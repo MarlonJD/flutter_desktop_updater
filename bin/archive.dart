@@ -82,6 +82,8 @@ Future<String?> genFileHashes({required String? path}) async {
 }
 
 Future<void> main(List<String> args) async {
+  bool zipFiles = false;
+
   if (args.isEmpty) {
     print("PLATFORM must be specified: macos, windows, linux");
     exit(1);
@@ -92,6 +94,13 @@ Future<void> main(List<String> args) async {
   if (platform != "macos" && platform != "windows" && platform != "linux") {
     print("PLATFORM must be specified: macos, windows, linux");
     exit(1);
+  }
+
+  // Check if zipFiles is true
+  if (args.length > 1) {
+    if (args[1] == "zip") {
+      zipFiles = true;
+    }
   }
 
   // Go to dist directory and get all folder names
@@ -195,76 +204,80 @@ Future<void> main(List<String> args) async {
         "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
   );
 
-  print("Target directory: $targetDirectory");
+  // Optional zip files
+  if (zipFiles) {
+    print("Target directory: $targetDirectory");
 
-  // Create zip file from the directory
-  const zipFileName = "Archive.zip";
+    // Create zip file from the directory
+    const zipFileName = "Archive.zip";
 
-  print("Creating zip archive...");
+    print("Creating zip archive...");
 
-  // Use ProcessResult to run the zip command
-  ProcessResult zipResult;
+    // Use ProcessResult to run the zip command
+    ProcessResult zipResult;
 
-  if (Platform.isWindows) {
-    // For Windows, use PowerShell's Compress-Archive
-    // Create a temporary directory to store files excluding hashes.json
-    final tempDir = Directory("${targetDirectory}_temp");
-    await tempDir.create();
+    if (Platform.isWindows) {
+      // For Windows, use PowerShell's Compress-Archive
+      // Create a temporary directory to store files excluding hashes.json
+      final tempDir = Directory("${targetDirectory}_temp");
+      await tempDir.create();
 
-    // Copy all files except hashes.json
-    await for (final entity in Directory(targetDirectory).list()) {
-      if (entity is File && !entity.path.endsWith("hashes.json")) {
-        final fileName = entity.path.split(Platform.pathSeparator).last;
-        await entity.copy("${tempDir.path}${Platform.pathSeparator}$fileName");
-      } else if (entity is Directory) {
-        final dirName = entity.path.split(Platform.pathSeparator).last;
-        await copyDirectory(
-          entity,
-          Directory("${tempDir.path}${Platform.pathSeparator}$dirName"),
-        );
+      // Copy all files except hashes.json
+      await for (final entity in Directory(targetDirectory).list()) {
+        if (entity is File && !entity.path.endsWith("hashes.json")) {
+          final fileName = entity.path.split(Platform.pathSeparator).last;
+          await entity
+              .copy("${tempDir.path}${Platform.pathSeparator}$fileName");
+        } else if (entity is Directory) {
+          final dirName = entity.path.split(Platform.pathSeparator).last;
+          await copyDirectory(
+            entity,
+            Directory("${tempDir.path}${Platform.pathSeparator}$dirName"),
+          );
+        }
       }
+
+      zipResult = await Process.run(
+        "powershell",
+        [
+          "-command",
+          "Compress-Archive -Path '${tempDir.path}\\*' -DestinationPath '$zipFileName' -Force",
+        ],
+      );
+
+      // Clean up temp directory
+      await tempDir.delete(recursive: true);
+    } else {
+      // For macOS and Linux, use the zip command
+      zipResult = await Process.run(
+        "zip",
+        ["-r", zipFileName, ".", "-x", "hashes.json"],
+        workingDirectory: targetDirectory,
+      );
     }
 
-    zipResult = await Process.run(
-      "powershell",
-      [
-        "-command",
-        "Compress-Archive -Path '${tempDir.path}\\*' -DestinationPath '$zipFileName' -Force",
-      ],
-    );
-
-    // Clean up temp directory
-    await tempDir.delete(recursive: true);
-  } else {
-    // For macOS and Linux, use the zip command
-    zipResult = await Process.run(
-      "zip",
-      ["-r", zipFileName, ".", "-x", "hashes.json"],
-      workingDirectory: targetDirectory,
-    );
-  }
-
-  if (zipResult.exitCode != 0) {
-    print("Error creating zip file: ${zipResult.stderr}");
-    exit(1);
-  }
-
-  print("Zip archive created successfully");
-
-  // Delete the original directory after zipping
-  final targetDir = Directory(targetDirectory);
-  if (await targetDir.exists()) {
-    final files = await targetDir.list().toList();
-
-    print("Removing original files after zipping");
-
-    for (final file in files) {
-      if (!file.path.endsWith(".zip") && !file.path.endsWith("hashes.json")) {
-        await file.delete(recursive: true);
-      }
+    if (zipResult.exitCode != 0) {
+      print("Error creating zip file: ${zipResult.stderr}");
+      exit(1);
     }
 
-    print("Original files removed successfully");
+    print("Zip archive created successfully");
+
+    // Delete the original directory after zipping
+    final targetDir = Directory(targetDirectory);
+    if (await targetDir.exists()) {
+      final files = await targetDir.list().toList();
+
+      print("Removing original files after zipping");
+
+      for (final file in files) {
+        if (!file.path.endsWith(".zip") && !file.path.endsWith("hashes.json")) {
+          await file.delete(recursive: true);
+        }
+      }
+
+      print("Original files removed successfully");
+    }
   }
 
   return;
