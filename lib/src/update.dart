@@ -3,6 +3,8 @@ import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/src/download.dart";
+import "package:path/path.dart" as path;
+import "package:path_provider/path_provider.dart";
 
 /// Modified updateAppFunction to return a stream of UpdateProgress.
 /// The stream emits total kilobytes, received kilobytes, and the currently downloading file's name.
@@ -10,17 +12,25 @@ Future<Stream<UpdateProgress>> updateAppFunction({
   required String remoteUpdateFolder,
   required List<FileHashModel?> changes,
 }) async {
-  final executablePath = Platform.resolvedExecutable;
-
-  final directoryPath = executablePath.substring(
-    0,
-    executablePath.lastIndexOf(Platform.pathSeparator),
-  );
-
-  var dir = Directory(directoryPath);
+  Directory dir;
 
   if (Platform.isMacOS) {
-    dir = dir.parent;
+    // Get the Application Support directory
+    final appSupportDir = await getApplicationSupportDirectory();
+    // Create a subdirectory for our application
+    dir = Directory(path.join(appSupportDir.path, "updates"));
+    // Make sure the directory exists
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+  } else {
+    // For other platforms maintain original behavior
+    final executablePath = Platform.resolvedExecutable;
+    final directoryPath = executablePath.substring(
+      0,
+      executablePath.lastIndexOf(Platform.pathSeparator),
+    );
+    dir = Directory(directoryPath);
   }
 
   final responseStream = StreamController<UpdateProgress>();
