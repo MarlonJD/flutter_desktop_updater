@@ -70,17 +70,17 @@ namespace desktop_updater
         "@echo off\n"
         "chcp 65001 > NUL\n"
         // "echo Updating the application...\n"
-        "timeout /t 2 /nobreak > NUL\n"
+        "timeout /t 4 /nobreak > NUL\n"
         // "echo Copying files...\n"
         "xcopy /E /I /Y \"" +
         updateDirStr + "\\*\" \"" + destDirStr + "\\\"\n"
                                                  "rmdir /S /Q \"" +
         updateDirStr + "\"\n" +
         // "echo Files copied.\n"
-        "timeout /t 1 /nobreak > NUL\n"
+        "timeout /t 3 /nobreak > NUL\n"
         "start \"\" \"" +
         exePathStr + "\"\n"
-                     "timeout /t 1 /nobreak > NUL\n"
+                     "timeout /t 2 /nobreak > NUL\n"
                      // "echo Deleting temporary files...\n"
                      "del update_script.bat\n"
                      "\"\n"
