@@ -112,7 +112,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       throw Exception("Folder URL is not set");
     }
 
-    if (_changedFiles == null && _changedFiles!.isEmpty) {
+    if (_changedFiles == null || _changedFiles!.isEmpty) {
       throw Exception("Changed files are not set");
     }
 
@@ -124,17 +124,6 @@ class DesktopUpdaterController extends ChangeNotifier {
     stream.listen(
       (event) {
         _updateProgress = event;
-
-        // if (_downloadProgress >= 1.0) {
-        //   _isDownloading = false;
-        //   _downloadProgress = 1.0;
-        //   _downloadedSize = _downloadSize;
-        //   _isDownloaded = true;
-
-        //   notifyListeners();
-        //   return;
-        // }
-
         _isDownloading = true;
         _isDownloaded = false;
         _downloadProgress = event.receivedBytes / event.totalBytes;
