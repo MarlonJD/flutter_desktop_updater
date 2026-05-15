@@ -5,25 +5,32 @@
 #include <VersionHelpers.h>
 #include <Shlwapi.h> // Include Shlwapi.h for PathFileExistsW
 
-#pragma comment(lib, "Version.lib") // Link with Version.lib
-#pragma comment(lib, "Shlwapi.lib") // Link with Shlwapi.lib
+// Link required Windows libraries
+#pragma comment(lib, "Version.lib")
+#pragma comment(lib, "Shlwapi.lib")
 
+// Flutter includes
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
+// Standard library includes
 #include <memory>
 #include <sstream>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 namespace desktop_updater
 {
-
-  // static
+  /**
+   * @brief Register the plugin with the Flutter registrar
+   * @param registrar The Flutter plugin registrar for Windows
+   */
   void DesktopUpdaterPlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarWindows *registrar)
   {
@@ -47,75 +54,211 @@ namespace desktop_updater
 
   DesktopUpdaterPlugin::~DesktopUpdaterPlugin() {}
 
-  // Modify the createBatFile function to accept parameters and use them in the bat script
+  /**
+   * @brief Converts a wide string to UTF-8 string
+   * @param wideStr The wide string to convert
+   * @return UTF-8 encoded string
+   */
+  std::string WideStringToUtf8(const std::wstring &wideStr)
+  {
+    if (wideStr.empty()) return {};
+
+    int size = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 0) return {};
+
+    std::string result(size - 1, 0); // Exclude null terminator
+    WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, &result[0], size - 1, nullptr, nullptr);
+
+    return result;
+  }
+
+  /**
+   * @brief Extracts the executable name from a full path
+   * @param fullPath The full path to the executable
+   * @return The executable name without path
+   */
+  std::string ExtractExecutableName(const std::string &fullPath)
+  {
+    size_t pos = fullPath.find_last_of("\\");
+    return (pos != std::string::npos) ? fullPath.substr(pos + 1) : fullPath;
+  }
+
+  /**
+   * @brief Creates a robust batch script for handling application updates
+   *
+   * This function generates a comprehensive batch script that:
+   * 1. Waits for the application to close properly
+   * 2. Creates a complete backup of the current application
+   * 3. Copies new update files with retry logic
+   * 4. Restores backup if update fails
+   * 5. Cleans up temporary files and restarts the application
+   *
+   * @param updateDir Directory containing the update files
+   * @param destDir Destination directory (usually current directory)
+   * @param executable_path Full path to the application executable
+   */
   void createBatFile(const std::wstring &updateDir, const std::wstring &destDir, const wchar_t *executable_path)
   {
-    // Convert wide strings to regular strings using Windows API for proper conversion
-    int updateSize = WideCharToMultiByte(CP_UTF8, 0, updateDir.c_str(), -1, NULL, 0, NULL, NULL);
-    std::string updateDirStr(updateSize, 0);
-    WideCharToMultiByte(CP_UTF8, 0, updateDir.c_str(), -1, &updateDirStr[0], updateSize, NULL, NULL);
-    updateDirStr.pop_back(); // Remove null terminator
+    // Convert wide strings to UTF-8 for batch script generation
+    std::string updateDirStr = WideStringToUtf8(updateDir);
+    std::string destDirStr = WideStringToUtf8(destDir);
+    std::string exePathStr = WideStringToUtf8(executable_path);
+    std::string exeNameStr = ExtractExecutableName(exePathStr);
 
-    int destSize = WideCharToMultiByte(CP_UTF8, 0, destDir.c_str(), -1, NULL, 0, NULL, NULL);
-    std::string destDirStr(destSize, 0);
-    WideCharToMultiByte(CP_UTF8, 0, destDir.c_str(), -1, &destDirStr[0], destSize, NULL, NULL);
-    destDirStr.pop_back(); // Remove null terminator
-
-    int exePathSize = WideCharToMultiByte(CP_UTF8, 0, executable_path, -1, NULL, 0, NULL, NULL);
-    std::string exePathStr(exePathSize, 0);
-    WideCharToMultiByte(CP_UTF8, 0, executable_path, -1, &exePathStr[0], exePathSize, NULL, NULL);
-    exePathStr.pop_back(); // Remove null terminator
+    // Constants for the update process
+    const int MAX_WAIT_ATTEMPTS = 5;
+    const int MAX_RETRY_ATTEMPTS = 3;
+    const int RETRY_DELAY_SECONDS = 2;
 
     const std::string batScript =
         "@echo off\n"
-        "chcp 65001 > NUL\n"
-        // "echo Updating the application...\n"
-        "timeout /t 4 /nobreak > NUL\n"
-        // "echo Copying files...\n"
-        "xcopy /E /I /Y \"" +
-        updateDirStr + "\\*\" \"" + destDirStr + "\\\"\n"
-                                                 "rmdir /S /Q \"" +
-        updateDirStr + "\"\n" +
-        // "echo Files copied.\n"
-        "timeout /t 3 /nobreak > NUL\n"
-        "start \"\" \"" +
-        exePathStr + "\"\n"
-                     "timeout /t 2 /nobreak > NUL\n"
-                     // "echo Deleting temporary files...\n"
-                     "del update_script.bat\n"
-                     "\"\n"
-                     "exit\n";
+        "chcp 65001 > NUL\n"  // Enable UTF-8 support for non-ASCII paths
+        "echo.\n"
+        "echo ==========================================\n"
+        "echo        Application Update Process\n"
+        "echo ==========================================\n"
+        "echo.\n"
 
+        // STEP 1: Wait for application to close gracefully
+        "echo [STEP 1/5] Waiting for application to close...\n"
+        "set COUNT=0\n"
+        ":wait_loop\n"
+        "tasklist /FI \"IMAGENAME eq " + exeNameStr + "\" 2>NUL | find /I \"" + exeNameStr + "\" >NUL\n"
+        "if \"%ERRORLEVEL%\"==\"0\" (\n"
+        "    set /a COUNT+=1\n"
+        "    echo   Attempt %COUNT%/" + std::to_string(MAX_WAIT_ATTEMPTS) + " - Application still running...\n"
+        "    if %COUNT% GEQ " + std::to_string(MAX_WAIT_ATTEMPTS) + " (\n"
+        "        echo   Timeout reached - force closing application\n"
+        "        taskkill /F /IM \"" + exeNameStr + "\" >NUL 2>&1\n"
+        "        goto step2\n"
+        "    )\n"
+        "    timeout /t 1 /nobreak > NUL\n"
+        "    goto wait_loop\n"
+        ")\n"
+        "echo   Application closed successfully\n"
+        "echo.\n"
+
+        // STEP 2: Create complete backup
+        ":step2\n"
+        "echo [STEP 2/5] Creating backup restore point...\n"
+        "if exist backup (\n"
+        "    echo   Removing old backup...\n"
+        "    rmdir /s /q backup >NUL 2>&1\n"
+        ")\n"
+        "mkdir backup >NUL 2>&1\n"
+        "echo   Backing up application files...\n"
+
+        // Backup files (excluding backup folder and update script)
+        "for %%F in (*) do (\n"
+        "    if not \"%%F\"==\"backup\" (\n"
+        "        if not \"%%F\"==\"update_script.bat\" (\n"
+        "            copy \"%%F\" \"backup\\%%F\" >NUL 2>&1\n"
+        "        )\n"
+        "    )\n"
+        ")\n"
+
+        // Backup directories (excluding backup and update folders)
+        "for /D %%D in (*) do (\n"
+        "    if not \"%%D\"==\"backup\" (\n"
+        "        if not \"%%D\"==\"update\" (\n"
+        "            xcopy /E /H /C /I /Y \"%%D\" \"backup\\%%D\\\" >NUL 2>&1\n"
+        "        )\n"
+        "    )\n"
+        ")\n"
+        "echo   Backup completed successfully\n"
+        "echo.\n"
+
+        // STEP 3: Apply update with retry logic
+        "echo [STEP 3/5] Applying update...\n"
+        "set RETRY=0\n"
+        ":retry_copy\n"
+        "set /a RETRY+=1\n"
+        "echo   Update attempt %RETRY%/" + std::to_string(MAX_RETRY_ATTEMPTS) + "...\n"
+        "xcopy /E /I /Y \"" + updateDirStr + "\\*\" \"" + destDirStr + "\\\" >NUL 2>&1\n"
+        "if %ERRORLEVEL% EQU 0 (\n"
+        "    echo   Update applied successfully\n"
+        "    rmdir /s /q backup >NUL 2>&1\n"
+        "    goto cleanup\n"
+        ")\n"
+        "if %RETRY% LSS " + std::to_string(MAX_RETRY_ATTEMPTS) + " (\n"
+        "    echo   Update failed - retrying in " + std::to_string(RETRY_DELAY_SECONDS) + " seconds...\n"
+        "    timeout /t " + std::to_string(RETRY_DELAY_SECONDS) + " /nobreak > NUL\n"
+        "    goto retry_copy\n"
+        ")\n"
+        "echo   All update attempts failed\n"
+        "echo.\n"
+
+        // STEP 4: Restore backup if update failed
+        "echo [STEP 4/5] Restoring from backup...\n"
+        "echo   Update failed - restoring previous version\n"
+        "xcopy /E /H /C /I /Y backup\\*.* . >NUL 2>&1\n"
+        "if %ERRORLEVEL% EQU 0 (\n"
+        "    echo   Backup restored successfully\n"
+        ") else (\n"
+        "    echo   WARNING: Some files may not have been restored properly\n"
+        ")\n"
+        "rmdir /s /q backup >NUL 2>&1\n"
+        "echo.\n"
+
+        // STEP 5: Cleanup and restart
+        ":cleanup\n"
+        "echo [STEP 5/5] Cleanup and restart...\n"
+        "echo   Removing update files...\n"
+        "rmdir /S /Q \"" + updateDirStr + "\" >NUL 2>&1\n"
+        "echo   Starting application in foreground...\n"
+        "start /MAX \"\" \"" + exePathStr + "\"\n"
+        "timeout /t 1 /nobreak > NUL\n"
+        "echo   Cleaning up temporary files...\n"
+        "del update_script.bat >NUL 2>&1\n"
+        "echo.\n"
+        "echo Update process completed.\n"
+        "exit\n";
+
+    // Write the batch script to file
     std::ofstream batFile("update_script.bat");
-    batFile << batScript;
-    batFile.close();
-    std::cout << "Temporary .bat created.\n";
+    if (batFile.is_open()) {
+      batFile << batScript;
+      batFile.close();
+      std::cout << "Update batch script created successfully.\n";
+    } else {
+      std::cerr << "Error: Failed to create update batch script.\n";
+    }
   }
 
+  /**
+   * @brief Executes the update batch script in a separate process
+   *
+   * Creates a new process to run the update script with CREATE_NO_WINDOW flag
+   * to hide the console window from the user.
+   */
   void runBatFile()
   {
     STARTUPINFO si = {sizeof(si)};
     PROCESS_INFORMATION pi;
 
     WCHAR cmdLine[] = L"cmd.exe /c update_script.bat";
-    if (CreateProcess(
-            NULL,
-            cmdLine,
-            NULL,
-            NULL,
-            FALSE,
-            CREATE_NO_WINDOW,
-            NULL,
-            NULL,
-            &si,
-            &pi))
-    {
+
+    BOOL success = CreateProcess(
+        nullptr,                    // Application name
+        cmdLine,                    // Command line
+        nullptr,                    // Process security attributes
+        nullptr,                    // Thread security attributes
+        FALSE,                      // Inherit handles
+        CREATE_NO_WINDOW,           // Hide console window
+        nullptr,                    // Environment
+        nullptr,                    // Current directory
+        &si,                        // Startup info
+        &pi                         // Process info
+    );
+
+    if (success) {
+      // Close handles immediately as we don't need to wait for the process
       CloseHandle(pi.hProcess);
       CloseHandle(pi.hThread);
-    }
-    else
-    {
-      std::cout << "Failed to run the .bat file.\n";
+      std::cout << "Update script started successfully.\n";
+    } else {
+      DWORD error = GetLastError();
+      std::cerr << "Error: Failed to start update script. Error code: " << error << "\n";
     }
   }
 
@@ -126,7 +269,7 @@ namespace desktop_updater
     char szFilePath[MAX_PATH];
     GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
 
-    // Child process
+    // Get the current executable path
     wchar_t executable_path[MAX_PATH];
     GetModuleFileNameW(NULL, executable_path, MAX_PATH);
 
