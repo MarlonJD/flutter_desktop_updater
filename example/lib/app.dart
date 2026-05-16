@@ -1,3 +1,6 @@
+import "dart:async";
+import "dart:io";
+
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:desktop_updater/widget/update_widget.dart";
@@ -38,6 +41,37 @@ class _HomePageState extends State<HomePage> {
         warningConfirmText: "Restart",
       ),
     );
+
+    unawaited(_runSmokeTestCommand());
+  }
+
+  Future<void> _runSmokeTestCommand() async {
+    final stagingPath = Platform.environment["DESKTOP_UPDATER_SMOKE_STAGING"];
+    if (stagingPath == null || stagingPath.isEmpty) {
+      return;
+    }
+
+    final markerPath = Platform.environment["DESKTOP_UPDATER_SMOKE_MARKER"];
+    final stagingDirectory = Directory(stagingPath);
+
+    if (!await stagingDirectory.exists()) {
+      await _writeSmokeMarker(markerPath, "staging-missing");
+      return;
+    }
+
+    await _writeSmokeMarker(markerPath, "installing");
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await _desktopUpdaterPlugin.installUpdate(stagingPath: stagingPath);
+  }
+
+  Future<void> _writeSmokeMarker(String? markerPath, String value) async {
+    if (markerPath == null || markerPath.isEmpty) {
+      return;
+    }
+
+    final marker = File(markerPath);
+    await marker.parent.create(recursive: true);
+    await marker.writeAsString(value);
   }
 
   // Platform messages are asynchronous, so we initialize in an async method.

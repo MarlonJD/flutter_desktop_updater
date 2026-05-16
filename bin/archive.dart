@@ -3,6 +3,7 @@ import "dart:io";
 
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/app_archive.dart";
+import "package:desktop_updater/src/remote_file.dart";
 
 import "helper/copy.dart";
 
@@ -53,9 +54,10 @@ Future<String?> genFileHashes({required String? path}) async {
           !entity.path.endsWith(".DS_Store")) {
         // Dosyanın hash'ini al
         final hash = await getFileHash(entity);
-        final foundPath = entity.path.substring(dir.path.length + 1);
+        final foundPath = normalizeArchivePath(
+          entity.path.substring(dir.path.length + 1),
+        );
 
-        // Dosya yolunu ve hash değerini yaz
         if (hash.isNotEmpty) {
           final hashObj = FileHashModel(
             filePath: foundPath,
@@ -67,11 +69,8 @@ Future<String?> genFileHashes({required String? path}) async {
       }
     }
 
-    // Dosya hash'lerini json formatına çevir
-    final jsonStr = jsonEncode(hashList);
-
-    // Çıktı dosyasına yaz
-    sink.write(jsonStr);
+    hashList.sort((a, b) => a.filePath.compareTo(b.filePath));
+    sink.write(const JsonEncoder.withIndent("  ").convert(hashList));
 
     // Çıktıyı kaydediyoruz
     await sink.close();
@@ -123,8 +122,13 @@ Future<void> main(List<String> args) async {
       // desktop_updater_example-0.1.1+2-macos.app
       // version is 0.1.1, build number is 2, platform is macos, name is appNamePubspec variable
       final version = file.path.split("-").elementAt(1).split("+").first;
-      final buildNumber =
-          file.path.split("-").elementAt(1).split("+").last.split("-").first;
+      final buildNumber = file.path
+          .split("-")
+          .elementAt(1)
+          .split("+")
+          .last
+          .split("-")
+          .first;
       final foundPlatform = file.path.split("-").last.split(".").first;
 
       if (foundPlatform == platform) {
@@ -152,14 +156,13 @@ Future<void> main(List<String> args) async {
   // Get current build name and number from pubspec.yaml
   final pubspec = File("pubspec.yaml");
   final pubspecContent = await pubspec.readAsString();
-  final appNamePubspec =
-      RegExp(r"name: (.+)").firstMatch(pubspecContent)!.group(1);
+  final appNamePubspec = RegExp(
+    r"name: (.+)",
+  ).firstMatch(pubspecContent)!.group(1);
 
   if (platform == "windows") {
     await copyDirectory(
-      Directory(
-        foundDirectory,
-      ),
+      Directory(foundDirectory),
       Directory(
         "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
       ),

@@ -8,10 +8,12 @@ class AppArchiveModel {
 
   factory AppArchiveModel.fromJson(Map<String, dynamic> json) {
     return AppArchiveModel(
-      appName: json["appName"],
-      description: json["description"],
+      appName: json["appName"] as String? ?? "",
+      description: json["description"] as String? ?? "",
       items: List<ItemModel>.from(
-        json["items"].map((x) => ItemModel.fromJson(x)),
+        (json["items"] as List<dynamic>? ?? const []).map(
+          (x) => ItemModel.fromJson(x as Map<String, dynamic>),
+        ),
       ),
     );
   }
@@ -38,20 +40,23 @@ class ItemModel {
     required this.url,
     required this.platform,
     this.changedFiles,
+    this.removedFiles = const [],
     this.appName,
   });
 
   factory ItemModel.fromJson(Map<String, dynamic> json) {
     return ItemModel(
-      version: json["version"],
-      shortVersion: json["shortVersion"],
+      version: json["version"] as String? ?? "",
+      shortVersion: json["shortVersion"] as int? ?? 0,
       changes: List<ChangeModel>.from(
-        json["changes"].map((x) => ChangeModel.fromJson(x)),
+        (json["changes"] as List<dynamic>? ?? const []).map(
+          (x) => ChangeModel.fromJson(x as Map<String, dynamic>),
+        ),
       ),
-      date: json["date"],
-      mandatory: json["mandatory"],
-      url: json["url"],
-      platform: json["platform"],
+      date: json["date"] as String? ?? "",
+      mandatory: json["mandatory"] as bool? ?? false,
+      url: json["url"] as String? ?? "",
+      platform: json["platform"] as String? ?? "",
     );
   }
   final String version;
@@ -62,6 +67,7 @@ class ItemModel {
   final String url;
   final String platform;
   final List<FileHashModel?>? changedFiles;
+  final List<String> removedFiles;
   final String? appName;
 
   Map<String, dynamic> toJson() {
@@ -85,6 +91,7 @@ class ItemModel {
     String? url,
     String? platform,
     List<FileHashModel?>? changedFiles,
+    List<String>? removedFiles,
     String? appName,
   }) {
     return ItemModel(
@@ -95,7 +102,8 @@ class ItemModel {
       mandatory: mandatory ?? this.mandatory,
       url: url ?? this.url,
       platform: platform ?? this.platform,
-      changedFiles: changedFiles ?? changedFiles,
+      changedFiles: changedFiles ?? this.changedFiles,
+      removedFiles: removedFiles ?? this.removedFiles,
       appName: appName ?? this.appName,
     );
   }
@@ -105,7 +113,10 @@ class ChangeModel {
   ChangeModel({this.type, required this.message});
 
   factory ChangeModel.fromJson(Map<String, dynamic> json) {
-    return ChangeModel(type: json["type"], message: json["message"]);
+    return ChangeModel(
+      type: json["type"] as String?,
+      message: json["message"] as String? ?? "",
+    );
   }
   final String? type;
   final String message;
@@ -124,9 +135,9 @@ class FileHashModel {
 
   factory FileHashModel.fromJson(Map<String, dynamic> json) {
     return FileHashModel(
-      filePath: json["path"],
-      calculatedHash: json["calculatedHash"],
-      length: json["length"],
+      filePath: json["path"] as String? ?? "",
+      calculatedHash: json["calculatedHash"] as String? ?? "",
+      length: json["length"] as int? ?? 0,
     );
   }
   final String filePath;

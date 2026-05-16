@@ -10,14 +10,26 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
 
   @override
   Future<String?> getPlatformVersion() async {
-    final version =
-        await methodChannel.invokeMethod<String>("getPlatformVersion");
+    final version = await methodChannel.invokeMethod<String>(
+      "getPlatformVersion",
+    );
     return version;
   }
 
   @override
   Future<void> restartApp() async {
     await methodChannel.invokeMethod<void>("restartApp");
+  }
+
+  @override
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+  }) async {
+    await methodChannel.invokeMethod<void>("installUpdate", {
+      "stagingPath": stagingPath,
+      "removedFiles": removedFiles,
+    });
   }
 
   @override

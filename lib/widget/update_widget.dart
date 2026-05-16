@@ -21,10 +21,7 @@ class DesktopUpdateWidget extends StatefulWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>(
-        "controller",
-        controller,
-      ),
+      DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
     );
   }
 }
@@ -73,14 +70,10 @@ class _DesktopUpdateWidgetState extends State<DesktopUpdateWidget> {
           ),
         ),
         SliverList(
-          delegate: SliverChildListDelegate(
-            [
-              const SizedBox(
-                height: 16,
-              ),
-              Center(child: widget.child),
-            ],
-          ),
+          delegate: SliverChildListDelegate([
+            const SizedBox(height: 16),
+            Center(child: widget.child),
+          ]),
         ),
       ],
     );

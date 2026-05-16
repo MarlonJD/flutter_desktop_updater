@@ -1,3 +1,10 @@
+## 2.0.0-dev.1
+
+* Reworked the update pipeline around verified temporary staging directories.
+* Added native macOS and Windows install helpers that wait for the app to exit before replacing files.
+* Added hash/length verification for downloaded files and normalized archive paths for Windows-hosted files.
+* Added support for removing files that no longer exist in the target version.
+
 ## 1.3.0
 * Revert fix macOS issues, sorry for the inconvenience, do not use 1.2.0 for macOS
 

@@ -1,103 +1,108 @@
 import "dart:async";
 import "dart:io";
 
-import "package:desktop_updater/desktop_updater.dart";
+import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/download.dart";
+import "package:desktop_updater/src/update_progress.dart";
 
-/// Modified updateAppFunction to return a stream of UpdateProgress.
-/// The stream emits total kilobytes, received kilobytes, and the currently downloading file's name.
 Future<Stream<UpdateProgress>> updateAppFunction({
   required String remoteUpdateFolder,
   required List<FileHashModel?> changes,
 }) async {
-  final executablePath = Platform.resolvedExecutable;
-
-  final directoryPath = executablePath.substring(
-    0,
-    executablePath.lastIndexOf(Platform.pathSeparator),
+  final files = changes.whereType<FileHashModel>().toList(growable: false);
+  final stagingDirectory = await Directory.systemTemp.createTemp(
+    "desktop_updater_stage_",
   );
 
-  var dir = Directory(directoryPath);
+  late StreamController<UpdateProgress> controller;
 
-  if (Platform.isMacOS) {
-    dir = dir.parent;
-  }
+  controller = StreamController<UpdateProgress>(
+    onListen: () {
+      unawaited(
+        _downloadChangedFiles(
+          controller: controller,
+          remoteUpdateFolder: remoteUpdateFolder,
+          files: files,
+          stagingDirectory: stagingDirectory,
+        ),
+      );
+    },
+  );
 
-  final responseStream = StreamController<UpdateProgress>();
+  return controller.stream;
+}
+
+Future<void> _downloadChangedFiles({
+  required StreamController<UpdateProgress> controller,
+  required String remoteUpdateFolder,
+  required List<FileHashModel> files,
+  required Directory stagingDirectory,
+}) async {
+  final totalBytes = files.fold<int>(
+    0,
+    (previousValue, element) => previousValue + element.length,
+  );
+
+  var completedFiles = 0;
+  var completedBytes = 0;
 
   try {
-    if (await dir.exists()) {
-      if (changes.isEmpty) {
-        print("No updates required.");
-        await responseStream.close();
-        return responseStream.stream;
-      }
-
-      var receivedBytes = 0.0;
-      final totalFiles = changes.length;
-      var completedFiles = 0;
-
-      // Calculate total length in KB
-      final totalLengthKB = changes.fold<double>(
-        0,
-        (previousValue, element) =>
-            previousValue + ((element?.length ?? 0) / 1024.0),
+    if (files.isEmpty) {
+      controller.add(
+        UpdateProgress(
+          totalBytes: 0,
+          receivedBytes: 0,
+          currentFile: "",
+          totalFiles: 0,
+          completedFiles: 0,
+          stagingDirectory: stagingDirectory.path,
+        ),
       );
-
-      final changesFutureList = <Future<dynamic>>[];
-
-      for (final file in changes) {
-        if (file != null) {
-          changesFutureList.add(
-            downloadFile(
-              remoteUpdateFolder,
-              file.filePath,
-              dir.path,
-              (received, total) {
-                receivedBytes += received;
-                responseStream.add(
-                  UpdateProgress(
-                    totalBytes: totalLengthKB,
-                    receivedBytes: receivedBytes,
-                    currentFile: file.filePath,
-                    totalFiles: totalFiles,
-                    completedFiles: completedFiles,
-                  ),
-                );
-              },
-            ).then((_) {
-              completedFiles += 1;
-
-              responseStream.add(
-                UpdateProgress(
-                  totalBytes: totalLengthKB,
-                  receivedBytes: receivedBytes,
-                  currentFile: file.filePath,
-                  totalFiles: totalFiles,
-                  completedFiles: completedFiles,
-                ),
-              );
-              print("Completed: ${file.filePath}");
-            }).catchError((error) {
-              responseStream.addError(error);
-              return null;
-            }),
-          );
-        }
-      }
-
-      unawaited(
-        Future.wait(changesFutureList).then((_) async {
-          await responseStream.close();
-        }),
-      );
-
-      return responseStream.stream;
+      return;
     }
-  } catch (e) {
-    responseStream.addError(e);
-    await responseStream.close();
-  }
 
-  return responseStream.stream;
+    for (final fileHash in files) {
+      var currentFileBytes = 0;
+
+      await downloadFile(
+        remoteUpdateFolder: remoteUpdateFolder,
+        fileHash: fileHash,
+        stagingDirectory: stagingDirectory,
+        onProgress: (receivedBytes, _) {
+          currentFileBytes = receivedBytes;
+          controller.add(
+            UpdateProgress(
+              totalBytes: totalBytes.toDouble(),
+              receivedBytes: (completedBytes + currentFileBytes).toDouble(),
+              currentFile: fileHash.filePath,
+              totalFiles: files.length,
+              completedFiles: completedFiles,
+              stagingDirectory: stagingDirectory.path,
+            ),
+          );
+        },
+      );
+
+      completedFiles += 1;
+      completedBytes +=
+          fileHash.length > 0 ? fileHash.length : currentFileBytes;
+      controller.add(
+        UpdateProgress(
+          totalBytes: totalBytes.toDouble(),
+          receivedBytes: completedBytes.toDouble(),
+          currentFile: fileHash.filePath,
+          totalFiles: files.length,
+          completedFiles: completedFiles,
+          stagingDirectory: stagingDirectory.path,
+        ),
+      );
+    }
+  } catch (error, stackTrace) {
+    if (await stagingDirectory.exists()) {
+      await stagingDirectory.delete(recursive: true);
+    }
+    controller.addError(error, stackTrace);
+  } finally {
+    await controller.close();
+  }
 }

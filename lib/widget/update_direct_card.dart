@@ -22,10 +22,7 @@ class DesktopUpdateDirectCard extends StatefulWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>(
-        "controller",
-        controller,
-      ),
+      DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
     );
   }
 }
@@ -47,8 +44,9 @@ class _DesktopUpdateDirectCardState extends State<DesktopUpdateDirectCard> {
       controller: widget.controller,
       child: StatefulBuilder(
         builder: (context, setState) {
-          final desktopInheritedNotifier =
-              DesktopUpdaterInheritedNotifier.of(context);
+          final desktopInheritedNotifier = DesktopUpdaterInheritedNotifier.of(
+            context,
+          );
           final notifier = desktopInheritedNotifier?.notifier;
 
           if (((notifier?.needUpdate ?? false) == false) ||

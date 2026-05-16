@@ -16,6 +16,14 @@ class MockDesktopUpdaterPlatform
   }
 
   @override
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+  }) {
+    return Future.value();
+  }
+
+  @override
   Future<String?> sayHello() {
     return Future.value();
   }
@@ -49,8 +57,9 @@ class MockDesktopUpdaterPlatform
   }
 
   @override
-  Future<List<FileHashModel?>> prepareUpdateApp(
-      {required String remoteUpdateFolder}) {
+  Future<List<FileHashModel?>> prepareUpdateApp({
+    required String remoteUpdateFolder,
+  }) {
     return Future.value([]);
   }
 }

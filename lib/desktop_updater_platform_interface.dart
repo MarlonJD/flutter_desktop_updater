@@ -31,6 +31,13 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     throw UnimplementedError("restartApp() has not been implemented.");
   }
 
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+  }) {
+    throw UnimplementedError("installUpdate() has not been implemented.");
+  }
+
   Future<String?> sayHello() {
     throw UnimplementedError("sayHello() has not been implemented.");
   }

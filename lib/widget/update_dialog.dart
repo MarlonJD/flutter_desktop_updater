@@ -42,10 +42,7 @@ class UpdateDialogListener extends StatefulWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>(
-        "controller",
-        controller,
-      ),
+      DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
     );
     properties.add(ColorProperty("backgroundColor", backgroundColor));
     properties.add(ColorProperty("iconColor", iconColor));
@@ -177,39 +174,11 @@ class UpdateDialogWidget extends StatelessWidget {
               title: Text(
                 notifier.getLocalization?.updateAvailableText ??
                     "Update Available",
-                style: TextStyle(
-                  color: textColor,
-                ),
+                style: TextStyle(color: textColor),
               ),
               content: Text(
-                "${getLocalizedString(
-                      notifier.getLocalization?.newVersionAvailableText,
-                      [
-                        notifier.appName,
-                        notifier.appVersion,
-                      ],
-                    ) ?? (getLocalizedString(
-                      "{} {} is available",
-                      [
-                        notifier.appName,
-                        notifier.appVersion,
-                      ],
-                    )) ?? ""}, ${getLocalizedString(
-                      notifier.getLocalization?.newVersionLongText,
-                      [
-                        ((notifier.downloadSize ?? 0) / 1024)
-                                      .toStringAsFixed(2),
-                      ],
-                    ) ?? (getLocalizedString(
-                      "New version is ready to download, click the button below to start downloading. This will download {} MB of data.",
-                      [
-                        ((notifier.downloadSize ?? 0) / 1024)
-                            .toStringAsFixed(2),
-                      ],
-                    )) ?? ""}",
-                style: TextStyle(
-                  color: buttonTextColor,
-                ),
+                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [((notifier.downloadSize ?? 0) / 1024 / 1024).toStringAsFixed(2)]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [((notifier.downloadSize ?? 0) / 1024 / 1024).toStringAsFixed(2)])) ?? ""}",
+                style: TextStyle(color: buttonTextColor),
               ),
               actions: [
                 if ((notifier.isDownloading) && !(notifier.isDownloaded))
@@ -227,7 +196,7 @@ class UpdateDialogWidget extends StatelessWidget {
                         label: Row(
                           children: [
                             Text(
-                              "${((notifier.downloadProgress) * 100).toInt()}% (${((notifier.downloadedSize) / 1024).toStringAsFixed(2)} MB / ${((notifier.downloadSize ?? 0.0) / 1024).toStringAsFixed(2)} MB)",
+                              "${((notifier.downloadProgress) * 100).toInt()}% (${((notifier.downloadedSize) / 1024 / 1024).toStringAsFixed(2)} MB / ${((notifier.downloadSize ?? 0.0) / 1024 / 1024).toStringAsFixed(2)} MB)",
                             ),
                           ],
                         ),
@@ -256,7 +225,8 @@ class UpdateDialogWidget extends StatelessWidget {
                                       "Are you sure?",
                                 ),
                                 content: Text(
-                                  notifier.getLocalization
+                                  notifier
+                                          .getLocalization
                                           ?.restartWarningText ??
                                       "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
                                 ),
@@ -266,7 +236,8 @@ class UpdateDialogWidget extends StatelessWidget {
                                       Navigator.of(context).pop();
                                     },
                                     child: Text(
-                                      notifier.getLocalization
+                                      notifier
+                                              .getLocalization
                                               ?.warningCancelText ??
                                           "Not now",
                                     ),
@@ -274,7 +245,8 @@ class UpdateDialogWidget extends StatelessWidget {
                                   TextButton(
                                     onPressed: notifier.restartApp,
                                     child: Text(
-                                      notifier.getLocalization
+                                      notifier
+                                              .getLocalization
                                               ?.warningConfirmText ??
                                           "Restart",
                                     ),
@@ -293,33 +265,21 @@ class UpdateDialogWidget extends StatelessWidget {
                     children: [
                       if ((notifier.isMandatory) == false)
                         TextButton.icon(
-                          icon: Icon(
-                            Icons.close,
-                            color: buttonIconColor,
-                          ),
+                          icon: Icon(Icons.close, color: buttonIconColor),
                           label: Text(
                             notifier.getLocalization?.skipThisVersionText ??
                                 "Skip this version",
-                            style: TextStyle(
-                              color: buttonTextColor,
-                            ),
+                            style: TextStyle(color: buttonTextColor),
                           ),
                           onPressed: notifier.makeSkipUpdate,
                         ),
                       if ((notifier.isMandatory) == false)
-                        const SizedBox(
-                          width: 8,
-                        ),
+                        const SizedBox(width: 8),
                       TextButton.icon(
-                        icon: Icon(
-                          Icons.download,
-                          color: buttonIconColor,
-                        ),
+                        icon: Icon(Icons.download, color: buttonIconColor),
                         label: Text(
                           notifier.getLocalization?.downloadText ?? "Download",
-                          style: TextStyle(
-                            color: buttonTextColor,
-                          ),
+                          style: TextStyle(color: buttonTextColor),
                         ),
                         onPressed: notifier.downloadUpdate,
                       ),
@@ -337,9 +297,7 @@ class UpdateDialogWidget extends StatelessWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
-      ..add(
-        DiagnosticsProperty<DesktopUpdaterController>("notifier", notifier),
-      )
+      ..add(DiagnosticsProperty<DesktopUpdaterController>("notifier", notifier))
       ..add(ColorProperty("backgroundColor", backgroundColor))
       ..add(ColorProperty("iconColor", iconColor))
       ..add(ColorProperty("shadowColor", shadowColor))

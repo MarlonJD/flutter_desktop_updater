@@ -25,9 +25,22 @@ class DesktopUpdater {
     return Future.value("Hello from DesktopUpdater!");
   }
 
-  /// Uygulamayı kapatır ve yeniden başlatır
-  Future<void> restartApp() {
+  Future<void> restartApp({String? stagingPath}) {
+    if (stagingPath != null) {
+      return installUpdate(stagingPath: stagingPath);
+    }
+
     return DesktopUpdaterPlatform.instance.restartApp();
+  }
+
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+  }) {
+    return DesktopUpdaterPlatform.instance.installUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+    );
   }
 
   Future<String?> getExecutablePath() {
@@ -65,9 +78,7 @@ class DesktopUpdater {
     return DesktopUpdaterPlatform.instance.getCurrentVersion();
   }
 
-  Future<ItemModel?> versionCheck({
-    required String appArchiveUrl,
-  }) {
+  Future<ItemModel?> versionCheck({required String appArchiveUrl}) {
     return versionCheckFunction(appArchiveUrl: appArchiveUrl);
   }
 }
