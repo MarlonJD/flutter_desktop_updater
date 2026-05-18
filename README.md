@@ -256,6 +256,15 @@ You should add your versions to the `items` array. Each version should have the 
 
 - The updater must have write permission to the installed app directory. Apps installed under protected locations such as `C:\Program Files` may still require an elevated installer.
 - macOS updates should be built and signed as a complete app before creating the archive. Updating signed app contents with unsigned files will invalidate the bundle signature.
+- For non-Mac App Store macOS builds, make sure the App Sandbox is disabled in both debug and release entitlements. The restart helper needs file-system access to replace files inside the app bundle after the main process exits:
+
+```xml
+<!-- macos/Runner/DebugProfile.entitlements and macos/Runner/Release.entitlements -->
+<key>com.apple.security.app-sandbox</key>
+<false/>
+```
+
+  If your app must stay sandboxed, use a dedicated installer or privileged update path instead of the direct bundle-copy flow.
 - The update host should serve files with stable byte content. Any transformation by a CDN or proxy will fail hash verification, which is intentional.
 
 # Testing the restart installer
