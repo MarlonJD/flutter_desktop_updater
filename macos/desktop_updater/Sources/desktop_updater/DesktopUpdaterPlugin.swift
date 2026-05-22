@@ -140,6 +140,33 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
           rm -rf "$STAGING"
         fi
 
+        restore_execute_bits() {
+          chmod +x "$TARGET/MacOS"/* 2>/dev/null || true
+
+          if command -v file >/dev/null 2>&1; then
+            find "$TARGET/Frameworks" -type f -exec sh -c '
+              for candidate do
+                if file "$candidate" 2>/dev/null | grep -q "Mach-O"; then
+                  chmod +x "$candidate" 2>/dev/null || true
+                fi
+              done
+            ' sh {} +
+
+            find "$TARGET" -path "*/flutter_assets/assets/engine/*" -type f -exec sh -c '
+              for candidate do
+                if file "$candidate" 2>/dev/null | grep -q "Mach-O"; then
+                  chmod +x "$candidate" 2>/dev/null || true
+                fi
+              done
+            ' sh {} +
+          else
+            chmod +x "$TARGET"/Frameworks/*.framework/Versions/*/* 2>/dev/null || true
+            chmod +x "$TARGET"/Frameworks/App.framework/Versions/A/Resources/flutter_assets/assets/engine/macos/* 2>/dev/null || true
+          fi
+        }
+
+        restore_execute_bits
+
         if [ "$SKIP_RELAUNCH" != "1" ]; then
           open -n "$BUNDLE"
         fi
