@@ -1,4 +1,4 @@
-## 2.0.0-dev.1
+## 2.0.0-dev.2
 
 * Added macOS release manifests, content-addressed gzip payloads, and `ditto` full ZIP fallback archives for `.app` bundles.
 * Added macOS staged app verification for SHA-256 hashes, file modes, symlinks, unexpected files, bundle identifiers, Team IDs, code signatures, Gatekeeper, and stapler validation.
