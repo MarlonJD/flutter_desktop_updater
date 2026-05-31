@@ -1,22 +1,20 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:args/args.dart";
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/app_archive.dart";
+import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/remote_file.dart";
+import "package:path/path.dart" as path;
+import "package:pubspec_parse/pubspec_parse.dart";
 
 import "helper/copy.dart";
 
 Future<String> getFileHash(File file) async {
   try {
-    // Dosya içeriğini okuyun
     final List<int> fileBytes = await file.readAsBytes();
-
-    // blake2s algoritmasıyla hash hesaplayın
-
     final hash = await Blake2b().hash(fileBytes);
-
-    // Hash'i utf-8 base64'e dönüştürün ve geri döndürün
     return base64.encode(hash.bytes);
   } catch (e) {
     print("Error reading file ${file.path}: $e");
@@ -35,24 +33,15 @@ Future<String?> genFileHashes({required String? path}) async {
 
   print("Directory path: ${dir.path}");
 
-  // Eğer belirtilen yol bir dizinse
   if (await dir.exists()) {
-    // temp dizinindeki dosyaları kopyala
-    // dir + output.txt dosyası oluşturulur
     final outputFile = File("${dir.path}${Platform.pathSeparator}hashes.json");
-
-    // Çıktı dosyasını açıyoruz
     final sink = outputFile.openWrite();
-
-    // ignore: prefer_final_locals
     var hashList = <FileHashModel>[];
 
-    // Dizin içindeki tüm dosyaları döngüyle okuyoruz
     await for (final entity in dir.list(recursive: true, followLinks: false)) {
       if (entity is File &&
           !entity.path.endsWith("hashes.json") &&
           !entity.path.endsWith(".DS_Store")) {
-        // Dosyanın hash'ini al
         final hash = await getFileHash(entity);
         final foundPath = normalizeArchivePath(
           entity.path.substring(dir.path.length + 1),
@@ -71,8 +60,6 @@ Future<String?> genFileHashes({required String? path}) async {
 
     hashList.sort((a, b) => a.filePath.compareTo(b.filePath));
     sink.write(const JsonEncoder.withIndent("  ").convert(hashList));
-
-    // Çıktıyı kaydediyoruz
     await sink.close();
     return outputFile.path;
   } else {
@@ -91,6 +78,76 @@ Future<void> main(List<String> args) async {
   if (platform != "macos" && platform != "windows" && platform != "linux") {
     print("PLATFORM must be specified: macos, windows, linux");
     exit(1);
+  }
+
+  final parsed = Pubspec.parse(await File("pubspec.yaml").readAsString());
+  final buildName =
+      "${parsed.version?.major}.${parsed.version?.minor}.${parsed.version?.patch}";
+  final buildNumber = parsed.version?.build.firstOrNull.toString();
+  if (buildNumber == null || buildNumber.isEmpty) {
+    print("pubspec.yaml version must include a build number.");
+    exit(1);
+  }
+  if (platform == "macos") {
+    final appNamePubspec = parsed.name;
+    final parser = ArgParser()
+      ..addOption(
+        "app",
+        help: "Path to the signed, notarized, stapled .app bundle.",
+      )
+      ..addOption(
+        "channel",
+        defaultsTo: "stable",
+        help: "Release channel to store in release-manifest.json.",
+      )
+      ..addOption(
+        "output",
+        help: "Output artifact directory. Defaults to dist/<build>/<version>.",
+      );
+    final options = parser.parse(args.sublist(1));
+    if (options.rest.length > 1) {
+      stderr.writeln("Unexpected arguments: ${options.rest.join(" ")}");
+      stderr.writeln(parser.usage);
+      exit(64);
+    }
+    final channel = options.rest.firstOrNull ?? (options["channel"] as String);
+    final appPath = options["app"] as String?;
+    final outputPath = options["output"] as String?;
+    final buildApp = Directory(
+      appPath ??
+          path.join(
+            "build",
+            "macos",
+            "Build",
+            "Products",
+            "Release",
+            "$appNamePubspec.app",
+          ),
+    );
+    if (!await buildApp.exists()) {
+      print("macOS build app not found: ${buildApp.path}");
+      exit(1);
+    }
+
+    final outputDirectory = Directory(
+      outputPath ??
+          path.join("dist", buildNumber, "$buildName+$buildNumber-macos"),
+    );
+    final manifest = await createMacOSReleaseArtifacts(
+      appDirectory: buildApp,
+      outputDirectory: outputDirectory,
+      version: buildName,
+      shortVersion: int.parse(buildNumber),
+      channel: channel,
+    );
+
+    print("macOS release artifacts created at ${outputDirectory.path}");
+    print(
+      "Manifest: ${path.join(outputDirectory.path, "release-manifest.json")}",
+    );
+    print("Full archive: ${manifest.fullArchive?.path}");
+    print("Payload directory: ${path.join(outputDirectory.path, "payloads")}");
+    return;
   }
 
   // Go to dist directory and get all folder names
@@ -122,13 +179,8 @@ Future<void> main(List<String> args) async {
       // desktop_updater_example-0.1.1+2-macos.app
       // version is 0.1.1, build number is 2, platform is macos, name is appNamePubspec variable
       final version = file.path.split("-").elementAt(1).split("+").first;
-      final buildNumber = file.path
-          .split("-")
-          .elementAt(1)
-          .split("+")
-          .last
-          .split("-")
-          .first;
+      final buildNumber =
+          file.path.split("-").elementAt(1).split("+").last.split("-").first;
       final foundPlatform = file.path.split("-").last.split(".").first;
 
       if (foundPlatform == platform) {
@@ -153,23 +205,9 @@ Future<void> main(List<String> args) async {
   //   exit(1);
   // }
 
-  // Get current build name and number from pubspec.yaml
-  final pubspec = File("pubspec.yaml");
-  final pubspecContent = await pubspec.readAsString();
-  final appNamePubspec = RegExp(
-    r"name: (.+)",
-  ).firstMatch(pubspecContent)!.group(1);
-
   if (platform == "windows") {
     await copyDirectory(
       Directory(foundDirectory),
-      Directory(
-        "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
-      ),
-    );
-  } else if (platform == "macos") {
-    await copyDirectory(
-      Directory("$foundDirectory/$appNamePubspec.app/Contents"),
       Directory(
         "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
       ),

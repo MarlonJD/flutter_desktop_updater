@@ -3,6 +3,8 @@ import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/src/file_hash.dart";
+import "package:desktop_updater/src/macos_update.dart";
+import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/remote_file.dart";
 import "package:path/path.dart" as path;
 
@@ -36,6 +38,14 @@ Future<ItemModel?> versionCheckFunction({required String appArchiveUrl}) async {
       return null;
     }
 
+    if (Platform.isMacOS) {
+      return await _macOSVersionCheck(
+        latestVersion: latestVersion,
+        appArchive: appArchiveDecoded,
+        tempDir: tempDir,
+      );
+    }
+
     final newHashFile = File(path.join(tempDir.path, "hashes.json"));
     await downloadRemoteFileTo(
       base: latestVersion.url,
@@ -62,6 +72,33 @@ Future<ItemModel?> versionCheckFunction({required String appArchiveUrl}) async {
   }
 }
 
+Future<ItemModel?> _macOSVersionCheck({
+  required ItemModel latestVersion,
+  required AppArchiveModel appArchive,
+  required Directory tempDir,
+}) async {
+  final manifestFile = File(path.join(tempDir.path, releaseManifestFileName));
+  await downloadRemoteFileTo(
+    base: latestVersion.url,
+    relativePath: latestVersion.manifestPath ?? releaseManifestFileName,
+    destination: manifestFile,
+  );
+  final manifest = await readReleaseManifest(manifestFile);
+  final diff = await diffInstalledMacOSApp(targetManifest: manifest);
+
+  if (diff.changedEntries.isEmpty && diff.removedPaths.isEmpty) {
+    return null;
+  }
+
+  return latestVersion.copyWith(
+    changedFiles: fileHashModelsForManifestDiff(diff),
+    removedFiles: diff.removedPaths,
+    appName: appArchive.appName,
+    manifestPath: latestVersion.manifestPath ?? releaseManifestFileName,
+    channel: latestVersion.channel ?? manifest.channel,
+  );
+}
+
 Future<int?> _currentBuildNumber() async {
   String? currentVersion;
 
@@ -74,9 +111,8 @@ Future<int?> _currentBuildNumber() async {
       "flutter_assets",
       "version.json",
     );
-    final versionJson =
-        jsonDecode(await File(versionPath).readAsString())
-            as Map<String, dynamic>;
+    final versionJson = jsonDecode(await File(versionPath).readAsString())
+        as Map<String, dynamic>;
     currentVersion = versionJson["build_number"]?.toString();
   } else {
     currentVersion = await DesktopUpdater().getCurrentVersion();

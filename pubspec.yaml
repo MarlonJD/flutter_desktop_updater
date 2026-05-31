@@ -23,6 +23,7 @@ environment:
 dependencies:
   archive: ^4.0.2
   args: ^2.6.0
+  crypto: ^3.0.7
   cryptography_flutter_plus: ^2.3.4
   cryptography_plus: ^2.7.1
   flutter:
