@@ -49,6 +49,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   List<FileHashModel?>? _changedFiles;
   List<String> _removedFiles = const [];
   String? _stagingPath;
+  String _manifestPath = "release-manifest.json";
 
   List<ChangeModel?>? _releaseNotes;
   List<ChangeModel?>? get releaseNotes => _releaseNotes;
@@ -95,6 +96,7 @@ class DesktopUpdaterController extends ChangeNotifier {
 
       _changedFiles = versionResponse?.changedFiles;
       _removedFiles = versionResponse?.removedFiles ?? const [];
+      _manifestPath = versionResponse?.manifestPath ?? "release-manifest.json";
       _releaseNotes = versionResponse?.changes;
       _appName = versionResponse?.appName;
       _appVersion = versionResponse?.version;
@@ -124,6 +126,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     final stream = await _plugin.updateApp(
       remoteUpdateFolder: _folderUrl!,
       changedFiles: _changedFiles ?? [],
+      manifestPath: _manifestPath,
     );
 
     try {

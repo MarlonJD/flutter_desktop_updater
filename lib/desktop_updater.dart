@@ -61,10 +61,12 @@ class DesktopUpdater {
   Future<Stream<UpdateProgress>> updateApp({
     required String remoteUpdateFolder,
     required List<FileHashModel?> changedFiles,
+    String manifestPath = "release-manifest.json",
   }) {
     return updateAppFunction(
       remoteUpdateFolder: remoteUpdateFolder,
       changes: changedFiles,
+      manifestPath: manifestPath,
     );
   }
 

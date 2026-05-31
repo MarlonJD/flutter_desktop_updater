@@ -27,6 +27,10 @@ Future<void> main(List<String> args) async {
   final buildName =
       "${parsed.version?.major}.${parsed.version?.minor}.${parsed.version?.patch}";
   final buildNumber = parsed.version?.build.firstOrNull.toString();
+  if (buildNumber == null || buildNumber.isEmpty) {
+    print("pubspec.yaml version must include a build number.");
+    exit(1);
+  }
 
   print(
     "Building version $buildName+$buildNumber for $platform for app ${parsed.name}",
@@ -119,18 +123,20 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
+  if (platform == "macos") {
+    print("macOS app built at ${buildDir.path}");
+    print(
+      "Sign, notarize, and staple this .app, then run "
+      "dart run desktop_updater:archive macos --app ${buildDir.path}",
+    );
+    return;
+  }
+
   final distPath = platform == "windows"
       ? path.join(
           "dist",
           buildNumber,
           "$appNamePubspec-$buildName+$buildNumber-$platform",
-        )
-      : platform == "macos"
-      ? path.join(
-          "dist",
-          buildNumber,
-          "$appNamePubspec-$buildName+$buildNumber-$platform",
-          "$appNamePubspec.app",
         )
       : path.join(
           "dist",

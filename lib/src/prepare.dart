@@ -2,6 +2,7 @@ import "dart:io";
 
 import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/file_hash.dart";
+import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/remote_file.dart";
 import "package:path/path.dart" as path;
 
@@ -11,6 +12,15 @@ Future<List<FileHashModel?>> prepareUpdateAppFunction({
   final tempDir = await Directory.systemTemp.createTemp("desktop_updater_");
 
   try {
+    if (Platform.isMacOS) {
+      final manifest = await downloadMacOSReleaseManifest(
+        remoteUpdateFolder: remoteUpdateFolder,
+        tempDirectory: tempDir,
+      );
+      final diff = await diffInstalledMacOSApp(targetManifest: manifest);
+      return fileHashModelsForManifestDiff(diff);
+    }
+
     final newHashFile = File(path.join(tempDir.path, "hashes.json"));
     await downloadRemoteFileTo(
       base: remoteUpdateFolder,
@@ -19,7 +29,7 @@ Future<List<FileHashModel?>> prepareUpdateAppFunction({
     );
 
     final oldHashFilePath = await genFileHashes();
-    return verifyFileHashes(oldHashFilePath, newHashFile.path);
+    return await verifyFileHashes(oldHashFilePath, newHashFile.path);
   } finally {
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);

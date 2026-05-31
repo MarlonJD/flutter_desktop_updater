@@ -42,6 +42,8 @@ class ItemModel {
     this.changedFiles,
     this.removedFiles = const [],
     this.appName,
+    this.manifestPath,
+    this.channel,
   });
 
   factory ItemModel.fromJson(Map<String, dynamic> json) {
@@ -57,6 +59,8 @@ class ItemModel {
       mandatory: json["mandatory"] as bool? ?? false,
       url: json["url"] as String? ?? "",
       platform: json["platform"] as String? ?? "",
+      manifestPath: json["manifest"] as String?,
+      channel: json["channel"] as String?,
     );
   }
   final String version;
@@ -69,6 +73,8 @@ class ItemModel {
   final List<FileHashModel?>? changedFiles;
   final List<String> removedFiles;
   final String? appName;
+  final String? manifestPath;
+  final String? channel;
 
   Map<String, dynamic> toJson() {
     return {
@@ -79,6 +85,8 @@ class ItemModel {
       "mandatory": mandatory,
       "url": url,
       "platform": platform,
+      if (manifestPath != null) "manifest": manifestPath,
+      if (channel != null) "channel": channel,
     };
   }
 
@@ -93,6 +101,8 @@ class ItemModel {
     List<FileHashModel?>? changedFiles,
     List<String>? removedFiles,
     String? appName,
+    String? manifestPath,
+    String? channel,
   }) {
     return ItemModel(
       version: version ?? this.version,
@@ -105,6 +115,8 @@ class ItemModel {
       changedFiles: changedFiles ?? this.changedFiles,
       removedFiles: removedFiles ?? this.removedFiles,
       appName: appName ?? this.appName,
+      manifestPath: manifestPath ?? this.manifestPath,
+      channel: channel ?? this.channel,
     );
   }
 }
@@ -131,24 +143,46 @@ class FileHashModel {
     required this.filePath,
     required this.calculatedHash,
     required this.length,
+    this.kind = "file",
+    this.sha256,
+    this.mode,
+    this.payloadPath,
+    this.symlinkTarget,
   });
 
   factory FileHashModel.fromJson(Map<String, dynamic> json) {
     return FileHashModel(
       filePath: json["path"] as String? ?? "",
-      calculatedHash: json["calculatedHash"] as String? ?? "",
+      calculatedHash: (json["calculatedHash"] as String?) ??
+          (json["sha256"] as String?) ??
+          "",
       length: json["length"] as int? ?? 0,
+      kind: json["type"] as String? ?? "file",
+      sha256: json["sha256"] as String?,
+      mode: json["mode"] as String?,
+      payloadPath: json["payload"] as String?,
+      symlinkTarget: json["target"] as String?,
     );
   }
   final String filePath;
   final String calculatedHash;
   final int length;
+  final String kind;
+  final String? sha256;
+  final String? mode;
+  final String? payloadPath;
+  final String? symlinkTarget;
 
   Map<String, dynamic> toJson() {
     return {
       "path": filePath,
       "calculatedHash": calculatedHash,
       "length": length,
+      if (kind != "file") "type": kind,
+      if (sha256 != null) "sha256": sha256,
+      if (mode != null) "mode": mode,
+      if (payloadPath != null) "payload": payloadPath,
+      if (symlinkTarget != null) "target": symlinkTarget,
     };
   }
 }

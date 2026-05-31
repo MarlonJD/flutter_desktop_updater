@@ -7,7 +7,7 @@ Directory currentInstallDirectory({String? executablePath}) {
   final executableDirectory = Directory(path.dirname(executable));
 
   if (Platform.isMacOS) {
-    return executableDirectory.parent;
+    return executableDirectory.parent.parent;
   }
 
   return executableDirectory;

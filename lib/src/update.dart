@@ -3,12 +3,21 @@ import "dart:io";
 
 import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/download.dart";
+import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/update_progress.dart";
 
 Future<Stream<UpdateProgress>> updateAppFunction({
   required String remoteUpdateFolder,
   required List<FileHashModel?> changes,
+  String manifestPath = "release-manifest.json",
 }) async {
+  if (Platform.isMacOS) {
+    return updateMacOSAppFunction(
+      remoteUpdateFolder: remoteUpdateFolder,
+      manifestPath: manifestPath,
+    );
+  }
+
   final files = changes.whereType<FileHashModel>().toList(growable: false);
   final stagingDirectory = await Directory.systemTemp.createTemp(
     "desktop_updater_stage_",

@@ -137,5 +137,7 @@ bool _shouldSkipHash(String relativePath) {
   return relativePath == "hashes.json" ||
       relativePath == ".DS_Store" ||
       relativePath == ".desktop_updater_manifest.json" ||
+      relativePath == ".desktop_updater_release_manifest.json" ||
+      relativePath == "release-manifest.json" ||
       relativePath.startsWith("update/");
 }
