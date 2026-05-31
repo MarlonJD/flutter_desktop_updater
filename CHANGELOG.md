@@ -2,6 +2,7 @@
 
 * Added macOS release manifests, content-addressed gzip payloads, and `ditto` full ZIP fallback archives for `.app` bundles.
 * Added macOS staged app verification for SHA-256 hashes, file modes, symlinks, unexpected files, bundle identifiers, Team IDs, code signatures, Gatekeeper, and stapler validation.
+* Added migration guidance for apps upgrading from `1.0.0`.
 * Changed macOS releases to publish artifact directories instead of raw `.app` trees or ZIP-only updates.
 * Reworked the update pipeline around verified temporary staging directories.
 * Added native macOS and Windows install helpers that wait for the app to exit before replacing files.

@@ -1,0 +1,27 @@
+AGENTS.md
+docs/plans/
+
+# Generated files and local tool output.
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.history
+.idea/
+.packages
+.pub-cache/
+.svn/
+.swiftpm/
+.vscode/
+**/doc/api/
+build/
+example/output.txt
+migrate_working_dir/
+pubspec.lock
