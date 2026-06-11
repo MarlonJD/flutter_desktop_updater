@@ -1,357 +1,288 @@
-# What is Desktop Updater?
-This Flutter plugin supports desktop platforms including macOS, Windows, and Linux. It checks a remote app archive, downloads only changed files, verifies staged files before install, and installs the update on restart.
+# desktop_updater
+
+Flutter desktop updater plugin for macOS, Windows, and Linux.
+
+The 2.0 line uses a zip-first release contract:
+
+```text
+app-archive.json -> release.json -> one verified zip artifact
+```
+
+This avoids public folder listing, works with signed URLs and private buckets, and lets the updater verify the exact artifact length and SHA-256 before extraction or installation.
 
 - [2.0 roadmap](docs/2.0-roadmap.md)
 - [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md)
 - [Agent migration prompt](docs/migration/agent-prompt.md)
 
-# How does it work?
-The update flow is intentionally split into safe phases:
+## Version Lines
 
-1. The Dart layer downloads `app-archive.json` and the target version metadata.
-2. Windows and Linux use the existing `hashes.json` file diff.
-3. macOS uses `release-manifest.json`, content-addressed gzip payloads for regular files, symlink manifest entries, and a full `.zip` fallback archive.
-4. Changed files are staged into a temporary directory, not into the running app bundle/folder.
-5. The staged update is verified before install.
-6. On restart, a small native helper waits until the app process exits, verifies the staged update again, replaces the app, cleans staging, and relaunches the app.
+- `1.x`: stable maintenance line for the legacy folder-based update contract.
+- `2.x`: active development line for the zip-first release contract.
 
-On macOS the helper replaces the complete `YourApp.app` bundle after `codesign`, Gatekeeper, stapler, bundle identifier, and Team ID checks pass. On Windows it uses a detached PowerShell helper so locked `.exe` and `.dll` files are replaced only after the current app has fully closed.
+Apps already shipping with 1.x should keep their existing release contract until their app code and publishing pipeline have both migrated to 2.0.
 
-![flutter_desktop_updater](https://github.com/user-attachments/assets/b05d9a13-0f44-4213-b3bd-58e07c18226d)
+## Why 2.0 Was Rewritten
 
-## Getting Started
-Add dependency to your `pubspec.yaml`:
-```
+The 1.x updater expected a public or fetchable update folder. That worked for simple static hosting, but it made modern production setups awkward:
+
+- private buckets and signed URLs do not naturally expose folder listings;
+- CDN/proxy behavior can change directory-style publishing assumptions;
+- macOS `.app` bundles are easy to damage when uploaded as raw directory trees;
+- update clients need one exact artifact to hash, verify, stage, and install safely.
+
+2.0 changes the release model to one descriptor and one zip artifact per platform release. The client never needs S3 bucket listing, public folder hosting, or directory traversal on the server.
+
+## Install
+
+```yaml
 dependencies:
-  ...
-  desktop_updater: ^2.0.0-dev.4
+  desktop_updater: ^2.0.0-dev.5
 ```
 
-Install as CLI, 
-Run in your terminal:
-```
+Install the CLI:
+
+```sh
 dart pub global activate desktop_updater
 ```
 
-# Usage
+## Runtime Usage
 
-Add the following codes to your home page or any page you want to see the update card.
+Create a controller with your hosted `app-archive.json` URL:
 
 ```dart
-import 'package:desktop_updater/desktop_updater.dart';
+import "package:desktop_updater/desktop_updater.dart";
+import "package:desktop_updater/updater_controller.dart";
 
-late DesktopUpdaterController _desktopUpdaterController;
+late final DesktopUpdaterController controller;
 
 @override
 void initState() {
-    super.initState();
-    _desktopUpdaterController = DesktopUpdaterController(
-        appArchiveUrl: Uri.parse(
-        "https://www.yoursite.com/app-archive.json",
-        ),
-    );
+  super.initState();
+  controller = DesktopUpdaterController(
+    appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  );
 }
 ```
 
-Then wrap your home page with `DesktopUpdater` widget, under the Scaffold widget.
+Wrap your UI with one of the update widgets:
 
 ```dart
-@override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Your App Home Page"),
-      ),
-      body: DesktopUpdateWidget(
-        controller: _desktopUpdaterController,
-        child: Center(
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                    const Text(
-                        'Hello World!',
-                    ),
-                ],
-            ),
-        ),
-      ),
-    );
-}
+DesktopUpdateWidget(
+  controller: controller,
+  child: const YourHomePage(),
+)
 ```
 
-If you want to control when the first version check happens, disable the initial check and call `checkVersion()` manually:
+Use `skipInitialVersionCheck` when you want to control the first check yourself:
 
 ```dart
-@override
-void initState() {
-    super.initState();
-    _desktopUpdaterController = DesktopUpdaterController(
-        appArchiveUrl: Uri.parse(
-        "https://www.yoursite.com/app-archive.json",
-        ),
-        skipInitialVersionCheck: true,
-    );
-}
+controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  skipInitialVersionCheck: true,
+);
 
-Future<void> checkForUpdates() async {
-    await _desktopUpdaterController.checkVersion();
-}
+await controller.checkVersion();
 ```
 
-there is also sliver for custom scroll view, you can use `DesktopUpdateSliver` widget.
+Prefer the typed 2.0 state API for new code:
 
 ```dart
-@override
-Widget build(BuildContext context) {
-    return Scaffold(
-        appBar: AppBar(
-        title: const Text("Your App Home Page"),
-        ),
-        body: CustomScrollView(
-            slivers: <Widget>[
-                DesktopUpdateSliver(
-                    controller: _desktopUpdaterController,
-                ),
-                SliverList(
-                    delegate: SliverChildListDelegate(
-                    [
-                        const Text(
-                        'Hello World!',
-                        ),
-                    ],
-                ),
-            ],
-        ),
-    );
+switch (controller.state) {
+  case UpdateAvailable(:final descriptor, :final mandatory):
+    print("Update ${descriptor.version} is available. Mandatory: $mandatory");
+  case UpdateDownloading(:final receivedBytes, :final totalBytes):
+    print("Downloaded $receivedBytes of $totalBytes bytes");
+  case UpdateReadyToInstall(:final stagingPath):
+    print("Ready to install from $stagingPath");
+  case UpdateFailed(:final error):
+    print("Update failed: $error");
+  default:
+    break;
 }
 ```
 
-You can use this directly as a card for custom purposes. While you cannot modify the scaffold background in `DesktopUpdateSliver` or `DesktopUpdateWidget`, you can adjust colors and use it anywhere as needed
-```dart
-@override
-Widget build(BuildContext context) {
-    return Scaffold(
-        backgroundColor: Colors.blue,
-        appBar: AppBar(
-        title: const Text("Plugin example app"),
-        ),
-        body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Center(
-            child: Column(
-                children: [
-                    Theme(
-                        data: ThemeData(
-                            colorScheme:
-                                ColorScheme.fromSeed(seedColor: Colors.blue).copyWith(
-                            onSurface: Theme.of(context).colorScheme.onSurface,
-                            onSurfaceVariant:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                            primary: Theme.of(context).colorScheme.primary,
-                            surfaceContainerLowest:
-                                Theme.of(context).colorScheme.surfaceContainerLowest,
-                            surfaceContainerLow:
-                                Theme.of(context).colorScheme.surfaceContainerLow,
-                            surfaceContainerHighest:
-                                Theme.of(context).colorScheme.surfaceContainerHighest,
-                            ),
-                        ),
-                        child: DesktopUpdateDirectCard(
-                            controller: _desktopUpdaterController,
-                            child: const Text("This is a child widget"),
-                        ),
-                    ),
-                    const Text(
-                    "Running on: 1.0.0+1",
-                    ),
-                    Text("Running on: $_platformVersion\n"),
-                ],
-            ),
-        ),
-        ),
-    );
-}
-```
+The legacy boolean getters such as `needUpdate`, `isDownloading`, `isDownloaded`, and `downloadProgress` remain available as compatibility helpers during migration.
 
-You can use as alert dialog a with `UpdateDialogListener`:
-```dart
-@override
-Widget build(BuildContext context) {
-    return Scaffold(
-    appBar: AppBar(
-        title: const Text("Plugin example app"),
-    ),
-    body: Column(
-        children: [
-            /// This widget not rendering
-            UpdateDialogListener(
-                controller: _desktopUpdaterController,
-            ),
-        ],
-    )
-```
+## Release Contract
 
-# Creating app-archive.json
-```
+`app-archive.json` selects the best release for the current platform, channel, and installed version.
+
+```json
 {
-    "appName": "Desktop Updater",
-    "description": "This is my app description",
-    "items": [
-        {
-            "version": "0.1.8",
-            "shortVersion": 9,
-            "changes": [
-                {
-                    "type": "chore",
-                    "message": "Fix bug #1"
-                },
-                {
-                    "type": "feat",
-                    "message": "Add new feature #1"
-                },
-                {
-                    "message": "Add new feature #2"
-                }
-            ],
-            "date": "2025-01-10",
-            "mandatory": true,
-            "url": "https://www.yourwebsite.com/archive/desktop_updater/0.1.8%2B9-windows",
-            "platform": "windows"
-        },
-        {
-            "version": "0.1.7",
-            "shortVersion": 8,
-            "changes": [
-                {
-                    "type": "chore",
-                    "message": "Fix bug #1"
-                },
-                {
-                    "type": "feat",
-                    "message": "Add new feature #1"
-                },
-                {
-                    "message": "Add new feature #2"
-                }
-            ],
-            "date": "2025-01-10",
-            "mandatory": true,
-            "url": "https://www.yourwebsite.com/archive/desktop_updater/0.1.7%2B8-macos",
-            "platform": "macos",
-            "manifest": "release-manifest.json",
-            "channel": "stable"
-        }
-    ]
+  "schemaVersion": 3,
+  "appName": "Example App",
+  "items": [
+    {
+      "version": "2.0.0",
+      "buildNumber": 200,
+      "platform": "macos",
+      "channel": "stable",
+      "mandatory": false,
+      "release": "https://updates.example.com/releases/example/2.0.0/macos/release.json"
+    }
+  ]
 }
 ```
 
-# Release artifacts
+`release.json` describes exactly one zip artifact.
 
-Never upload or publish a raw macOS `.app` directory tree. Raw app trees can lose symlinks, modes, extended attributes, resource metadata, or framework bundle structure when copied by generic hosting or CI tools.
+```json
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.app",
+  "appName": "Example.app",
+  "version": "2.0.0",
+  "buildNumber": 200,
+  "platform": "macos",
+  "channel": "stable",
+  "artifact": {
+    "kind": "zip",
+    "url": "https://cdn.example.com/releases/example/2.0.0/macos/Example-2.0.0-macos.zip",
+    "sha256": "64-lowercase-hex-characters",
+    "length": 12345678
+  },
+  "install": {
+    "strategy": "wholeBundleReplace"
+  },
+  "minimumUpdaterVersion": "2.0.0",
+  "generatedAt": "2026-06-11T00:00:00Z"
+}
+```
 
-The macOS artifact set is:
+Supported install strategies:
 
-- `release-manifest.json`: SHA-256 manifest with regular files, file modes, symlink paths and exact targets, expected `CFBundleIdentifier`, expected Apple Developer `TeamIdentifier`, version, build, and channel.
-- `payloads/<sha256>.gz`: content-addressed compressed payloads for regular files.
-- `<App>.zip`: full fallback archive containing the signed, notarized, stapled `.app`.
+- `wholeBundleReplace`: macOS `.app` bundle replacement.
+- `wholeDirectoryReplace`: Windows and Linux app directory replacement.
 
-Publish the artifact directory, not a ZIP-only release. The manifest and payloads allow delta downloads and exact symlink reconstruction; the ZIP is kept as a recovery fallback when delta staging fails or the local app cannot be patched safely. A ZIP-only release is simpler, but it makes every update a full app download and removes the content-addressed delta path.
+The optional `signature` field is reserved for production authenticity policies. The built-in verifier currently validates descriptor shape, exact URL support, artifact length, SHA-256, and zip safety. Projects that require signed descriptors should wire `ArtifactVerificationPolicy.signatureVerifier` or wait for the planned first-party signing gate before calling a direct-zip Linux or Windows build fully production signed.
 
-Create the full archive on macOS with:
+## Package A Release
+
+Build your app first, then package the exact release artifact.
+
+macOS:
 
 ```sh
-/usr/bin/ditto -c -k --keepParent --sequesterRsrc <App.app> <App.zip>
+flutter build macos --release
+
+# Sign, notarize, and staple the .app before packaging.
+
+dart run desktop_updater:package \
+  --input build/macos/Build/Products/Release/Example.app \
+  --output dist/2.0.0/macos \
+  --package-id com.example.app \
+  --app-name Example.app \
+  --version 2.0.0 \
+  --build-number 200 \
+  --platform macos \
+  --channel stable \
+  --install-strategy wholeBundleReplace \
+  --artifact-url https://cdn.example.com/releases/example/2.0.0/macos/Example.app.zip
 ```
 
-Extract the full archive only into a fresh staging directory with:
+Windows:
 
 ```sh
-/usr/bin/ditto -x -k <App.zip> <staging-dir>
+flutter build windows --release
+
+dart run desktop_updater:package \
+  --input build/windows/x64/runner/Release \
+  --output dist/2.0.0/windows \
+  --package-id com.example.app \
+  --app-name Example \
+  --version 2.0.0 \
+  --build-number 200 \
+  --platform windows \
+  --channel stable \
+  --install-strategy wholeDirectoryReplace \
+  --artifact-url https://cdn.example.com/releases/example/2.0.0/windows/Example-windows.zip
 ```
 
-Do not use default `/usr/bin/zip -r` for `.app` bundles, and do not unzip and re-zip macOS artifacts in CI/CD.
+Linux:
 
-# Release flow
+```sh
+flutter build linux --release
 
-The published version/build/channel state is stored in `app-archive.json` under each item: `version`, `shortVersion`, `platform`, optional `channel`, and the item `url` pointing at that release's artifact directory. For macOS, the artifact directory contains `release-manifest.json`, `payloads/`, and the full fallback ZIP.
-
-End-to-end release flow:
-
-1. Make code changes and update the app changelog.
-2. Build the macOS app.
-3. Sign, notarize, and staple the built `.app`.
-4. Generate updater artifacts with the CLI.
-5. Update `app-archive.json` with the new version, build, channel, platform, and artifact URL.
-6. Run a publish dry-run that checks every referenced manifest, payload, and ZIP exists.
-7. Publish the artifact directory and `app-archive.json`.
-8. Run an update smoke test from the previous version.
-
-# Commands
-You need to update the `version` in `pubspec.yaml` and run the following commands to build the application. Both Flutter version formats are supported:
-
-```yaml
-version: 1.0.0
+dart run desktop_updater:package \
+  --input build/linux/x64/release/bundle \
+  --output dist/2.0.0/linux \
+  --package-id com.example.app \
+  --app-name Example \
+  --version 2.0.0 \
+  --build-number 200 \
+  --platform linux \
+  --channel stable \
+  --install-strategy wholeDirectoryReplace \
+  --artifact-url https://cdn.example.com/releases/example/2.0.0/linux/Example-linux.zip
 ```
 
-```yaml
-version: 1.0.0+1
+Verify a packaged release:
+
+```sh
+dart run desktop_updater:verify --release dist/2.0.0/macos/release.json
 ```
 
-Using a build number is still recommended for updater releases because it gives every artifact a monotonic ordering value. If you omit the build number, increase the semantic version for every release, for example `1.0.0` to `1.0.1`.
+Publish:
 
-`dart run desktop_updater:release macos`
+- `app-archive.json`
+- `release.json`
+- the zip artifact referenced by `release.json`
 
-For macOS this only builds the app. Sign, notarize, and staple the `.app`, then generate the publishable artifact directory:
+Do not publish or rely on public update folders for the 2.0 contract.
 
-`dart run desktop_updater:archive macos --app path/to/YourApp.app --channel stable`
+## Hosting Requirements
 
-The macOS archive command creates a directory such as `dist/1/1.0.0+1-macos` containing only `release-manifest.json`, `payloads/`, and `<App>.zip`. You can override the destination with `--output path/to/artifacts`.
+- Serve exact URLs for `app-archive.json`, `release.json`, and the zip artifact.
+- Do not require bucket listing.
+- Signed URLs are supported when they remain valid for the full check and download flow.
+- CDN/proxy transformations that change bytes will fail SHA-256 verification by design.
+- Use HTTPS for production update metadata and artifacts.
 
-For Windows and Linux, you'll see a folder such as `1.0.0+1-windows` in `dist/1`. Upload that folder as-is to your static host, S3 bucket, GitHub Pages site, or other public file server. The folder must include `hashes.json` and every file path listed inside it.
+## Platform Behavior
 
-Hash paths are normalized with `/` separators so Windows archives can be served over normal HTTP URLs.
+### macOS
 
-# App Archive JSON Structure
-You should add your versions to the `items` array. Each version should have the following fields:
-- `version`: Required, The version number of the app.
-- `shortVersion`: Optional, The monotonic build number of the app. This is used to compare versions when present. If omitted, `desktop_updater` compares the semantic `version` value instead.
-- `changes`: Required, The changes made in this version. This is an array of objects with the following fields:
-    - `type`: Optional, the type of the change. This can be one of the following values: feat, fix, chore, docs, style, refactor, perf, test, build, ci, or other.
-    - `message`: Required, The message describing the change.
-- `date`: Required, The date when this version was released.
-- `mandatory`: Required, A boolean value indicating whether this version is mandatory. If this is true, the user will not be able to skip this version.
-- `url`: Required, The URL where the app can be downloaded. This should be a direct link of the folder containing the app files.
-- `platform`: Required, The platform for which this version is available. This can be one of the following values: windows, macos, or linux.
-- `manifest`: Optional for macOS, defaults to `release-manifest.json`.
-- `channel`: Optional release channel label, for example `stable`, `beta`, or `nightly`.
+macOS stages a complete `.app` and replaces the installed bundle only after native gates pass.
 
-# Production notes
+Production requirements:
 
-- The updater must have write permission to the installed app directory. Apps installed under protected locations such as `C:\Program Files` may still require an elevated installer.
-- macOS updates must be built, signed, notarized, and stapled as a complete app before creating updater artifacts.
-- Before replacing the installed macOS app, the staged app must pass all gates:
-  - `/usr/bin/codesign --verify --deep --strict --verbose=2 <staged-app>`
-  - `/usr/sbin/spctl --assess --type execute --verbose=2 <staged-app>`
-  - `/usr/bin/xcrun stapler validate <staged-app>`
-  - `CFBundleIdentifier` must match the currently installed app bundle identifier.
-  - `TeamIdentifier` from `/usr/bin/codesign -dv --verbose=4 <staged-app>` must match the currently installed app Team ID.
-- macOS delta updates stage a complete `.app` by copying the installed bundle into a temporary directory, applying verified payload and symlink changes, rejecting unsafe symlinks, verifying the manifest, and then replacing the installed app as a whole bundle after restart. The live `.app` is never patched in place.
-- For non-Mac App Store macOS builds, make sure the App Sandbox is disabled in both debug and release entitlements. The restart helper needs file-system access to replace files inside the app bundle after the main process exits:
+- Build a Release `.app`.
+- Sign with a `Developer ID Application` identity.
+- Enable hardened runtime.
+- Notarize the signed app.
+- Staple the notarization ticket.
+- Keep `CFBundleIdentifier` and Team ID stable across releases.
+- Keep App Sandbox disabled for this whole-app replacement strategy.
+- Ensure production entitlements do not include `get-task-allow`.
 
-```xml
-<!-- macos/Runner/DebugProfile.entitlements and macos/Runner/Release.entitlements -->
-<key>com.apple.security.app-sandbox</key>
-<false/>
+Validation commands:
+
+```sh
+codesign --verify --deep --strict --verbose=2 Example.app
+spctl --assess --type execute --verbose=2 Example.app
+xcrun stapler validate Example.app
+codesign -dvvv --entitlements :- Example.app
 ```
 
-  If your app must stay sandboxed, use a dedicated installer or privileged update path instead of the direct bundle-copy flow.
-- The update host should serve files with stable byte content. Any transformation by a CDN or proxy will fail hash verification, which is intentional.
+Mac App Store or sandboxed apps should use the store update channel instead of this direct self-updater.
 
-# Testing the restart installer
+### Windows
 
-Do not put the restart/install test inside `integration_test`. The app must close itself, so the Flutter test runner dies with it.
+Windows schedules a detached PowerShell helper so locked `.exe` and `.dll` files are replaced only after the running app exits. The helper backs up the current app directory and rolls back if replacement fails.
 
-For macOS plugin integration, Swift Package Manager is the primary path and CocoaPods is the fallback compatibility path. Run the SwiftPM check locally without requiring `pod install`; run CocoaPods fallback separately after disabling SwiftPM.
+Unsigned Release builds can prove the update mechanics. Production direct distribution should additionally sign `.exe` and `.dll` files with Authenticode and verify them with `signtool` before calling the app production-ready.
+
+### Linux
+
+Linux schedules a detached Bash helper that resolves the running executable, replaces the app directory without relying on the current working directory, rejects removed paths outside the app root, and rolls back on failure.
+
+Linux has no single OS-level Developer ID equivalent. Direct zip distribution should use release descriptor signing or another publisher-authenticity layer before being treated as production-ready. Flatpak, Snap, deb, rpm, or distro repositories should normally use their own update channels.
+
+## SwiftPM And CocoaPods On macOS
+
+Swift Package Manager is the primary macOS plugin integration path for 2.0. CocoaPods remains supported as a fallback for apps that disable SwiftPM or still run older Flutter tooling.
+
+SwiftPM lane:
 
 ```sh
 flutter config --enable-swift-package-manager
@@ -359,21 +290,46 @@ cd example
 flutter test integration_test -d macos
 ```
 
+CocoaPods fallback lane:
+
 ```sh
 flutter config --no-enable-swift-package-manager
 cd example
 flutter test integration_test -d macos
 ```
 
-For macOS packaging and extraction regressions, run the package tests:
+Do not commit a `Podfile` in the SwiftPM-first example app. When SwiftPM is disabled, Flutter creates the CocoaPods files needed for the fallback lane and then runs `pod install`.
+
+## Testing
+
+Dart/package checks:
 
 ```sh
-flutter test test/macos_updater_manifest_test.dart
+dart format --set-exit-if-changed .
+flutter analyze --no-fatal-infos
+flutter test --no-pub
+dart pub publish --dry-run
 ```
 
-A full macOS replacement smoke must use a signed, notarized, stapled staged `.app` produced from `release-manifest.json`; the helper intentionally rejects ad hoc file-only staging.
+macOS native smoke:
 
-On Windows, use the external smoke runner:
+```sh
+cd example
+flutter build macos --debug
+dart run tool/updater_smoke.dart
+```
+
+macOS production smoke requires a signed, notarized, stapled staged `.app` that already contains the smoke sentinel before signing:
+
+```sh
+cd example
+dart run tool/updater_smoke.dart \
+  --production-gates \
+  --app /path/to/installed/Example.app \
+  --staged-app /path/to/notarized/update/Example.app
+```
+
+Windows smoke:
 
 ```sh
 cd example
@@ -381,34 +337,20 @@ flutter build windows --debug
 dart run tool/updater_smoke.dart
 ```
 
-The smoke runner launches the built example app with a temporary staged update. The app calls the real native `installUpdate`, closes, the helper copies a sentinel file into the installation directory, and the runner verifies that the staging directory was cleaned up.
+Linux smoke:
 
-By default the runner skips relaunch so CI does not leave an app open. Add `--relaunch` when you want to test the full close-copy-reopen flow manually.
-
-# Customization
-
-You can change text and button text by passing `DesktopUpdateLocalization` to controller.
-
-```dart
-@override
-void initState() {
-    super.initState();
-    _desktopUpdaterController = DesktopUpdaterController(
-        appArchiveUrl: Uri.parse(
-        "https://www.yoursite.com/app-archive.json",
-        ),
-        localization: const DesktopUpdateLocalization(
-            updateAvailableText: "Update available",
-            newVersionAvailableText: "{} {} is available",
-            newVersionLongText:
-                "New version is ready to download, click the button below to start downloading. This will download {} MB of data.",
-            restartText: "Restart to update",
-            warningTitleText: "Are you sure?",
-            restartWarningText:
-                "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
-            warningCancelText: "Not now",
-            warningConfirmText: "Restart",
-        ),
-    );
-}
+```sh
+cd example
+flutter build linux --debug
+dart run tool/updater_smoke.dart
 ```
+
+By default the smoke runner skips relaunch so CI does not leave an app open. Add `--relaunch` when you want to test the close-copy-reopen flow manually.
+
+## Migration
+
+Read [Migrating From 1.x To 2.0](docs/migration/1.x-to-2.0.md) before changing a shipped app. The migration must update both sides of the system:
+
+- app code: prefer typed `UpdateState` and keep compatibility getters only during migration;
+- release publishing: replace folder uploads with `app-archive.json -> release.json -> zip`;
+- platform validation: add macOS signing/notarization/stapling, Windows signing if direct distribution is used, and Linux descriptor authenticity if direct zip distribution is used.
