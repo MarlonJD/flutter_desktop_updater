@@ -1,3 +1,7 @@
+## 2.0.0-dev.5
+
+* Fixed version comparison so archive build metadata is not treated as newer when the installed app does not expose a build number.
+
 ## 2.0.0-dev.4
 
 * Added `skipInitialVersionCheck` to `DesktopUpdaterController` so apps can initialize the controller without immediately checking for updates.
