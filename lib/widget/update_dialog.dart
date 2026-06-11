@@ -1,9 +1,13 @@
+import "dart:async";
+
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
+/// Listens for available updates and presents them in a dialog.
 class UpdateDialogListener extends StatefulWidget {
+  /// Creates a listener that shows an update dialog for [controller].
   const UpdateDialogListener({
     super.key,
     required this.controller,
@@ -15,6 +19,7 @@ class UpdateDialogListener extends StatefulWidget {
     this.buttonIconColor,
   });
 
+  /// The controller that provides update state and actions.
   final DesktopUpdaterController controller;
 
   /// The background color of the dialog. if null, it will use Theme.of(context).colorScheme.surfaceContainerHigh,
@@ -41,49 +46,91 @@ class UpdateDialogListener extends StatefulWidget {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
-    );
-    properties.add(ColorProperty("backgroundColor", backgroundColor));
-    properties.add(ColorProperty("iconColor", iconColor));
-    properties.add(ColorProperty("shadowColor", shadowColor));
-    properties.add(ColorProperty("buttonTextColor", buttonTextColor));
-    properties.add(ColorProperty("buttonIconColor", buttonIconColor));
-    properties.add(ColorProperty("textColor", textColor));
+    properties
+      ..add(
+        DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
+      )
+      ..add(ColorProperty("backgroundColor", backgroundColor))
+      ..add(ColorProperty("iconColor", iconColor))
+      ..add(ColorProperty("shadowColor", shadowColor))
+      ..add(ColorProperty("buttonTextColor", buttonTextColor))
+      ..add(ColorProperty("buttonIconColor", buttonIconColor))
+      ..add(ColorProperty("textColor", textColor));
   }
 }
 
 class _UpdateDialogListenerState extends State<UpdateDialogListener> {
+  Object? _dialogRequest;
+
+  @override
+  void didUpdateWidget(covariant UpdateDialogListener oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.controller != widget.controller) {
+      _dialogRequest = null;
+    }
+  }
+
+  void _tryShowDialog() {
+    final controller = widget.controller;
+
+    if (_dialogRequest != null || !_shouldShowDialog(controller)) {
+      return;
+    }
+
+    final request = Object();
+    _dialogRequest = request;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _dialogRequest != request ||
+          controller != widget.controller ||
+          !_shouldShowDialog(controller)) {
+        _clearDialogRequest(request);
+        return;
+      }
+
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: controller.isMandatory == false,
+          builder: (context) {
+            return UpdateDialogWidget(
+              controller: controller,
+              backgroundColor: widget.backgroundColor,
+              iconColor: widget.iconColor,
+              shadowColor: widget.shadowColor,
+              textColor: widget.textColor,
+              buttonTextColor: widget.buttonTextColor,
+              buttonIconColor: widget.buttonIconColor,
+            );
+          },
+        ).whenComplete(() {
+          _clearDialogRequest(request);
+        }),
+      );
+    });
+  }
+
+  bool _shouldShowDialog(DesktopUpdaterController controller) {
+    return controller.needUpdate &&
+        !controller.skipUpdate &&
+        !controller.isDownloading;
+  }
+
+  void _clearDialogRequest(Object request) {
+    if (_dialogRequest == request) {
+      _dialogRequest = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
-        debugPrint("UpdateDialogListener: ${widget.controller.needUpdate}");
-        if (((widget.controller.needUpdate) == false) ||
-            (widget.controller.skipUpdate) ||
-            widget.controller.isDownloading) {
-          return const SizedBox();
-        } else {
-          WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-            showDialog(
-              context: context,
-              barrierDismissible: widget.controller.isMandatory == false,
-              builder: (context) {
-                return UpdateDialogWidget(
-                  controller: widget.controller,
-                  backgroundColor: widget.backgroundColor,
-                  iconColor: widget.iconColor,
-                  shadowColor: widget.shadowColor,
-                  textColor: widget.textColor,
-                  buttonTextColor: widget.buttonTextColor,
-                  buttonIconColor: widget.buttonIconColor,
-                );
-              },
-            );
-          });
-        }
-        return const SizedBox();
+        _tryShowDialog();
+        return const SizedBox.shrink();
       },
     );
   }
@@ -91,15 +138,16 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>(
-        "controller",
-        widget.controller,
-      ),
-    );
-    properties.add(ColorProperty("backgroundColor", widget.backgroundColor));
-    properties.add(ColorProperty("iconColor", widget.iconColor));
-    properties.add(ColorProperty("shadowColor", widget.shadowColor));
+    properties
+      ..add(
+        DiagnosticsProperty<DesktopUpdaterController>(
+          "controller",
+          widget.controller,
+        ),
+      )
+      ..add(ColorProperty("backgroundColor", widget.backgroundColor))
+      ..add(ColorProperty("iconColor", widget.iconColor))
+      ..add(ColorProperty("shadowColor", widget.shadowColor));
   }
 }
 
@@ -177,7 +225,13 @@ class UpdateDialogWidget extends StatelessWidget {
                 style: TextStyle(color: textColor),
               ),
               content: Text(
-                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [((notifier.downloadSize ?? 0) / 1024 / 1024).toStringAsFixed(2)]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [((notifier.downloadSize ?? 0) / 1024 / 1024).toStringAsFixed(2)])) ?? ""}",
+                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
+                          ((notifier.downloadSize ?? 0) / 1024 / 1024)
+                              .toStringAsFixed(2),
+                        ]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [
+                          ((notifier.downloadSize ?? 0) / 1024 / 1024)
+                              .toStringAsFixed(2),
+                        ])) ?? ""}",
                 style: TextStyle(color: buttonTextColor),
               ),
               actions: [
@@ -225,8 +279,7 @@ class UpdateDialogWidget extends StatelessWidget {
                                       "Are you sure?",
                                 ),
                                 content: Text(
-                                  notifier
-                                          .getLocalization
+                                  notifier.getLocalization
                                           ?.restartWarningText ??
                                       "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
                                 ),
@@ -236,8 +289,7 @@ class UpdateDialogWidget extends StatelessWidget {
                                       Navigator.of(context).pop();
                                     },
                                     child: Text(
-                                      notifier
-                                              .getLocalization
+                                      notifier.getLocalization
                                               ?.warningCancelText ??
                                           "Not now",
                                     ),
@@ -245,8 +297,7 @@ class UpdateDialogWidget extends StatelessWidget {
                                   TextButton(
                                     onPressed: notifier.restartApp,
                                     child: Text(
-                                      notifier
-                                              .getLocalization
+                                      notifier.getLocalization
                                               ?.warningConfirmText ??
                                           "Restart",
                                     ),
