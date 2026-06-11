@@ -54,36 +54,59 @@ class UpdateDialogListener extends StatefulWidget {
 }
 
 class _UpdateDialogListenerState extends State<UpdateDialogListener> {
+  bool _dialogShown = false;
+
+  @override
+  void didUpdateWidget(covariant UpdateDialogListener oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // reset si nouveau controller
+    if (oldWidget.controller != widget.controller) {
+      _dialogShown = false;
+    }
+  }
+
+  void _tryShowDialog() {
+    if (_dialogShown) return;
+
+    final controller = widget.controller;
+
+    final shouldShow = controller.needUpdate == true &&
+        controller.skipUpdate == false &&
+        controller.isDownloading == false;
+
+    if (!shouldShow) return;
+
+    _dialogShown = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: controller.isMandatory == false,
+        builder: (context) {
+          return UpdateDialogWidget(
+            controller: controller,
+            backgroundColor: widget.backgroundColor,
+            iconColor: widget.iconColor,
+            shadowColor: widget.shadowColor,
+            textColor: widget.textColor,
+            buttonTextColor: widget.buttonTextColor,
+            buttonIconColor: widget.buttonIconColor,
+          );
+        },
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
-        debugPrint("UpdateDialogListener: ${widget.controller.needUpdate}");
-        if (((widget.controller.needUpdate) == false) ||
-            (widget.controller.skipUpdate) ||
-            widget.controller.isDownloading) {
-          return const SizedBox();
-        } else {
-          WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-            showDialog(
-              context: context,
-              barrierDismissible: widget.controller.isMandatory == false,
-              builder: (context) {
-                return UpdateDialogWidget(
-                  controller: widget.controller,
-                  backgroundColor: widget.backgroundColor,
-                  iconColor: widget.iconColor,
-                  shadowColor: widget.shadowColor,
-                  textColor: widget.textColor,
-                  buttonTextColor: widget.buttonTextColor,
-                  buttonIconColor: widget.buttonIconColor,
-                );
-              },
-            );
-          });
-        }
-        return const SizedBox();
+        _tryShowDialog();
+        return const SizedBox.shrink();
       },
     );
   }
