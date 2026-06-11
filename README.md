@@ -10,6 +10,8 @@ app-archive.json -> release.json -> one verified zip artifact
 
 This avoids public folder listing, works with signed URLs and private buckets, and lets the updater verify the exact artifact length and SHA-256 before extraction or installation.
 
+![flutter_desktop_updater](https://github.com/user-attachments/assets/b05d9a13-0f44-4213-b3bd-58e07c18226d)
+
 - [2.0 roadmap](docs/2.0-roadmap.md)
 - [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md)
 - [Agent migration prompt](docs/migration/agent-prompt.md)
