@@ -8,6 +8,8 @@ import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_update.dart";
+import "package:desktop_updater/src/release_manifest.dart"
+    show stagedReleaseManifestFileName;
 import "package:desktop_updater/src/version_info.dart";
 import "package:path/path.dart" as path;
 
@@ -125,6 +127,21 @@ class UpdateClient {
       final stagedPath = descriptor.platform == "macos"
           ? path.join(stagingRoot.path, descriptor.appName)
           : stagingRoot.path;
+      if (descriptor.platform == "macos") {
+        final stagedApp = Directory(stagedPath);
+        if (!await stagedApp.exists()) {
+          throw FormatException(
+            "macOS zip did not contain expected app bundle: "
+            "${descriptor.appName}",
+          );
+        }
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
+      }
+
       return UpdateStageResult(
         descriptor: descriptor,
         stagingPath: stagedPath,

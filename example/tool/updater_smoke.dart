@@ -4,7 +4,15 @@ import "dart:io";
 Future<void> main(List<String> args) async {
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
-  final appPath = _absolutePath(_argValue(args, "--app") ?? _defaultAppPath());
+  final config = _argValue(args, "--config") ?? "Debug";
+  if (config != "Debug" && config != "Release") {
+    stderr.writeln("--config must be Debug or Release.");
+    _usage();
+    exit(64);
+  }
+
+  final appPath =
+      _absolutePath(_argValue(args, "--app") ?? _defaultAppPath(config));
   final stagedAppPath = _absolutePath(_argValue(args, "--staged-app"));
 
   if (appPath == null) {
@@ -128,14 +136,14 @@ Future<void> main(List<String> args) async {
     );
 }
 
-String? _defaultAppPath() {
+String? _defaultAppPath(String config) {
   if (Platform.isMacOS) {
     return _joinAll([
       "build",
       "macos",
       "Build",
       "Products",
-      "Debug",
+      config,
       "desktop_updater_example.app",
     ]);
   }
@@ -146,7 +154,7 @@ String? _defaultAppPath() {
       "windows",
       "x64",
       "runner",
-      "Debug",
+      config,
       "desktop_updater_example.exe",
     ]);
   }
@@ -156,7 +164,7 @@ String? _defaultAppPath() {
       "build",
       "linux",
       "x64",
-      "debug",
+      config.toLowerCase(),
       "bundle",
       "desktop_updater_example",
     ]);
@@ -286,14 +294,18 @@ String? _absolutePath(String? path) {
 
 void _usage() {
   stderr.writeln(
-    "Usage: dart run tool/updater_smoke.dart [--app <path>] [--relaunch]\n"
+    "Usage: dart run tool/updater_smoke.dart [--app <path>] "
+    "[--config Debug|Release] [--relaunch]\n"
     "\n"
     "Use --production-gates --staged-app <path> on macOS with a signed, "
     "notarized, stapled Release .app that already contains the smoke sentinel.\n"
     "\n"
     "Build the example first:\n"
     "  flutter build macos --debug\n"
+    "  flutter build macos --release\n"
     "  flutter build windows --debug\n"
-    "  flutter build linux --debug\n",
+    "  flutter build windows --release\n"
+    "  flutter build linux --debug\n"
+    "  flutter build linux --release\n",
   );
 }

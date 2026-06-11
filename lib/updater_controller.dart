@@ -7,6 +7,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   DesktopUpdaterController({
     required Uri? appArchiveUrl,
     this.localization,
+    this.allowUnsignedMacOSUpdates = false,
     bool skipInitialVersionCheck = false,
     @Deprecated("Use skipInitialVersionCheck instead.") bool? skipCheckVersion,
   }) : _skipInitialVersionCheck = skipCheckVersion ?? skipInitialVersionCheck {
@@ -23,6 +24,13 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   DesktopUpdateLocalization? localization;
   DesktopUpdateLocalization? get getLocalization => localization;
+
+  /// Allows macOS Release installs to bypass native signing, Gatekeeper,
+  /// stapler, and Team ID checks.
+  ///
+  /// Keep this false for public macOS distribution. When true, macOS still
+  /// requires a complete `.app` bundle with the same bundle identifier.
+  final bool allowUnsignedMacOSUpdates;
 
   String? _appName;
   String? get appName => _appName;
@@ -251,6 +259,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     await _plugin.installUpdate(
       stagingPath: stagingPath,
       removedFiles: _removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
     );
   }
 

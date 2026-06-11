@@ -12,7 +12,7 @@ Future<void> main(List<String> args) async {
     ..addOption("package-id", help: "Bundle identifier or package id.")
     ..addOption("app-name", help: "App name inside the artifact.")
     ..addOption("version", help: "Release semantic version.")
-    ..addOption("build-number", help: "Monotonic build number.")
+    ..addOption("build-number", help: "Optional monotonic build number.")
     ..addOption("platform", allowed: ["macos", "windows", "linux"])
     ..addOption("channel", defaultsTo: "stable")
     ..addOption("artifact-url", help: "Exact URL clients will fetch.")
@@ -36,7 +36,7 @@ Future<void> main(List<String> args) async {
     packageId: _required(results, "package-id"),
     appName: appName,
     version: _required(results, "version"),
-    buildNumber: int.parse(_required(results, "build-number")),
+    buildNumber: _optionalInt(results, "build-number"),
     platform: platform,
     channel: results["channel"] as String,
     artifactUrl: Uri.parse(_required(results, "artifact-url")),
@@ -48,6 +48,14 @@ Future<void> main(List<String> args) async {
     ..writeln("Artifact: ${result.artifact.path}")
     ..writeln("Release: ${result.releaseFile.path}")
     ..writeln("app-archive.json item release: ${result.releaseFile.uri}");
+}
+
+int? _optionalInt(ArgResults results, String name) {
+  final value = results[name] as String?;
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  return int.parse(value);
 }
 
 String _required(ArgResults results, String name) {

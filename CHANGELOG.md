@@ -1,6 +1,17 @@
+## 2.0.0
+
+* Promoted the zip-first 2.0 release contract: `app-archive.json` points to `release.json`, and `release.json` points to one verified zip artifact.
+* Added shared Dart update checks, artifact verification, safe staging, typed update state, and zip-first package/verify CLI entrypoints.
+* Added native install scheduling for macOS whole-app replacement, Windows locked-file replacement, and Linux directory replacement with rollback-focused smoke coverage.
+* Added macOS hosted update smoke hooks, explicit unsigned macOS release-mechanics opt-out, and documentation separating release mechanics from production-trusted publisher gates.
+* Added Windows and Linux Release CI gates for build, native tests, integration tests, and update smoke.
+* Made 2.0 `buildNumber` metadata optional in release indexes, release descriptors, and the zip-first package CLI.
+
 ## 2.0.0-dev.5
 
 * Fixed version comparison so archive build metadata is not treated as newer when the installed app does not expose a build number.
+* Added explicit `allowUnsignedMacOSUpdates` opt-out for owners who need unsigned macOS Release update mechanics while keeping signed, notarized, stapled updates as the default production-trusted path.
+* Made 2.0 `buildNumber` metadata optional in release indexes, release descriptors, and the zip-first package CLI.
 
 ## 2.0.0-dev.4
 

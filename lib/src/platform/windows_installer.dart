@@ -8,10 +8,12 @@ class WindowsInstaller implements PlatformInstaller {
   Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
   }) {
     return DesktopUpdaterPlatform.instance.installUpdate(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
     );
   }
 }

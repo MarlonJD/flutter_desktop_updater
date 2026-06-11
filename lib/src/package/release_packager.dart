@@ -13,11 +13,11 @@ class ReleasePackageRequest {
     required this.packageId,
     required this.appName,
     required this.version,
-    required this.buildNumber,
     required this.platform,
     required this.channel,
     required this.artifactUrl,
     required this.installStrategy,
+    this.buildNumber,
     this.minimumUpdaterVersion = "2.0.0",
   });
 
@@ -26,7 +26,7 @@ class ReleasePackageRequest {
   final String packageId;
   final String appName;
   final String version;
-  final int buildNumber;
+  final int? buildNumber;
   final String platform;
   final String channel;
   final Uri artifactUrl;

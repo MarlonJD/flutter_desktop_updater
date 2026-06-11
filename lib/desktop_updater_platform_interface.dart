@@ -34,6 +34,7 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
   Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
   }) {
     throw UnimplementedError("installUpdate() has not been implemented.");
   }

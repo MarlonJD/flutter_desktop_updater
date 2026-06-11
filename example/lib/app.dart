@@ -15,19 +15,31 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const _defaultAppArchiveUrl =
+      "https://www.yoursite.com/app-archive.json";
+
   String _platformVersion = "Unknown";
+  String _appVersion = "Unknown app version";
   final _desktopUpdaterPlugin = DesktopUpdater();
   late DesktopUpdaterController _desktopUpdaterController;
+
+  bool get _hostedSmokeEnabled =>
+      Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE"] == "1";
+
+  bool get _hostedSmokeAllowUnsignedMacOS =>
+      Platform.environment["DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"] ==
+      "1";
 
   @override
   void initState() {
     super.initState();
     initPlatformState();
+    initAppVersionState();
 
     _desktopUpdaterController = DesktopUpdaterController(
-      appArchiveUrl: Uri.parse(
-        "https://www.yoursite.com/app-archive.json",
-      ),
+      appArchiveUrl: _configuredAppArchiveUrl(),
+      skipInitialVersionCheck: _hostedSmokeEnabled,
+      allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
       localization: const DesktopUpdateLocalization(
         updateAvailableText: "Update available",
         newVersionAvailableText: "{} {} is available",
@@ -43,6 +55,16 @@ class _HomePageState extends State<HomePage> {
     );
 
     unawaited(_runSmokeTestCommand());
+    unawaited(_runHostedSmokeTestCommand());
+  }
+
+  Uri _configuredAppArchiveUrl() {
+    final value = Platform.environment["DESKTOP_UPDATER_APP_ARCHIVE_URL"];
+    return Uri.parse(
+      value == null || value.trim().isEmpty
+          ? _defaultAppArchiveUrl
+          : value.trim(),
+    );
   }
 
   Future<void> _runSmokeTestCommand() async {
@@ -62,6 +84,35 @@ class _HomePageState extends State<HomePage> {
     await _writeSmokeMarker(markerPath, "installing");
     await Future<void>.delayed(const Duration(milliseconds: 250));
     await _desktopUpdaterPlugin.installUpdate(stagingPath: stagingPath);
+  }
+
+  Future<void> _runHostedSmokeTestCommand() async {
+    if (!_hostedSmokeEnabled) {
+      return;
+    }
+
+    final markerPath =
+        Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"];
+
+    try {
+      await _writeSmokeMarker(markerPath, "checking");
+      await _desktopUpdaterController.checkVersion();
+
+      if (!_desktopUpdaterController.needUpdate) {
+        await _writeSmokeMarker(markerPath, "no-update");
+        return;
+      }
+
+      await _writeSmokeMarker(markerPath, "downloading");
+      await _desktopUpdaterController.downloadUpdate();
+
+      await _writeSmokeMarker(markerPath, "installing");
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await _desktopUpdaterController.restartApp();
+    } catch (error) {
+      await _writeSmokeMarker(markerPath, "failed: $error");
+      rethrow;
+    }
   }
 
   Future<void> _writeSmokeMarker(String? markerPath, String value) async {
@@ -96,6 +147,29 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> initAppVersionState() async {
+    String appVersion;
+
+    try {
+      final versionInfo = await _desktopUpdaterPlugin.getCurrentVersionInfo();
+      if (versionInfo == null || versionInfo.versionName == null) {
+        appVersion = "Unknown app version";
+      } else if (versionInfo.buildNumber == null) {
+        appVersion = versionInfo.versionName!;
+      } else {
+        appVersion = "${versionInfo.versionName!}+${versionInfo.buildNumber}";
+      }
+    } on PlatformException {
+      appVersion = "Failed to get app version.";
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _appVersion = appVersion;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,9 +183,7 @@ class _HomePageState extends State<HomePage> {
           child: Center(
             child: Column(
               children: [
-                const Text(
-                  "Running on: 1.0.0+1",
-                ),
+                Text("App version: $_appVersion"),
                 Text("Running on: $_platformVersion\n"),
               ],
             ),

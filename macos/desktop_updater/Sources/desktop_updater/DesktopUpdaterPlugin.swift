@@ -34,9 +34,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             }
 
             let removedFiles = arguments["removedFiles"] as? [String] ?? []
+            let allowUnsignedMacOSUpdates =
+                arguments["allowUnsignedMacOSUpdates"] as? Bool ?? false
             scheduleInstallAndRelaunch(
                 stagingPath: stagingPath,
                 removedFiles: removedFiles,
+                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
                 result: result
             )
         case "getExecutablePath":
@@ -56,6 +59,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     private func scheduleInstallAndRelaunch(
         stagingPath: String?,
         removedFiles _: [String],
+        allowUnsignedMacOSUpdates: Bool = false,
         result: @escaping FlutterResult
     ) {
         do {
@@ -70,7 +74,10 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 return
             }
 
-            let scriptURL = try writeHelperScript(stagingPath: stagingPath)
+            let scriptURL = try writeHelperScript(
+                stagingPath: stagingPath,
+                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates
+            )
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -92,15 +99,19 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         }
     }
 
-    private func writeHelperScript(stagingPath: String?) throws -> URL {
+    private func writeHelperScript(
+        stagingPath: String?,
+        allowUnsignedMacOSUpdates: Bool
+    ) throws -> URL {
         let bundlePath = Bundle.main.bundlePath
         let helperName = "desktop_updater_\(UUID().uuidString).sh"
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(helperName)
+        let allowUnsignedValue = allowUnsignedMacOSUpdates ? "1" : ""
         #if DEBUG
-            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-}\""
+            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-\(allowUnsignedValue)}\""
         #else
-            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"\""
+            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"\(allowUnsignedValue)\""
         #endif
 
         var script = """
@@ -159,7 +170,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
               exit 1
             fi
           else
-            echo "Skipping macOS signing gates for debug smoke update." >&2
+            echo "Skipping macOS signing gates because allowUnsignedMacOSUpdates or the debug smoke bypass is enabled." >&2
           fi
 
           TARGET_PARENT="$(dirname "$BUNDLE")"

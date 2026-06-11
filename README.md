@@ -17,7 +17,7 @@ This avoids public folder listing, works with signed URLs and private buckets, a
 ## Version Lines
 
 - `1.x`: stable maintenance line for the legacy folder-based update contract.
-- `2.x`: active development line for the zip-first release contract.
+- `2.x`: current stable line for the zip-first release contract.
 
 Apps already shipping with 1.x should keep their existing release contract until their app code and publishing pipeline have both migrated to 2.0.
 
@@ -36,7 +36,7 @@ The 1.x updater expected a public or fetchable update folder. That worked for si
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.0.0-dev.5
+  desktop_updater: ^2.0.0
 ```
 
 Install the CLI:
@@ -82,6 +82,27 @@ controller = DesktopUpdaterController(
 );
 
 await controller.checkVersion();
+```
+
+macOS signing and notarization gates are enabled by default for Release
+updates. Owners who deliberately support an unsigned direct-distribution lane
+can opt out, but that lane is only release-mechanics ready and is not
+production-trusted:
+
+```dart
+controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  allowUnsignedMacOSUpdates: true,
+);
+```
+
+The same opt-out is available for manual installs:
+
+```dart
+await DesktopUpdater().installUpdate(
+  stagingPath: "/path/to/staged/Example.app",
+  allowUnsignedMacOSUpdates: true,
+);
 ```
 
 Prefer the typed 2.0 state API for new code:
@@ -148,6 +169,12 @@ The legacy boolean getters such as `needUpdate`, `isDownloading`, `isDownloaded`
   "generatedAt": "2026-06-11T00:00:00Z"
 }
 ```
+
+`buildNumber` is optional in both `app-archive.json` items and `release.json`.
+Include it when your app exposes a monotonic build number. Omit it when the
+installed app only exposes a semantic version such as `1.2.3`; in that case
+2.0 uses semantic version ordering and will not treat a remote build number as
+newer than an equal installed semantic version with no build metadata.
 
 Supported install strategies:
 
@@ -222,6 +249,9 @@ Verify a packaged release:
 dart run desktop_updater:verify --release dist/2.0.0/macos/release.json
 ```
 
+`--build-number` is optional. Omit it when your app does not expose build
+metadata and you want update checks to rely only on semantic versions.
+
 Publish:
 
 - `app-archive.json`
@@ -238,13 +268,38 @@ Do not publish or rely on public update folders for the 2.0 contract.
 - CDN/proxy transformations that change bytes will fail SHA-256 verification by design.
 - Use HTTPS for production update metadata and artifacts.
 
+## Readiness And Platform Trust
+
+desktop_updater separates update mechanics from platform publisher trust:
+
+- `release-mechanics ready`: a Release build can check, download, verify,
+  stage, install, relaunch, and roll back through the zip-first flow.
+- `production-trusted ready`: the Release artifact also satisfies the
+  platform's publisher-authenticity expectations.
+
+Unsigned Windows and Linux Release builds can be accepted as
+release-mechanics ready for this Flutter package. Most Flutter desktop apps
+will not have Windows Authenticode certificates or a Linux-specific signing
+policy. Those apps may still use the direct zip updater, but their users can
+see operating-system or distribution trust warnings, and the package does not
+claim platform trust for them.
+
+macOS is stricter by default. Public direct distribution should be
+Developer ID signed, hardened-runtime enabled, notarized, stapled, and
+Gatekeeper accepted before being called production-trusted. Apps that need an
+unsigned macOS lane can set `allowUnsignedMacOSUpdates: true`; this bypasses
+the native codesign, Gatekeeper, stapler, and Team ID gates, while still
+requiring a complete `.app` bundle with the same `CFBundleIdentifier`. A macOS
+update installed with this opt-out remains release-mechanics only and may be
+blocked or warned on by Gatekeeper.
+
 ## Platform Behavior
 
 ### macOS
 
 macOS stages a complete `.app` and replaces the installed bundle only after native gates pass.
 
-Production requirements:
+Production-trusted requirements:
 
 - Build a Release `.app`.
 - Sign with a `Developer ID Application` identity.
@@ -254,6 +309,12 @@ Production requirements:
 - Keep `CFBundleIdentifier` and Team ID stable across releases.
 - Keep App Sandbox disabled for this whole-app replacement strategy.
 - Ensure production entitlements do not include `get-task-allow`.
+
+The macOS Release helper requires these gates by default. Set
+`allowUnsignedMacOSUpdates: true` only when the app owner intentionally accepts
+unsigned release mechanics, such as an internal lab, a local enterprise flow,
+or a user-controlled distribution channel. That opt-out does not make the app
+production-trusted.
 
 Validation commands:
 
@@ -270,13 +331,13 @@ Mac App Store or sandboxed apps should use the store update channel instead of t
 
 Windows schedules a detached PowerShell helper so locked `.exe` and `.dll` files are replaced only after the running app exits. The helper backs up the current app directory and rolls back if replacement fails.
 
-Unsigned Release builds can prove the update mechanics. Production direct distribution should additionally sign `.exe` and `.dll` files with Authenticode and verify them with `signtool` before calling the app production-ready.
+Unsigned Release builds can be accepted as release-mechanics ready. Production-trusted direct distribution should additionally sign `.exe` and `.dll` files with Authenticode and verify them with `signtool`.
 
 ### Linux
 
 Linux schedules a detached Bash helper that resolves the running executable, replaces the app directory without relying on the current working directory, rejects removed paths outside the app root, and rolls back on failure.
 
-Linux has no single OS-level Developer ID equivalent. Direct zip distribution should use release descriptor signing or another publisher-authenticity layer before being treated as production-ready. Flatpak, Snap, deb, rpm, or distro repositories should normally use their own update channels.
+Linux has no single OS-level Developer ID equivalent. Unsigned Release builds can be accepted as release-mechanics ready. Direct zip distribution should use release descriptor signing or another publisher-authenticity layer before being treated as production-trusted. Flatpak, Snap, deb, rpm, or distro repositories should normally use their own update channels.
 
 ## SwiftPM And CocoaPods On macOS
 
@@ -353,4 +414,4 @@ Read [Migrating From 1.x To 2.0](docs/migration/1.x-to-2.0.md) before changing a
 
 - app code: prefer typed `UpdateState` and keep compatibility getters only during migration;
 - release publishing: replace folder uploads with `app-archive.json -> release.json -> zip`;
-- platform validation: add macOS signing/notarization/stapling, Windows signing if direct distribution is used, and Linux descriptor authenticity if direct zip distribution is used.
+- platform validation: add macOS signing/notarization/stapling for production-trusted distribution, Windows signing when publisher trust is required, and Linux descriptor authenticity when direct zip publisher trust is required.

@@ -58,6 +58,24 @@ jobs:
       - name: Run update smoke
         working-directory: example
         run: dart run tool/updater_smoke.dart
+      - name: Build example release
+        working-directory: example
+        run: flutter build windows --release
+      - name: Build native tests release
+        working-directory: example
+        run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
+      - name: Run native tests release
+        working-directory: example
+        run: ctest --test-dir build/windows/x64 -C Release --output-on-failure
+      - name: Run integration tests release
+        working-directory: example
+        run: flutter test integration_test -d windows
+      - name: Rebuild example release for smoke
+        working-directory: example
+        run: flutter build windows --release
+      - name: Run update smoke release
+        working-directory: example
+        run: dart run tool/updater_smoke.dart --config Release
 
   linux:
     name: Linux
@@ -93,3 +111,21 @@ jobs:
       - name: Run update smoke
         working-directory: example
         run: xvfb-run -a dart run tool/updater_smoke.dart
+      - name: Build example release
+        working-directory: example
+        run: flutter build linux --release
+      - name: Build native tests release
+        working-directory: example
+        run: cmake --build build/linux/x64/release --target desktop_updater_test
+      - name: Run native tests release
+        working-directory: example
+        run: ctest --test-dir build/linux/x64/release --output-on-failure
+      - name: Run integration tests release
+        working-directory: example
+        run: xvfb-run -a flutter test integration_test -d linux
+      - name: Rebuild example release for smoke
+        working-directory: example
+        run: flutter build linux --release
+      - name: Run update smoke release
+        working-directory: example
+        run: xvfb-run -a dart run tool/updater_smoke.dart --config Release

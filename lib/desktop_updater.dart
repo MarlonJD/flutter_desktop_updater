@@ -31,9 +31,15 @@ class DesktopUpdater {
     return Future.value("Hello from DesktopUpdater!");
   }
 
-  Future<void> restartApp({String? stagingPath}) {
+  Future<void> restartApp({
+    String? stagingPath,
+    bool allowUnsignedMacOSUpdates = false,
+  }) {
     if (stagingPath != null) {
-      return installUpdate(stagingPath: stagingPath);
+      return installUpdate(
+        stagingPath: stagingPath,
+        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      );
     }
 
     return DesktopUpdaterPlatform.instance.restartApp();
@@ -42,10 +48,12 @@ class DesktopUpdater {
   Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
   }) {
     return DesktopUpdaterPlatform.instance.installUpdate(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
     );
   }
 

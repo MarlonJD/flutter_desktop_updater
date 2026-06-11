@@ -19,6 +19,7 @@ class MockDesktopUpdaterPlatform
   Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
   }) {
     return Future.value();
   }

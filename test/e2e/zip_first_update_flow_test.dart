@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:desktop_updater/src/core/update_client.dart";
+import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -37,6 +38,51 @@ void main() {
       expect(progress, isNotEmpty);
       expect(File(path.join(staged.stagingPath, "app.txt")).readAsStringSync(),
           "version=2.0.0");
+    } finally {
+      await server?.close();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("macOS zip-first staging writes native helper sidecar", () async {
+    final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
+    UpdateServer? server;
+    try {
+      server = await UpdateServer.bind(tempDir);
+      await buildReleaseFixture(
+        root: tempDir,
+        baseUri: server.uri,
+        platform: "macos",
+      );
+
+      final client = UpdateClient(
+        appArchiveUrl: server.uri.resolve("app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "1.0.0",
+          buildNumber: "100",
+        ),
+        platform: "macos",
+        stagingParent: tempDir,
+        runProcess: (_, arguments) async {
+          final destination = arguments.last;
+          await Directory(path.join(destination, "Example")).create();
+          return ProcessResult(0, 0, "", "");
+        },
+      );
+      final check = await client.checkForUpdate();
+
+      final staged = await client.downloadVerifyAndStage(
+        descriptor: check!.descriptor,
+      );
+      final sidecar = File(
+        path.join(
+          Directory(staged.stagingPath).parent.path,
+          stagedReleaseManifestFileName,
+        ),
+      );
+
+      expect(sidecar.existsSync(), isTrue);
+      expect(await sidecar.readAsString(), contains('"schemaVersion": 3'));
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);

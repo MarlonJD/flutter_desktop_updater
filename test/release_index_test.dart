@@ -41,6 +41,25 @@ void main() {
     expect(index.items.single.buildNumber, 140);
   });
 
+  test("keeps buildNumber optional in schema v3 indexes", () {
+    final index = ReleaseIndex.fromJson({
+      "schemaVersion": 3,
+      "appName": "Example App",
+      "items": [
+        {
+          "version": "2.0.0",
+          "platform": "linux",
+          "channel": "stable",
+          "mandatory": false,
+          "release": "https://updates.example.com/linux.json",
+        },
+      ],
+    });
+
+    expect(index.items.single.buildNumber, isNull);
+    expect(index.items.single.toJson(), isNot(contains("buildNumber")));
+  });
+
   test("rejects schema v3 items without release", () {
     expect(
       () => ReleaseIndex.fromJson({

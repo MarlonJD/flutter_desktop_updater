@@ -60,7 +60,7 @@ class ReleaseIndexItem {
     return ReleaseIndexItem(
       version: json["version"] as String? ?? "",
       buildNumber:
-          (json["buildNumber"] as int?) ?? (json["shortVersion"] as int?) ?? 0,
+          (json["buildNumber"] as int?) ?? (json["shortVersion"] as int?),
       platform: json["platform"] as String? ?? "",
       channel: json["channel"] as String? ?? "stable",
       mandatory: json["mandatory"] as bool? ?? false,
@@ -69,7 +69,7 @@ class ReleaseIndexItem {
   }
 
   final String version;
-  final int buildNumber;
+  final int? buildNumber;
   final String platform;
   final String channel;
   final bool mandatory;
@@ -78,7 +78,7 @@ class ReleaseIndexItem {
   Map<String, dynamic> toJson() {
     return {
       "version": version,
-      "buildNumber": buildNumber,
+      if (buildNumber != null) "buildNumber": buildNumber,
       "platform": platform,
       "channel": channel,
       "mandatory": mandatory,
@@ -122,6 +122,8 @@ int _compareReleaseIndexItems(ReleaseIndexItem left, ReleaseIndexItem right) {
 DesktopVersionInfo _indexVersionInfo(ReleaseIndexItem item) {
   return DesktopVersionInfo.fromParts(
     versionName: item.version,
-    buildNumber: item.buildNumber <= 0 ? null : item.buildNumber.toString(),
+    buildNumber: item.buildNumber == null || item.buildNumber! <= 0
+        ? null
+        : item.buildNumber.toString(),
   );
 }

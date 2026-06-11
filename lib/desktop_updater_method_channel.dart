@@ -25,10 +25,12 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
   Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
   }) async {
     await methodChannel.invokeMethod<void>("installUpdate", {
       "stagingPath": stagingPath,
       "removedFiles": removedFiles,
+      "allowUnsignedMacOSUpdates": allowUnsignedMacOSUpdates,
     });
   }
 

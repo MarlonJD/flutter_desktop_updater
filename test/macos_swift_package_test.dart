@@ -24,7 +24,7 @@ void main() {
     );
   });
 
-  test("macOS production updater gates stay enabled outside DEBUG", () {
+  test("macOS production updater gates stay enabled by default", () {
     final pluginSource = File(
       "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
     ).readAsStringSync();
@@ -36,14 +36,22 @@ void main() {
     ).readAsStringSync();
 
     expect(pluginSource, contains("#if DEBUG"));
+    expect(pluginSource, contains("allowUnsignedMacOSUpdates"));
+    expect(
+      pluginSource,
+      contains('let allowUnsignedValue = allowUnsignedMacOSUpdates ? "1" : ""'),
+    );
     expect(
       pluginSource,
       contains(
-        r'ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-}\"',
+        r'ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-\(allowUnsignedValue)}\"',
       ),
     );
     expect(pluginSource, contains("#else"));
-    expect(pluginSource, contains(r'ALLOW_UNSIGNED_MACOS=\"\"'));
+    expect(
+      pluginSource,
+      contains(r'ALLOW_UNSIGNED_MACOS=\"\(allowUnsignedValue)\"'),
+    );
     expect(pluginSource, contains("/usr/bin/codesign --verify"));
     expect(pluginSource, contains("/usr/sbin/spctl --assess"));
     expect(pluginSource, contains("/usr/bin/xcrun stapler validate"));

@@ -19,6 +19,15 @@ void main() {
     );
   });
 
+  test("keeps buildNumber optional in release descriptors", () {
+    final descriptor = ReleaseDescriptor.fromJson(
+      _descriptorJson()..remove("buildNumber"),
+    );
+
+    expect(descriptor.buildNumber, isNull);
+    expect(descriptor.toJson(), isNot(contains("buildNumber")));
+  });
+
   test("canonical signature json empties signature value", () {
     final descriptor = ReleaseDescriptor.fromJson({
       ..._descriptorJson(),

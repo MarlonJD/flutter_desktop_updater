@@ -36,4 +36,36 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("zip packager omits buildNumber when it is not provided", () async {
+    final tempDir = await Directory.systemTemp.createTemp("packager_");
+    try {
+      final input = Directory(path.join(tempDir.path, "input"));
+      await input.create();
+      File(path.join(input.path, "app.txt")).writeAsStringSync("hello");
+      final output = Directory(path.join(tempDir.path, "out"));
+
+      final result = await const ZipReleasePackager().package(
+        ReleasePackageRequest(
+          input: input,
+          outputDirectory: output,
+          packageId: "com.example.app",
+          appName: "Example",
+          version: "2.0.0",
+          platform: "linux",
+          channel: "stable",
+          artifactUrl: Uri.parse("https://cdn.example.com/Example.zip"),
+          installStrategy: "wholeDirectoryReplace",
+        ),
+      );
+
+      expect(result.descriptor.buildNumber, isNull);
+      expect(
+        await result.releaseFile.readAsString(),
+        isNot(contains("buildNumber")),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
 }

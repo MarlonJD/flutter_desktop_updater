@@ -22,7 +22,7 @@ class ReleaseDescriptor {
       packageId: json["packageId"] as String? ?? "",
       appName: json["appName"] as String? ?? "",
       version: json["version"] as String? ?? "",
-      buildNumber: json["buildNumber"] as int? ?? 0,
+      buildNumber: json["buildNumber"] as int?,
       platform: json["platform"] as String? ?? "",
       channel: json["channel"] as String? ?? "stable",
       artifact: ReleaseArtifact.fromJson(
@@ -49,7 +49,7 @@ class ReleaseDescriptor {
   final String packageId;
   final String appName;
   final String version;
-  final int buildNumber;
+  final int? buildNumber;
   final String platform;
   final String channel;
   final ReleaseArtifact artifact;
@@ -64,7 +64,7 @@ class ReleaseDescriptor {
       "packageId": packageId,
       "appName": appName,
       "version": version,
-      "buildNumber": buildNumber,
+      if (buildNumber != null) "buildNumber": buildNumber,
       "platform": platform,
       "channel": channel,
       "artifact": artifact.toJson(),
@@ -102,6 +102,11 @@ class ReleaseDescriptor {
     }
     if (platform.trim().isEmpty) {
       throw const FormatException("release.json platform is required.");
+    }
+    if (buildNumber != null && buildNumber! < 0) {
+      throw const FormatException(
+        "release.json buildNumber must be zero or greater when provided.",
+      );
     }
     artifact.validate();
     install.validate();
