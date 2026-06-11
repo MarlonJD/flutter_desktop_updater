@@ -64,7 +64,7 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   void init(Uri url) {
     _appArchiveUrl = url;
-    if (skipCheckVersion == true) {
+    if (!skipCheckVersion) {
       checkVersion();
       notifyListeners();
     }
