@@ -312,6 +312,32 @@ Production-trusted requirements:
 - Keep App Sandbox disabled for this whole-app replacement strategy.
 - Ensure production entitlements do not include `get-task-allow`.
 
+Notarization credentials are stored as a local Keychain profile. When creating
+the profile, keep the exact `--keychain-profile` and `--keychain` values printed
+by `notarytool`; use both values again for `history`, `submit`, and any
+automation that notarizes release artifacts:
+
+```sh
+xcrun notarytool store-credentials desktop-updater-notary \
+  --key "$HOME/Developer/secrets/AuthKey_XXXXXXXXXX.p8" \
+  --key-id "XXXXXXXXXX" \
+  --issuer "00000000-0000-0000-0000-000000000000" \
+  --keychain "$HOME/Library/Keychains/login.keychain-db" \
+  --validate
+
+xcrun notarytool history \
+  --keychain-profile desktop-updater-notary \
+  --keychain "$HOME/Library/Keychains/login.keychain-db" \
+  --output-format json
+```
+
+If `store-credentials` says the credentials were saved but a later command says
+`No Keychain password item found`, the profile was not read from the same
+Keychain. Re-run the command with an explicit `--keychain`, or copy the exact
+`--keychain-profile ... --keychain ...` pair from the success message. When
+copying multi-line shell commands, the trailing `\` must be the final character
+on the line; a space after it breaks argument continuation.
+
 The macOS Release helper requires these gates by default. Set
 `allowUnsignedMacOSUpdates: true` only when the app owner intentionally accepts
 unsigned release mechanics, such as an internal lab, a local enterprise flow,
