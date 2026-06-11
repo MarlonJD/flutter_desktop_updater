@@ -52,6 +52,9 @@ jobs:
       - name: Run integration tests
         working-directory: example
         run: flutter test integration_test -d windows
+      - name: Rebuild example for smoke
+        working-directory: example
+        run: flutter build windows --debug
       - name: Run update smoke
         working-directory: example
         run: dart run tool/updater_smoke.dart
@@ -84,6 +87,9 @@ jobs:
       - name: Run integration tests
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
+      - name: Rebuild example for smoke
+        working-directory: example
+        run: flutter build linux --debug
       - name: Run update smoke
         working-directory: example
         run: xvfb-run -a dart run tool/updater_smoke.dart
