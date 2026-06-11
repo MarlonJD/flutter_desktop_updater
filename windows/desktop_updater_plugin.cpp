@@ -147,7 +147,7 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
 
   const fs::path executable(executable_path);
   const fs::path target_directory = executable.parent_path();
-  if (!staging_path.empty() && !fs::exists(fs::path(staging_path))) {
+  if (!staging_path.empty() && !fs::is_directory(fs::path(staging_path))) {
     *error = "Staged update directory does not exist.";
     return false;
   }
@@ -169,12 +169,20 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "}\n"
       << "$targetRoot = [IO.Path]::GetFullPath($target).TrimEnd('\\\\')\n"
       << "$targetRootWithSlash = $targetRoot + '\\'\n"
+      << "$backup = Join-Path ([IO.Path]::GetTempPath()) "
+         "('desktop_updater_backup_' + $pidToWait)\n"
+      << "if (Test-Path -LiteralPath $backup) { "
+         "Remove-Item -LiteralPath $backup -Recurse -Force }\n"
+      << "try {\n"
+      << "Copy-Item -LiteralPath $target -Destination $backup -Recurse -Force\n"
       << "foreach ($relative in $removed) {\n"
       << "  if ([string]::IsNullOrWhiteSpace($relative)) { continue }\n"
       << "  $candidate = [IO.Path]::GetFullPath((Join-Path $target $relative))\n"
-      << "  if (($candidate.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase) -or "
-         "$candidate.StartsWith($targetRootWithSlash, [StringComparison]::OrdinalIgnoreCase)) "
-         "-and (Test-Path -LiteralPath $candidate)) {\n"
+      << "  if (-not $candidate.StartsWith($targetRootWithSlash, "
+         "[StringComparison]::OrdinalIgnoreCase)) {\n"
+      << "    throw \"Removed file escapes app root: $relative\"\n"
+      << "  }\n"
+      << "  if (Test-Path -LiteralPath $candidate) {\n"
       << "    Remove-Item -LiteralPath $candidate -Recurse -Force\n"
       << "  }\n"
       << "}\n"
@@ -192,6 +200,15 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "    }\n"
       << "  }\n"
       << "  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "}\n"
+      << "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "} catch {\n"
+      << "  if (Test-Path -LiteralPath $backup) {\n"
+      << "    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "    Copy-Item -LiteralPath $backup -Destination $target -Recurse -Force\n"
+      << "    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "  }\n"
+      << "  throw\n"
       << "}\n"
       << "if ($skipRelaunch -ne '1') {\n"
       << "  Start-Process -FilePath $exe -WorkingDirectory $target\n"
@@ -307,6 +324,26 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
 
   build_number->erase(last_character + 1);
   return ProductVersionBuildParseResult::kBuildNumber;
+}
+
+bool IsStrictChildPathForTesting(const std::wstring& root,
+                                 const std::wstring& candidate) {
+  fs::path root_path(root);
+  fs::path candidate_path(candidate);
+  std::wstring root_value = root_path.lexically_normal().wstring();
+  std::wstring candidate_value = candidate_path.lexically_normal().wstring();
+  while (!root_value.empty() &&
+         (root_value.back() == L'\\' || root_value.back() == L'/')) {
+    root_value.pop_back();
+  }
+  while (!candidate_value.empty() &&
+         (candidate_value.back() == L'\\' || candidate_value.back() == L'/')) {
+    candidate_value.pop_back();
+  }
+  const std::wstring root_with_slash = root_value + L"\\";
+  return candidate_value.size() > root_with_slash.size() &&
+         _wcsnicmp(candidate_value.c_str(), root_with_slash.c_str(),
+                   root_with_slash.size()) == 0;
 }
 
 // static

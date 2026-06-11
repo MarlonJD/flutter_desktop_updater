@@ -35,7 +35,7 @@ Future<ItemModel?> versionCheckFunction({required String appArchiveUrl}) async {
           compareArchiveItems(value, element) >= 0 ? value : element,
     );
 
-    final currentVersion = await _currentVersionInfo();
+    final currentVersion = await currentVersionInfo();
     if (currentVersion == null ||
         !isArchiveItemNewerThanCurrent(latestVersion, currentVersion)) {
       return null;
@@ -102,7 +102,7 @@ Future<ItemModel?> _macOSVersionCheck({
   );
 }
 
-Future<DesktopVersionInfo?> _currentVersionInfo() async {
+Future<DesktopVersionInfo?> currentVersionInfo() async {
   if (Platform.isLinux) {
     final exePath = await File("/proc/self/exe").resolveSymbolicLinks();
     final appPath = path.dirname(exePath);

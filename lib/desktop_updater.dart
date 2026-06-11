@@ -1,12 +1,18 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/app_archive.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/file_hash.dart";
 import "package:desktop_updater/src/prepare.dart";
 import "package:desktop_updater/src/update.dart";
 import "package:desktop_updater/src/update_progress.dart";
 import "package:desktop_updater/src/version_check.dart";
+import "package:desktop_updater/src/version_info.dart";
 
 export "package:desktop_updater/src/app_archive.dart";
+export "package:desktop_updater/src/core/release_descriptor.dart";
+export "package:desktop_updater/src/core/release_index.dart";
+export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/localization.dart";
 export "package:desktop_updater/src/update_progress.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
@@ -80,7 +86,36 @@ class DesktopUpdater {
     return DesktopUpdaterPlatform.instance.getCurrentVersion();
   }
 
+  Future<DesktopVersionInfo?> getCurrentVersionInfo() {
+    return currentVersionInfo();
+  }
+
   Future<ItemModel?> versionCheck({required String appArchiveUrl}) {
     return versionCheckFunction(appArchiveUrl: appArchiveUrl);
+  }
+
+  Future<UpdateCheckResult?> checkZipFirstUpdate({
+    required Uri appArchiveUrl,
+    required DesktopVersionInfo currentVersion,
+  }) {
+    return UpdateClient(
+      appArchiveUrl: appArchiveUrl,
+      currentVersion: currentVersion,
+    ).checkForUpdate();
+  }
+
+  Future<UpdateStageResult> downloadZipFirstUpdate({
+    required Uri appArchiveUrl,
+    required DesktopVersionInfo currentVersion,
+    required ReleaseDescriptor descriptor,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+  }) {
+    return UpdateClient(
+      appArchiveUrl: appArchiveUrl,
+      currentVersion: currentVersion,
+    ).downloadVerifyAndStage(
+      descriptor: descriptor,
+      onProgress: onProgress,
+    );
   }
 }

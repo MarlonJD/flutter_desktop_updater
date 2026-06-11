@@ -41,11 +41,12 @@ class _UpdateCardState extends State<UpdateCard> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                notifier
-                                        ?.getLocalization
+                                notifier?.getLocalization
                                         ?.updateAvailableText ??
                                     "Update Available",
-                                style: Theme.of(context).textTheme.bodyLarge
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
                                     ?.copyWith(
                                       color: Theme.of(
                                         context,
@@ -54,8 +55,7 @@ class _UpdateCardState extends State<UpdateCard> {
                               ),
                               Text(
                                 getLocalizedString(
-                                      notifier
-                                          ?.getLocalization
+                                      notifier?.getLocalization
                                           ?.newVersionAvailableText,
                                       [notifier?.appName, notifier?.appVersion],
                                     ) ??
@@ -64,7 +64,9 @@ class _UpdateCardState extends State<UpdateCard> {
                                       notifier?.appVersion,
                                     ])) ??
                                     "",
-                                style: Theme.of(context).textTheme.bodyMedium
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
                                     ?.copyWith(
                                       color: Theme.of(
                                         context,
@@ -121,7 +123,9 @@ class _UpdateCardState extends State<UpdateCard> {
                         Text(
                           notifier?.getLocalization?.updateAvailableText ??
                               "Update Available",
-                          style: Theme.of(context).textTheme.bodyLarge
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
@@ -129,8 +133,7 @@ class _UpdateCardState extends State<UpdateCard> {
                         Text(
                           getLocalizedString(
                                 notifier
-                                    ?.getLocalization
-                                    ?.newVersionAvailableText,
+                                    ?.getLocalization?.newVersionAvailableText,
                                 [notifier?.appName, notifier?.appVersion],
                               ) ??
                               (getLocalizedString("{} {} is available", [
@@ -138,12 +141,12 @@ class _UpdateCardState extends State<UpdateCard> {
                                 notifier?.appVersion,
                               ])) ??
                               "",
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -162,12 +165,12 @@ class _UpdateCardState extends State<UpdateCard> {
                                 ],
                               )) ??
                               "",
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                         ),
                         const SizedBox(height: 24),
                         Row(
@@ -210,14 +213,12 @@ class _UpdateCardState extends State<UpdateCard> {
                                     builder: (context) {
                                       return AlertDialog(
                                         title: Text(
-                                          notifier
-                                                  ?.getLocalization
+                                          notifier?.getLocalization
                                                   ?.warningTitleText ??
                                               "Are you sure?",
                                         ),
                                         content: Text(
-                                          notifier
-                                                  ?.getLocalization
+                                          notifier?.getLocalization
                                                   ?.restartWarningText ??
                                               "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
                                         ),
@@ -227,8 +228,7 @@ class _UpdateCardState extends State<UpdateCard> {
                                               Navigator.of(context).pop();
                                             },
                                             child: Text(
-                                              notifier
-                                                      ?.getLocalization
+                                              notifier?.getLocalization
                                                       ?.warningCancelText ??
                                                   "Not now",
                                             ),
@@ -238,8 +238,7 @@ class _UpdateCardState extends State<UpdateCard> {
                                               notifier?.restartApp();
                                             },
                                             child: Text(
-                                              notifier
-                                                      ?.getLocalization
+                                              notifier?.getLocalization
                                                       ?.warningConfirmText ??
                                                   "Restart",
                                             ),
@@ -267,8 +266,7 @@ class _UpdateCardState extends State<UpdateCard> {
                                     OutlinedButton.icon(
                                       icon: const Icon(Icons.close),
                                       label: Text(
-                                        notifier
-                                                ?.getLocalization
+                                        notifier?.getLocalization
                                                 ?.skipThisVersionText ??
                                             "Skip this version",
                                       ),
@@ -310,30 +308,35 @@ class _UpdateCardState extends State<UpdateCard> {
                                                     ).unfocus();
                                                   },
                                                   child: Scaffold(
-                                                    backgroundColor:
-                                                        Theme.of(context)
-                                                            .colorScheme
-                                                            .surfaceContainerLow,
+                                                    backgroundColor: Theme.of(
+                                                            context)
+                                                        .colorScheme
+                                                        .surfaceContainerLow,
                                                     body: Padding(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 16,
-                                                          ),
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 16,
+                                                      ),
                                                       child: CustomScrollView(
                                                         controller:
                                                             scrollController,
                                                         slivers: <Widget>[
                                                           SliverList(
-                                                            delegate: SliverChildListDelegate([
+                                                            delegate:
+                                                                SliverChildListDelegate([
                                                               Text(
                                                                 "Release notes",
-                                                                style: Theme.of(context)
+                                                                style: Theme.of(
+                                                                        context)
                                                                     .textTheme
                                                                     .bodyLarge
                                                                     ?.copyWith(
-                                                                      color: Theme.of(
+                                                                      color: Theme
+                                                                              .of(
                                                                         context,
-                                                                      ).colorScheme.onSurface,
+                                                                      )
+                                                                          .colorScheme
+                                                                          .onSurface,
                                                                     ),
                                                               ),
                                                               const SizedBox(
@@ -347,13 +350,17 @@ class _UpdateCardState extends State<UpdateCard> {
                                                                         )
                                                                         .join() ??
                                                                     "",
-                                                                style: Theme.of(context)
+                                                                style: Theme.of(
+                                                                        context)
                                                                     .textTheme
                                                                     .bodyMedium
                                                                     ?.copyWith(
-                                                                      color: Theme.of(
+                                                                      color: Theme
+                                                                              .of(
                                                                         context,
-                                                                      ).colorScheme.onSurfaceVariant,
+                                                                      )
+                                                                          .colorScheme
+                                                                          .onSurfaceVariant,
                                                                     ),
                                                               ),
                                                             ]),
@@ -361,28 +368,33 @@ class _UpdateCardState extends State<UpdateCard> {
                                                         ],
                                                       ),
                                                     ),
-                                                    bottomNavigationBar: Padding(
+                                                    bottomNavigationBar:
+                                                        Padding(
                                                       padding:
                                                           const EdgeInsets.only(
-                                                            bottom: 8,
-                                                          ),
+                                                        bottom: 8,
+                                                      ),
                                                       child: Container(
                                                         margin: EdgeInsets.zero,
-                                                        decoration: BoxDecoration(
+                                                        decoration:
+                                                            BoxDecoration(
                                                           borderRadius:
-                                                              const BorderRadius.all(
-                                                                Radius.circular(
-                                                                  12,
-                                                                ),
-                                                              ),
-                                                          color: Theme.of(context)
+                                                              const BorderRadius
+                                                                  .all(
+                                                            Radius.circular(
+                                                              12,
+                                                            ),
+                                                          ),
+                                                          color: Theme.of(
+                                                                  context)
                                                               .colorScheme
                                                               .surfaceContainerLow,
                                                         ),
                                                         padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 8,
-                                                            ),
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 8,
+                                                        ),
                                                         child: Row(
                                                           mainAxisSize:
                                                               MainAxisSize.min,

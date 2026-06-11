@@ -45,6 +45,12 @@ TEST(DesktopUpdaterPlugin, ProductVersionBuildNumberRejectsEmptyMetadata) {
             ProductVersionBuildParseResult::kInvalid);
 }
 
+TEST(DesktopUpdaterPlugin, RemovedFileMustBeStrictChildPath) {
+  EXPECT_TRUE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\App\\data.txt"));
+  EXPECT_FALSE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\App"));
+  EXPECT_FALSE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\Other\\data.txt"));
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

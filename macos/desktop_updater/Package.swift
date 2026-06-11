@@ -6,16 +6,19 @@ import PackageDescription
 let package = Package(
     name: "desktop_updater",
     platforms: [
-        .macOS("10.14")
+        .macOS("10.15")
     ],
     products: [
         .library(name: "desktop-updater", targets: ["desktop_updater"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(name: "FlutterFramework", path: "../FlutterFramework")
+    ],
     targets: [
         .target(
             name: "desktop_updater",
             dependencies: [
+                .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             resources: [
                 // If your plugin requires a privacy manifest, for example if it collects user

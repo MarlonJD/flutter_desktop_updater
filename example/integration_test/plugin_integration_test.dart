@@ -9,6 +9,8 @@
 import "package:desktop_updater/desktop_updater.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:integration_test/integration_test.dart";
+import "dart:convert";
+import "dart:io";
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -19,5 +21,15 @@ void main() {
     // The version string depends on the host platform running the test, so
     // just assert that some non-empty string is returned.
     expect(version?.isNotEmpty, true);
+  });
+
+  testWidgets("migration fixture uses release descriptor URL", (tester) async {
+    final fixture = File("migration/app_archive_v3.json");
+    final json = jsonDecode(fixture.readAsStringSync()) as Map<String, dynamic>;
+    final items = json["items"] as List<dynamic>;
+    final first = items.single as Map<String, dynamic>;
+
+    expect(json["schemaVersion"], 3);
+    expect(first["release"], contains("release.json"));
   });
 }

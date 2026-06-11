@@ -19,6 +19,9 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
     const std::wstring& product_version,
     std::wstring* build_number);
 
+bool IsStrictChildPathForTesting(const std::wstring& root,
+                                 const std::wstring& candidate);
+
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows *registrar);

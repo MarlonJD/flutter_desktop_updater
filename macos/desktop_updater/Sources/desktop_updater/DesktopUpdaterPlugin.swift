@@ -97,6 +97,11 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         let helperName = "desktop_updater_\(UUID().uuidString).sh"
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(helperName)
+        #if DEBUG
+            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-}\""
+        #else
+            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"\""
+        #endif
 
         var script = """
         #!/bin/sh
@@ -106,6 +111,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         STAGING=\(shellQuote(stagingPath ?? ""))
         BUNDLE=\(shellQuote(bundlePath))
         SKIP_RELAUNCH="${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}"
+        \(smokeGateBypassAssignment)
 
         while kill -0 "$PID" 2>/dev/null; do
           sleep 0.5
@@ -130,26 +136,30 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
           fi
 
           EXPECTED_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$BUNDLE/Contents/Info.plist")"
-          EXPECTED_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$BUNDLE" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-          if [ -z "$EXPECTED_TEAM_ID" ]; then
-            echo "Installed app TeamIdentifier could not be read." >&2
-            exit 1
-          fi
-
-          /usr/bin/codesign --verify --deep --strict --verbose=2 "$STAGING"
-          /usr/sbin/spctl --assess --type execute --verbose=2 "$STAGING"
-          /usr/bin/xcrun stapler validate "$STAGING"
-
           ACTUAL_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$STAGING/Contents/Info.plist")"
           if [ "$ACTUAL_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
             echo "CFBundleIdentifier mismatch: expected $EXPECTED_BUNDLE_ID, got $ACTUAL_BUNDLE_ID" >&2
             exit 1
           fi
 
-          ACTUAL_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$STAGING" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-          if [ "$ACTUAL_TEAM_ID" != "$EXPECTED_TEAM_ID" ]; then
-            echo "TeamIdentifier mismatch: expected $EXPECTED_TEAM_ID, got $ACTUAL_TEAM_ID" >&2
-            exit 1
+          if [ "$ALLOW_UNSIGNED_MACOS" != "1" ]; then
+            EXPECTED_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$BUNDLE" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+            if [ -z "$EXPECTED_TEAM_ID" ]; then
+              echo "Installed app TeamIdentifier could not be read." >&2
+              exit 1
+            fi
+
+            /usr/bin/codesign --verify --deep --strict --verbose=2 "$STAGING"
+            /usr/sbin/spctl --assess --type execute --verbose=2 "$STAGING"
+            /usr/bin/xcrun stapler validate "$STAGING"
+
+            ACTUAL_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$STAGING" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+            if [ "$ACTUAL_TEAM_ID" != "$EXPECTED_TEAM_ID" ]; then
+              echo "TeamIdentifier mismatch: expected $EXPECTED_TEAM_ID, got $ACTUAL_TEAM_ID" >&2
+              exit 1
+            fi
+          else
+            echo "Skipping macOS signing gates for debug smoke update." >&2
           fi
 
           TARGET_PARENT="$(dirname "$BUNDLE")"

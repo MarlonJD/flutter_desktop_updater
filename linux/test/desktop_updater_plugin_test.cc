@@ -27,5 +27,12 @@ TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   EXPECT_THAT(fl_value_get_string(result), testing::StartsWith("Linux "));
 }
 
+TEST(DesktopUpdaterPlugin, InstallUpdateRequiresExistingStagingDirectory) {
+  std::string error;
+  EXPECT_FALSE(schedule_install_update(
+      "/tmp/desktop_updater_missing_staging", {}, &error));
+  EXPECT_THAT(error, testing::HasSubstr("Staged update directory"));
+}
+
 }  // namespace test
 }  // namespace desktop_updater

@@ -1,6 +1,10 @@
 # What is Desktop Updater?
 This Flutter plugin supports desktop platforms including macOS, Windows, and Linux. It checks a remote app archive, downloads only changed files, verifies staged files before install, and installs the update on restart.
 
+- [2.0 roadmap](docs/2.0-roadmap.md)
+- [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md)
+- [Agent migration prompt](docs/migration/agent-prompt.md)
+
 # How does it work?
 The update flow is intentionally split into safe phases:
 
@@ -346,6 +350,20 @@ You should add your versions to the `items` array. Each version should have the 
 # Testing the restart installer
 
 Do not put the restart/install test inside `integration_test`. The app must close itself, so the Flutter test runner dies with it.
+
+For macOS plugin integration, Swift Package Manager is the primary path and CocoaPods is the fallback compatibility path. Run the SwiftPM check locally without requiring `pod install`; run CocoaPods fallback separately after disabling SwiftPM.
+
+```sh
+flutter config --enable-swift-package-manager
+cd example
+flutter test integration_test -d macos
+```
+
+```sh
+flutter config --no-enable-swift-package-manager
+cd example
+flutter test integration_test -d macos
+```
 
 For macOS packaging and extraction regressions, run the package tests:
 

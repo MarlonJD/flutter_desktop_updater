@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "appName": "Example App",
+  "items": [
+    {
+      "version": "2.0.0",
+      "buildNumber": 200,
+      "platform": "macos",
+      "channel": "stable",
+      "mandatory": false,
+      "release": "https://updates.example.com/releases/example/2.0.0/macos/release.json"
+    }
+  ]
+}

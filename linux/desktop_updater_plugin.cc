@@ -7,13 +7,18 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <libgen.h>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
 #include <linux/limits.h>
 
 // Forward declarations
 FlMethodResponse *get_platform_version();
+bool schedule_install_update(const std::string &staging_path,
+                             const std::vector<std::string> &removed_files,
+                             std::string *error);
 
 // Function to copy file from source to destination
 bool copy_file(const char *source, const char *destination)
@@ -43,50 +48,175 @@ bool copy_file(const char *source, const char *destination)
   return true;
 }
 
-void createUpdateScript(const char *executable_path)
+std::string shell_quote(const std::string &value)
 {
-  char *temp_path = strdup(executable_path);
-  const char *base_name = basename(temp_path);
-
-  const std::string script =
-      "#!/bin/bash\n"
-      "sleep 1\n"
-      "cp -R update/* .\n"
-      "chmod +x " +
-      std::string(executable_path) + "\n"
-                                     "./" +
-      std::string(base_name) + " &\n"
-                               "sleep 1\n"
-                               "rm update_script.sh\n"
-                               "rm -rf update\n"
-                               "exit\n";
-
-  FILE *file = fopen("update_script.sh", "w");
-  if (file)
+  std::string quoted = "'";
+  for (char character : value)
   {
-    fprintf(file, "%s", script.c_str());
-    fclose(file);
-    chmod("update_script.sh", 0755);
-    g_print("Update script created.\n");
+    if (character == '\'')
+    {
+      quoted += "'\\''";
+    }
+    else
+    {
+      quoted += character;
+    }
   }
-
-  free(temp_path);
+  quoted += "'";
+  return quoted;
 }
 
-void runUpdateScript()
+std::string current_executable_path()
+{
+  char executable_path[PATH_MAX];
+  ssize_t len = readlink("/proc/self/exe", executable_path, sizeof(executable_path) - 1);
+  if (len == -1)
+  {
+    return "";
+  }
+  executable_path[len] = '\0';
+  return std::string(executable_path);
+}
+
+std::string parent_directory(const std::string &file_path)
+{
+  char *copy = strdup(file_path.c_str());
+  std::string result = dirname(copy);
+  free(copy);
+  return result;
+}
+
+std::string base_name(const std::string &file_path)
+{
+  char *copy = strdup(file_path.c_str());
+  std::string result = basename(copy);
+  free(copy);
+  return result;
+}
+
+std::string shell_array(const std::vector<std::string> &values)
+{
+  if (values.empty())
+  {
+    return "";
+  }
+
+  std::string result;
+  for (const auto &value : values)
+  {
+    result += " " + shell_quote(value);
+  }
+  return result;
+}
+
+bool write_file(const std::string &path, const std::string &contents)
+{
+  std::ofstream file(path, std::ios::binary | std::ios::trunc);
+  if (!file.is_open())
+  {
+    return false;
+  }
+  file << contents;
+  return file.good();
+}
+
+bool start_detached_script(const std::string &script_path)
 {
   pid_t pid = fork();
-
   if (pid == 0)
   {
-    // Child process
-    execl("/bin/sh", "sh", "update_script.sh", NULL);
+    execl("/bin/sh", "sh", script_path.c_str(), nullptr);
     _exit(1);
   }
-  else if (pid < 0)
+  return pid > 0;
+}
+
+bool schedule_install_update(const std::string &staging_path,
+                             const std::vector<std::string> &removed_files,
+                             std::string *error)
+{
+  const std::string executable_path = current_executable_path();
+  if (executable_path.empty())
   {
-    g_print("Failed to run the update script.\n");
+    *error = "Unable to resolve executable path.";
+    return false;
   }
+
+  if (!staging_path.empty())
+  {
+    struct stat staging_stat = {};
+    if (stat(staging_path.c_str(), &staging_stat) != 0 || !S_ISDIR(staging_stat.st_mode))
+    {
+      *error = "Staged update directory does not exist.";
+      return false;
+    }
+  }
+
+  const std::string target_directory = parent_directory(executable_path);
+  const std::string script_path =
+      "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
+  const std::string removed_values = shell_array(removed_files);
+  const std::string script =
+      "#!/bin/bash\n"
+      "set -euo pipefail\n"
+      "pid_to_wait=" +
+      std::to_string(getpid()) + "\n"
+                              "staging=" +
+      shell_quote(staging_path) + "\n"
+                                  "target=" +
+      shell_quote(target_directory) + "\n"
+                                      "exe=" +
+      shell_quote(executable_path) + "\n"
+                                     "removed=(" +
+      removed_values + ")\n"
+                       "skip_relaunch=\"${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}\"\n"
+                       "while kill -0 \"$pid_to_wait\" 2>/dev/null; do sleep 0.5; done\n"
+                       "target_root=\"$(cd \"$target\" && pwd -P)\"\n"
+                       "backup=\"$(mktemp -d /tmp/desktop_updater_backup_XXXXXX)\"\n"
+                       "rollback() {\n"
+                       "  if [ -d \"$backup\" ]; then\n"
+                       "    rm -rf \"$target\"\n"
+                       "    mkdir -p \"$(dirname \"$target\")\"\n"
+                       "    cp -a \"$backup/.\" \"$target/\"\n"
+                       "  fi\n"
+                       "}\n"
+                       "trap 'rollback; rm -rf \"$backup\"; exit 1' ERR\n"
+                       "cp -a \"$target/.\" \"$backup/\"\n"
+                       "for relative in \"${removed[@]}\"; do\n"
+                       "  [ -z \"$relative\" ] && continue\n"
+                       "  candidate=\"$(realpath -m \"$target/$relative\")\"\n"
+                       "  case \"$candidate\" in\n"
+                       "    \"$target_root\"/*) [ -e \"$candidate\" ] && rm -rf \"$candidate\" ;;\n"
+                       "    *) echo \"Removed file escapes app root: $relative\" >&2; exit 1 ;;\n"
+                       "  esac\n"
+                       "done\n"
+                       "if [ -n \"$staging\" ]; then\n"
+                       "  [ -d \"$staging\" ] || exit 1\n"
+                       "  cp -a \"$staging/.\" \"$target/\"\n"
+                       "  rm -rf \"$staging\"\n"
+                       "fi\n"
+                       "rm -rf \"$backup\"\n"
+                       "trap - ERR\n"
+                       "if [ \"$skip_relaunch\" != \"1\" ]; then\n"
+                       "  cd \"$target\"\n"
+                       "  \"$exe\" &\n"
+                       "fi\n"
+                       "rm -f \"$0\"\n";
+
+  if (!write_file(script_path, script))
+  {
+    *error = "Unable to write update helper script.";
+    return false;
+  }
+
+  chmod(script_path.c_str(), 0755);
+  if (!start_detached_script(script_path))
+  {
+    *error = "Unable to start update helper script.";
+    return false;
+  }
+
+  return true;
 }
 
 // Implementation of get_platform_version
@@ -125,20 +255,69 @@ static void desktop_updater_plugin_handle_method_call(
   }
   else if (strcmp(method, "restartApp") == 0)
   {
-    printf("Restarting the application...\n");
-
-    char executable_path[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", executable_path, sizeof(executable_path) - 1);
-    if (len != -1)
+    std::string error;
+    if (!schedule_install_update("", {}, &error))
     {
-      executable_path[len] = '\0';
-      printf("Executable path: %s\n", executable_path);
-
-      createUpdateScript(executable_path);
-      runUpdateScript();
-
-      // Exit current process
+      g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
+      response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "RestartError", error.c_str(), details));
+    }
+    else
+    {
+      response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+      fl_method_call_respond(method_call, response, nullptr);
       exit(0);
+      return;
+    }
+  }
+  else if (strcmp(method, "installUpdate") == 0)
+  {
+    FlValue *args = fl_method_call_get_args(method_call);
+    if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP)
+    {
+      response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "InvalidArguments", "installUpdate expects a map.", nullptr));
+    }
+    else
+    {
+      FlValue *staging_value = fl_value_lookup_string(args, "stagingPath");
+      if (staging_value == nullptr || fl_value_get_type(staging_value) != FL_VALUE_TYPE_STRING)
+      {
+        response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "InvalidArguments", "stagingPath must be a string.", nullptr));
+      }
+      else
+      {
+        std::vector<std::string> removed_files;
+        FlValue *removed_value = fl_value_lookup_string(args, "removedFiles");
+        if (removed_value != nullptr && fl_value_get_type(removed_value) == FL_VALUE_TYPE_LIST)
+        {
+          const size_t length = fl_value_get_length(removed_value);
+          for (size_t i = 0; i < length; ++i)
+          {
+            FlValue *item = fl_value_get_list_value(removed_value, i);
+            if (item != nullptr && fl_value_get_type(item) == FL_VALUE_TYPE_STRING)
+            {
+              removed_files.push_back(fl_value_get_string(item));
+            }
+          }
+        }
+
+        std::string error;
+        if (!schedule_install_update(fl_value_get_string(staging_value), removed_files, &error))
+        {
+          g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
+          response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "InstallError", error.c_str(), details));
+        }
+        else
+        {
+          response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+          fl_method_call_respond(method_call, response, nullptr);
+          exit(0);
+          return;
+        }
+      }
     }
   }
   else
