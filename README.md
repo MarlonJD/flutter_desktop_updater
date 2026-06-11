@@ -264,7 +264,17 @@ End-to-end release flow:
 8. Run an update smoke test from the previous version.
 
 # Commands
-You need to update version on `pubspec.yaml` file and run the following commands to build the application:
+You need to update the `version` in `pubspec.yaml` and run the following commands to build the application. Both Flutter version formats are supported:
+
+```yaml
+version: 1.0.0
+```
+
+```yaml
+version: 1.0.0+1
+```
+
+Using a build number is still recommended for updater releases because it gives every artifact a monotonic ordering value. If you omit the build number, increase the semantic version for every release, for example `1.0.0` to `1.0.1`.
 
 `dart run desktop_updater:release macos`
 
@@ -281,7 +291,7 @@ Hash paths are normalized with `/` separators so Windows archives can be served 
 # App Archive JSON Structure
 You should add your versions to the `items` array. Each version should have the following fields:
 - `version`: Required, The version number of the app.
-- `shortVersion`: Required, The short version number of the app. This is used to compare the versions.
+- `shortVersion`: Optional, The monotonic build number of the app. This is used to compare versions when present. If omitted, `desktop_updater` compares the semantic `version` value instead.
 - `changes`: Required, The changes made in this version. This is an array of objects with the following fields:
     - `type`: Optional, the type of the change. This can be one of the following values: feat, fix, chore, docs, style, refactor, perf, test, build, ci, or other.
     - `message`: Required, The message describing the change.

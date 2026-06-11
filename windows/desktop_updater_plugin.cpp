@@ -211,6 +211,55 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
   return true;
 }
 
+bool ReadCurrentProductVersion(std::wstring* product_version,
+                               std::string* error) {
+  const std::wstring executable_path = CurrentExecutablePath();
+  DWORD version_handle = 0;
+  const DWORD version_size =
+      GetFileVersionInfoSizeW(executable_path.c_str(), &version_handle);
+
+  if (version_size == 0) {
+    *error = "Unable to get version size.";
+    return false;
+  }
+
+  std::vector<BYTE> version_data(version_size);
+  if (!GetFileVersionInfoW(executable_path.c_str(), version_handle,
+                           version_size, version_data.data())) {
+    *error = "Unable to get version info.";
+    return false;
+  }
+
+  struct LanguageAndCodePage {
+    WORD language;
+    WORD code_page;
+  }* translation;
+
+  UINT translation_size = 0;
+  if (!VerQueryValueW(version_data.data(), L"\\VarFileInfo\\Translation",
+                      reinterpret_cast<LPVOID*>(&translation),
+                      &translation_size) ||
+      translation_size < sizeof(LanguageAndCodePage)) {
+    *error = "Unable to get translation info.";
+    return false;
+  }
+
+  wchar_t sub_block[50];
+  swprintf_s(sub_block, L"\\StringFileInfo\\%04x%04x\\ProductVersion",
+             translation[0].language, translation[0].code_page);
+
+  LPBYTE buffer = nullptr;
+  UINT size = 0;
+  if (!VerQueryValueW(version_data.data(), sub_block,
+                      reinterpret_cast<LPVOID*>(&buffer), &size)) {
+    *error = "Unable to query product version.";
+    return false;
+  }
+
+  *product_version = std::wstring(reinterpret_cast<wchar_t*>(buffer));
+  return true;
+}
+
 std::vector<std::wstring> RemovedFilesFromArguments(
     const flutter::EncodableMap& arguments) {
   std::vector<std::wstring> removed_files;
@@ -235,6 +284,30 @@ std::vector<std::wstring> RemovedFilesFromArguments(
 }
 
 }  // namespace
+
+ProductVersionBuildParseResult ParseProductVersionBuildNumber(
+    const std::wstring& product_version,
+    std::wstring* build_number) {
+  build_number->clear();
+  const size_t plus_position = product_version.find(L'+');
+  if (plus_position == std::wstring::npos) {
+    return ProductVersionBuildParseResult::kNoBuildNumber;
+  }
+
+  if (plus_position + 1 >= product_version.length()) {
+    return ProductVersionBuildParseResult::kInvalid;
+  }
+
+  *build_number = product_version.substr(plus_position + 1);
+  const size_t last_character = build_number->find_last_not_of(L" \t\r\n");
+  if (last_character == std::wstring::npos) {
+    build_number->clear();
+    return ProductVersionBuildParseResult::kInvalid;
+  }
+
+  build_number->erase(last_character + 1);
+  return ProductVersionBuildParseResult::kBuildNumber;
+}
 
 // static
 void DesktopUpdaterPlugin::RegisterWithRegistrar(
@@ -315,65 +388,51 @@ void DesktopUpdaterPlugin::HandleMethodCall(
   } else if (method_call.method_name().compare("getExecutablePath") == 0) {
     result->Success(flutter::EncodableValue(WideToUtf8(CurrentExecutablePath())));
   } else if (method_call.method_name().compare("getCurrentVersion") == 0) {
-    const std::wstring executable_path = CurrentExecutablePath();
-    DWORD version_handle = 0;
-    const DWORD version_size =
-        GetFileVersionInfoSizeW(executable_path.c_str(), &version_handle);
-
-    if (version_size == 0) {
-      result->Error("VersionError", "Unable to get version size.");
+    std::wstring product_version;
+    std::string error;
+    if (!ReadCurrentProductVersion(&product_version, &error)) {
+      result->Error("VersionError", error);
       return;
     }
 
-    std::vector<BYTE> version_data(version_size);
-    if (!GetFileVersionInfoW(executable_path.c_str(), version_handle,
-                             version_size, version_data.data())) {
-      result->Error("VersionError", "Unable to get version info.");
-      return;
-    }
-
-    struct LanguageAndCodePage {
-      WORD language;
-      WORD code_page;
-    }* translation;
-
-    UINT translation_size = 0;
-    if (!VerQueryValueW(version_data.data(), L"\\VarFileInfo\\Translation",
-                        reinterpret_cast<LPVOID*>(&translation),
-                        &translation_size) ||
-        translation_size < sizeof(LanguageAndCodePage)) {
-      result->Error("VersionError", "Unable to get translation info.");
-      return;
-    }
-
-    wchar_t sub_block[50];
-    swprintf_s(sub_block, L"\\StringFileInfo\\%04x%04x\\ProductVersion",
-               translation[0].language, translation[0].code_page);
-
-    LPBYTE buffer = nullptr;
-    UINT size = 0;
-    if (!VerQueryValueW(version_data.data(), sub_block,
-                        reinterpret_cast<LPVOID*>(&buffer), &size)) {
-      result->Error("VersionError", "Unable to query product version.");
-      return;
-    }
-
-    std::wstring product_version(reinterpret_cast<wchar_t*>(buffer));
-    const size_t plus_position = product_version.find(L'+');
-    if (plus_position == std::wstring::npos ||
-        plus_position + 1 >= product_version.length()) {
+    std::wstring build_number;
+    const ProductVersionBuildParseResult parse_result =
+        ParseProductVersionBuildNumber(product_version, &build_number);
+    if (parse_result == ProductVersionBuildParseResult::kInvalid) {
       result->Error("VersionError", "Invalid product version format.");
       return;
     }
 
-    std::wstring build_number = product_version.substr(plus_position + 1);
-    const size_t last_character = build_number.find_last_not_of(L" \t\r\n");
-    if (last_character == std::wstring::npos) {
-      result->Error("VersionError", "Invalid product version format.");
+    if (parse_result == ProductVersionBuildParseResult::kNoBuildNumber) {
+      result->Success(flutter::EncodableValue());
       return;
     }
-    build_number.erase(last_character + 1);
+
     result->Success(flutter::EncodableValue(WideToUtf8(build_number)));
+  } else if (method_call.method_name().compare("getCurrentVersionInfo") == 0) {
+    std::wstring product_version;
+    std::string error;
+    if (!ReadCurrentProductVersion(&product_version, &error)) {
+      result->Error("VersionError", error);
+      return;
+    }
+
+    std::wstring build_number;
+    const ProductVersionBuildParseResult parse_result =
+        ParseProductVersionBuildNumber(product_version, &build_number);
+    if (parse_result == ProductVersionBuildParseResult::kInvalid) {
+      result->Error("VersionError", "Invalid product version format.");
+      return;
+    }
+
+    flutter::EncodableMap version_info;
+    version_info[flutter::EncodableValue("version")] =
+        flutter::EncodableValue(WideToUtf8(product_version));
+    version_info[flutter::EncodableValue("buildNumber")] =
+        parse_result == ProductVersionBuildParseResult::kBuildNumber
+            ? flutter::EncodableValue(WideToUtf8(build_number))
+            : flutter::EncodableValue();
+    result->Success(flutter::EncodableValue(version_info));
   } else {
     result->NotImplemented();
   }

@@ -6,6 +6,7 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/remote_file.dart";
+import "package:desktop_updater/src/version_info.dart";
 import "package:path/path.dart" as path;
 import "package:pubspec_parse/pubspec_parse.dart";
 
@@ -81,13 +82,17 @@ Future<void> main(List<String> args) async {
   }
 
   final parsed = Pubspec.parse(await File("pubspec.yaml").readAsString());
-  final buildName =
-      "${parsed.version?.major}.${parsed.version?.minor}.${parsed.version?.patch}";
-  final buildNumber = parsed.version?.build.firstOrNull.toString();
-  if (buildNumber == null || buildNumber.isEmpty) {
-    print("pubspec.yaml version must include a build number.");
+  final packageVersion = parsed.version;
+  if (packageVersion == null) {
+    print("pubspec.yaml version must include a version.");
     exit(1);
   }
+  final releaseVersion = DesktopVersionInfo.parse(packageVersion.toString());
+  final buildName = releaseVersion.versionName!;
+  final buildNumber = releaseVersion.buildNumber;
+  final versionLabel = releaseVersionLabel(releaseVersion);
+  final versionFolder = releaseVersionFolder(releaseVersion);
+
   if (platform == "macos") {
     final appNamePubspec = parsed.name;
     final parser = ArgParser()
@@ -130,14 +135,13 @@ Future<void> main(List<String> args) async {
     }
 
     final outputDirectory = Directory(
-      outputPath ??
-          path.join("dist", buildNumber, "$buildName+$buildNumber-macos"),
+      outputPath ?? path.join("dist", versionFolder, "$versionLabel-macos"),
     );
     final manifest = await createMacOSReleaseArtifacts(
       appDirectory: buildApp,
       outputDirectory: outputDirectory,
       version: buildName,
-      shortVersion: int.parse(buildNumber),
+      shortVersion: buildNumber ?? 0,
       channel: channel,
     );
 
@@ -158,41 +162,48 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  /// Sort folders by name, it will be the build number,
-  /// and get the last one, biggest build number
   final folders = await distDir.list().toList();
-  folders.sort((a, b) => a.path.compareTo(b.path));
 
-  final lastBuildNumberFolder = folders.last;
-
-  // Get all files in the last folder path
-  final files = await Directory(lastBuildNumberFolder.path).list().toList();
-
-  var platformFound = false;
   String? foundDirectory;
-  String? foundVersion;
-  String? foundBuildNumber;
+  String? foundVersionLabel;
+  String? foundParentDirectory;
+  DesktopVersionInfo? foundVersionInfo;
 
   /// Check if there is a file in given platform
-  for (final file in files) {
-    if (file is Directory) {
-      // desktop_updater_example-0.1.1+2-macos.app
-      // version is 0.1.1, build number is 2, platform is macos, name is appNamePubspec variable
-      final version = file.path.split("-").elementAt(1).split("+").first;
-      final buildNumber =
-          file.path.split("-").elementAt(1).split("+").last.split("-").first;
-      final foundPlatform = file.path.split("-").last.split(".").first;
+  for (final folder in folders) {
+    if (folder is! Directory) {
+      continue;
+    }
 
-      if (foundPlatform == platform) {
-        platformFound = true;
+    final files = await folder.list().toList();
+    for (final file in files) {
+      if (file is! Directory) {
+        continue;
+      }
+
+      final versionLabel = archiveVersionLabelFromName(
+        archiveName: path.basename(file.path),
+        appName: parsed.name,
+        platform: platform,
+      );
+      if (versionLabel == null) {
+        continue;
+      }
+
+      final versionInfo = DesktopVersionInfo.parse(versionLabel);
+      if (foundVersionInfo == null ||
+          compareDesktopVersions(versionInfo, foundVersionInfo) > 0) {
         foundDirectory = file.path;
-        foundVersion = version;
-        foundBuildNumber = buildNumber;
+        foundVersionLabel = versionLabel;
+        foundParentDirectory = folder.path;
+        foundVersionInfo = versionInfo;
       }
     }
   }
 
-  if (!platformFound || foundDirectory == null) {
+  if (foundDirectory == null ||
+      foundVersionLabel == null ||
+      foundParentDirectory == null) {
     print("File not found for platform: $platform");
     exit(1);
   } else {
@@ -209,21 +220,21 @@ Future<void> main(List<String> args) async {
     await copyDirectory(
       Directory(foundDirectory),
       Directory(
-        "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
+        "$foundParentDirectory${Platform.pathSeparator}$foundVersionLabel-$platform",
       ),
     );
   } else if (platform == "linux") {
     await copyDirectory(
       Directory(foundDirectory),
       Directory(
-        "${lastBuildNumberFolder.path}/$foundVersion+$foundBuildNumber-$platform",
+        "$foundParentDirectory/$foundVersionLabel-$platform",
       ),
     );
   }
 
   await genFileHashes(
     path:
-        "${lastBuildNumberFolder.path}${Platform.pathSeparator}$foundVersion+$foundBuildNumber-$platform",
+        "$foundParentDirectory${Platform.pathSeparator}$foundVersionLabel-$platform",
   );
 
   return;

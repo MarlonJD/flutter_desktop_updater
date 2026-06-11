@@ -39,6 +39,7 @@ class ItemModel {
     required this.mandatory,
     required this.url,
     required this.platform,
+    this.hasShortVersion = true,
     this.changedFiles,
     this.removedFiles = const [],
     this.appName,
@@ -50,6 +51,7 @@ class ItemModel {
     return ItemModel(
       version: json["version"] as String? ?? "",
       shortVersion: json["shortVersion"] as int? ?? 0,
+      hasShortVersion: json.containsKey("shortVersion"),
       changes: List<ChangeModel>.from(
         (json["changes"] as List<dynamic>? ?? const []).map(
           (x) => ChangeModel.fromJson(x as Map<String, dynamic>),
@@ -65,6 +67,7 @@ class ItemModel {
   }
   final String version;
   final int shortVersion;
+  final bool hasShortVersion;
   final List<ChangeModel> changes;
   final String date;
   final bool mandatory;
@@ -79,7 +82,7 @@ class ItemModel {
   Map<String, dynamic> toJson() {
     return {
       "version": version,
-      "shortVersion": shortVersion,
+      if (hasShortVersion) "shortVersion": shortVersion,
       "changes": List<dynamic>.from(changes.map((x) => x.toJson())),
       "date": date,
       "mandatory": mandatory,
@@ -93,6 +96,7 @@ class ItemModel {
   ItemModel copyWith({
     String? version,
     int? shortVersion,
+    bool? hasShortVersion,
     List<ChangeModel>? changes,
     String? date,
     bool? mandatory,
@@ -107,6 +111,7 @@ class ItemModel {
     return ItemModel(
       version: version ?? this.version,
       shortVersion: shortVersion ?? this.shortVersion,
+      hasShortVersion: hasShortVersion ?? this.hasShortVersion,
       changes: changes ?? this.changes,
       date: date ?? this.date,
       mandatory: mandatory ?? this.mandatory,

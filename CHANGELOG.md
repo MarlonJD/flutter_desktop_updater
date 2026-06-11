@@ -1,3 +1,9 @@
+## 2.0.0-dev.3
+
+* Added support for Flutter versions without build metadata in update checks and release tooling.
+* Kept build-number based ordering for existing archives while allowing semantic version fallback when `shortVersion` is omitted.
+* Fixed Windows ProductVersion parsing so versions like `1.2.3` no longer throw, while malformed values like `1.2.3+` still fail.
+
 ## 2.0.0-dev.2
 
 * Added macOS release manifests, content-addressed gzip payloads, and `ditto` full ZIP fallback archives for `.app` bundles.

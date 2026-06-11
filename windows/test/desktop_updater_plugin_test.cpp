@@ -22,6 +22,29 @@ using flutter::MethodResultFunctions;
 
 }  // namespace
 
+TEST(DesktopUpdaterPlugin, ProductVersionBuildNumberWithMetadata) {
+  std::wstring build_number;
+
+  EXPECT_EQ(ParseProductVersionBuildNumber(L"1.2.3+4", &build_number),
+            ProductVersionBuildParseResult::kBuildNumber);
+  EXPECT_EQ(build_number, L"4");
+}
+
+TEST(DesktopUpdaterPlugin, ProductVersionBuildNumberMissingIsValid) {
+  std::wstring build_number;
+
+  EXPECT_EQ(ParseProductVersionBuildNumber(L"1.2.3", &build_number),
+            ProductVersionBuildParseResult::kNoBuildNumber);
+  EXPECT_TRUE(build_number.empty());
+}
+
+TEST(DesktopUpdaterPlugin, ProductVersionBuildNumberRejectsEmptyMetadata) {
+  std::wstring build_number;
+
+  EXPECT_EQ(ParseProductVersionBuildNumber(L"1.2.3+", &build_number),
+            ProductVersionBuildParseResult::kInvalid);
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

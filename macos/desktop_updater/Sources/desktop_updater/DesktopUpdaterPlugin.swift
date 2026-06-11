@@ -43,6 +43,11 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             result(Bundle.main.executablePath)
         case "getCurrentVersion":
             result(Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
+        case "getCurrentVersionInfo":
+            result([
+                "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+                "buildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+            ])
         default:
             result(FlutterMethodNotImplemented)
         }

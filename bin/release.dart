@@ -1,6 +1,7 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:desktop_updater/src/version_info.dart";
 import "package:path/path.dart" as path;
 import "package:pubspec_parse/pubspec_parse.dart";
 
@@ -23,17 +24,19 @@ Future<void> main(List<String> args) async {
   final pubspec = File("pubspec.yaml").readAsStringSync();
   final parsed = Pubspec.parse(pubspec);
 
-  /// Only base version 1.0.0
-  final buildName =
-      "${parsed.version?.major}.${parsed.version?.minor}.${parsed.version?.patch}";
-  final buildNumber = parsed.version?.build.firstOrNull.toString();
-  if (buildNumber == null || buildNumber.isEmpty) {
-    print("pubspec.yaml version must include a build number.");
+  final packageVersion = parsed.version;
+  if (packageVersion == null) {
+    print("pubspec.yaml version must include a version.");
     exit(1);
   }
+  final releaseVersion = DesktopVersionInfo.parse(packageVersion.toString());
+  final buildName = releaseVersion.versionName!;
+  final buildNumber = releaseVersion.buildNumber?.toString();
+  final versionLabel = releaseVersionLabel(releaseVersion);
+  final versionFolder = releaseVersionFolder(releaseVersion);
 
   print(
-    "Building version $buildName+$buildNumber for $platform for app ${parsed.name}",
+    "Building version $versionLabel for $platform for app ${parsed.name}",
   );
 
   final appNamePubspec = parsed.name;
@@ -68,10 +71,14 @@ Future<void> main(List<String> args) async {
     platform,
     "--dart-define",
     "FLUTTER_BUILD_NAME=$buildName",
-    "--dart-define",
-    "FLUTTER_BUILD_NUMBER=$buildNumber",
     ...extraArgs,
   ];
+  if (buildNumber != null) {
+    buildCommand.addAll([
+      "--dart-define",
+      "FLUTTER_BUILD_NUMBER=$buildNumber",
+    ]);
+  }
 
   print("Executing build command: ${buildCommand.join(' ')}");
 
@@ -135,13 +142,13 @@ Future<void> main(List<String> args) async {
   final distPath = platform == "windows"
       ? path.join(
           "dist",
-          buildNumber,
-          "$appNamePubspec-$buildName+$buildNumber-$platform",
+          versionFolder,
+          "$appNamePubspec-$versionLabel-$platform",
         )
       : path.join(
           "dist",
-          buildNumber,
-          "$appNamePubspec-$buildName+$buildNumber-$platform",
+          versionFolder,
+          "$appNamePubspec-$versionLabel-$platform",
         );
 
   final distDir = Directory(distPath);
