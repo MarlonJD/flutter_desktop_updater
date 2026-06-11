@@ -125,7 +125,7 @@ bool start_detached_script(const std::string &script_path)
   pid_t pid = fork();
   if (pid == 0)
   {
-    execl("/bin/sh", "sh", script_path.c_str(), nullptr);
+    execl("/bin/bash", "bash", script_path.c_str(), nullptr);
     _exit(1);
   }
   return pid > 0;
