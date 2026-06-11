@@ -263,6 +263,28 @@ Publish:
 
 Do not publish or rely on public update folders for the 2.0 contract.
 
+## GitHub Actions CI/CD
+
+The package repository runs a public, secretless GitHub Actions CI matrix for
+Dart, Linux, and Windows. It verifies formatting, analysis, tests, CLI
+entrypoints, pub dry-runs, native tests, integration tests, and debug/release
+update smoke tests.
+
+Real automatic update publishing belongs in your app repository, not in this
+package repository. Your app owns the bundle ID, signing certificate,
+notarization credentials, update hosting, release approval policy, and platform
+publisher-trust gates.
+
+Use the CI/CD guide when wiring an app release workflow:
+
+- [GitHub Actions CI/CD for automatic updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md)
+- Build the app in Release mode.
+- Sign, notarize, staple, and Gatekeeper-check macOS artifacts before zipping.
+- Sign Windows artifacts when publisher trust is required.
+- Add a descriptor authenticity layer for production-trusted Linux direct zip distribution.
+- Run `dart run desktop_updater:package` to generate the zip and `release.json`.
+- Upload versioned artifacts first, verify the hosted `release.json`, then publish `app-archive.json` last.
+
 ## Hosting Requirements
 
 - Serve exact URLs for `app-archive.json`, `release.json`, and the zip artifact.
@@ -439,7 +461,7 @@ By default the smoke runner skips relaunch so CI does not leave an app open. Add
 
 ## Migration
 
-Read [Migrating From 1.x To 2.0](docs/migration/1.x-to-2.0.md) before changing a shipped app. The migration must update both sides of the system:
+Read [Migrating From 1.x To 2.0](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md) before changing a shipped app. The migration must update both sides of the system:
 
 - app code: prefer typed `UpdateState` and keep compatibility getters only during migration;
 - release publishing: replace folder uploads with `app-archive.json -> release.json -> zip`;
