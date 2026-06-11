@@ -12,9 +12,10 @@ This avoids public folder listing, works with signed URLs and private buckets, a
 
 ![flutter_desktop_updater](https://github.com/user-attachments/assets/b05d9a13-0f44-4213-b3bd-58e07c18226d)
 
-- [2.0 roadmap](docs/2.0-roadmap.md)
-- [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md)
-- [Agent migration prompt](docs/migration/agent-prompt.md)
+- [2.0 roadmap](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/2.0-roadmap.md)
+- [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md)
+- [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md)
+- [Agent migration prompt](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/agent-prompt.md)
 
 ## Version Lines
 
