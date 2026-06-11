@@ -102,6 +102,16 @@ void main() {
 
       expect(isArchiveItemNewerThanCurrent(remote, current), isFalse);
     });
+
+    test(
+      "does not treat archive build as newer when current build is unavailable",
+      () {
+        final current = DesktopVersionInfo.parse("1.2.3");
+        final remote = archiveItem(version: "1.2.3", shortVersion: 5);
+
+        expect(isArchiveItemNewerThanCurrent(remote, current), isFalse);
+      },
+    );
   });
 
   group("ItemModel", () {

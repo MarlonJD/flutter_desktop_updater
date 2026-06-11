@@ -90,8 +90,6 @@ int compareDesktopVersions(
     if (versionComparison != 0) {
       return versionComparison;
     }
-
-    return (candidate.buildNumber ?? 0).compareTo(current.buildNumber ?? 0);
   }
 
   return 0;
