@@ -1,11 +1,14 @@
 import "dart:convert";
 import "dart:io";
 
-import "package:desktop_updater/desktop_updater.dart";
+import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/file_hash.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/remote_file.dart";
+import "package:desktop_updater/src/version_info.dart";
+import "package:flutter/services.dart";
 import "package:path/path.dart" as path;
 
 Future<ItemModel?> versionCheckFunction({required String appArchiveUrl}) async {
@@ -29,12 +32,12 @@ Future<ItemModel?> versionCheckFunction({required String appArchiveUrl}) async {
 
     final latestVersion = versions.reduce(
       (value, element) =>
-          value.shortVersion > element.shortVersion ? value : element,
+          compareArchiveItems(value, element) >= 0 ? value : element,
     );
 
-    final currentVersion = await _currentBuildNumber();
+    final currentVersion = await _currentVersionInfo();
     if (currentVersion == null ||
-        latestVersion.shortVersion <= currentVersion) {
+        !isArchiveItemNewerThanCurrent(latestVersion, currentVersion)) {
       return null;
     }
 
@@ -99,9 +102,7 @@ Future<ItemModel?> _macOSVersionCheck({
   );
 }
 
-Future<int?> _currentBuildNumber() async {
-  String? currentVersion;
-
+Future<DesktopVersionInfo?> _currentVersionInfo() async {
   if (Platform.isLinux) {
     final exePath = await File("/proc/self/exe").resolveSymbolicLinks();
     final appPath = path.dirname(exePath);
@@ -113,14 +114,31 @@ Future<int?> _currentBuildNumber() async {
     );
     final versionJson = jsonDecode(await File(versionPath).readAsString())
         as Map<String, dynamic>;
-    currentVersion = versionJson["build_number"]?.toString();
-  } else {
-    currentVersion = await DesktopUpdater().getCurrentVersion();
+    return DesktopVersionInfo.fromParts(
+      versionName: versionJson["version"]?.toString(),
+      buildNumber: versionJson["build_number"]?.toString(),
+    );
   }
 
-  if (currentVersion == null || currentVersion.trim().isEmpty) {
+  final methodChannel = MethodChannelDesktopUpdater();
+  Map<String, String?>? versionInfo;
+  try {
+    versionInfo = await methodChannel.getCurrentVersionInfo();
+  } on MissingPluginException {
+    versionInfo = null;
+  }
+
+  if (versionInfo != null) {
+    return DesktopVersionInfo.fromParts(
+      versionName: versionInfo["version"],
+      buildNumber: versionInfo["buildNumber"],
+    );
+  }
+
+  final buildNumber = await methodChannel.getCurrentVersion();
+  if (buildNumber == null || buildNumber.trim().isEmpty) {
     return null;
   }
 
-  return int.tryParse(currentVersion.trim());
+  return DesktopVersionInfo.fromParts(buildNumber: buildNumber);
 }

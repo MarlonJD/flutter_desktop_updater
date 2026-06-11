@@ -51,4 +51,12 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
   Future<String?> getCurrentVersion() async {
     return methodChannel.invokeMethod<String>("getCurrentVersion");
   }
+
+  /// Returns structured native version metadata for update checks.
+  Future<Map<String, String?>?> getCurrentVersionInfo() async {
+    final versionInfo = await methodChannel.invokeMapMethod<String, String?>(
+      "getCurrentVersionInfo",
+    );
+    return versionInfo == null ? null : Map<String, String?>.from(versionInfo);
+  }
 }

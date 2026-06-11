@@ -5,8 +5,19 @@
 #include <flutter/plugin_registrar_windows.h>
 
 #include <memory>
+#include <string>
 
 namespace desktop_updater {
+
+enum class ProductVersionBuildParseResult {
+  kBuildNumber,
+  kNoBuildNumber,
+  kInvalid,
+};
+
+ProductVersionBuildParseResult ParseProductVersionBuildNumber(
+    const std::wstring& product_version,
+    std::wstring* build_number);
 
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:
