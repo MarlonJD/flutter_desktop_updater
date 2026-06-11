@@ -60,7 +60,7 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
   void didUpdateWidget(covariant UpdateDialogListener oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // reset si nouveau controller
+    // reset if new controller
     if (oldWidget.controller != widget.controller) {
       _dialogShown = false;
     }
