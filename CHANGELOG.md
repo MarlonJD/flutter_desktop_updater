@@ -1,3 +1,8 @@
+## 2.0.0-dev.4
+
+* Added `skipInitialVersionCheck` to `DesktopUpdaterController` so apps can initialize the controller without immediately checking for updates.
+* Kept `skipCheckVersion` as a deprecated alias for the same behavior.
+
 ## 2.0.0-dev.3
 
 * Added support for Flutter versions without build metadata in update checks and release tooling.

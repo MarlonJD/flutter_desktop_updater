@@ -2,11 +2,22 @@ import "package:desktop_updater/desktop_updater.dart";
 import "package:flutter/material.dart";
 
 class DesktopUpdaterController extends ChangeNotifier {
-  DesktopUpdaterController({required Uri? appArchiveUrl, this.localization}) {
+  DesktopUpdaterController({
+    required Uri? appArchiveUrl,
+    this.localization,
+    bool skipInitialVersionCheck = false,
+    @Deprecated("Use skipInitialVersionCheck instead.") bool? skipCheckVersion,
+  }) : _skipInitialVersionCheck = skipCheckVersion ?? skipInitialVersionCheck {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
   }
+
+  final bool _skipInitialVersionCheck;
+  bool get skipInitialVersionCheck => _skipInitialVersionCheck;
+
+  @Deprecated("Use skipInitialVersionCheck instead.")
+  bool get getSkipCheckVersion => _skipInitialVersionCheck;
 
   DesktopUpdateLocalization? localization;
   DesktopUpdateLocalization? get getLocalization => localization;
@@ -61,6 +72,11 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   void init(Uri url) {
     _appArchiveUrl = url;
+    if (_skipInitialVersionCheck) {
+      notifyListeners();
+      return;
+    }
+
     checkVersion();
     notifyListeners();
   }

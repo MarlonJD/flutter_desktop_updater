@@ -20,7 +20,7 @@ Add dependency to your `pubspec.yaml`:
 ```
 dependencies:
   ...
-  desktop_updater: ^2.0.0-dev.1
+  desktop_updater: ^2.0.0-dev.4
 ```
 
 Install as CLI, 
@@ -72,6 +72,25 @@ Then wrap your home page with `DesktopUpdater` widget, under the Scaffold widget
         ),
       ),
     );
+}
+```
+
+If you want to control when the first version check happens, disable the initial check and call `checkVersion()` manually:
+
+```dart
+@override
+void initState() {
+    super.initState();
+    _desktopUpdaterController = DesktopUpdaterController(
+        appArchiveUrl: Uri.parse(
+        "https://www.yoursite.com/app-archive.json",
+        ),
+        skipInitialVersionCheck: true,
+    );
+}
+
+Future<void> checkForUpdates() async {
+    await _desktopUpdaterController.checkVersion();
 }
 ```
 
