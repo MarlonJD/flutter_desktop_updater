@@ -1,16 +1,33 @@
-# desktop_updater_example
+# desktop_updater 2.x example
 
-Demonstrates how to use the desktop_updater plugin.
+This app demonstrates the desktop_updater 2.x zip-first update flow:
 
-## Getting Started
+```text
+app-archive.json -> release.json -> zip artifact
+```
 
-This project is a starting point for a Flutter application.
+The example does not check the network automatically on startup. Press
+**Check for updates** to run the controller against the configured archive URL.
 
-A few resources to get you started if this is your first Flutter project:
+## Configure
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+By default the app displays `https://updates.example.com/app-archive.json`.
+Point it at your own hosted 2.x index before testing a real update:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+DESKTOP_UPDATER_APP_ARCHIVE_URL=https://updates.example.com/app-archive.json \
+flutter run -d macos
+```
+
+## Production Smoke Hooks
+
+The CI smoke tools still use environment variables to drive unattended checks:
+
+- `DESKTOP_UPDATER_SMOKE_STAGING`
+- `DESKTOP_UPDATER_SMOKE_MARKER`
+- `DESKTOP_UPDATER_HOSTED_SMOKE`
+- `DESKTOP_UPDATER_HOSTED_SMOKE_MARKER`
+- `DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS`
+
+For public macOS distribution, keep unsigned updates disabled and use signed,
+notarized, stapled artifacts.

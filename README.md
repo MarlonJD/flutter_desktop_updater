@@ -85,27 +85,26 @@ void initState() {
   super.initState();
   controller = DesktopUpdaterController(
     appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+    skipInitialVersionCheck: true,
   );
 }
 ```
 
-Wrap your UI with one of the update widgets:
+Trigger checks from your own update action and optionally mount the dialog
+listener near the top of your app:
 
 ```dart
-DesktopUpdateWidget(
-  controller: controller,
-  child: const YourHomePage(),
-)
+Stack(
+  children: [
+    const YourHomePage(),
+    UpdateDialogListener(controller: controller),
+  ],
+);
 ```
 
-Use `skipInitialVersionCheck` when you want to control the first check yourself:
+Run the check manually:
 
 ```dart
-controller = DesktopUpdaterController(
-  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  skipInitialVersionCheck: true,
-);
-
 await controller.checkVersion();
 ```
 
