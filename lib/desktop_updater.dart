@@ -1,34 +1,19 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
-import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_client.dart";
-import "package:desktop_updater/src/file_hash.dart";
-import "package:desktop_updater/src/prepare.dart";
-import "package:desktop_updater/src/update.dart";
-import "package:desktop_updater/src/update_progress.dart";
-import "package:desktop_updater/src/version_check.dart";
+import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/version_info.dart";
 
-export "package:desktop_updater/src/app_archive.dart";
 export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
 export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/localization.dart";
-export "package:desktop_updater/src/update_progress.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
-export "package:desktop_updater/widget/update_direct_card.dart";
-export "package:desktop_updater/widget/update_sliver.dart";
-
-export "desktop_updater_inherited_widget.dart";
 
 class DesktopUpdater {
   DesktopUpdater();
   Future<String?> getPlatformVersion() {
     return DesktopUpdaterPlatform.instance.getPlatformVersion();
-  }
-
-  Future<String?> sayHello() {
-    return Future.value("Hello from DesktopUpdater!");
   }
 
   Future<void> restartApp({
@@ -61,45 +46,12 @@ class DesktopUpdater {
     return DesktopUpdaterPlatform.instance.getExecutablePath();
   }
 
-  Future<List<FileHashModel?>> verifyFileHash(
-    String oldHashFilePath,
-    String newHashFilePath,
-  ) {
-    return verifyFileHashes(oldHashFilePath, newHashFilePath);
-  }
-
-  Future<String?> generateFileHashes({String? path}) {
-    return genFileHashes(path: path);
-  }
-
-  Future<Stream<UpdateProgress>> updateApp({
-    required String remoteUpdateFolder,
-    required List<FileHashModel?> changedFiles,
-    String manifestPath = "release-manifest.json",
-  }) {
-    return updateAppFunction(
-      remoteUpdateFolder: remoteUpdateFolder,
-      changes: changedFiles,
-      manifestPath: manifestPath,
-    );
-  }
-
-  Future<List<FileHashModel?>> prepareUpdateApp({
-    required String remoteUpdateFolder,
-  }) {
-    return prepareUpdateAppFunction(remoteUpdateFolder: remoteUpdateFolder);
-  }
-
   Future<String?> getCurrentVersion() {
     return DesktopUpdaterPlatform.instance.getCurrentVersion();
   }
 
   Future<DesktopVersionInfo?> getCurrentVersionInfo() {
     return currentVersionInfo();
-  }
-
-  Future<ItemModel?> versionCheck({required String appArchiveUrl}) {
-    return versionCheckFunction(appArchiveUrl: appArchiveUrl);
   }
 
   Future<UpdateCheckResult?> checkZipFirstUpdate({

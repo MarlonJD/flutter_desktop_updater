@@ -8,7 +8,13 @@ class ReleaseIndex {
   });
 
   factory ReleaseIndex.fromJson(Map<String, dynamic> json) {
-    final schemaVersion = json["schemaVersion"] as int? ?? 1;
+    final schemaVersionValue = json["schemaVersion"] as int?;
+    if (schemaVersionValue != 3) {
+      throw const FormatException(
+        "Release index must include schemaVersion 3.",
+      );
+    }
+    const schemaVersion = 3;
     return ReleaseIndex(
       schemaVersion: schemaVersion,
       appName: json["appName"] as String? ?? "",
@@ -16,7 +22,6 @@ class ReleaseIndex {
           .map(
             (item) => ReleaseIndexItem.fromJson(
               item as Map<String, dynamic>,
-              schemaVersion: schemaVersion,
             ),
           )
           .toList(growable: false),
@@ -46,12 +51,9 @@ class ReleaseIndexItem {
     required this.release,
   });
 
-  factory ReleaseIndexItem.fromJson(
-    Map<String, dynamic> json, {
-    int schemaVersion = 3,
-  }) {
-    final releaseValue = json["release"] ?? json["url"];
-    if (schemaVersion == 3 && releaseValue == null) {
+  factory ReleaseIndexItem.fromJson(Map<String, dynamic> json) {
+    final releaseValue = json["release"];
+    if (releaseValue == null) {
       throw const FormatException(
         "Release index schema v3 items must include release.",
       );
@@ -116,7 +118,9 @@ bool _isReleaseIndexItemNewer(
 
 int _compareReleaseIndexItems(ReleaseIndexItem left, ReleaseIndexItem right) {
   return compareDesktopVersions(
-      _indexVersionInfo(left), _indexVersionInfo(right));
+    _indexVersionInfo(left),
+    _indexVersionInfo(right),
+  );
 }
 
 DesktopVersionInfo _indexVersionInfo(ReleaseIndexItem item) {

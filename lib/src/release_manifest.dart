@@ -4,7 +4,7 @@ import "dart:convert";
 import "dart:io";
 
 import "package:crypto/crypto.dart" as crypto;
-import "package:desktop_updater/src/remote_file.dart";
+import "package:desktop_updater/src/io/archive_path.dart";
 import "package:path/path.dart" as path;
 
 const releaseManifestFileName = "release-manifest.json";

@@ -1,7 +1,7 @@
 import "dart:io";
 
 import "package:archive/archive_io.dart";
-import "package:desktop_updater/src/remote_file.dart";
+import "package:desktop_updater/src/io/archive_path.dart";
 import "package:path/path.dart" as path;
 
 class SafeZipExtractor {

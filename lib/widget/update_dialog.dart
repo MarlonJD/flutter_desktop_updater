@@ -93,7 +93,7 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
       unawaited(
         showDialog<void>(
           context: context,
-          barrierDismissible: controller.isMandatory == false,
+          barrierDismissible: _canDismissDialog(controller.state),
           builder: (context) {
             return UpdateDialogWidget(
               controller: controller,
@@ -113,9 +113,7 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
   }
 
   bool _shouldShowDialog(DesktopUpdaterController controller) {
-    return controller.needUpdate &&
-        !controller.skipUpdate &&
-        !controller.isDownloading;
+    return controller.state is UpdateAvailable && !controller.skipUpdate;
   }
 
   void _clearDialogRequest(Object request) {
@@ -161,7 +159,7 @@ Future showUpdateDialog<T>(
 }) {
   return showDialog(
     context: context,
-    // barrierDismissible: controller.isMandatory == false,
+    barrierDismissible: _canDismissDialog(controller.state),
     builder: (context) {
       return UpdateDialogWidget(
         controller: controller,
@@ -215,6 +213,11 @@ class UpdateDialogWidget extends StatelessWidget {
         return ListenableBuilder(
           listenable: notifier,
           builder: (context, child) {
+            final state = notifier.state;
+            final totalBytes = _updateTotalBytes(
+              state: state,
+              descriptor: notifier.activeDescriptor,
+            );
             return AlertDialog(
               backgroundColor: backgroundColor,
               iconColor: iconColor,
@@ -226,16 +229,14 @@ class UpdateDialogWidget extends StatelessWidget {
               ),
               content: Text(
                 "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
-                          ((notifier.downloadSize ?? 0) / 1024 / 1024)
-                              .toStringAsFixed(2),
+                          _formatMegabytes(totalBytes),
                         ]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [
-                          ((notifier.downloadSize ?? 0) / 1024 / 1024)
-                              .toStringAsFixed(2),
+                          _formatMegabytes(totalBytes),
                         ])) ?? ""}",
                 style: TextStyle(color: buttonTextColor),
               ),
               actions: [
-                if ((notifier.isDownloading) && !(notifier.isDownloaded))
+                if (state is UpdateDownloading)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -244,13 +245,15 @@ class UpdateDialogWidget extends StatelessWidget {
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                            value: notifier.downloadProgress,
+                            value: _progressValue(state),
                           ),
                         ),
                         label: Row(
                           children: [
                             Text(
-                              "${((notifier.downloadProgress) * 100).toInt()}% (${((notifier.downloadedSize) / 1024 / 1024).toStringAsFixed(2)} MB / ${((notifier.downloadSize ?? 0.0) / 1024 / 1024).toStringAsFixed(2)} MB)",
+                              "${(_progressValue(state) * 100).toInt()}% "
+                              "(${_formatMegabytes(state.receivedBytes)} MB / "
+                              "${_formatMegabytes(state.totalBytes)} MB)",
                             ),
                           ],
                         ),
@@ -258,8 +261,7 @@ class UpdateDialogWidget extends StatelessWidget {
                       ),
                     ],
                   )
-                else if (notifier.isDownloading == false &&
-                    (notifier.isDownloaded))
+                else if (state is UpdateReadyToInstall)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -314,7 +316,7 @@ class UpdateDialogWidget extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      if ((notifier.isMandatory) == false)
+                      if (!_isMandatoryUpdate(state))
                         TextButton.icon(
                           icon: Icon(Icons.close, color: buttonIconColor),
                           label: Text(
@@ -324,8 +326,7 @@ class UpdateDialogWidget extends StatelessWidget {
                           ),
                           onPressed: notifier.makeSkipUpdate,
                         ),
-                      if ((notifier.isMandatory) == false)
-                        const SizedBox(width: 8),
+                      if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
                       TextButton.icon(
                         icon: Icon(Icons.download, color: buttonIconColor),
                         label: Text(
@@ -356,4 +357,33 @@ class UpdateDialogWidget extends StatelessWidget {
       ..add(ColorProperty("buttonIconColor", buttonIconColor))
       ..add(ColorProperty("textColor", textColor));
   }
+}
+
+bool _canDismissDialog(UpdateState state) {
+  return !_isMandatoryUpdate(state);
+}
+
+bool _isMandatoryUpdate(UpdateState state) {
+  return state is UpdateAvailable && state.mandatory;
+}
+
+int _updateTotalBytes({
+  required UpdateState state,
+  required ReleaseDescriptor? descriptor,
+}) {
+  if (state is UpdateDownloading) {
+    return state.totalBytes;
+  }
+  return descriptor?.artifact.length ?? 0;
+}
+
+double _progressValue(UpdateDownloading state) {
+  if (state.totalBytes <= 0) {
+    return 0;
+  }
+  return state.receivedBytes / state.totalBytes;
+}
+
+String _formatMegabytes(num bytes) {
+  return (bytes / 1024 / 1024).toStringAsFixed(2);
 }

@@ -1,3 +1,4 @@
+import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -18,19 +19,7 @@ void main() {
 
     expect(controller.appArchiveUrl, archiveUrl);
     expect(controller.skipInitialVersionCheck, isTrue);
-    expect(controller.needUpdate, isFalse);
+    expect(controller.state, isA<UpdateIdle>());
     expect(notifications, 1);
-  });
-
-  test("skipCheckVersion remains available as a deprecated alias", () {
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      // ignore: deprecated_member_use_from_same_package
-      skipCheckVersion: true,
-    );
-
-    expect(controller.skipInitialVersionCheck, isTrue);
-    // ignore: deprecated_member_use_from_same_package
-    expect(controller.getSkipCheckVersion, isTrue);
   });
 }

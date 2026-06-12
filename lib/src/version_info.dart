@@ -1,4 +1,3 @@
-import "package:desktop_updater/src/app_archive.dart";
 import "package:pub_semver/pub_semver.dart";
 
 /// Parsed desktop app version metadata used for update ordering.
@@ -47,33 +46,6 @@ class DesktopVersionInfo {
 
   /// Monotonic build number when the platform exposes one.
   final int? buildNumber;
-}
-
-/// Returns true when [archiveItem] is newer than [currentVersion].
-bool isArchiveItemNewerThanCurrent(
-  ItemModel archiveItem,
-  DesktopVersionInfo currentVersion,
-) {
-  return compareArchiveItemToCurrent(archiveItem, currentVersion) > 0;
-}
-
-/// Compares two archive items using build numbers when possible.
-int compareArchiveItems(ItemModel left, ItemModel right) {
-  return compareDesktopVersions(
-    _archiveVersionInfo(left),
-    _archiveVersionInfo(right),
-  );
-}
-
-/// Compares an archive item against the current app version.
-int compareArchiveItemToCurrent(
-  ItemModel archiveItem,
-  DesktopVersionInfo currentVersion,
-) {
-  return compareDesktopVersions(
-    _archiveVersionInfo(archiveItem),
-    currentVersion,
-  );
 }
 
 /// Compares two parsed desktop versions.
@@ -143,13 +115,6 @@ String? archiveVersionLabelFromName({
 
   DesktopVersionInfo.parse(versionLabel);
   return versionLabel;
-}
-
-DesktopVersionInfo _archiveVersionInfo(ItemModel item) {
-  return DesktopVersionInfo.fromParts(
-    versionName: item.version,
-    buildNumber: item.hasShortVersion ? item.shortVersion.toString() : null,
-  );
 }
 
 Version? _parseVersion(String? version) {

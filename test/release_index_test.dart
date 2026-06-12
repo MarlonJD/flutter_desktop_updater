@@ -23,22 +23,22 @@ void main() {
     expect(index.items.single.release.path, "/release.json");
   });
 
-  test("keeps legacy indexes readable where feasible", () {
-    final index = ReleaseIndex.fromJson({
-      "appName": "Example App",
-      "items": [
-        {
-          "version": "1.4.0",
-          "shortVersion": 140,
-          "platform": "linux",
-          "mandatory": false,
-          "url": "https://updates.example.com/linux/",
-        },
-      ],
-    });
-
-    expect(index.schemaVersion, 1);
-    expect(index.items.single.buildNumber, 140);
+  test("rejects indexes without the 2.x schema", () {
+    expect(
+      () => ReleaseIndex.fromJson({
+        "appName": "Example App",
+        "items": [
+          {
+            "version": "1.4.0",
+            "shortVersion": 140,
+            "platform": "linux",
+            "mandatory": false,
+            "url": "https://updates.example.com/linux/",
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
   });
 
   test("keeps buildNumber optional in schema v3 indexes", () {

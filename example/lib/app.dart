@@ -153,7 +153,7 @@ class _HomePageState extends State<HomePage> {
       await _writeSmokeMarker(markerPath, "checking");
       await _desktopUpdaterController.checkVersion();
 
-      if (!_desktopUpdaterController.needUpdate) {
+      if (_desktopUpdaterController.state is! UpdateAvailable) {
         await _writeSmokeMarker(markerPath, "no-update");
         return;
       }
@@ -246,7 +246,6 @@ class _HomePageState extends State<HomePage> {
                         _StateCard(
                           state: _desktopUpdaterController.state,
                           statusMessage: _statusMessage,
-                          controller: _desktopUpdaterController,
                           onCheck: _checkForUpdates,
                           onDownload: _downloadUpdate,
                           onInstall: _installUpdate,
@@ -323,7 +322,6 @@ class _StateCard extends StatelessWidget {
   const _StateCard({
     required this.state,
     required this.statusMessage,
-    required this.controller,
     required this.onCheck,
     required this.onDownload,
     required this.onInstall,
@@ -331,17 +329,21 @@ class _StateCard extends StatelessWidget {
 
   final UpdateState state;
   final String statusMessage;
-  final DesktopUpdaterController controller;
   final Future<void> Function() onCheck;
   final Future<void> Function() onDownload;
   final Future<void> Function() onInstall;
 
   @override
   Widget build(BuildContext context) {
-    final canDownload = state is UpdateAvailable;
-    final canInstall = state is UpdateReadyToInstall;
-    final checking = state is UpdateChecking;
-    final downloading = state is UpdateDownloading;
+    final currentState = state;
+    final canDownload = currentState is UpdateAvailable;
+    final canInstall = currentState is UpdateReadyToInstall;
+    final checking = currentState is UpdateChecking;
+    final downloading = currentState is UpdateDownloading;
+    final progress =
+        currentState is UpdateDownloading && currentState.totalBytes > 0
+            ? currentState.receivedBytes / currentState.totalBytes
+            : null;
 
     return Card.outlined(
       child: Padding(
@@ -356,10 +358,10 @@ class _StateCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(statusMessage),
             const SizedBox(height: 12),
-            Text("State: ${_stateLabel(state)}"),
+            Text("State: ${_stateLabel(currentState)}"),
             if (downloading) ...[
               const SizedBox(height: 12),
-              LinearProgressIndicator(value: controller.downloadProgress),
+              LinearProgressIndicator(value: progress),
             ],
             const SizedBox(height: 16),
             Wrap(

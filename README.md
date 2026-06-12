@@ -146,7 +146,9 @@ switch (controller.state) {
 }
 ```
 
-The legacy boolean getters such as `needUpdate`, `isDownloading`, `isDownloaded`, and `downloadProgress` remain available as compatibility helpers during migration.
+The 1.x boolean/progress getters were removed from the 2.x runtime API. Use
+`controller.state` for update availability, download progress, and install
+readiness.
 
 ## Release Contract
 

@@ -1,4 +1,3 @@
-import "package:desktop_updater/src/app_archive.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -32,7 +31,7 @@ void main() {
       expect(version.buildNumber, 9);
     });
 
-    test("formats build-number release labels with the legacy shape", () {
+    test("formats build-number release labels with build metadata", () {
       final version = DesktopVersionInfo.parse("1.2.3+4");
 
       expect(releaseVersionLabel(version), "1.2.3+4");
@@ -56,7 +55,7 @@ void main() {
       expect(versionLabel, "2.0.0-dev.2");
     });
 
-    test("extracts legacy archive version labels with build metadata", () {
+    test("extracts archive version labels with build metadata", () {
       final versionLabel = archiveVersionLabelFromName(
         archiveName: "desktop_updater_example-1.2.3+4-linux",
         appName: "desktop_updater_example",
@@ -78,72 +77,45 @@ void main() {
   });
 
   group("version comparison", () {
-    test("keeps build-number ordering for existing archive items", () {
+    test("keeps build-number ordering when both sides expose builds", () {
       final current = DesktopVersionInfo.fromParts(
         versionName: "1.2.3",
         buildNumber: "4",
       );
-      final remote = archiveItem(version: "1.2.3", shortVersion: 5);
+      final remote = DesktopVersionInfo.fromParts(
+        versionName: "1.2.3",
+        buildNumber: "5",
+      );
 
-      expect(isArchiveItemNewerThanCurrent(remote, current), isTrue);
+      expect(compareDesktopVersions(remote, current), greaterThan(0));
     });
 
     test("uses semantic version ordering when build numbers are absent", () {
       final current = DesktopVersionInfo.parse("1.2.3");
-      final remote = archiveItemWithoutShortVersion(version: "1.2.4");
+      final remote = DesktopVersionInfo.parse("1.2.4");
 
-      expect(isArchiveItemNewerThanCurrent(remote, current), isTrue);
+      expect(compareDesktopVersions(remote, current), greaterThan(0));
     });
 
     test("does not update to an older semantic version without build numbers",
         () {
       final current = DesktopVersionInfo.parse("1.2.3");
-      final remote = archiveItemWithoutShortVersion(version: "1.2.2");
+      final remote = DesktopVersionInfo.parse("1.2.2");
 
-      expect(isArchiveItemNewerThanCurrent(remote, current), isFalse);
+      expect(compareDesktopVersions(remote, current), lessThan(0));
     });
 
     test(
-      "does not treat archive build as newer when current build is unavailable",
+      "does not treat build-only difference as newer when current build is unavailable",
       () {
         final current = DesktopVersionInfo.parse("1.2.3");
-        final remote = archiveItem(version: "1.2.3", shortVersion: 5);
+        final remote = DesktopVersionInfo.fromParts(
+          versionName: "1.2.3",
+          buildNumber: "5",
+        );
 
-        expect(isArchiveItemNewerThanCurrent(remote, current), isFalse);
+        expect(compareDesktopVersions(remote, current), 0);
       },
     );
-  });
-
-  group("ItemModel", () {
-    test("preserves missing shortVersion as optional archive data", () {
-      final item = archiveItemWithoutShortVersion(version: "1.2.3");
-
-      expect(item.shortVersion, 0);
-      expect(item.hasShortVersion, isFalse);
-      expect(item.toJson(), isNot(contains("shortVersion")));
-    });
-  });
-}
-
-ItemModel archiveItem({required String version, required int shortVersion}) {
-  return ItemModel(
-    version: version,
-    shortVersion: shortVersion,
-    changes: const [],
-    date: "2026-06-11",
-    mandatory: false,
-    url: "https://example.com/update",
-    platform: "windows",
-  );
-}
-
-ItemModel archiveItemWithoutShortVersion({required String version}) {
-  return ItemModel.fromJson({
-    "version": version,
-    "changes": <Object?>[],
-    "date": "2026-06-11",
-    "mandatory": false,
-    "url": "https://example.com/update",
-    "platform": "windows",
   });
 }

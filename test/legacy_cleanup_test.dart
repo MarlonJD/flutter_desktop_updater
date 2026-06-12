@@ -7,7 +7,67 @@ void main() {
     expect(File("example.json").existsSync(), isFalse);
     expect(File("example/output.txt").existsSync(), isFalse);
     expect(File("bin/smoke_update.dart").existsSync(), isFalse);
+    expect(File("bin/archive.dart").existsSync(), isFalse);
+    expect(File("bin/release.dart").existsSync(), isFalse);
+    expect(File("bin/helper/copy.dart").existsSync(), isFalse);
+    expect(
+      File("lib/desktop_updater_inherited_widget.dart").existsSync(),
+      isFalse,
+    );
     expect(Directory("lib/src/platform").existsSync(), isFalse);
+    expect(File("lib/src/update_progress.dart").existsSync(), isFalse);
     expect(File("lib/widget/update_widget.dart").existsSync(), isFalse);
+    expect(File("lib/widget/update_card.dart").existsSync(), isFalse);
+    expect(File("lib/widget/update_direct_card.dart").existsSync(), isFalse);
+    expect(File("lib/widget/update_sliver.dart").existsSync(), isFalse);
+    expect(File("lib/src/app_archive.dart").existsSync(), isFalse);
+    expect(File("lib/src/download.dart").existsSync(), isFalse);
+    expect(File("lib/src/file_hash.dart").existsSync(), isFalse);
+    expect(File("lib/src/prepare.dart").existsSync(), isFalse);
+    expect(File("lib/src/remote_file.dart").existsSync(), isFalse);
+    expect(File("lib/src/update.dart").existsSync(), isFalse);
+    expect(File("lib/src/version_check.dart").existsSync(), isFalse);
+  });
+
+  test("public 2.x runtime does not expose legacy folder update API", () {
+    final checkedFiles = Directory("lib")
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith(".dart"))
+        .where((file) => !file.path.contains("lib/src/migrate/"))
+        .toList(growable: false);
+    const forbiddenTokens = <String>[
+      "versionCheck",
+      "prepareUpdateApp",
+      "updateApp(",
+      "verifyFileHash",
+      "generateFileHashes",
+      "legacyFolderReplace",
+      "skipCheckVersion",
+      "getSkipCheckVersion",
+      "needUpdate",
+      "isDownloading",
+      "isDownloaded",
+      "downloadProgress",
+      "downloadedSize",
+      "downloadSize",
+      "updateProgress",
+      "releaseNotes",
+      "sayHello",
+      "FileHashModel",
+      "AppArchiveModel",
+      "ItemModel",
+    ];
+
+    for (final file in checkedFiles) {
+      final source = file.readAsStringSync();
+      for (final token in forbiddenTokens) {
+        expect(
+          source,
+          isNot(contains(token)),
+          reason: "${file.path} contains $token",
+        );
+      }
+    }
   });
 }

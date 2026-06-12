@@ -1,5 +1,4 @@
 import "package:desktop_updater/desktop_updater_method_channel.dart";
-import "package:desktop_updater/src/app_archive.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 abstract class DesktopUpdaterPlatform extends PlatformInterface {
@@ -39,33 +38,8 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     throw UnimplementedError("installUpdate() has not been implemented.");
   }
 
-  Future<String?> sayHello() {
-    throw UnimplementedError("sayHello() has not been implemented.");
-  }
-
   Future<String?> getExecutablePath() {
     throw UnimplementedError("getExecutablePath() has not been implemented.");
-  }
-
-  Future<void> generateFileHashes({String? path}) {
-    throw UnimplementedError("generateFileHashes() has not been implemented.");
-  }
-
-  Future<List<FileHashModel?>> verifyFileHash(
-    String oldHashFilePath,
-    String newHashFilePath,
-  ) {
-    throw UnimplementedError("verifyFileHash() has not been implemented.");
-  }
-
-  Future<void> updateApp({required String remoteUpdateFolder}) {
-    throw UnimplementedError("updateApp() has not been implemented.");
-  }
-
-  Future<List<FileHashModel?>> prepareUpdateApp({
-    required String remoteUpdateFolder,
-  }) {
-    throw UnimplementedError("prepareUpdateApp() has not been implemented.");
   }
 
   Future<String?> getCurrentVersion() {

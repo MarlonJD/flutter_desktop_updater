@@ -25,43 +25,13 @@ class MockDesktopUpdaterPlatform
   }
 
   @override
-  Future<String?> sayHello() {
-    return Future.value();
-  }
-
-  @override
   Future<String?> getExecutablePath() {
-    return Future.value();
-  }
-
-  @override
-  Future<void> generateFileHashes({String? path}) {
-    return Future.value();
-  }
-
-  @override
-  Future<List<FileHashModel?>> verifyFileHash(
-    String oldHashFilePath,
-    String newHashFilePath,
-  ) {
-    return Future.value([]);
-  }
-
-  @override
-  Future<void> updateApp({required String remoteUpdateFolder}) {
     return Future.value();
   }
 
   @override
   Future<String?> getCurrentVersion() {
     return Future.value();
-  }
-
-  @override
-  Future<List<FileHashModel?>> prepareUpdateApp({
-    required String remoteUpdateFolder,
-  }) {
-    return Future.value([]);
   }
 }
 

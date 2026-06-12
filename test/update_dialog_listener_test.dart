@@ -1,3 +1,5 @@
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:desktop_updater/widget/update_dialog.dart";
 import "package:flutter/material.dart";
@@ -69,10 +71,27 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
           skipInitialVersionCheck: true,
         );
 
-  bool _needUpdate = false;
   bool _skipUpdate = false;
-  bool _isDownloading = false;
-  bool _isMandatory = false;
+  bool _hasAvailableUpdate = false;
+
+  final ReleaseDescriptor _descriptor = ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.test",
+    appName: "Test App",
+    version: "2.0.0",
+    buildNumber: 200,
+    platform: "linux",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: Uri.parse("https://example.com/app.zip"),
+      sha256: "a" * 64,
+      length: 1024,
+    ),
+    install: const ReleaseInstall(strategy: "wholeDirectoryReplace"),
+    minimumUpdaterVersion: "2.0.0",
+    generatedAt: DateTime.utc(2026, 6, 12),
+  );
 
   @override
   String? get appName => "Test App";
@@ -81,25 +100,20 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
   String? get appVersion => "2.0.0";
 
   @override
-  double? get downloadSize => 1024;
-
-  @override
-  bool get isDownloading => _isDownloading;
-
-  @override
-  bool get isMandatory => _isMandatory;
-
-  @override
-  bool get needUpdate => _needUpdate;
-
-  @override
   bool get skipUpdate => _skipUpdate;
 
+  @override
+  ReleaseDescriptor? get activeDescriptor =>
+      _hasAvailableUpdate ? _descriptor : null;
+
+  @override
+  UpdateState get state => _hasAvailableUpdate
+      ? UpdateAvailable(descriptor: _descriptor, mandatory: false)
+      : const UpdateIdle();
+
   void showAvailableUpdate() {
-    _needUpdate = true;
+    _hasAvailableUpdate = true;
     _skipUpdate = false;
-    _isDownloading = false;
-    _isMandatory = false;
     notifyListeners();
   }
 

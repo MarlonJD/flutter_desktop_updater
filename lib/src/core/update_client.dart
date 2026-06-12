@@ -52,9 +52,6 @@ class UpdateClient {
       final index = ReleaseIndex.fromJson(
         jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>,
       );
-      if (index.schemaVersion != 3) {
-        throw const LegacyReleaseIndexException();
-      }
 
       final item = selectReleaseIndexItem(
         index: index,
@@ -152,15 +149,6 @@ class UpdateClient {
       }
       rethrow;
     }
-  }
-}
-
-class LegacyReleaseIndexException implements Exception {
-  const LegacyReleaseIndexException();
-
-  @override
-  String toString() {
-    return "Legacy release index does not use schemaVersion 3.";
   }
 }
 
