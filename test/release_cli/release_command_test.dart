@@ -60,6 +60,75 @@ updates:
       await fixture.delete();
     }
   });
+
+  test("notarize flag requires macOS notarization config", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "publish",
+          "--platform",
+          "macos",
+          "--skip-build-for-test",
+          "--notarize",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 64);
+      expect(
+        output.toString(),
+        contains("macos.developerIdApplication is required"),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("notarize flag is only accepted for macOS", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "publish",
+          "--platform",
+          "windows",
+          "--skip-build-for-test",
+          "--notarize",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 64);
+      expect(
+        output.toString(),
+        contains("--notarize is only supported with --platform macos"),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
 }
 
 class ReleasePublishFixture {

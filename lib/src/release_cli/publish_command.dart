@@ -16,6 +16,7 @@ ArgParser buildPublishParser() {
     ..addOption("build-number")
     ..addOption("package-id")
     ..addOption("app-name")
+    ..addFlag("notarize", negatable: false)
     ..addFlag("skip-build-for-test", negatable: false);
 }
 
@@ -39,6 +40,7 @@ Future<int> runPublishCommand(
     buildNumber: _optionalInt(results, "build-number"),
     packageId: results["package-id"] as String?,
     appName: results["app-name"] as String?,
+    notarize: results["notarize"] as bool,
   );
   final publisher = ReleasePublisher(
     skipBuild: results["skip-build-for-test"] as bool,

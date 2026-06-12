@@ -51,4 +51,73 @@ updates:
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("loads explicit macOS notarization config", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  staple: false
+  gatekeeperAssess: false
+""");
+
+    expect(config.macos.notarize, isTrue);
+    expect(
+      config.macos.developerIdApplication,
+      "Developer ID Application: Example Corp (TEAMID1234)",
+    );
+    expect(config.macos.notaryProfile, "desktop-updater-notary");
+    expect(
+      config.macos.keychain,
+      "/Users/me/Library/Keychains/login.keychain-db",
+    );
+    expect(config.macos.staple, isFalse);
+    expect(config.macos.gatekeeperAssess, isFalse);
+  });
+
+  test("cli notarize flag enables configured macOS notarization", () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+""",
+      cliOverrides: const ReleasePublishOverrides(notarize: true),
+    );
+
+    expect(config.macos.notarize, isTrue);
+    expect(config.macos.staple, isTrue);
+    expect(config.macos.gatekeeperAssess, isTrue);
+  });
+
+  test("notarization requires non-secret Apple credential references",
+      () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.developerIdApplication is required"),
+        ),
+      ),
+    );
+  });
 }

@@ -13,6 +13,7 @@ class ReleasePublishOverrides {
     this.buildNumber,
     this.packageId,
     this.appName,
+    this.notarize = false,
   });
 
   final String? configPath;
@@ -23,6 +24,7 @@ class ReleasePublishOverrides {
   final int? buildNumber;
   final String? packageId;
   final String? appName;
+  final bool notarize;
 }
 
 class ReleasePublishConfig {
@@ -31,12 +33,14 @@ class ReleasePublishConfig {
     required this.outputDirectory,
     required this.channel,
     required this.uploadProvider,
+    required this.macos,
   });
 
   final Uri baseUrl;
   final Directory outputDirectory;
   final String channel;
   final UploadConfig uploadProvider;
+  final MacOSPublishConfig macos;
 
   static Future<ReleasePublishConfig> load({
     required Directory projectRoot,
@@ -75,6 +79,7 @@ class ReleasePublishConfig {
     final channelValue =
         cliOverrides.channel ?? _stringValue(updates, "channel") ?? "stable";
     final provider = _readUploadProvider(document);
+    final macos = _readMacOSConfig(document, cliOverrides);
 
     return ReleasePublishConfig(
       baseUrl: _normalizeBaseUrl(baseUrlValue),
@@ -87,8 +92,27 @@ class ReleasePublishConfig {
       ),
       channel: channelValue,
       uploadProvider: provider,
+      macos: macos,
     );
   }
+}
+
+class MacOSPublishConfig {
+  const MacOSPublishConfig({
+    required this.notarize,
+    required this.staple,
+    required this.gatekeeperAssess,
+    this.developerIdApplication,
+    this.notaryProfile,
+    this.keychain,
+  });
+
+  final bool notarize;
+  final String? developerIdApplication;
+  final String? notaryProfile;
+  final String? keychain;
+  final bool staple;
+  final bool gatekeeperAssess;
 }
 
 sealed class UploadConfig {
@@ -228,6 +252,36 @@ UploadConfig _readUploadProvider(Map<String, dynamic> document) {
   return const ManualUploadConfig();
 }
 
+MacOSPublishConfig _readMacOSConfig(
+  Map<String, dynamic> document,
+  ReleasePublishOverrides cliOverrides,
+) {
+  final macos = _mapValue(document, "macos");
+  final notarize = cliOverrides.notarize ||
+      (_boolValue(macos, "notarize", displayName: "macos.notarize") ?? false);
+  final config = MacOSPublishConfig(
+    notarize: notarize,
+    developerIdApplication: _stringValue(macos, "developerIdApplication"),
+    notaryProfile: _stringValue(macos, "notaryProfile"),
+    keychain: _stringValue(macos, "keychain"),
+    staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
+    gatekeeperAssess: _boolValue(macos, "gatekeeperAssess",
+            displayName: "macos.gatekeeperAssess") ??
+        true,
+  );
+
+  if (config.notarize) {
+    _requireConfigValue(
+      config.developerIdApplication,
+      "macos.developerIdApplication",
+    );
+    _requireConfigValue(config.notaryProfile, "macos.notaryProfile");
+    _requireConfigValue(config.keychain, "macos.keychain");
+  }
+
+  return config;
+}
+
 Uri _normalizeBaseUrl(String value) {
   final uri = Uri.parse(value.trim());
   if (!uri.hasScheme || uri.host.isEmpty) {
@@ -294,7 +348,11 @@ String _requiredString(
   return value;
 }
 
-bool? _boolValue(Map<String, dynamic> map, String key) {
+bool? _boolValue(
+  Map<String, dynamic> map,
+  String key, {
+  String? displayName,
+}) {
   final value = map[key];
   if (value == null) {
     return null;
@@ -305,7 +363,7 @@ bool? _boolValue(Map<String, dynamic> map, String key) {
   if (value is String) {
     return value.toLowerCase() == "true";
   }
-  throw FormatException("$key must be true or false.");
+  throw FormatException("${displayName ?? key} must be true or false.");
 }
 
 int? _intValue(Map<String, dynamic> map, String key) {
@@ -317,4 +375,11 @@ int? _intValue(Map<String, dynamic> map, String key) {
     return value;
   }
   return int.parse(value.toString());
+}
+
+void _requireConfigValue(String? value, String displayName) {
+  if (value == null || value.trim().isEmpty) {
+    throw FormatException(
+        "$displayName is required when macos.notarize is true.");
+  }
 }

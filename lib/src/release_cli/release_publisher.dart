@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
@@ -22,11 +23,13 @@ class ReleasePublisher {
     this.skipBuild = false,
     this.packager = const ZipReleasePackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
+    this.runProcess = defaultProcessRunner,
   });
 
   final bool skipBuild;
   final ReleasePackager packager;
   final ProjectMetadataResolver metadataResolver;
+  final ProcessRunner runProcess;
 
   Future<PublishManifest> publish({
     required Directory projectRoot,
@@ -38,6 +41,11 @@ class ReleasePublisher {
       projectRoot: projectRoot,
       cliOverrides: overrides,
     );
+    if (overrides.notarize && platform != "macos") {
+      throw const FormatException(
+        "--notarize is only supported with --platform macos.",
+      );
+    }
     final metadata = await metadataResolver.resolve(
       projectRoot: projectRoot,
       platform: platform,
@@ -46,6 +54,15 @@ class ReleasePublisher {
 
     if (!skipBuild) {
       await _build(projectRoot, metadata, output);
+    }
+
+    if (platform == "macos" && config.macos.notarize) {
+      await _notarizeMacOS(
+        app: metadata.input,
+        config: config.macos,
+        runProcess: runProcess,
+        output: output,
+      );
     }
 
     output.writeln("Packaging update...");
@@ -122,6 +139,93 @@ class ReleasePublisher {
   }
 }
 
+Future<void> _notarizeMacOS({
+  required FileSystemEntity app,
+  required MacOSPublishConfig config,
+  required ProcessRunner runProcess,
+  required StringSink output,
+}) async {
+  if (app is! Directory) {
+    throw FileSystemException(
+      "macOS notarization requires an .app directory",
+      app.path,
+    );
+  }
+
+  output.writeln("Signing macOS app...");
+  await _runChecked(
+    "/usr/bin/codesign",
+    [
+      "--force",
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--sign",
+      config.developerIdApplication!,
+      app.path,
+    ],
+    runProcess,
+  );
+  await _runChecked(
+    "/usr/bin/codesign",
+    ["--verify", "--deep", "--strict", "--verbose=2", app.path],
+    runProcess,
+  );
+
+  final tempDir =
+      await Directory.systemTemp.createTemp("desktop_updater_notary_");
+  try {
+    final notaryZip = path.join(tempDir.path, "notary.zip");
+    output.writeln("Creating macOS notarization archive...");
+    await runDittoCreateZip(
+      appPath: app.path,
+      archivePath: notaryZip,
+      runProcess: runProcess,
+    );
+
+    output.writeln("Submitting macOS app for notarization...");
+    await _runChecked(
+      "/usr/bin/xcrun",
+      [
+        "notarytool",
+        "submit",
+        notaryZip,
+        "--keychain-profile",
+        config.notaryProfile!,
+        "--keychain",
+        config.keychain!,
+        "--wait",
+      ],
+      runProcess,
+    );
+  } finally {
+    await tempDir.delete(recursive: true);
+  }
+
+  if (config.staple) {
+    output.writeln("Stapling macOS notarization ticket...");
+    await _runChecked(
+      "/usr/bin/xcrun",
+      ["stapler", "staple", app.path],
+      runProcess,
+    );
+    await _runChecked(
+      "/usr/bin/xcrun",
+      ["stapler", "validate", app.path],
+      runProcess,
+    );
+  }
+
+  if (config.gatekeeperAssess) {
+    output.writeln("Assessing macOS app with Gatekeeper...");
+    await _runChecked(
+      "/usr/sbin/spctl",
+      ["--assess", "--type", "execute", "--verbose=2", app.path],
+      runProcess,
+    );
+  }
+}
+
 Future<void> _build(
   Directory projectRoot,
   ProjectMetadata metadata,
@@ -141,6 +245,23 @@ Future<void> _build(
       result.exitCode,
     );
   }
+}
+
+Future<ProcessResult> _runChecked(
+  String executable,
+  List<String> arguments,
+  ProcessRunner runProcess,
+) async {
+  final result = await runProcess(executable, arguments);
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      executable,
+      arguments,
+      "Command failed with exit ${result.exitCode}: ${result.stderr}${result.stdout}",
+      result.exitCode,
+    );
+  }
+  return result;
 }
 
 UploadProvider _providerFor(UploadConfig config) {

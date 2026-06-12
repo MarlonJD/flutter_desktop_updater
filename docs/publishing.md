@@ -111,11 +111,27 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-3. Add `desktop_updater.yaml`:
+3. Add `desktop_updater.yaml` at the app repository root, next to
+   `pubspec.yaml`:
 
 ```yaml
 updates:
   baseUrl: https://updates.example.com
+```
+
+By default, `release publish` looks for:
+
+```text
+<app-repo>/desktop_updater.yaml
+<app-repo>/pubspec.yaml
+```
+
+Use `--config` only when your release config lives somewhere else:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --config tool/release/desktop_updater.yaml
 ```
 
 `baseUrl` is the public HTTP(S) root users' apps can fetch. It produces these
@@ -200,6 +216,26 @@ For production, start from the minimum setup and add:
 - A release approval step before publishing `app-archive.json`.
 - `release validate` after every upload.
 
+For Windows and Linux production signing choices, native package channels, and
+country or provider restrictions, see
+[Windows And Linux Production Release Options](windows-linux-production-release.md).
+
+For macOS production-trusted direct distribution, also plan the Apple trust
+setup before the first release:
+
+- Create or install a `Developer ID Application` certificate for the app's Team
+  ID.
+- Configure App Store Connect API key credentials for notarization.
+- Store those notarization credentials with `notarytool store-credentials` in
+  the keychain used by the release job.
+- Sign the Release `.app`, notarize it, staple it, and verify Gatekeeper before
+  packaging the zip that users will download.
+
+The high-level `release publish --platform macos` command does not create Apple
+credentials and does not silently notarize an app just because a Developer ID
+identity exists. Production macOS notarization should be an explicit app-owned
+release step, not a hidden side effect.
+
 Recommended S3-compatible config:
 
 ```yaml
@@ -278,6 +314,48 @@ Use optional provider blocks when you want automatic upload:
 Only one provider block can be configured at a time. If no provider block is
 configured, `manual` is used.
 
+### macOS Notarization Opt-In
+
+`release publish --platform macos` notarizes only when you explicitly opt in.
+Use the CLI flag:
+
+```sh
+dart run desktop_updater:release publish --platform macos --notarize
+```
+
+or enable it in YAML:
+
+```yaml
+# desktop_updater.yaml, at the app repository root next to pubspec.yaml.
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  staple: true
+  gatekeeperAssess: true
+```
+
+The YAML must contain only non-secret references. The `.p8` App Store Connect
+API key, `.p12` Developer ID certificate, passwords, API key ID, issuer ID, and
+CI keychain password must still come from the user's machine, keychain, CI
+secrets, or standard environment setup.
+
+When notarization is enabled, publish runs:
+
+1. Build the Release `.app`.
+2. Sign with `macos.developerIdApplication`.
+3. Submit the signed app with `macos.notaryProfile` and `macos.keychain`.
+4. Staple when `macos.staple` is true.
+5. Run Gatekeeper assessment when `macos.gatekeeperAssess` is true.
+6. Package, upload, and validate only after those gates pass.
+
+This keeps notarization intentional and avoids silently using whatever Developer
+ID identity happens to be installed on the machine.
+
 ## Platform-Specific Work
 
 ### macOS
@@ -295,7 +373,18 @@ What the command does:
 - Packages the `.app` with macOS-safe zip behavior.
 - Writes `wholeBundleReplace` in `release.json`.
 
-What you must do before production packaging:
+Important trust boundary:
+
+- `release publish --platform macos` handles release mechanics: build, package,
+  publish, and validate.
+- It does not automatically import Developer ID certificates.
+- It does not automatically create a notary profile.
+- It notarizes and staples only when you explicitly pass `--notarize` or set
+  `macos.notarize: true`.
+- If you need production-trusted macOS updates, configure that explicit
+  notarization gate before packaging the artifact that will be uploaded.
+
+What you must do for production-trusted macOS updates:
 
 - Sign with a `Developer ID Application` identity.
 - Enable hardened runtime.
@@ -305,6 +394,119 @@ What you must do before production packaging:
 - Keep `CFBundleIdentifier` and Team ID stable across releases.
 - Keep App Sandbox disabled for this whole-app replacement strategy.
 - Ensure production entitlements do not include `get-task-allow`.
+
+### macOS Developer ID And Notary Setup
+
+One-time Apple setup:
+
+1. Join the Apple Developer Program.
+2. Create or download a `Developer ID Application` certificate for the Team ID
+   that owns the app.
+3. Install that certificate locally, or export it as a password-protected `.p12`
+   for CI secret storage.
+4. Create an App Store Connect API key with access to notarization.
+5. Download the `AuthKey_<KEY_ID>.p8` file and record the Key ID and Issuer ID.
+
+Never commit `.p8`, `.p12`, generated keychains, certificate passwords, Team
+IDs, Issuer IDs, or real API key IDs to a public repository.
+
+Check the local Developer ID identity:
+
+```sh
+security find-identity -v -p codesigning
+```
+
+Create a local notary profile:
+
+```sh
+xcrun notarytool store-credentials desktop-updater-notary \
+  --key "$HOME/Developer/secrets/AuthKey_XXXXXXXXXX.p8" \
+  --key-id "XXXXXXXXXX" \
+  --issuer "00000000-0000-0000-0000-000000000000" \
+  --keychain "$HOME/Library/Keychains/login.keychain-db" \
+  --validate
+```
+
+Use the same `--keychain-profile` and `--keychain` pair for every later
+`notarytool` command. If `notarytool` later says
+`No Keychain password item found`, it is usually reading a different keychain
+from the one where the profile was stored.
+
+CI should create an ephemeral keychain, import the Developer ID `.p12`, and
+store the notary profile into that same keychain:
+
+```sh
+KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+CERTIFICATE="$RUNNER_TEMP/developer-id.p12"
+API_KEY="$RUNNER_TEMP/AuthKey.p8"
+
+security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+security set-keychain-settings -lut 21600 "$KEYCHAIN"
+security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+security import "$CERTIFICATE" \
+  -k "$KEYCHAIN" \
+  -P "$APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+  -T /usr/bin/codesign
+security set-key-partition-list \
+  -S apple-tool:,apple:,codesign: \
+  -s \
+  -k "$MACOS_KEYCHAIN_PASSWORD" \
+  "$KEYCHAIN"
+
+xcrun notarytool store-credentials desktop-updater-notary \
+  --key "$API_KEY" \
+  --key-id "$APPLE_API_KEY_ID" \
+  --issuer "$APPLE_API_ISSUER_ID" \
+  --keychain "$KEYCHAIN" \
+  --validate
+```
+
+### macOS Production Packaging Order
+
+Use this order for production-trusted macOS artifacts:
+
+1. Build the Release app.
+2. Sign the app with the Developer ID identity and hardened runtime.
+3. Verify the signature.
+4. Create a temporary notarization zip with `ditto`.
+5. Submit that zip to Apple notarization and wait for acceptance.
+6. Staple the accepted ticket onto the `.app`.
+7. Verify Gatekeeper and stapler acceptance.
+8. Package and publish the stapled `.app`.
+9. Validate the hosted update.
+
+The high-level command supports this order with `--notarize` or
+`macos.notarize: true`. Apps with more complex signing needs can still use the
+low-level `package`, `app_archive`, upload, and `release validate` commands
+after an app-owned signing/notarization script has stapled the app.
+
+Example signing/notarization shell outline:
+
+```sh
+APP="build/macos/Build/Products/Release/Example.app"
+IDENTITY="Developer ID Application: Example Corp (TEAMID1234)"
+KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+NOTARY_ZIP="$(mktemp -t desktop-updater-notary).zip"
+
+codesign --force --options runtime --timestamp \
+  --sign "$IDENTITY" \
+  "$APP"
+
+codesign --verify --deep --strict --verbose=2 "$APP"
+
+/usr/bin/ditto -c -k --keepParent --sequesterRsrc "$APP" "$NOTARY_ZIP"
+
+xcrun notarytool submit "$NOTARY_ZIP" \
+  --keychain-profile desktop-updater-notary \
+  --keychain "$KEYCHAIN" \
+  --wait
+
+xcrun stapler staple "$APP"
+```
+
+For complex apps, sign nested frameworks, helper tools, and extensions with the
+app's normal release signing process before signing the outer `.app`. Do not
+rely on a single outer-app signature as your whole production signing strategy.
 
 Useful checks:
 
@@ -348,6 +550,10 @@ What you should do for production trust:
 Unsigned Windows Release builds can be release-mechanics ready, but users can
 still see publisher-trust warnings.
 
+For Authenticode, Microsoft Artifact Signing, MSIX/Store, winget, enterprise
+trust, and country/provider constraints, see
+[Windows And Linux Production Release Options](windows-linux-production-release.md).
+
 ### Linux
 
 Command:
@@ -372,6 +578,10 @@ What you should do for production trust:
 
 Flatpak, Snap, deb, rpm, and distro repositories should normally use their own
 update channels.
+
+For direct zip descriptor signing, Sigstore/TUF options, native package
+repositories, Flatpak/Snap/AppImage tradeoffs, and country/provider constraints,
+see [Windows And Linux Production Release Options](windows-linux-production-release.md).
 
 ## Upload Providers
 
