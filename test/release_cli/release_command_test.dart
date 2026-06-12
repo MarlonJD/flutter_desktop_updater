@@ -5,6 +5,8 @@ import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
+import "../fixtures/release_publish_project.dart";
+
 void main() {
   test("publish without upload provider prints manual upload instructions",
       () async {
@@ -18,7 +20,7 @@ updates:
       final output = StringBuffer();
 
       final exitCode = await runReleaseCommand(
-        ["publish", "--platform", "macos", "--skip-build-for-test"],
+        ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
         projectRoot: fixture.root,
         output: output,
       );
@@ -50,7 +52,7 @@ updates:
             "desktop_updater",
             "releases",
             "2.0.1",
-            "macos",
+            fixture.platform,
             "release.json",
           ),
         ).exists(),
@@ -132,9 +134,10 @@ macos:
 }
 
 class ReleasePublishFixture {
-  const ReleasePublishFixture(this.root);
+  const ReleasePublishFixture(this.root, this.platform);
 
   final Directory root;
+  final String platform;
 
   Future<void> delete() => root.delete(recursive: true);
 }
@@ -143,33 +146,7 @@ Future<ReleasePublishFixture> createReleasePublishFixture({
   required String config,
 }) async {
   final root = await Directory.systemTemp.createTemp("release_publish_");
-  await File(path.join(root.path, "pubspec.yaml")).writeAsString("""
-name: release_fixture
-version: 2.0.1+201
-""");
-  await File(path.join(root.path, "desktop_updater.yaml"))
-      .writeAsString(config);
+  await writeReleasePublishFixtureProject(root: root, config: config);
 
-  final configs = Directory(path.join(root.path, "macos", "Runner", "Configs"));
-  await configs.create(recursive: true);
-  await File(path.join(configs.path, "AppInfo.xcconfig")).writeAsString("""
-PRODUCT_NAME = Release Fixture
-PRODUCT_BUNDLE_IDENTIFIER = com.example.releaseFixture
-""");
-
-  final appBundle = Directory(
-    path.join(
-      root.path,
-      "build",
-      "macos",
-      "Build",
-      "Products",
-      "Release",
-      "Release Fixture.app",
-    ),
-  );
-  await appBundle.create(recursive: true);
-  await File(path.join(appBundle.path, "app.txt")).writeAsString("hello");
-
-  return ReleasePublishFixture(root);
+  return ReleasePublishFixture(root, releasePublishFixturePlatform);
 }

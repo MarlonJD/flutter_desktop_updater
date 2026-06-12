@@ -3,6 +3,7 @@ import "dart:io";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:path/path.dart" as path;
 
+import "../fixtures/release_publish_project.dart";
 import "../fixtures/update_server.dart";
 
 class ReleasePublishE2eFixture {
@@ -10,11 +11,13 @@ class ReleasePublishE2eFixture {
     required this.projectRoot,
     required this.webRoot,
     required this.server,
+    required this.platform,
   });
 
   final Directory projectRoot;
   final Directory webRoot;
   final UpdateServer server;
+  final String platform;
 
   File get manifestFile {
     return File(
@@ -47,43 +50,20 @@ Future<ReleasePublishE2eFixture> createReleasePublishE2eFixture({
   await webRoot.create();
   final server = await UpdateServer.bind(webRoot);
 
-  await File(path.join(projectRoot.path, "pubspec.yaml")).writeAsString("""
-name: release_fixture
-version: 2.0.1+201
-""");
-  await File(path.join(projectRoot.path, "desktop_updater.yaml"))
-      .writeAsString("""
+  await writeReleasePublishFixtureProject(
+    root: projectRoot,
+    config: """
 updates:
   baseUrl: ${baseUrl ?? server.uri}
 $providerConfig
-""");
-
-  final configs =
-      Directory(path.join(projectRoot.path, "macos", "Runner", "Configs"));
-  await configs.create(recursive: true);
-  await File(path.join(configs.path, "AppInfo.xcconfig")).writeAsString("""
-PRODUCT_NAME = Release Fixture
-PRODUCT_BUNDLE_IDENTIFIER = com.example.releaseFixture
-""");
-
-  final appBundle = Directory(
-    path.join(
-      projectRoot.path,
-      "build",
-      "macos",
-      "Build",
-      "Products",
-      "Release",
-      "Release Fixture.app",
-    ),
+""",
   );
-  await appBundle.create(recursive: true);
-  await File(path.join(appBundle.path, "app.txt")).writeAsString("hello");
 
   return ReleasePublishE2eFixture(
     projectRoot: projectRoot,
     webRoot: webRoot,
     server: server,
+    platform: releasePublishFixturePlatform,
   );
 }
 
@@ -294,7 +274,7 @@ bool get releasePublishE2eEnabled {
 Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
   final output = StringBuffer();
   final exitCode = await runReleaseCommand(
-    ["publish", "--platform", "macos", "--skip-build-for-test"],
+    ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
     projectRoot: fixture.projectRoot,
     output: output,
   );
