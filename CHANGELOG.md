@@ -1,3 +1,8 @@
+## 2.0.1
+
+* Added `dart run desktop_updater:migrate` to preview and apply safe 1.x to 2.0 migration edits, plus manual findings for typed state, old CLI commands, low-level APIs, and platform publishing work.
+* Documented the automated migration flow in the README and 1.x to 2.0 migration guide.
+
 ## 2.0.0
 
 * Promoted the zip-first 2.0 release contract: `app-archive.json` points to `release.json`, and `release.json` points to one verified zip artifact.

@@ -48,6 +48,28 @@ Install the CLI:
 dart pub global activate desktop_updater
 ```
 
+## Automated Migration
+
+Preview the 1.x to 2.0 migration before editing a shipped app:
+
+```sh
+dart run desktop_updater:migrate --path .
+```
+
+Apply safe edits:
+
+```sh
+dart run desktop_updater:migrate --path . --apply
+```
+
+The migrator updates simple source changes, such as `skipCheckVersion` to
+`skipInitialVersionCheck`, and reports manual migration findings with file and
+line references. It does not automatically rewrite publishing pipelines,
+macOS signing/notarization setup, or typed-state UI logic. Review the report,
+then run `flutter analyze`, `flutter test`, and
+`dart run desktop_updater:verify --release <release.json>` against the same
+artifact clients will download.
+
 ## Runtime Usage
 
 Create a controller with your hosted `app-archive.json` URL:
@@ -463,6 +485,8 @@ By default the smoke runner skips relaunch so CI does not leave an app open. Add
 
 Read [Migrating From 1.x To 2.0](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md) before changing a shipped app. The migration must update both sides of the system:
 
+- automated pass: run `dart run desktop_updater:migrate --path .` first, then
+  `--apply` only after reviewing the dry-run report;
 - app code: prefer typed `UpdateState` and keep compatibility getters only during migration;
 - release publishing: replace folder uploads with `app-archive.json -> release.json -> zip`;
 - platform validation: add macOS signing/notarization/stapling for production-trusted distribution, Windows signing when publisher trust is required, and Linux descriptor authenticity when direct zip publisher trust is required.
