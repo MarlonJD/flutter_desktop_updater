@@ -90,8 +90,41 @@ void initState() {
 }
 ```
 
-Trigger checks from your own update action and optionally mount the dialog
-listener near the top of your app:
+Use one of the ready-made update surfaces, or build your own from the same
+controller state.
+
+Wrap a page with the stock inline update card:
+
+```dart
+DesktopUpdateWidget(
+  controller: controller,
+  child: const YourHomePage(),
+)
+```
+
+Place only the stock update card wherever your layout needs it:
+
+```dart
+Column(
+  children: [
+    DesktopUpdateDirectCard(controller: controller),
+    const Expanded(child: YourHomePage()),
+  ],
+)
+```
+
+Use the sliver variant inside a `CustomScrollView`:
+
+```dart
+CustomScrollView(
+  slivers: [
+    DesktopUpdateSliver(controller: controller),
+    const SliverToBoxAdapter(child: YourHomePage()),
+  ],
+)
+```
+
+Or mount the dialog listener near the top of your app:
 
 ```dart
 Stack(
@@ -100,6 +133,48 @@ Stack(
     UpdateDialogListener(controller: controller),
   ],
 );
+```
+
+For custom UI, inherit the controller and switch on the typed state:
+
+```dart
+DesktopUpdaterInheritedNotifier(
+  controller: controller,
+  child: Builder(
+    builder: (context) {
+      final notifier =
+          DesktopUpdaterInheritedNotifier.of(context).notifier!;
+
+      return switch (notifier.state) {
+        UpdateAvailable(:final mandatory) => ListTile(
+            leading: const Icon(Icons.system_update),
+            title: Text(
+              mandatory ? "Required update available" : "Update available",
+            ),
+            subtitle: Text("${notifier.appName} ${notifier.appVersion}"),
+            trailing: mandatory
+                ? FilledButton(
+                    onPressed: notifier.downloadUpdate,
+                    child: const Text("Download"),
+                  )
+                : OutlinedButton(
+                    onPressed: notifier.makeSkipUpdate,
+                    child: const Text("Skip this version"),
+                  ),
+          ),
+        UpdateDownloading(:final receivedBytes, :final totalBytes) =>
+          LinearProgressIndicator(
+            value: totalBytes <= 0 ? null : receivedBytes / totalBytes,
+          ),
+        UpdateReadyToInstall() => FilledButton(
+            onPressed: notifier.restartApp,
+            child: const Text("Restart to update"),
+          ),
+        _ => const SizedBox.shrink(),
+      };
+    },
+  ),
+)
 ```
 
 Run the check manually:

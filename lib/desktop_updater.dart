@@ -8,7 +8,13 @@ export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
 export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/localization.dart";
+export "package:desktop_updater/widget/update_card.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
+export "package:desktop_updater/widget/update_direct_card.dart";
+export "package:desktop_updater/widget/update_sliver.dart";
+export "package:desktop_updater/widget/update_widget.dart";
+
+export "desktop_updater_inherited_widget.dart";
 
 class DesktopUpdater {
   DesktopUpdater();

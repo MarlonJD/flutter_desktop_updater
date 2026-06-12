@@ -243,6 +243,15 @@ class _HomePageState extends State<HomePage> {
                           platformVersion: _platformVersion,
                         ),
                         const SizedBox(height: 12),
+                        DesktopUpdaterInheritedNotifier(
+                          controller: _desktopUpdaterController,
+                          child: const _CustomUpdateBanner(),
+                        ),
+                        const SizedBox(height: 12),
+                        DesktopUpdateDirectCard(
+                          controller: _desktopUpdaterController,
+                        ),
+                        const SizedBox(height: 12),
                         _StateCard(
                           state: _desktopUpdaterController.state,
                           statusMessage: _statusMessage,
@@ -261,6 +270,69 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+}
+
+class _CustomUpdateBanner extends StatelessWidget {
+  const _CustomUpdateBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final notifier = DesktopUpdaterInheritedNotifier.of(context).notifier!;
+    final state = notifier.state;
+
+    return switch (state) {
+      UpdateAvailable(:final mandatory) => Card.outlined(
+          child: ListTile(
+            leading: const Icon(Icons.system_update),
+            title: Text(
+              mandatory ? "Required update available" : "Update available",
+            ),
+            subtitle: Text("${notifier.appName} ${notifier.appVersion}"),
+            trailing: Wrap(
+              spacing: 8,
+              children: [
+                if (!mandatory)
+                  OutlinedButton(
+                    onPressed: notifier.makeSkipUpdate,
+                    child: const Text("Skip this version"),
+                  ),
+                FilledButton(
+                  onPressed: notifier.downloadUpdate,
+                  child: const Text("Download"),
+                ),
+              ],
+            ),
+          ),
+        ),
+      UpdateDownloading(:final receivedBytes, :final totalBytes) =>
+        Card.outlined(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Downloading update"),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(
+                  value: totalBytes <= 0 ? null : receivedBytes / totalBytes,
+                ),
+              ],
+            ),
+          ),
+        ),
+      UpdateReadyToInstall() => Card.outlined(
+          child: ListTile(
+            leading: const Icon(Icons.restart_alt),
+            title: const Text("Update ready to install"),
+            trailing: FilledButton(
+              onPressed: notifier.restartApp,
+              child: const Text("Install"),
+            ),
+          ),
+        ),
+      _ => const SizedBox.shrink(),
+    };
   }
 }
 
