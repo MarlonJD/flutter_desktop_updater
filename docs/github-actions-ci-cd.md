@@ -25,18 +25,18 @@ The package CI intentionally does not publish app update artifacts. Automatic up
 
 Use an app-owned workflow when you want CI/CD to publish real desktop updates.
 
-Recommended flow:
+Recommended high-level flow:
 
 1. Trigger the workflow from a version tag such as `v2.0.0`, or from a protected manual `workflow_dispatch`.
-2. Build the Flutter desktop app in Release mode.
-3. Apply the platform publisher-authenticity layer.
-4. Package the exact artifact with `dart run desktop_updater:package`.
-5. Upload the zip artifact and `release.json` to stable, exact URLs.
-6. Update `app-archive.json` to point at the new `release.json`.
-7. Run `dart run desktop_updater:verify --release <release.json>` against the same descriptor and artifact clients will download.
-8. Only then mark the release as published.
+2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
+3. Run `dart run desktop_updater:release publish --platform macos`.
+4. Let the command upload versioned files first, validate hosted `release.json` and artifact bytes, upload `app-archive.json` last, and validate hosted update selection.
+5. Only then mark the release as published.
 
 For atomic publishing, upload versioned artifacts first, verify them, and update `app-archive.json` last. If a CDN is in front of the bucket, avoid byte transformations and keep cache TTLs short for `app-archive.json`.
+
+The lower-level `package`, `app_archive`, and `verify` commands remain useful
+for custom pipelines that need to own every upload step.
 
 ## Required Configuration
 
@@ -156,9 +156,12 @@ xcrun notarytool submit "$ZIP_PATH" \
 
 If CI fails with `No Keychain password item found`, the profile was not read from the same keychain where it was stored, or the keychain was locked/removed. Recreate the profile in the current runner keychain and pass both `--keychain-profile` and `--keychain` consistently.
 
-## macOS CD Skeleton
+## macOS Advanced Low-Level CD Skeleton
 
-This is a skeleton for an app repository. Replace placeholders with your app's paths and upload provider.
+This is a low-level skeleton for an app repository that needs to own each
+packaging and upload step. Most apps should start with
+`dart run desktop_updater:release publish --platform macos` and only drop down
+to these commands when their release workflow needs that control.
 
 ```yaml
 name: Publish desktop update
@@ -268,6 +271,21 @@ jobs:
             --platform macos \
             --channel "${{ vars.UPDATE_CHANNEL }}" \
             --artifact-url "$ARTIFACT_URL"
+
+      - name: Update app archive metadata
+        run: |
+          RELEASE_JSON_URL="${{ vars.UPDATE_BASE_URL }}/releases/$RELEASE_VERSION/macos/release.json"
+
+          # If this is not the first release, restore the currently published
+          # app-archive.json to dist/app-archive.json before this step.
+          dart run desktop_updater:app_archive upsert \
+            --archive dist/app-archive.json \
+            --app-name "${{ vars.APP_NAME }}" \
+            --version "$RELEASE_VERSION" \
+            --build-number "$RELEASE_BUILD_NUMBER" \
+            --platform macos \
+            --channel "${{ vars.UPDATE_CHANNEL }}" \
+            --release-url "$RELEASE_JSON_URL"
 
       - name: Upload versioned files
         run: ./tool/ci/upload_update_files.sh

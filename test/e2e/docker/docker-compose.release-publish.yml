@@ -1,0 +1,47 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - release-publish-minio:/data
+
+  ftp:
+    image: delfer/alpine-ftp-server:latest
+    platform: linux/arm64
+    environment:
+      USERS: deploy|desktop-updater-test|/ftp/deploy
+      ADDRESS: 127.0.0.1
+      MIN_PORT: 30000
+      MAX_PORT: 30009
+    ports:
+      - "2121:21"
+      - "30000-30009:30000-30009"
+    volumes:
+      - release-publish-ftp:/ftp/deploy
+
+  sftp:
+    image: atmoz/sftp:latest
+    command: deploy:desktop-updater-test:1001:100:upload
+    ports:
+      - "2222:22"
+    volumes:
+      - release-publish-sftp:/home/deploy/upload
+
+  static:
+    image: nginx:alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - release-publish-ftp:/usr/share/nginx/html/ftp:ro
+      - release-publish-sftp:/usr/share/nginx/html/sftp:ro
+
+volumes:
+  release-publish-minio:
+  release-publish-ftp:
+  release-publish-sftp:

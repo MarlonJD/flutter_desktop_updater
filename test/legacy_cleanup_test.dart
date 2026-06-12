@@ -8,7 +8,6 @@ void main() {
     expect(File("example/output.txt").existsSync(), isFalse);
     expect(File("bin/smoke_update.dart").existsSync(), isFalse);
     expect(File("bin/archive.dart").existsSync(), isFalse);
-    expect(File("bin/release.dart").existsSync(), isFalse);
     expect(File("bin/helper/copy.dart").existsSync(), isFalse);
     expect(Directory("lib/src/platform").existsSync(), isFalse);
     expect(File("lib/src/update_progress.dart").existsSync(), isFalse);
@@ -30,6 +29,7 @@ void main() {
     expect(File("lib/widget/update_card.dart").existsSync(), isTrue);
     expect(File("lib/widget/update_direct_card.dart").existsSync(), isTrue);
     expect(File("lib/widget/update_sliver.dart").existsSync(), isTrue);
+    expect(File("bin/release.dart").existsSync(), isTrue);
   });
 
   test("public 2.x runtime does not expose legacy folder update API", () {

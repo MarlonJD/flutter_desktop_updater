@@ -15,6 +15,7 @@ This avoids public folder listing, works with signed URLs and private buckets, a
 - [2.0 roadmap](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/2.0-roadmap.md)
 - [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md)
 - [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md)
+- [Publishing desktop updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/publishing.md)
 - [Agent migration prompt](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/agent-prompt.md)
 
 ## Version Lines
@@ -284,7 +285,25 @@ Supported install strategies:
 
 The optional `signature` field is reserved for production authenticity policies. The built-in verifier currently validates descriptor shape, exact URL support, artifact length, SHA-256, and zip safety. Projects that require signed descriptors should wire `ArtifactVerificationPolicy.signatureVerifier` or wait for the planned first-party signing gate before calling a direct-zip Linux or Windows build fully production signed.
 
-## Package A Release
+## Publish A Release
+
+For most apps, use the high-level release command:
+
+```sh
+dart run desktop_updater:release publish --platform macos
+```
+
+The command reads the app version from `pubspec.yaml`, builds the selected
+platform, writes `app-archive.json`, `release.json`, and the zip artifact under
+`dist/desktop_updater`, and validates the hosted update path after upload.
+
+If no upload provider is configured, it prints a clickable local folder link
+and the `release validate` command to run after manual upload.
+
+See [Publishing desktop updates](docs/publishing.md) for provider config,
+manual upload, S3-compatible, FTP, SFTP, custom command, and CI examples.
+
+## Advanced: Package A Release Manually
 
 Build your app first, then package the exact release artifact.
 
@@ -350,14 +369,36 @@ Verify a packaged release:
 dart run desktop_updater:verify --release dist/2.0.0/macos/release.json
 ```
 
+Create or update the top-level `app-archive.json` entry that points clients to
+the hosted `release.json`:
+
+```sh
+dart run desktop_updater:app_archive upsert \
+  --archive dist/app-archive.json \
+  --app-name "Example App" \
+  --version 2.0.0 \
+  --build-number 200 \
+  --platform macos \
+  --channel stable \
+  --release-url https://updates.example.com/releases/example/2.0.0/macos/release.json
+```
+
+Run `app_archive upsert` once for each platform release. Re-running it for the
+same `platform`, `channel`, `version`, and `buildNumber` replaces that item
+instead of duplicating it.
+
+Point `--archive` at the current `app-archive.json` when you already have
+published releases. If the file does not exist, the command creates a new
+archive for the first release.
+
 `--build-number` is optional. Omit it when your app does not expose build
 metadata and you want update checks to rely only on semantic versions.
 
 Publish:
 
-- `app-archive.json`
-- `release.json`
-- the zip artifact referenced by `release.json`
+- upload the zip artifact and `release.json` to the exact URLs they advertise;
+- verify the hosted `release.json`;
+- upload `app-archive.json` last.
 
 Do not publish or rely on public update folders for the 2.0 contract.
 
@@ -381,6 +422,7 @@ Use the CI/CD guide when wiring an app release workflow:
 - Sign Windows artifacts when publisher trust is required.
 - Add a descriptor authenticity layer for production-trusted Linux direct zip distribution.
 - Run `dart run desktop_updater:package` to generate the zip and `release.json`.
+- Run `dart run desktop_updater:app_archive upsert` to update `app-archive.json`.
 - Upload versioned artifacts first, verify the hosted `release.json`, then publish `app-archive.json` last.
 
 ## Hosting Requirements

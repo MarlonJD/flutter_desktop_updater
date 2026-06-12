@@ -162,7 +162,7 @@ class _ExpandedUpdateCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Text(
               notifier.getLocalization?.updateAvailableText ??
                   "Update Available",
@@ -183,7 +183,7 @@ class _ExpandedUpdateCard extends StatelessWidget {
                     color: colorScheme.onSurfaceVariant,
                   ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
