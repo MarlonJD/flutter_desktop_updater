@@ -5,8 +5,24 @@ import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:path/path.dart" as path;
 
+/// Runs the shell process used by [CustomCommandUploadProvider].
+typedef CustomCommandProcessRunner = Future<ProcessResult> Function(
+  String executable,
+  List<String> arguments, {
+  Map<String, String>? environment,
+});
+
+/// Upload provider that delegates publishing to a user configured command.
 class CustomCommandUploadProvider implements UploadProvider {
-  const CustomCommandUploadProvider();
+  /// Creates a custom command upload provider.
+  const CustomCommandUploadProvider({
+    CustomCommandProcessRunner runProcess = defaultCustomCommandProcessRunner,
+    bool? isWindows,
+  })  : _runProcess = runProcess,
+        _isWindows = isWindows;
+
+  final CustomCommandProcessRunner _runProcess;
+  final bool? _isWindows;
 
   @override
   Future<UploadResult> upload({
@@ -46,14 +62,7 @@ class CustomCommandUploadProvider implements UploadProvider {
       "CHANNEL": manifest.release.channel,
     };
 
-    final executable = Platform.isWindows ? "cmd" : "/bin/sh";
-    final arguments =
-        Platform.isWindows ? ["/c", config.command] : ["-c", config.command];
-    final result = await Process.run(
-      executable,
-      arguments,
-      environment: environment,
-    );
+    final result = await _runShellCommand(config.command, environment);
     if (result.stdout.toString().isNotEmpty) {
       output.write(result.stdout);
     }
@@ -62,12 +71,54 @@ class CustomCommandUploadProvider implements UploadProvider {
     }
     if (result.exitCode != 0) {
       throw ProcessException(
-        executable,
-        arguments,
+        "customCommand",
+        [config.command],
         "${result.stdout}\n${result.stderr}",
         result.exitCode,
       );
     }
     return const UploadResult(uploaded: true);
   }
+
+  Future<ProcessResult> _runShellCommand(
+    String command,
+    Map<String, String> environment,
+  ) {
+    if (_isWindows ?? Platform.isWindows) {
+      return _runWindowsCommand(command, environment);
+    }
+    return _runProcess("/bin/sh", ["-c", command], environment: environment);
+  }
+
+  Future<ProcessResult> _runWindowsCommand(
+    String command,
+    Map<String, String> environment,
+  ) async {
+    final tempDir =
+        await Directory.systemTemp.createTemp("desktop_updater_upload_");
+    try {
+      final script = File(path.join(tempDir.path, "upload.cmd"));
+      await script.writeAsString("@echo off\r\n$command\r\n");
+      return await _runProcess(
+        "cmd",
+        ["/d", "/e:off", "/v:off", "/c", script.path],
+        environment: environment,
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  }
+}
+
+/// Default process runner for custom command upload scripts.
+Future<ProcessResult> defaultCustomCommandProcessRunner(
+  String executable,
+  List<String> arguments, {
+  Map<String, String>? environment,
+}) {
+  return Process.run(
+    executable,
+    arguments,
+    environment: environment,
+  );
 }

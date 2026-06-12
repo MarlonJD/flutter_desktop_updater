@@ -21,7 +21,7 @@ printf '%s\\n' "\$DESKTOP_UPDATER_PUBLISH_MANIFEST" > "${logFile.path}"
         expect(chmod.exitCode, 0);
       }
 
-      final provider = CustomCommandUploadProvider();
+      const provider = CustomCommandUploadProvider();
       await provider.upload(
         localRoot: Directory(path.join(tempDir.path, "dist")),
         manifest:
@@ -38,6 +38,74 @@ printf '%s\\n' "\$DESKTOP_UPDATER_PUBLISH_MANIFEST" > "${logFile.path}"
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("windows custom command preserves quoted script paths", () async {
+    final tempDir = await Directory.systemTemp.createTemp("custom_upload_");
+    try {
+      final calls = <_CommandCall>[];
+      String? wrapperScript;
+      final provider = CustomCommandUploadProvider(
+        isWindows: true,
+        runProcess: (
+          executable,
+          arguments, {
+          environment,
+        }) async {
+          calls.add(
+            _CommandCall(
+              executable: executable,
+              arguments: arguments,
+              environment: environment,
+            ),
+          );
+          wrapperScript = await File(arguments.last).readAsString();
+          return ProcessResult(123, 0, "uploaded\n", "");
+        },
+      );
+      final output = StringBuffer();
+
+      await provider.upload(
+        localRoot: Directory(path.join(tempDir.path, "dist")),
+        manifest:
+            testPublishManifest(localRoot: path.join(tempDir.path, "dist")),
+        config: const CustomCommandUploadConfig(
+          command: r'dart "C:\repo path\copy_updates.dart"',
+        ),
+        output: output,
+      );
+
+      expect(output.toString(), contains("uploaded"));
+      expect(calls, hasLength(1));
+      expect(calls.single.executable, "cmd");
+      expect(
+        calls.single.arguments.take(4),
+        ["/d", "/e:off", "/v:off", "/c"],
+      );
+      expect(calls.single.arguments.last, endsWith("upload.cmd"));
+      expect(
+        wrapperScript,
+        contains(r'dart "C:\repo path\copy_updates.dart"'),
+      );
+      expect(
+        calls.single.environment?["DESKTOP_UPDATER_LOCAL_ROOT"],
+        path.join(tempDir.path, "dist"),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+}
+
+class _CommandCall {
+  const _CommandCall({
+    required this.executable,
+    required this.arguments,
+    required this.environment,
+  });
+
+  final String executable;
+  final List<String> arguments;
+  final Map<String, String>? environment;
 }
 
 PublishManifest testPublishManifest({required String localRoot}) {
