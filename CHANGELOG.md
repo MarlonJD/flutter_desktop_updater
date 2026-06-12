@@ -1,5 +1,6 @@
 ## 2.1.2
 
+* Fixed Windows `release publish` builds so the CLI invokes `flutter build windows --release` through shell-aware process resolution.
 * Fixed notarized macOS `release publish` so nested Flutter frameworks are signed before the outer `.app`, then verified through notary, stapler, and Gatekeeper before packaging.
 * Added user-facing `release publish` smoke coverage for Windows, Linux, and opt-in notarized macOS CI so release smoke tests exercise the same publish command users run.
 

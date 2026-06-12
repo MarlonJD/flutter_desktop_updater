@@ -19,18 +19,58 @@ import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 import "package:path/path.dart" as path;
 
+/// Starts the Flutter build subprocess used by `release publish`.
+typedef BuildProcessStarter = Future<BuildProcess> Function(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+  bool runInShell,
+});
+
+/// A started build subprocess.
+abstract interface class BuildProcess {
+  /// The process standard output stream.
+  Stream<List<int>> get stdout;
+
+  /// The process standard error stream.
+  Stream<List<int>> get stderr;
+
+  /// Completes with the process exit code.
+  Future<int> get exitCode;
+}
+
+/// Adapter for a real `dart:io` process.
+class StartedBuildProcess implements BuildProcess {
+  /// Creates an adapter for [process].
+  const StartedBuildProcess(this.process);
+
+  /// The underlying process.
+  final Process process;
+
+  @override
+  Stream<List<int>> get stdout => process.stdout;
+
+  @override
+  Stream<List<int>> get stderr => process.stderr;
+
+  @override
+  Future<int> get exitCode => process.exitCode;
+}
+
 class ReleasePublisher {
   const ReleasePublisher({
     this.skipBuild = false,
     this.packager = const ZipReleasePackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
     this.runProcess = defaultProcessRunner,
-  });
+    BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
+  }) : _startBuildProcess = startBuildProcess;
 
   final bool skipBuild;
   final ReleasePackager packager;
   final ProjectMetadataResolver metadataResolver;
   final ProcessRunner runProcess;
+  final BuildProcessStarter _startBuildProcess;
 
   Future<PublishManifest> publish({
     required Directory projectRoot,
@@ -54,7 +94,7 @@ class ReleasePublisher {
     );
 
     if (!skipBuild) {
-      await _build(projectRoot, metadata, output);
+      await _build(projectRoot, metadata, output, _startBuildProcess);
     }
 
     if (platform == "macos" && config.macos.notarize) {
@@ -317,19 +357,24 @@ Future<void> _build(
   Directory projectRoot,
   ProjectMetadata metadata,
   StringSink output,
+  BuildProcessStarter startBuildProcess,
 ) async {
   output.writeln("Building ${metadata.platform} release...");
-  final process = await Process.start(
+  final process = await startBuildProcess(
     "flutter",
     metadata.profile.flutterBuildArgs,
     workingDirectory: projectRoot.path,
-    runInShell: true,
+    runInShell: _shouldRunFlutterBuildInShell(metadata.platform),
   );
 
-  process.stdout.transform(utf8.decoder).listen(output.write);
-  process.stderr.transform(utf8.decoder).listen(output.write);
-
+  final stdoutDone = process.stdout.transform(utf8.decoder).forEach(
+        output.write,
+      );
+  final stderrDone = process.stderr.transform(utf8.decoder).forEach(
+        output.write,
+      );
   final exitCode = await process.exitCode;
+  await Future.wait([stdoutDone, stderrDone]);
 
   if (exitCode != 0) {
     throw ProcessException(
@@ -339,6 +384,27 @@ Future<void> _build(
       exitCode,
     );
   }
+}
+
+/// Default Flutter build process starter.
+Future<BuildProcess> defaultBuildProcessStarter(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+  bool runInShell = false,
+}) async {
+  return StartedBuildProcess(
+    await Process.start(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+      runInShell: runInShell,
+    ),
+  );
+}
+
+bool _shouldRunFlutterBuildInShell(String platform) {
+  return platform == "windows";
 }
 
 Future<ProcessResult> _runChecked(
