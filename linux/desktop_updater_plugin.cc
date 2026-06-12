@@ -192,6 +192,7 @@ bool schedule_install_update(const std::string &staging_path,
                        "done\n"
                        "if [ -n \"$staging\" ]; then\n"
                        "  [ -d \"$staging\" ] || exit 1\n"
+                       "  find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
                        "  cp -a \"$staging/.\" \"$target/\"\n"
                        "  rm -rf \"$staging\"\n"
                        "fi\n"

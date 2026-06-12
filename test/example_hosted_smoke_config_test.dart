@@ -24,4 +24,14 @@ void main() {
     expect(source, contains("App version:"));
     expect(source, isNot(contains("Running on: 1.0.0+1")));
   });
+
+  test("direct smoke can explicitly allow unsigned macOS updates", () {
+    final source = File("example/lib/app.dart").readAsStringSync();
+
+    expect(source, contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"));
+    expect(
+      source,
+      contains("allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS"),
+    );
+  });
 }

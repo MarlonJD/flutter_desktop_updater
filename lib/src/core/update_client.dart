@@ -2,6 +2,7 @@ import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
@@ -73,6 +74,7 @@ class UpdateClient {
       if (descriptor.platform != platform || descriptor.channel != channel) {
         return null;
       }
+      _verifyDescriptorMatchesIndexItem(item: item, descriptor: descriptor);
 
       return UpdateCheckResult(
         index: index,
@@ -125,13 +127,7 @@ class UpdateClient {
           ? path.join(stagingRoot.path, descriptor.appName)
           : stagingRoot.path;
       if (descriptor.platform == "macos") {
-        final stagedApp = Directory(stagedPath);
-        if (!await stagedApp.exists()) {
-          throw FormatException(
-            "macOS zip did not contain expected app bundle: "
-            "${descriptor.appName}",
-          );
-        }
+        await rejectTopLevelMacOSAppSymlink(stagedPath);
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
@@ -149,6 +145,36 @@ class UpdateClient {
       }
       rethrow;
     }
+  }
+}
+
+void _verifyDescriptorMatchesIndexItem({
+  required ReleaseIndexItem item,
+  required ReleaseDescriptor descriptor,
+}) {
+  if (descriptor.version != item.version) {
+    throw FormatException(
+      "release.json version does not match app-archive.json: "
+      "expected ${item.version}, got ${descriptor.version}.",
+    );
+  }
+  if (descriptor.buildNumber != item.buildNumber) {
+    throw FormatException(
+      "release.json buildNumber does not match app-archive.json: "
+      "expected ${item.buildNumber}, got ${descriptor.buildNumber}.",
+    );
+  }
+  if (descriptor.platform != item.platform) {
+    throw FormatException(
+      "release.json platform does not match app-archive.json: "
+      "expected ${item.platform}, got ${descriptor.platform}.",
+    );
+  }
+  if (descriptor.channel != item.channel) {
+    throw FormatException(
+      "release.json channel does not match app-archive.json: "
+      "expected ${item.channel}, got ${descriptor.channel}.",
+    );
   }
 }
 

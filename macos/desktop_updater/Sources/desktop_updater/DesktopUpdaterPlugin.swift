@@ -63,15 +63,41 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         result: @escaping FlutterResult
     ) {
         do {
-            if let stagingPath, !FileManager.default.fileExists(atPath: stagingPath) {
-                result(
-                    FlutterError(
-                        code: "InstallError",
-                        message: "Staged update directory does not exist.",
-                        details: stagingPath
+            if let stagingPath {
+                let values: URLResourceValues
+                do {
+                    values = try URL(fileURLWithPath: stagingPath)
+                        .resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
+                } catch {
+                    result(
+                        FlutterError(
+                            code: "InstallError",
+                            message: "Staged macOS update directory does not exist.",
+                            details: stagingPath
+                        )
                     )
-                )
-                return
+                    return
+                }
+                if values.isSymbolicLink == true {
+                    result(
+                        FlutterError(
+                            code: "InstallError",
+                            message: "Staged macOS update must be a real .app directory, not a symlink.",
+                            details: stagingPath
+                        )
+                    )
+                    return
+                }
+                if values.isDirectory != true {
+                    result(
+                        FlutterError(
+                            code: "InstallError",
+                            message: "Staged macOS update directory does not exist.",
+                            details: stagingPath
+                        )
+                    )
+                    return
+                }
             }
 
             let scriptURL = try writeHelperScript(
@@ -139,6 +165,14 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
               exit 1
               ;;
           esac
+          if [ -L "$STAGING" ]; then
+            echo "Staged macOS update must be a real .app directory, not a symlink." >&2
+            exit 1
+          fi
+          if [ ! -d "$STAGING" ]; then
+            echo "Staged macOS update directory does not exist." >&2
+            exit 1
+          fi
 
           MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"
           if [ ! -f "$MANIFEST" ]; then

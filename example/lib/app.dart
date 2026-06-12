@@ -35,6 +35,9 @@ class _HomePageState extends State<HomePage> {
       Platform.environment["DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"] ==
       "1";
 
+  bool get _directSmokeAllowUnsignedMacOS =>
+      Platform.environment["DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"] == "1";
+
   @override
   void initState() {
     super.initState();
@@ -159,7 +162,10 @@ class _HomePageState extends State<HomePage> {
 
     await _writeSmokeMarker(markerPath, "installing");
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    await _desktopUpdaterPlugin.installUpdate(stagingPath: stagingPath);
+    await _desktopUpdaterPlugin.installUpdate(
+      stagingPath: stagingPath,
+      allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS,
+    );
   }
 
   Future<void> _runHostedSmokeTestCommand() async {

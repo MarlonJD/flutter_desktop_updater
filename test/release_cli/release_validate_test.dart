@@ -40,6 +40,55 @@ void main() {
       await fixture.delete();
     }
   });
+
+  test("validate rejects hosted descriptor identity mismatch", () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+    );
+    try {
+      final releaseFile = File(
+        path.join(
+          fixture.projectRoot.path,
+          "web",
+          "releases",
+          "2.0.1",
+          "macos",
+          "release.json",
+        ),
+      );
+      final json =
+          jsonDecode(await releaseFile.readAsString()) as Map<String, dynamic>;
+      await releaseFile.writeAsString(
+        "${const JsonEncoder.withIndent("  ").convert({
+              ...json,
+              "version": "1.0.0",
+              "buildNumber": 100,
+            })}\n",
+      );
+
+      final output = StringBuffer();
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.0.0+200",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+      );
+
+      expect(exitCode, 1);
+      expect(
+        output.toString(),
+        contains("release.json version mismatch"),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
 }
 
 class HostedPublishFixture {

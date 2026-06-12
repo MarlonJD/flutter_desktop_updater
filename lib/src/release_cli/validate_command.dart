@@ -182,6 +182,26 @@ void _verifyDescriptorMatchesManifest(
   ReleaseDescriptor descriptor,
   PublishManifest manifest,
 ) {
+  if (descriptor.version != manifest.release.version) {
+    throw StateError(
+      "release.json version mismatch: expected ${manifest.release.version}, got ${descriptor.version}.",
+    );
+  }
+  if (descriptor.buildNumber != manifest.release.buildNumber) {
+    throw StateError(
+      "release.json buildNumber mismatch: expected ${manifest.release.buildNumber}, got ${descriptor.buildNumber}.",
+    );
+  }
+  if (descriptor.platform != manifest.release.platform) {
+    throw StateError(
+      "release.json platform mismatch: expected ${manifest.release.platform}, got ${descriptor.platform}.",
+    );
+  }
+  if (descriptor.channel != manifest.release.channel) {
+    throw StateError(
+      "release.json channel mismatch: expected ${manifest.release.channel}, got ${descriptor.channel}.",
+    );
+  }
   if (descriptor.artifact.url.toString() != manifest.artifact.url.toString()) {
     throw StateError(
       "release.json artifact URL mismatch: expected ${manifest.artifact.url}, got ${descriptor.artifact.url}.",
