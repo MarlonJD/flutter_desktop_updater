@@ -1,3 +1,4 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/core/release_index.dart";
@@ -232,17 +233,24 @@ Future<void> _build(
   StringSink output,
 ) async {
   output.writeln("Building ${metadata.platform} release...");
-  final result = await Process.run(
+  final process = await Process.start(
     "flutter",
     metadata.profile.flutterBuildArgs,
     workingDirectory: projectRoot.path,
+    runInShell: true,
   );
-  if (result.exitCode != 0) {
+
+  process.stdout.transform(utf8.decoder).listen(output.write);
+  process.stderr.transform(utf8.decoder).listen(output.write);
+
+  final exitCode = await process.exitCode;
+
+  if (exitCode != 0) {
     throw ProcessException(
       "flutter",
       metadata.profile.flutterBuildArgs,
-      "${result.stdout}\n${result.stderr}",
-      result.exitCode,
+      "Build failed with exit code $exitCode",
+      exitCode,
     );
   }
 }
