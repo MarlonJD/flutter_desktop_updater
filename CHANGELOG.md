@@ -1,3 +1,10 @@
+## 2.1.1
+
+* Hardened update selection so `app-archive.json` entries must match the downloaded `release.json` version, build number, platform, and channel.
+* Hardened `release validate` to reject hosted descriptor identity mismatches before accepting a published update.
+* Rejected top-level staged macOS `.app` symlinks and rechecked the staged app inside the native install helper before replacement.
+* Pruned Windows and Linux whole-directory targets before copying the staged update, preventing stale files from surviving replacement.
+
 ## 2.1.0
 
 * Added the high-level `dart run desktop_updater:release publish` flow for building, packaging, manifest generation, manual upload packages, provider upload, and hosted validation.
