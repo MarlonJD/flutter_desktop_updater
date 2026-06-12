@@ -154,18 +154,10 @@ Future<void> _notarizeMacOS({
   }
 
   output.writeln("Signing macOS app...");
-  await _runChecked(
-    "/usr/bin/codesign",
-    [
-      "--force",
-      "--options",
-      "runtime",
-      "--timestamp",
-      "--sign",
-      config.developerIdApplication!,
-      app.path,
-    ],
-    runProcess,
+  await _signMacOSAppForNotarization(
+    app: app,
+    developerIdApplication: config.developerIdApplication!,
+    runProcess: runProcess,
   );
   await _runChecked(
     "/usr/bin/codesign",
@@ -185,7 +177,7 @@ Future<void> _notarizeMacOS({
     );
 
     output.writeln("Submitting macOS app for notarization...");
-    await _runChecked(
+    final result = await _runChecked(
       "/usr/bin/xcrun",
       [
         "notarytool",
@@ -196,9 +188,12 @@ Future<void> _notarizeMacOS({
         "--keychain",
         config.keychain!,
         "--wait",
+        "--output-format",
+        "json",
       ],
       runProcess,
     );
+    _verifyNotarySubmissionAccepted(result.stdout.toString());
   } finally {
     await tempDir.delete(recursive: true);
   }
@@ -225,6 +220,97 @@ Future<void> _notarizeMacOS({
       runProcess,
     );
   }
+}
+
+Future<void> _signMacOSAppForNotarization({
+  required Directory app,
+  required String developerIdApplication,
+  required ProcessRunner runProcess,
+}) async {
+  final nestedCode = await _nestedMacOSCodeToSign(app);
+  for (final entity in nestedCode) {
+    await _runChecked(
+      "/usr/bin/codesign",
+      _codesignArguments(developerIdApplication, entity.path),
+      runProcess,
+    );
+  }
+  await _runChecked(
+    "/usr/bin/codesign",
+    _codesignArguments(developerIdApplication, app.path),
+    runProcess,
+  );
+}
+
+Future<List<FileSystemEntity>> _nestedMacOSCodeToSign(Directory app) async {
+  final frameworks = Directory(path.join(app.path, "Contents", "Frameworks"));
+  if (!await frameworks.exists()) {
+    return const [];
+  }
+
+  final entities = <FileSystemEntity>[];
+  await for (final entity in frameworks.list(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (_shouldSignNestedMacOSCode(entity)) {
+      entities.add(entity);
+    }
+  }
+  entities.sort((a, b) {
+    final depthComparison =
+        path.split(b.path).length.compareTo(path.split(a.path).length);
+    if (depthComparison != 0) {
+      return depthComparison;
+    }
+    return a.path.compareTo(b.path);
+  });
+  return entities;
+}
+
+bool _shouldSignNestedMacOSCode(FileSystemEntity entity) {
+  final extension = path.extension(entity.path).toLowerCase();
+  if (entity is Directory) {
+    return const {".app", ".appex", ".framework", ".xpc"}.contains(extension);
+  }
+  if (entity is File) {
+    return const {".dylib", ".so"}.contains(extension);
+  }
+  return false;
+}
+
+List<String> _codesignArguments(String identity, String target) {
+  return [
+    "--force",
+    "--options",
+    "runtime",
+    "--timestamp",
+    "--sign",
+    identity,
+    target,
+  ];
+}
+
+void _verifyNotarySubmissionAccepted(String response) {
+  late final Object? decoded;
+  try {
+    decoded = jsonDecode(response);
+  } on FormatException catch (error) {
+    throw StateError(
+      "Unable to parse macOS notarization response: ${error.message}",
+    );
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw StateError("Unable to parse macOS notarization response.");
+  }
+
+  final status = decoded["status"]?.toString();
+  if (status == "Accepted") {
+    return;
+  }
+  final id = decoded["id"]?.toString();
+  final suffix = id == null || id.isEmpty ? "" : " for submission $id";
+  throw StateError("macOS notarization failed: $status$suffix.");
 }
 
 Future<void> _build(

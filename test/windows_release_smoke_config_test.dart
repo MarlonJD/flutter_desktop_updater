@@ -13,7 +13,8 @@ void main() {
     expect(source, contains('"desktop_updater_example.exe"'));
   });
 
-  test("Windows CI runs Release build, native tests, integration, and smoke",
+  test(
+      "Windows CI runs Release build, native tests, integration, publish, and smoke",
       () {
     final workflow =
         File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
@@ -30,7 +31,24 @@ void main() {
       workflow,
       contains("ctest --test-dir build/windows/x64 -C Release"),
     );
-    expect(workflow,
-        contains("dart run tool/updater_smoke.dart --config Release"));
+    expect(
+      workflow,
+      contains("dart run tool/updater_smoke.dart --config Release"),
+    );
+    expect(workflow, contains("Run release publish smoke"));
+    expect(
+      workflow,
+      contains("dart run tool/release_publish_smoke.dart --platform windows"),
+    );
+    expect(
+      workflow,
+      isNot(
+        contains(
+          "Rebuild example release for smoke\n"
+          "        working-directory: example\n"
+          "        run: flutter build windows --release",
+        ),
+      ),
+    );
   });
 }
