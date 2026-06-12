@@ -1,3 +1,12 @@
+## 2.1.0
+
+* Added the high-level `dart run desktop_updater:release publish` flow for building, packaging, manifest generation, manual upload packages, provider upload, and hosted validation.
+* Added `dart run desktop_updater:release validate` to simulate an older installed version, select an update, fetch `release.json`, download the artifact, and verify length and SHA-256.
+* Added release publish upload providers for manual, S3-compatible storage, SFTP, FTP, and custom commands.
+* Added ready-made update UI surfaces, manual update check result helpers, and screenshots for the stock card, sliver, dialog, and custom state-driven UI.
+* Added explicit macOS notarization opt-in for `release publish --platform macos --notarize` and `macos.notarize: true`.
+* Added publishing documentation for minimum setup, provider config, macOS production trust, and Windows/Linux production release options.
+
 ## 2.0.1
 
 * Added `dart run desktop_updater:migrate` to preview and apply safe 1.x to 2.0 migration edits, plus manual findings for typed state, old CLI commands, low-level APIs, and platform publishing work.
