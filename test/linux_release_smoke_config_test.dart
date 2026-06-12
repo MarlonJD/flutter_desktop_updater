@@ -14,7 +14,9 @@ void main() {
     expect(source, contains('"desktop_updater_example"'));
   });
 
-  test("Linux CI runs Release build, native tests, integration, and smoke", () {
+  test(
+      "Linux CI runs Release build, native tests, integration, publish, and smoke",
+      () {
     final workflow =
         File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
 
@@ -29,6 +31,21 @@ void main() {
     expect(
       workflow,
       contains("xvfb-run -a dart run tool/updater_smoke.dart --config Release"),
+    );
+    expect(workflow, contains("Run release publish smoke"));
+    expect(
+      workflow,
+      contains("dart run tool/release_publish_smoke.dart --platform linux"),
+    );
+    expect(
+      workflow,
+      isNot(
+        contains(
+          "Rebuild example release for smoke\n"
+          "        working-directory: example\n"
+          "        run: flutter build linux --release",
+        ),
+      ),
     );
   });
 }

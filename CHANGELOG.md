@@ -1,3 +1,8 @@
+## 2.1.2
+
+* Fixed notarized macOS `release publish` so nested Flutter frameworks are signed before the outer `.app`, then verified through notary, stapler, and Gatekeeper before packaging.
+* Added user-facing `release publish` smoke coverage for Windows, Linux, and opt-in notarized macOS CI so release smoke tests exercise the same publish command users run.
+
 ## 2.1.1
 
 * Hardened update selection so `app-archive.json` entries must match the downloaded `release.json` version, build number, platform, and channel.
