@@ -26,6 +26,7 @@ class _HomePageState extends State<HomePage> {
   String _appVersion = "Unknown app version";
   String _statusMessage =
       "Ready. Configure DESKTOP_UPDATER_APP_ARCHIVE_URL with a hosted 2.x app-archive.json.";
+  bool _checkingForUpdates = false;
 
   bool get _hostedSmokeEnabled =>
       Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE"] == "1";
@@ -53,6 +54,10 @@ class _HomePageState extends State<HomePage> {
             "The app will hand the staged artifact to the platform installer.",
         warningCancelText: "Not now",
         warningConfirmText: "Install",
+        upToDateTitleText: "Application is up to date",
+        upToDateText: "{} is the latest hosted version.",
+        updateCheckFailedTitleText: "Could not check for updates",
+        updateCheckFailedText: "Check the archive URL and try again.",
       ),
     );
 
@@ -71,27 +76,43 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _checkForUpdates() async {
+  Future<void> _checkForUpdatesManually() async {
+    if (_checkingForUpdates) {
+      return;
+    }
+
     setState(() {
+      _checkingForUpdates = true;
       _statusMessage = "Checking the 2.x release index...";
     });
 
     try {
-      await _desktopUpdaterController.checkVersion();
-      final state = _desktopUpdaterController.state;
+      final result = await _desktopUpdaterController.checkForUpdates();
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
-        _statusMessage = switch (state) {
-          UpdateAvailable(:final descriptor) =>
+        _statusMessage = switch (result) {
+          ManualUpdateCheckAvailable(:final descriptor) =>
             "Update ${descriptor.version} is available for ${descriptor.platform}.",
-          UpdateIdle() => "No matching 2.x update was found.",
-          UpdateFailed(:final error) => "Update check failed: $error",
-          _ => _statusMessage,
+          ManualUpdateCheckUpToDate() => "No matching 2.x update was found.",
+          ManualUpdateCheckFailed(:final error) =>
+            "Update check failed: $error",
         };
       });
-    } on Object catch (error) {
-      setState(() {
-        _statusMessage = "Update check failed: $error";
-      });
+
+      await showManualUpdateCheckResultDialog(
+        context,
+        controller: _desktopUpdaterController,
+        result: result,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _checkingForUpdates = false;
+        });
+      }
     }
   }
 
@@ -255,7 +276,8 @@ class _HomePageState extends State<HomePage> {
                         _StateCard(
                           state: _desktopUpdaterController.state,
                           statusMessage: _statusMessage,
-                          onCheck: _checkForUpdates,
+                          checkingForUpdates: _checkingForUpdates,
+                          onCheck: _checkForUpdatesManually,
                           onDownload: _downloadUpdate,
                           onInstall: _installUpdate,
                         ),
@@ -394,6 +416,7 @@ class _StateCard extends StatelessWidget {
   const _StateCard({
     required this.state,
     required this.statusMessage,
+    required this.checkingForUpdates,
     required this.onCheck,
     required this.onDownload,
     required this.onInstall,
@@ -401,6 +424,7 @@ class _StateCard extends StatelessWidget {
 
   final UpdateState state;
   final String statusMessage;
+  final bool checkingForUpdates;
   final Future<void> Function() onCheck;
   final Future<void> Function() onDownload;
   final Future<void> Function() onInstall;
@@ -410,7 +434,7 @@ class _StateCard extends StatelessWidget {
     final currentState = state;
     final canDownload = currentState is UpdateAvailable;
     final canInstall = currentState is UpdateReadyToInstall;
-    final checking = currentState is UpdateChecking;
+    final checking = checkingForUpdates || currentState is UpdateChecking;
     final downloading = currentState is UpdateDownloading;
     final progress =
         currentState is UpdateDownloading && currentState.totalBytes > 0
@@ -440,9 +464,16 @@ class _StateCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                FilledButton(
+                FilledButton.icon(
                   onPressed: checking || downloading ? null : onCheck,
-                  child: const Text("Check for updates"),
+                  icon: checking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update),
+                  label: Text(checking ? "Checking..." : "Check for updates"),
                 ),
                 OutlinedButton(
                   onPressed: canDownload && !downloading ? onDownload : null,

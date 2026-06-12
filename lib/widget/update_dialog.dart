@@ -171,6 +171,99 @@ Future showUpdateDialog<T>(
   );
 }
 
+/// Shows optional Material feedback for a user-triggered update check result.
+Future<void> showManualUpdateCheckResultDialog(
+  BuildContext context, {
+  required DesktopUpdaterController controller,
+  required ManualUpdateCheckResult result,
+  bool showAvailableUpdate = false,
+  Color? backgroundColor,
+  Color? iconColor,
+  Color? shadowColor,
+  Color? textColor,
+  Color? buttonTextColor,
+}) async {
+  switch (result) {
+    case ManualUpdateCheckAvailable():
+      if (!showAvailableUpdate) {
+        return;
+      }
+      await showUpdateDialog<void>(
+        context,
+        controller: controller,
+        backgroundColor: backgroundColor,
+        iconColor: iconColor,
+        shadowColor: shadowColor,
+      );
+    case ManualUpdateCheckUpToDate():
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          final localization = controller.getLocalization;
+          final appName = controller.appName ?? "This application";
+          final appVersion = controller.appVersion ?? "";
+          final versionLabel =
+              appVersion.isEmpty ? appName : "$appName $appVersion";
+
+          return AlertDialog(
+            backgroundColor: backgroundColor,
+            iconColor: iconColor,
+            shadowColor: shadowColor,
+            title: Text(
+              localization?.upToDateTitleText ?? "Application is up to date",
+              style: TextStyle(color: textColor),
+            ),
+            content: Text(
+              getLocalizedString(localization?.upToDateText, [versionLabel]) ??
+                  "$versionLabel is the latest available version.",
+              style: TextStyle(color: textColor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  localization?.okText ?? "OK",
+                  style: TextStyle(color: buttonTextColor),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    case ManualUpdateCheckFailed():
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          final localization = controller.getLocalization;
+
+          return AlertDialog(
+            backgroundColor: backgroundColor,
+            iconColor: iconColor,
+            shadowColor: shadowColor,
+            title: Text(
+              localization?.updateCheckFailedTitleText ??
+                  "Could not check for updates",
+              style: TextStyle(color: textColor),
+            ),
+            content: Text(
+              localization?.updateCheckFailedText ?? "Please try again later.",
+              style: TextStyle(color: textColor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  localization?.okText ?? "OK",
+                  style: TextStyle(color: buttonTextColor),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+  }
+}
+
 /// A widget that shows an update dialog.
 class UpdateDialogWidget extends StatelessWidget {
   /// Creates an update dialog widget.

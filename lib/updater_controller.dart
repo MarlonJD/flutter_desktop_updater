@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/localization.dart";
+import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:flutter/material.dart";
 
 class DesktopUpdaterController extends ChangeNotifier {
@@ -109,6 +110,34 @@ class DesktopUpdaterController extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Checks for updates for an explicit user action and returns a typed result.
+  Future<ManualUpdateCheckResult> checkForUpdates() async {
+    try {
+      await checkVersion();
+    } on Object catch (error, stackTrace) {
+      _state = UpdateFailed(error);
+      notifyListeners();
+      return ManualUpdateCheckFailed(error, stackTrace);
+    }
+
+    final currentState = state;
+    if (currentState is UpdateAvailable) {
+      return ManualUpdateCheckAvailable(
+        descriptor: currentState.descriptor,
+        mandatory: currentState.mandatory,
+      );
+    }
+
+    if (currentState is UpdateFailed) {
+      return ManualUpdateCheckFailed(
+        currentState.error,
+        StackTrace.current,
+      );
+    }
+
+    return const ManualUpdateCheckUpToDate();
   }
 
   Future<void> downloadUpdate() async {

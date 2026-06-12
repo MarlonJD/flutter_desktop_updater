@@ -1,7 +1,5 @@
-import "package:desktop_updater/src/core/release_descriptor.dart";
-import "package:desktop_updater/src/core/update_state.dart";
+import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
-import "package:desktop_updater/widget/update_dialog.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -52,6 +50,73 @@ void main() {
       expect(find.byType(AlertDialog), findsOneWidget);
     },
   );
+
+  testWidgets("manual up-to-date result helper shows one confirmation dialog", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController();
+
+    await tester.pumpWidget(
+      _buildManualResultApp(
+        controller: controller,
+        result: const ManualUpdateCheckUpToDate(),
+      ),
+    );
+
+    await tester.tap(find.text("Show result"));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text("Application is up to date"), findsOneWidget);
+    expect(
+      find.text("Test App 2.0.0 is the latest available version."),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets("manual failed result helper shows retry-later dialog", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController();
+
+    await tester.pumpWidget(
+      _buildManualResultApp(
+        controller: controller,
+        result: ManualUpdateCheckFailed(
+          StateError("network down"),
+          StackTrace.current,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text("Show result"));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text("Could not check for updates"), findsOneWidget);
+    expect(find.text("Please try again later."), findsOneWidget);
+  });
+
+  testWidgets("manual available result helper stays quiet by default", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController();
+
+    await tester.pumpWidget(
+      _buildManualResultApp(
+        controller: controller,
+        result: ManualUpdateCheckAvailable(
+          descriptor: _testDescriptor(),
+          mandatory: false,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text("Show result"));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+  });
 }
 
 Widget _buildTestApp(_TestDesktopUpdaterController controller) {
@@ -61,6 +126,52 @@ Widget _buildTestApp(_TestDesktopUpdaterController controller) {
         controller: controller,
       ),
     ),
+  );
+}
+
+Widget _buildManualResultApp({
+  required _TestDesktopUpdaterController controller,
+  required ManualUpdateCheckResult result,
+}) {
+  return MaterialApp(
+    home: Scaffold(
+      body: Builder(
+        builder: (context) {
+          return TextButton(
+            onPressed: () {
+              showManualUpdateCheckResultDialog(
+                context,
+                controller: controller,
+                result: result,
+              );
+            },
+            child: const Text("Show result"),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+ReleaseDescriptor _testDescriptor() {
+  return ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.app",
+    appName: "Example.app",
+    version: "2.0.1",
+    buildNumber: 201,
+    platform: "macos",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: Uri.parse("https://example.com/Example.zip"),
+      sha256:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      length: 1024,
+    ),
+    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    minimumUpdaterVersion: "2.0.0",
+    generatedAt: DateTime.utc(2026, 6, 12),
   );
 }
 

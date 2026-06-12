@@ -184,6 +184,45 @@ Run the check manually:
 await controller.checkVersion();
 ```
 
+### Manual "Check for Updates..." feedback
+
+Automatic startup checks stay quiet when no update is available. For a
+user-triggered menu item or button, call `checkForUpdates()` and decide how your
+app should present the result:
+
+```dart
+final result = await controller.checkForUpdates();
+
+switch (result) {
+  case ManualUpdateCheckAvailable():
+    // Existing update widgets can show the download flow from controller state.
+    break;
+  case ManualUpdateCheckUpToDate():
+    // Show a native app dialog, snackbar, settings-row message, or custom widget.
+    break;
+  case ManualUpdateCheckFailed(:final error):
+    // Log the error and show retry guidance that matches your app.
+    break;
+}
+```
+
+If you want the package's stock Material feedback for manual checks, use the
+optional helper:
+
+```dart
+final result = await controller.checkForUpdates();
+await showManualUpdateCheckResultDialog(
+  context,
+  controller: controller,
+  result: result,
+);
+```
+
+The helper does not show an available-update dialog by default, because apps
+often already mount `UpdateDialogListener`, `UpdateDialogWidget`, or a custom
+update surface. Pass `showAvailableUpdate: true` only when the manual check
+action owns the whole update presentation.
+
 macOS signing and notarization gates are enabled by default for Release
 updates. Owners who deliberately support an unsigned direct-distribution lane
 can opt out, but that lane is only release-mechanics ready and is not

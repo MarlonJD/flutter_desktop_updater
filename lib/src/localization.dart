@@ -8,6 +8,11 @@
 /// - restartWarningText
 /// - warningCancelText
 /// - warningConfirmText
+/// - upToDateTitleText
+/// - upToDateText
+/// - updateCheckFailedTitleText
+/// - updateCheckFailedText
+/// - okText
 class DesktopUpdateLocalization {
   /// constructor
   const DesktopUpdateLocalization({
@@ -21,6 +26,11 @@ class DesktopUpdateLocalization {
     this.warningConfirmText,
     this.skipThisVersionText,
     this.downloadText,
+    this.upToDateTitleText,
+    this.upToDateText,
+    this.updateCheckFailedTitleText,
+    this.updateCheckFailedText,
+    this.okText,
   });
 
   /// Default: "Update available"
@@ -56,6 +66,21 @@ class DesktopUpdateLocalization {
 
   /// Default: "Download"
   final String? downloadText;
+
+  /// Default: "Application is up to date"
+  final String? upToDateTitleText;
+
+  /// Default: "{} is the latest available version."
+  final String? upToDateText;
+
+  /// Default: "Could not check for updates"
+  final String? updateCheckFailedTitleText;
+
+  /// Default: "Please try again later."
+  final String? updateCheckFailedText;
+
+  /// Default: "OK"
+  final String? okText;
 }
 
 String? getLocalizedString(String? key, List<dynamic> args) {
