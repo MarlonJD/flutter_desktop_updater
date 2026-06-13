@@ -85,10 +85,14 @@ class DesktopUpdater {
 
     /// Version currently installed on this machine.
     required DesktopVersionInfo currentVersion,
+
+    /// Stable app-owned identity used for deterministic staged rollouts.
+    String? installationIdentity,
   }) {
     return UpdateClient(
       appArchiveUrl: appArchiveUrl,
       currentVersion: currentVersion,
+      installationIdentity: installationIdentity,
     ).checkForUpdate();
   }
 

@@ -461,7 +461,7 @@ server returns wrong Content-Range -> delete partial and fail
 final SHA-256 mismatch -> delete partial and fail
 ```
 
-- [ ] **Step 6.2: Staged rollout percentage**
+- [x] **Step 6.2: Staged rollout percentage**
 
 Add optional index metadata:
 

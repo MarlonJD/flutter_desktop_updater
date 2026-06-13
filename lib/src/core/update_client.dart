@@ -37,6 +37,7 @@ class UpdateClient {
     ProcessRunner runProcess = defaultProcessRunner,
     MinimumOSSupportChecker? isMinimumOSSupported,
     DesktopUpdaterTelemetry? telemetry,
+    this.installationIdentity,
   })  : platform = platform ?? Platform.operatingSystem,
         _currentUpdaterVersion = currentUpdaterVersion ??
             DesktopVersionInfo.parse(_desktopUpdaterPackageVersion),
@@ -53,6 +54,9 @@ class UpdateClient {
   final DesktopVersionInfo _currentUpdaterVersion;
   final String platform;
   final String channel;
+
+  /// Stable app-owned identity used for deterministic staged rollouts.
+  final String? installationIdentity;
   final UpdateTransport _transport;
   final ArtifactVerifier _verifier;
   final SafeZipExtractor _extractor;
@@ -78,6 +82,7 @@ class UpdateClient {
         platform: platform,
         currentVersion: currentVersion,
         channel: channel,
+        installationIdentity: installationIdentity,
       );
       if (item == null) {
         return null;

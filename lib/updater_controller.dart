@@ -32,6 +32,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.localization,
     this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
+    this.installationIdentity,
     this.preferences,
     this.telemetry,
     this.isMinimumOSSupported,
@@ -55,6 +56,9 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Release channel used for update selection and skip preferences.
   final String channel;
+
+  /// Stable app-owned identity used for deterministic staged rollouts.
+  final String? installationIdentity;
 
   /// Optional app-owned persistence adapter for skipped versions.
   final UpdatePreferences? preferences;
@@ -160,6 +164,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         appArchiveUrl: archiveUrl,
         currentVersion: currentVersion,
         channel: channel,
+        installationIdentity: installationIdentity,
         telemetry: telemetry,
         isMinimumOSSupported: isMinimumOSSupported,
       );

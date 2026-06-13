@@ -74,6 +74,97 @@ void main() {
     }
   });
 
+  test("filters staged rollout index items before descriptor download",
+      () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final rollout = {"percentage": 25, "salt": "stable-2026-06"};
+
+    final withoutIdentityTransport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+    });
+    final withoutIdentity = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: withoutIdentityTransport,
+    );
+
+    expect(await withoutIdentity.checkForUpdate(), isNull);
+    expect(withoutIdentityTransport.downloadedSources, [archiveUrl]);
+
+    final outsideRolloutTransport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+    });
+    final outsideRollout = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: outsideRolloutTransport,
+      installationIdentity: "device-1",
+    );
+
+    expect(await outsideRollout.checkForUpdate(), isNull);
+    expect(outsideRolloutTransport.downloadedSources, [archiveUrl]);
+
+    final eligibleTransport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+    });
+    final eligible = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: eligibleTransport,
+      installationIdentity: "pilot-a",
+    );
+
+    final result = await eligible.checkForUpdate();
+
+    expect(result, isNotNull);
+    expect(result!.item.version, "2.1.0");
+    expect(eligibleTransport.downloadedSources, [archiveUrl, releaseUrl]);
+  });
+
+  test("keeps rollout metadata absent items eligible without identity",
+      () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final transport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl),
+      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+    });
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: transport,
+    );
+
+    final result = await client.checkForUpdate();
+
+    expect(result, isNotNull);
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+  });
+
   test("skips descriptors that require a newer updater", () async {
     final archiveUrl =
         Uri.parse("https://updates.example.com/app-archive.json");
@@ -169,7 +260,7 @@ void main() {
   });
 }
 
-String _indexJson(Uri releaseUrl) {
+String _indexJson(Uri releaseUrl, {Map<String, dynamic>? rollout}) {
   return jsonEncode({
     "schemaVersion": 3,
     "appName": "Example",
@@ -181,6 +272,7 @@ String _indexJson(Uri releaseUrl) {
         "channel": "stable",
         "mandatory": true,
         "release": releaseUrl.toString(),
+        if (rollout != null) "rollout": rollout,
       },
     ],
   });
