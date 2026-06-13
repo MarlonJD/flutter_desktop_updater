@@ -89,6 +89,43 @@ void main() {
     }
   });
 
+  test("Windows zip-first staging writes native helper sidecar", () async {
+    final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
+    UpdateServer? server;
+    try {
+      server = await UpdateServer.bind(tempDir);
+      await buildReleaseFixture(
+        root: tempDir,
+        baseUri: server.uri,
+        platform: "windows",
+      );
+
+      final client = UpdateClient(
+        appArchiveUrl: server.uri.resolve("app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "1.0.0",
+          buildNumber: "100",
+        ),
+        platform: "windows",
+        stagingParent: tempDir,
+      );
+      final check = await client.checkForUpdate();
+
+      final staged = await client.downloadVerifyAndStage(
+        descriptor: check!.descriptor,
+      );
+      final sidecar = File(
+        path.join(staged.stagingPath, stagedReleaseManifestFileName),
+      );
+
+      expect(sidecar.existsSync(), isTrue);
+      expect(await sidecar.readAsString(), contains('"version": "2.0.0"'));
+    } finally {
+      await server?.close();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("checksum mismatch fails before extraction", () async {
     final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
     UpdateServer? server;

@@ -133,6 +133,12 @@ class UpdateClient {
         ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
+      } else if (descriptor.platform == "windows") {
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
       }
 
       return UpdateStageResult(

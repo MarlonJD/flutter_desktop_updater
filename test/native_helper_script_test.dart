@@ -47,4 +47,24 @@ void main() {
     expect(copyIndex, isNonNegative);
     expect(pruneIndex, lessThan(copyIndex));
   });
+
+  test("Windows helper updates uninstall DisplayVersion after overlay", () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    const copySnippet =
+        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
+    const registrySnippet = r"Update-UninstallDisplayVersion -Version";
+
+    final copyIndex = source.indexOf(copySnippet);
+    final registryIndex = source.indexOf(registrySnippet);
+    final relaunchIndex = source.indexOf(r"Start-Process -FilePath $exe");
+
+    expect(source, contains(r".desktop_updater_release_manifest.json"));
+    expect(source, contains("DisplayVersion"));
+    expect(copyIndex, isNonNegative);
+    expect(registryIndex, isNonNegative);
+    expect(relaunchIndex, isNonNegative);
+    expect(copyIndex, lessThan(registryIndex));
+    expect(registryIndex, lessThan(relaunchIndex));
+  });
 }
