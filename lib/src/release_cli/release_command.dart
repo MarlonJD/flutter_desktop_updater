@@ -2,17 +2,20 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/publish_command.dart";
+import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 
 Future<int> runReleaseCommand(
   List<String> args, {
   Directory? projectRoot,
   StringSink? output,
+  Map<String, String>? environment,
 }) async {
   final out = output ?? stdout;
   final parser = ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
     ..addCommand("publish", buildPublishParser())
+    ..addCommand("sign", buildSignParser())
     ..addCommand("validate", buildValidateParser());
 
   try {
@@ -30,8 +33,19 @@ Future<int> runReleaseCommand(
           projectRoot: projectRoot ?? Directory.current,
           output: out,
         );
+      case "sign":
+        return await runSignCommand(
+          command,
+          projectRoot: projectRoot ?? Directory.current,
+          output: out,
+          environment: environment,
+        );
       case "validate":
-        return await runValidateCommand(command, output: out);
+        return await runValidateCommand(
+          command,
+          output: out,
+          environment: environment,
+        );
     }
     out.writeln("Unsupported release command: ${command.name}");
     return 64;
@@ -50,6 +64,7 @@ Publish and validate desktop updater releases.
 
 Usage:
   dart run desktop_updater:release publish --platform macos
+  dart run desktop_updater:release sign --release dist/desktop_updater/releases/2.2.0/macos/release.json --public-key-id stable-2026 --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json
 
 ${parser.usage}

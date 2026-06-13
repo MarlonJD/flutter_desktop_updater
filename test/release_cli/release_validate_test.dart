@@ -1,6 +1,8 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:cryptography_plus/cryptography_plus.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:desktop_updater/src/release_manifest.dart";
@@ -89,6 +91,100 @@ void main() {
       await fixture.delete();
     }
   });
+
+  test("validate verifies signed hosted release descriptor", () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+    );
+    try {
+      await _signHostedRelease(fixture);
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.0.0+200",
+          "--require-signature",
+          "--public-keys-env",
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+        environment: {
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
+            _publicKeyId: fixture.publicKey,
+          }),
+        },
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("Hosted release descriptor: OK"));
+      expect(output.toString(), contains("Hosted artifact SHA-256: OK"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test(
+      "validate rejects tampered signed hosted descriptor before metadata trust",
+      () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+    );
+    try {
+      final releaseFile = await _signHostedRelease(fixture);
+      final json =
+          jsonDecode(await releaseFile.readAsString()) as Map<String, dynamic>;
+      final artifact = json["artifact"] as Map<String, dynamic>;
+      await releaseFile.writeAsString(
+        "${const JsonEncoder.withIndent("  ").convert({
+              ...json,
+              "artifact": {
+                ...artifact,
+                "sha256": "b" * 64,
+              },
+            })}\n",
+      );
+
+      final output = StringBuffer();
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.0.0+200",
+          "--require-signature",
+          "--public-keys-env",
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+        environment: {
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
+            _publicKeyId: fixture.publicKey,
+          }),
+        },
+      );
+
+      expect(exitCode, 1);
+      expect(
+        output.toString(),
+        contains("release.json signature verification failed."),
+      );
+      expect(
+        output.toString(),
+        isNot(contains("release.json artifact SHA-256 mismatch")),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
 }
 
 class HostedPublishFixture {
@@ -96,11 +192,13 @@ class HostedPublishFixture {
     required this.projectRoot,
     required this.manifestFile,
     required this.server,
+    required this.publicKey,
   });
 
   final Directory projectRoot;
   final File manifestFile;
   final UpdateServer server;
+  final String publicKey;
 
   Future<void> delete() async {
     await server.close();
@@ -136,6 +234,9 @@ Future<HostedPublishFixture> createHostedPublishFixture({
   await artifactFile.writeAsString("artifact bytes");
   final artifactSha256 = await sha256File(artifactFile);
   final artifactLength = await artifactFile.length();
+  final algorithm = Ed25519();
+  final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
+  final publicKey = await keyPair.extractPublicKey();
 
   await File(path.join(webRoot.path, "app-archive.json")).writeAsString(
     "${const JsonEncoder.withIndent("  ").convert({
@@ -206,5 +307,82 @@ Future<HostedPublishFixture> createHostedPublishFixture({
     projectRoot: projectRoot,
     manifestFile: manifestFile,
     server: server,
+    publicKey: base64Encode(publicKey.bytes),
   );
+}
+
+const _publicKeyId = "stable-2026";
+const _privateSeed = <int>[
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+];
+
+Future<File> _signHostedRelease(HostedPublishFixture fixture) async {
+  final releaseFile = File(
+    path.join(
+      fixture.projectRoot.path,
+      "web",
+      "releases",
+      "2.0.1",
+      "macos",
+      "release.json",
+    ),
+  );
+  final json =
+      jsonDecode(await releaseFile.readAsString()) as Map<String, dynamic>;
+  final descriptorToSign = ReleaseDescriptor.fromJson({
+    ...json,
+    "signature": {
+      "algorithm": "ed25519",
+      "publicKeyId": _publicKeyId,
+      "value": "",
+    },
+  });
+  final algorithm = Ed25519();
+  final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
+  final signature = await algorithm.sign(
+    descriptorToSign.canonicalSignatureBytes(),
+    keyPair: keyPair,
+  );
+  await releaseFile.writeAsString(
+    "${const JsonEncoder.withIndent("  ").convert({
+          ...json,
+          "signature": {
+            "algorithm": "ed25519",
+            "publicKeyId": _publicKeyId,
+            "value": base64Encode(signature.bytes),
+          },
+        })}\n",
+  );
+  return releaseFile;
 }

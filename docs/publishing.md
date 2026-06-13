@@ -88,9 +88,23 @@ Supported install strategies:
 - `wholeBundleReplace`: macOS `.app` bundle replacement.
 - `wholeDirectoryReplace`: Windows and Linux app directory replacement.
 
-The optional `signature` field is reserved for production authenticity policies.
-The built-in verifier currently validates descriptor shape, exact URL support,
-artifact length, SHA-256, and zip safety.
+The optional `signature` field adds package-owned metadata authenticity for
+`release.json`. It signs the canonical descriptor bytes with the signature
+value blanked, then stores the Ed25519 signature inline:
+
+```json
+"signature": {
+  "algorithm": "ed25519",
+  "publicKeyId": "stable-2026",
+  "value": "base64-raw-ed25519-signature"
+}
+```
+
+This signature proves the versioned update metadata came from a holder of the
+matching private key before the updater trusts artifact metadata such as URL,
+length, and SHA-256. It does not replace app-owned platform trust: Authenticode,
+Apple Developer ID notarization, native package signing, store review, and
+Linux repository signing remain the app publisher's responsibility.
 
 ## Common Minimum Setup
 
@@ -204,6 +218,18 @@ Without `--from-version`, validation uses the previous hosted release for the
 same platform and channel when available, or synthetic `0.0.0` for a first
 release.
 
+To require a signed hosted `release.json`, pin public keys in an environment
+variable and pass it to validation:
+
+```sh
+export DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS='{"stable-2026":"base64-raw-ed25519-public-key"}'
+
+dart run desktop_updater:release validate \
+  --manifest dist/desktop_updater/.desktop_updater_publish.json \
+  --require-signature \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+```
+
 ## Recommended Setup
 
 For production, start from the minimum setup and add:
@@ -211,10 +237,50 @@ For production, start from the minimum setup and add:
 - HTTPS for `app-archive.json`, `release.json`, and zip artifacts.
 - Short cache TTLs for `app-archive.json`.
 - Long, immutable cache TTLs for versioned `release.json` and zip files.
+- Signed `release.json` descriptors with public keys pinned by the app or
+  release validation environment.
 - S3-compatible storage, SFTP, or a custom upload command in CI.
 - Platform publisher-trust gates before packaging.
 - A release approval step before publishing `app-archive.json`.
-- `release validate` after every upload.
+- `release validate --require-signature` after every production upload.
+
+### Signing release.json
+
+Sign each generated descriptor after packaging and before uploading it:
+
+```sh
+dart run desktop_updater:release sign \
+  --release dist/desktop_updater/releases/2.2.0/linux/release.json \
+  --public-key-id stable-2026 \
+  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
+```
+
+`DESKTOP_UPDATER_RELEASE_PRIVATE_KEY` must contain a base64-encoded raw
+32-byte Ed25519 private seed. You can also keep the key outside the repository
+and point to it explicitly:
+
+```sh
+dart run desktop_updater:release sign \
+  --release dist/desktop_updater/releases/2.2.0/linux/release.json \
+  --public-key-id stable-2026 \
+  --private-key-file /secure/path/desktop-updater-release.key
+```
+
+Private signing keys are never read from `desktop_updater.yaml`. Keep them in
+CI secret storage, a dedicated key file, or another app-owned secret manager.
+
+### Trust Split
+
+Signed `release.json` is the package-owned, platform-independent trust layer. It
+protects update metadata across macOS, Windows, and Linux: which artifact URL is
+selected, which length is expected, and which SHA-256 digest must match.
+
+Platform trust remains app-owned. For Windows, use Authenticode or a trusted
+installer/channel when your distribution requires it. For macOS, sign and
+notarize the `.app` before packaging. For Linux, use native package repository
+signing or store/channel trust when that is how users install your app. These
+steps answer "will the platform trust this app"; the signed descriptor answers
+"did this updater metadata come from my release key."
 
 For Windows and Linux production signing choices, native package channels, and
 country or provider restrictions, see
@@ -702,15 +768,25 @@ Validation must prove the hosted files work in client order:
 3. Fetch hosted `app-archive.json`.
 4. Select an update for platform and channel.
 5. Fetch hosted `release.json`.
-6. Download artifact bytes.
-7. Verify exact length and SHA-256.
-8. Print clear OK or failure lines.
+6. Verify its Ed25519 signature when `--require-signature` is enabled.
+7. Download artifact bytes.
+8. Verify exact length and SHA-256.
+9. Print clear OK or failure lines.
 
 Example:
 
 ```sh
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json
+```
+
+Signed validation:
+
+```sh
+dart run desktop_updater:release validate \
+  --manifest dist/desktop_updater/.desktop_updater_publish.json \
+  --require-signature \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 ## Low-Level Commands

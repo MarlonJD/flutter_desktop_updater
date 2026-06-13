@@ -5,6 +5,7 @@ import "package:args/args.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:http/http.dart" as http;
@@ -13,12 +14,18 @@ ArgParser buildValidateParser() {
   return ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
     ..addOption("manifest")
-    ..addOption("from-version");
+    ..addOption("from-version")
+    ..addFlag("require-signature", negatable: false)
+    ..addOption(
+      "public-keys-env",
+      help: "Environment variable containing JSON public key map.",
+    );
 }
 
 Future<int> runValidateCommand(
   ArgResults results, {
   required StringSink output,
+  Map<String, String>? environment,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildValidateParser().usage);
@@ -27,12 +34,37 @@ Future<int> runValidateCommand(
 
   final manifestFile = File(_required(results, "manifest"));
   final fromVersion = results["from-version"] as String?;
-  await ReleaseValidator().validate(
+  await ReleaseValidator(
+    artifactVerifier: _artifactVerifier(
+      results: results,
+      environment: environment ?? Platform.environment,
+    ),
+  ).validate(
     manifestFile: manifestFile,
     fromVersion: fromVersion,
     output: output,
   );
   return 0;
+}
+
+ArtifactVerifier _artifactVerifier({
+  required ArgResults results,
+  required Map<String, String> environment,
+}) {
+  if (!(results["require-signature"] as bool)) {
+    return const ArtifactVerifier();
+  }
+
+  final envName = _required(results, "public-keys-env");
+  final value = environment[envName];
+  if (value == null || value.trim().isEmpty) {
+    throw FormatException("Missing environment variable $envName.");
+  }
+  return ArtifactVerifier(
+    policy: ArtifactVerificationPolicy.requireEd25519Signature(
+      publicKeys: decodeReleasePublicKeysJson(value),
+    ),
+  );
 }
 
 class ReleaseValidator {

@@ -2,6 +2,7 @@ import "dart:io";
 
 import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 
 typedef DescriptorSignatureVerifier = Future<bool> Function(
   ReleaseDescriptor descriptor,
@@ -13,6 +14,16 @@ class ArtifactVerificationPolicy {
     this.requireSignature = false,
     this.signatureVerifier,
   });
+
+  factory ArtifactVerificationPolicy.requireEd25519Signature({
+    required Map<String, String> publicKeys,
+  }) {
+    final verifier = Ed25519ReleaseSignatureVerifier(publicKeys);
+    return ArtifactVerificationPolicy(
+      requireSignature: true,
+      signatureVerifier: verifier.verify,
+    );
+  }
 
   final bool requireSignature;
   final DescriptorSignatureVerifier? signatureVerifier;
