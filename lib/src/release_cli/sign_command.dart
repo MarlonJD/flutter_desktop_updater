@@ -6,6 +6,7 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:path/path.dart" as path;
 
+/// Builds the argument parser for `desktop_updater:release sign`.
 ArgParser buildSignParser() {
   return ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
@@ -21,6 +22,10 @@ ArgParser buildSignParser() {
     );
 }
 
+/// Runs `release sign` for a local `release.json` descriptor.
+///
+/// The private key must come from [environment] or an external key file so
+/// secrets do not need to live in package configuration.
 Future<int> runSignCommand(
   ArgResults results, {
   required Directory projectRoot,
@@ -58,12 +63,15 @@ Future<int> runSignCommand(
   return 0;
 }
 
+/// Signs release descriptors with Ed25519 metadata.
 class ReleaseDescriptorSigner {
+  /// Creates a descriptor signer.
   ReleaseDescriptorSigner({Ed25519? algorithm})
       : _algorithm = algorithm ?? Ed25519();
 
   final Ed25519 _algorithm;
 
+  /// Signs [releaseFile] and writes the signature into its `signature` field.
   Future<void> sign({
     required File releaseFile,
     required String publicKeyId,
@@ -127,7 +135,7 @@ Future<String> _readPrivateKey({
   }
 
   if (hasEnv) {
-    final value = environment[envName!.trim()];
+    final value = environment[envName.trim()];
     if (value == null || value.trim().isEmpty) {
       throw FormatException("Missing environment variable ${envName.trim()}.");
     }

@@ -1,7 +1,12 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:desktop_updater/src/core/update_retry_policy.dart";
 import "package:desktop_updater/src/io/file_update_transport.dart";
+import "package:desktop_updater/src/io/http_update_transport.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:http/http.dart" as http;
+import "package:http/testing.dart";
 import "package:path/path.dart" as path;
 
 void main() {
@@ -34,5 +39,101 @@ void main() {
       ),
       throwsUnsupportedError,
     );
+  });
+
+  test("http transport retries transient statuses with backoff", () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    final delays = <Duration>[];
+    var attempts = 0;
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          attempts += 1;
+          if (attempts < 3) {
+            return http.Response("busy", HttpStatus.serviceUnavailable);
+          }
+          return http.Response("ok", HttpStatus.ok);
+        }),
+        retryPolicy: const UpdateRetryPolicy(),
+        delay: (duration) async {
+          delays.add(duration);
+        },
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+
+      await transport.download(
+        Uri.parse("https://updates.example.com/download.txt"),
+        destination,
+      );
+
+      expect(attempts, 3);
+      expect(delays, [
+        const Duration(milliseconds: 500),
+        const Duration(seconds: 1),
+      ]);
+      expect(destination.readAsStringSync(), "ok");
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("http transport does not retry non-transient statuses", () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    final delays = <Duration>[];
+    var attempts = 0;
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          attempts += 1;
+          return http.Response("missing", HttpStatus.notFound);
+        }),
+        delay: (duration) async {
+          delays.add(duration);
+        },
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+
+      await expectLater(
+        transport.download(
+          Uri.parse("https://updates.example.com/download.txt"),
+          destination,
+        ),
+        throwsA(isA<HttpException>()),
+      );
+
+      expect(attempts, 1);
+      expect(delays, isEmpty);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("http transport retries transient client failures", () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    var attempts = 0;
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          attempts += 1;
+          if (attempts == 1) {
+            throw http.ClientException("connection reset", request.url);
+          }
+          return http.Response.bytes(utf8.encode("ok"), HttpStatus.ok);
+        }),
+        retryPolicy: const UpdateRetryPolicy(maxAttempts: 2),
+        delay: (_) async {},
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+
+      await transport.download(
+        Uri.parse("https://updates.example.com/download.txt"),
+        destination,
+      );
+
+      expect(attempts, 2);
+      expect(destination.readAsStringSync(), "ok");
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
   });
 }

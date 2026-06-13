@@ -83,6 +83,25 @@ best release for the current platform, channel, and installed version.
 monotonic build number. Omit it when the installed app only exposes a semantic
 version such as `1.2.3`.
 
+`minimumUpdaterVersion` is enforced before artifact download. If a descriptor
+requires a newer `desktop_updater` runtime than the app has, update checks skip
+that descriptor and direct staging rejects it before fetching the zip.
+
+`minimumOS` is optional descriptor metadata. Use it when a release should only
+be offered to newer operating system versions:
+
+```json
+"minimumOS": {
+  "macos": "13.0",
+  "windows": "10.0.19045",
+  "linux": "glibc-2.35"
+}
+```
+
+The runtime parses and preserves this metadata. Apps that want enforcement
+provide an `isMinimumOSSupported` callback to `DesktopUpdaterController` or
+`UpdateClient`; without that callback the field is informational.
+
 Supported install strategies:
 
 - `wholeBundleReplace`: macOS `.app` bundle replacement.
@@ -105,6 +124,26 @@ matching private key before the updater trusts artifact metadata such as URL,
 length, and SHA-256. It does not replace app-owned platform trust: Authenticode,
 Apple Developer ID notarization, native package signing, store review, and
 Linux repository signing remain the app publisher's responsibility.
+
+## Runtime Policies
+
+The runtime ships product-grade defaults but keeps storage and telemetry
+app-owned:
+
+- Optional update skip persistence is provided by an `UpdatePreferences`
+  adapter. The package stores skipped versions in memory when no adapter is
+  supplied and never depends on `shared_preferences` or another storage
+  package.
+- HTTP downloads retry transient statuses `408`, `429`, `500`, `502`, `503`,
+  and `504` with `UpdateRetryPolicy(maxAttempts: 3, initialDelay: 500ms,
+  maxDelay: 5s)`. Descriptor parse failures, signature failures, SHA-256
+  mismatches, unsupported URL schemes, and zip safety failures are not retried.
+- Optional telemetry is a `DesktopUpdaterTelemetry` callback with typed events.
+  The package does not include a telemetry backend, and callback failures do not
+  affect update checks, downloads, verification, or install handoff.
+
+Advanced callers that use `HttpUpdateTransport` directly can provide a custom
+`UpdateRetryPolicy` and delay function for tests or app-specific retry tuning.
 
 ## Common Minimum Setup
 

@@ -4,6 +4,7 @@ This index tracks repository-backed implementation plans for `desktop_updater`.
 
 ## Active
 
+- [2026-06-13 - Trust, UX, and product roadmap](2026-06-13-trust-ux-and-product-roadmap-plan.md)
 - [2026-06-12 - Security remediation and follow-up](2026-06-12-security-remediation-plan.md)
 - [2026-06-12 - Manual update check result](2026-06-12-manual-update-check-result-plan.md)
 - [2026-06-12 - Release publish UX](2026-06-12-release-publish-ux-plan.md)

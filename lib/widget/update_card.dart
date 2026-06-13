@@ -1,3 +1,5 @@
+import "dart:async";
+
 import "package:desktop_updater/desktop_updater_inherited_widget.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_state.dart";
@@ -261,7 +263,9 @@ class _UpdateCardActions extends StatelessWidget {
                   notifier.getLocalization?.skipThisVersionText ??
                       "Skip this version",
                 ),
-                onPressed: notifier.makeSkipUpdate,
+                onPressed: () {
+                  unawaited(notifier.makeSkipUpdate());
+                },
               ),
           ],
         ),

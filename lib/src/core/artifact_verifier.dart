@@ -4,18 +4,26 @@ import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_signature_verifier.dart";
 
+/// Callback used to verify signed descriptor bytes.
 typedef DescriptorSignatureVerifier = Future<bool> Function(
+  /// Descriptor whose [ReleaseDescriptor.signature] should be checked.
   ReleaseDescriptor descriptor,
+
+  /// Canonical descriptor bytes produced for signature verification.
   List<int> canonicalBytes,
 );
 
+/// Verification requirements applied before an update artifact is trusted.
 class ArtifactVerificationPolicy {
+  /// Creates an artifact verification policy.
   const ArtifactVerificationPolicy({
     this.requireSignature = false,
     this.signatureVerifier,
   });
 
+  /// Creates a policy that requires Ed25519 descriptor signatures.
   factory ArtifactVerificationPolicy.requireEd25519Signature({
+    /// Map of `publicKeyId` to base64 raw Ed25519 public key bytes.
     required Map<String, String> publicKeys,
   }) {
     final verifier = Ed25519ReleaseSignatureVerifier(publicKeys);
@@ -25,17 +33,24 @@ class ArtifactVerificationPolicy {
     );
   }
 
+  /// Whether a descriptor signature is required before artifact download.
   final bool requireSignature;
+
+  /// Verifier used when [requireSignature] is true.
   final DescriptorSignatureVerifier? signatureVerifier;
 }
 
+/// Verifies release descriptors and downloaded update artifact files.
 class ArtifactVerifier {
+  /// Creates an artifact verifier using [policy].
   const ArtifactVerifier({
     this.policy = const ArtifactVerificationPolicy(),
   });
 
+  /// Verification policy applied by this verifier.
   final ArtifactVerificationPolicy policy;
 
+  /// Validates descriptor fields, URL shape, and optional descriptor signature.
   Future<void> verifyDescriptor(ReleaseDescriptor descriptor) async {
     descriptor.validate();
     verifyArtifactUrl(descriptor.artifact.url);
@@ -72,6 +87,7 @@ class ArtifactVerifier {
     }
   }
 
+  /// Verifies that [file] matches the expected artifact length and SHA-256.
   Future<void> verifyArtifactFile({
     required ReleaseArtifact artifact,
     required File file,
@@ -96,6 +112,7 @@ class ArtifactVerifier {
   }
 }
 
+/// Validates that an artifact URL is absolute and uses a supported scheme.
 void verifyArtifactUrl(Uri uri) {
   if (uri.scheme != "https" && uri.scheme != "http" && uri.scheme != "file") {
     throw UnsupportedError("Unsupported update URL scheme: ${uri.scheme}");

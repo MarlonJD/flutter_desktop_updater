@@ -417,7 +417,9 @@ class UpdateDialogWidget extends StatelessWidget {
                                 "Skip this version",
                             style: TextStyle(color: buttonTextColor),
                           ),
-                          onPressed: notifier.makeSkipUpdate,
+                          onPressed: () {
+                            unawaited(notifier.makeSkipUpdate());
+                          },
                         ),
                       if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
                       TextButton.icon(

@@ -42,6 +42,33 @@ void main() {
         as Map<String, dynamic>;
     expect(signature["value"], "");
   });
+
+  test("parses optional minimum OS metadata", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "minimumOS": {
+        "macos": "13.0",
+        "windows": "10.0.19045",
+        "linux": "glibc-2.35",
+      },
+    });
+
+    expect(descriptor.minimumOS["macos"], "13.0");
+    expect(descriptor.minimumOSForPlatform("linux"), "glibc-2.35");
+    expect(descriptor.minimumOSForPlatform("freebsd"), isNull);
+    expect(descriptor.toJson()["minimumOS"], {
+      "macos": "13.0",
+      "windows": "10.0.19045",
+      "linux": "glibc-2.35",
+    });
+  });
+
+  test("omits minimum OS when descriptor metadata does not provide it", () {
+    final descriptor = ReleaseDescriptor.fromJson(_descriptorJson());
+
+    expect(descriptor.minimumOS, isEmpty);
+    expect(descriptor.toJson(), isNot(contains("minimumOS")));
+  });
 }
 
 Map<String, dynamic> _descriptorJson() {

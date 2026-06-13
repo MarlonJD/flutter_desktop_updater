@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
+import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_update.dart";
@@ -14,10 +15,19 @@ import "package:desktop_updater/src/release_manifest.dart"
 import "package:desktop_updater/src/version_info.dart";
 import "package:path/path.dart" as path;
 
+const String _desktopUpdaterPackageVersion = "2.1.4";
+
+/// App-owned policy callback for descriptor `minimumOS` checks.
+typedef MinimumOSSupportChecker = bool Function({
+  required String platform,
+  required String minimumOS,
+});
+
 class UpdateClient {
   UpdateClient({
     required this.appArchiveUrl,
     required this.currentVersion,
+    DesktopVersionInfo? currentUpdaterVersion,
     String? platform,
     this.channel = "stable",
     UpdateTransport? transport,
@@ -25,15 +35,22 @@ class UpdateClient {
     SafeZipExtractor extractor = const SafeZipExtractor(),
     Directory? stagingParent,
     ProcessRunner runProcess = defaultProcessRunner,
+    MinimumOSSupportChecker? isMinimumOSSupported,
+    DesktopUpdaterTelemetry? telemetry,
   })  : platform = platform ?? Platform.operatingSystem,
+        _currentUpdaterVersion = currentUpdaterVersion ??
+            DesktopVersionInfo.parse(_desktopUpdaterPackageVersion),
         _transport = transport ?? CompositeUpdateTransport(),
         _verifier = verifier,
         _extractor = extractor,
         _stagingParent = stagingParent,
-        _runProcess = runProcess;
+        _runProcess = runProcess,
+        _isMinimumOSSupported = isMinimumOSSupported,
+        _telemetry = telemetry;
 
   final Uri appArchiveUrl;
   final DesktopVersionInfo currentVersion;
+  final DesktopVersionInfo _currentUpdaterVersion;
   final String platform;
   final String channel;
   final UpdateTransport _transport;
@@ -41,6 +58,8 @@ class UpdateClient {
   final SafeZipExtractor _extractor;
   final Directory? _stagingParent;
   final ProcessRunner _runProcess;
+  final MinimumOSSupportChecker? _isMinimumOSSupported;
+  final DesktopUpdaterTelemetry? _telemetry;
 
   Future<UpdateCheckResult?> checkForUpdate() async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -75,6 +94,9 @@ class UpdateClient {
         return null;
       }
       _verifyDescriptorMatchesIndexItem(item: item, descriptor: descriptor);
+      if (!_descriptorPolicyAllowsUpdate(descriptor)) {
+        return null;
+      }
 
       return UpdateCheckResult(
         index: index,
@@ -93,6 +115,7 @@ class UpdateClient {
     void Function(int receivedBytes, int? totalBytes)? onProgress,
   }) async {
     await _verifier.verifyDescriptor(descriptor);
+    _ensureDescriptorPolicyAllowsDownload(descriptor);
 
     final stagingRoot = await (_stagingParent ?? Directory.systemTemp)
         .createTemp("desktop_updater_stage_");
@@ -107,6 +130,15 @@ class UpdateClient {
       await _verifier.verifyArtifactFile(
         artifact: descriptor.artifact,
         file: artifactFile,
+      );
+      emitUpdateTelemetry(
+        _telemetry,
+        UpdateTelemetryEvent.artifactVerified(
+          source: descriptor.artifact.url,
+          version: descriptor.version,
+          channel: descriptor.channel,
+          platform: descriptor.platform,
+        ),
       );
 
       if (descriptor.platform == "macos") {
@@ -151,6 +183,53 @@ class UpdateClient {
       }
       rethrow;
     }
+  }
+
+  bool _descriptorPolicyAllowsUpdate(ReleaseDescriptor descriptor) {
+    return _supportsRequiredUpdaterVersion(descriptor) &&
+        _supportsMinimumOS(descriptor);
+  }
+
+  void _ensureDescriptorPolicyAllowsDownload(ReleaseDescriptor descriptor) {
+    if (!_supportsRequiredUpdaterVersion(descriptor)) {
+      throw UnsupportedError(
+        "release.json requires desktop_updater "
+        "${descriptor.minimumUpdaterVersion} or newer.",
+      );
+    }
+    if (!_supportsMinimumOS(descriptor)) {
+      final minimumOS = descriptor.minimumOSForPlatform(platform);
+      throw UnsupportedError(
+        "release.json requires $platform $minimumOS or newer.",
+      );
+    }
+  }
+
+  bool _supportsRequiredUpdaterVersion(ReleaseDescriptor descriptor) {
+    final requiredVersion = descriptor.minimumUpdaterVersion.trim();
+    if (requiredVersion.isEmpty) {
+      return true;
+    }
+
+    return compareDesktopVersions(
+          _currentUpdaterVersion,
+          DesktopVersionInfo.parse(requiredVersion),
+        ) >=
+        0;
+  }
+
+  bool _supportsMinimumOS(ReleaseDescriptor descriptor) {
+    final minimumOS = descriptor.minimumOSForPlatform(platform);
+    if (minimumOS == null) {
+      return true;
+    }
+
+    final checker = _isMinimumOSSupported;
+    if (checker == null) {
+      return true;
+    }
+
+    return checker(platform: platform, minimumOS: minimumOS);
   }
 }
 

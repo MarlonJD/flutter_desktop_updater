@@ -175,6 +175,60 @@ controller.checkVersion()` and handle the thrown error. For user-triggered
 checks, prefer `checkForUpdates()`, which returns `ManualUpdateCheckFailed`
 instead of throwing.
 
+## Runtime Extension Points
+
+The controller keeps skip, retry, and telemetry behavior optional so apps do not
+need to adopt a storage or analytics package just to use the updater.
+
+Skip preferences are in-memory by default. To persist "skip this version"
+across controller recreation, provide an app-owned `UpdatePreferences` adapter:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  preferences: MyUpdatePreferencesStore(),
+);
+```
+
+The adapter stores one skipped version per channel with
+`skippedVersion({required channel})`,
+`skipVersion({required version, required channel})`, and
+`clearSkippedVersion({required channel})`. Mandatory updates ignore skipped
+versions.
+
+Telemetry is also app-owned. Pass a callback to receive typed lifecycle events
+such as `checkStarted`, `checkFailed`, `updateSelected`, `downloadStarted`,
+`downloadFailed`, `artifactVerified`, `installScheduled`, and `installFailed`:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  telemetry: (event) {
+    analytics.record("desktop_update_${event.type.name}");
+  },
+);
+```
+
+Telemetry callback failures are ignored by the updater. The callback is for
+observation only and is never required for update checks, downloads, or install
+handoff.
+
+If your app wants to enforce descriptor `minimumOS` metadata, provide a
+deterministic policy callback:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  isMinimumOSSupported: ({required platform, required minimumOS}) {
+    return myRuntimePolicy.supports(platform, minimumOS);
+  },
+);
+```
+
+When the callback returns false for the current platform, the descriptor is
+skipped. If no callback is supplied, `minimumOS` is parsed and preserved but not
+enforced by the controller.
+
 ## Custom UI With `DesktopUpdaterInheritedNotifier`
 
 For product-specific UI, wrap your own widget with

@@ -1,7 +1,9 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_client.dart";
+import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -71,6 +73,181 @@ void main() {
       await fixture.delete();
     }
   });
+
+  test("skips descriptors that require a newer updater", () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final transport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl),
+      releaseUrl: _descriptorJson(
+        artifactUrl: artifactUrl,
+        minimumUpdaterVersion: "99.0.0",
+      ),
+    });
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      currentUpdaterVersion: DesktopVersionInfo.parse("2.1.4"),
+      platform: "macos",
+      transport: transport,
+    );
+
+    final result = await client.checkForUpdate();
+
+    expect(result, isNull);
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+    expect(transport.downloadedSources, isNot(contains(artifactUrl)));
+  });
+
+  test("rejects direct artifact staging when updater version is too old", () {
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final transport = _MapUpdateTransport({});
+    final client = UpdateClient(
+      appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      currentUpdaterVersion: DesktopVersionInfo.parse("2.1.4"),
+      platform: "macos",
+      transport: transport,
+    );
+
+    expect(
+      () => client.downloadVerifyAndStage(
+        descriptor: _descriptor(
+          artifactUrl: artifactUrl,
+          minimumUpdaterVersion: "99.0.0",
+        ),
+      ),
+      throwsUnsupportedError,
+    );
+    expect(transport.downloadedSources, isEmpty);
+  });
+
+  test("skips descriptors when minimum OS policy rejects the platform",
+      () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final transport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl),
+      releaseUrl: _descriptorJson(
+        artifactUrl: artifactUrl,
+        minimumOS: {"macos": "13.0"},
+      ),
+    });
+    final checkedPolicies = <String>[];
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: transport,
+      isMinimumOSSupported: ({
+        required minimumOS,
+        required platform,
+      }) {
+        checkedPolicies.add("$platform:$minimumOS");
+        return false;
+      },
+    );
+
+    final result = await client.checkForUpdate();
+
+    expect(result, isNull);
+    expect(checkedPolicies, ["macos:13.0"]);
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+  });
+}
+
+String _indexJson(Uri releaseUrl) {
+  return jsonEncode({
+    "schemaVersion": 3,
+    "appName": "Example",
+    "items": [
+      {
+        "version": "2.1.0",
+        "buildNumber": 210,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": true,
+        "release": releaseUrl.toString(),
+      },
+    ],
+  });
+}
+
+String _descriptorJson({
+  required Uri artifactUrl,
+  String minimumUpdaterVersion = "2.0.0",
+  Map<String, String> minimumOS = const {},
+}) {
+  return jsonEncode(
+    _descriptor(
+      artifactUrl: artifactUrl,
+      minimumUpdaterVersion: minimumUpdaterVersion,
+      minimumOS: minimumOS,
+    ).toJson(),
+  );
+}
+
+ReleaseDescriptor _descriptor({
+  required Uri artifactUrl,
+  String minimumUpdaterVersion = "2.0.0",
+  Map<String, String> minimumOS = const {},
+}) {
+  return ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.app",
+    appName: "Example",
+    version: "2.1.0",
+    buildNumber: 210,
+    platform: "macos",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: artifactUrl,
+      sha256: "a" * 64,
+      length: 12,
+    ),
+    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    minimumUpdaterVersion: minimumUpdaterVersion,
+    minimumOS: minimumOS,
+    generatedAt: DateTime.utc(2026, 6, 13),
+  );
+}
+
+class _MapUpdateTransport implements UpdateTransport {
+  _MapUpdateTransport(this.responses);
+
+  final Map<Uri, String> responses;
+  final List<Uri> downloadedSources = [];
+
+  @override
+  Future<void> download(
+    Uri source,
+    File destination, {
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
+  }) async {
+    downloadedSources.add(source);
+    final response = responses[source];
+    if (response == null) {
+      throw StateError("No fake response for $source.");
+    }
+    await destination.parent.create(recursive: true);
+    await destination.writeAsString(response);
+    onProgress?.call(response.length, response.length);
+  }
 }
 
 class _UpdateFixture {

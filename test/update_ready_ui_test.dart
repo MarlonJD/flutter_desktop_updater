@@ -191,7 +191,7 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   }
 
   @override
-  void makeSkipUpdate() {
+  Future<void> makeSkipUpdate() async {
     _skipUpdate = true;
     notifyListeners();
   }

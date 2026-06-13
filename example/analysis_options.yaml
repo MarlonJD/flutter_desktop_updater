@@ -51,7 +51,9 @@ linter:
     prefer_int_literals: true                               # To improve code readability.
     prefer_null_aware_method_calls: true                    # To improve code readability.
     prefer_double_quotes: true                              # To encourage consistent styling.                 
-    public_member_api_docs: true                            # To provide users with ample context and explanation.
+    # Example widgets are demo code rather than package API; keep public API
+    # documentation enforced by the root package analysis options.
+    public_member_api_docs: false
     require_trailing_commas: true                           # To improve code readability.
     sort_constructors_first: true                           # To provide a consistent style for classes.
     sort_unnamed_constructors_first: true                   # To provide organization and quick exploration.

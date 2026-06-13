@@ -5,6 +5,7 @@ import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:path/path.dart" as path;
 import "package:yaml/yaml.dart";
 
+/// Builds the argument parser for `desktop_updater:release doctor`.
 ArgParser buildDoctorParser() {
   return ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
@@ -12,6 +13,7 @@ ArgParser buildDoctorParser() {
     ..addOption("config");
 }
 
+/// Runs release configuration diagnostics for one target platform.
 Future<int> runDoctorCommand(
   ArgResults results, {
   required Directory projectRoot,
@@ -139,13 +141,10 @@ void _writeConfigDiagnostics(
   switch (platform) {
     case "windows":
       _writeWindowsDiagnostics(config, output);
-      break;
     case "linux":
       _writeLinuxDiagnostics(config, output);
-      break;
     case "macos":
       _writeMacOSDiagnostics(config, output);
-      break;
   }
 }
 
