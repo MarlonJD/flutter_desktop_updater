@@ -167,6 +167,14 @@ Why this helper exists: automatic startup checks should usually stay quiet when
 nothing is available, but a manual "Check for updates" button should still be
 able to tell the user "up to date" or "check failed".
 
+Automatic startup checks also stay quiet when the version check itself fails.
+The controller still moves to `UpdateFailed`, so inline surfaces and custom
+state UI can show retry affordances, but the initial `init()` check does not
+throw into app startup. For strict flows, explicitly `await
+controller.checkVersion()` and handle the thrown error. For user-triggered
+checks, prefer `checkForUpdates()`, which returns `ManualUpdateCheckFailed`
+instead of throwing.
+
 ## Custom UI With `DesktopUpdaterInheritedNotifier`
 
 For product-specific UI, wrap your own widget with

@@ -1,10 +1,37 @@
 import "dart:async";
+import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const channel = MethodChannel("desktop_updater");
+
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == "getCurrentVersionInfo") {
+        return <String, String?>{
+          "version": "1.0.0",
+          "buildNumber": "100",
+        };
+      }
+      if (methodCall.method == "getCurrentVersion") {
+        return "100";
+      }
+      return null;
+    });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
   test("skipInitialVersionCheck lets callers trigger checks manually", () {
     final controller = DesktopUpdaterController(
       appArchiveUrl: null,
@@ -23,6 +50,51 @@ void main() {
     expect(controller.skipInitialVersionCheck, isTrue);
     expect(controller.state, isA<UpdateIdle>());
     expect(notifications, 1);
+  });
+
+  test(
+    "automatic startup check failure updates state without unhandled error",
+    () async {
+      final missingArchive = Uri.file(
+        "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
+      );
+      final unhandledErrors = <Object>[];
+      final failed = Completer<void>();
+      late DesktopUpdaterController controller;
+
+      await runZonedGuarded<Future<void>>(
+        () async {
+          controller = DesktopUpdaterController(appArchiveUrl: missingArchive);
+          controller.addListener(() {
+            if (controller.state is UpdateFailed && !failed.isCompleted) {
+              failed.complete();
+            }
+          });
+
+          await failed.future.timeout(const Duration(seconds: 5));
+          await Future<void>.delayed(Duration.zero);
+        },
+        (error, _) {
+          unhandledErrors.add(error);
+        },
+      );
+
+      expect(controller.state, isA<UpdateFailed>());
+      expect(unhandledErrors, isEmpty);
+    },
+  );
+
+  test("checkVersion remains strict when awaited explicitly", () async {
+    final missingArchive = Uri.file(
+      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: missingArchive,
+      skipInitialVersionCheck: true,
+    );
+
+    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
+    expect(controller.state, isA<UpdateFailed>());
   });
 
   test(

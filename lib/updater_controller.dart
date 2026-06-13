@@ -59,7 +59,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       return;
     }
 
-    unawaited(checkVersion());
+    unawaited(_checkVersionQuietly());
     notifyListeners();
   }
 
@@ -109,6 +109,14 @@ class DesktopUpdaterController extends ChangeNotifier {
       _state = UpdateFailed(error);
       notifyListeners();
       rethrow;
+    }
+  }
+
+  Future<void> _checkVersionQuietly() async {
+    try {
+      await checkVersion();
+    } on Object {
+      // checkVersion already moved the controller into UpdateFailed.
     }
   }
 
