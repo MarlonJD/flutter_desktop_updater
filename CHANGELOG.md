@@ -1,3 +1,8 @@
+## 2.1.4
+
+* Added `release publish --mandatory` so generated `app-archive.json` items can mark updates as mandatory while keeping the default optional.
+* Fixed Windows staged updates to refresh the uninstall display version metadata after installation.
+
 ## 2.1.3
 
 * Fixed Windows `release publish` builds so the CLI invokes `flutter build windows --release` through shell-aware process resolution.
