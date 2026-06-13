@@ -44,6 +44,12 @@ Publish one platform:
 dart run desktop_updater:release publish --platform macos
 ```
 
+Before your first production release, run:
+
+```sh
+dart run desktop_updater:release doctor --platform macos
+```
+
 With only `updates.baseUrl`, publish creates an upload-ready package under
 `dist/desktop_updater` and prints the manual upload and validate instructions.
 With an upload provider configured, it uploads versioned files first, validates

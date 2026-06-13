@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:args/args.dart";
+import "package:desktop_updater/src/release_cli/doctor_command.dart";
 import "package:desktop_updater/src/release_cli/publish_command.dart";
 import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
@@ -14,6 +15,7 @@ Future<int> runReleaseCommand(
   final out = output ?? stdout;
   final parser = ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
+    ..addCommand("doctor", buildDoctorParser())
     ..addCommand("publish", buildPublishParser())
     ..addCommand("sign", buildSignParser())
     ..addCommand("validate", buildValidateParser());
@@ -27,6 +29,12 @@ Future<int> runReleaseCommand(
 
     final command = results.command!;
     switch (command.name) {
+      case "doctor":
+        return await runDoctorCommand(
+          command,
+          projectRoot: projectRoot ?? Directory.current,
+          output: out,
+        );
       case "publish":
         return await runPublishCommand(
           command,
@@ -63,6 +71,7 @@ String _usage(ArgParser parser) {
 Publish and validate desktop updater releases.
 
 Usage:
+  dart run desktop_updater:release doctor --platform macos
   dart run desktop_updater:release publish --platform macos
   dart run desktop_updater:release sign --release dist/desktop_updater/releases/2.2.0/macos/release.json --public-key-id stable-2026 --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json

@@ -38,6 +38,7 @@ class ReleasePublishConfig {
     required this.channel,
     required this.uploadProvider,
     required this.macos,
+    required this.hooks,
   });
 
   final Uri baseUrl;
@@ -45,6 +46,7 @@ class ReleasePublishConfig {
   final String channel;
   final UploadConfig uploadProvider;
   final MacOSPublishConfig macos;
+  final ReleaseHooksConfig hooks;
 
   static Future<ReleasePublishConfig> load({
     required Directory projectRoot,
@@ -84,6 +86,7 @@ class ReleasePublishConfig {
         cliOverrides.channel ?? _stringValue(updates, "channel") ?? "stable";
     final provider = _readUploadProvider(document);
     final macos = _readMacOSConfig(document, cliOverrides);
+    final hooks = _readHooksConfig(document);
 
     return ReleasePublishConfig(
       baseUrl: _normalizeBaseUrl(baseUrlValue),
@@ -97,6 +100,7 @@ class ReleasePublishConfig {
       channel: channelValue,
       uploadProvider: provider,
       macos: macos,
+      hooks: hooks,
     );
   }
 }
@@ -117,6 +121,38 @@ class MacOSPublishConfig {
   final String? keychain;
   final bool staple;
   final bool gatekeeperAssess;
+}
+
+class ReleaseHooksConfig {
+  const ReleaseHooksConfig({
+    this.prePackage = const [],
+    this.postPackage = const [],
+  });
+
+  final List<ReleaseHookConfig> prePackage;
+  final List<ReleaseHookConfig> postPackage;
+
+  bool hasPrePackageHookFor(String platform) {
+    return prePackage.any((hook) => hook.appliesTo(platform));
+  }
+
+  bool hasPostPackageHookFor(String platform) {
+    return postPackage.any((hook) => hook.appliesTo(platform));
+  }
+}
+
+class ReleaseHookConfig {
+  const ReleaseHookConfig({
+    required this.command,
+    this.platforms = const [],
+  });
+
+  final String command;
+  final List<String> platforms;
+
+  bool appliesTo(String platform) {
+    return platforms.isEmpty || platforms.contains(platform);
+  }
 }
 
 sealed class UploadConfig {
@@ -198,6 +234,98 @@ class CustomCommandUploadConfig extends UploadConfig {
 
   @override
   String get providerName => "customCommand";
+}
+
+ReleaseHooksConfig _readHooksConfig(Map<String, dynamic> document) {
+  final hooks = _mapValue(document, "hooks");
+  if (hooks.isEmpty) {
+    return const ReleaseHooksConfig();
+  }
+  return ReleaseHooksConfig(
+    prePackage: _readHookList(hooks, "prePackage"),
+    postPackage: _readHookList(hooks, "postPackage"),
+  );
+}
+
+List<ReleaseHookConfig> _readHookList(
+  Map<String, dynamic> hooks,
+  String key,
+) {
+  final value = hooks[key];
+  if (value == null) {
+    return const [];
+  }
+  if (value is! List) {
+    throw FormatException("hooks.$key must be a list.");
+  }
+  return [
+    for (var i = 0; i < value.length; i += 1)
+      _readHookConfig(
+        _hookMap(value[i], "hooks.$key[$i]"),
+        "hooks.$key[$i]",
+      ),
+  ];
+}
+
+ReleaseHookConfig _readHookConfig(
+  Map<String, dynamic> hook,
+  String displayName,
+) {
+  _rejectSecretHookKeys(hook, displayName);
+  return ReleaseHookConfig(
+    command: _requiredString(hook, "command", "$displayName.command"),
+    platforms: _readHookPlatforms(hook, "$displayName.platforms"),
+  );
+}
+
+Map<String, dynamic> _hookMap(Object? value, String displayName) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  throw FormatException("$displayName must be a map.");
+}
+
+List<String> _readHookPlatforms(
+  Map<String, dynamic> hook,
+  String displayName,
+) {
+  final value = hook["platforms"];
+  if (value == null) {
+    return const [];
+  }
+  if (value is! List) {
+    throw FormatException("$displayName must be a list.");
+  }
+  const allowed = {"macos", "windows", "linux"};
+  return [
+    for (final item in value)
+      if (allowed.contains(item.toString()))
+        item.toString()
+      else
+        throw FormatException(
+          "$displayName contains unsupported platform ${item.toString()}.",
+        ),
+  ];
+}
+
+void _rejectSecretHookKeys(
+  Map<String, dynamic> hook,
+  String displayName,
+) {
+  const forbiddenKeys = {
+    "env",
+    "environment",
+    "secret",
+    "secrets",
+    "privateKey",
+    "privateKeyEnv",
+    "privateKeyFile",
+  };
+  for (final key in forbiddenKeys) {
+    if (hook.containsKey(key)) {
+      throw FormatException("$displayName.$key must not be set.");
+    }
+  }
 }
 
 UploadConfig _readUploadProvider(Map<String, dynamic> document) {

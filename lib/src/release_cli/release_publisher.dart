@@ -27,6 +27,12 @@ typedef BuildProcessStarter = Future<BuildProcess> Function(
   bool runInShell,
 });
 
+/// Runs a configured release hook command.
+typedef ReleaseHookCommandRunner = Future<ProcessResult> Function(
+  String command, {
+  required Map<String, String> environment,
+});
+
 /// A started build subprocess.
 abstract interface class BuildProcess {
   /// The process standard output stream.
@@ -63,6 +69,7 @@ class ReleasePublisher {
     this.packager = const ZipReleasePackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
     this.runProcess = defaultProcessRunner,
+    this.runHookCommand = defaultReleaseHookCommandRunner,
     BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
   }) : _startBuildProcess = startBuildProcess;
 
@@ -70,6 +77,7 @@ class ReleasePublisher {
   final ReleasePackager packager;
   final ProjectMetadataResolver metadataResolver;
   final ProcessRunner runProcess;
+  final ReleaseHookCommandRunner runHookCommand;
   final BuildProcessStarter _startBuildProcess;
 
   Future<PublishManifest> publish({
@@ -92,6 +100,13 @@ class ReleasePublisher {
       platform: platform,
       overrides: overrides,
     );
+    final layout = PublishLayout.create(
+      outputDirectory: config.outputDirectory,
+      baseUrl: config.baseUrl,
+      version: metadata.version,
+      platform: platform,
+      appName: metadata.appName,
+    );
 
     if (!skipBuild) {
       await _build(projectRoot, metadata, output, _startBuildProcess);
@@ -106,14 +121,18 @@ class ReleasePublisher {
       );
     }
 
-    output.writeln("Packaging update...");
-    final layout = PublishLayout.create(
-      outputDirectory: config.outputDirectory,
-      baseUrl: config.baseUrl,
-      version: metadata.version,
-      platform: platform,
-      appName: metadata.appName,
+    await _runReleaseHooks(
+      hooks: config.hooks.prePackage,
+      phase: "prePackage",
+      projectRoot: projectRoot,
+      config: config,
+      metadata: metadata,
+      layout: layout,
+      runHookCommand: runHookCommand,
+      output: output,
     );
+
+    output.writeln("Packaging update...");
     final packageAppName = _artifactNameStem(metadata.appName);
     final packageResult = await packager.package(
       ReleasePackageRequest(
@@ -168,6 +187,17 @@ class ReleasePublisher {
     );
     await manifest.writeTo(layout.manifestFile);
 
+    await _runReleaseHooks(
+      hooks: config.hooks.postPackage,
+      phase: "postPackage",
+      projectRoot: projectRoot,
+      config: config,
+      metadata: metadata,
+      layout: layout,
+      runHookCommand: runHookCommand,
+      output: output,
+    );
+
     await _uploadAndValidate(
       provider: _providerFor(config.uploadProvider),
       config: config.uploadProvider,
@@ -178,6 +208,76 @@ class ReleasePublisher {
 
     return manifest;
   }
+}
+
+Future<void> _runReleaseHooks({
+  required List<ReleaseHookConfig> hooks,
+  required String phase,
+  required Directory projectRoot,
+  required ReleasePublishConfig config,
+  required ProjectMetadata metadata,
+  required PublishLayout layout,
+  required ReleaseHookCommandRunner runHookCommand,
+  required StringSink output,
+}) async {
+  for (final hook in hooks.where((hook) => hook.appliesTo(metadata.platform))) {
+    output.writeln("Running $phase hook: ${hook.command}");
+    final result = await runHookCommand(
+      hook.command,
+      environment: _releaseHookEnvironment(
+        phase: phase,
+        projectRoot: projectRoot,
+        config: config,
+        metadata: metadata,
+        layout: layout,
+      ),
+    );
+    if (result.stdout.toString().isNotEmpty) {
+      output.write(result.stdout);
+    }
+    if (result.stderr.toString().isNotEmpty) {
+      output.write(result.stderr);
+    }
+    if (result.exitCode != 0) {
+      throw ProcessException(
+        "release hook",
+        [phase, hook.command],
+        "${result.stdout}\n${result.stderr}",
+        result.exitCode,
+      );
+    }
+  }
+}
+
+Map<String, String> _releaseHookEnvironment({
+  required String phase,
+  required Directory projectRoot,
+  required ReleasePublishConfig config,
+  required ProjectMetadata metadata,
+  required PublishLayout layout,
+}) {
+  return {
+    ...Platform.environment,
+    "DESKTOP_UPDATER_HOOK_PHASE": phase,
+    "DESKTOP_UPDATER_PLATFORM": metadata.platform,
+    "DESKTOP_UPDATER_PROJECT_ROOT": projectRoot.path,
+    "DESKTOP_UPDATER_APP_PATH": metadata.input.path,
+    "DESKTOP_UPDATER_BASE_URL": config.baseUrl.toString(),
+    "DESKTOP_UPDATER_OUTPUT_ROOT": config.outputDirectory.path,
+    "DESKTOP_UPDATER_CHANNEL": config.channel,
+    "DESKTOP_UPDATER_APP_NAME": metadata.appName,
+    "DESKTOP_UPDATER_PACKAGE_ID": metadata.packageId,
+    "DESKTOP_UPDATER_VERSION": metadata.version,
+    if (metadata.buildNumber != null)
+      "DESKTOP_UPDATER_BUILD_NUMBER": metadata.buildNumber.toString(),
+    "DESKTOP_UPDATER_PUBLISH_MANIFEST": layout.manifestFile.path,
+    "DESKTOP_UPDATER_APP_ARCHIVE_FILE": layout.appArchiveFile.path,
+    "DESKTOP_UPDATER_RELEASE_FILE": layout.releaseFile.path,
+    "DESKTOP_UPDATER_ARTIFACT_FILE": layout.artifactFile.path,
+    "DESKTOP_UPDATER_APP_ARCHIVE_URL": layout.appArchiveUrl.toString(),
+    "DESKTOP_UPDATER_RELEASE_URL": layout.releaseUrl.toString(),
+    "DESKTOP_UPDATER_ARTIFACT_URL": layout.artifactUrl.toString(),
+  };
 }
 
 Future<void> _notarizeMacOS({
@@ -401,6 +501,40 @@ Future<BuildProcess> defaultBuildProcessStarter(
       runInShell: runInShell,
     ),
   );
+}
+
+/// Default shell runner for configured release hook commands.
+Future<ProcessResult> defaultReleaseHookCommandRunner(
+  String command, {
+  required Map<String, String> environment,
+}) {
+  if (Platform.isWindows) {
+    return _runWindowsReleaseHook(command, environment);
+  }
+  return Process.run(
+    "/bin/sh",
+    ["-c", command],
+    environment: environment,
+  );
+}
+
+Future<ProcessResult> _runWindowsReleaseHook(
+  String command,
+  Map<String, String> environment,
+) async {
+  final tempDir =
+      await Directory.systemTemp.createTemp("desktop_updater_hook_");
+  try {
+    final script = File(path.join(tempDir.path, "hook.cmd"));
+    await script.writeAsString("@echo off\r\n$command\r\n");
+    return await Process.run(
+      "cmd",
+      ["/d", "/e:off", "/v:off", "/c", script.path],
+      environment: environment,
+    );
+  } finally {
+    await tempDir.delete(recursive: true);
+  }
 }
 
 bool _shouldRunFlutterBuildInShell(String platform) {

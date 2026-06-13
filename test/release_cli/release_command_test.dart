@@ -172,6 +172,21 @@ macos:
       await fixture.delete();
     }
   });
+
+  test("release help lists doctor command", () async {
+    final output = StringBuffer();
+
+    final exitCode = await runReleaseCommand(
+      const ["--help"],
+      output: output,
+    );
+
+    expect(exitCode, 0);
+    expect(
+      output.toString(),
+      contains("dart run desktop_updater:release doctor --platform macos"),
+    );
+  });
 }
 
 class ReleasePublishFixture {

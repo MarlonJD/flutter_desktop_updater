@@ -120,4 +120,59 @@ macos:
       ),
     );
   });
+
+  test("loads pre-package and post-package hooks", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+hooks:
+  prePackage:
+    - command: ./tool/sign_windows_release.ps1
+      platforms: [windows]
+  postPackage:
+    - command: ./tool/sign_release_json.sh
+      platforms: [linux, windows, macos]
+""");
+
+    expect(config.hooks.prePackage, hasLength(1));
+    expect(
+      config.hooks.prePackage.single.command,
+      "./tool/sign_windows_release.ps1",
+    );
+    expect(config.hooks.prePackage.single.platforms, ["windows"]);
+    expect(config.hooks.postPackage, hasLength(1));
+    expect(
+      config.hooks.postPackage.single.command,
+      "./tool/sign_release_json.sh",
+    );
+    expect(config.hooks.postPackage.single.platforms, [
+      "linux",
+      "windows",
+      "macos",
+    ]);
+  });
+
+  test("rejects secrets in hook config", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+hooks:
+  postPackage:
+    - command: ./tool/sign_release_json.sh
+      platforms: [linux]
+      environment:
+        DESKTOP_UPDATER_RELEASE_PRIVATE_KEY: inline-secret
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("hooks.postPackage[0].environment must not be set"),
+        ),
+      ),
+    );
+  });
 }

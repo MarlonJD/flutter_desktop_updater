@@ -157,6 +157,46 @@ https://updates.example.com/releases/2.0.1/macos/release.json
 https://updates.example.com/releases/2.0.1/macos/Example-2.0.1-macos.zip
 ```
 
+Run the doctor before the first production release for each platform:
+
+```sh
+dart run desktop_updater:release doctor --platform macos
+dart run desktop_updater:release doctor --platform windows
+dart run desktop_updater:release doctor --platform linux
+```
+
+The doctor reads `desktop_updater.yaml`, checks `pubspec.yaml` name/version
+metadata, reports whether upload is manual or provider-backed, and calls out
+platform trust gaps. It does not block internal, unsigned, or manual-upload
+flows when the config is otherwise valid.
+
+Exit codes:
+
+- `0`: config loaded, or only warnings/info were found.
+- `64`: invalid release config, such as a missing `updates.baseUrl`.
+- `1`: unexpected filesystem or parser failure.
+
+If `desktop_updater.yaml` is missing, the doctor prints the minimum config:
+
+```yaml
+updates:
+  baseUrl: https://updates.example.com
+```
+
+Warnings to expect before production hardening:
+
+- `http://` base URLs are allowed but warned because production hosts should
+  use HTTPS.
+- No provider means `release publish` prepares a manual upload package.
+- Windows direct zip releases should run an app-owned Authenticode signing hook
+  before packaging when publisher trust matters.
+- Linux direct zip releases should sign `release.json` with an app-owned hook
+  or another pinned descriptor signature policy before calling the flow
+  production-trusted.
+- macOS unsigned/internal flows can use `allowUnsignedMacOSUpdates`, but
+  production direct distribution should sign, notarize, staple, and verify
+  Gatekeeper before packaging.
+
 4. Keep `pubspec.yaml` version current:
 
 ```yaml
@@ -379,6 +419,50 @@ Use optional provider blocks when you want automatic upload:
 
 Only one provider block can be configured at a time. If no provider block is
 configured, `manual` is used.
+
+### App-Owned Release Hooks
+
+Optional hooks let your app keep platform trust work in your own scripts while
+making the release doctor aware of the gates:
+
+```yaml
+hooks:
+  prePackage:
+    - command: ./tool/sign_windows_release.ps1
+      platforms: [windows]
+  postPackage:
+    - command: ./tool/sign_release_json.sh
+      platforms: [linux, windows, macos]
+```
+
+Use `prePackage` for gates that must happen before the zip is created, such as
+Windows Authenticode signing or macOS notarization when you own that outside the
+built-in `macos.notarize` flow. Use `postPackage` for metadata gates such as
+signing generated `release.json`.
+
+`release publish` runs matching hooks for the requested platform. Each hook gets
+the normal process environment plus these variables:
+
+- `DESKTOP_UPDATER_HOOK_PHASE`: `prePackage` or `postPackage`.
+- `DESKTOP_UPDATER_PLATFORM`: `macos`, `windows`, or `linux`.
+- `DESKTOP_UPDATER_PROJECT_ROOT`: app repository root.
+- `DESKTOP_UPDATER_APP_PATH`: platform Release app/bundle path.
+- `DESKTOP_UPDATER_BASE_URL`: normalized `updates.baseUrl`.
+- `DESKTOP_UPDATER_OUTPUT_ROOT`: local `dist/desktop_updater` root.
+- `DESKTOP_UPDATER_CHANNEL`, `DESKTOP_UPDATER_APP_NAME`,
+  `DESKTOP_UPDATER_PACKAGE_ID`, `DESKTOP_UPDATER_VERSION`, and optional
+  `DESKTOP_UPDATER_BUILD_NUMBER`.
+- `DESKTOP_UPDATER_PUBLISH_MANIFEST`: `.desktop_updater_publish.json` path.
+- `DESKTOP_UPDATER_APP_ARCHIVE_FILE`, `DESKTOP_UPDATER_RELEASE_FILE`, and
+  `DESKTOP_UPDATER_ARTIFACT_FILE`.
+- `DESKTOP_UPDATER_APP_ARCHIVE_URL`, `DESKTOP_UPDATER_RELEASE_URL`, and
+  `DESKTOP_UPDATER_ARTIFACT_URL`.
+
+The YAML stores command paths and platform filters only. Do not put credentials,
+private keys, passwords, tokens, or inline environment maps in
+`desktop_updater.yaml`; hooks should read secrets from CI secret storage,
+keychains, standard credential files, or environment variables owned by the
+calling release job.
 
 ### macOS Notarization Opt-In
 

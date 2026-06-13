@@ -108,6 +108,58 @@ void main() {
       }
     });
   }
+
+  test("release hooks run around packaging with environment contract",
+      () async {
+    final root = await _createHookFixture();
+    final commands = <String>[];
+    final hookCalls = <_HookCall>[];
+    final packager = _RecordingPackager(commands);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: packager,
+        runHookCommand: (command, {required environment}) async {
+          hookCalls.add(_HookCall(command, environment));
+          commands.add(
+              "HOOK ${environment["DESKTOP_UPDATER_HOOK_PHASE"]} $command");
+          return ProcessResult(0, 0, "hook stdout\n", "");
+        },
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+      );
+
+      expect(commands, [
+        "HOOK prePackage ./tool/sign_windows_release.ps1",
+        startsWith("PACKAGE "),
+        "HOOK postPackage ./tool/sign_release_json.sh",
+      ]);
+      expect(hookCalls, hasLength(2));
+      expect(
+          hookCalls.first.environment["DESKTOP_UPDATER_PLATFORM"], "windows");
+      expect(hookCalls.first.environment["DESKTOP_UPDATER_PROJECT_ROOT"],
+          root.path);
+      expect(
+        hookCalls.first.environment["DESKTOP_UPDATER_BASE_URL"],
+        "https://updates.example.com/",
+      );
+      expect(
+        hookCalls.first.environment["DESKTOP_UPDATER_RELEASE_FILE"],
+        endsWith(path.join("releases", "2.1.0", "windows", "release.json")),
+      );
+      expect(
+        hookCalls.last.environment["DESKTOP_UPDATER_PUBLISH_MANIFEST"],
+        endsWith(".desktop_updater_publish.json"),
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
 }
 
 Future<Directory> _createWindowsFixture() async {
@@ -134,6 +186,27 @@ set(APPLICATION_ID "com.example.egasManager")
   return root;
 }
 
+Future<Directory> _createHookFixture() async {
+  final root = await Directory.systemTemp.createTemp("publish_hooks_");
+  await File(path.join(root.path, "pubspec.yaml")).writeAsString("""
+name: egas_manager
+version: 2.1.0
+""");
+  await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+
+hooks:
+  prePackage:
+    - command: ./tool/sign_windows_release.ps1
+      platforms: [windows]
+  postPackage:
+    - command: ./tool/sign_release_json.sh
+      platforms: [windows]
+""");
+  return root;
+}
+
 class _BuildProcessCall {
   const _BuildProcessCall({
     required this.executable,
@@ -146,6 +219,13 @@ class _BuildProcessCall {
   final List<String> arguments;
   final String? workingDirectory;
   final bool runInShell;
+}
+
+class _HookCall {
+  const _HookCall(this.command, this.environment);
+
+  final String command;
+  final Map<String, String> environment;
 }
 
 class _FakeBuildProcess implements BuildProcess {
