@@ -95,6 +95,47 @@ updates:
     }
   });
 
+  test("mandatory flag marks the generated app archive item", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "publish",
+          "--platform",
+          fixture.platform,
+          "--skip-build-for-test",
+          "--mandatory",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      final appArchive = File(
+        path.join(
+          fixture.root.path,
+          "dist",
+          "desktop_updater",
+          "app-archive.json",
+        ),
+      );
+      final archive =
+          jsonDecode(await appArchive.readAsString()) as Map<String, dynamic>;
+      final items = archive["items"] as List<dynamic>;
+      final firstItem = items.single as Map<String, dynamic>;
+      expect(firstItem["mandatory"], isTrue);
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("notarize flag is only accepted for macOS", () async {
     final fixture = await createReleasePublishFixture(
       config: """

@@ -138,7 +138,7 @@ class ReleasePublisher {
         buildNumber: metadata.buildNumber,
         platform: platform,
         channel: config.channel,
-        mandatory: false,
+        mandatory: overrides.mandatory,
         release: layout.releaseUrl,
       ),
     );

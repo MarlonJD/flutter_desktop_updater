@@ -16,6 +16,11 @@ ArgParser buildPublishParser() {
     ..addOption("build-number")
     ..addOption("package-id")
     ..addOption("app-name")
+    ..addFlag(
+      "mandatory",
+      negatable: false,
+      help: "Mark this release as mandatory in app-archive.json.",
+    )
     ..addFlag("notarize", negatable: false)
     ..addFlag("skip-build-for-test", negatable: false);
 }
@@ -40,6 +45,7 @@ Future<int> runPublishCommand(
     buildNumber: _optionalInt(results, "build-number"),
     packageId: results["package-id"] as String?,
     appName: results["app-name"] as String?,
+    mandatory: results["mandatory"] as bool,
     notarize: results["notarize"] as bool,
   );
   final publisher = ReleasePublisher(

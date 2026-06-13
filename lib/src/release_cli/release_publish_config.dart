@@ -13,6 +13,7 @@ class ReleasePublishOverrides {
     this.buildNumber,
     this.packageId,
     this.appName,
+    this.mandatory = false,
     this.notarize = false,
   });
 
@@ -24,6 +25,9 @@ class ReleasePublishOverrides {
   final int? buildNumber;
   final String? packageId;
   final String? appName;
+
+  /// Whether app-archive.json should mark this release as mandatory.
+  final bool mandatory;
   final bool notarize;
 }
 
