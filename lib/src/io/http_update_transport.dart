@@ -31,9 +31,6 @@ class HttpUpdateTransport implements UpdateTransport {
 
     await destination.parent.create(recursive: true);
     final partial = File("${destination.path}.part");
-    if (await partial.exists()) {
-      await partial.delete();
-    }
 
     var attempt = 0;
     try {
@@ -100,7 +97,11 @@ class HttpUpdateTransport implements UpdateTransport {
     required void Function(int receivedBytes, int? totalBytes)? onProgress,
     required Duration? timeout,
   }) async {
+    final resumeFrom = await partial.exists() ? await partial.length() : 0;
     final request = http.Request("GET", source);
+    if (resumeFrom > 0) {
+      request.headers[HttpHeaders.rangeHeader] = "bytes=$resumeFrom-";
+    }
     final future = _client.send(request);
     final response =
         timeout == null ? await future : await future.timeout(timeout);
@@ -116,9 +117,38 @@ class HttpUpdateTransport implements UpdateTransport {
       );
     }
 
+    if (resumeFrom > 0 && response.statusCode == HttpStatus.partialContent) {
+      final contentRange = await _validateContentRange(
+        response,
+        expectedStart: resumeFrom,
+        source: source,
+      );
+      await _writeStream(
+        response.stream,
+        partial,
+        mode: FileMode.append,
+        initialReceivedBytes: resumeFrom,
+        totalBytes: contentRange.totalBytes,
+        onProgress: onProgress,
+      );
+      return;
+    }
+
+    if (resumeFrom > 0 && response.statusCode != HttpStatus.ok) {
+      await response.stream.drain<void>();
+      throw HttpException(
+        "Failed to resume $source: HTTP ${response.statusCode}",
+        uri: source,
+      );
+    }
+
+    if (resumeFrom > 0 && await partial.exists()) {
+      await partial.delete();
+    }
     await _writeStream(
       response.stream,
       partial,
+      mode: FileMode.write,
       totalBytes: response.contentLength,
       onProgress: onProgress,
     );
@@ -153,11 +183,13 @@ Future<void> _defaultDelay(Duration duration) {
 Future<void> _writeStream(
   Stream<List<int>> stream,
   File destination, {
+  required FileMode mode,
+  int initialReceivedBytes = 0,
   required int? totalBytes,
   void Function(int receivedBytes, int? totalBytes)? onProgress,
 }) async {
-  final sink = destination.openWrite();
-  var receivedBytes = 0;
+  final sink = destination.openWrite(mode: mode);
+  var receivedBytes = initialReceivedBytes;
 
   try {
     await for (final chunk in stream) {
@@ -167,5 +199,70 @@ Future<void> _writeStream(
     }
   } finally {
     await sink.close();
+  }
+}
+
+Future<_ContentRange> _validateContentRange(
+  http.StreamedResponse response, {
+  required int expectedStart,
+  required Uri source,
+}) async {
+  final header = response.headers[HttpHeaders.contentRangeHeader];
+  final contentRange = _ContentRange.parse(header);
+  if (contentRange == null ||
+      contentRange.start != expectedStart ||
+      contentRange.end < contentRange.start ||
+      contentRange.totalBytes <= contentRange.end) {
+    await response.stream.drain<void>();
+    throw HttpException(
+      "Invalid Content-Range for $source: ${header ?? "<missing>"}",
+      uri: source,
+    );
+  }
+
+  final rangeLength = contentRange.end - contentRange.start + 1;
+  if (response.contentLength != null && response.contentLength != rangeLength) {
+    await response.stream.drain<void>();
+    throw HttpException(
+      "Invalid Content-Range length for $source: ${header ?? "<missing>"}",
+      uri: source,
+    );
+  }
+
+  return contentRange;
+}
+
+class _ContentRange {
+  const _ContentRange({
+    required this.start,
+    required this.end,
+    required this.totalBytes,
+  });
+
+  final int start;
+  final int end;
+  final int totalBytes;
+
+  static final _pattern = RegExp(r"^bytes\s+(\d+)-(\d+)/(\d+)$");
+
+  static _ContentRange? parse(String? header) {
+    if (header == null) {
+      return null;
+    }
+    final match = _pattern.firstMatch(header.trim());
+    if (match == null) {
+      return null;
+    }
+    final start = int.tryParse(match.group(1)!);
+    final end = int.tryParse(match.group(2)!);
+    final totalBytes = int.tryParse(match.group(3)!);
+    if (start == null || end == null || totalBytes == null) {
+      return null;
+    }
+    return _ContentRange(
+      start: start,
+      end: end,
+      totalBytes: totalBytes,
+    );
   }
 }

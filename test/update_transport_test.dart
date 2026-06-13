@@ -136,4 +136,105 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("http transport resumes existing partial with valid range response",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    final ranges = <String?>[];
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          ranges.add(request.headers[HttpHeaders.rangeHeader]);
+          return http.Response.bytes(
+            utf8.encode("world"),
+            HttpStatus.partialContent,
+            headers: const {
+              HttpHeaders.contentRangeHeader: "bytes 6-10/11",
+            },
+          );
+        }),
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+      final partial = File("${destination.path}.part")
+        ..createSync(recursive: true)
+        ..writeAsStringSync("hello ");
+
+      await transport.download(
+        Uri.parse("https://updates.example.com/download.txt"),
+        destination,
+      );
+
+      expect(ranges, ["bytes=6-"]);
+      expect(destination.readAsStringSync(), "hello world");
+      expect(partial.existsSync(), isFalse);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("http transport restarts when server ignores range request", () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    final ranges = <String?>[];
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          ranges.add(request.headers[HttpHeaders.rangeHeader]);
+          return http.Response("fresh bytes", HttpStatus.ok);
+        }),
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+      final partial = File("${destination.path}.part")
+        ..createSync(recursive: true)
+        ..writeAsStringSync("stale");
+
+      await transport.download(
+        Uri.parse("https://updates.example.com/download.txt"),
+        destination,
+      );
+
+      expect(ranges, ["bytes=5-"]);
+      expect(destination.readAsStringSync(), "fresh bytes");
+      expect(partial.existsSync(), isFalse);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("http transport deletes partial and fails on invalid content range",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    final ranges = <String?>[];
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          ranges.add(request.headers[HttpHeaders.rangeHeader]);
+          return http.Response.bytes(
+            utf8.encode("world"),
+            HttpStatus.partialContent,
+            headers: const {
+              HttpHeaders.contentRangeHeader: "bytes 0-4/11",
+            },
+          );
+        }),
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+      final partial = File("${destination.path}.part")
+        ..createSync(recursive: true)
+        ..writeAsStringSync("hello ");
+
+      await expectLater(
+        transport.download(
+          Uri.parse("https://updates.example.com/download.txt"),
+          destination,
+        ),
+        throwsA(isA<HttpException>()),
+      );
+
+      expect(ranges, ["bytes=6-"]);
+      expect(partial.existsSync(), isFalse);
+      expect(destination.existsSync(), isFalse);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
 }
