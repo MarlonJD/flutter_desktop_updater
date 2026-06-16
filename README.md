@@ -125,9 +125,8 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   restrictions.
 - [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
-- [Native helper diagnostics and recovery](docs/plans/2026-06-13-native-helper-diagnostics-recovery-plan.md):
-  opt-in support logs, recovery markers, platform helper evidence, and
-  verification notes.
+- [Implementation plans index](docs/plans/index.md): completed roadmap closure,
+  trust/UX, and native diagnostics execution ledgers.
 - [GitHub Actions CI/CD guide](docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
 - [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md): migration
