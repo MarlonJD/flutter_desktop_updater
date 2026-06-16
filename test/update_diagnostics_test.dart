@@ -214,4 +214,102 @@ void main() {
     expect(plainText, contains("password=<redacted>"));
     expect(plainText, contains("Authorization: <redacted>"));
   });
+
+  test("diagnostics recorder forwards ordered entries to optional sink", () {
+    final timestamps = [
+      DateTime.utc(2026, 6, 13, 8),
+      DateTime.utc(2026, 6, 13, 8, 1),
+    ];
+    final sink = _MemoryDiagnosticsSink();
+    UpdateDiagnosticsRecorder(
+      clock: () => timestamps.removeAt(0),
+      sink: sink,
+    )
+      ..record(
+        stage: UpdateDiagnosticStage.check,
+        level: UpdateDiagnosticLevel.info,
+        message: "Checking app archive",
+      )
+      ..record(
+        stage: UpdateDiagnosticStage.download,
+        level: UpdateDiagnosticLevel.error,
+        message: "Download failed",
+        error: StateError("network down"),
+      );
+
+    expect(sink.entries.map((entry) => entry.message), [
+      "Checking app archive",
+      "Download failed",
+    ]);
+    expect(sink.entries.map((entry) => entry.stage), [
+      UpdateDiagnosticStage.check,
+      UpdateDiagnosticStage.download,
+    ]);
+  });
+
+  test("throwing diagnostics sink still leaves problem report available", () {
+    final recorder = UpdateDiagnosticsRecorder(
+      clock: () => DateTime.utc(2026, 6, 13, 8),
+      sink: _ThrowingDiagnosticsSink(),
+    )..record(
+        stage: UpdateDiagnosticStage.download,
+        level: UpdateDiagnosticLevel.error,
+        message: "Download failed token=abc",
+        error: StateError("password=hunter2"),
+      );
+
+    final report = recorder.buildReport(
+      failure: StateError("Authorization: Bearer abc"),
+    );
+    final plainText = report.toPlainText();
+
+    expect(report.entries, hasLength(1));
+    expect(plainText, contains("token=<redacted>"));
+    expect(plainText, contains("password=<redacted>"));
+    expect(plainText, contains("Authorization: <redacted>"));
+  });
+
+  test("diagnostic entry formats redacted log lines for app-owned sinks", () {
+    final entry = UpdateDiagnosticEntry(
+      timestamp: DateTime.utc(2026, 6, 13, 8),
+      stage: UpdateDiagnosticStage.descriptor,
+      level: UpdateDiagnosticLevel.error,
+      message:
+          "GET https://updates.example.com/release.json?token=abc&safe=value",
+      error: const FormatException(
+        "Authorization: Bearer abc password=hunter2 signature=deadbeef",
+      ),
+    );
+
+    final line = entry.toRedactedLogLine();
+
+    expect(
+      line,
+      startsWith("2026-06-13T08:00:00.000Z error descriptor:"),
+    );
+    expect(line, contains("token=<redacted>"));
+    expect(line, contains("safe=value"));
+    expect(line, contains("Authorization: <redacted>"));
+    expect(line, contains("password=<redacted>"));
+    expect(line, contains("signature=<redacted>"));
+    expect(line, isNot(contains("abc password")));
+    expect(line, isNot(contains("hunter2")));
+    expect(line, isNot(contains("deadbeef")));
+  });
+}
+
+class _MemoryDiagnosticsSink implements UpdateDiagnosticsSink {
+  final entries = <UpdateDiagnosticEntry>[];
+
+  @override
+  void record(UpdateDiagnosticEntry entry) {
+    entries.add(entry);
+  }
+}
+
+class _ThrowingDiagnosticsSink implements UpdateDiagnosticsSink {
+  @override
+  void record(UpdateDiagnosticEntry entry) {
+    throw StateError("sink unavailable");
+  }
 }

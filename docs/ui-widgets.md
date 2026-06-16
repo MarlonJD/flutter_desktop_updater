@@ -285,6 +285,36 @@ The callback is observational. If it throws or your persistence backend is
 unavailable, the updater still treats install scheduling according to the
 native helper result.
 
+Apps that want a durable lifecycle log can supply an app-owned diagnostics
+recorder with a sink. The package forwards redacted entries but does not choose
+a file path, retention policy, upload target, or storage package:
+
+```dart
+class AppUpdateLogSink implements UpdateDiagnosticsSink {
+  AppUpdateLogSink(this.file);
+  final File file;
+
+  @override
+  void record(UpdateDiagnosticEntry entry) {
+    file.writeAsStringSync(
+      "${entry.toRedactedLogLine()}\n",
+      mode: FileMode.append,
+      flush: true,
+    );
+  }
+}
+
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  diagnosticsRecorder: UpdateDiagnosticsRecorder(
+    sink: AppUpdateLogSink(appOwnedLogFile),
+  ),
+);
+```
+
+Sink failures are ignored by the updater. In-memory problem reports remain
+available even when the app-owned log destination cannot be written.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 

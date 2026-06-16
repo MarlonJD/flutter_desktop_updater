@@ -62,6 +62,30 @@ class UpdateDiagnosticEntry {
 
   /// Optional error captured with the entry.
   final Object? error;
+
+  /// Formats this entry as one redacted line for app-owned log sinks.
+  String toRedactedLogLine() {
+    final buffer = StringBuffer()
+      ..write(timestamp.toUtc().toIso8601String())
+      ..write(" ")
+      ..write(level.name)
+      ..write(" ")
+      ..write(stage.name)
+      ..write(": ")
+      ..write(_redact(message));
+    if (error != null) {
+      buffer
+        ..write(" Error: ")
+        ..write(_redact(error.toString()));
+    }
+    return buffer.toString();
+  }
+}
+
+/// Optional app-owned sink for receiving retained diagnostics entries.
+abstract interface class UpdateDiagnosticsSink {
+  /// Records one diagnostics [entry].
+  void record(UpdateDiagnosticEntry entry);
 }
 
 /// Locally generated, user-copyable update problem report.

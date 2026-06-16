@@ -8,15 +8,18 @@ class UpdateDiagnosticsRecorder {
   /// Creates an in-memory diagnostics recorder.
   UpdateDiagnosticsRecorder({
     DateTime Function()? clock,
+    UpdateDiagnosticsSink? sink,
     this.packageVersion = desktopUpdaterPackageVersion,
     String? platform,
     this.channel = "stable",
     int maxEntries = UpdateProblemReport.maxEntries,
   })  : _clock = clock ?? DateTime.now,
+        _sink = sink,
         platform = platform ?? Platform.operatingSystem,
         _maxEntries = maxEntries < 1 ? 1 : maxEntries;
 
   final DateTime Function() _clock;
+  final UpdateDiagnosticsSink? _sink;
   final int _maxEntries;
   final List<UpdateDiagnosticEntry> _entries = [];
   int _omittedEntryCount = 0;
@@ -44,15 +47,19 @@ class UpdateDiagnosticsRecorder {
       _entries.removeAt(0);
       _omittedEntryCount += 1;
     }
-    _entries.add(
-      UpdateDiagnosticEntry(
-        timestamp: _clock(),
-        stage: stage,
-        level: level,
-        message: message,
-        error: error,
-      ),
+    final entry = UpdateDiagnosticEntry(
+      timestamp: _clock(),
+      stage: stage,
+      level: level,
+      message: message,
+      error: error,
     );
+    _entries.add(entry);
+    try {
+      _sink?.record(entry);
+    } on Object {
+      // App-owned diagnostics sinks are observational only.
+    }
   }
 
   /// Clears retained entries for a fresh update lifecycle.

@@ -100,6 +100,13 @@ need to duplicate secret-redaction logic.
 - Redacted log formatting removes tokens, authorization, passwords, signatures,
   secrets, keys, and credentials before file-oriented export.
 
+Status on 2026-06-16: complete. `UpdateDiagnosticsSink`,
+`UpdateDiagnosticEntry.toRedactedLogLine()`, and
+`UpdateDiagnosticsRecorder(sink: ...)` are implemented. Verification:
+`flutter test --no-pub test/update_diagnostics_test.dart` passed with 8 tests,
+including ordered sink forwarding, throwing sink isolation, and redacted log line
+formatting.
+
 ## Task 8B: App-Owned Recovery Marker
 
 **Files:**

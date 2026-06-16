@@ -162,6 +162,11 @@ app-owned:
   redacted `UpdateProblemReport` when check, download, verification, staging, or
   install handoff fails. Reports are bounded before copy/export. The package
   does not write report files, upload logs, or depend on a backend.
+- Apps can opt into durable lifecycle diagnostics by supplying
+  `UpdateDiagnosticsRecorder(sink: ...)` with an app-owned
+  `UpdateDiagnosticsSink`. Sink failures are ignored, and
+  `UpdateDiagnosticEntry.toRedactedLogLine()` is available so file-oriented
+  sinks can reuse package redaction before writing.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor
