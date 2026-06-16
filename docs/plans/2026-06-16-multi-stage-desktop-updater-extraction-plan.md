@@ -19,6 +19,38 @@
 - Baseline result before planning: passed with `232` tests and `3` provider E2E tests skipped behind `DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1`.
 - First sandbox attempt failed because Flutter SDK cache files live outside the workspace; the successful baseline used approved escalation for the same command.
 
+## Stage Gate Policy
+
+Every stage must prove that the existing 2.2.0 behavior is still intact before the next stage begins.
+
+For every code-changing step:
+
+- Run the focused test for the area that changed.
+- Run `flutter test --no-pub test/compat`.
+- If the step touches a native/platform surface, run that platform's local focused gate too, such as `swift test --package-path macos/desktop_updater` for macOS plugin work.
+- If a 2.2.0 compatibility test fails, first assume the test, fixture, or moved wrapper is wrong. Do not intentionally change 2.2.0 behavior without a separate bugfix plan.
+
+For every stage close:
+
+- Run `flutter test --no-pub test/compat`.
+- Run `flutter test --no-pub`.
+- Run `dart pub publish --dry-run` when the stage touches public package layout, exports, metadata, CLI, fixtures included in the package, or publishable files.
+- Run the stage's native gates when that stage touches macOS, Windows, or Linux behavior.
+- Record an exact passed/skipped/blocked split before committing, opening a PR, or starting the next stage.
+
+Provider E2E policy:
+
+- The FTP, S3, and SFTP release-publish E2E tests remain behind `DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1`.
+- If a stage does not touch provider upload behavior, hosted metadata layout, descriptor signing, artifact paths, or release-publish orchestration, record those provider E2Es as skipped unless the credentialed environment is already available.
+- If a stage does touch those release-sensitive surfaces, run:
+
+```sh
+DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1 flutter test --no-pub test/e2e
+```
+
+- If the provider E2E environment is unavailable for a release-sensitive stage, record that gate as blocked and require CI or credentialed local evidence before declaring the stage complete.
+- Final pre-merge or pre-release verification must either run the provider E2Es or explicitly record why they are skipped/blocked.
+
 ## Product Shape At The End
 
 ```text
@@ -841,6 +873,16 @@ flutter test --no-pub
 
 Expected: PASS with provider E2Es skipped unless `DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1` is set.
 
+- [ ] **Step 9.1a: Run or classify provider E2E gate**
+
+If release-publish provider behavior, hosted metadata layout, descriptor signing, artifact paths, or release-publish orchestration changed in this branch, run:
+
+```sh
+DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1 flutter test --no-pub test/e2e
+```
+
+Expected: PASS in a credentialed/provider-ready environment. If the branch did not touch those release-sensitive surfaces, record the provider E2Es as skipped. If the branch did touch those surfaces but the credentialed environment is unavailable, record the provider E2Es as blocked and require CI or credentialed local evidence before declaring the stage complete.
+
 - [ ] **Step 9.2: Run publish dry run**
 
 Run:
@@ -892,6 +934,7 @@ Include:
 - passed checks
 - skipped checks
 - blocked checks
+- provider E2E classification
 - compatibility notes
 - migration notes
 - open questions
