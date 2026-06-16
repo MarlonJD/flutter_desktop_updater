@@ -3,6 +3,16 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("README surfaces native helper diagnostics and 2.2.0 setup", () {
+    final source = File("README.md").readAsStringSync();
+
+    expect(source, contains("desktop_updater: ^2.2.0"));
+    expect(source, contains("## Diagnostics And Recovery"));
+    expect(source, contains("diagnosticsLogPath"));
+    expect(source, contains("UpdateRecoveryStore"));
+    expect(source, contains("native helper diagnostics plan"));
+  });
+
   test("support docs describe app-owned diagnostics levels", () {
     final uiDocs = File("docs/ui-widgets.md").readAsStringSync();
     final publishingDocs = File("docs/publishing.md").readAsStringSync();
@@ -37,5 +47,15 @@ void main() {
     expect(source, contains("descriptor signing"));
     expect(source, contains("repository signing"));
     expect(source, contains("Default package behavior writes no files"));
+  });
+
+  test("package metadata and changelog agree on 2.2.0", () {
+    final pubspec = File("pubspec.yaml").readAsStringSync();
+    final changelog = File("CHANGELOG.md").readAsStringSync();
+
+    expect(pubspec, contains("version: 2.2.0"));
+    expect(changelog, startsWith("## 2.2.0"));
+    expect(changelog, contains("native helper diagnostics"));
+    expect(changelog, contains("install recovery markers"));
   });
 }

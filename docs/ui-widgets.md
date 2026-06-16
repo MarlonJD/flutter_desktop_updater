@@ -285,6 +285,8 @@ The callback is observational. If it throws or your persistence backend is
 unavailable, the updater still treats install scheduling according to the
 native helper result.
 
+### Diagnostics And Support
+
 Apps that want a durable lifecycle log can supply an app-owned diagnostics
 recorder with a sink. The package forwards redacted entries but does not choose
 a file path, retention policy, upload target, or storage package:

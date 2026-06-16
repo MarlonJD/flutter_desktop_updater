@@ -1,3 +1,11 @@
+## 2.2.0
+
+* Added opt-in update diagnostics sinks with redacted log formatting for app-owned lifecycle logs.
+* Added app-owned install recovery markers and post-relaunch failure reports for native install handoff.
+* Added explicit native helper diagnostics log paths for macOS, Windows, and Linux helper events.
+* Added Windows and Linux CI smoke diagnostics artifacts for failed or explicitly requested diagnostics runs.
+* Documented the native helper diagnostics and recovery support flow in the README and product docs.
+
 ## 2.1.4
 
 * Added `release publish --mandatory` so generated `app-archive.json` items can mark updates as mandatory while keeping the default optional.
