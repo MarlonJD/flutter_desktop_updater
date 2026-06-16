@@ -165,6 +165,48 @@ void main() {
     expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
   });
 
+  test("keeps delta artifacts descriptor-only during update selection",
+      () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final deltaUrl = Uri.parse(
+      "https://updates.example.com/2.0.0-to-2.1.0.patch",
+    );
+    final transport = _MapUpdateTransport({
+      archiveUrl: _indexJson(releaseUrl),
+      releaseUrl: _descriptorJson(
+        artifactUrl: artifactUrl,
+        deltaArtifacts: [
+          {
+            "fromVersion": "2.0.0",
+            "kind": "bsdiff",
+            "url": deltaUrl.toString(),
+            "sha256": "b" * 64,
+            "length": 456,
+          },
+        ],
+      ),
+    });
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.fromParts(
+        versionName: "2.0.0",
+        buildNumber: "200",
+      ),
+      platform: "macos",
+      transport: transport,
+    );
+
+    final result = await client.checkForUpdate();
+
+    expect(result, isNotNull);
+    expect(result!.descriptor.artifact.url, artifactUrl);
+    expect(result.descriptor.deltaArtifacts.single.url, deltaUrl);
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+  });
+
   test("skips descriptors that require a newer updater", () async {
     final archiveUrl =
         Uri.parse("https://updates.example.com/app-archive.json");
@@ -282,13 +324,18 @@ String _descriptorJson({
   required Uri artifactUrl,
   String minimumUpdaterVersion = "2.0.0",
   Map<String, String> minimumOS = const {},
+  List<Map<String, dynamic>> deltaArtifacts = const [],
 }) {
+  final json = _descriptor(
+    artifactUrl: artifactUrl,
+    minimumUpdaterVersion: minimumUpdaterVersion,
+    minimumOS: minimumOS,
+  ).toJson();
+  if (deltaArtifacts.isNotEmpty) {
+    json["deltaArtifacts"] = deltaArtifacts;
+  }
   return jsonEncode(
-    _descriptor(
-      artifactUrl: artifactUrl,
-      minimumUpdaterVersion: minimumUpdaterVersion,
-      minimumOS: minimumOS,
-    ).toJson(),
+    json,
   );
 }
 

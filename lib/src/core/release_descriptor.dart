@@ -3,7 +3,10 @@ import "dart:convert";
 /// Parsed `release.json` metadata for one platform-specific update artifact.
 ///
 /// Descriptors use schema version 3 and point at a single zip artifact plus the
-/// install strategy needed by the native helper.
+/// install strategy needed by the native helper. Optional delta artifact
+/// metadata can be published ahead of runtime support; the updater continues to
+/// choose the full zip artifact until delta verification and patch application
+/// are implemented.
 class ReleaseDescriptor {
   /// Creates release metadata for one downloadable artifact.
   const ReleaseDescriptor({
@@ -19,6 +22,7 @@ class ReleaseDescriptor {
     required this.minimumUpdaterVersion,
     required this.generatedAt,
     this.minimumOS = const {},
+    this.deltaArtifacts = const [],
     this.signature,
   });
 
@@ -39,6 +43,7 @@ class ReleaseDescriptor {
         json["install"] as Map<String, dynamic>? ?? const {},
       ),
       minimumOS: _parseMinimumOS(json["minimumOS"]),
+      deltaArtifacts: _parseDeltaArtifacts(json["deltaArtifacts"]),
       signature: json["signature"] == null
           ? null
           : ReleaseSignature.fromJson(
@@ -88,6 +93,9 @@ class ReleaseDescriptor {
   /// Optional minimum OS versions keyed by platform.
   final Map<String, String> minimumOS;
 
+  /// Optional descriptor metadata for future delta update artifacts.
+  final List<ReleaseDeltaArtifact> deltaArtifacts;
+
   /// UTC timestamp for descriptor generation.
   final DateTime generatedAt;
 
@@ -106,6 +114,10 @@ class ReleaseDescriptor {
       if (signature != null) "signature": signature!.toJson(),
       "minimumUpdaterVersion": minimumUpdaterVersion,
       if (minimumOS.isNotEmpty) "minimumOS": minimumOS,
+      if (deltaArtifacts.isNotEmpty)
+        "deltaArtifacts": [
+          for (final artifact in deltaArtifacts) artifact.toJson(),
+        ],
       "generatedAt": generatedAt.toUtc().toIso8601String(),
     };
   }
@@ -156,6 +168,9 @@ class ReleaseDescriptor {
       );
     }
     artifact.validate();
+    for (final deltaArtifact in deltaArtifacts) {
+      deltaArtifact.validate();
+    }
     install.validate();
   }
 }
@@ -180,6 +195,32 @@ Map<String, String> _parseMinimumOS(Object? value) {
     minimumOS[platform] = version;
   }
   return Map.unmodifiable(minimumOS);
+}
+
+List<ReleaseDeltaArtifact> _parseDeltaArtifacts(Object? value) {
+  if (value == null) {
+    return const [];
+  }
+  if (value is! List) {
+    throw const FormatException(
+      "release.json deltaArtifacts must be a list.",
+    );
+  }
+
+  final artifacts = <ReleaseDeltaArtifact>[];
+  for (final entry in value) {
+    if (entry is! Map) {
+      throw const FormatException(
+        "release.json deltaArtifacts entries must be objects.",
+      );
+    }
+    artifacts.add(
+      ReleaseDeltaArtifact.fromJson(
+        Map<String, dynamic>.from(entry),
+      ),
+    );
+  }
+  return List.unmodifiable(artifacts);
 }
 
 /// Download metadata for the zip artifact referenced by a descriptor.
@@ -236,6 +277,86 @@ class ReleaseArtifact {
     }
     if (length < 0) {
       throw const FormatException("release.json artifact.length is required.");
+    }
+  }
+}
+
+/// Descriptor metadata for a future delta update artifact.
+class ReleaseDeltaArtifact {
+  /// Creates delta artifact metadata.
+  const ReleaseDeltaArtifact({
+    required this.fromVersion,
+    required this.kind,
+    required this.url,
+    required this.sha256,
+    required this.length,
+  });
+
+  /// Parses delta artifact metadata from a descriptor entry.
+  factory ReleaseDeltaArtifact.fromJson(Map<String, dynamic> json) {
+    return ReleaseDeltaArtifact(
+      fromVersion: json["fromVersion"] as String? ?? "",
+      kind: json["kind"] as String? ?? "",
+      url: Uri.parse(json["url"] as String? ?? ""),
+      sha256: json["sha256"] as String? ?? "",
+      length: json["length"] as int? ?? -1,
+    );
+  }
+
+  /// Source app version that this delta can patch from.
+  final String fromVersion;
+
+  /// Delta artifact type. Version 3 descriptors currently reserve `bsdiff`.
+  final String kind;
+
+  /// Absolute URL for downloading the delta artifact.
+  final Uri url;
+
+  /// Expected lowercase hexadecimal SHA-256 digest.
+  final String sha256;
+
+  /// Expected delta artifact length in bytes.
+  final int length;
+
+  /// Converts this delta artifact to descriptor JSON.
+  Map<String, dynamic> toJson() {
+    return {
+      "fromVersion": fromVersion,
+      "kind": kind,
+      "url": url.toString(),
+      "sha256": sha256,
+      "length": length,
+    };
+  }
+
+  /// Throws because runtime delta verification is not implemented yet.
+  void ensureRuntimeSupported() {
+    throw UnsupportedError(
+      "Delta update artifacts are not supported yet; use the full zip "
+      "artifact.",
+    );
+  }
+
+  /// Validates delta metadata shape without enabling runtime application.
+  void validate() {
+    if (fromVersion.trim().isEmpty) {
+      throw const FormatException(
+        "release.json deltaArtifacts.fromVersion is required.",
+      );
+    }
+    if (kind != "bsdiff") {
+      throw FormatException("Unsupported release delta artifact kind: $kind");
+    }
+    if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
+      throw const FormatException(
+        "release.json deltaArtifacts.sha256 must be 64 lowercase hex "
+        "characters.",
+      );
+    }
+    if (length < 0) {
+      throw const FormatException(
+        "release.json deltaArtifacts.length is required.",
+      );
     }
   }
 }

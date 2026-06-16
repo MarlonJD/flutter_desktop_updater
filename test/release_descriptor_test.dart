@@ -69,6 +69,41 @@ void main() {
     expect(descriptor.minimumOS, isEmpty);
     expect(descriptor.toJson(), isNot(contains("minimumOS")));
   });
+
+  test("parses optional delta artifact metadata behind unsupported gate", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "deltaArtifacts": [
+        {
+          "fromVersion": "2.1.4",
+          "kind": "bsdiff",
+          "url": "https://cdn.example.com/2.1.4-to-2.2.0.patch",
+          "sha256": "b" * 64,
+          "length": 456,
+        },
+      ],
+    });
+
+    final delta = descriptor.deltaArtifacts.single;
+    expect(delta.fromVersion, "2.1.4");
+    expect(delta.kind, "bsdiff");
+    expect(
+      delta.url,
+      Uri.parse("https://cdn.example.com/2.1.4-to-2.2.0.patch"),
+    );
+    expect(delta.sha256, "b" * 64);
+    expect(delta.length, 456);
+    expect(descriptor.toJson()["deltaArtifacts"], [
+      {
+        "fromVersion": "2.1.4",
+        "kind": "bsdiff",
+        "url": "https://cdn.example.com/2.1.4-to-2.2.0.patch",
+        "sha256": "b" * 64,
+        "length": 456,
+      },
+    ]);
+    expect(delta.ensureRuntimeSupported, throwsUnsupportedError);
+  });
 }
 
 Map<String, dynamic> _descriptorJson() {

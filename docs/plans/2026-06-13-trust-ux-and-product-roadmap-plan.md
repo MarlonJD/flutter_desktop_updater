@@ -733,7 +733,7 @@ Final gate on 2026-06-16: `dart format --set-exit-if-changed .` exited 0,
 issues, and `flutter test --no-pub` passed with 208 tests and 3 opt-in
 provider E2E tests skipped.
 
-- [ ] **Step 7.4: Delta update design gate**
+- [x] **Step 7.4: Delta update design gate**
 
 Do not implement binary deltas until the signed descriptor, retry, and resumable download paths are stable. First add descriptor shape support behind an explicit unsupported error:
 
@@ -756,6 +756,16 @@ Do not implement binary deltas until the signed descriptor, retry, and resumable
 ```
 
 Runtime must continue choosing the full zip until delta verification and patch application are implemented with fail-first tests.
+
+Verification on 2026-06-16: `flutter test --no-pub test/release_descriptor_test.dart test/update_client_security_test.dart`
+passed with 15 tests after adding descriptor-only `deltaArtifacts` metadata,
+an explicit unsupported runtime gate on `ReleaseDeltaArtifact`, and an update
+selection test proving the client still chooses the full zip artifact.
+
+Final gate on 2026-06-16: `dart format --set-exit-if-changed .` exited 0,
+`flutter analyze --no-fatal-infos` exited 0 with the existing 229 analyzer info
+issues, and `flutter test --no-pub` passed with 210 tests and 3 opt-in
+provider E2E tests skipped.
 
 Verification:
 

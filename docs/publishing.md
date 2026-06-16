@@ -102,6 +102,23 @@ The runtime parses and preserves this metadata. Apps that want enforcement
 provide an `isMinimumOSSupported` callback to `DesktopUpdaterController` or
 `UpdateClient`; without that callback the field is informational.
 
+`deltaArtifacts` is optional descriptor metadata reserved for future delta
+updates. The runtime parses and preserves the shape but does not download,
+verify, or apply delta patches yet. Clients continue to use the full `artifact`
+zip until delta verification and patch application ship with their own tests.
+
+```json
+"deltaArtifacts": [
+  {
+    "fromVersion": "2.1.4",
+    "kind": "bsdiff",
+    "url": "https://updates.example.com/releases/2.2.0/macos/2.1.4-to-2.2.0.patch",
+    "sha256": "64-lowercase-hex-characters",
+    "length": 456
+  }
+]
+```
+
 Supported install strategies:
 
 - `wholeBundleReplace`: macOS `.app` bundle replacement.
