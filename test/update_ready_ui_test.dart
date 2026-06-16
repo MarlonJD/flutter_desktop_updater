@@ -84,6 +84,91 @@ void main() {
     expect(find.text("Update failed"), findsOneWidget);
   });
 
+  testWidgets("error icon has a Tooltip with a non-empty message", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController()..showFailedUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, isNotEmpty);
+  });
+
+  testWidgets(
+    "error tooltip uses onUpdateFailedTooltip callback when provided", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      localization: const DesktopUpdateLocalization(
+        onUpdateFailedTooltip: _customTooltip,
+      ),
+    )..showFailedUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, "Custom error message");
+  });
+
+  testWidgets("description icon is hidden when releaseNotesUrl is null", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController()..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.description_outlined), findsNothing);
+  });
+
+  testWidgets("description icon is shown when releaseNotesUrl is set", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
+    )..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+  });
+
   testWidgets("wrapper widget can show the card above custom content", (
     tester,
   ) async {
@@ -140,10 +225,14 @@ void main() {
 }
 
 class _ReadyUiTestController extends DesktopUpdaterController {
-  _ReadyUiTestController()
-      : super(
+  _ReadyUiTestController({
+    Uri? releaseNotesUrl,
+    DesktopUpdateLocalization? localization,
+  }) : super(
           appArchiveUrl: null,
           skipInitialVersionCheck: true,
+          releaseNotesUrl: releaseNotesUrl,
+          localization: localization,
         );
 
   bool _skipUpdate = false;
@@ -225,6 +314,8 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     notifyListeners();
   }
 }
+
+String? _customTooltip(Object _) => "Custom error message";
 
 UpdateProblemReport _testReport() {
   return UpdateProblemReport(

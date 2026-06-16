@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.2.0
+  desktop_updater: ^2.3.0
 ```
 
 Point your app at the hosted archive:
@@ -90,6 +90,71 @@ See [Ready-made UI widgets](docs/ui-widgets.md) for screenshots, placement
 guidance, and when to choose each surface.
 
 For custom UI, switch on `controller.state`.
+
+## Release Notes
+
+Pass a `releaseNotesUrl` to the controller and the update card shows a
+description icon that opens a bottom sheet with the hosted release notes:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
+);
+```
+
+The endpoint must return a JSON object with a `data` array:
+
+```json
+{
+  "data": [
+    { "type": "feat",  "message": "Add dark mode support" },
+    { "type": "fix",   "message": "Fix crash on startup" },
+    { "type": "other", "message": "General stability improvements" }
+  ]
+}
+```
+
+`type` controls the section the entry appears under. Recognised values are
+`"feat"`, `"fix"`, and `"other"`. Any missing or unrecognised value is treated
+as `"other"`. The bottom sheet always renders sections in `feat → fix → other`
+order and omits empty sections.
+
+The icon is hidden when `releaseNotesUrl` is `null`. Notes are fetched once per
+update cycle — the cache is cleared when `checkVersion()` starts.
+
+Localise the bottom sheet and override section labels via `DesktopUpdateLocalization`:
+
+```dart
+localization: const DesktopUpdateLocalization(
+  releaseNotesTitleText: "What's new",
+  releaseNotesTypeLabels: {
+    "feat": "New features",
+    "fix":  "Bug fixes",
+    "other": "Other changes",
+  },
+  releaseNotesErrorText: "Could not load release notes.",
+  releaseNotesRetryText: "Retry",
+  releaseNotesEmptyText: "No release notes available for this version.",
+),
+```
+
+## Error Tooltip
+
+When an update fails the error icon shows a tooltip. Supply an
+`onUpdateFailedTooltip` callback to return a custom string, or fall back to
+`releaseNotesErrorText`:
+
+```dart
+localization: DesktopUpdateLocalization(
+  releaseNotesErrorText: "Update failed. Please try again.",
+  onUpdateFailedTooltip: (error) {
+    if (error is SocketException) return "No internet connection.";
+    if (error is TimeoutException) return "Connection timed out.";
+    return null; // falls back to releaseNotesErrorText
+  },
+),
+```
 
 ## Diagnostics And Recovery
 

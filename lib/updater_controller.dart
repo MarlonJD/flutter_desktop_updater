@@ -2,6 +2,7 @@ import "dart:async";
 
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_notes.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
@@ -10,6 +11,7 @@ import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/current_version.dart";
+import "package:desktop_updater/src/io/release_notes_fetcher.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
@@ -49,11 +51,15 @@ class DesktopUpdaterController extends ChangeNotifier {
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
     bool skipInitialVersionCheck = false,
+    Uri? releaseNotesUrl,
+    ReleaseNotesFetcher? releaseNotesFetcher,
   })  : _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
-        _onCleanupReport = onCleanupReport {
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesUrl = releaseNotesUrl,
+        _releaseNotesFetcher = releaseNotesFetcher ?? ReleaseNotesFetcher() {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -102,6 +108,13 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Whether the app supplied an explicit problem-report callback.
   bool get canReportProblem => _onProblemReport != null;
 
+  /// Optional URL for hosted release notes JSON.
+  ///
+  /// When non-null, the update card shows a description icon that opens the
+  /// release notes bottom sheet. Set a locale-aware URL and rebuild the
+  /// controller when the app locale changes.
+  Uri? get releaseNotesUrl => _releaseNotesUrl;
+
   /// Optional app-owned minimum OS support policy.
   final MinimumOSSupportChecker? isMinimumOSSupported;
 
@@ -143,6 +156,32 @@ class DesktopUpdaterController extends ChangeNotifier {
   String? _stagingPath;
   String? _currentAppVersion;
   UpdateCleanupReport? _lastCleanupReport;
+
+  final Uri? _releaseNotesUrl;
+  final ReleaseNotesFetcher _releaseNotesFetcher;
+  ReleaseNotes? _cachedReleaseNotes;
+
+  /// Fetches and returns the hosted release notes.
+  ///
+  /// Returns the cached result on subsequent calls within the same update
+  /// cycle. The cache is cleared when [checkVersion] starts so that a new
+  /// update cycle always fetches fresh notes.
+  ///
+  /// Throws [StateError] if [releaseNotesUrl] is null.
+  /// Throws an `HttpException` if the server returns a non-2xx status.
+  Future<ReleaseNotes> fetchReleaseNotes() async {
+    final cached = _cachedReleaseNotes;
+    if (cached != null) return cached;
+
+    final url = _releaseNotesUrl;
+    if (url == null) {
+      throw StateError("releaseNotesUrl is not set on this controller.");
+    }
+
+    final notes = await _releaseNotesFetcher.fetch(url);
+    _cachedReleaseNotes = notes;
+    return notes;
+  }
 
   /// Invokes the app-owned problem-report callback when one was supplied.
   Future<void> reportProblem(UpdateProblemReport report) async {
@@ -199,6 +238,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Checking for updates from $archiveUrl",
       );
     _lastCleanupReport = null;
+    _cachedReleaseNotes = null;
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
