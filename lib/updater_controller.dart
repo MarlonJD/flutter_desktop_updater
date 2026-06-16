@@ -15,6 +15,7 @@ import "package:desktop_updater/src/io/release_notes_fetcher.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
 export "package:desktop_updater/src/core/update_client.dart"
@@ -37,6 +38,40 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// When [appArchiveUrl] is provided and [skipInitialVersionCheck] is false,
   /// the controller starts an asynchronous update check during construction.
   DesktopUpdaterController({
+    required Uri? appArchiveUrl,
+    this.localization,
+    this.allowUnsignedMacOSUpdates = false,
+    this.channel = "stable",
+    this.installationIdentity,
+    this.preferences,
+    this.recoveryStore,
+    this.diagnosticsLogPath,
+    this.telemetry,
+    this.isMinimumOSSupported,
+    UpdateDiagnosticsRecorder? diagnosticsRecorder,
+    Future<void> Function(UpdateProblemReport report)? onProblemReport,
+    FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
+    bool skipInitialVersionCheck = false,
+    Uri? releaseNotesUrl,
+  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
+        _diagnosticsRecorder =
+            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+        _onProblemReport = onProblemReport,
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesUrl = releaseNotesUrl,
+        _releaseNotesFetcher = ReleaseNotesFetcher() {
+    if (appArchiveUrl != null) {
+      init(appArchiveUrl);
+    }
+  }
+
+  /// Creates a controller with injected collaborators for unit testing.
+  ///
+  /// Identical to the default constructor but accepts an optional
+  /// [releaseNotesFetcher] so tests can substitute a fake HTTP layer without
+  /// exposing that seam in the public API.
+  @visibleForTesting
+  DesktopUpdaterController.forTesting({
     required Uri? appArchiveUrl,
     this.localization,
     this.allowUnsignedMacOSUpdates = false,

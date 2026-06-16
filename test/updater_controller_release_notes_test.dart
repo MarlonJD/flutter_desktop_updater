@@ -29,7 +29,7 @@ void main() {
   });
 
   test("fetchReleaseNotes returns parsed notes from the fetcher", () async {
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: null,
       skipInitialVersionCheck: true,
       releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
@@ -46,7 +46,7 @@ void main() {
 
   test("fetchReleaseNotes returns cached result on second call", () async {
     final fetcher = _CountingNotesFetcher(_fakeNotes);
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: null,
       skipInitialVersionCheck: true,
       releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
@@ -69,12 +69,13 @@ void main() {
   });
 
   test("fetchReleaseNotes propagates errors from the fetcher", () async {
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: null,
       skipInitialVersionCheck: true,
       releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
       releaseNotesFetcher: _FailingNotesFetcher(
-        HttpException("HTTP 404", uri: Uri.parse("https://example.com/notes.json")),
+        HttpException("HTTP 404",
+            uri: Uri.parse("https://example.com/notes.json")),
       ),
     );
 
@@ -86,7 +87,7 @@ void main() {
     final missingArchive = Uri.file(
       "${Directory.systemTemp.path}/missing-${DateTime.now().millisecondsSinceEpoch}.json",
     );
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: missingArchive,
       skipInitialVersionCheck: true,
       releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
@@ -108,7 +109,7 @@ void main() {
 }
 
 class _ConstantNotesFetcher extends ReleaseNotesFetcher {
-  _ConstantNotesFetcher(this._notes) : super();
+  _ConstantNotesFetcher(this._notes) : super(client: null);
   final ReleaseNotes _notes;
 
   @override
@@ -116,7 +117,7 @@ class _ConstantNotesFetcher extends ReleaseNotesFetcher {
 }
 
 class _CountingNotesFetcher extends ReleaseNotesFetcher {
-  _CountingNotesFetcher(this._notes) : super();
+  _CountingNotesFetcher(this._notes) : super(client: null);
   final ReleaseNotes _notes;
   int callCount = 0;
 
@@ -128,7 +129,7 @@ class _CountingNotesFetcher extends ReleaseNotesFetcher {
 }
 
 class _FailingNotesFetcher extends ReleaseNotesFetcher {
-  _FailingNotesFetcher(this._error) : super();
+  _FailingNotesFetcher(this._error) : super(client: null);
   final Object _error;
 
   @override
