@@ -8,6 +8,21 @@ import "package:path/path.dart" as path;
 
 /// Reads the current desktop app version from platform metadata.
 Future<DesktopVersionInfo?> currentVersionInfo() async {
+  final methodChannel = MethodChannelDesktopUpdater();
+  Map<String, String?>? versionInfo;
+  try {
+    versionInfo = await methodChannel.getCurrentVersionInfo();
+  } on MissingPluginException {
+    versionInfo = null;
+  }
+
+  if (versionInfo != null) {
+    return DesktopVersionInfo.fromParts(
+      versionName: versionInfo["version"],
+      buildNumber: versionInfo["buildNumber"],
+    );
+  }
+
   if (Platform.isLinux) {
     final exePath = await File("/proc/self/exe").resolveSymbolicLinks();
     final appPath = path.dirname(exePath);
@@ -22,21 +37,6 @@ Future<DesktopVersionInfo?> currentVersionInfo() async {
     return DesktopVersionInfo.fromParts(
       versionName: versionJson["version"]?.toString(),
       buildNumber: versionJson["build_number"]?.toString(),
-    );
-  }
-
-  final methodChannel = MethodChannelDesktopUpdater();
-  Map<String, String?>? versionInfo;
-  try {
-    versionInfo = await methodChannel.getCurrentVersionInfo();
-  } on MissingPluginException {
-    versionInfo = null;
-  }
-
-  if (versionInfo != null) {
-    return DesktopVersionInfo.fromParts(
-      versionName: versionInfo["version"],
-      buildNumber: versionInfo["buildNumber"],
     );
   }
 
