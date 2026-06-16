@@ -1,0 +1,44 @@
+[
+  {
+    "case": "newer build wins when both sides expose build metadata",
+    "candidate": "2.2.0+220",
+    "current": "2.1.9+219",
+    "result": 1
+  },
+  {
+    "case": "same version newer build is newer",
+    "candidate": "2.2.0+221",
+    "current": "2.2.0+220",
+    "result": 1
+  },
+  {
+    "case": "build numbers are compared before semantic versions",
+    "candidate": "3.0.0+100",
+    "current": "2.0.0+200",
+    "result": -1
+  },
+  {
+    "case": "semantic versions compare when build metadata is absent",
+    "candidate": "2.2.0",
+    "current": "2.1.9",
+    "result": 1
+  },
+  {
+    "case": "pre-release sorts before the stable release",
+    "candidate": "2.2.0-beta.1",
+    "current": "2.2.0",
+    "result": -1
+  },
+  {
+    "case": "one-sided build metadata is ignored after equal semver",
+    "candidate": "2.2.0+220",
+    "current": "2.2.0",
+    "result": 0
+  },
+  {
+    "case": "same version and build are equal",
+    "candidate": "2.2.0+220",
+    "current": "2.2.0+220",
+    "result": 0
+  }
+]

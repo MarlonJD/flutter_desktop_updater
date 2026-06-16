@@ -1,0 +1,78 @@
+{
+  "currentVersion": "2.0.0+200",
+  "index": {
+    "schemaVersion": 3,
+    "appName": "Example.app",
+    "items": [
+      {
+        "version": "2.0.1",
+        "buildNumber": 201,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.com/releases/2.0.1/macos/release.json"
+      },
+      {
+        "version": "2.1.0",
+        "buildNumber": 210,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.com/releases/2.1.0/macos/release.json",
+        "rollout": {
+          "percentage": 25,
+          "salt": "stable-2026-06"
+        }
+      },
+      {
+        "version": "2.1.0",
+        "buildNumber": 210,
+        "platform": "macos",
+        "channel": "beta",
+        "mandatory": false,
+        "release": "https://updates.example.com/releases/2.1.0/macos-beta/release.json",
+        "rollout": {
+          "percentage": 25,
+          "salt": "stable-2026-06"
+        }
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case": "no rollout metadata remains selectable without identity",
+      "platform": "macos",
+      "channel": "stable",
+      "identity": null,
+      "selectedVersion": "2.0.1"
+    },
+    {
+      "case": "identity inside stable partial rollout selects partial item",
+      "platform": "macos",
+      "channel": "stable",
+      "identity": "pilot-a",
+      "selectedVersion": "2.1.0"
+    },
+    {
+      "case": "identity outside partial rollout falls back to no-rollout item",
+      "platform": "macos",
+      "channel": "stable",
+      "identity": "device-1",
+      "selectedVersion": "2.0.1"
+    },
+    {
+      "case": "same identity can fall outside another channel bucket",
+      "platform": "macos",
+      "channel": "beta",
+      "identity": "pilot-a",
+      "selectedVersion": null
+    },
+    {
+      "case": "beta identity inside channel-specific bucket is selected",
+      "platform": "macos",
+      "channel": "beta",
+      "identity": "beta-a",
+      "selectedVersion": "2.1.0"
+    }
+  ]
+}

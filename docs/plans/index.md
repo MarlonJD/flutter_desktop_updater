@@ -4,11 +4,11 @@ This index tracks repository-backed implementation plans for `desktop_updater`.
 
 ## Next
 
-- None.
+- [2026-06-16 - Multi-stage desktop updater extraction](2026-06-16-multi-stage-desktop-updater-extraction-plan.md)
 
 ## Active
 
-- None.
+- [2026-06-16 - 2.2.0 compatibility lock](2026-06-16-220-compatibility-lock-plan.md)
 
 ## Needs Status Audit
 

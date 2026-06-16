@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.app",
+  "appName": "Example.app",
+  "version": "2.2.0",
+  "buildNumber": 220,
+  "platform": "macos",
+  "channel": "stable",
+  "artifact": {
+    "kind": "zip",
+    "url": "https://updates.example.com/releases/2.2.0/macos/Example.zip",
+    "sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "length": 6
+  },
+  "install": {
+    "strategy": "wholeBundleReplace"
+  },
+  "minimumUpdaterVersion": "2.2.0",
+  "minimumOS": {
+    "macos": "13.0"
+  },
+  "generatedAt": "2026-06-16T00:00:00Z"
+}

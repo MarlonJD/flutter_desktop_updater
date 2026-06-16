@@ -1,0 +1,12 @@
+Update Problem Report
+Generated: 2026-06-16T12:00:00.000Z
+Package version: 2.2.0
+Platform: macos
+Channel: stable
+App version: 1.0.0+100
+Update version: 2.0.0
+Staging path: /tmp/staged
+Failure: Bad state: Authorization: <redacted> password=<redacted>
+
+Diagnostics:
+[2026-06-16T12:01:00.000Z] ERROR download: GET https://updates.example.com/release.json?token=<redacted>&safe=value

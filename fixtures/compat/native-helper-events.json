@@ -1,0 +1,21 @@
+{
+  "events": [
+    "helper scheduled",
+    "waiting for parent process",
+    "parent process exited",
+    "staging path validation",
+    "backup start",
+    "backup success",
+    "backup failure",
+    "move start",
+    "move success",
+    "move failure",
+    "rollback start",
+    "rollback success",
+    "rollback failure",
+    "cleanup start",
+    "cleanup success",
+    "cleanup failure",
+    "relaunch attempt"
+  ]
+}
