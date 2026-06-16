@@ -145,6 +145,13 @@ app-owned:
   redacted `UpdateProblemReport` when check, download, verification, staging, or
   install handoff fails. Reports are bounded before copy/export. The package
   does not write report files, upload logs, or depend on a backend.
+- Install scheduling emits a small in-memory `UpdateCleanupReport` through
+  `DesktopUpdaterController.lastCleanupReport` and the optional
+  `onCleanupReport` callback. The report records the staging path, descriptor
+  version, whether cleanup was attempted, whether cleanup succeeded when known,
+  whether a native helper reported backup rollback when known, and error text
+  when scheduling or cleanup fails. Callback or persistence failures are ignored
+  so install success is not blocked by reporting.
 
 Advanced callers that use `HttpUpdateTransport` directly can provide a custom
 `UpdateRetryPolicy` and delay function for tests or app-specific retry tuning.

@@ -171,10 +171,60 @@ void main() {
       expect(report.entries.last.stage, UpdateDiagnosticStage.install);
       expect(report.entries.last.level, UpdateDiagnosticLevel.error);
       expect(report.entries.last.message, contains("Install failed"));
+
+      final cleanupReport = controller.lastCleanupReport;
+      expect(cleanupReport, isNotNull);
+      expect(cleanupReport!.stagingPath, report.stagingPath);
+      expect(cleanupReport.descriptorVersion, "2.0.1");
+      expect(cleanupReport.cleanupAttempted, isFalse);
+      expect(cleanupReport.cleanupSucceeded, isFalse);
+      expect(cleanupReport.backupRestoredByNativeHelper, isNull);
+      expect(cleanupReport.errorText, contains("Native install failed"));
     } finally {
       await fixture.delete();
     }
   });
+
+  test(
+    "successful install scheduling emits cleanup report without blocking",
+    () async {
+      final reports = <UpdateCleanupReport>[];
+      final fixture = await _ControllerUpdateFixture.create(
+        mandatory: false,
+        validArtifact: true,
+      );
+      try {
+        final controller = DesktopUpdaterController(
+          appArchiveUrl: fixture.archiveUrl,
+          skipInitialVersionCheck: true,
+          onCleanupReport: (report) {
+            reports.add(report);
+            throw StateError("report sink is down");
+          },
+        );
+
+        await controller.checkVersion();
+        await controller.downloadUpdate();
+        await controller.restartApp();
+
+        expect(reports, hasLength(1));
+        final report = reports.single;
+        expect(controller.lastCleanupReport, same(report));
+        expect(report.stagingPath, isNotEmpty);
+        expect(report.descriptorVersion, "2.0.1");
+        expect(report.cleanupAttempted, isFalse);
+        expect(report.cleanupSucceeded, isNull);
+        expect(report.backupRestoredByNativeHelper, isNull);
+        expect(report.errorText, isNull);
+
+        final state = controller.state;
+        expect(state, isA<UpdateInstalling>());
+        expect((state as UpdateInstalling).cleanupReport, same(report));
+      } finally {
+        await fixture.delete();
+      }
+    },
+  );
 
   test("telemetry failures do not prevent diagnostics reports", () async {
     final missingArchive = Uri.file(

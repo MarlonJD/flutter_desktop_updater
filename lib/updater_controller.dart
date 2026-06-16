@@ -43,11 +43,13 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.isMinimumOSSupported,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
+    FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
     bool skipInitialVersionCheck = false,
   })  : _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
-        _onProblemReport = onProblemReport {
+        _onProblemReport = onProblemReport,
+        _onCleanupReport = onCleanupReport {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -78,9 +80,14 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   final UpdateDiagnosticsRecorder _diagnosticsRecorder;
   final Future<void> Function(UpdateProblemReport report)? _onProblemReport;
+  final FutureOr<void> Function(UpdateCleanupReport report)? _onCleanupReport;
 
   /// In-memory diagnostics recorder used to build failure reports.
   UpdateDiagnosticsRecorder get diagnosticsRecorder => _diagnosticsRecorder;
+
+  /// Most recent install scheduling or cleanup report emitted by this
+  /// controller.
+  UpdateCleanupReport? get lastCleanupReport => _lastCleanupReport;
 
   /// Whether the app supplied an explicit problem-report callback.
   bool get canReportProblem => _onProblemReport != null;
@@ -125,6 +132,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   UpdateClient? _client;
   String? _stagingPath;
   String? _currentAppVersion;
+  UpdateCleanupReport? _lastCleanupReport;
 
   /// Invokes the app-owned problem-report callback when one was supplied.
   Future<void> reportProblem(UpdateProblemReport report) async {
@@ -180,6 +188,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         level: UpdateDiagnosticLevel.info,
         message: "Checking for updates from $archiveUrl",
       );
+    _lastCleanupReport = null;
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
@@ -433,7 +442,22 @@ class DesktopUpdaterController extends ChangeNotifier {
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
       );
+      final cleanupReport = _buildCleanupReport(
+        stagingPath: stagingPath,
+        cleanupAttempted: false,
+      );
+      _recordCleanupReport(cleanupReport);
+      _state = UpdateInstalling(cleanupReport: cleanupReport);
+      notifyListeners();
     } catch (error) {
+      _recordCleanupReport(
+        _buildCleanupReport(
+          stagingPath: stagingPath,
+          cleanupAttempted: false,
+          cleanupSucceeded: false,
+          errorText: error.toString(),
+        ),
+      );
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
         level: UpdateDiagnosticLevel.error,
@@ -461,6 +485,35 @@ class DesktopUpdaterController extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  UpdateCleanupReport _buildCleanupReport({
+    required String stagingPath,
+    required bool cleanupAttempted,
+    bool? cleanupSucceeded,
+    bool? backupRestoredByNativeHelper,
+    String? errorText,
+  }) {
+    return UpdateCleanupReport(
+      stagingPath: stagingPath,
+      descriptorVersion: _activeDescriptor?.version,
+      cleanupAttempted: cleanupAttempted,
+      cleanupSucceeded: cleanupSucceeded,
+      backupRestoredByNativeHelper: backupRestoredByNativeHelper,
+      errorText: errorText,
+    );
+  }
+
+  void _recordCleanupReport(UpdateCleanupReport report) {
+    _lastCleanupReport = report;
+    final callback = _onCleanupReport;
+    if (callback == null) {
+      return;
+    }
+
+    unawaited(
+      Future<void>.sync(() => callback(report)).catchError((Object _) {}),
+    );
   }
 
   Future<bool> _isSkipped(ReleaseDescriptor descriptor) async {

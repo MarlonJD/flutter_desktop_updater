@@ -252,6 +252,24 @@ Telemetry callback failures are ignored by the updater. The callback is for
 observation only and is never required for update checks, downloads, or install
 handoff.
 
+Install scheduling also keeps a small cleanup report in memory. Read
+`controller.lastCleanupReport` after `restartApp()` or pass `onCleanupReport`
+to persist the staging path, descriptor version, cleanup status, native rollback
+status when known, and error text when scheduling or cleanup fails:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  onCleanupReport: (report) async {
+    await myReleaseAuditStore.save(report);
+  },
+);
+```
+
+The callback is observational. If it throws or your persistence backend is
+unavailable, the updater still treats install scheduling according to the
+native helper result.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 

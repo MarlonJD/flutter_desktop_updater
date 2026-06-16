@@ -678,7 +678,7 @@ Expected: format clean, analyzer exits 0, and targeted tests pass.
 - Test: `test/release_descriptor_test.dart`
 - Test: `test/update_client_security_test.dart`
 
-- [ ] **Step 7.1: Resumable downloads**
+- [x] **Step 7.1: Resumable downloads**
 
 Add HTTP Range support only after retry/backoff lands. Resume only when the server returns `206 Partial Content` and the existing `.part` file length is less than the expected artifact length.
 
@@ -689,6 +689,10 @@ server ignores Range and returns 200 -> restart from byte 0
 server returns wrong Content-Range -> delete partial and fail
 final SHA-256 mismatch -> delete partial and fail
 ```
+
+Verification on 2026-06-16: `flutter test --no-pub test/update_transport_test.dart`
+passed with 8 tests, covering retry/backoff, valid range resume, server-ignored
+range restart, and invalid `Content-Range` partial cleanup.
 
 - [x] **Step 7.2: Staged rollout percentage**
 
@@ -703,7 +707,7 @@ Add optional index metadata:
 
 Selection must be deterministic per installation identity and channel. If the app does not provide an installation identity, rollout filtering is disabled and the item is treated as not eligible unless the rollout is 100 percent.
 
-- [ ] **Step 7.3: Rollback and cleanup report**
+- [x] **Step 7.3: Rollback and cleanup report**
 
 Add a small report object emitted after install scheduling or next startup cleanup:
 
@@ -717,6 +721,17 @@ error text when known
 ```
 
 Do not block install success on telemetry/report persistence.
+
+Verification on 2026-06-16: `flutter test --no-pub test/updater_controller_test.dart`
+passed with 15 tests after adding `UpdateCleanupReport`,
+`DesktopUpdaterController.lastCleanupReport`, and optional `onCleanupReport`.
+Successful install scheduling emits a report without waiting on callback
+persistence; failed install scheduling records known error text.
+
+Final gate on 2026-06-16: `dart format --set-exit-if-changed .` exited 0,
+`flutter analyze --no-fatal-infos` exited 0 with the existing 229 analyzer info
+issues, and `flutter test --no-pub` passed with 208 tests and 3 opt-in
+provider E2E tests skipped.
 
 - [ ] **Step 7.4: Delta update design gate**
 

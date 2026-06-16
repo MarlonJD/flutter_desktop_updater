@@ -181,6 +181,38 @@ class UpdateProblemReport {
   }
 }
 
+/// Small report emitted after install scheduling or cleanup evidence.
+class UpdateCleanupReport {
+  /// Creates an install cleanup report.
+  const UpdateCleanupReport({
+    required this.stagingPath,
+    required this.descriptorVersion,
+    required this.cleanupAttempted,
+    this.cleanupSucceeded,
+    this.backupRestoredByNativeHelper,
+    this.errorText,
+  });
+
+  /// Platform-specific staged update path associated with the report.
+  final String stagingPath;
+
+  /// Release descriptor version associated with the staged update.
+  final String? descriptorVersion;
+
+  /// Whether cleanup was attempted for the staged update.
+  final bool cleanupAttempted;
+
+  /// Whether cleanup succeeded, when cleanup or install-scheduling result is
+  /// known.
+  final bool? cleanupSucceeded;
+
+  /// Whether the native helper reported restoring a backup during rollback.
+  final bool? backupRestoredByNativeHelper;
+
+  /// Error text captured while scheduling install or cleanup, when known.
+  final String? errorText;
+}
+
 const String _redacted = "<redacted>";
 
 final RegExp _authorizationHeaderPattern = RegExp(

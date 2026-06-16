@@ -58,7 +58,10 @@ final class UpdateReadyToInstall extends UpdateState {
 /// The native install or restart helper is running.
 final class UpdateInstalling extends UpdateState {
   /// Creates an installing state.
-  const UpdateInstalling();
+  const UpdateInstalling({this.cleanupReport});
+
+  /// Report emitted after install scheduling, when available.
+  final UpdateCleanupReport? cleanupReport;
 }
 
 /// The most recent update check, download, verification, or install failed.
