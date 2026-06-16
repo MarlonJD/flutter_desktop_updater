@@ -10,7 +10,16 @@ void main() {
     expect(source, contains("## Diagnostics And Recovery"));
     expect(source, contains("diagnosticsLogPath"));
     expect(source, contains("UpdateRecoveryStore"));
-    expect(source, contains("native helper diagnostics plan"));
+    expect(source, contains("docs/ui-widgets.md#diagnostics-and-support"));
+    expect(source, contains("docs/publishing.md#runtime-policies"));
+    expect(
+      source,
+      contains(
+        "docs/windows-linux-production-release.md#diagnostics-and-support-logs",
+      ),
+    );
+    expect(source, isNot(contains("native helper diagnostics plan")));
+    expect(source, isNot(contains("docs/plans")));
   });
 
   test("support docs describe app-owned diagnostics levels", () {

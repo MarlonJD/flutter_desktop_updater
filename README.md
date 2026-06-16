@@ -102,8 +102,8 @@ app-owned `UpdateRecoveryStore` only when support needs post-exit native helper
 evidence.
 
 Details live in [Ready-made UI widgets](docs/ui-widgets.md#diagnostics-and-support),
-[Publishing desktop updates](docs/publishing.md#runtime-policies), and the
-[native helper diagnostics plan](docs/plans/2026-06-13-native-helper-diagnostics-recovery-plan.md).
+[Publishing desktop updates](docs/publishing.md#runtime-policies), and
+[Windows and Linux production release options](docs/windows-linux-production-release.md#diagnostics-and-support-logs).
 
 ## Production Trust
 
@@ -125,8 +125,6 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   restrictions.
 - [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
-- [Implementation plans index](docs/plans/index.md): completed roadmap closure,
-  trust/UX, and native diagnostics execution ledgers.
 - [GitHub Actions CI/CD guide](docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
 - [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md): migration
