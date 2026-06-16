@@ -94,7 +94,9 @@ class ReleaseManifest {
 
   void _validate() {
     if (schemaVersion != 2) {
-      throw FormatException("Unsupported release manifest schema version.");
+      throw const FormatException(
+        "Unsupported release manifest schema version.",
+      );
     }
     if (platform != "macos") {
       throw FormatException("Unsupported release manifest platform: $platform");
@@ -158,28 +160,23 @@ class ReleaseFullArchive {
 class ReleaseManifestEntry {
   ReleaseManifestEntry.file({
     required this.path,
-    required String sha256,
-    required int length,
-    required String mode,
-    required String payloadPath,
+    required String this.sha256,
+    required this.length,
+    required String this.mode,
+    required String this.payloadPath,
   })  : type = ReleaseManifestEntryType.file,
-        sha256 = sha256,
-        length = length,
-        mode = mode,
-        payloadPath = payloadPath,
         symlinkTarget = null {
     _validate();
   }
 
   ReleaseManifestEntry.symlink({
     required this.path,
-    required String symlinkTarget,
+    required String this.symlinkTarget,
   })  : type = ReleaseManifestEntryType.symlink,
         sha256 = null,
         length = 0,
         mode = null,
-        payloadPath = null,
-        symlinkTarget = symlinkTarget {
+        payloadPath = null {
     _validate();
   }
 

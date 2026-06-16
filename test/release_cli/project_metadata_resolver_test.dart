@@ -13,7 +13,7 @@ void main() {
       platform: "macos",
     );
     try {
-      final metadata = await ProjectMetadataResolver().resolve(
+      final metadata = await const ProjectMetadataResolver().resolve(
         projectRoot: fixture.root,
         platform: "macos",
         overrides: const ReleasePublishOverrides(),
@@ -32,7 +32,7 @@ void main() {
       platform: "macos",
     );
     try {
-      final metadata = await ProjectMetadataResolver().resolve(
+      final metadata = await const ProjectMetadataResolver().resolve(
         projectRoot: fixture.root,
         platform: "macos",
         overrides: const ReleasePublishOverrides(
@@ -54,7 +54,7 @@ void main() {
       platform: "macos",
     );
     try {
-      final metadata = await ProjectMetadataResolver().resolve(
+      final metadata = await const ProjectMetadataResolver().resolve(
         projectRoot: fixture.root,
         platform: "macos",
         overrides: const ReleasePublishOverrides(buildNumber: 210),
@@ -73,7 +73,7 @@ void main() {
       platform: "macos",
     );
     try {
-      final metadata = await ProjectMetadataResolver().resolve(
+      final metadata = await const ProjectMetadataResolver().resolve(
         projectRoot: fixture.root,
         platform: "macos",
         overrides: const ReleasePublishOverrides(),

@@ -7,8 +7,10 @@ void main() {
       () {
     final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
 
-    expect(source,
-        contains('execl("/bin/bash", "bash", script_path.c_str(), nullptr);'));
+    expect(
+      source,
+      contains('execl("/bin/bash", "bash", script_path.c_str(), nullptr);'),
+    );
     expect(source, contains("#!/bin/bash"));
     expect(source, contains("set -euo pipefail"));
     expect(source, contains("removed=("));
@@ -41,8 +43,10 @@ void main() {
     final copyIndex = source.indexOf(copySnippet);
 
     expect(pruneIndex, isNonNegative);
-    expect(source,
-        contains(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force"));
+    expect(
+      source,
+      contains(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force"),
+    );
     expect(removeIndex, isNonNegative);
     expect(copyIndex, isNonNegative);
     expect(pruneIndex, lessThan(copyIndex));

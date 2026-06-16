@@ -122,7 +122,8 @@ void main() {
         runHookCommand: (command, {required environment}) async {
           hookCalls.add(_HookCall(command, environment));
           commands.add(
-              "HOOK ${environment["DESKTOP_UPDATER_HOOK_PHASE"]} $command");
+            "HOOK ${environment["DESKTOP_UPDATER_HOOK_PHASE"]} $command",
+          );
           return ProcessResult(0, 0, "hook stdout\n", "");
         },
       );
@@ -141,9 +142,13 @@ void main() {
       ]);
       expect(hookCalls, hasLength(2));
       expect(
-          hookCalls.first.environment["DESKTOP_UPDATER_PLATFORM"], "windows");
-      expect(hookCalls.first.environment["DESKTOP_UPDATER_PROJECT_ROOT"],
-          root.path);
+        hookCalls.first.environment["DESKTOP_UPDATER_PLATFORM"],
+        "windows",
+      );
+      expect(
+        hookCalls.first.environment["DESKTOP_UPDATER_PROJECT_ROOT"],
+        root.path,
+      );
       expect(
         hookCalls.first.environment["DESKTOP_UPDATER_BASE_URL"],
         "https://updates.example.com/",

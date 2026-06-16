@@ -23,7 +23,8 @@ class PublishLayout {
 
   File get manifestFile {
     return File(
-        path.join(outputDirectory.path, ".desktop_updater_publish.json"));
+      path.join(outputDirectory.path, ".desktop_updater_publish.json"),
+    );
   }
 
   File get appArchiveFile {

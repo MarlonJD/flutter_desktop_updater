@@ -183,7 +183,8 @@ DesktopVersionInfo _currentVersionForValidation({
       .where((item) => item.platform == manifest.release.platform)
       .where((item) => item.channel == manifest.release.channel)
       .where(
-          (item) => item.release.toString() != manifest.release.url.toString())
+        (item) => item.release.toString() != manifest.release.url.toString(),
+      )
       .toList(growable: false)
     ..sort((left, right) {
       return compareDesktopVersions(

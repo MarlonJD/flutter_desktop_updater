@@ -174,7 +174,12 @@ Future<String> _resolvePackageId({
 Future<Map<String, String>> _readMacosAppInfo(Directory projectRoot) async {
   final file = File(
     path.join(
-        projectRoot.path, "macos", "Runner", "Configs", "AppInfo.xcconfig"),
+      projectRoot.path,
+      "macos",
+      "Runner",
+      "Configs",
+      "AppInfo.xcconfig",
+    ),
   );
   if (!await file.exists()) {
     return const {};

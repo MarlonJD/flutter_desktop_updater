@@ -22,7 +22,13 @@ typedef MinimumOSSupportChecker = bool Function({
   required String minimumOS,
 });
 
+/// Low-level zip-first update client used by the controller and direct APIs.
+///
+/// The client reads an `app-archive.json`, selects the newest eligible release,
+/// validates the release descriptor, downloads the artifact, verifies it, and
+/// stages it for the native install handoff.
 class UpdateClient {
+  /// Creates a client for one app archive and currently installed app version.
   UpdateClient({
     required this.appArchiveUrl,
     required this.currentVersion,
@@ -48,10 +54,18 @@ class UpdateClient {
         _isMinimumOSSupported = isMinimumOSSupported,
         _telemetry = telemetry;
 
+  /// Hosted `app-archive.json` URL.
   final Uri appArchiveUrl;
+
+  /// Version currently installed on this machine.
   final DesktopVersionInfo currentVersion;
+
   final DesktopVersionInfo _currentUpdaterVersion;
+
+  /// Platform identifier used for release selection.
   final String platform;
+
+  /// Release channel used for release selection.
   final String channel;
 
   /// Stable app-owned identity used for deterministic staged rollouts.
@@ -64,6 +78,7 @@ class UpdateClient {
   final MinimumOSSupportChecker? _isMinimumOSSupported;
   final DesktopUpdaterTelemetry? _telemetry;
 
+  /// Checks the archive and returns the newest eligible release, if any.
   Future<UpdateCheckResult?> checkForUpdate() async {
     final tempDir = await Directory.systemTemp.createTemp(
       "desktop_updater_index_",
@@ -114,6 +129,7 @@ class UpdateClient {
     }
   }
 
+  /// Downloads, verifies, extracts, and stages [descriptor].
   Future<UpdateStageResult> downloadVerifyAndStage({
     required ReleaseDescriptor descriptor,
     void Function(int receivedBytes, int? totalBytes)? onProgress,
@@ -267,24 +283,36 @@ void _verifyDescriptorMatchesIndexItem({
   }
 }
 
+/// Successful update-check result with the selected index item and descriptor.
 class UpdateCheckResult {
+  /// Creates an update-check result.
   const UpdateCheckResult({
     required this.index,
     required this.item,
     required this.descriptor,
   });
 
+  /// App archive that contained the selected release.
   final ReleaseIndex index;
+
+  /// Selected release index item.
   final ReleaseIndexItem item;
+
+  /// Versioned release descriptor selected for download.
   final ReleaseDescriptor descriptor;
 }
 
+/// Result returned after a release artifact has been verified and staged.
 class UpdateStageResult {
+  /// Creates a staged update result.
   const UpdateStageResult({
     required this.descriptor,
     required this.stagingPath,
   });
 
+  /// Descriptor that was downloaded and staged.
   final ReleaseDescriptor descriptor;
+
+  /// Platform-specific path handed to the native install helper.
   final String stagingPath;
 }

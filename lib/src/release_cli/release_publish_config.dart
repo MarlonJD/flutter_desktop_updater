@@ -303,7 +303,7 @@ List<String> _readHookPlatforms(
         item.toString()
       else
         throw FormatException(
-          "$displayName contains unsupported platform ${item.toString()}.",
+          "$displayName contains unsupported platform $item.",
         ),
   ];
 }
@@ -397,8 +397,11 @@ MacOSPublishConfig _readMacOSConfig(
     notaryProfile: _stringValue(macos, "notaryProfile"),
     keychain: _stringValue(macos, "keychain"),
     staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
-    gatekeeperAssess: _boolValue(macos, "gatekeeperAssess",
-            displayName: "macos.gatekeeperAssess") ??
+    gatekeeperAssess: _boolValue(
+          macos,
+          "gatekeeperAssess",
+          displayName: "macos.gatekeeperAssess",
+        ) ??
         true,
   );
 
@@ -465,7 +468,7 @@ Map<String, dynamic> _mapValue(Map<String, dynamic> map, String key) {
 
 String? _stringValue(Map<String, dynamic> map, String key) {
   final value = map[key];
-  return value == null ? null : value.toString();
+  return value?.toString();
 }
 
 String _requiredString(
@@ -512,6 +515,7 @@ int? _intValue(Map<String, dynamic> map, String key) {
 void _requireConfigValue(String? value, String displayName) {
   if (value == null || value.trim().isEmpty) {
     throw FormatException(
-        "$displayName is required when macos.notarize is true.");
+      "$displayName is required when macos.notarize is true.",
+    );
   }
 }

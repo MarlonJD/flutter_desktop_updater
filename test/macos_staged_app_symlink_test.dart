@@ -10,10 +10,10 @@ void main() {
       "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
     ).readAsStringSync();
 
-    final symlinkCheck = source.indexOf('if [ -L "\$STAGING" ]; then');
-    final directoryCheck = source.indexOf('if [ ! -d "\$STAGING" ]; then');
+    final symlinkCheck = source.indexOf(r'if [ -L "$STAGING" ]; then');
+    final directoryCheck = source.indexOf(r'if [ ! -d "$STAGING" ]; then');
     final manifestCheck = source.indexOf(
-      'MANIFEST="\$(dirname "\$STAGING")/.desktop_updater_release_manifest.json"',
+      r'MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"',
     );
 
     expect(symlinkCheck, isNonNegative);
@@ -33,33 +33,36 @@ void main() {
     );
   });
 
-  test("top-level staged macOS app symlink is rejected before install",
-      () async {
-    final tempDir = await Directory.systemTemp.createTemp("macos_symlink_");
-    try {
-      final realApp = Directory(path.join(tempDir.path, "Real.app"));
-      await Directory(path.join(realApp.path, "Contents")).create(
-        recursive: true,
-      );
-      final stagedLink = Link(path.join(tempDir.path, "Staged.app"));
-      await stagedLink.create(realApp.path);
+  test(
+    "top-level staged macOS app symlink is rejected before install",
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp("macos_symlink_");
+      try {
+        final realApp = Directory(path.join(tempDir.path, "Real.app"));
+        await Directory(path.join(realApp.path, "Contents")).create(
+          recursive: true,
+        );
+        final stagedLink = Link(path.join(tempDir.path, "Staged.app"));
+        await stagedLink.create(realApp.path);
 
-      expect(
-        FileSystemEntity.typeSync(stagedLink.path, followLinks: false),
-        FileSystemEntityType.link,
-      );
-      await expectLater(
-        rejectTopLevelMacOSAppSymlink(stagedLink.path),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            "message",
-            contains("Staged macOS app must be a real directory"),
+        expect(
+          FileSystemEntity.typeSync(stagedLink.path, followLinks: false),
+          FileSystemEntityType.link,
+        );
+        await expectLater(
+          rejectTopLevelMacOSAppSymlink(stagedLink.path),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              "message",
+              contains("Staged macOS app must be a real directory"),
+            ),
           ),
-        ),
-      );
-    } finally {
-      await tempDir.delete(recursive: true);
-    }
-  }, skip: !Platform.isMacOS);
+        );
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
+    },
+    skip: !Platform.isMacOS,
+  );
 }

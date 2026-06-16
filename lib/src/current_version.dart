@@ -6,6 +6,7 @@ import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/services.dart";
 import "package:path/path.dart" as path;
 
+/// Reads the current desktop app version from platform metadata.
 Future<DesktopVersionInfo?> currentVersionInfo() async {
   if (Platform.isLinux) {
     final exePath = await File("/proc/self/exe").resolveSymbolicLinks();

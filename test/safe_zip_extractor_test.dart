@@ -8,17 +8,20 @@ import "package:path/path.dart" as path;
 void main() {
   test("rejects parent traversal entries", () async {
     await _expectZipRejected(
-        Archive()..addFile(ArchiveFile.string("../evil", "x")));
+      Archive()..addFile(ArchiveFile.string("../evil", "x")),
+    );
   });
 
   test("rejects absolute entries", () async {
     await _expectZipRejected(
-        Archive()..addFile(ArchiveFile.string("/tmp/evil", "x")));
+      Archive()..addFile(ArchiveFile.string("/tmp/evil", "x")),
+    );
   });
 
   test("rejects Windows drive entries", () async {
     await _expectZipRejected(
-        Archive()..addFile(ArchiveFile.string(r"C:\evil", "x")));
+      Archive()..addFile(ArchiveFile.string(r"C:\evil", "x")),
+    );
   });
 
   test("accepts nested valid paths", () async {
@@ -117,7 +120,6 @@ Future<void> _expectZipRejected(Archive archive) async {
 }
 
 Future<File> _writeZip(Directory tempDir, Archive archive) async {
-  final file = File(path.join(tempDir.path, "fixture.zip"));
-  file.writeAsBytesSync(ZipEncoder().encode(archive));
-  return file;
+  return File(path.join(tempDir.path, "fixture.zip"))
+    ..writeAsBytesSync(ZipEncoder().encode(archive));
 }

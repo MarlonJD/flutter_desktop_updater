@@ -4,9 +4,12 @@ import "package:archive/archive_io.dart";
 import "package:desktop_updater/src/io/archive_path.dart";
 import "package:path/path.dart" as path;
 
+/// Extracts zip artifacts while rejecting unsafe paths and symlinks.
 class SafeZipExtractor {
+  /// Creates a safe zip extractor.
   const SafeZipExtractor();
 
+  /// Extracts [archiveFile] into [destination].
   Future<void> extract({
     required File archiveFile,
     required Directory destination,

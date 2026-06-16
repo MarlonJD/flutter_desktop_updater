@@ -36,8 +36,10 @@ void main() {
       );
 
       expect(progress, isNotEmpty);
-      expect(File(path.join(staged.stagingPath, "app.txt")).readAsStringSync(),
-          "version=2.0.0");
+      expect(
+        File(path.join(staged.stagingPath, "app.txt")).readAsStringSync(),
+        "version=2.0.0",
+      );
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);

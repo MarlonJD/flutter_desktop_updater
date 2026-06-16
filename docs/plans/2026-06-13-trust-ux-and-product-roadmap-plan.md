@@ -326,7 +326,7 @@ Expected: all tests pass.
 - Modify: selected tests only when formatter/lint fixes are mechanical
 - Modify: `analysis_options.yaml` only if a lint rule is intentionally relaxed with a comment
 
-- [ ] **Step 4.1: Capture baseline**
+- [x] **Step 4.1: Capture baseline**
 
 Run:
 
@@ -336,7 +336,10 @@ flutter analyze --no-fatal-infos
 
 Expected: command exits 0. Record the issue count before cleanup.
 
-- [ ] **Step 4.2: Fix public API documentation in focused batches**
+Baseline captured on 2026-06-16: `flutter analyze --no-fatal-infos` exited 0
+with 324 analyzer info issues.
+
+- [x] **Step 4.2: Fix public API documentation in focused batches**
 
 Start with exported or user-facing files:
 
@@ -350,11 +353,11 @@ lib/src/core/release_index.dart
 lib/src/core/artifact_verifier.dart
 ```
 
-- [ ] **Step 4.3: Fix mechanical style infos**
+- [x] **Step 4.3: Fix mechanical style infos**
 
 Apply `dart format .`, then fix `require_trailing_commas`, `use_raw_strings`, `prefer_const_constructors`, and `directives_ordering` in small batches.
 
-- [ ] **Step 4.4: Decide example-app doc lint policy**
+- [x] **Step 4.4: Decide example-app doc lint policy**
 
 Either document public example classes or suppress `public_member_api_docs` for `example/**` through `analysis_options.yaml` with a comment explaining that example app widgets are not package API.
 
@@ -367,6 +370,11 @@ flutter test --no-pub
 ```
 
 Expected: analyzer exits 0 with materially fewer infos than the baseline, and tests pass.
+
+Verification on 2026-06-16: `dart format --set-exit-if-changed .` exited 0,
+`flutter analyze --no-fatal-infos` exited 0 with 229 analyzer info issues, and
+`flutter test --no-pub` passed with 207 tests and 3 opt-in provider E2E tests
+skipped.
 
 ## Task 5: Persistent Skip, Retry/Backoff, Telemetry, And Policy
 

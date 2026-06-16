@@ -177,7 +177,8 @@ List<_UploadFile> _versionedUploadFiles(
       _UploadFile(
         relativePath: relativePath,
         file: File(
-            path.join(localRoot.path, path.fromUri(Uri(path: relativePath)))),
+          path.join(localRoot.path, path.fromUri(Uri(path: relativePath))),
+        ),
       ),
   ];
 }
@@ -192,8 +193,8 @@ SftpUploadConfig _sftpConfig(UploadConfig config) {
 }
 
 String _remotePath(String root, String relativePath) {
-  final cleanRoot = root.replaceAll("\\", "/").replaceAll(RegExp(r"/+$"), "");
-  final cleanRelative = relativePath.replaceAll("\\", "/");
+  final cleanRoot = root.replaceAll(r"\", "/").replaceAll(RegExp(r"/+$"), "");
+  final cleanRelative = relativePath.replaceAll(r"\", "/");
   if (cleanRoot.isEmpty) {
     return "/$cleanRelative";
   }
@@ -210,7 +211,7 @@ Uri _remoteUri(SftpUploadConfig config, String remotePath) {
 }
 
 String _escapeCurlConfig(String value) {
-  return value.replaceAll("\\", r"\\").replaceAll('"', r'\"');
+  return value.replaceAll(r"\", r"\\").replaceAll('"', r'\"');
 }
 
 bool _fileExists(String path) => File(path).existsSync();

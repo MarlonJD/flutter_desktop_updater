@@ -25,7 +25,9 @@ void main() {
       expect(output.toString(), contains("Minimum desktop_updater.yaml:"));
       expect(output.toString(), contains("updates:"));
       expect(
-          output.toString(), contains("baseUrl: https://updates.example.com"));
+        output.toString(),
+        contains("baseUrl: https://updates.example.com"),
+      );
     } finally {
       await root.delete(recursive: true);
     }
@@ -49,7 +51,9 @@ updates:
 
       expect(exitCode, 64);
       expect(
-          output.toString(), contains("ERROR: updates.baseUrl is required."));
+        output.toString(),
+        contains("ERROR: updates.baseUrl is required."),
+      );
     } finally {
       await root.delete(recursive: true);
     }

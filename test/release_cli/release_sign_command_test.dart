@@ -115,7 +115,8 @@ void main() {
       expect(
         output.toString(),
         contains(
-            "Provide exactly one of --private-key-env or --private-key-file."),
+          "Provide exactly one of --private-key-env or --private-key-file.",
+        ),
       );
     } finally {
       await fixture.delete();

@@ -148,7 +148,8 @@ List<_UploadFile> _versionedUploadFiles(
       _UploadFile(
         relativePath: relativePath,
         file: File(
-            path.join(localRoot.path, path.fromUri(Uri(path: relativePath)))),
+          path.join(localRoot.path, path.fromUri(Uri(path: relativePath))),
+        ),
       ),
   ];
 }
@@ -161,8 +162,8 @@ S3UploadConfig _s3Config(UploadConfig config) {
 }
 
 String _s3Key(String? prefix, String relativePath) {
-  final normalizedPath = relativePath.replaceAll("\\", "/");
-  final trimmedPrefix = prefix?.trim().replaceAll("\\", "/");
+  final normalizedPath = relativePath.replaceAll(r"\", "/");
+  final trimmedPrefix = prefix?.trim().replaceAll(r"\", "/");
   if (trimmedPrefix == null || trimmedPrefix.isEmpty) {
     return normalizedPath;
   }

@@ -12,8 +12,7 @@ class UpdateServer {
 
   static Future<UpdateServer> bind(Directory root) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final fixture = UpdateServer._(server, root);
-    fixture._serve();
+    final fixture = UpdateServer._(server, root).._serve();
     return fixture;
   }
 

@@ -264,7 +264,8 @@ Future<void> waitForTcpPrefix(int port, String prefix) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
   }
   throw StateError(
-      "Timed out waiting for $prefix on localhost:$port. $lastError");
+    "Timed out waiting for $prefix on localhost:$port. $lastError",
+  );
 }
 
 bool get releasePublishE2eEnabled {

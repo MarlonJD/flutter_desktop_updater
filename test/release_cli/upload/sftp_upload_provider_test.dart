@@ -36,19 +36,23 @@ void main() {
 
   test("sftp curl config allows unknown host keys only for loopback", () {
     expect(
-      sftpCurlConfigAllowsUnknownHost(SftpUploadConfig(
-        host: "127.0.0.1",
-        remotePath: "/updates",
-        username: "deploy",
-      )),
+      sftpCurlConfigAllowsUnknownHost(
+        const SftpUploadConfig(
+          host: "127.0.0.1",
+          remotePath: "/updates",
+          username: "deploy",
+        ),
+      ),
       isTrue,
     );
     expect(
-      sftpCurlConfigAllowsUnknownHost(SftpUploadConfig(
-        host: "deploy.example.com",
-        remotePath: "/updates",
-        username: "deploy",
-      )),
+      sftpCurlConfigAllowsUnknownHost(
+        const SftpUploadConfig(
+          host: "deploy.example.com",
+          remotePath: "/updates",
+          username: "deploy",
+        ),
+      ),
       isFalse,
     );
   });

@@ -50,7 +50,7 @@ linter:
     prefer_if_elements_to_conditional_expressions: true     # To make large lists easier to read and navigate.
     prefer_int_literals: true                               # To improve code readability.
     prefer_null_aware_method_calls: true                    # To improve code readability.
-    prefer_double_quotes: true                              # To encourage consistent styling.                 
+    prefer_double_quotes: true                              # To encourage consistent styling.
     # Example widgets are demo code rather than package API; keep public API
     # documentation enforced by the root package analysis options.
     public_member_api_docs: false
@@ -80,7 +80,9 @@ linter:
 
     # Flutter-specific linter rules
     avoid_unnecessary_containers: true                      # To improve code readability.
-    diagnostic_describe_all_properties: true                # To make Amplify widgets easier to debug.
+    # Example widgets intentionally skip debug property exhaustiveness because
+    # they are runnable sample UI, not package API.
+    diagnostic_describe_all_properties: false
     sized_box_for_whitespace: true                          # To improve code readability.
     sort_child_properties_last: true                        # To improve code readability.
     use_build_context_synchronously: false                  # To prevent asynchronous usage of an invalid BuildContext.

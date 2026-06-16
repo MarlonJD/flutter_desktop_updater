@@ -18,7 +18,9 @@ void main() {
       expect(validateOutput.toString(), contains("Hosted app archive: OK"));
       expect(validateOutput.toString(), contains("Update selection: OK"));
       expect(
-          validateOutput.toString(), contains("Hosted artifact SHA-256: OK"));
+        validateOutput.toString(),
+        contains("Hosted artifact SHA-256: OK"),
+      );
     } finally {
       await fixture.delete();
     }
