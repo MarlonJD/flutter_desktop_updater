@@ -42,6 +42,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.installationIdentity,
     this.preferences,
     this.recoveryStore,
+    this.diagnosticsLogPath,
     this.telemetry,
     this.isMinimumOSSupported,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
@@ -80,6 +81,9 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional app-owned persistence adapter for pending install recovery.
   final UpdateRecoveryStore? recoveryStore;
+
+  /// Optional app-owned native helper diagnostics log path.
+  final String? diagnosticsLogPath;
 
   /// Optional app-owned telemetry callback.
   final DesktopUpdaterTelemetry? telemetry;
@@ -456,6 +460,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       await DesktopUpdaterPlatform.instance.installUpdate(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+        diagnosticsLogPath: diagnosticsLogPath,
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,

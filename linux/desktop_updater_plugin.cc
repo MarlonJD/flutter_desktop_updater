@@ -18,6 +18,7 @@
 FlMethodResponse *get_platform_version();
 bool schedule_install_update(const std::string &staging_path,
                              const std::vector<std::string> &removed_files,
+                             const std::string &diagnostics_log_path,
                              std::string *error);
 
 // Function to copy file from source to destination
@@ -133,6 +134,7 @@ bool start_detached_script(const std::string &script_path)
 
 bool schedule_install_update(const std::string &staging_path,
                              const std::vector<std::string> &removed_files,
+                             const std::string &diagnostics_log_path,
                              std::string *error)
 {
   const std::string executable_path = current_executable_path();
@@ -167,20 +169,32 @@ bool schedule_install_update(const std::string &staging_path,
       shell_quote(target_directory) + "\n"
                                       "exe=" +
       shell_quote(executable_path) + "\n"
+                                     "diagnostics_log=" +
+      shell_quote(diagnostics_log_path) + "\n"
                                      "removed=(" +
       removed_values + ")\n"
                        "skip_relaunch=\"${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}\"\n"
+                       "log_event() {\n"
+                       "  [ -n \"$diagnostics_log\" ] || return 0\n"
+                       "  printf '{\"timestamp\":\"%s\",\"event\":\"%s\"}\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"$1\" >> \"$diagnostics_log\" 2>/dev/null || true\n"
+                       "}\n"
+                       "log_event \"helper scheduled\"\n"
+                       "log_event \"waiting for parent process\"\n"
                        "while kill -0 \"$pid_to_wait\" 2>/dev/null; do sleep 0.5; done\n"
+                       "log_event \"parent process exited\"\n"
                        "target_root=\"$(cd \"$target\" && pwd -P)\"\n"
                        "backup=\"$(mktemp -d /tmp/desktop_updater_backup_XXXXXX)\"\n"
                        "rollback() {\n"
+                       "  log_event \"rollback start\"\n"
                        "  if [ -d \"$backup\" ]; then\n"
                        "    rm -rf \"$target\"\n"
                        "    mkdir -p \"$(dirname \"$target\")\"\n"
                        "    cp -a \"$backup/.\" \"$target/\"\n"
+                       "    log_event \"rollback success\"\n"
                        "  fi\n"
                        "}\n"
                        "trap 'rollback; rm -rf \"$backup\"; exit 1' ERR\n"
+                       "log_event \"backup start\"\n"
                        "cp -a \"$target/.\" \"$backup/\"\n"
                        "for relative in \"${removed[@]}\"; do\n"
                        "  [ -z \"$relative\" ] && continue\n"
@@ -191,14 +205,19 @@ bool schedule_install_update(const std::string &staging_path,
                        "  esac\n"
                        "done\n"
                        "if [ -n \"$staging\" ]; then\n"
+                       "  log_event \"staging path validation\"\n"
                        "  [ -d \"$staging\" ] || exit 1\n"
+                       "  log_event \"move start\"\n"
                        "  find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
                        "  cp -a \"$staging/.\" \"$target/\"\n"
+                       "  log_event \"cleanup start\"\n"
                        "  rm -rf \"$staging\"\n"
+                       "  log_event \"cleanup success\"\n"
                        "fi\n"
                        "rm -rf \"$backup\"\n"
                        "trap - ERR\n"
                        "if [ \"$skip_relaunch\" != \"1\" ]; then\n"
+                       "  log_event \"relaunch attempt\"\n"
                        "  cd \"$target\"\n"
                        "  \"$exe\" &\n"
                        "fi\n"
@@ -257,7 +276,7 @@ static void desktop_updater_plugin_handle_method_call(
   else if (strcmp(method, "restartApp") == 0)
   {
     std::string error;
-    if (!schedule_install_update("", {}, &error))
+    if (!schedule_install_update("", {}, "", &error))
     {
       g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
@@ -304,8 +323,19 @@ static void desktop_updater_plugin_handle_method_call(
           }
         }
 
+        std::string diagnostics_log_path;
+        FlValue *diagnostics_value =
+            fl_value_lookup_string(args, "diagnosticsLogPath");
+        if (diagnostics_value != nullptr &&
+            fl_value_get_type(diagnostics_value) == FL_VALUE_TYPE_STRING)
+        {
+          diagnostics_log_path = fl_value_get_string(diagnostics_value);
+        }
+
         std::string error;
-        if (!schedule_install_update(fl_value_get_string(staging_value), removed_files, &error))
+        if (!schedule_install_update(fl_value_get_string(staging_value),
+                                     removed_files, diagnostics_log_path,
+                                     &error))
         {
           g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
           response = FL_METHOD_RESPONSE(fl_method_error_response_new(

@@ -16,6 +16,40 @@ void main() {
     expect(source, contains("removed=("));
   });
 
+  test("native helpers append diagnostics only when an explicit path is passed",
+      () {
+    final macosSource = File(
+      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    ).readAsStringSync();
+    final linuxSource =
+        File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final windowsSource =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    expect(macosSource, contains("diagnosticsLogPath"));
+    expect(macosSource, contains("DIAGNOSTICS_LOG="));
+    expect(macosSource, contains("log_event \"helper scheduled\""));
+    expect(macosSource, contains(r'[ -n "$DIAGNOSTICS_LOG" ] || return 0'));
+
+    expect(linuxSource, contains("diagnosticsLogPath"));
+    expect(linuxSource, contains("diagnostics_log="));
+    expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
+    expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
+
+    expect(windowsSource, contains("diagnosticsLogPath"));
+    expect(windowsSource, contains(r"$diagnosticsLog = "));
+    expect(
+      windowsSource,
+      contains("Write-DiagnosticsEvent 'helper scheduled'"),
+    );
+    expect(
+      windowsSource,
+      contains(
+        r"if ([string]::IsNullOrWhiteSpace($diagnosticsLog)) { return }",
+      ),
+    );
+  });
+
   test("Linux helper prunes target before whole directory overlay", () {
     final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
     const pruneSnippet =

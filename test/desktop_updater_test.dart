@@ -7,6 +7,8 @@ import "package:plugin_platform_interface/plugin_platform_interface.dart";
 class MockDesktopUpdaterPlatform
     with MockPlatformInterfaceMixin
     implements DesktopUpdaterPlatform {
+  String? lastDiagnosticsLogPath;
+
   @override
   Future<String?> getPlatformVersion() => Future.value("42");
 
@@ -20,7 +22,9 @@ class MockDesktopUpdaterPlatform
     required String stagingPath,
     List<String> removedFiles = const [],
     bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
   }) {
+    lastDiagnosticsLogPath = diagnosticsLogPath;
     return Future.value();
   }
 
@@ -48,5 +52,19 @@ void main() {
     DesktopUpdaterPlatform.instance = fakePlatform;
 
     expect(await desktopUpdaterPlugin.getPlatformVersion(), "42");
+  });
+
+  test("installUpdate forwards explicit diagnostics log path to platform",
+      () async {
+    final desktopUpdaterPlugin = DesktopUpdater();
+    final fakePlatform = MockDesktopUpdaterPlatform();
+    DesktopUpdaterPlatform.instance = fakePlatform;
+
+    await desktopUpdaterPlugin.installUpdate(
+      stagingPath: "/tmp/staged",
+      diagnosticsLogPath: "/tmp/helper.jsonl",
+    );
+
+    expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
   });
 }

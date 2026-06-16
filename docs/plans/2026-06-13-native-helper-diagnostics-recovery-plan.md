@@ -239,6 +239,15 @@ parsing, but keep the user-facing copied report plain text.
 - Include enough context to understand rollback without exposing secret paths
   beyond the app-owned staging/install paths.
 
+Status on 2026-06-16: complete. `diagnosticsLogPath` is available on
+`DesktopUpdater.installUpdate()`, `DesktopUpdater.restartApp()`, the platform
+interface, the method channel, and `DesktopUpdaterController`. macOS, Linux, and
+Windows helpers parse the explicit path and append bounded JSONL-style lifecycle
+events only when it is supplied; helper logging failures are ignored. Verification:
+`flutter test --no-pub test/desktop_updater_method_channel_test.dart
+test/desktop_updater_test.dart test/updater_controller_test.dart
+test/native_helper_script_test.dart` passed with 34 tests.
+
 ## Task 8D: Platform Verification Gates
 
 macOS can be verified locally. Windows and Linux should use the existing GitHub

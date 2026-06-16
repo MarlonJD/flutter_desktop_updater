@@ -26,12 +26,17 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     required String stagingPath,
     List<String> removedFiles = const [],
     bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
   }) async {
-    await methodChannel.invokeMethod<void>("installUpdate", {
+    final arguments = <String, Object?>{
       "stagingPath": stagingPath,
       "removedFiles": removedFiles,
       "allowUnsignedMacOSUpdates": allowUnsignedMacOSUpdates,
-    });
+    };
+    if (diagnosticsLogPath != null && diagnosticsLogPath.isNotEmpty) {
+      arguments["diagnosticsLogPath"] = diagnosticsLogPath;
+    }
+    await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }
 
   @override

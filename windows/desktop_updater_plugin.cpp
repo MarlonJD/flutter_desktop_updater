@@ -138,6 +138,7 @@ bool StartDetachedPowerShell(const fs::path& script_path) {
 
 bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
                                 const std::vector<std::wstring>& removed_files,
+                                const std::wstring& diagnostics_log_path,
                                 std::string* error) {
   const std::wstring executable_path = CurrentExecutablePath();
   if (executable_path.empty()) {
@@ -162,11 +163,23 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "$staging = " << PowerShellQuote(staging_path) << "\n"
       << "$target = " << PowerShellQuote(target_directory.wstring()) << "\n"
       << "$exe = " << PowerShellQuote(executable_path) << "\n"
+      << "$diagnosticsLog = " << PowerShellQuote(diagnostics_log_path) << "\n"
       << "$removed = " << PowerShellArray(removed_files) << "\n"
       << "$skipRelaunch = $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH\n"
+      << "function Write-DiagnosticsEvent([string]$Event) {\n"
+      << "  if ([string]::IsNullOrWhiteSpace($diagnosticsLog)) { return }\n"
+      << "  try {\n"
+      << "    $timestamp = [DateTime]::UtcNow.ToString('o')\n"
+      << "    $line = @{timestamp=$timestamp; event=$Event} | ConvertTo-Json -Compress\n"
+      << "    Add-Content -LiteralPath $diagnosticsLog -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue\n"
+      << "  } catch {}\n"
+      << "}\n"
+      << "Write-DiagnosticsEvent 'helper scheduled'\n"
+      << "Write-DiagnosticsEvent 'waiting for parent process'\n"
       << "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) {\n"
       << "  Start-Sleep -Milliseconds 500\n"
       << "}\n"
+      << "Write-DiagnosticsEvent 'parent process exited'\n"
       << "$targetRoot = [IO.Path]::GetFullPath($target).TrimEnd('\\\\')\n"
       << "$targetRootWithSlash = $targetRoot + '\\'\n"
       << "function Get-NormalizedDirectory([string]$value) {\n"
@@ -213,6 +226,7 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "if (Test-Path -LiteralPath $backup) { "
          "Remove-Item -LiteralPath $backup -Recurse -Force }\n"
       << "try {\n"
+      << "Write-DiagnosticsEvent 'backup start'\n"
       << "Copy-Item -LiteralPath $target -Destination $backup -Recurse -Force\n"
       << "foreach ($relative in $removed) {\n"
       << "  if ([string]::IsNullOrWhiteSpace($relative)) { continue }\n"
@@ -226,9 +240,11 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "  }\n"
       << "}\n"
       << "if (-not [string]::IsNullOrWhiteSpace($staging)) {\n"
+      << "  Write-DiagnosticsEvent 'staging path validation'\n"
       << "  $deadline = (Get-Date).AddSeconds(90)\n"
       << "  while ($true) {\n"
       << "    try {\n"
+      << "      Write-DiagnosticsEvent 'move start'\n"
       << "      Get-ChildItem -LiteralPath $target -Force | ForEach-Object {\n"
       << "        Remove-Item -LiteralPath $_.FullName -Recurse -Force\n"
       << "      }\n"
@@ -253,18 +269,23 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "      Start-Sleep -Seconds 1\n"
       << "    }\n"
       << "  }\n"
+      << "  Write-DiagnosticsEvent 'cleanup start'\n"
       << "  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "  Write-DiagnosticsEvent 'cleanup success'\n"
       << "}\n"
       << "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
       << "} catch {\n"
       << "  if (Test-Path -LiteralPath $backup) {\n"
+      << "    Write-DiagnosticsEvent 'rollback start'\n"
       << "    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue\n"
       << "    Copy-Item -LiteralPath $backup -Destination $target -Recurse -Force\n"
       << "    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "    Write-DiagnosticsEvent 'rollback success'\n"
       << "  }\n"
       << "  throw\n"
       << "}\n"
       << "if ($skipRelaunch -ne '1') {\n"
+      << "  Write-DiagnosticsEvent 'relaunch attempt'\n"
       << "  Start-Process -FilePath $exe -WorkingDirectory $target\n"
       << "}\n"
       << "Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue\n";
@@ -354,6 +375,22 @@ std::vector<std::wstring> RemovedFilesFromArguments(
   return removed_files;
 }
 
+std::wstring DiagnosticsLogPathFromArguments(
+    const flutter::EncodableMap& arguments) {
+  const auto iterator =
+      arguments.find(flutter::EncodableValue("diagnosticsLogPath"));
+  if (iterator == arguments.end()) {
+    return L"";
+  }
+
+  const auto* value = std::get_if<std::string>(&iterator->second);
+  if (value == nullptr) {
+    return L"";
+  }
+
+  return Utf8ToWide(*value);
+}
+
 }  // namespace
 
 ProductVersionBuildParseResult ParseProductVersionBuildNumber(
@@ -438,7 +475,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(version_stream.str()));
   } else if (method_call.method_name().compare("restartApp") == 0) {
     std::string error;
-    if (!ScheduleInstallAndRelaunch(L"", {}, &error)) {
+    if (!ScheduleInstallAndRelaunch(L"", {}, L"", &error)) {
       result->Error("RestartError", error);
       return;
     }
@@ -469,7 +506,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     std::string error;
     if (!ScheduleInstallAndRelaunch(
             Utf8ToWide(*staging_path), RemovedFilesFromArguments(*arguments),
-            &error)) {
+            DiagnosticsLogPathFromArguments(*arguments), &error)) {
       result->Error("InstallError", error);
       return;
     }

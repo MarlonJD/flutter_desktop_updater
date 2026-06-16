@@ -173,6 +173,11 @@ app-owned:
   pre-exit native scheduling fails, and `recoverPendingInstall()` converts an
   old-version relaunch or unverifiable current version into `UpdateFailed` with
   a redacted report. Store read, write, and clear failures are diagnostics-only.
+- Apps can pass `diagnosticsLogPath` to `DesktopUpdaterController` or
+  `DesktopUpdater.installUpdate()` when they want native helper post-exit
+  diagnostics. The path is explicit and app-owned; native helpers append
+  bounded JSONL-style events only when it is present, and logging failures do
+  not block install, rollback, cleanup, or relaunch attempts.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor

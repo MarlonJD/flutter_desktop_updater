@@ -67,4 +67,26 @@ void main() {
       "allowUnsignedMacOSUpdates": true,
     });
   });
+
+  test("installUpdate forwards explicit diagnostics log path", () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.installUpdate(
+      stagingPath: "/tmp/Example.app",
+      diagnosticsLogPath: "/tmp/desktop-updater-helper.jsonl",
+    );
+
+    expect(capturedCall.method, "installUpdate");
+    expect(capturedCall.arguments, {
+      "stagingPath": "/tmp/Example.app",
+      "removedFiles": <String>[],
+      "allowUnsignedMacOSUpdates": false,
+      "diagnosticsLogPath": "/tmp/desktop-updater-helper.jsonl",
+    });
+  });
 }

@@ -38,11 +38,15 @@ class DesktopUpdater {
 
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
+
+    /// Optional app-owned native helper diagnostics log path.
+    String? diagnosticsLogPath,
   }) {
     if (stagingPath != null) {
       return installUpdate(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+        diagnosticsLogPath: diagnosticsLogPath,
       );
     }
 
@@ -59,11 +63,15 @@ class DesktopUpdater {
 
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
+
+    /// Optional app-owned native helper diagnostics log path.
+    String? diagnosticsLogPath,
   }) {
     return DesktopUpdaterPlatform.instance.installUpdate(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
       allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
     );
   }
 

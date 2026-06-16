@@ -223,6 +223,37 @@ void main() {
     }
   });
 
+  test("restartApp forwards explicit native diagnostics log path", () async {
+    late MethodCall capturedCall;
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (methodCall) {
+          capturedCall = methodCall;
+        },
+      );
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        diagnosticsLogPath: "/tmp/helper.jsonl",
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      expect(
+        capturedCall.arguments,
+        containsPair("diagnosticsLogPath", "/tmp/helper.jsonl"),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("pre-handoff native failure clears marker and exposes report", () async {
     _setMockPlatformHandler(failInstall: true);
     final recoveryStore = _MemoryRecoveryStore();

@@ -16,7 +16,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         case "getPlatformVersion":
             result("macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
         case "restartApp":
-            scheduleInstallAndRelaunch(stagingPath: nil, removedFiles: [], result: result)
+            scheduleInstallAndRelaunch(
+                stagingPath: nil,
+                removedFiles: [],
+                diagnosticsLogPath: nil,
+                result: result
+            )
         case "installUpdate":
             guard
                 let arguments = call.arguments as? [String: Any],
@@ -36,10 +41,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             let removedFiles = arguments["removedFiles"] as? [String] ?? []
             let allowUnsignedMacOSUpdates =
                 arguments["allowUnsignedMacOSUpdates"] as? Bool ?? false
+            let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
             scheduleInstallAndRelaunch(
                 stagingPath: stagingPath,
                 removedFiles: removedFiles,
                 allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+                diagnosticsLogPath: diagnosticsLogPath,
                 result: result
             )
         case "getExecutablePath":
@@ -60,6 +67,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         stagingPath: String?,
         removedFiles _: [String],
         allowUnsignedMacOSUpdates: Bool = false,
+        diagnosticsLogPath: String? = nil,
         result: @escaping FlutterResult
     ) {
         do {
@@ -102,7 +110,8 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
 
             let scriptURL = try writeHelperScript(
                 stagingPath: stagingPath,
-                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates
+                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+                diagnosticsLogPath: diagnosticsLogPath
             )
 
             let process = Process()
@@ -127,7 +136,8 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
 
     private func writeHelperScript(
         stagingPath: String?,
-        allowUnsignedMacOSUpdates: Bool
+        allowUnsignedMacOSUpdates: Bool,
+        diagnosticsLogPath: String?
     ) throws -> URL {
         let bundlePath = Bundle.main.bundlePath
         let helperName = "desktop_updater_\(UUID().uuidString).sh"
@@ -147,17 +157,27 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         PID="\(ProcessInfo.processInfo.processIdentifier)"
         STAGING=\(shellQuote(stagingPath ?? ""))
         BUNDLE=\(shellQuote(bundlePath))
+        DIAGNOSTICS_LOG=\(shellQuote(diagnosticsLogPath ?? ""))
         SKIP_RELAUNCH="${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}"
         \(smokeGateBypassAssignment)
 
+        log_event() {
+          [ -n "$DIAGNOSTICS_LOG" ] || return 0
+          printf '{"timestamp":"%s","event":"%s"}\\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" >> "$DIAGNOSTICS_LOG" 2>/dev/null || true
+        }
+
+        log_event "helper scheduled"
+        log_event "waiting for parent process"
         while kill -0 "$PID" 2>/dev/null; do
           sleep 0.5
         done
+        log_event "parent process exited"
 
         """
 
         script += """
         if [ -n "$STAGING" ]; then
+          log_event "staging path validation"
           case "$STAGING" in
             *.app) ;;
             *)
@@ -188,6 +208,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
           fi
 
           if [ "$ALLOW_UNSIGNED_MACOS" != "1" ]; then
+            log_event "package identity checks"
             EXPECTED_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$BUNDLE" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
             if [ -z "$EXPECTED_TEAM_ID" ]; then
               echo "Installed app TeamIdentifier could not be read." >&2
@@ -211,10 +232,14 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
           TARGET_NAME="$(basename "$BUNDLE")"
           BACKUP="$TARGET_PARENT/.$TARGET_NAME.desktop_updater_backup.$$"
 
+          log_event "backup start"
           /bin/mv "$BUNDLE" "$BACKUP"
+          log_event "move start"
           if /bin/mv "$STAGING" "$BUNDLE"; then
+            log_event "cleanup start"
             /bin/rm -rf "$BACKUP"
             /bin/rm -rf "$(dirname "$MANIFEST")"
+            log_event "cleanup success"
           else
             /bin/mv "$BACKUP" "$BUNDLE"
             exit 1
@@ -222,6 +247,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         fi
 
         if [ "$SKIP_RELAUNCH" != "1" ]; then
+          log_event "relaunch attempt"
           open -n "$BUNDLE"
         fi
         rm -f "$0"

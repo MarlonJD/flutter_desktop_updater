@@ -356,6 +356,21 @@ while the old version or an unverifiable version becomes `UpdateFailed(report)`.
 Store failures are captured as diagnostics warnings and do not crash startup or
 block install handoff.
 
+For post-exit native helper diagnostics, pass an explicit app-owned log path.
+The helpers append bounded JSONL-style lifecycle events only when a path is
+provided; logging failures are ignored so update install and rollback work are
+not blocked by support logging:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  diagnosticsLogPath: appOwnedHelperLogFile.path,
+);
+```
+
+Use this with an app-owned recovery store when support needs evidence from
+after the Flutter process has exited.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 

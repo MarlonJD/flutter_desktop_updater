@@ -43,6 +43,9 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
 
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
+
+    /// Optional app-owned native helper diagnostics log path.
+    String? diagnosticsLogPath,
   }) {
     throw UnimplementedError("installUpdate() has not been implemented.");
   }
