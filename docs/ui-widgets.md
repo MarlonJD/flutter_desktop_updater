@@ -235,6 +235,21 @@ The adapter stores one skipped version per channel with
 `clearSkippedVersion({required channel})`. Mandatory updates ignore skipped
 versions.
 
+Staged rollouts use an app-owned stable identity. Pass an opaque
+`installationIdentity` when you want `rollout.percentage` metadata in
+`app-archive.json` to filter update eligibility:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  installationIdentity: myInstallIdentity,
+);
+```
+
+Use a generated install ID or hashed app-owned identifier. Avoid emails, license
+keys, names, or support IDs. Without an identity, partial rollout items are
+ignored; full rollout and non-rollout items still work normally.
+
 Telemetry is also app-owned. Pass a callback to receive typed lifecycle events
 such as `checkStarted`, `checkFailed`, `updateSelected`, `downloadStarted`,
 `downloadFailed`, `artifactVerified`, `installScheduled`, and `installFailed`:

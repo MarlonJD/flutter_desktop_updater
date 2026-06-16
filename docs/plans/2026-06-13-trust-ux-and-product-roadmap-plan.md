@@ -34,6 +34,23 @@ Recommended order:
 6. Update diagnostics and problem report UI.
 7. Resumable download, rollout percentages, rollback reports, and delta updates.
 
+## Documentation Closure Audit
+
+Last reviewed: 2026-06-16.
+
+| Lane | Implementation state | Reader-facing documentation state | Closure action |
+| --- | --- | --- | --- |
+| Platform-independent signed `release.json` | Implemented in `release_signature_verifier.dart`, `sign_command.dart`, `ArtifactVerifier`, and release validation tests. | Covered in `docs/publishing.md`, `SECURITY.md`, and README trust guidance. | Complete. |
+| Quiet startup check failures | Implemented in `DesktopUpdaterController.init()` quiet automatic checks and manual/strict behavior tests. | Covered in `docs/ui-widgets.md`. | Complete. |
+| `release doctor` and release hooks | Implemented in `doctor_command.dart`, release command help, publish config, and docs. | Covered in `README.md` and `docs/publishing.md`. | Complete. |
+| Persistent skip, retry/backoff, telemetry, and `minimumOS` | Implemented in controller, transport, client, descriptor, and policy tests. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
+| Update diagnostics and problem report UI | Implemented in diagnostics types, recorder, controller, stock UI, and widget tests. | Covered in `docs/ui-widgets.md` and `docs/publishing.md`. | Complete. |
+| Staged rollout percentage | Implemented in `ReleaseRollout`, index selection, client filtering, and tests. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
+| Resumable downloads | Implemented in `HttpUpdateTransport` with Range and `Content-Range` tests. | Covered in `docs/publishing.md`. | Complete. |
+| Rollback and cleanup report | Implemented as `UpdateCleanupReport`, `DesktopUpdaterController.lastCleanupReport`, and optional `onCleanupReport`. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
+| Delta updates | Implemented as descriptor-only `deltaArtifacts` metadata with an explicit unsupported runtime gate. | Covered in `docs/publishing.md`; runtime continues to use full zip artifacts. | Complete. |
+| Native helper diagnostics and recovery | Split into `docs/plans/2026-06-13-native-helper-diagnostics-recovery-plan.md`. | Not a default runtime feature. | Track separately. |
+
 ## File Structure
 
 - Create: `lib/src/core/release_signature_verifier.dart`

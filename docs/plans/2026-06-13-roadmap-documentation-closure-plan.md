@@ -8,6 +8,11 @@
 
 **Tech Stack:** Markdown, existing `desktop_updater` Dart/Flutter tests, `rg`, `git diff --check`, and targeted `flutter test --no-pub` commands.
 
+**Execution update on 2026-06-16:** The original closure plan predated the
+cleanup report and delta metadata gate implementation. Current repository
+evidence shows Task 7.3 and Task 7.4 are now implemented and documented, so this
+closure pass marks them complete instead of leaving them as planned-only items.
+
 ---
 
 ## Non-Negotiable Constraints
@@ -43,7 +48,7 @@
 **Files:**
 - Modify: `docs/plans/2026-06-13-trust-ux-and-product-roadmap-plan.md`
 
-- [ ] **Step 1.1: Capture implementation evidence**
+- [x] **Step 1.1: Capture implementation evidence**
 
 Run:
 
@@ -61,30 +66,30 @@ rg finds implementation evidence for signed descriptors, doctor, runtime policy,
 roadmap checkboxes are still mixed and need syncing.
 ```
 
-- [ ] **Step 1.2: Add a documentation closure audit table**
+- [x] **Step 1.2: Add a documentation closure audit table**
 
 In `docs/plans/2026-06-13-trust-ux-and-product-roadmap-plan.md`, add this section immediately after `## Scope Split`:
 
 ```markdown
 ## Documentation Closure Audit
 
-Last reviewed: 2026-06-13.
+Last reviewed: 2026-06-16.
 
 | Lane | Implementation state | Reader-facing documentation state | Closure action |
 | --- | --- | --- | --- |
 | Platform-independent signed `release.json` | Implemented in `release_signature_verifier.dart`, `sign_command.dart`, `ArtifactVerifier`, and release validation tests. | Covered in `docs/publishing.md`, `SECURITY.md`, and README trust guidance. | Mark roadmap steps complete after targeted tests pass. |
 | Quiet startup check failures | Implemented in `DesktopUpdaterController.init()` quiet automatic checks and manual/strict behavior tests. | Covered in `docs/ui-widgets.md`. | Mark roadmap steps complete after targeted tests pass. |
 | `release doctor` and release hooks | Implemented in `doctor_command.dart`, release command help, publish config, and docs. | Covered in `README.md` and `docs/publishing.md`. | Mark roadmap steps complete after targeted tests pass. |
-| Persistent skip, retry/backoff, telemetry, and `minimumOS` | Implemented in controller, transport, client, descriptor, and policy tests. | Partially covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Add missing staged rollout and resumable-download details before closing. |
+| Persistent skip, retry/backoff, telemetry, and `minimumOS` | Implemented in controller, transport, client, descriptor, and policy tests. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
 | Update diagnostics and problem report UI | Implemented in diagnostics types, recorder, controller, stock UI, and widget tests. | Covered in `docs/ui-widgets.md` and `docs/publishing.md`. | Mark roadmap steps complete after targeted tests pass. |
-| Staged rollout percentage | Implemented in `ReleaseRollout`, index selection, client filtering, and tests. | Missing reader-facing explanation outside the plan. | Add `docs/publishing.md` and `docs/ui-widgets.md` sections. |
-| Resumable downloads | Implemented in `HttpUpdateTransport` with Range and `Content-Range` tests. | Missing reader-facing explanation outside the plan. | Add `docs/publishing.md` section. |
-| Rollback and cleanup report | Not implemented as a public runtime report in this roadmap slice. | Mentioned only as planned roadmap work. | Leave unchecked and label as planned. |
-| Delta updates | Not implemented; descriptor shape remains a design gate. | Mentioned only as planned roadmap work. | Leave unchecked and label as planned. |
+| Staged rollout percentage | Implemented in `ReleaseRollout`, index selection, client filtering, and tests. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
+| Resumable downloads | Implemented in `HttpUpdateTransport` with Range and `Content-Range` tests. | Covered in `docs/publishing.md`. | Complete. |
+| Rollback and cleanup report | Implemented as `UpdateCleanupReport`, `DesktopUpdaterController.lastCleanupReport`, and optional `onCleanupReport`. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
+| Delta updates | Implemented as descriptor-only `deltaArtifacts` metadata with an explicit unsupported runtime gate. | Covered in `docs/publishing.md`; runtime continues to use full zip artifacts. | Complete. |
 | Native helper diagnostics and recovery | Split into `docs/plans/2026-06-13-native-helper-diagnostics-recovery-plan.md`. | Not a default runtime feature. | Cross-link from this plan only. |
 ```
 
-- [ ] **Step 1.3: Sync completed roadmap checkboxes**
+- [x] **Step 1.3: Sync completed roadmap checkboxes**
 
 In the same roadmap plan, change these checkbox groups from `- [ ]` to `- [x]` only after Step 1.1 evidence is present:
 
@@ -94,32 +99,27 @@ Task 2: Step 2.1 through Step 2.3
 Task 3: Step 3.1 through Step 3.4
 Task 5: Step 5.1 through Step 5.4
 Task 6: Step 6.1 through Step 6.7
-Task 7: Step 7.1 and Step 7.2
+Task 7: Step 7.1 through Step 7.4
 ```
 
-Leave these unchecked:
+Previously planned-only items are now implemented in the current branch:
 
 ```text
-Task 4: Step 4.1 through Step 4.4
 Task 7: Step 7.3
 Task 7: Step 7.4
 ```
 
-- [ ] **Step 1.4: Label planned roadmap-only items**
+- [x] **Step 1.4: Label advanced update boundaries**
 
-Under `Step 7.3: Rollback and cleanup report`, add this sentence after the introductory paragraph:
+Under `Step 7.3: Rollback and cleanup report`, keep the status tied to the
+concrete report type, controller surface, and platform-helper-known fields.
 
-```markdown
-Status: planned. Do not document this as a public runtime feature until a concrete report type, controller surface, and platform helper evidence exist.
-```
+Under `Step 7.4: Delta update design gate`, keep the public boundary clear:
+descriptor metadata is parsed and preserved, while runtime patch application
+remains unsupported and the full zip artifact is still chosen.
 
-Under `Step 7.4: Delta update design gate`, add this sentence after the introductory paragraph:
 
-```markdown
-Status: planned design gate. Runtime must continue using full zip artifacts until delta verification and patch application have fail-first tests and public API documentation.
-```
-
-- [ ] **Step 1.5: Add the native-helper diagnostics cross-link**
+- [x] **Step 1.5: Add the native-helper diagnostics cross-link**
 
 At the end of `Task 6: Update Diagnostics And Problem Report UI`, before `## Task 7`, add:
 
@@ -133,7 +133,7 @@ Follow-up native helper diagnostics, recovery markers, and post-exit install or 
 - Modify: `docs/publishing.md`
 - Modify: `docs/ui-widgets.md`
 
-- [ ] **Step 2.1: Add publishing docs for staged rollout metadata**
+- [x] **Step 2.1: Add publishing docs for staged rollout metadata**
 
 In `docs/publishing.md`, add this section after the `Runtime Policies` section and before `## Common Minimum Setup`:
 
@@ -160,7 +160,7 @@ Items without rollout metadata remain eligible, and a rollout with
 `percentage: 100` is eligible for everyone.
 ````
 
-- [ ] **Step 2.2: Add UI/controller docs for installation identity**
+- [x] **Step 2.2: Add UI/controller docs for installation identity**
 
 In `docs/ui-widgets.md`, add this subsection inside `## Runtime Extension Points`, after the skip-preferences paragraph and before telemetry:
 
@@ -181,7 +181,7 @@ keys, names, or support IDs. Without an identity, partial rollout items are
 ignored; full rollout and non-rollout items still work normally.
 ````
 
-- [ ] **Step 2.3: Verify rollout docs are discoverable**
+- [x] **Step 2.3: Verify rollout docs are discoverable**
 
 Run:
 
@@ -200,7 +200,7 @@ Both docs/publishing.md and docs/ui-widgets.md mention installationIdentity and 
 **Files:**
 - Modify: `docs/publishing.md`
 
-- [ ] **Step 3.1: Add publishing docs for resumable download behavior**
+- [x] **Step 3.1: Add publishing docs for resumable download behavior**
 
 In `docs/publishing.md`, add this section after `### Staged Rollouts`:
 
@@ -222,7 +222,7 @@ Apps do not need a separate API to opt in. Use HTTPS storage that supports
 range requests for the best recovery behavior, especially for large artifacts.
 ```
 
-- [ ] **Step 3.2: Verify resumable docs are discoverable**
+- [x] **Step 3.2: Verify resumable docs are discoverable**
 
 Run:
 
@@ -236,30 +236,27 @@ Expected:
 docs/publishing.md explains the resume, restart, delete, and fail rules.
 ```
 
-## Task 4: Clarify Roadmap-Only Boundaries
+## Task 4: Clarify Advanced Update Boundaries
 
 **Files:**
 - Modify: `docs/publishing.md`
 - Inspect: `README.md`
 - Inspect: `SECURITY.md`
 
-- [ ] **Step 4.1: Add a short roadmap-only note**
+- [x] **Step 4.1: Add short advanced-boundary notes**
 
-In `docs/publishing.md`, add this section after `### Resumable Downloads`:
+In `docs/publishing.md`, keep the public boundary close to the relevant
+features:
 
 ```markdown
-### Roadmap-Only Update Features
+`UpdateCleanupReport` is an observational report surface and must not block
+install success.
 
-Rollback and cleanup reports are still roadmap work. The current native helpers
-perform rollback-focused replacement behavior, but the package does not yet
-expose a public rollback report object after install scheduling or next startup.
-
-Delta artifacts are also roadmap work. The runtime continues to choose the full
-zip artifact until delta descriptor support, patch verification, and patch
-application have their own fail-first tests and public API documentation.
+`deltaArtifacts` metadata is parsed and preserved, but runtime patch
+application is unsupported; clients continue choosing the full zip artifact.
 ```
 
-- [ ] **Step 4.2: Keep README concise**
+- [x] **Step 4.2: Keep README concise**
 
 Run:
 
@@ -273,7 +270,7 @@ Expected:
 No matches are required in README.md. README should continue linking to docs/publishing.md and docs/ui-widgets.md instead of duplicating advanced policy.
 ```
 
-- [ ] **Step 4.3: Keep SECURITY.md scoped to security boundaries**
+- [x] **Step 4.3: Keep SECURITY.md scoped to security boundaries**
 
 Run:
 
@@ -296,7 +293,7 @@ SECURITY.md may mention rollback as an impact category, but it should not gain l
 - Verify: `README.md`
 - Verify: `SECURITY.md`
 
-- [ ] **Step 5.1: Scan for weak placeholders**
+- [x] **Step 5.1: Scan for weak placeholders**
 
 Run:
 
@@ -310,7 +307,7 @@ Expected:
 No matches.
 ```
 
-- [ ] **Step 5.2: Check markdown patch hygiene**
+- [x] **Step 5.2: Check markdown patch hygiene**
 
 Run:
 
@@ -324,7 +321,7 @@ Expected:
 No trailing whitespace or conflict marker errors.
 ```
 
-- [ ] **Step 5.3: Run targeted behavior tests for the documented features**
+- [x] **Step 5.3: Run targeted behavior tests for the documented features**
 
 Run:
 
@@ -351,7 +348,7 @@ Expected:
 All targeted tests pass. Existing opt-in release-publish E2E tests remain skipped unless their environment flags are explicitly set.
 ```
 
-- [ ] **Step 5.4: Review final doc diff**
+- [x] **Step 5.4: Review final doc diff**
 
 Run:
 
@@ -362,12 +359,29 @@ git diff -- docs/plans/2026-06-13-trust-ux-and-product-roadmap-plan.md docs/publ
 Expected:
 
 ```text
-Diff shows roadmap status sync, staged rollout docs, resumable download docs, roadmap-only boundaries, and no unrelated README or SECURITY.md expansion.
+Diff shows roadmap status sync, staged rollout docs, resumable download docs,
+advanced update boundaries, and no unrelated README or SECURITY.md expansion.
 ```
+
+Verification on 2026-06-16:
+
+- Implementation evidence scan found signed descriptors, doctor, runtime
+  policies, diagnostics, rollout, resumable download, cleanup report, and delta
+  metadata surfaces in `lib`, `test`, and docs.
+- Rollout and resumable-download discoverability scans found the expected
+  reader-facing sections in `docs/publishing.md` and `docs/ui-widgets.md`.
+- Placeholder scan returned no matches.
+- README and SECURITY scope scans returned no matches for advanced rollout,
+  resumable, delta, or cleanup report policy terms.
+- `git diff --check` for the touched docs exited 0.
+- Targeted `flutter test --no-pub` documentation-feature suite passed with 91
+  tests.
 
 ## Self-Review Notes
 
 - This plan closes documentation and status-tracking gaps only.
 - Runtime code changes belong in the original roadmap plan or the native-helper diagnostics plan, not in this closure slice.
-- `rollback and cleanup report` and `deltaArtifacts` must stay visibly planned until they have concrete runtime types, tests, and public API docs.
+- `UpdateCleanupReport` and descriptor-only `deltaArtifacts` are now concrete
+  public surfaces; future binary patch application still belongs in a separate
+  fail-first plan.
 - Public documentation should say what apps can safely use today; plan docs can carry future implementation detail.

@@ -4,12 +4,11 @@ This index tracks repository-backed implementation plans for `desktop_updater`.
 
 ## Next
 
-- [2026-06-13 - Roadmap documentation closure](2026-06-13-roadmap-documentation-closure-plan.md)
+- [2026-06-13 - Native helper diagnostics and recovery](2026-06-13-native-helper-diagnostics-recovery-plan.md)
 
 ## Active
 
-- [2026-06-13 - Native helper diagnostics and recovery](2026-06-13-native-helper-diagnostics-recovery-plan.md)
-- [2026-06-13 - Trust, UX, and product roadmap](2026-06-13-trust-ux-and-product-roadmap-plan.md)
+- None.
 
 ## Needs Status Audit
 
@@ -18,6 +17,8 @@ This index tracks repository-backed implementation plans for `desktop_updater`.
 
 ## Completed
 
+- [2026-06-13 - Roadmap documentation closure](2026-06-13-roadmap-documentation-closure-plan.md)
+- [2026-06-13 - Trust, UX, and product roadmap](2026-06-13-trust-ux-and-product-roadmap-plan.md)
 - [2026-06-12 - Security remediation and follow-up](2026-06-12-security-remediation-plan.md)
 
 ## Existing

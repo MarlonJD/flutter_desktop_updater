@@ -178,6 +178,43 @@ Apps that want user-approved reporting can pass `onProblemReport` to
 email, issue-form, support, or API workflow. The callback is optional and is
 invoked only by explicit user action in the ready-made problem report dialog.
 
+### Staged Rollouts
+
+Add optional rollout metadata to an `app-archive.json` item when a release
+should be offered to only part of a channel:
+
+```json
+"rollout": {
+  "percentage": 25,
+  "salt": "stable-2026-06"
+}
+```
+
+Rollout selection is deterministic for the tuple of `installationIdentity`,
+channel, percentage, and salt. The app owns `installationIdentity`; pass a
+stable opaque value to `DesktopUpdaterController` or `UpdateClient`. Do not use
+an email address, license key, or other directly identifying value.
+
+If no `installationIdentity` is supplied, partial rollouts are not eligible.
+Items without rollout metadata remain eligible, and a rollout with
+`percentage: 100` is eligible for everyone.
+
+### Resumable Downloads
+
+HTTP downloads keep an in-progress `.part` file in the staging area. If a later
+attempt sees that partial file, the transport sends a `Range` request and
+resumes only when the server replies with `206 Partial Content` and a valid
+`Content-Range` starting at the partial length.
+
+If the server ignores the range request and returns `200 OK`, the updater
+restarts the download from byte zero. If the server returns an invalid
+`Content-Range`, the updater deletes the partial file and fails the attempt. A
+final length or SHA-256 mismatch also deletes the partial file and fails before
+staging or install handoff.
+
+Apps do not need a separate API to opt in. Use HTTPS storage that supports
+range requests for the best recovery behavior, especially for large artifacts.
+
 ## Common Minimum Setup
 
 Do this once in the app repository.
