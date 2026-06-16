@@ -101,9 +101,9 @@ sink for durable Dart lifecycle logs, and add `diagnosticsLogPath` plus an
 app-owned `UpdateRecoveryStore` only when support needs post-exit native helper
 evidence.
 
-Details live in [Ready-made UI widgets](docs/ui-widgets.md#diagnostics-and-support),
-[Publishing desktop updates](docs/publishing.md#runtime-policies), and
-[Windows and Linux production release options](docs/windows-linux-production-release.md#diagnostics-and-support-logs).
+Details live in [Diagnostics and recovery](docs/diagnostics-and-recovery.md),
+[Ready-made UI widgets](docs/ui-widgets.md#diagnostics-and-support), and
+[Publishing desktop updates](docs/publishing.md#runtime-policies).
 
 ## Production Trust
 
@@ -125,6 +125,8 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   restrictions.
 - [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
+- [Diagnostics and recovery](docs/diagnostics-and-recovery.md): where logs are
+  written, how helper diagnostics work, and how to wire support collection.
 - [GitHub Actions CI/CD guide](docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
 - [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md): migration

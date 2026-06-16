@@ -208,6 +208,9 @@ Use three explicit support levels:
    needs post-exit install, rollback, cleanup, or relaunch evidence and
    post-relaunch `UpdateFailed(report)` recovery.
 
+See [Diagnostics and recovery](diagnostics-and-recovery.md) for concrete log
+locations, JSONL helper events, and support handoff examples.
+
 Suggested user support wording:
 
 ```text

@@ -334,6 +334,9 @@ screen, attach the update log from the location your app shows in Settings.
 Avoid documenting a package-level Windows or Linux log path. If your app chooses
 one, show it in your own support UI and ask the user before sharing it.
 
+See [Diagnostics and recovery](diagnostics-and-recovery.md) for the full
+app-owned log path, recovery marker, and support collection flow.
+
 ## What desktop_updater Should Own
 
 Current behavior:

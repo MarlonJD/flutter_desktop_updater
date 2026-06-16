@@ -10,14 +10,9 @@ void main() {
     expect(source, contains("## Diagnostics And Recovery"));
     expect(source, contains("diagnosticsLogPath"));
     expect(source, contains("UpdateRecoveryStore"));
+    expect(source, contains("docs/diagnostics-and-recovery.md"));
     expect(source, contains("docs/ui-widgets.md#diagnostics-and-support"));
     expect(source, contains("docs/publishing.md#runtime-policies"));
-    expect(
-      source,
-      contains(
-        "docs/windows-linux-production-release.md#diagnostics-and-support-logs",
-      ),
-    );
     expect(source, isNot(contains("native helper diagnostics plan")));
     expect(source, isNot(contains("docs/plans")));
   });
@@ -25,8 +20,10 @@ void main() {
   test("support docs describe app-owned diagnostics levels", () {
     final uiDocs = File("docs/ui-widgets.md").readAsStringSync();
     final publishingDocs = File("docs/publishing.md").readAsStringSync();
+    final diagnosticsDocs =
+        File("docs/diagnostics-and-recovery.md").readAsStringSync();
 
-    for (final source in <String>[uiDocs, publishingDocs]) {
+    for (final source in <String>[uiDocs, publishingDocs, diagnosticsDocs]) {
       expect(source, contains("In-memory problem report only"));
       expect(source, contains("App-owned Dart lifecycle log"));
       expect(
@@ -36,6 +33,22 @@ void main() {
       expect(source, contains("Open Settings > Updates > Copy update report"));
       expect(source, contains("app-owned"));
     }
+  });
+
+  test("diagnostics docs explain log locations and helper behavior", () {
+    final source = File("docs/diagnostics-and-recovery.md").readAsStringSync();
+
+    expect(source, contains("The package writes no log files by default"));
+    expect(source, contains("Where Logs Go"));
+    expect(source, contains("UpdateDiagnosticsSink"));
+    expect(source, contains("diagnosticsLogPath"));
+    expect(source, contains("UpdateRecoveryStore"));
+    expect(source, contains("Create the parent directory"));
+    expect(source, contains("one JSON object per line"));
+    expect(source, contains("helper scheduled"));
+    expect(source, contains("relaunch attempt"));
+    expect(source, contains("does not include a logging backend"));
+    expect(source, isNot(contains("docs/plans")));
   });
 
   test("CI docs keep helper diagnostics artifacts opt-in", () {

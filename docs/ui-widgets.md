@@ -393,6 +393,9 @@ screen, attach the update log from the location your app shows in Settings.
 Do not hardcode a package-owned support path. The app should choose the path,
 retention behavior, and whether the user approves sharing the file.
 
+See [Diagnostics and recovery](diagnostics-and-recovery.md) for the full log
+location, native helper, and recovery-store model.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 
