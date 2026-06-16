@@ -55,7 +55,6 @@ void main() {
       "downloadedSize",
       "downloadSize",
       "updateProgress",
-      "releaseNotes",
       "sayHello",
       "FileHashModel",
       "AppArchiveModel",

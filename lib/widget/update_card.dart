@@ -5,6 +5,7 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 import "package:desktop_updater/widget/update_problem_report_dialog.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
@@ -192,12 +193,26 @@ class _ExpandedUpdateCard extends StatelessWidget {
               children: [
                 Flexible(child: _UpdateCardActions(notifier: notifier)),
                 if (state is UpdateFailed)
-                  Icon(
-                    Icons.error_outline,
-                    color: colorScheme.error,
+                  Tooltip(
+                    message: _updateFailedTooltip(
+                      state.error,
+                      notifier.getLocalization,
+                    ),
+                    child: Icon(
+                      Icons.error_outline,
+                      color: colorScheme.error,
+                    ),
                   )
-                else
-                  const Icon(Icons.description_outlined),
+                else if (notifier.releaseNotesUrl != null)
+                  IconButton(
+                    icon: const Icon(Icons.description_outlined),
+                    onPressed: () async {
+                      await showReleaseNotesBottomSheet(
+                        context,
+                        notifier: notifier,
+                      );
+                    },
+                  ),
               ],
             ),
           ],
@@ -416,4 +431,13 @@ void _showRestartDialog(
       );
     },
   );
+}
+
+String _updateFailedTooltip(
+  Object error,
+  DesktopUpdateLocalization? loc,
+) {
+  final custom = loc?.onUpdateFailedTooltip?.call(error);
+  if (custom != null) return custom;
+  return loc?.releaseNotesErrorText ?? "Update failed. Please try again.";
 }
