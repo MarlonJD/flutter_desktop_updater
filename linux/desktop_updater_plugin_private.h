@@ -15,4 +15,5 @@ FlMethodResponse *get_platform_version();
 // Schedules an absolute-path update helper for tests and plugin calls.
 bool schedule_install_update(const std::string &staging_path,
                              const std::vector<std::string> &removed_files,
+                             const std::string &diagnostics_log_path,
                              std::string *error);

@@ -50,6 +50,30 @@ void main() {
     );
   });
 
+  test("native helpers include failure events for support diagnostics", () {
+    final macosSource = File(
+      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    ).readAsStringSync();
+    final linuxSource =
+        File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final windowsSource =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    for (final source in <String>[macosSource, linuxSource, windowsSource]) {
+      expect(source, contains("backup failure"));
+      expect(source, contains("move failure"));
+      expect(source, contains("cleanup failure"));
+      expect(source, contains("rollback failure"));
+    }
+  });
+
+  test("Linux native test header exposes diagnostics log path scheduling", () {
+    final source =
+        File("linux/desktop_updater_plugin_private.h").readAsStringSync();
+
+    expect(source, contains("diagnostics_log_path"));
+  });
+
   test("Linux helper prunes target before whole directory overlay", () {
     final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
     const pruneSnippet =

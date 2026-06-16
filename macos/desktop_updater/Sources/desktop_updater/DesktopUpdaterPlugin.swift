@@ -233,15 +233,29 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
           BACKUP="$TARGET_PARENT/.$TARGET_NAME.desktop_updater_backup.$$"
 
           log_event "backup start"
-          /bin/mv "$BUNDLE" "$BACKUP"
+          if /bin/mv "$BUNDLE" "$BACKUP"; then
+            log_event "backup success"
+          else
+            log_event "backup failure"
+            exit 1
+          fi
           log_event "move start"
           if /bin/mv "$STAGING" "$BUNDLE"; then
+            log_event "move success"
             log_event "cleanup start"
-            /bin/rm -rf "$BACKUP"
-            /bin/rm -rf "$(dirname "$MANIFEST")"
-            log_event "cleanup success"
+            if /bin/rm -rf "$BACKUP" && /bin/rm -rf "$(dirname "$MANIFEST")"; then
+              log_event "cleanup success"
+            else
+              log_event "cleanup failure"
+            fi
           else
-            /bin/mv "$BACKUP" "$BUNDLE"
+            log_event "move failure"
+            log_event "rollback start"
+            if /bin/rm -rf "$BUNDLE" && /bin/mv "$BACKUP" "$BUNDLE"; then
+              log_event "rollback success"
+            else
+              log_event "rollback failure"
+            fi
             exit 1
           fi
         fi

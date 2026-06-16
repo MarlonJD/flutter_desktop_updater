@@ -47,6 +47,14 @@ Future<void> main(List<String> args) async {
     tempRoot: tempRoot,
   );
   final markerPath = _join(tempRoot.path, "marker.txt");
+  final diagnosticsLogPath =
+      _absolutePath(_argValue(args, "--diagnostics-log")) ??
+          _join(tempRoot.path, "helper-diagnostics.jsonl");
+  final diagnosticsLog = File(diagnosticsLogPath);
+  await diagnosticsLog.parent.create(recursive: true);
+  if (await diagnosticsLog.exists()) {
+    await diagnosticsLog.delete();
+  }
   final sentinelRelativePath = Platform.isMacOS
       ? _join("Resources", "desktop_updater_smoke.txt")
       : "desktop_updater_smoke.txt";
@@ -91,6 +99,7 @@ Future<void> main(List<String> args) async {
     environment: {
       "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
       "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
+      "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
@@ -127,8 +136,19 @@ Future<void> main(List<String> args) async {
     "Timed out waiting for staging directory cleanup.",
   );
 
+  await _expectDiagnosticsLog(
+    diagnosticsLogPath,
+    const <String>[
+      "helper scheduled",
+      "backup start",
+      "move start",
+      "cleanup success",
+    ],
+  );
+
   stdout
     ..writeln("Smoke update installed: ${installedSentinel.path}")
+    ..writeln("Helper diagnostics log: $diagnosticsLogPath")
     ..writeln(
       relaunch
           ? "Relaunch was enabled; close the relaunched example app manually."
@@ -259,6 +279,28 @@ Future<void> _waitFor(
   throw TimeoutException(timeoutMessage);
 }
 
+Future<void> _expectDiagnosticsLog(
+  String logPath,
+  List<String> expectedEvents,
+) async {
+  final log = File(logPath);
+  await _waitFor(
+    log.existsSync,
+    const Duration(seconds: 10),
+    "Timed out waiting for helper diagnostics log at $logPath.",
+  );
+
+  final contents = await log.readAsString();
+  for (final event in expectedEvents) {
+    if (!contents.contains('"event":"$event"')) {
+      stderr.writeln(contents);
+      throw StateError(
+        "Helper diagnostics log missing event '$event' in $logPath.",
+      );
+    }
+  }
+}
+
 String? _argValue(List<String> args, String name) {
   final index = args.indexOf(name);
   if (index == -1 || index + 1 >= args.length) {
@@ -295,7 +337,7 @@ String? _absolutePath(String? path) {
 void _usage() {
   stderr.writeln(
     "Usage: dart run tool/updater_smoke.dart [--app <path>] "
-    "[--config Debug|Release] [--relaunch]\n"
+    "[--config Debug|Release] [--diagnostics-log <path>] [--relaunch]\n"
     "\n"
     "Use --production-gates --staged-app <path> on macOS with a signed, "
     "notarized, stapled Release .app that already contains the smoke sentinel.\n"

@@ -30,7 +30,7 @@ TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
 TEST(DesktopUpdaterPlugin, InstallUpdateRequiresExistingStagingDirectory) {
   std::string error;
   EXPECT_FALSE(schedule_install_update(
-      "/tmp/desktop_updater_missing_staging", {}, &error));
+      "/tmp/desktop_updater_missing_staging", {}, "", &error));
   EXPECT_THAT(error, testing::HasSubstr("Staged update directory"));
 }
 

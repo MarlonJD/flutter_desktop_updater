@@ -314,6 +314,19 @@ Extend the smoke or native tests to assert:
 - log file is uploaded as a workflow artifact only for failed or explicit
   diagnostics runs.
 
+Status on 2026-06-16: local gate wiring complete. Native helpers now emit
+backup, move, cleanup, and rollback success/failure diagnostics events, and the
+Linux native test header exposes the `diagnosticsLogPath` scheduling argument
+used by the CI native test target. The example update smoke passes an explicit
+helper diagnostics log path, verifies core helper events, and the Windows/Linux
+workflow uploads the log artifact only on failure or when
+`DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS=1`. Local macOS evidence:
+`flutter build macos --release` in `example/` passed, and
+`dart run tool/updater_smoke.dart --config Release --diagnostics-log build/desktop-updater-helper-release.jsonl`
+passed with helper scheduled, backup, move, and cleanup events. Windows/Linux
+runtime evidence remains the post-push GitHub Actions run for
+`.github/workflows/desktop-updater-ci.yml`.
+
 ## Task 8E: Documentation And Support Flow
 
 **Files:**

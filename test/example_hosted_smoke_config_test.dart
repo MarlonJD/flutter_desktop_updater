@@ -29,9 +29,11 @@ void main() {
     final source = File("example/lib/app.dart").readAsStringSync();
 
     expect(source, contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"));
+    expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(
       source,
       contains("allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS"),
     );
+    expect(source, contains("diagnosticsLogPath: diagnosticsLogPath"));
   });
 }

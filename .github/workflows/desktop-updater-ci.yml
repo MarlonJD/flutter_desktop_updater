@@ -58,7 +58,14 @@ jobs:
         run: flutter build windows --debug
       - name: Run update smoke
         working-directory: example
-        run: dart run tool/updater_smoke.dart
+        run: dart run tool/updater_smoke.dart --diagnostics-log build/desktop-updater-helper-debug.jsonl
+      - name: Upload update smoke diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-update-smoke-debug-diagnostics
+          path: example/build/desktop-updater-helper-debug.jsonl
+          if-no-files-found: ignore
       - name: Build example release
         working-directory: example
         run: flutter build windows --release
@@ -76,7 +83,14 @@ jobs:
         run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Run update smoke release
         working-directory: example
-        run: dart run tool/updater_smoke.dart --config Release
+        run: dart run tool/updater_smoke.dart --config Release --diagnostics-log build/desktop-updater-helper-release.jsonl
+      - name: Upload update smoke release diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-update-smoke-release-diagnostics
+          path: example/build/desktop-updater-helper-release.jsonl
+          if-no-files-found: ignore
 
   macos-notarized:
     name: macOS Notarized Publish
@@ -166,7 +180,14 @@ jobs:
         run: flutter build linux --debug
       - name: Run update smoke
         working-directory: example
-        run: xvfb-run -a dart run tool/updater_smoke.dart
+        run: xvfb-run -a dart run tool/updater_smoke.dart --diagnostics-log build/desktop-updater-helper-debug.jsonl
+      - name: Upload update smoke diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-update-smoke-debug-diagnostics
+          path: example/build/desktop-updater-helper-debug.jsonl
+          if-no-files-found: ignore
       - name: Build example release
         working-directory: example
         run: flutter build linux --release
@@ -184,4 +205,11 @@ jobs:
         run: dart run tool/release_publish_smoke.dart --platform linux
       - name: Run update smoke release
         working-directory: example
-        run: xvfb-run -a dart run tool/updater_smoke.dart --config Release
+        run: xvfb-run -a dart run tool/updater_smoke.dart --config Release --diagnostics-log build/desktop-updater-helper-release.jsonl
+      - name: Upload update smoke release diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-update-smoke-release-diagnostics
+          path: example/build/desktop-updater-helper-release.jsonl
+          if-no-files-found: ignore

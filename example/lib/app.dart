@@ -153,6 +153,8 @@ class _HomePageState extends State<HomePage> {
     }
 
     final markerPath = Platform.environment["DESKTOP_UPDATER_SMOKE_MARKER"];
+    final diagnosticsLogPath =
+        Platform.environment["DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"];
     final stagingDirectory = Directory(stagingPath);
 
     if (!await stagingDirectory.exists()) {
@@ -165,6 +167,7 @@ class _HomePageState extends State<HomePage> {
     await _desktopUpdaterPlugin.installUpdate(
       stagingPath: stagingPath,
       allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS,
+      diagnosticsLogPath: diagnosticsLogPath,
     );
   }
 
