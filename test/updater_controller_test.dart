@@ -2,36 +2,24 @@ import "dart:async";
 import "dart:convert";
 import "dart:io";
 
+import "package:archive/archive.dart";
+import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
+const MethodChannel _desktopUpdaterChannel = MethodChannel("desktop_updater");
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const channel = MethodChannel("desktop_updater");
-
-  setUp(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      if (methodCall.method == "getCurrentVersionInfo") {
-        return <String, String?>{
-          "version": "1.0.0",
-          "buildNumber": "100",
-        };
-      }
-      if (methodCall.method == "getCurrentVersion") {
-        return "100";
-      }
-      return null;
-    });
-  });
+  setUp(_setMockPlatformHandler);
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
+        .setMockMethodCallHandler(_desktopUpdaterChannel, null);
   });
 
   test("skipInitialVersionCheck lets callers trigger checks manually", () {
@@ -97,6 +85,144 @@ void main() {
 
     await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
     expect(controller.state, isA<UpdateFailed>());
+  });
+
+  test("failed check exposes a problem report", () async {
+    final missingArchive = Uri.file(
+      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: missingArchive,
+      skipInitialVersionCheck: true,
+    );
+
+    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
+
+    final failed = controller.state as UpdateFailed;
+    final report = failed.report;
+    expect(report, isNotNull);
+    expect(report!.failure, same(failed.error));
+    expect(report.channel, "stable");
+    expect(report.appVersion, "1.0.0+100");
+    expect(
+      report.entries.map((entry) => entry.stage),
+      contains(UpdateDiagnosticStage.check),
+    );
+    expect(report.entries.last.level, UpdateDiagnosticLevel.error);
+    expect(report.toPlainText(), contains("Checking for updates"));
+  });
+
+  test(
+    "failed download report keeps check and download lifecycle entries",
+    () async {
+      final fixture = await _ControllerUpdateFixture.create(mandatory: false);
+      try {
+        final controller = DesktopUpdaterController(
+          appArchiveUrl: fixture.archiveUrl,
+          skipInitialVersionCheck: true,
+        );
+
+        await controller.checkVersion();
+        await expectLater(controller.downloadUpdate(), throwsA(isA<Object>()));
+
+        final failed = controller.state as UpdateFailed;
+        final report = failed.report;
+        expect(report, isNotNull);
+        expect(report!.updateVersion, "2.0.1");
+        expect(
+          report.entries.map((entry) => entry.stage),
+          containsAllInOrder([
+            UpdateDiagnosticStage.check,
+            UpdateDiagnosticStage.descriptor,
+            UpdateDiagnosticStage.download,
+          ]),
+        );
+        expect(report.entries.last.level, UpdateDiagnosticLevel.error);
+        expect(report.entries.last.message, contains("Download failed"));
+      } finally {
+        await fixture.delete();
+      }
+    },
+  );
+
+  test("failed install report records install failure", () async {
+    _setMockPlatformHandler(failInstall: true);
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(isA<PlatformException>()),
+      );
+
+      final failed = controller.state as UpdateFailed;
+      final report = failed.report;
+      expect(report, isNotNull);
+      expect(report!.stagingPath, isNotEmpty);
+      expect(report.entries.last.stage, UpdateDiagnosticStage.install);
+      expect(report.entries.last.level, UpdateDiagnosticLevel.error);
+      expect(report.entries.last.message, contains("Install failed"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("telemetry failures do not prevent diagnostics reports", () async {
+    final missingArchive = Uri.file(
+      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: missingArchive,
+      skipInitialVersionCheck: true,
+      telemetry: (_) {
+        throw StateError("telemetry sink is down");
+      },
+    );
+
+    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
+
+    final failed = controller.state as UpdateFailed;
+    expect(failed.report, isNotNull);
+    expect(failed.report!.entries.last.level, UpdateDiagnosticLevel.error);
+  });
+
+  test("problem report callback is invoked only by explicit action", () async {
+    final sentReports = <UpdateProblemReport>[];
+    final report = UpdateProblemReport(
+      generatedAt: DateTime.utc(2026, 6, 13, 9),
+      packageVersion: "2.1.4",
+      platform: "linux",
+      channel: "stable",
+      entries: const [],
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      onProblemReport: (report) async {
+        sentReports.add(report);
+      },
+    );
+    final controllerWithoutCallback = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+    );
+
+    expect(controller.canReportProblem, isTrue);
+    expect(controllerWithoutCallback.canReportProblem, isFalse);
+    expect(sentReports, isEmpty);
+
+    await controller.reportProblem(report);
+
+    expect(sentReports, [same(report)]);
   });
 
   test(
@@ -240,6 +366,30 @@ void main() {
   });
 }
 
+void _setMockPlatformHandler({bool failInstall = false}) {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(_desktopUpdaterChannel, (
+    MethodCall methodCall,
+  ) async {
+    if (methodCall.method == "getCurrentVersionInfo") {
+      return <String, String?>{
+        "version": "1.0.0",
+        "buildNumber": "100",
+      };
+    }
+    if (methodCall.method == "getCurrentVersion") {
+      return "100";
+    }
+    if (methodCall.method == "installUpdate" && failInstall) {
+      throw PlatformException(
+        code: "install-failed",
+        message: "Native install failed",
+      );
+    }
+    return null;
+  });
+}
+
 class _ManualCheckTestController extends DesktopUpdaterController {
   _ManualCheckTestController({required this.onCheckVersion})
       : super(
@@ -320,6 +470,7 @@ class _ControllerUpdateFixture {
 
   static Future<_ControllerUpdateFixture> create({
     required bool mandatory,
+    bool validArtifact = false,
   }) async {
     final root = await Directory.systemTemp.createTemp(
       "updater_controller_",
@@ -327,11 +478,29 @@ class _ControllerUpdateFixture {
     final releaseUrl = root.uri.resolve("release.json");
     final artifactUrl = root.uri.resolve("artifact.zip");
 
-    await File(path.join(root.path, "artifact.zip")).writeAsString("zip");
+    final appName =
+        Platform.operatingSystem == "macos" ? "Example.app" : "Example";
+    final artifact = File(path.join(root.path, "artifact.zip"));
+    final artifactBytes = validArtifact
+        ? ZipEncoder().encode(
+            Archive()
+              ..addFile(
+                ArchiveFile.string(
+                  Platform.operatingSystem == "macos"
+                      ? "$appName/Contents/Info.plist"
+                      : "app.txt",
+                  "version=2.0.1",
+                ),
+              ),
+          )
+        : utf8.encode("zip");
+    await artifact.writeAsBytes(artifactBytes);
+    final artifactSha256 =
+        crypto.sha256.convert(await artifact.readAsBytes()).toString();
     await File(path.join(root.path, "app-archive.json")).writeAsString(
       "${const JsonEncoder.withIndent("  ").convert({
             "schemaVersion": 3,
-            "appName": "Example",
+            "appName": appName,
             "items": [
               {
                 "version": "2.0.1",
@@ -348,7 +517,7 @@ class _ControllerUpdateFixture {
       "${const JsonEncoder.withIndent("  ").convert({
             "schemaVersion": 3,
             "packageId": "com.example.app",
-            "appName": "Example",
+            "appName": appName,
             "version": "2.0.1",
             "buildNumber": 201,
             "platform": Platform.operatingSystem,
@@ -356,8 +525,8 @@ class _ControllerUpdateFixture {
             "artifact": {
               "kind": "zip",
               "url": artifactUrl.toString(),
-              "sha256": "a" * 64,
-              "length": 3,
+              "sha256": validArtifact ? artifactSha256 : "a" * 64,
+              "length": await artifact.length(),
             },
             "install": {"strategy": "wholeDirectoryReplace"},
             "minimumUpdaterVersion": "2.0.0",

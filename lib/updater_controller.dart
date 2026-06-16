@@ -3,16 +3,21 @@ import "dart:async";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_client.dart";
+import "package:desktop_updater/src/core/update_diagnostics.dart";
+import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 import "package:desktop_updater/src/core/update_preferences.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
+import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/material.dart";
 
 export "package:desktop_updater/src/core/update_client.dart"
     show MinimumOSSupportChecker;
+export "package:desktop_updater/src/core/update_diagnostics.dart";
+export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_preferences.dart";
 export "package:desktop_updater/src/core/update_telemetry.dart";
 
@@ -36,8 +41,13 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.preferences,
     this.telemetry,
     this.isMinimumOSSupported,
+    UpdateDiagnosticsRecorder? diagnosticsRecorder,
+    Future<void> Function(UpdateProblemReport report)? onProblemReport,
     bool skipInitialVersionCheck = false,
-  }) : _skipInitialVersionCheck = skipInitialVersionCheck {
+  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
+        _diagnosticsRecorder =
+            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+        _onProblemReport = onProblemReport {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -65,6 +75,15 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional app-owned telemetry callback.
   final DesktopUpdaterTelemetry? telemetry;
+
+  final UpdateDiagnosticsRecorder _diagnosticsRecorder;
+  final Future<void> Function(UpdateProblemReport report)? _onProblemReport;
+
+  /// In-memory diagnostics recorder used to build failure reports.
+  UpdateDiagnosticsRecorder get diagnosticsRecorder => _diagnosticsRecorder;
+
+  /// Whether the app supplied an explicit problem-report callback.
+  bool get canReportProblem => _onProblemReport != null;
 
   /// Optional app-owned minimum OS support policy.
   final MinimumOSSupportChecker? isMinimumOSSupported;
@@ -105,6 +124,16 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   UpdateClient? _client;
   String? _stagingPath;
+  String? _currentAppVersion;
+
+  /// Invokes the app-owned problem-report callback when one was supplied.
+  Future<void> reportProblem(UpdateProblemReport report) async {
+    final callback = _onProblemReport;
+    if (callback == null) {
+      return;
+    }
+    await callback(report);
+  }
 
   /// Sets the app archive URL and starts the initial update check when enabled.
   void init(Uri url) {
@@ -144,6 +173,13 @@ class DesktopUpdaterController extends ChangeNotifier {
       throw StateError("App archive URL is not set.");
     }
 
+    _diagnosticsRecorder
+      ..clear()
+      ..record(
+        stage: UpdateDiagnosticStage.check,
+        level: UpdateDiagnosticLevel.info,
+        message: "Checking for updates from $archiveUrl",
+      );
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
@@ -159,6 +195,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       if (currentVersion == null) {
         throw StateError("Current app version is unavailable.");
       }
+      _currentAppVersion = _formatVersionInfo(currentVersion);
 
       final client = UpdateClient(
         appArchiveUrl: archiveUrl,
@@ -174,6 +211,11 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = false;
+        _diagnosticsRecorder.record(
+          stage: UpdateDiagnosticStage.check,
+          level: UpdateDiagnosticLevel.info,
+          message: "No update is available.",
+        );
         _state = const UpdateIdle();
         notifyListeners();
         return;
@@ -184,6 +226,11 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = true;
+        _diagnosticsRecorder.record(
+          stage: UpdateDiagnosticStage.policy,
+          level: UpdateDiagnosticLevel.info,
+          message: "Update ${result.descriptor.version} is skipped.",
+        );
         _state = const UpdateIdle();
         notifyListeners();
         return;
@@ -193,6 +240,12 @@ class DesktopUpdaterController extends ChangeNotifier {
       _client = client;
       _activeDescriptor = result.descriptor;
       _stagingPath = null;
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.descriptor,
+        level: UpdateDiagnosticLevel.info,
+        message: "Update selected: ${result.descriptor.version} "
+            "(${result.descriptor.platform}/${result.descriptor.channel}).",
+      );
       _state = UpdateAvailable(
         descriptor: result.descriptor,
         mandatory: result.item.mandatory,
@@ -208,7 +261,13 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
       notifyListeners();
     } catch (error) {
-      _state = UpdateFailed(error);
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.check,
+        level: UpdateDiagnosticLevel.error,
+        message: "Update check failed.",
+        error: error,
+      );
+      _state = UpdateFailed(error, report: _buildProblemReport(error));
       emitUpdateTelemetry(
         telemetry,
         UpdateTelemetryEvent.checkFailed(
@@ -235,7 +294,10 @@ class DesktopUpdaterController extends ChangeNotifier {
     try {
       await checkVersion();
     } on Object catch (error, stackTrace) {
-      _state = UpdateFailed(error);
+      _state = UpdateFailed(
+        error,
+        report: _reportFromStateOrBuild(error),
+      );
       notifyListeners();
       return ManualUpdateCheckFailed(error, stackTrace);
     }
@@ -270,6 +332,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
 
     _stagingPath = null;
+    _diagnosticsRecorder.record(
+      stage: UpdateDiagnosticStage.download,
+      level: UpdateDiagnosticLevel.info,
+      message: "Downloading update artifact from ${descriptor.artifact.url}",
+    );
     _state = UpdateDownloading(
       receivedBytes: 0,
       totalBytes: descriptor.artifact.length,
@@ -298,10 +365,30 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
 
       _stagingPath = result.stagingPath;
+      _diagnosticsRecorder
+        ..record(
+          stage: UpdateDiagnosticStage.verify,
+          level: UpdateDiagnosticLevel.info,
+          message: "Update artifact verified.",
+        )
+        ..record(
+          stage: UpdateDiagnosticStage.stage,
+          level: UpdateDiagnosticLevel.info,
+          message: "Update staged at ${result.stagingPath}",
+        );
       _state = UpdateReadyToInstall(stagingPath: result.stagingPath);
       notifyListeners();
     } catch (error) {
-      _state = UpdateFailed(error);
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.download,
+        level: UpdateDiagnosticLevel.error,
+        message: "Download failed.",
+        error: error,
+      );
+      _state = UpdateFailed(
+        error,
+        report: _buildProblemReport(error, updateVersion: descriptor.version),
+      );
       emitUpdateTelemetry(
         telemetry,
         UpdateTelemetryEvent.downloadFailed(
@@ -325,6 +412,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
 
     _state = const UpdateInstalling();
+    _diagnosticsRecorder.record(
+      stage: UpdateDiagnosticStage.install,
+      level: UpdateDiagnosticLevel.info,
+      message: "Install handoff started for $stagingPath",
+    );
     emitUpdateTelemetry(
       telemetry,
       UpdateTelemetryEvent.installScheduled(
@@ -342,7 +434,20 @@ class DesktopUpdaterController extends ChangeNotifier {
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
       );
     } catch (error) {
-      _state = UpdateFailed(error);
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.error,
+        message: "Install failed.",
+        error: error,
+      );
+      _state = UpdateFailed(
+        error,
+        report: _buildProblemReport(
+          error,
+          updateVersion: _activeDescriptor?.version,
+          stagingPath: stagingPath,
+        ),
+      );
       emitUpdateTelemetry(
         telemetry,
         UpdateTelemetryEvent.installFailed(
@@ -379,4 +484,40 @@ class DesktopUpdaterController extends ChangeNotifier {
       return _skippedVersionInMemory;
     }
   }
+
+  UpdateProblemReport _reportFromStateOrBuild(Object error) {
+    final currentState = state;
+    if (currentState is UpdateFailed && currentState.report != null) {
+      return currentState.report!;
+    }
+    return _buildProblemReport(error);
+  }
+
+  UpdateProblemReport _buildProblemReport(
+    Object error, {
+    String? updateVersion,
+    String? stagingPath,
+  }) {
+    return _diagnosticsRecorder.buildReport(
+      appVersion: _currentAppVersion,
+      updateVersion: updateVersion ?? _activeDescriptor?.version,
+      stagingPath: stagingPath ?? _stagingPath,
+      failure: error,
+    );
+  }
+}
+
+String? _formatVersionInfo(DesktopVersionInfo version) {
+  final versionName = version.versionName;
+  final buildNumber = version.buildNumber;
+  if (versionName != null && buildNumber != null) {
+    return "$versionName+$buildNumber";
+  }
+  if (version.rawVersion != null && version.rawVersion!.isNotEmpty) {
+    return version.rawVersion;
+  }
+  if (versionName != null && versionName.isNotEmpty) {
+    return versionName;
+  }
+  return buildNumber?.toString();
 }

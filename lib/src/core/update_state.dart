@@ -1,4 +1,5 @@
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/update_diagnostics.dart";
 
 /// Base type for the updater lifecycle states exposed by the controller.
 sealed class UpdateState {
@@ -63,8 +64,11 @@ final class UpdateInstalling extends UpdateState {
 /// The most recent update check, download, verification, or install failed.
 final class UpdateFailed extends UpdateState {
   /// Creates a failed state with the original [error].
-  const UpdateFailed(this.error);
+  const UpdateFailed(this.error, {this.report});
 
   /// Error reported by the failing update operation.
   final Object error;
+
+  /// Redacted diagnostics report for this failure, when available.
+  final UpdateProblemReport? report;
 }

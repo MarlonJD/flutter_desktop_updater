@@ -97,6 +97,34 @@ void main() {
     expect(find.text("Please try again later."), findsOneWidget);
   });
 
+  testWidgets("manual failed result helper can open a problem report", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()..showFailedUpdate();
+
+    await tester.pumpWidget(
+      _buildManualResultApp(
+        controller: controller,
+        result: ManualUpdateCheckFailed(
+          StateError("network down"),
+          StackTrace.current,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text("Show result"));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text("Could not check for updates"), findsOneWidget);
+    expect(find.text("View report"), findsOneWidget);
+
+    await tester.tap(find.text("View report"));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Update failed"), findsOneWidget);
+  });
+
   testWidgets("manual available result helper stays quiet by default", (
     tester,
   ) async {
@@ -184,6 +212,7 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
 
   bool _skipUpdate = false;
   bool _hasAvailableUpdate = false;
+  UpdateProblemReport? _failedReport;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
     schemaVersion: 3,
@@ -220,11 +249,20 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
   @override
   UpdateState get state => _hasAvailableUpdate
       ? UpdateAvailable(descriptor: _descriptor, mandatory: false)
-      : const UpdateIdle();
+      : _failedReport == null
+          ? const UpdateIdle()
+          : UpdateFailed(StateError("network down"), report: _failedReport);
 
   void showAvailableUpdate() {
     _hasAvailableUpdate = true;
+    _failedReport = null;
     _skipUpdate = false;
+    notifyListeners();
+  }
+
+  void showFailedUpdate() {
+    _hasAvailableUpdate = false;
+    _failedReport = _testProblemReport();
     notifyListeners();
   }
 
@@ -233,4 +271,23 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
     _skipUpdate = true;
     notifyListeners();
   }
+}
+
+UpdateProblemReport _testProblemReport() {
+  return UpdateProblemReport(
+    generatedAt: DateTime.utc(2026, 6, 13, 9),
+    packageVersion: "2.1.4",
+    platform: "linux",
+    channel: "stable",
+    updateVersion: "2.0.0",
+    failure: StateError("network down"),
+    entries: [
+      UpdateDiagnosticEntry(
+        timestamp: DateTime.utc(2026, 6, 13, 8),
+        stage: UpdateDiagnosticStage.check,
+        level: UpdateDiagnosticLevel.error,
+        message: "Update check failed",
+      ),
+    ],
+  );
 }

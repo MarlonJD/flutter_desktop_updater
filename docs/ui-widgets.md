@@ -114,7 +114,8 @@ wrapper widgets handle placement.
 - `UpdateAvailable`: shows download and, when optional, skip actions.
 - `UpdateDownloading`: shows a progress action.
 - `UpdateReadyToInstall`: shows the restart/install action.
-- `UpdateFailed`: shows a retry action.
+- `UpdateFailed`: shows a retry action and, when a diagnostics report exists,
+  a "View report" action.
 
 ## `UpdateDialogListener` And Dialog Helpers
 
@@ -174,6 +175,44 @@ throw into app startup. For strict flows, explicitly `await
 controller.checkVersion()` and handle the thrown error. For user-triggered
 checks, prefer `checkForUpdates()`, which returns `ManualUpdateCheckFailed`
 instead of throwing.
+
+## Update Problem Reports
+
+When a check, download, verification, staging, or install handoff fails, the
+controller builds a local `UpdateProblemReport` and attaches it to
+`UpdateFailed.report`. The report is kept in memory, bounded to a safe entry
+count, and redacted before `toPlainText()` is copied or exported. The package
+does not write report files, upload logs, or include a reporting backend.
+
+Stock UI shows "View report" only when `UpdateFailed.report` is available. The
+dialog starts with a short user-facing summary, keeps technical details
+collapsed, and lets the user copy the redacted report. The "Report issue" action
+is hidden unless your app supplies `onProblemReport`.
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  onProblemReport: (report) async {
+    await myIssueReporter.send(report.toPlainText());
+  },
+);
+```
+
+Use `onProblemReport` for app-owned integrations such as Sentry, email,
+pre-filled issue forms, customer support tickets, or your own API. It is invoked
+only after an explicit user action in the report dialog.
+
+Custom UI can open the same dialog:
+
+```dart
+if (controller.state case UpdateFailed(:final report) when report != null) {
+  await showUpdateProblemReportDialog(
+    context,
+    controller: controller,
+    report: report,
+  );
+}
+```
 
 ## Runtime Extension Points
 

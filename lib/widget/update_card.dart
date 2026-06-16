@@ -5,6 +5,7 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater/widget/update_problem_report_dialog.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
@@ -242,10 +243,28 @@ class _UpdateCardActions extends StatelessWidget {
           ),
           onPressed: () => _showRestartDialog(context, notifier),
         ),
-      UpdateFailed() => TextButton.icon(
-          icon: const Icon(Icons.refresh),
-          label: const Text("Check again"),
-          onPressed: notifier.checkVersion,
+      UpdateFailed(:final report) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            TextButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text("Check again"),
+              onPressed: notifier.checkVersion,
+            ),
+            if (report != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.assignment_outlined),
+                label: const Text("View report"),
+                onPressed: () {
+                  showUpdateProblemReportDialog(
+                    context,
+                    controller: notifier,
+                    report: report,
+                  );
+                },
+              ),
+          ],
         ),
       _ => Wrap(
           spacing: 8,

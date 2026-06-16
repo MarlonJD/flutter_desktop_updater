@@ -63,6 +63,27 @@ void main() {
     expect(find.text("50% (50.00 MB / 100.00 MB)"), findsOneWidget);
   });
 
+  testWidgets("failed ready UI shows a problem report action", (tester) async {
+    final controller = _ReadyUiTestController()..showFailedUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DesktopUpdateDirectCard(controller: controller),
+        ),
+      ),
+    );
+
+    expect(find.text("Please try again later."), findsOneWidget);
+    expect(find.text("Check again"), findsOneWidget);
+    expect(find.text("View report"), findsOneWidget);
+
+    await tester.tap(find.text("View report"));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Update failed"), findsOneWidget);
+  });
+
   testWidgets("wrapper widget can show the card above custom content", (
     tester,
   ) async {
@@ -182,6 +203,14 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     notifyListeners();
   }
 
+  void showFailedUpdate() {
+    _state = UpdateFailed(
+      StateError("network down"),
+      report: _testReport(),
+    );
+    notifyListeners();
+  }
+
   @override
   Future<void> downloadUpdate() async {
     showDownloadingUpdate(
@@ -195,4 +224,23 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     _skipUpdate = true;
     notifyListeners();
   }
+}
+
+UpdateProblemReport _testReport() {
+  return UpdateProblemReport(
+    generatedAt: DateTime.utc(2026, 6, 13, 9),
+    packageVersion: "2.1.4",
+    platform: "linux",
+    channel: "stable",
+    updateVersion: "2.0.0",
+    failure: StateError("network down"),
+    entries: [
+      UpdateDiagnosticEntry(
+        timestamp: DateTime.utc(2026, 6, 13, 8),
+        stage: UpdateDiagnosticStage.download,
+        level: UpdateDiagnosticLevel.error,
+        message: "Download failed",
+      ),
+    ],
+  );
 }

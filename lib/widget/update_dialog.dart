@@ -235,6 +235,8 @@ Future<void> showManualUpdateCheckResultDialog(
         context: context,
         builder: (context) {
           final localization = controller.getLocalization;
+          final state = controller.state;
+          final report = state is UpdateFailed ? state.report : null;
 
           return AlertDialog(
             backgroundColor: backgroundColor,
@@ -250,6 +252,20 @@ Future<void> showManualUpdateCheckResultDialog(
               style: TextStyle(color: textColor),
             ),
             actions: [
+              if (report != null)
+                TextButton(
+                  onPressed: () {
+                    showUpdateProblemReportDialog(
+                      context,
+                      controller: controller,
+                      report: report,
+                    );
+                  },
+                  child: Text(
+                    "View report",
+                    style: TextStyle(color: buttonTextColor),
+                  ),
+                ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: Text(
@@ -307,6 +323,56 @@ class UpdateDialogWidget extends StatelessWidget {
           listenable: notifier,
           builder: (context, child) {
             final state = notifier.state;
+            if (state is UpdateFailed) {
+              return AlertDialog(
+                backgroundColor: backgroundColor,
+                iconColor: iconColor,
+                shadowColor: shadowColor,
+                title: Text(
+                  "Update failed",
+                  style: TextStyle(color: textColor),
+                ),
+                content: Text(
+                  "Please try again later.",
+                  style: TextStyle(color: textColor),
+                ),
+                actions: [
+                  TextButton.icon(
+                    icon: Icon(Icons.refresh, color: buttonIconColor),
+                    label: Text(
+                      "Check again",
+                      style: TextStyle(color: buttonTextColor),
+                    ),
+                    onPressed: notifier.checkVersion,
+                  ),
+                  if (state.report != null)
+                    TextButton.icon(
+                      icon: Icon(
+                        Icons.assignment_outlined,
+                        color: buttonIconColor,
+                      ),
+                      label: Text(
+                        "View report",
+                        style: TextStyle(color: buttonTextColor),
+                      ),
+                      onPressed: () {
+                        showUpdateProblemReportDialog(
+                          context,
+                          controller: notifier,
+                          report: state.report!,
+                        );
+                      },
+                    ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      "Close",
+                      style: TextStyle(color: buttonTextColor),
+                    ),
+                  ),
+                ],
+              );
+            }
             final totalBytes = _updateTotalBytes(
               state: state,
               descriptor: notifier.activeDescriptor,

@@ -31,7 +31,8 @@ Recommended order:
 3. Release doctor and adoption friction reduction.
 4. Analyzer info cleanup.
 5. Persistent skip, retry/backoff, telemetry, and policy features.
-6. Resumable download, rollout percentages, rollback reports, and delta updates.
+6. Update diagnostics and problem report UI.
+7. Resumable download, rollout percentages, rollback reports, and delta updates.
 
 ## File Structure
 
@@ -55,8 +56,14 @@ Recommended order:
   - Add retry/backoff first; add resumable range download later as a separate slice.
 - Modify: `lib/src/core/update_client.dart`
   - Add metadata policy checks, telemetry callbacks, staged cleanup reporting, and descriptor signature enforcement.
+- Create: `lib/src/core/update_diagnostics.dart`
+  - Structured update log entries and user-copyable problem reports with safe redaction.
+- Create: `lib/src/core/update_diagnostics_recorder.dart`
+  - In-memory diagnostics recorder with optional app-owned export callback and no storage backend dependency.
 - Modify: `lib/src/core/release_descriptor.dart`
   - Extend schema only when adding signed metadata, minimum OS, rollout, or delta artifacts. Preserve schema v3 compatibility.
+- Create: `lib/widget/update_problem_report_dialog.dart`
+  - Ready-made Material dialog for failed updates with summary, details, copy report, retry, and optional report action.
 - Modify: `lib/src/package/zip_release_packager.dart`
   - Add optional descriptor fields that publish-time policy owns.
 - Modify: `docs/publishing.md`
@@ -73,6 +80,8 @@ Recommended order:
 - Test: `test/update_client_security_test.dart`
 - Test: `test/release_descriptor_test.dart`
 - Test: `test/release_cli/release_doctor_test.dart`
+- Test: `test/update_diagnostics_test.dart`
+- Test: `test/update_problem_report_dialog_test.dart`
 
 ## Task 1: Platform-Independent Signed `release.json`
 
@@ -434,7 +443,219 @@ flutter test --no-pub test/updater_controller_test.dart test/update_transport_te
 
 Expected: all tests pass.
 
-## Task 6: Resumable Download, Staged Rollout, Rollback Reports, And Delta Updates
+## Task 6: Update Diagnostics And Problem Report UI
+
+**Files:**
+- Create: `lib/src/core/update_diagnostics.dart`
+- Create: `lib/src/core/update_diagnostics_recorder.dart`
+- Modify: `lib/src/core/update_state.dart`
+- Modify: `lib/updater_controller.dart`
+- Create: `lib/widget/update_problem_report_dialog.dart`
+- Modify: `lib/widget/update_card.dart`
+- Modify: `lib/widget/update_dialog.dart`
+- Modify: `lib/desktop_updater.dart`
+- Modify: `docs/ui-widgets.md`
+- Modify: `docs/publishing.md`
+- Test: `test/update_diagnostics_test.dart`
+- Test: `test/updater_controller_test.dart`
+- Test: `test/update_problem_report_dialog_test.dart`
+- Test: `test/update_ready_ui_test.dart`
+- Test: `test/update_dialog_listener_test.dart`
+
+- [x] **Step 6.1: Add fail-first diagnostics model tests**
+
+Create `test/update_diagnostics_test.dart` with tests proving:
+
+```text
+UpdateDiagnosticEntry records timestamp, stage, level, message, optional error.
+UpdateProblemReport includes package/app/update metadata and ordered entries.
+toPlainText() redacts secrets from URLs and text values.
+copy text does not include Authorization headers, tokens, passwords, or signatures.
+report is bounded to a sane max entry count so UI cannot explode.
+```
+
+Use deterministic timestamps in tests.
+
+Run:
+
+```sh
+flutter test --no-pub test/update_diagnostics_test.dart
+```
+
+Expected: fail because diagnostics types do not exist.
+
+- [x] **Step 6.2: Implement diagnostics data types**
+
+Create `lib/src/core/update_diagnostics.dart` with:
+
+```dart
+enum UpdateDiagnosticLevel { info, warning, error }
+
+enum UpdateDiagnosticStage {
+  check,
+  descriptor,
+  policy,
+  download,
+  verify,
+  stage,
+  install,
+  cleanup,
+}
+
+class UpdateDiagnosticEntry {
+  const UpdateDiagnosticEntry({
+    required this.timestamp,
+    required this.stage,
+    required this.level,
+    required this.message,
+    this.error,
+  });
+
+  final DateTime timestamp;
+  final UpdateDiagnosticStage stage;
+  final UpdateDiagnosticLevel level;
+  final String message;
+  final Object? error;
+}
+
+class UpdateProblemReport {
+  const UpdateProblemReport({
+    required this.generatedAt,
+    required this.packageVersion,
+    required this.platform,
+    required this.channel,
+    required this.entries,
+    this.appVersion,
+    this.updateVersion,
+    this.stagingPath,
+    this.failure,
+  });
+
+  String toPlainText();
+}
+```
+
+Add redaction helpers that replace query values for keys such as `token`,
+`signature`, `password`, `secret`, `key`, `authorization`, and `credential`
+with `<redacted>`.
+
+- [x] **Step 6.3: Add fail-first recorder/controller tests**
+
+Extend `test/updater_controller_test.dart` with tests proving:
+
+```text
+failed check moves state to UpdateFailed(error, report: report)
+failed download records check/download/failed entries
+failed install records installFailed and exposes the report
+telemetry callback failures do not prevent report generation
+onProblemReport callback is optional and invoked only by explicit UI action
+```
+
+Run:
+
+```sh
+flutter test --no-pub test/updater_controller_test.dart
+```
+
+Expected: fail because `UpdateFailed.report`, recorder, and callback wiring do not exist.
+
+- [x] **Step 6.4: Implement in-memory recorder and controller wiring**
+
+Create `lib/src/core/update_diagnostics_recorder.dart` with an in-memory
+`UpdateDiagnosticsRecorder` that:
+
+```text
+stores bounded entries
+records lifecycle stages from check/download/verify/stage/install/cleanup
+builds UpdateProblemReport on failure
+does not write files
+does not upload reports
+does not require telemetry
+```
+
+Modify `DesktopUpdaterController`:
+
+```dart
+DesktopUpdaterController({
+  ...,
+  UpdateDiagnosticsRecorder? diagnosticsRecorder,
+  Future<void> Function(UpdateProblemReport report)? onProblemReport,
+})
+```
+
+Keep the default recorder in memory. When failures occur, move state to
+`UpdateFailed(error, report: recorder.buildReport(...))`. Keep existing
+telemetry events; diagnostics must still work when telemetry is null or throws.
+
+- [x] **Step 6.5: Add fail-first problem report UI tests**
+
+Create `test/update_problem_report_dialog_test.dart` and extend ready UI tests
+for:
+
+```text
+UpdateFailed with report shows "View report" / "Ayrıntıları göster" action in stock UI.
+dialog shows human summary first and collapsible technical details second.
+"Copy report" writes redacted plain text to Clipboard.
+"Report issue" is hidden when no onProblemReport callback exists.
+"Report issue" invokes onProblemReport with the current report when supplied.
+"Try again" calls controller.checkVersion().
+```
+
+Run:
+
+```sh
+flutter test --no-pub test/update_problem_report_dialog_test.dart test/update_ready_ui_test.dart test/update_dialog_listener_test.dart
+```
+
+Expected: fail until the dialog and UI actions exist.
+
+- [x] **Step 6.6: Implement ready-made report dialog**
+
+Create `lib/widget/update_problem_report_dialog.dart` exporting:
+
+```dart
+Future<void> showUpdateProblemReportDialog(
+  BuildContext context, {
+  required DesktopUpdaterController controller,
+  required UpdateProblemReport report,
+});
+
+class UpdateProblemReportDialog extends StatelessWidget { ... }
+```
+
+The dialog should feel like a desktop problem report surface:
+
+```text
+title: "Update failed"
+summary: short user-facing failure message
+actions: Try again, Copy report, optional Report issue, Close
+details: collapsed technical report with monospace selectable text
+```
+
+Use Material widgets already used in the package. Do not add a dependency.
+
+- [x] **Step 6.7: Document diagnostics and app-owned reporting**
+
+Update `docs/ui-widgets.md` and `docs/publishing.md`:
+
+```text
+automatic checks stay quiet but failures can expose a report through stock UI
+reports are generated locally and redacted before copy/export
+the package does not upload logs or include a backend
+apps can wire onProblemReport to Sentry, email, issue form, or their own API
+```
+
+Verification:
+
+```sh
+dart format --set-exit-if-changed lib test
+flutter analyze --no-fatal-infos
+flutter test --no-pub test/update_diagnostics_test.dart test/updater_controller_test.dart test/update_problem_report_dialog_test.dart test/update_ready_ui_test.dart test/update_dialog_listener_test.dart
+```
+
+Expected: format clean, analyzer exits 0, and targeted tests pass.
+
+## Task 7: Resumable Download, Staged Rollout, Rollback Reports, And Delta Updates
 
 **Files:**
 - Modify: `lib/src/io/http_update_transport.dart`
@@ -449,7 +670,7 @@ Expected: all tests pass.
 - Test: `test/release_descriptor_test.dart`
 - Test: `test/update_client_security_test.dart`
 
-- [ ] **Step 6.1: Resumable downloads**
+- [ ] **Step 7.1: Resumable downloads**
 
 Add HTTP Range support only after retry/backoff lands. Resume only when the server returns `206 Partial Content` and the existing `.part` file length is less than the expected artifact length.
 
@@ -461,7 +682,7 @@ server returns wrong Content-Range -> delete partial and fail
 final SHA-256 mismatch -> delete partial and fail
 ```
 
-- [x] **Step 6.2: Staged rollout percentage**
+- [x] **Step 7.2: Staged rollout percentage**
 
 Add optional index metadata:
 
@@ -474,7 +695,7 @@ Add optional index metadata:
 
 Selection must be deterministic per installation identity and channel. If the app does not provide an installation identity, rollout filtering is disabled and the item is treated as not eligible unless the rollout is 100 percent.
 
-- [ ] **Step 6.3: Rollback and cleanup report**
+- [ ] **Step 7.3: Rollback and cleanup report**
 
 Add a small report object emitted after install scheduling or next startup cleanup:
 
@@ -489,7 +710,7 @@ error text when known
 
 Do not block install success on telemetry/report persistence.
 
-- [ ] **Step 6.4: Delta update design gate**
+- [ ] **Step 7.4: Delta update design gate**
 
 Do not implement binary deltas until the signed descriptor, retry, and resumable download paths are stable. First add descriptor shape support behind an explicit unsupported error:
 

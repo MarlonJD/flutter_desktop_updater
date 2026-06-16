@@ -10,12 +10,11 @@ import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_update.dart";
+import "package:desktop_updater/src/package_version.dart";
 import "package:desktop_updater/src/release_manifest.dart"
     show stagedReleaseManifestFileName;
 import "package:desktop_updater/src/version_info.dart";
 import "package:path/path.dart" as path;
-
-const String _desktopUpdaterPackageVersion = "2.1.4";
 
 /// App-owned policy callback for descriptor `minimumOS` checks.
 typedef MinimumOSSupportChecker = bool Function({
@@ -40,7 +39,7 @@ class UpdateClient {
     this.installationIdentity,
   })  : platform = platform ?? Platform.operatingSystem,
         _currentUpdaterVersion = currentUpdaterVersion ??
-            DesktopVersionInfo.parse(_desktopUpdaterPackageVersion),
+            DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
         _transport = transport ?? CompositeUpdateTransport(),
         _verifier = verifier,
         _extractor = extractor,

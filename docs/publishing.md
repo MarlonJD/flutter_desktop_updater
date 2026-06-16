@@ -141,9 +141,18 @@ app-owned:
 - Optional telemetry is a `DesktopUpdaterTelemetry` callback with typed events.
   The package does not include a telemetry backend, and callback failures do not
   affect update checks, downloads, verification, or install handoff.
+- Update diagnostics are recorded in memory and attached to `UpdateFailed` as a
+  redacted `UpdateProblemReport` when check, download, verification, staging, or
+  install handoff fails. Reports are bounded before copy/export. The package
+  does not write report files, upload logs, or depend on a backend.
 
 Advanced callers that use `HttpUpdateTransport` directly can provide a custom
 `UpdateRetryPolicy` and delay function for tests or app-specific retry tuning.
+
+Apps that want user-approved reporting can pass `onProblemReport` to
+`DesktopUpdaterController` and send `report.toPlainText()` to their own Sentry,
+email, issue-form, support, or API workflow. The callback is optional and is
+invoked only by explicit user action in the ready-made problem report dialog.
 
 ## Common Minimum Setup
 

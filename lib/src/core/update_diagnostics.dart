@@ -1,0 +1,213 @@
+/// Severity for a structured updater diagnostics entry.
+enum UpdateDiagnosticLevel {
+  /// Informational lifecycle event.
+  info,
+
+  /// Non-fatal condition worth surfacing in technical details.
+  warning,
+
+  /// Failure condition.
+  error,
+}
+
+/// Lifecycle area associated with an updater diagnostics entry.
+enum UpdateDiagnosticStage {
+  /// App archive lookup and version selection.
+  check,
+
+  /// Release descriptor fetch or parsing.
+  descriptor,
+
+  /// App-owned or package-owned update policy checks.
+  policy,
+
+  /// Artifact download.
+  download,
+
+  /// Artifact integrity and trust verification.
+  verify,
+
+  /// Staging the artifact for install.
+  stage,
+
+  /// Native install or restart handoff.
+  install,
+
+  /// Temporary file cleanup.
+  cleanup,
+}
+
+/// A single structured diagnostics entry for the update lifecycle.
+class UpdateDiagnosticEntry {
+  /// Creates a diagnostics entry.
+  const UpdateDiagnosticEntry({
+    required this.timestamp,
+    required this.stage,
+    required this.level,
+    required this.message,
+    this.error,
+  });
+
+  /// Entry timestamp.
+  final DateTime timestamp;
+
+  /// Lifecycle stage associated with this entry.
+  final UpdateDiagnosticStage stage;
+
+  /// Entry severity.
+  final UpdateDiagnosticLevel level;
+
+  /// Human-readable message.
+  final String message;
+
+  /// Optional error captured with the entry.
+  final Object? error;
+}
+
+/// Locally generated, user-copyable update problem report.
+class UpdateProblemReport {
+  /// Creates a bounded problem report.
+  UpdateProblemReport({
+    required this.generatedAt,
+    required this.packageVersion,
+    required this.platform,
+    required this.channel,
+    required List<UpdateDiagnosticEntry> entries,
+    this.appVersion,
+    this.updateVersion,
+    this.stagingPath,
+    this.failure,
+    int omittedEntryCount = 0,
+  })  : entries = List.unmodifiable(_boundedEntries(entries)),
+        omittedEntryCount =
+            omittedEntryCount + _omittedCountFor(entries.length);
+
+  /// Maximum diagnostics entries retained in a report.
+  static const int maxEntries = 80;
+
+  /// Report generation time.
+  final DateTime generatedAt;
+
+  /// Version of the `desktop_updater` package that generated the report.
+  final String packageVersion;
+
+  /// Runtime platform associated with the update flow.
+  final String platform;
+
+  /// Update channel associated with the flow.
+  final String channel;
+
+  /// Bounded, ordered diagnostics entries.
+  final List<UpdateDiagnosticEntry> entries;
+
+  /// Number of older entries omitted while bounding the report.
+  final int omittedEntryCount;
+
+  /// Installed app version, when known.
+  final String? appVersion;
+
+  /// Selected update version, when known.
+  final String? updateVersion;
+
+  /// Staged update path, when known.
+  final String? stagingPath;
+
+  /// Failure that caused the report, when known.
+  final Object? failure;
+
+  /// Builds redacted text suitable for clipboard copy or app-owned export.
+  String toPlainText() {
+    final buffer = StringBuffer()
+      ..writeln("Update Problem Report")
+      ..writeln("Generated: ${generatedAt.toUtc().toIso8601String()}")
+      ..writeln("Package version: ${_redact(packageVersion)}")
+      ..writeln("Platform: ${_redact(platform)}")
+      ..writeln("Channel: ${_redact(channel)}");
+
+    _writeOptional(buffer, "App version", appVersion);
+    _writeOptional(buffer, "Update version", updateVersion);
+    _writeOptional(buffer, "Staging path", stagingPath);
+
+    if (failure != null) {
+      buffer.writeln("Failure: ${_redact(failure.toString())}");
+    }
+
+    buffer
+      ..writeln()
+      ..writeln("Diagnostics:");
+    if (omittedEntryCount > 0) {
+      buffer.writeln("Entries omitted: $omittedEntryCount older entries");
+    }
+
+    for (final entry in entries) {
+      buffer.writeln(
+        "[${entry.timestamp.toUtc().toIso8601String()}] "
+        "${entry.level.name.toUpperCase()} ${entry.stage.name}: "
+        "${_redact(entry.message)}",
+      );
+      if (entry.error != null) {
+        buffer.writeln("  Error: ${_redact(entry.error.toString())}");
+      }
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  static void _writeOptional(
+    StringBuffer buffer,
+    String label,
+    String? value,
+  ) {
+    if (value == null || value.isEmpty) {
+      return;
+    }
+    buffer.writeln("$label: ${_redact(value)}");
+  }
+
+  static List<UpdateDiagnosticEntry> _boundedEntries(
+    List<UpdateDiagnosticEntry> entries,
+  ) {
+    if (entries.length <= maxEntries) {
+      return entries;
+    }
+    return entries.sublist(entries.length - maxEntries);
+  }
+
+  static int _omittedCountFor(int entryCount) {
+    if (entryCount <= maxEntries) {
+      return 0;
+    }
+    return entryCount - maxEntries;
+  }
+}
+
+const String _redacted = "<redacted>";
+
+final RegExp _authorizationHeaderPattern = RegExp(
+  r"\b(authorization)\s*:\s*([^\r\n,;]+?)(?=\s+[A-Za-z0-9_-]*(?:token|signature|password|secret|credentials?|key)[A-Za-z0-9_-]*\s*[=:]|[\r\n,;]|$)",
+  caseSensitive: false,
+  multiLine: true,
+);
+
+final RegExp _secretAssignmentPattern = RegExp(
+  r"\b([A-Za-z0-9_-]*(?:token|signature|password|secret|authorization|credentials?|key)[A-Za-z0-9_-]*)\s*([=:])\s*([^&\s,;]+)",
+  caseSensitive: false,
+);
+
+String _redact(String input) {
+  final withoutAuthorizationHeaders = input.replaceAllMapped(
+    _authorizationHeaderPattern,
+    (match) => "${match.group(1)}: $_redacted",
+  );
+
+  return withoutAuthorizationHeaders.replaceAllMapped(
+    _secretAssignmentPattern,
+    (match) {
+      final separator = match.group(2);
+      if (separator == ":") {
+        return "${match.group(1)}: $_redacted";
+      }
+      return "${match.group(1)}=$_redacted";
+    },
+  );
+}
