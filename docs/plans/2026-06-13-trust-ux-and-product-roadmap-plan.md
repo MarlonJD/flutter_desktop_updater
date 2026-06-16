@@ -96,7 +96,7 @@ Recommended order:
 - Test: `test/release_cli/release_sign_command_test.dart`
 - Test: `test/release_cli/release_validate_test.dart`
 
-- [ ] **Step 1.1: Add fail-first signature verifier tests**
+- [x] **Step 1.1: Add fail-first signature verifier tests**
 
 Create `test/release_signature_verifier_test.dart` with tests for valid signature, tampered descriptor, missing public key, malformed base64 signature, and unsupported algorithm.
 
@@ -108,7 +108,7 @@ flutter test --no-pub test/release_signature_verifier_test.dart
 
 Expected: fail because `release_signature_verifier.dart` does not exist.
 
-- [ ] **Step 1.2: Implement Ed25519 descriptor verification**
+- [x] **Step 1.2: Implement Ed25519 descriptor verification**
 
 Create `lib/src/core/release_signature_verifier.dart` with an `Ed25519ReleaseSignatureVerifier` that accepts a `Map<String, String>` of `publicKeyId -> base64 raw public key`, decodes `ReleaseDescriptor.signature.value`, and verifies `descriptor.canonicalSignatureBytes()`.
 
@@ -122,7 +122,7 @@ invalid base64 -> false
 non-ed25519 algorithm -> false
 ```
 
-- [ ] **Step 1.3: Wire verifier into `ArtifactVerifier` policy**
+- [x] **Step 1.3: Wire verifier into `ArtifactVerifier` policy**
 
 Keep `ArtifactVerificationPolicy(requireSignature: true)` fail-closed. Add a constructor helper or factory so CLI callers can build a verifier from pinned public keys without hand-writing the callback every time.
 
@@ -136,7 +136,7 @@ requireSignature true + invalid signature -> throws
 requireSignature true + valid signature -> passes
 ```
 
-- [ ] **Step 1.4: Add `release sign` CLI**
+- [x] **Step 1.4: Add `release sign` CLI**
 
 Add a command shape under the existing release command:
 
@@ -159,7 +159,7 @@ Public key id:
 stable-2026
 ```
 
-- [ ] **Step 1.5: Add signed validation**
+- [x] **Step 1.5: Add signed validation**
 
 Extend `release validate` with:
 
@@ -176,7 +176,7 @@ Expected `DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS` shape:
 {"stable-2026":"base64-raw-ed25519-public-key"}
 ```
 
-- [ ] **Step 1.6: Document platform trust split**
+- [x] **Step 1.6: Document platform trust split**
 
 In `docs/publishing.md`, document that signed `release.json` proves update metadata authenticity across macOS, Windows, and Linux, while Authenticode/notarization/native package signatures remain app-owned platform trust.
 
@@ -188,6 +188,12 @@ flutter test --no-pub test/release_signature_verifier_test.dart test/release_cli
 
 Expected: all tests pass.
 
+Status sync on 2026-06-16: signed descriptor verification, `release sign`,
+signed validation, and platform trust documentation are implemented in the
+current branch. The 2026-06-16 full gate passed with `flutter test --no-pub`,
+including the signature verifier, sign command, validate command, and artifact
+verifier suites.
+
 ## Task 2: Quiet Startup Check Failures
 
 **Files:**
@@ -197,7 +203,7 @@ Expected: all tests pass.
 - Test: `test/updater_controller_test.dart`
 - Test: `test/update_dialog_listener_test.dart`
 
-- [ ] **Step 2.1: Add fail-first startup behavior tests**
+- [x] **Step 2.1: Add fail-first startup behavior tests**
 
 Add tests proving:
 
@@ -216,7 +222,7 @@ flutter test --no-pub test/updater_controller_test.dart
 
 Expected: fail until automatic startup checks use a quiet wrapper.
 
-- [ ] **Step 2.2: Split automatic and explicit checks**
+- [x] **Step 2.2: Split automatic and explicit checks**
 
 Keep `checkVersion()` as the strict low-level method. Add a private `_checkVersionQuietly()` used only by `init()`:
 
@@ -232,7 +238,7 @@ Future<void> _checkVersionQuietly() async {
 
 Change `init()` to call `unawaited(_checkVersionQuietly())`.
 
-- [ ] **Step 2.3: Document behavior**
+- [x] **Step 2.3: Document behavior**
 
 Update `docs/ui-widgets.md` to state that automatic startup checks update controller state and built-in UI, but do not throw into app startup; explicit `checkVersion()` remains strict and `checkForUpdates()` returns a typed result.
 
@@ -243,6 +249,10 @@ flutter test --no-pub test/updater_controller_test.dart test/update_dialog_liste
 ```
 
 Expected: all tests pass.
+
+Status sync on 2026-06-16: automatic startup checks use the quiet wrapper while
+explicit checks remain strict. The 2026-06-16 full gate passed with
+`flutter test --no-pub`, including controller and dialog listener coverage.
 
 ## Task 3: Adoption Friction Reduction
 
@@ -255,7 +265,7 @@ Expected: all tests pass.
 - Test: `test/release_cli/release_doctor_test.dart`
 - Test: `test/release_cli/release_command_test.dart`
 
-- [ ] **Step 3.1: Add `release doctor` tests**
+- [x] **Step 3.1: Add `release doctor` tests**
 
 Test these diagnostics:
 
@@ -269,7 +279,7 @@ linux direct zip + no descriptor signature config -> warning only
 macos + allowUnsignedMacOSUpdates guidance -> warning only
 ```
 
-- [ ] **Step 3.2: Implement `release doctor`**
+- [x] **Step 3.2: Implement `release doctor`**
 
 Add:
 
@@ -287,7 +297,7 @@ Exit behavior:
 1 -> unexpected filesystem or parser failure
 ```
 
-- [ ] **Step 3.3: Add hook config after doctor messages are stable**
+- [x] **Step 3.3: Add hook config after doctor messages are stable**
 
 Add optional app-owned hooks to config:
 
@@ -303,7 +313,7 @@ hooks:
 
 Hooks must receive a manifest/environment contract and must never receive secrets from YAML.
 
-- [ ] **Step 3.4: Keep README quick**
+- [x] **Step 3.4: Keep README quick**
 
 Update README with one small line:
 
@@ -318,6 +328,11 @@ flutter test --no-pub test/release_cli/release_doctor_test.dart test/release_cli
 ```
 
 Expected: all tests pass.
+
+Status sync on 2026-06-16: `release doctor`, hook config, and README guidance
+are implemented in the current branch. The 2026-06-16 full gate passed with
+`flutter test --no-pub`, including doctor, release command, and publish config
+coverage.
 
 ## Task 4: Analyzer Info Debt Reduction
 
@@ -393,7 +408,7 @@ skipped.
 - Test: `test/release_descriptor_test.dart`
 - Test: `test/release_index_test.dart`
 
-- [ ] **Step 5.1: Persistent skip-this-version**
+- [x] **Step 5.1: Persistent skip-this-version**
 
 Add an optional preference adapter:
 
@@ -407,7 +422,7 @@ abstract interface class UpdatePreferences {
 
 The controller should keep current in-memory skip behavior when no adapter is supplied.
 
-- [ ] **Step 5.2: Retry/backoff**
+- [x] **Step 5.2: Retry/backoff**
 
 Add `UpdateRetryPolicy` with explicit defaults:
 
@@ -419,7 +434,7 @@ retry statuses: 408, 429, 500, 502, 503, 504
 do not retry: descriptor parse failures, signature failures, SHA-256 mismatch
 ```
 
-- [ ] **Step 5.3: Telemetry callbacks**
+- [x] **Step 5.3: Telemetry callbacks**
 
 Add optional callbacks without adding a telemetry backend:
 
@@ -429,7 +444,7 @@ typedef DesktopUpdaterTelemetry = void Function(UpdateTelemetryEvent event);
 
 Events should include `checkStarted`, `checkFailed`, `updateSelected`, `downloadStarted`, `downloadFailed`, `artifactVerified`, `installScheduled`, and `installFailed`.
 
-- [ ] **Step 5.4: Minimum OS and minimum updater version policy**
+- [x] **Step 5.4: Minimum OS and minimum updater version policy**
 
 Keep existing `minimumUpdaterVersion` and enforce it in `UpdateClient` before download. Add optional descriptor fields:
 
@@ -450,6 +465,12 @@ flutter test --no-pub test/updater_controller_test.dart test/update_transport_te
 ```
 
 Expected: all tests pass.
+
+Status sync on 2026-06-16: persistent skip preferences, retry/backoff,
+telemetry callbacks, `minimumUpdaterVersion`, and optional `minimumOS` policy
+are implemented in the current branch. The 2026-06-16 full gate passed with
+`flutter test --no-pub`, including controller, transport, descriptor, and update
+client security coverage.
 
 ## Task 6: Update Diagnostics And Problem Report UI
 
