@@ -194,6 +194,31 @@ Apps that want user-approved reporting can pass `onProblemReport` to
 email, issue-form, support, or API workflow. The callback is optional and is
 invoked only by explicit user action in the ready-made problem report dialog.
 
+Use three explicit support levels:
+
+1. **In-memory problem report only.** This is the default. The package records
+   bounded, redacted diagnostics in memory for `UpdateFailed(report)` and does
+   not write files, upload logs, or choose retention.
+2. **App-owned Dart lifecycle log.** Supply
+   `UpdateDiagnosticsRecorder(sink: ...)` when your app wants a redacted log for
+   check, descriptor, download, verify, stage, and native handoff events. Your
+   app chooses the file path, storage package, retention, and upload policy.
+3. **App-owned native helper log plus recovery store.** Supply
+   `diagnosticsLogPath` with an app-owned `UpdateRecoveryStore` when support
+   needs post-exit install, rollback, cleanup, or relaunch evidence and
+   post-relaunch `UpdateFailed(report)` recovery.
+
+Suggested user support wording:
+
+```text
+Open Settings > Updates > Copy update report. If the app cannot open that
+screen, attach the update log from the location your app shows in Settings.
+```
+
+Avoid package-level platform paths in public docs or support scripts. If your
+app writes a helper log, show the user the app-owned location and ask for
+explicit approval before sharing it.
+
 ### Staged Rollouts
 
 Add optional rollout metadata to an `app-archive.json` item when a release

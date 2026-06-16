@@ -307,6 +307,33 @@ checkpoints, not one-time setup facts.
   blocking and trade restrictions. Always check the current official sanctions
   list for the countries, entities, and users involved.
 
+## Diagnostics And Support Logs
+
+Native helper diagnostics are support evidence, not a trust layer. They can help
+you understand where a Windows or Linux update failed after the Flutter process
+exited, such as backup, copy, rollback, cleanup, or relaunch, but they do not
+replace Authenticode, descriptor signing, repository signing, or hosted
+validation.
+
+Keep diagnostics app-owned:
+
+- Default package behavior writes no files and uploads no logs.
+- Use in-memory problem reports for ordinary UI support flows.
+- Add `UpdateDiagnosticsRecorder(sink: ...)` only when your app chooses a
+  durable Dart lifecycle log path and retention policy.
+- Add `diagnosticsLogPath` plus an app-owned recovery store only when support
+  needs post-exit helper evidence.
+
+Recommended support wording:
+
+```text
+Open Settings > Updates > Copy update report. If the app cannot open that
+screen, attach the update log from the location your app shows in Settings.
+```
+
+Avoid documenting a package-level Windows or Linux log path. If your app chooses
+one, show it in your own support UI and ask the user before sharing it.
+
 ## What desktop_updater Should Own
 
 Current behavior:

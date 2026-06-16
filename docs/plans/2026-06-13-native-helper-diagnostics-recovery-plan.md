@@ -354,6 +354,15 @@ screen, attach the update log from <app-owned path>.
 Avoid hardcoding platform-specific support paths in the package docs except as
 examples owned by the app.
 
+Status on 2026-06-16: complete. `docs/ui-widgets.md`,
+`docs/publishing.md`, `docs/github-actions-ci-cd.md`, and
+`docs/windows-linux-production-release.md` now describe the three app-owned
+support levels, sample user support wording, conditional helper diagnostics
+artifact uploads, and the split between support evidence and publisher trust.
+Verification:
+`flutter test --no-pub test/native_helper_diagnostics_docs_test.dart` passed
+with 3 tests.
+
 ## Acceptance
 
 - No storage, file logging, upload, or telemetry happens by default.

@@ -19,6 +19,12 @@ The package CI covers:
 - Windows debug and release builds, native tests, integration tests, and update smoke tests;
 - Linux debug and release builds, native tests, integration tests, and update smoke tests under `xvfb`.
 
+Windows and Linux update smoke tests pass an explicit helper diagnostics log
+path to the example app. The workflow uploads that log only when the job has
+failed, or when the repository variable
+`DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS` is set to `1` for an intentional
+diagnostics run. The package does not upload helper logs by default.
+
 The package CI intentionally does not publish app update artifacts. Automatic updates belong to the app that is shipping the update because that app owns the bundle ID, signing identity, notarization credentials, versioning, update hosting, and release approval policy.
 
 ## App Repository CD

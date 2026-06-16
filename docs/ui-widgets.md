@@ -371,6 +371,26 @@ final controller = DesktopUpdaterController(
 Use this with an app-owned recovery store when support needs evidence from
 after the Flutter process has exited.
 
+For support flows, keep the integration level explicit:
+
+1. In-memory problem report only: this is the default. The package writes no
+   files and uploads nothing.
+2. App-owned Dart lifecycle log: add `UpdateDiagnosticsRecorder(sink: ...)`
+   when your app wants a redacted durable log at a path it controls.
+3. App-owned native helper log plus recovery store: add `diagnosticsLogPath`
+   and `UpdateRecoveryStore` when support needs post-exit install, rollback,
+   cleanup, or relaunch evidence.
+
+Suggested user-facing support copy:
+
+```text
+Open Settings > Updates > Copy update report. If the app cannot open that
+screen, attach the update log from the location your app shows in Settings.
+```
+
+Do not hardcode a package-owned support path. The app should choose the path,
+retention behavior, and whether the user approves sharing the file.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 
