@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 import "package:desktop_updater/src/core/update_preferences.dart";
+import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/current_version.dart";
@@ -19,6 +20,7 @@ export "package:desktop_updater/src/core/update_client.dart"
 export "package:desktop_updater/src/core/update_diagnostics.dart";
 export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_preferences.dart";
+export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_telemetry.dart";
 
 /// Coordinates update checks, downloads, and install handoff for UI code.
@@ -39,6 +41,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.channel = "stable",
     this.installationIdentity,
     this.preferences,
+    this.recoveryStore,
     this.telemetry,
     this.isMinimumOSSupported,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
@@ -74,6 +77,9 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional app-owned persistence adapter for skipped versions.
   final UpdatePreferences? preferences;
+
+  /// Optional app-owned persistence adapter for pending install recovery.
+  final UpdateRecoveryStore? recoveryStore;
 
   /// Optional app-owned telemetry callback.
   final DesktopUpdaterTelemetry? telemetry;
@@ -151,7 +157,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       return;
     }
 
-    unawaited(_checkVersionQuietly());
+    unawaited(_recoverThenCheckVersionQuietly());
     notifyListeners();
   }
 
@@ -269,7 +275,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         ),
       );
       notifyListeners();
-    } catch (error) {
+    } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.check,
         level: UpdateDiagnosticLevel.error,
@@ -296,6 +302,14 @@ class DesktopUpdaterController extends ChangeNotifier {
     } on Object {
       // checkVersion already moved the controller into UpdateFailed.
     }
+  }
+
+  Future<void> _recoverThenCheckVersionQuietly() async {
+    await recoverPendingInstall();
+    if (_state is UpdateFailed) {
+      return;
+    }
+    await _checkVersionQuietly();
   }
 
   /// Checks for updates for an explicit user action and returns a typed result.
@@ -387,7 +401,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         );
       _state = UpdateReadyToInstall(stagingPath: result.stagingPath);
       notifyListeners();
-    } catch (error) {
+    } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.download,
         level: UpdateDiagnosticLevel.error,
@@ -438,6 +452,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await _writePendingRecoveryMarker(stagingPath);
       await DesktopUpdaterPlatform.instance.installUpdate(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
@@ -449,7 +464,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       _recordCleanupReport(cleanupReport);
       _state = UpdateInstalling(cleanupReport: cleanupReport);
       notifyListeners();
-    } catch (error) {
+    } on Object catch (error) {
+      await _clearPendingRecoveryMarker();
       _recordCleanupReport(
         _buildCleanupReport(
           stagingPath: stagingPath,
@@ -485,6 +501,158 @@ class DesktopUpdaterController extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Recovers a pending native install marker from the app-owned store.
+  Future<void> recoverPendingInstall() async {
+    final store = recoveryStore;
+    if (store == null) {
+      return;
+    }
+
+    final UpdateInstallRecoveryMarker? marker;
+    try {
+      marker = await store.readPendingInstall(channel: channel);
+    } on Object catch (error) {
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.warning,
+        message: "Recovery marker read failed.",
+        error: error,
+      );
+      notifyListeners();
+      return;
+    }
+
+    if (marker == null) {
+      return;
+    }
+
+    _diagnosticsRecorder
+      ..clear()
+      ..record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.warning,
+        message: "Pending install marker found for "
+            "${marker.updateVersion ?? "unknown update"}.",
+      );
+
+    final DesktopVersionInfo? currentVersion;
+    try {
+      currentVersion = await currentVersionInfo();
+    } on Object catch (error) {
+      _failRecoveredInstall(
+        marker,
+        StateError("Could not verify completed install after relaunch."),
+        message: "Could not verify completed install after relaunch.",
+        appVersion: marker.appVersion,
+        error: error,
+      );
+      return;
+    }
+
+    if (currentVersion == null) {
+      _failRecoveredInstall(
+        marker,
+        StateError("Could not verify completed install after relaunch."),
+        message: "Could not verify completed install after relaunch.",
+        appVersion: marker.appVersion,
+      );
+      return;
+    }
+
+    final currentAppVersion = _formatVersionInfo(currentVersion);
+    _currentAppVersion = currentAppVersion ?? marker.appVersion;
+    if (_matchesRecoveredTarget(currentVersion, marker)) {
+      await _clearPendingRecoveryMarker();
+      _state = const UpdateIdle();
+      notifyListeners();
+      return;
+    }
+
+    _failRecoveredInstall(
+      marker,
+      StateError("Pending install did not complete after relaunch."),
+      message: "Pending install did not complete after relaunch.",
+      appVersion: _currentAppVersion,
+    );
+  }
+
+  Future<void> _writePendingRecoveryMarker(String stagingPath) async {
+    final store = recoveryStore;
+    if (store == null) {
+      return;
+    }
+
+    final marker = UpdateInstallRecoveryMarker(
+      createdAt: DateTime.now(),
+      packageVersion: _diagnosticsRecorder.packageVersion,
+      platform: _diagnosticsRecorder.platform,
+      channel: channel,
+      appVersion: _currentAppVersion,
+      updateVersion: _activeDescriptor?.version,
+      updateBuildNumber: _activeDescriptor?.buildNumber,
+      stagingPath: stagingPath,
+      diagnosticsText: _buildProblemReport(
+        StateError("Install handoff pending."),
+        updateVersion: _activeDescriptor?.version,
+        stagingPath: stagingPath,
+      ).toPlainText(),
+    );
+
+    try {
+      await store.writePendingInstall(marker);
+    } on Object catch (error) {
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.warning,
+        message: "Recovery marker write failed.",
+        error: error,
+      );
+    }
+  }
+
+  Future<void> _clearPendingRecoveryMarker() async {
+    final store = recoveryStore;
+    if (store == null) {
+      return;
+    }
+
+    try {
+      await store.clearPendingInstall(channel: channel);
+    } on Object catch (error) {
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.warning,
+        message: "Recovery marker clear failed.",
+        error: error,
+      );
+    }
+  }
+
+  void _failRecoveredInstall(
+    UpdateInstallRecoveryMarker marker,
+    Object failure, {
+    required String message,
+    String? appVersion,
+    Object? error,
+  }) {
+    _diagnosticsRecorder.record(
+      stage: UpdateDiagnosticStage.install,
+      level: UpdateDiagnosticLevel.error,
+      message: message,
+      error: error ?? failure,
+    );
+    _state = UpdateFailed(
+      failure,
+      report: _diagnosticsRecorder.buildReport(
+        appVersion: appVersion ?? marker.appVersion,
+        updateVersion: marker.updateVersion,
+        stagingPath: marker.stagingPath,
+        failure: failure,
+      ),
+    );
+    notifyListeners();
   }
 
   UpdateCleanupReport _buildCleanupReport({
@@ -558,6 +726,27 @@ class DesktopUpdaterController extends ChangeNotifier {
       failure: error,
     );
   }
+}
+
+bool _matchesRecoveredTarget(
+  DesktopVersionInfo currentVersion,
+  UpdateInstallRecoveryMarker marker,
+) {
+  final targetVersion = marker.updateVersion;
+  final targetBuildNumber = marker.updateBuildNumber;
+  final hasTargetVersion = targetVersion != null && targetVersion.isNotEmpty;
+  final versionMatches = hasTargetVersion
+      ? currentVersion.versionName == targetVersion ||
+          currentVersion.rawVersion == targetVersion
+      : null;
+  final buildMatches = targetBuildNumber == null
+      ? null
+      : currentVersion.buildNumber == targetBuildNumber;
+
+  if (versionMatches != null && buildMatches != null) {
+    return versionMatches && buildMatches;
+  }
+  return versionMatches ?? buildMatches ?? false;
 }
 
 String? _formatVersionInfo(DesktopVersionInfo version) {

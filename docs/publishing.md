@@ -167,6 +167,12 @@ app-owned:
   `UpdateDiagnosticsSink`. Sink failures are ignored, and
   `UpdateDiagnosticEntry.toRedactedLogLine()` is available so file-oriented
   sinks can reuse package redaction before writing.
+- Apps can opt into post-relaunch install recovery by supplying an app-owned
+  `UpdateRecoveryStore`. The package writes no marker by default. When supplied,
+  `restartApp()` writes a pending marker before native handoff, clears it if
+  pre-exit native scheduling fails, and `recoverPendingInstall()` converts an
+  old-version relaunch or unverifiable current version into `UpdateFailed` with
+  a redacted report. Store read, write, and clear failures are diagnostics-only.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor

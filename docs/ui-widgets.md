@@ -315,6 +315,47 @@ final controller = DesktopUpdaterController(
 Sink failures are ignored by the updater. In-memory problem reports remain
 available even when the app-owned log destination cannot be written.
 
+Apps can also opt into a pending install recovery marker. The package never
+chooses a marker file, database, or retention policy; provide an app-owned
+`UpdateRecoveryStore` when you want post-relaunch install failure reports:
+
+```dart
+class AppUpdateRecoveryStore implements UpdateRecoveryStore {
+  @override
+  Future<UpdateInstallRecoveryMarker?> readPendingInstall({
+    required String channel,
+  }) async {
+    return myStore.readMarker(channel);
+  }
+
+  @override
+  Future<void> writePendingInstall(
+    UpdateInstallRecoveryMarker marker,
+  ) async {
+    await myStore.writeMarker(marker.channel, marker);
+  }
+
+  @override
+  Future<void> clearPendingInstall({required String channel}) async {
+    await myStore.deleteMarker(channel);
+  }
+}
+
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  recoveryStore: AppUpdateRecoveryStore(),
+);
+```
+
+Before native install handoff, `restartApp()` writes a marker with the current
+app version, target update version/build, staging path, and redacted diagnostics
+text. If the native method throws before the app exits, the marker is cleared
+and the current-session `UpdateFailed(report)` is preserved. On relaunch,
+`recoverPendingInstall()` reads the marker: a target version match clears it,
+while the old version or an unverifiable version becomes `UpdateFailed(report)`.
+Store failures are captured as diagnostics warnings and do not crash startup or
+block install handoff.
+
 If your app wants to enforce descriptor `minimumOS` metadata, provide a
 deterministic policy callback:
 

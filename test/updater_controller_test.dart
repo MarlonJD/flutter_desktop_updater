@@ -185,6 +185,183 @@ void main() {
     }
   });
 
+  test("restartApp writes a recovery marker before native handoff", () async {
+    final recoveryStore = _MemoryRecoveryStore();
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (_) async {
+          expect(
+            await recoveryStore.readPendingInstall(channel: "stable"),
+            isNotNull,
+          );
+        },
+      );
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      final marker = await recoveryStore.readPendingInstall(channel: "stable");
+      expect(marker, isNotNull);
+      expect(marker!.channel, "stable");
+      expect(marker.appVersion, "1.0.0+100");
+      expect(marker.updateVersion, "2.0.1");
+      expect(marker.updateBuildNumber, 201);
+      expect(marker.stagingPath, isNotEmpty);
+      expect(marker.diagnosticsText, contains("Install handoff started"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("pre-handoff native failure clears marker and exposes report", () async {
+    _setMockPlatformHandler(failInstall: true);
+    final recoveryStore = _MemoryRecoveryStore();
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(isA<PlatformException>()),
+      );
+
+      expect(
+        await recoveryStore.readPendingInstall(channel: "stable"),
+        isNull,
+      );
+      final failed = controller.state as UpdateFailed;
+      expect(failed.report, isNotNull);
+      expect(failed.report!.entries.last.stage, UpdateDiagnosticStage.install);
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("relaunch on old version creates recovered failed report", () async {
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: Platform.operatingSystem,
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: "/tmp/staged-app",
+        diagnosticsText: "previous redacted diagnostics",
+      );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+    );
+
+    await controller.recoverPendingInstall();
+
+    final failed = controller.state as UpdateFailed;
+    final report = failed.report;
+    expect(report, isNotNull);
+    expect(report!.appVersion, "1.0.0+100");
+    expect(report.updateVersion, "2.0.1");
+    expect(report.stagingPath, "/tmp/staged-app");
+    expect(
+      report.toPlainText(),
+      contains("Pending install did not complete"),
+    );
+    expect(
+      await recoveryStore.readPendingInstall(channel: "stable"),
+      isNotNull,
+    );
+  });
+
+  test("relaunch on target version clears marker without failure", () async {
+    _setMockPlatformHandler(versionName: "2.0.1", buildNumber: "201");
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: Platform.operatingSystem,
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: "/tmp/staged-app",
+      );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(controller.state, isA<UpdateIdle>());
+    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+    expect(recoveryStore.clearedChannels, ["stable"]);
+  });
+
+  test("recovery store failures do not crash startup or install handoff",
+      () async {
+    final readFailureStore = _ThrowingRecoveryStore(readFailure: true);
+    final readController = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: readFailureStore,
+    );
+
+    await readController.recoverPendingInstall();
+
+    expect(readController.state, isA<UpdateIdle>());
+    expect(
+      readController.diagnosticsRecorder.entries.last.message,
+      contains("Recovery marker read failed"),
+    );
+
+    final writeFailureStore = _ThrowingRecoveryStore(writeFailure: true);
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: writeFailureStore,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      expect(controller.state, isA<UpdateInstalling>());
+      expect(
+        controller.diagnosticsRecorder.entries.map((entry) => entry.message),
+        contains("Recovery marker write failed."),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test(
     "successful install scheduling emits cleanup report without blocking",
     () async {
@@ -416,19 +593,27 @@ void main() {
   });
 }
 
-void _setMockPlatformHandler({bool failInstall = false}) {
+void _setMockPlatformHandler({
+  bool failInstall = false,
+  String versionName = "1.0.0",
+  String buildNumber = "100",
+  FutureOr<void> Function(MethodCall methodCall)? onInstallUpdate,
+}) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_desktopUpdaterChannel, (
     MethodCall methodCall,
   ) async {
     if (methodCall.method == "getCurrentVersionInfo") {
       return <String, String?>{
-        "version": "1.0.0",
-        "buildNumber": "100",
+        "version": versionName,
+        "buildNumber": buildNumber,
       };
     }
     if (methodCall.method == "getCurrentVersion") {
-      return "100";
+      return buildNumber;
+    }
+    if (methodCall.method == "installUpdate") {
+      await onInstallUpdate?.call(methodCall);
     }
     if (methodCall.method == "installUpdate" && failInstall) {
       throw PlatformException(
@@ -507,6 +692,64 @@ class _MemoryUpdatePreferences implements UpdatePreferences {
   Future<void> clearSkippedVersion({required String channel}) async {
     _skippedVersions.remove(channel);
   }
+}
+
+class _MemoryRecoveryStore implements UpdateRecoveryStore {
+  UpdateInstallRecoveryMarker? marker;
+  final clearedChannels = <String>[];
+
+  @override
+  Future<UpdateInstallRecoveryMarker?> readPendingInstall({
+    required String channel,
+  }) async {
+    if (marker?.channel != channel) {
+      return null;
+    }
+    return marker;
+  }
+
+  @override
+  Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
+    this.marker = marker;
+  }
+
+  @override
+  Future<void> clearPendingInstall({required String channel}) async {
+    if (marker?.channel == channel) {
+      marker = null;
+    }
+    clearedChannels.add(channel);
+  }
+}
+
+class _ThrowingRecoveryStore implements UpdateRecoveryStore {
+  _ThrowingRecoveryStore({
+    this.readFailure = false,
+    this.writeFailure = false,
+  });
+
+  final bool readFailure;
+  final bool writeFailure;
+
+  @override
+  Future<UpdateInstallRecoveryMarker?> readPendingInstall({
+    required String channel,
+  }) async {
+    if (readFailure) {
+      throw StateError("read unavailable");
+    }
+    return null;
+  }
+
+  @override
+  Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
+    if (writeFailure) {
+      throw StateError("write unavailable");
+    }
+  }
+
+  @override
+  Future<void> clearPendingInstall({required String channel}) async {}
 }
 
 class _ControllerUpdateFixture {

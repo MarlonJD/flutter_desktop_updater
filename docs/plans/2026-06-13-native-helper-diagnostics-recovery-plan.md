@@ -174,6 +174,16 @@ recovery markers unless the app supplies a store.
 - Recovery store read/write failures do not crash app startup; they create
   diagnostic warnings when possible.
 
+Status on 2026-06-16: complete. `UpdateInstallRecoveryMarker`,
+`UpdateRecoveryStore`, `DesktopUpdaterController(recoveryStore: ...)`, and
+`recoverPendingInstall()` are implemented. Verification:
+`flutter test --no-pub test/update_recovery_test.dart
+test/updater_controller_test.dart` passed with 22 tests, including pre-handoff
+marker write, native failure clear, old-version relaunch reports, target-version
+clear, and recovery store warning behavior. Ready-made widgets already surface
+recovered failures through the existing `UpdateFailed(report)` UI path, so no
+widget code change was required for this Dart recovery slice.
+
 ## Task 8C: Native Helper Diagnostics Log Path
 
 **Files:**

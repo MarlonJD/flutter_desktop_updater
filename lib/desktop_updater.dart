@@ -8,6 +8,7 @@ export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
 export "package:desktop_updater/src/core/update_diagnostics.dart";
 export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
+export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/localization.dart";
 export "package:desktop_updater/src/manual_update_check_result.dart";
