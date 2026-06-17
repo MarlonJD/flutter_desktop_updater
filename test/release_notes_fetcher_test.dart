@@ -80,4 +80,15 @@ void main() {
 
     expect(notes.entries, isEmpty);
   });
+
+  test("fetch throws FormatException for non-object JSON", () {
+    final fetcher = ReleaseNotesFetcher(
+      client: MockClient((_) async => http.Response("[]", 200)),
+    );
+
+    expect(
+      () => fetcher.fetch(Uri.parse(_url)),
+      throwsFormatException,
+    );
+  });
 }

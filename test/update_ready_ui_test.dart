@@ -104,8 +104,8 @@ void main() {
     expect(tooltip.message, isNotEmpty);
   });
 
-  testWidgets(
-    "error tooltip uses onUpdateFailedTooltip callback when provided", (
+  testWidgets("error tooltip uses onUpdateFailedTooltip callback when provided",
+      (
     tester,
   ) async {
     final controller = _ReadyUiTestController(
@@ -127,6 +127,30 @@ void main() {
 
     final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
     expect(tooltip.message, "Custom error message");
+  });
+
+  testWidgets("error tooltip does not reuse release notes error text", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      localization: const DesktopUpdateLocalization(
+        releaseNotesErrorText: "Could not load release notes.",
+      ),
+    )..showFailedUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, "Update failed. Please try again.");
   });
 
   testWidgets("description icon is hidden when releaseNotesUrl is null", (
@@ -153,6 +177,27 @@ void main() {
   ) async {
     final controller = _ReadyUiTestController(
       releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
+    )..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+  });
+
+  testWidgets("description icon is shown when releaseNotesLoader is set", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      releaseNotesLoader: (_) async => const ReleaseNotes(sections: []),
     )..showAvailableUpdate();
 
     await tester.pumpWidget(
@@ -226,13 +271,12 @@ void main() {
 
 class _ReadyUiTestController extends DesktopUpdaterController {
   _ReadyUiTestController({
-    Uri? releaseNotesUrl,
-    DesktopUpdateLocalization? localization,
+    super.releaseNotesUrl,
+    super.releaseNotesLoader,
+    super.localization,
   }) : super(
           appArchiveUrl: null,
           skipInitialVersionCheck: true,
-          releaseNotesUrl: releaseNotesUrl,
-          localization: localization,
         );
 
   bool _skipUpdate = false;

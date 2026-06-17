@@ -34,6 +34,13 @@ Recommended order:
 6. Update diagnostics and problem report UI.
 7. Resumable download, rollout percentages, rollback reports, and delta updates.
 
+Follow-up product slices:
+
+- Release notes capability and custom UI examples are tracked separately in
+  `docs/plans/2026-06-17-release-notes-capability-plan.md`. That plan preserves
+  the contributor-friendly PR #52 JSON shape while widening the feature into a
+  public controller API, ready-made UI, and later CLI-published metadata path.
+
 ## Documentation Closure Audit
 
 Last reviewed: 2026-06-16.
@@ -50,6 +57,7 @@ Last reviewed: 2026-06-16.
 | Rollback and cleanup report | Implemented as `UpdateCleanupReport`, `DesktopUpdaterController.lastCleanupReport`, and optional `onCleanupReport`. | Covered in `docs/publishing.md` and `docs/ui-widgets.md`. | Complete. |
 | Delta updates | Implemented as descriptor-only `deltaArtifacts` metadata with an explicit unsupported runtime gate. | Covered in `docs/publishing.md`; runtime continues to use full zip artifacts. | Complete. |
 | Native helper diagnostics and recovery | Split into `docs/plans/2026-06-13-native-helper-diagnostics-recovery-plan.md`. | Not a default runtime feature. | Track separately. |
+| Release notes capability and custom UI examples | Planned in `docs/plans/2026-06-17-release-notes-capability-plan.md`. | Not documented as shipped until that plan lands. | Track separately. |
 
 ## File Structure
 

@@ -6,7 +6,7 @@ void main() {
   test("README surfaces native helper diagnostics and 2.2.0 setup", () {
     final source = File("README.md").readAsStringSync();
 
-    expect(source, contains("desktop_updater: ^2.3.0"));
+    expect(source, contains("desktop_updater: ^2.2.0"));
     expect(source, contains("## Diagnostics And Recovery"));
     expect(source, contains("diagnosticsLogPath"));
     expect(source, contains("UpdateRecoveryStore"));
@@ -75,9 +75,22 @@ void main() {
     final pubspec = File("pubspec.yaml").readAsStringSync();
     final changelog = File("CHANGELOG.md").readAsStringSync();
 
-    expect(pubspec, contains("version: 2.3.0"));
-    expect(changelog, contains("## 2.2.0"));
+    expect(pubspec, contains("version: 2.2.0"));
+    expect(changelog, startsWith("## 2.2.0"));
     expect(changelog, contains("native helper diagnostics"));
     expect(changelog, contains("install recovery markers"));
+  });
+
+  test("release notes docs show built-in and custom UI patterns", () {
+    final readme = File("README.md").readAsStringSync();
+    final uiDocs = File("docs/ui-widgets.md").readAsStringSync();
+
+    expect(readme, contains("releaseNotesLoader"));
+    expect(readme, contains("releaseNotesUrl"));
+    expect(uiDocs, contains("Release Notes Patterns"));
+    expect(uiDocs, contains("Built-in card and bottom sheet"));
+    expect(uiDocs, contains("Inline panel"));
+    expect(uiDocs, contains("Side sheet"));
+    expect(uiDocs, contains("Changelog page"));
   });
 }

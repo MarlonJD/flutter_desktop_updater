@@ -66,28 +66,9 @@ class UpdateProblemReportDialog extends StatelessWidget {
               title: const Text("Technical details"),
               childrenPadding: const EdgeInsets.only(top: 8),
               children: [
-                Container(
-                  key: const Key("desktopUpdaterProblemReportDetails"),
-                  width: double.infinity,
-                  constraints: BoxConstraints(maxHeight: detailsMaxHeight),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Scrollbar(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(12),
-                      child: SelectableText(
-                        report.toPlainText(),
-                        style: textTheme.bodySmall?.copyWith(
-                          fontFamily: "monospace",
-                        ),
-                      ),
-                    ),
-                  ),
+                _ProblemReportDetails(
+                  report: report,
+                  maxHeight: detailsMaxHeight,
                 ),
               ],
             ),
@@ -116,6 +97,66 @@ class UpdateProblemReportDialog extends StatelessWidget {
         DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
       )
       ..add(DiagnosticsProperty<UpdateProblemReport>("report", report));
+  }
+}
+
+class _ProblemReportDetails extends StatefulWidget {
+  const _ProblemReportDetails({
+    required this.report,
+    required this.maxHeight,
+  });
+
+  final UpdateProblemReport report;
+  final double maxHeight;
+
+  @override
+  State<_ProblemReportDetails> createState() => _ProblemReportDetailsState();
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties
+      ..add(DiagnosticsProperty<UpdateProblemReport>("report", report))
+      ..add(DoubleProperty("maxHeight", maxHeight));
+  }
+}
+
+class _ProblemReportDetailsState extends State<_ProblemReportDetails> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      key: const Key("desktopUpdaterProblemReportDetails"),
+      width: double.infinity,
+      constraints: BoxConstraints(maxHeight: widget.maxHeight),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Scrollbar(
+        controller: _scrollController,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          primary: false,
+          padding: const EdgeInsets.all(12),
+          child: SelectableText(
+            widget.report.toPlainText(),
+            style: textTheme.bodySmall?.copyWith(fontFamily: "monospace"),
+          ),
+        ),
+      ),
+    );
   }
 }
 

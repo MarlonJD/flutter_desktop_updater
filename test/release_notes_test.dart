@@ -1,4 +1,4 @@
-import "package:desktop_updater/src/core/release_notes.dart";
+import "package:desktop_updater/desktop_updater.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
@@ -43,6 +43,103 @@ void main() {
   });
 
   group("ReleaseNotes.fromJson", () {
+    test("keeps contributor simple data array format supported", () {
+      final notes = ReleaseNotes.fromJson({
+        "data": [
+          {"type": "feat", "message": "Added auto test feature"},
+          {"type": "fix", "message": "Fixed auto test flow"},
+          {"type": "other", "message": "Maintenance"},
+        ],
+      });
+
+      expect(notes.entries, hasLength(3));
+      expect(notes.sections.map((section) => section.type), [
+        ReleaseNotesSectionType.features,
+        ReleaseNotesSectionType.fixes,
+        ReleaseNotesSectionType.other,
+      ]);
+      expect(notes.sections.first.items.single.body, "Added auto test feature");
+    });
+
+    test("parses rich canonical sections format", () {
+      final notes = ReleaseNotes.fromJson({
+        "schemaVersion": 1,
+        "format": "desktop_updater.release_notes.v1",
+        "summary": "Quality improvements.",
+        "locale": "en-US",
+        "sections": [
+          {
+            "type": "security",
+            "title": "Security",
+            "items": [
+              {"title": "Hardening", "body": "Improved update checks."},
+            ],
+          },
+        ],
+      });
+
+      expect(notes.summary, "Quality improvements.");
+      expect(notes.locale, "en-US");
+      expect(notes.sections.single.type, ReleaseNotesSectionType.security);
+      expect(notes.sections.single.title, "Security");
+      expect(notes.sections.single.items.single.title, "Hardening");
+      expect(
+        notes.sections.single.items.single.body,
+        "Improved update checks.",
+      );
+    });
+
+    test("normalizes simple aliases to section types", () {
+      expect(
+        ReleaseNotes.normalizeType("feat"),
+        ReleaseNotesSectionType.features,
+      );
+      expect(ReleaseNotes.normalizeType("fix"), ReleaseNotesSectionType.fixes);
+      expect(
+        ReleaseNotes.normalizeType("breaking"),
+        ReleaseNotesSectionType.breaking,
+      );
+      expect(
+        ReleaseNotes.normalizeType("unknown"),
+        ReleaseNotesSectionType.other,
+      );
+    });
+
+    test("throws FormatException for malformed release notes payloads", () {
+      expect(
+        () => ReleaseNotes.fromJson({"data": "bad"}),
+        throwsFormatException,
+      );
+      expect(
+        () => ReleaseNotes.fromJson({
+          "data": [
+            {"type": "feat"},
+          ],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ReleaseNotes.fromJson({
+          "schemaVersion": 2,
+          "sections": [],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ReleaseNotes.fromJson({
+          "sections": [
+            {
+              "type": "features",
+              "items": [
+                {"body": ""},
+              ],
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+    });
+
     test("parses empty data array", () {
       final notes = ReleaseNotes.fromJson({"data": []});
       expect(notes.entries, isEmpty);
@@ -65,7 +162,8 @@ void main() {
   });
 
   group("ReleaseNotes.grouped", () {
-    test("returns feat, fix, other in fixed order regardless of source order", () {
+    test("returns feat, fix, other in fixed order regardless of source order",
+        () {
       final notes = ReleaseNotes.fromJson({
         "data": [
           {"type": "other", "message": "Other first"},
@@ -100,7 +198,7 @@ void main() {
     });
 
     test("empty entries returns empty map", () {
-      expect(const ReleaseNotes([]).grouped(), isEmpty);
+      expect(const ReleaseNotes(sections: []).grouped(), isEmpty);
     });
   });
 }

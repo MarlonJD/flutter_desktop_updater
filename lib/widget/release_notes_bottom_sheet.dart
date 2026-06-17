@@ -1,3 +1,5 @@
+import "dart:async";
+
 import "package:desktop_updater/src/core/release_notes.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/foundation.dart";
@@ -6,29 +8,38 @@ import "package:flutter/material.dart";
 const _defaultTypeLabels = {
   "feat": "New features",
   "fix": "Bug fixes",
+  "features": "New features",
+  "fixes": "Bug fixes",
+  "security": "Security",
+  "breaking": "Breaking changes",
   "other": "Other changes",
 };
 
 /// Opens a modal bottom sheet displaying the hosted release notes.
 ///
-/// Fetches notes via [DesktopUpdaterController.fetchReleaseNotes] on first
-/// open within a given update cycle. Shows a loading spinner while fetching
-/// and an error state with a retry button if the fetch fails.
+/// Loads notes via [DesktopUpdaterController.loadReleaseNotes] on first open
+/// within a given update cycle. Shows a loading spinner while fetching and an
+/// error state with a retry button if loading fails.
 Future<void> showReleaseNotesBottomSheet(
   BuildContext context, {
-  required DesktopUpdaterController notifier,
+  DesktopUpdaterController? controller,
+  DesktopUpdaterController? notifier,
 }) {
+  final resolved = controller ?? notifier;
+  if (resolved == null) {
+    throw ArgumentError.notNull("controller");
+  }
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => _ReleaseNotesSheet(notifier: notifier),
+    builder: (_) => _ReleaseNotesSheet(controller: resolved),
   );
 }
 
 class _ReleaseNotesSheet extends StatefulWidget {
-  const _ReleaseNotesSheet({required this.notifier});
+  const _ReleaseNotesSheet({required this.controller});
 
-  final DesktopUpdaterController notifier;
+  final DesktopUpdaterController controller;
 
   @override
   State<_ReleaseNotesSheet> createState() => _ReleaseNotesSheetState();
@@ -37,33 +48,34 @@ class _ReleaseNotesSheet extends StatefulWidget {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
-      DiagnosticsProperty<DesktopUpdaterController>("notifier", notifier),
+      DiagnosticsProperty<DesktopUpdaterController>("controller", controller),
     );
   }
 }
 
 class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
-  late Future<ReleaseNotes> _future;
-
   @override
   void initState() {
     super.initState();
-    _future = widget.notifier.fetchReleaseNotes();
+    _load();
   }
 
-  void _retry() {
-    setState(() {
-      _future = widget.notifier.fetchReleaseNotes();
-    });
+  void _load({bool forceRefresh = false}) {
+    unawaited(
+      widget.controller
+          .loadReleaseNotes(forceRefresh: forceRefresh)
+          .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final localization = widget.notifier.getLocalization;
+    final localization = widget.controller.getLocalization;
     final title = localization?.releaseNotesTitleText ?? "What's new";
     final typeLabels = {
       ..._defaultTypeLabels,
       ...?localization?.releaseNotesTypeLabels,
+      ...?localization?.releaseNotesSectionLabels,
     };
     final errorText =
         localization?.releaseNotesErrorText ?? "Could not load release notes.";
@@ -87,14 +99,16 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
               ),
             ),
             Expanded(
-              child: FutureBuilder<ReleaseNotes>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+              child: ListenableBuilder(
+                listenable: widget.controller,
+                builder: (context, child) {
+                  final state = widget.controller.releaseNotesState;
+                  if (state is ReleaseNotesIdle ||
+                      state is ReleaseNotesLoading) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  if (snapshot.hasError) {
+                  if (state is ReleaseNotesFailed) {
                     return Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -104,7 +118,7 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           TextButton(
-                            onPressed: _retry,
+                            onPressed: () => _load(forceRefresh: true),
                             child: Text(retryText),
                           ),
                         ],
@@ -112,9 +126,12 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
                     );
                   }
 
-                  final grouped = snapshot.data!.grouped();
+                  final notes = (state as ReleaseNotesLoaded).notes;
+                  final sections = notes.sections
+                      .where((section) => section.items.isNotEmpty)
+                      .toList(growable: false);
 
-                  if (grouped.isEmpty) {
+                  if (sections.isEmpty) {
                     return Center(child: Text(emptyText));
                   }
 
@@ -125,20 +142,34 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
                       vertical: 8,
                     ),
                     children: [
-                      for (final entry in grouped.entries) ...[
+                      if (notes.summary != null) ...[
                         Text(
-                          typeLabels[entry.key] ?? entry.key,
+                          notes.summary!,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      for (final section in sections) ...[
+                        Text(
+                          section.title ??
+                              _sectionLabel(section.type, typeLabels),
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         const SizedBox(height: 4),
-                        for (final note in entry.value)
+                        for (final note in section.items)
                           Padding(
                             padding: const EdgeInsets.only(left: 8, bottom: 4),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text("• "),
-                                Expanded(child: Text(note.message)),
+                                Expanded(
+                                  child: Text(
+                                    note.title == null
+                                        ? note.body
+                                        : "${note.title}: ${note.body}",
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -154,4 +185,36 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
       },
     );
   }
+}
+
+String _sectionLabel(
+  ReleaseNotesSectionType type,
+  Map<String, String> labels,
+) {
+  final legacyKey = _legacySectionKey(type);
+  if (legacyKey != null && labels.containsKey(legacyKey)) {
+    return labels[legacyKey]!;
+  }
+  return labels[_sectionKey(type)] ?? _sectionKey(type);
+}
+
+String _sectionKey(ReleaseNotesSectionType type) {
+  return switch (type) {
+    ReleaseNotesSectionType.features => "features",
+    ReleaseNotesSectionType.fixes => "fixes",
+    ReleaseNotesSectionType.security => "security",
+    ReleaseNotesSectionType.breaking => "breaking",
+    ReleaseNotesSectionType.other => "other",
+  };
+}
+
+String? _legacySectionKey(ReleaseNotesSectionType type) {
+  return switch (type) {
+    ReleaseNotesSectionType.features => "feat",
+    ReleaseNotesSectionType.fixes => "fix",
+    ReleaseNotesSectionType.other => "other",
+    ReleaseNotesSectionType.security ||
+    ReleaseNotesSectionType.breaking =>
+      null,
+  };
 }

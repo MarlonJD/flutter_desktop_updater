@@ -59,6 +59,12 @@ void main() {
       "FileHashModel",
       "AppArchiveModel",
       "ItemModel",
+      // Keep legacy folder-update API out of the 2.x runtime. The new release
+      // notes capability is allowed through ReleaseNotes models and
+      // releaseNotesLoader.
+      "getReleaseNotes",
+      "setReleaseNotes",
+      "ReleaseNotesModel",
     ];
 
     for (final file in checkedFiles) {

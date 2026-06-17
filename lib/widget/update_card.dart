@@ -203,13 +203,18 @@ class _ExpandedUpdateCard extends StatelessWidget {
                       color: colorScheme.error,
                     ),
                   )
-                else if (notifier.releaseNotesUrl != null)
+                else if (notifier.canLoadReleaseNotes)
                   IconButton(
+                    tooltip: notifier
+                            .getLocalization?.releaseNotesButtonTooltipText ??
+                        "Release notes",
                     icon: const Icon(Icons.description_outlined),
-                    onPressed: () async {
-                      await showReleaseNotesBottomSheet(
-                        context,
-                        notifier: notifier,
+                    onPressed: () {
+                      unawaited(
+                        showReleaseNotesBottomSheet(
+                          context,
+                          controller: notifier,
+                        ),
                       );
                     },
                   ),
@@ -439,5 +444,5 @@ String _updateFailedTooltip(
 ) {
   final custom = loc?.onUpdateFailedTooltip?.call(error);
   if (custom != null) return custom;
-  return loc?.releaseNotesErrorText ?? "Update failed. Please try again.";
+  return loc?.updateFailedTooltipText ?? "Update failed. Please try again.";
 }

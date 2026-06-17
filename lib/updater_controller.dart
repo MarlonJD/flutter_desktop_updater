@@ -26,6 +26,11 @@ export "package:desktop_updater/src/core/update_preferences.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_telemetry.dart";
 
+/// Loads release notes for the selected update descriptor.
+typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
+  ReleaseDescriptor descriptor,
+);
+
 /// Coordinates update checks, downloads, and install handoff for UI code.
 ///
 /// The controller owns the high-level [UpdateState] used by the ready-made
@@ -52,14 +57,17 @@ class DesktopUpdaterController extends ChangeNotifier {
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
     bool skipInitialVersionCheck = false,
+    ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
   })  : _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
         _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
         _releaseNotesUrl = releaseNotesUrl,
-        _releaseNotesFetcher = ReleaseNotesFetcher() {
+        _releaseNotesFetcher =
+            releaseNotesUrl == null ? null : ReleaseNotesFetcher() {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -86,6 +94,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
     bool skipInitialVersionCheck = false,
+    ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
   })  : _skipInitialVersionCheck = skipInitialVersionCheck,
@@ -93,8 +102,10 @@ class DesktopUpdaterController extends ChangeNotifier {
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
         _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
         _releaseNotesUrl = releaseNotesUrl,
-        _releaseNotesFetcher = releaseNotesFetcher ?? ReleaseNotesFetcher() {
+        _releaseNotesFetcher = releaseNotesFetcher ??
+            (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -145,10 +156,19 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional URL for hosted release notes JSON.
   ///
-  /// When non-null, the update card shows a description icon that opens the
-  /// release notes bottom sheet. Set a locale-aware URL and rebuild the
-  /// controller when the app locale changes.
+  /// This is a convenience path for simple apps. Prefer the descriptor-aware
+  /// release notes loader when notes should depend on the active descriptor,
+  /// locale, account, or app environment.
   Uri? get releaseNotesUrl => _releaseNotesUrl;
+
+  /// Whether release notes can be loaded for the selected update descriptor.
+  bool get canLoadReleaseNotes {
+    return activeDescriptor != null &&
+        (_releaseNotesLoader != null || _releaseNotesUrl != null);
+  }
+
+  /// Current release notes loading state.
+  ReleaseNotesState get releaseNotesState => _releaseNotesState;
 
   /// Optional app-owned minimum OS support policy.
   final MinimumOSSupportChecker? isMinimumOSSupported;
@@ -192,31 +212,56 @@ class DesktopUpdaterController extends ChangeNotifier {
   String? _currentAppVersion;
   UpdateCleanupReport? _lastCleanupReport;
 
+  final ReleaseNotesLoader? _releaseNotesLoader;
   final Uri? _releaseNotesUrl;
-  final ReleaseNotesFetcher _releaseNotesFetcher;
+  final ReleaseNotesFetcher? _releaseNotesFetcher;
+  ReleaseNotesState _releaseNotesState = const ReleaseNotesIdle();
   ReleaseNotes? _cachedReleaseNotes;
+  String? _cachedReleaseNotesKey;
+
+  /// Loads release notes for the active update descriptor.
+  ///
+  /// Returns a cached result for the same descriptor unless [forceRefresh] is
+  /// true. Loading errors are stored in [releaseNotesState] and rethrown.
+  Future<ReleaseNotes> loadReleaseNotes({bool forceRefresh = false}) async {
+    final descriptor = activeDescriptor;
+    if (descriptor == null) {
+      throw StateError("No active update descriptor is available.");
+    }
+    if (_releaseNotesLoader == null && _releaseNotesUrl == null) {
+      throw StateError("No release notes loader is configured.");
+    }
+
+    final cacheKey = _releaseNotesCacheKey(descriptor);
+    final cached = _cachedReleaseNotes;
+    if (!forceRefresh && cached != null && _cachedReleaseNotesKey == cacheKey) {
+      return cached;
+    }
+
+    _releaseNotesState = const ReleaseNotesLoading();
+    notifyListeners();
+
+    try {
+      final loader = _releaseNotesLoader;
+      final notes = loader == null
+          ? await _releaseNotesFetcher!.fetch(_releaseNotesUrl!)
+          : await loader(descriptor);
+      _cachedReleaseNotes = notes;
+      _cachedReleaseNotesKey = cacheKey;
+      _releaseNotesState = ReleaseNotesLoaded(notes);
+      notifyListeners();
+      return notes;
+    } on Object catch (error) {
+      _releaseNotesState = ReleaseNotesFailed(error);
+      notifyListeners();
+      rethrow;
+    }
+  }
 
   /// Fetches and returns the hosted release notes.
   ///
-  /// Returns the cached result on subsequent calls within the same update
-  /// cycle. The cache is cleared when [checkVersion] starts so that a new
-  /// update cycle always fetches fresh notes.
-  ///
-  /// Throws [StateError] if [releaseNotesUrl] is null.
-  /// Throws an `HttpException` if the server returns a non-2xx status.
-  Future<ReleaseNotes> fetchReleaseNotes() async {
-    final cached = _cachedReleaseNotes;
-    if (cached != null) return cached;
-
-    final url = _releaseNotesUrl;
-    if (url == null) {
-      throw StateError("releaseNotesUrl is not set on this controller.");
-    }
-
-    final notes = await _releaseNotesFetcher.fetch(url);
-    _cachedReleaseNotes = notes;
-    return notes;
-  }
+  /// Compatibility wrapper around [loadReleaseNotes].
+  Future<ReleaseNotes> fetchReleaseNotes() => loadReleaseNotes();
 
   /// Invokes the app-owned problem-report callback when one was supplied.
   Future<void> reportProblem(UpdateProblemReport report) async {
@@ -273,7 +318,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Checking for updates from $archiveUrl",
       );
     _lastCleanupReport = null;
-    _cachedReleaseNotes = null;
+    _clearReleaseNotesCache();
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
@@ -305,6 +350,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = false;
+        _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
           stage: UpdateDiagnosticStage.check,
           level: UpdateDiagnosticLevel.info,
@@ -320,6 +366,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = true;
+        _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
           stage: UpdateDiagnosticStage.policy,
           level: UpdateDiagnosticLevel.info,
@@ -658,6 +705,12 @@ class DesktopUpdaterController extends ChangeNotifier {
     );
   }
 
+  @override
+  void dispose() {
+    _releaseNotesFetcher?.close();
+    super.dispose();
+  }
+
   Future<void> _writePendingRecoveryMarker(String stagingPath) async {
     final store = recoveryStore;
     if (store == null) {
@@ -806,6 +859,23 @@ class DesktopUpdaterController extends ChangeNotifier {
       failure: error,
     );
   }
+
+  void _clearReleaseNotesCache() {
+    _cachedReleaseNotes = null;
+    _cachedReleaseNotesKey = null;
+    _releaseNotesState = const ReleaseNotesIdle();
+  }
+}
+
+String _releaseNotesCacheKey(ReleaseDescriptor descriptor) {
+  return [
+    descriptor.packageId,
+    descriptor.version,
+    descriptor.buildNumber?.toString() ?? "",
+    descriptor.platform,
+    descriptor.channel,
+    descriptor.artifact.url.toString(),
+  ].join("|");
 }
 
 bool _matchesRecoveredTarget(

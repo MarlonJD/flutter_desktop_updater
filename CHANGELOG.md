@@ -1,8 +1,3 @@
-## 2.3.0
-
-* Added optional `releaseNotesUrl` to `DesktopUpdaterController` for hosted release notes fetched on demand showing a bottom sheet with release content in `UpdateCard` build-in widget.
-* Added a `Tooltip` on error icon in `UpdateCard` build-in widget for better state understanding.
-
 ## 2.2.0
 
 * Added opt-in update diagnostics sinks with redacted log formatting for app-owned lifecycle logs.

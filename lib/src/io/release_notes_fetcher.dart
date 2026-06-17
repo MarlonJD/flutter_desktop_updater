@@ -13,9 +13,11 @@ import "package:http/http.dart" as http;
 class ReleaseNotesFetcher {
   /// Fetches a release notes JSON array from a hosted REST endpoint.
   ReleaseNotesFetcher({http.Client? client})
-      : _client = client ?? http.Client();
+      : _client = client ?? http.Client(),
+        _ownsClient = client == null;
 
   final http.Client _client;
+  final bool _ownsClient;
 
   /// GETs [url] and returns the parsed [ReleaseNotes].
   ///
@@ -28,8 +30,17 @@ class ReleaseNotesFetcher {
         uri: url,
       );
     }
-    return ReleaseNotes.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
-    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) {
+      throw const FormatException("release-notes.json must be a JSON object.");
+    }
+    return ReleaseNotes.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  /// Closes the owned HTTP client.
+  void close() {
+    if (_ownsClient) {
+      _client.close();
+    }
   }
 }

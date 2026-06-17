@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.3.0
+  desktop_updater: ^2.2.0
 ```
 
 Point your app at the hosted archive:
@@ -93,8 +93,23 @@ For custom UI, switch on `controller.state`.
 
 ## Release Notes
 
-Pass a `releaseNotesUrl` to the controller and the update card shows a
-description icon that opens a bottom sheet with the hosted release notes:
+Use `releaseNotesLoader` when notes should depend on the selected descriptor,
+platform, channel, locale, account, or environment:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  releaseNotesLoader: (descriptor) {
+    return myNotesApi.fetch(
+      version: descriptor.version,
+      platform: descriptor.platform,
+      channel: descriptor.channel,
+    );
+  },
+);
+```
+
+For a simple hosted file, pass `releaseNotesUrl` instead:
 
 ```dart
 final controller = DesktopUpdaterController(
@@ -103,7 +118,7 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-The endpoint must return a JSON object with a `data` array:
+The simple contributor-friendly JSON shape uses a `data` array:
 
 ```json
 {
@@ -115,19 +130,37 @@ The endpoint must return a JSON object with a `data` array:
 }
 ```
 
-`type` controls the section the entry appears under. Recognised values are
-`"feat"`, `"fix"`, and `"other"`. Any missing or unrecognised value is treated
-as `"other"`. The bottom sheet always renders sections in `feat → fix → other`
-order and omits empty sections.
+The richer package-owned shape supports sections, summaries, and item titles:
 
-The icon is hidden when `releaseNotesUrl` is `null`. Notes are fetched once per
-update cycle — the cache is cleared when `checkVersion()` starts.
+```json
+{
+  "schemaVersion": 1,
+  "format": "desktop_updater.release_notes.v1",
+  "summary": "Quality improvements.",
+  "sections": [
+    {
+      "type": "features",
+      "title": "New features",
+      "items": [
+        { "body": "Add dark mode support" }
+      ]
+    }
+  ]
+}
+```
 
-Localise the bottom sheet and override section labels via `DesktopUpdateLocalization`:
+The ready-made card shows a release notes icon when the active update can load
+notes. Custom UI can call `controller.loadReleaseNotes()` and render
+`controller.releaseNotesState`; the controller keeps caching, retry state, and
+descriptor context aligned.
+
+Localise the bottom sheet and override section labels via
+`DesktopUpdateLocalization`:
 
 ```dart
 localization: const DesktopUpdateLocalization(
   releaseNotesTitleText: "What's new",
+  releaseNotesButtonTooltipText: "Release notes",
   releaseNotesTypeLabels: {
     "feat": "New features",
     "fix":  "Bug fixes",
@@ -142,16 +175,16 @@ localization: const DesktopUpdateLocalization(
 ## Error Tooltip
 
 When an update fails the error icon shows a tooltip. Supply an
-`onUpdateFailedTooltip` callback to return a custom string, or fall back to
-`releaseNotesErrorText`:
+`onUpdateFailedTooltip` callback to return a custom string, or set
+`updateFailedTooltipText` for one static fallback:
 
 ```dart
 localization: DesktopUpdateLocalization(
-  releaseNotesErrorText: "Update failed. Please try again.",
+  updateFailedTooltipText: "Update failed. Please try again.",
   onUpdateFailedTooltip: (error) {
     if (error is SocketException) return "No internet connection.";
     if (error is TimeoutException) return "Connection timed out.";
-    return null; // falls back to releaseNotesErrorText
+    return null; // falls back to updateFailedTooltipText
   },
 ),
 ```

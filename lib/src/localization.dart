@@ -14,8 +14,11 @@
 /// - updateCheckFailedText
 /// - okText
 /// - onUpdateFailedTooltip
+/// - updateFailedTooltipText
+/// - releaseNotesButtonTooltipText
 /// - releaseNotesTitleText
 /// - releaseNotesTypeLabels
+/// - releaseNotesSectionLabels
 /// - releaseNotesErrorText
 /// - releaseNotesRetryText
 /// - releaseNotesEmptyText
@@ -38,8 +41,11 @@ class DesktopUpdateLocalization {
     this.updateCheckFailedText,
     this.okText,
     this.onUpdateFailedTooltip,
+    this.updateFailedTooltipText,
+    this.releaseNotesButtonTooltipText,
     this.releaseNotesTitleText,
     this.releaseNotesTypeLabels,
+    this.releaseNotesSectionLabels,
     this.releaseNotesErrorText,
     this.releaseNotesRetryText,
     this.releaseNotesEmptyText,
@@ -95,7 +101,7 @@ class DesktopUpdateLocalization {
   final String? okText;
 
   /// Called with the raw update error to produce a tooltip string for the
-  /// error icon. Return `null` to fall through to [releaseNotesErrorText].
+  /// error icon. Return `null` to fall through to [updateFailedTooltipText].
   ///
   /// To return a single static string for all error cases:
   /// ```dart
@@ -107,10 +113,20 @@ class DesktopUpdateLocalization {
   /// onUpdateFailedTooltip: (error) {
   ///   if (error is SocketException) return "No internet connection.";
   ///   if (error is TimeoutException) return "Connection timed out.";
-  ///   return null; // fall through to releaseNotesErrorText
+  ///   return null; // fall through to updateFailedTooltipText
   /// },
   /// ```
   final String? Function(Object error)? onUpdateFailedTooltip;
+
+  /// Fallback tooltip shown for the update error icon.
+  ///
+  /// Default: "Update failed. Please try again."
+  final String? updateFailedTooltipText;
+
+  /// Tooltip for the ready-made release notes icon.
+  ///
+  /// Default: "Release notes"
+  final String? releaseNotesButtonTooltipText;
 
   /// Title of the release notes bottom sheet.
   ///
@@ -129,6 +145,13 @@ class DesktopUpdateLocalization {
   /// - "other" → "Other changes"
   final Map<String, String>? releaseNotesTypeLabels;
 
+  /// Section header labels for rich release note sections.
+  ///
+  /// Keys: "features", "fixes", "security", "breaking", "other".
+  /// [releaseNotesTypeLabels] is still supported for the simple contributor
+  /// keys "feat", "fix", and "other".
+  final Map<String, String>? releaseNotesSectionLabels;
+
   /// Error message shown in the release notes bottom sheet when the fetch fails.
   ///
   /// Default: "Could not load release notes."
@@ -145,6 +168,7 @@ class DesktopUpdateLocalization {
   final String? releaseNotesEmptyText;
 }
 
+/// Replaces `{}` placeholders in [key] with the provided [args].
 String? getLocalizedString(String? key, List<dynamic> args) {
   for (var i = 0; i < args.length; i++) {
     key = key?.replaceFirst("{}", args[i].toString());

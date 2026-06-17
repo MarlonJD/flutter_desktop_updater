@@ -2,7 +2,6 @@ import "dart:async";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
-import "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -17,7 +16,7 @@ void main() {
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-    completer.complete(const ReleaseNotes([]));
+    completer.complete(const ReleaseNotes(sections: []));
     await tester.pumpAndSettle();
   });
 
@@ -46,7 +45,7 @@ void main() {
 
   testWidgets("shows empty state when notes list is empty", (tester) async {
     final controller = _NotesTestController(
-      factory: () => Future.value(const ReleaseNotes([])),
+      factory: () => Future.value(const ReleaseNotes(sections: [])),
     );
 
     await _pumpSheet(tester, controller);
@@ -69,18 +68,13 @@ void main() {
 
   testWidgets("Try again button triggers re-fetch", (tester) async {
     var attempt = 0;
+    final retryCompleter = Completer<ReleaseNotes>();
 
     final controller = _CallbackNotesController(
       nextFuture: () {
         attempt++;
         if (attempt == 1) return Future.error(Exception("fail"));
-        return Future.value(
-          ReleaseNotes.fromJson({
-            "data": [
-              {"type": "feat", "message": "Retry worked"},
-            ],
-          }),
-        );
+        return retryCompleter.future;
       },
     );
 
@@ -93,6 +87,14 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    retryCompleter.complete(
+      ReleaseNotes.fromJson({
+        "data": [
+          {"type": "feat", "message": "Retry worked"},
+        ],
+      }),
+    );
 
     await tester.pumpAndSettle();
 
@@ -177,9 +179,26 @@ class _NotesTestController extends DesktopUpdaterController {
         );
 
   final Future<ReleaseNotes> Function() _factory;
+  ReleaseNotesState _releaseNotesState = const ReleaseNotesIdle();
 
   @override
-  Future<ReleaseNotes> fetchReleaseNotes() => _factory();
+  ReleaseNotesState get releaseNotesState => _releaseNotesState;
+
+  @override
+  Future<ReleaseNotes> loadReleaseNotes({bool forceRefresh = false}) async {
+    _releaseNotesState = const ReleaseNotesLoading();
+    notifyListeners();
+    try {
+      final notes = await _factory();
+      _releaseNotesState = ReleaseNotesLoaded(notes);
+      notifyListeners();
+      return notes;
+    } on Object catch (error) {
+      _releaseNotesState = ReleaseNotesFailed(error);
+      notifyListeners();
+      rethrow;
+    }
+  }
 }
 
 class _CallbackNotesController extends DesktopUpdaterController {
@@ -193,7 +212,24 @@ class _CallbackNotesController extends DesktopUpdaterController {
         );
 
   final Future<ReleaseNotes> Function() _nextFuture;
+  ReleaseNotesState _releaseNotesState = const ReleaseNotesIdle();
 
   @override
-  Future<ReleaseNotes> fetchReleaseNotes() => _nextFuture();
+  ReleaseNotesState get releaseNotesState => _releaseNotesState;
+
+  @override
+  Future<ReleaseNotes> loadReleaseNotes({bool forceRefresh = false}) async {
+    _releaseNotesState = const ReleaseNotesLoading();
+    notifyListeners();
+    try {
+      final notes = await _nextFuture();
+      _releaseNotesState = ReleaseNotesLoaded(notes);
+      notifyListeners();
+      return notes;
+    } on Object catch (error) {
+      _releaseNotesState = ReleaseNotesFailed(error);
+      notifyListeners();
+      rethrow;
+    }
+  }
 }

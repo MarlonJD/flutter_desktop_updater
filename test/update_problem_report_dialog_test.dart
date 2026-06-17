@@ -1,5 +1,6 @@
 import "package:desktop_updater/updater_controller.dart";
 import "package:desktop_updater/widget/update_problem_report_dialog.dart";
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -158,6 +159,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets("technical details scrollbar stays attached inside page scroll", (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      final controller = _ProblemReportTestController();
+      final report = _testReportWithManyEntries();
+
+      await tester.binding.setSurfaceSize(const Size(760, 520));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        _buildScrollableDialogHost(controller: controller, report: report),
+      );
+
+      await tester.tap(find.text("Open report"));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("Technical details"));
+      await tester.pumpAndSettle();
+
+      final details = find.byKey(
+        const Key("desktopUpdaterProblemReportDetails"),
+      );
+
+      await tester.drag(details, const Offset(0, -80));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets("actions keep a stable two-column layout with readable labels", (
     tester,
   ) async {
@@ -225,6 +259,38 @@ Widget _buildDialogHost({
             child: const Text("Open report"),
           );
         },
+      ),
+    ),
+  );
+}
+
+Widget _buildScrollableDialogHost({
+  required DesktopUpdaterController controller,
+  required UpdateProblemReport report,
+}) {
+  return MaterialApp(
+    home: Scaffold(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Builder(
+              builder: (context) {
+                return TextButton(
+                  onPressed: () {
+                    showUpdateProblemReportDialog(
+                      context,
+                      controller: controller,
+                      report: report,
+                    );
+                  },
+                  child: const Text("Open report"),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     ),
   );

@@ -3,6 +3,7 @@ import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater_example/release_notes_examples.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
@@ -309,6 +310,10 @@ class _HomePageState extends State<HomePage> {
                           controller: _desktopUpdaterController,
                         ),
                         const SizedBox(height: 12),
+                        InlineReleaseNotesPanel(
+                          controller: _desktopUpdaterController,
+                        ),
+                        const SizedBox(height: 12),
                         _StateCard(
                           state: _desktopUpdaterController.state,
                           statusMessage: _statusMessage,
@@ -445,7 +450,7 @@ class _ContractCard extends StatelessWidget {
                     SizedBox(height: 6),
                     Text(
                       "Set DESKTOP_UPDATER_RELEASE_NOTES_URL to a JSON array endpoint "
-                      "([{\"type\":\"feat\",\"message\":\"…\"}]) to enable the release notes icon.",
+                      "({\"data\":[{\"type\":\"feat\",\"message\":\"...\"}]}) to enable the release notes icon.",
                     ),
                   ],
                 ),
