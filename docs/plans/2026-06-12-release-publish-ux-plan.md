@@ -87,6 +87,15 @@ Artifact:
 https://updates.example.com/releases/2.0.1/macos/Example-2.0.1-macos.zip
 ```
 
+Future release notes metadata is tracked in
+`docs/plans/2026-06-17-release-notes-capability-plan.md`. The initial runtime
+slice should use app-owned `releaseNotesLoader` / `releaseNotesUrl` APIs. A
+later CLI slice can extend this publish flow so `release publish` validates a
+local `release-notes.json`, copies it into the versioned release directory,
+writes an optional `releaseNotes` reference into `release.json`, uploads the
+notes file with versioned files, validates it, and still uploads
+`app-archive.json` last.
+
 ## Minimum Config
 
 Only the public update root is required:

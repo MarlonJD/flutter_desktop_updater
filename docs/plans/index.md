@@ -4,6 +4,7 @@ This index tracks repository-backed implementation plans for `desktop_updater`.
 
 ## Next
 
+- [2026-06-17 - Release notes capability and custom UI](2026-06-17-release-notes-capability-plan.md)
 - [2026-06-16 - Multi-stage desktop updater extraction](2026-06-16-multi-stage-desktop-updater-extraction-plan.md)
 
 ## Active

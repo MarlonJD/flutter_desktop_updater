@@ -3,8 +3,15 @@ import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater_example/release_notes_examples.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+
+String? _customTooltip(Object error) {
+  if (error is SocketException) return "No internet connection.";
+  if (error is TimeoutException) return "Connection timed out.";
+  return null;
+}
 
 /// Demonstrates the desktop_updater 2.x zip-first runtime flow.
 class HomePage extends StatefulWidget {
@@ -18,6 +25,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _defaultAppArchiveUrl =
       "https://updates.example.com/app-archive.json";
+  static const _defaultReleaseNotesUrl =
+      "https://updates.example.com/release-notes.json";
 
   final _desktopUpdaterPlugin = DesktopUpdater();
   late final DesktopUpdaterController _desktopUpdaterController;
@@ -44,6 +53,7 @@ class _HomePageState extends State<HomePage> {
 
     _desktopUpdaterController = DesktopUpdaterController(
       appArchiveUrl: _configuredAppArchiveUrl(),
+      releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
       allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
       localization: const DesktopUpdateLocalization(
@@ -61,6 +71,16 @@ class _HomePageState extends State<HomePage> {
         upToDateText: "{} is the latest hosted version.",
         updateCheckFailedTitleText: "Could not check for updates",
         updateCheckFailedText: "Check the archive URL and try again.",
+        onUpdateFailedTooltip: _customTooltip,
+        releaseNotesTitleText: "What's new",
+        releaseNotesTypeLabels: {
+          "feat": "New features",
+          "fix": "Bug fixes",
+          "other": "Other changes",
+        },
+        releaseNotesErrorText: "Could not load release notes.",
+        releaseNotesRetryText: "Retry",
+        releaseNotesEmptyText: "No release notes available for this version.",
       ),
     );
 
@@ -77,6 +97,14 @@ class _HomePageState extends State<HomePage> {
           ? _defaultAppArchiveUrl
           : value.trim(),
     );
+  }
+
+  Uri? _configuredReleaseNotesUrl() {
+    final value = Platform.environment["DESKTOP_UPDATER_RELEASE_NOTES_URL"];
+    if (value == null || value.trim().isEmpty) {
+      return Uri.parse(_defaultReleaseNotesUrl);
+    }
+    return Uri.parse(value.trim());
   }
 
   Future<void> _checkForUpdatesManually() async {
@@ -282,6 +310,10 @@ class _HomePageState extends State<HomePage> {
                           controller: _desktopUpdaterController,
                         ),
                         const SizedBox(height: 12),
+                        InlineReleaseNotesPanel(
+                          controller: _desktopUpdaterController,
+                        ),
+                        const SizedBox(height: 12),
                         _StateCard(
                           state: _desktopUpdaterController.state,
                           statusMessage: _statusMessage,
@@ -409,8 +441,18 @@ class _ContractCard extends StatelessWidget {
               ),
               child: const Padding(
                 padding: EdgeInsets.all(12),
-                child: Text(
-                  "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 2.x app-archive.json.",
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 2.x app-archive.json.",
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      "Set DESKTOP_UPDATER_RELEASE_NOTES_URL to a JSON array endpoint "
+                      "({\"data\":[{\"type\":\"feat\",\"message\":\"...\"}]}) to enable the release notes icon.",
+                    ),
+                  ],
                 ),
               ),
             ),

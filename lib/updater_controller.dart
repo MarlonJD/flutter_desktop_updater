@@ -2,6 +2,7 @@ import "dart:async";
 
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_notes.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
@@ -10,9 +11,11 @@ import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/current_version.dart";
+import "package:desktop_updater/src/io/release_notes_fetcher.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
 export "package:desktop_updater/src/core/update_client.dart"
@@ -22,6 +25,11 @@ export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_preferences.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_telemetry.dart";
+
+/// Loads release notes for the selected update descriptor.
+typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
+  ReleaseDescriptor descriptor,
+);
 
 /// Coordinates update checks, downloads, and install handoff for UI code.
 ///
@@ -49,11 +57,55 @@ class DesktopUpdaterController extends ChangeNotifier {
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
     bool skipInitialVersionCheck = false,
+    ReleaseNotesLoader? releaseNotesLoader,
+    Uri? releaseNotesUrl,
   })  : _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
-        _onCleanupReport = onCleanupReport {
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
+        _releaseNotesUrl = releaseNotesUrl,
+        _releaseNotesFetcher =
+            releaseNotesUrl == null ? null : ReleaseNotesFetcher() {
+    if (appArchiveUrl != null) {
+      init(appArchiveUrl);
+    }
+  }
+
+  /// Creates a controller with injected collaborators for unit testing.
+  ///
+  /// Identical to the default constructor but accepts an optional
+  /// [releaseNotesFetcher] so tests can substitute a fake HTTP layer without
+  /// exposing that seam in the public API.
+  @visibleForTesting
+  DesktopUpdaterController.forTesting({
+    required Uri? appArchiveUrl,
+    this.localization,
+    this.allowUnsignedMacOSUpdates = false,
+    this.channel = "stable",
+    this.installationIdentity,
+    this.preferences,
+    this.recoveryStore,
+    this.diagnosticsLogPath,
+    this.telemetry,
+    this.isMinimumOSSupported,
+    UpdateDiagnosticsRecorder? diagnosticsRecorder,
+    Future<void> Function(UpdateProblemReport report)? onProblemReport,
+    FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
+    bool skipInitialVersionCheck = false,
+    ReleaseNotesLoader? releaseNotesLoader,
+    Uri? releaseNotesUrl,
+    ReleaseNotesFetcher? releaseNotesFetcher,
+  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
+        _diagnosticsRecorder =
+            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+        _onProblemReport = onProblemReport,
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
+        _releaseNotesUrl = releaseNotesUrl,
+        _releaseNotesFetcher = releaseNotesFetcher ??
+            (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -102,6 +154,22 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Whether the app supplied an explicit problem-report callback.
   bool get canReportProblem => _onProblemReport != null;
 
+  /// Optional URL for hosted release notes JSON.
+  ///
+  /// This is a convenience path for simple apps. Prefer the descriptor-aware
+  /// release notes loader when notes should depend on the active descriptor,
+  /// locale, account, or app environment.
+  Uri? get releaseNotesUrl => _releaseNotesUrl;
+
+  /// Whether release notes can be loaded for the selected update descriptor.
+  bool get canLoadReleaseNotes {
+    return activeDescriptor != null &&
+        (_releaseNotesLoader != null || _releaseNotesUrl != null);
+  }
+
+  /// Current release notes loading state.
+  ReleaseNotesState get releaseNotesState => _releaseNotesState;
+
   /// Optional app-owned minimum OS support policy.
   final MinimumOSSupportChecker? isMinimumOSSupported;
 
@@ -143,6 +211,57 @@ class DesktopUpdaterController extends ChangeNotifier {
   String? _stagingPath;
   String? _currentAppVersion;
   UpdateCleanupReport? _lastCleanupReport;
+
+  final ReleaseNotesLoader? _releaseNotesLoader;
+  final Uri? _releaseNotesUrl;
+  final ReleaseNotesFetcher? _releaseNotesFetcher;
+  ReleaseNotesState _releaseNotesState = const ReleaseNotesIdle();
+  ReleaseNotes? _cachedReleaseNotes;
+  String? _cachedReleaseNotesKey;
+
+  /// Loads release notes for the active update descriptor.
+  ///
+  /// Returns a cached result for the same descriptor unless [forceRefresh] is
+  /// true. Loading errors are stored in [releaseNotesState] and rethrown.
+  Future<ReleaseNotes> loadReleaseNotes({bool forceRefresh = false}) async {
+    final descriptor = activeDescriptor;
+    if (descriptor == null) {
+      throw StateError("No active update descriptor is available.");
+    }
+    if (_releaseNotesLoader == null && _releaseNotesUrl == null) {
+      throw StateError("No release notes loader is configured.");
+    }
+
+    final cacheKey = _releaseNotesCacheKey(descriptor);
+    final cached = _cachedReleaseNotes;
+    if (!forceRefresh && cached != null && _cachedReleaseNotesKey == cacheKey) {
+      return cached;
+    }
+
+    _releaseNotesState = const ReleaseNotesLoading();
+    notifyListeners();
+
+    try {
+      final loader = _releaseNotesLoader;
+      final notes = loader == null
+          ? await _releaseNotesFetcher!.fetch(_releaseNotesUrl!)
+          : await loader(descriptor);
+      _cachedReleaseNotes = notes;
+      _cachedReleaseNotesKey = cacheKey;
+      _releaseNotesState = ReleaseNotesLoaded(notes);
+      notifyListeners();
+      return notes;
+    } on Object catch (error) {
+      _releaseNotesState = ReleaseNotesFailed(error);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Fetches and returns the hosted release notes.
+  ///
+  /// Compatibility wrapper around [loadReleaseNotes].
+  Future<ReleaseNotes> fetchReleaseNotes() => loadReleaseNotes();
 
   /// Invokes the app-owned problem-report callback when one was supplied.
   Future<void> reportProblem(UpdateProblemReport report) async {
@@ -199,6 +318,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Checking for updates from $archiveUrl",
       );
     _lastCleanupReport = null;
+    _clearReleaseNotesCache();
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
@@ -230,6 +350,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = false;
+        _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
           stage: UpdateDiagnosticStage.check,
           level: UpdateDiagnosticLevel.info,
@@ -245,6 +366,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeDescriptor = null;
         _stagingPath = null;
         _skipUpdate = true;
+        _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
           stage: UpdateDiagnosticStage.policy,
           level: UpdateDiagnosticLevel.info,
@@ -583,6 +705,12 @@ class DesktopUpdaterController extends ChangeNotifier {
     );
   }
 
+  @override
+  void dispose() {
+    _releaseNotesFetcher?.close();
+    super.dispose();
+  }
+
   Future<void> _writePendingRecoveryMarker(String stagingPath) async {
     final store = recoveryStore;
     if (store == null) {
@@ -731,6 +859,23 @@ class DesktopUpdaterController extends ChangeNotifier {
       failure: error,
     );
   }
+
+  void _clearReleaseNotesCache() {
+    _cachedReleaseNotes = null;
+    _cachedReleaseNotesKey = null;
+    _releaseNotesState = const ReleaseNotesIdle();
+  }
+}
+
+String _releaseNotesCacheKey(ReleaseDescriptor descriptor) {
+  return [
+    descriptor.packageId,
+    descriptor.version,
+    descriptor.buildNumber?.toString() ?? "",
+    descriptor.platform,
+    descriptor.channel,
+    descriptor.artifact.url.toString(),
+  ].join("|");
 }
 
 bool _matchesRecoveredTarget(

@@ -6,12 +6,14 @@ import "package:desktop_updater/src/version_info.dart";
 
 export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
+export "package:desktop_updater/src/core/release_notes.dart";
 export "package:desktop_updater/src/core/update_diagnostics.dart";
 export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/localization.dart";
 export "package:desktop_updater/src/manual_update_check_result.dart";
+export "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 export "package:desktop_updater/widget/update_card.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
 export "package:desktop_updater/widget/update_direct_card.dart";

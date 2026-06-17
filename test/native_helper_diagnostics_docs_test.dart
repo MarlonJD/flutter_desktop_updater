@@ -80,4 +80,17 @@ void main() {
     expect(changelog, contains("native helper diagnostics"));
     expect(changelog, contains("install recovery markers"));
   });
+
+  test("release notes docs show built-in and custom UI patterns", () {
+    final readme = File("README.md").readAsStringSync();
+    final uiDocs = File("docs/ui-widgets.md").readAsStringSync();
+
+    expect(readme, contains("releaseNotesLoader"));
+    expect(readme, contains("releaseNotesUrl"));
+    expect(uiDocs, contains("Release Notes Patterns"));
+    expect(uiDocs, contains("Built-in card and bottom sheet"));
+    expect(uiDocs, contains("Inline panel"));
+    expect(uiDocs, contains("Side sheet"));
+    expect(uiDocs, contains("Changelog page"));
+  });
 }
