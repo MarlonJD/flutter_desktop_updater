@@ -57,7 +57,11 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _load();
+      }
+    });
   }
 
   void _load({bool forceRefresh = false}) {

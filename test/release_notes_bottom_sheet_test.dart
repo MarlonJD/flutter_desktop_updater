@@ -6,6 +6,22 @@ import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  testWidgets("opens without notifying listeners during route build", (
+    tester,
+  ) async {
+    final controller = _NotesTestController(
+      factory: () => Future.value(const ReleaseNotes(sections: [])),
+    );
+
+    await _pumpSheet(tester, controller);
+
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets("shows CircularProgressIndicator while loading", (tester) async {
     final completer = Completer<ReleaseNotes>();
     final controller = _NotesTestController(
