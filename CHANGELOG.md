@@ -1,3 +1,11 @@
+## 2.3.0
+
+* Added optional release notes support for update UIs through `releaseNotesUrl`, `releaseNotesLoader`, `releaseNotesState`, and `loadReleaseNotes()`.
+* Added public release notes models that keep the simple `{ "data": [{ "type", "message" }] }` format supported while allowing richer sections, summaries, and item metadata.
+* Added a built-in Material release notes bottom sheet and wired the ready-made update card to show a release notes action when notes are available.
+* Added example custom release notes UIs for inline panels, side sheets, and changelog pages.
+* Fixed the release notes bottom sheet so its first load starts after the route has built, avoiding build-time listener notifications.
+
 ## 2.2.0
 
 * Added opt-in update diagnostics sinks with redacted log formatting for app-owned lifecycle logs.
