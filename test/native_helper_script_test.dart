@@ -88,6 +88,42 @@ void main() {
     expect(pruneIndex, lessThan(copyIndex));
   });
 
+  test("Linux helper restores executable permission before commit cleanup", () {
+    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
+    const restoreSnippet = r'chmod +x \"$exe\"';
+    const existsSnippet = r'[ -e \"$exe\" ] && [ ! -x \"$exe\" ]';
+    const missingExecutableSnippet =
+        r'[ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]';
+    const cleanupSnippet = r'rm -rf \"$backup\"';
+    const trapDisabledSnippet = r'trap - ERR';
+    const relaunchSnippet = r'\"$exe\" &';
+
+    final copyIndex = source.indexOf(copySnippet);
+    final restoreIndex = source.indexOf(restoreSnippet);
+    final existsIndex = source.indexOf(existsSnippet);
+    final missingExecutableIndex = source.indexOf(missingExecutableSnippet);
+    final restoreSearchStart = restoreIndex < 0 ? 0 : restoreIndex;
+    final cleanupIndex = source.indexOf(cleanupSnippet, restoreSearchStart);
+    final trapDisabledIndex =
+        source.indexOf(trapDisabledSnippet, restoreSearchStart);
+    final relaunchIndex = source.indexOf(relaunchSnippet);
+
+    expect(copyIndex, isNonNegative);
+    expect(existsIndex, isNonNegative);
+    expect(restoreIndex, isNonNegative);
+    expect(missingExecutableIndex, isNonNegative);
+    expect(cleanupIndex, isNonNegative);
+    expect(trapDisabledIndex, isNonNegative);
+    expect(relaunchIndex, isNonNegative);
+    expect(copyIndex, lessThan(restoreIndex));
+    expect(existsIndex, lessThan(restoreIndex));
+    expect(restoreIndex, lessThan(missingExecutableIndex));
+    expect(restoreIndex, lessThan(cleanupIndex));
+    expect(restoreIndex, lessThan(trapDisabledIndex));
+    expect(restoreIndex, lessThan(relaunchIndex));
+  });
+
   test("Windows helper prunes target before whole directory overlay", () {
     final source =
         File("windows/desktop_updater_plugin.cpp").readAsStringSync();
