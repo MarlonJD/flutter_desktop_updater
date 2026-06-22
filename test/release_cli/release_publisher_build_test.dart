@@ -60,6 +60,55 @@ void main() {
     }
   });
 
+  test("publish forwards dart defines to flutter build", () async {
+    final root = await _createWindowsFixture();
+    final commands = <String>[];
+    final buildCalls = <_BuildProcessCall>[];
+    final packager = _RecordingPackager(commands);
+    try {
+      final publisher = ReleasePublisher(
+        packager: packager,
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls.add(
+            _BuildProcessCall(
+              executable: executable,
+              arguments: arguments,
+              workingDirectory: workingDirectory,
+              runInShell: runInShell,
+            ),
+          );
+          return const _FakeBuildProcess();
+        },
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(
+          dartDefines: ["MY_VAR=value", "FEATURE_FLAG=true"],
+        ),
+        output: StringBuffer(),
+      );
+
+      expect(buildCalls, hasLength(1));
+      expect(buildCalls.single.arguments, [
+        "build",
+        "windows",
+        "--release",
+        "--dart-define=MY_VAR=value",
+        "--dart-define=FEATURE_FLAG=true",
+      ]);
+      expect(commands.single, startsWith("PACKAGE "));
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   for (final platform in ["linux", "macos"]) {
     test("$platform publish build does not force shell resolution", () async {
       final root = await _createFixture(platform);

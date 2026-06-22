@@ -16,6 +16,12 @@ ArgParser buildPublishParser() {
     ..addOption("build-number")
     ..addOption("package-id")
     ..addOption("app-name")
+    ..addMultiOption(
+      "dart-define",
+      splitCommas: false,
+      valueHelp: "key=value",
+      help: "Forward a build-time environment value to flutter build.",
+    )
     ..addFlag(
       "mandatory",
       negatable: false,
@@ -45,6 +51,9 @@ Future<int> runPublishCommand(
     buildNumber: _optionalInt(results, "build-number"),
     packageId: results["package-id"] as String?,
     appName: results["app-name"] as String?,
+    dartDefines: List<String>.unmodifiable(
+      results["dart-define"] as List<String>,
+    ),
     mandatory: results["mandatory"] as bool,
     notarize: results["notarize"] as bool,
   );
