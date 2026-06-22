@@ -2,7 +2,11 @@
 
 #include <windows.h>
 #include <VersionHelpers.h>
+#include <bcrypt.h>
+#include <shellapi.h>
 
+#pragma comment(lib, "Bcrypt.lib")
+#pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Version.lib")
 
 #include <flutter/method_channel.h>
@@ -11,6 +15,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -21,6 +26,11 @@ namespace fs = std::filesystem;
 
 namespace desktop_updater {
 namespace {
+
+enum class PowerShellLaunchMode {
+  kNormal,
+  kElevated,
+};
 
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
@@ -56,6 +66,31 @@ std::string WideToUtf8(const std::wstring& value) {
   return result;
 }
 
+std::string WindowsErrorMessage(DWORD error_code) {
+  if (error_code == 0) {
+    return "";
+  }
+
+  wchar_t* message_buffer = nullptr;
+  const DWORD length = FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      nullptr, error_code, 0, reinterpret_cast<LPWSTR>(&message_buffer), 0,
+      nullptr);
+  if (length == 0 || message_buffer == nullptr) {
+    return "Windows error " + std::to_string(error_code) + ".";
+  }
+
+  std::wstring message(message_buffer, length);
+  LocalFree(message_buffer);
+  while (!message.empty() &&
+         (message.back() == L'\r' || message.back() == L'\n' ||
+          message.back() == L' ' || message.back() == L'\t')) {
+    message.pop_back();
+  }
+  return WideToUtf8(message);
+}
+
 std::wstring CurrentExecutablePath() {
   std::vector<wchar_t> buffer(MAX_PATH);
 
@@ -74,6 +109,15 @@ std::wstring CurrentExecutablePath() {
   }
 }
 
+std::string Utf8PowerShellScriptContents(const std::string& script) {
+  std::string contents;
+  contents.push_back(static_cast<char>(0xEF));
+  contents.push_back(static_cast<char>(0xBB));
+  contents.push_back(static_cast<char>(0xBF));
+  contents.append(script);
+  return contents;
+}
+
 std::string PowerShellQuote(const std::wstring& value) {
   std::string escaped = WideToUtf8(value);
   size_t pos = 0;
@@ -82,6 +126,91 @@ std::string PowerShellQuote(const std::wstring& value) {
     pos += 2;
   }
   return "'" + escaped + "'";
+}
+
+std::string Base64Encode(const unsigned char* data, size_t length) {
+  static constexpr char table[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string encoded;
+  encoded.reserve(((length + 2) / 3) * 4);
+
+  for (size_t i = 0; i < length; i += 3) {
+    const unsigned int octet_a = data[i];
+    const unsigned int octet_b = i + 1 < length ? data[i + 1] : 0;
+    const unsigned int octet_c = i + 2 < length ? data[i + 2] : 0;
+    const unsigned int triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+    encoded.push_back(table[(triple >> 18) & 0x3F]);
+    encoded.push_back(table[(triple >> 12) & 0x3F]);
+    encoded.push_back(i + 1 < length ? table[(triple >> 6) & 0x3F] : '=');
+    encoded.push_back(i + 2 < length ? table[triple & 0x3F] : '=');
+  }
+
+  return encoded;
+}
+
+std::string Base64EncodeWide(const std::wstring& value) {
+  return Base64Encode(reinterpret_cast<const unsigned char*>(value.data()),
+                      value.size() * sizeof(wchar_t));
+}
+
+bool Sha256Hex(const std::string& contents, std::string* hex_digest) {
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  DWORD object_length = 0;
+  DWORD hash_length = 0;
+  DWORD property_length = 0;
+
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr,
+                                  0) < 0) {
+    return false;
+  }
+
+  auto close_algorithm = [&]() {
+    if (algorithm != nullptr) {
+      BCryptCloseAlgorithmProvider(algorithm, 0);
+      algorithm = nullptr;
+    }
+  };
+
+  if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
+                        reinterpret_cast<PUCHAR>(&object_length),
+                        sizeof(object_length), &property_length, 0) < 0 ||
+      BCryptGetProperty(algorithm, BCRYPT_HASH_LENGTH,
+                        reinterpret_cast<PUCHAR>(&hash_length),
+                        sizeof(hash_length), &property_length, 0) < 0) {
+    close_algorithm();
+    return false;
+  }
+
+  std::vector<unsigned char> hash_object(object_length);
+  std::vector<unsigned char> digest(hash_length);
+  if (BCryptCreateHash(algorithm, &hash, hash_object.data(), object_length,
+                       nullptr, 0, 0) < 0) {
+    close_algorithm();
+    return false;
+  }
+
+  bool ok = BCryptHashData(
+                hash,
+                reinterpret_cast<PUCHAR>(
+                    const_cast<char*>(contents.data())),
+                static_cast<ULONG>(contents.size()), 0) >= 0 &&
+            BCryptFinishHash(hash, digest.data(), hash_length, 0) >= 0;
+  BCryptDestroyHash(hash);
+  close_algorithm();
+
+  if (!ok) {
+    return false;
+  }
+
+  std::ostringstream stream;
+  stream << std::hex << std::setfill('0');
+  for (const unsigned char byte : digest) {
+    stream << std::setw(2) << static_cast<int>(byte);
+  }
+  *hex_digest = stream.str();
+  return true;
 }
 
 std::string PowerShellArray(const std::vector<std::wstring>& values) {
@@ -101,15 +230,13 @@ std::string PowerShellArray(const std::vector<std::wstring>& values) {
 }
 
 bool WriteUtf8PowerShellScript(const fs::path& script_path,
-                               const std::string& script) {
+                               const std::string& script_contents) {
   std::ofstream file(script_path, std::ios::binary | std::ios::trunc);
   if (!file.is_open()) {
     return false;
   }
 
-  const unsigned char bom[] = {0xEF, 0xBB, 0xBF};
-  file.write(reinterpret_cast<const char*>(bom), sizeof(bom));
-  file << script;
+  file << script_contents;
   return file.good();
 }
 
@@ -136,9 +263,129 @@ bool StartDetachedPowerShell(const fs::path& script_path) {
   return started == TRUE;
 }
 
+std::wstring ElevatedPowerShellBootstrap(const fs::path& script_path,
+                                         const std::string& expected_hash) {
+  std::wostringstream bootstrap;
+  bootstrap
+      << L"$ErrorActionPreference='Stop'\n"
+      << L"$scriptPath="
+      << Utf8ToWide(PowerShellQuote(script_path.wstring())) << L"\n"
+      << L"$expectedHash="
+      << Utf8ToWide(PowerShellQuote(Utf8ToWide(expected_hash)))
+      << L"\n"
+      << L"$bytes=[IO.File]::ReadAllBytes($scriptPath)\n"
+      << L"$sha=[Security.Cryptography.SHA256]::Create()\n"
+      << L"try {\n"
+      << L"  $actualHash=[BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()\n"
+      << L"} finally {\n"
+      << L"  $sha.Dispose()\n"
+      << L"}\n"
+      << L"if ($actualHash -ne $expectedHash) {\n"
+      << L"  throw 'desktop_updater elevated helper hash mismatch.'\n"
+      << L"}\n"
+      << L"$scriptText=[Text.Encoding]::UTF8.GetString($bytes)\n"
+      << L"if ($scriptText.Length -gt 0 -and $scriptText[0] -eq [char]0xfeff) {\n"
+      << L"  $scriptText=$scriptText.Substring(1)\n"
+      << L"}\n"
+      << L"Invoke-Expression $scriptText\n";
+  return bootstrap.str();
+}
+
+bool StartElevatedPowerShell(const fs::path& script_path,
+                             const std::string& script_contents,
+                             std::string* error) {
+  std::string expected_hash;
+  if (!Sha256Hex(script_contents, &expected_hash)) {
+    *error = "Unable to hash elevated update helper script.";
+    return false;
+  }
+
+  const std::wstring bootstrap =
+      ElevatedPowerShellBootstrap(script_path, expected_hash);
+  const std::wstring parameters =
+      L"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden "
+      L"-EncodedCommand " +
+      Utf8ToWide(Base64EncodeWide(bootstrap));
+
+  SHELLEXECUTEINFOW execute_info = {};
+  execute_info.cbSize = sizeof(execute_info);
+  execute_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  execute_info.lpVerb = L"runas";
+  execute_info.lpFile = L"powershell.exe";
+  execute_info.lpParameters = parameters.c_str();
+  execute_info.nShow = SW_HIDE;
+
+  if (!ShellExecuteExW(&execute_info)) {
+    const DWORD error_code = GetLastError();
+    if (error_code == ERROR_CANCELLED) {
+      *error = "User cancelled the Windows UAC update prompt.";
+    } else {
+      *error = "Unable to start elevated update helper script: " +
+               WindowsErrorMessage(error_code);
+    }
+    return false;
+  }
+
+  if (execute_info.hProcess != nullptr) {
+    CloseHandle(execute_info.hProcess);
+  }
+  return true;
+}
+
+bool StartPowerShell(const fs::path& script_path,
+                     const std::string& script_contents,
+                     PowerShellLaunchMode launch_mode,
+                     std::string* error) {
+  if (launch_mode == PowerShellLaunchMode::kElevated) {
+    return StartElevatedPowerShell(script_path, script_contents, error);
+  }
+
+  if (!StartDetachedPowerShell(script_path)) {
+    *error = "Unable to start update helper script.";
+    return false;
+  }
+  return true;
+}
+
+bool IsProcessElevated() {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    return false;
+  }
+
+  TOKEN_ELEVATION elevation = {};
+  DWORD size = 0;
+  const BOOL result =
+      GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation),
+                          &size);
+  CloseHandle(token);
+  return result == TRUE && elevation.TokenIsElevated != 0;
+}
+
+bool CanWriteDirectory(const fs::path& directory) {
+  const fs::path probe_path = directory /
+      (L".desktop_updater_write_probe_" +
+       std::to_wstring(GetCurrentProcessId()) + L"_" +
+       std::to_wstring(GetTickCount64()) + L".tmp");
+
+  HANDLE file = CreateFileW(
+      probe_path.wstring().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+      FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_HIDDEN |
+          FILE_FLAG_DELETE_ON_CLOSE,
+      nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+
+  CloseHandle(file);
+  DeleteFileW(probe_path.wstring().c_str());
+  return true;
+}
+
 bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
                                 const std::vector<std::wstring>& removed_files,
                                 const std::wstring& diagnostics_log_path,
+                                bool request_elevation_if_needed,
                                 std::string* error) {
   const std::wstring executable_path = CurrentExecutablePath();
   if (executable_path.empty()) {
@@ -153,17 +400,32 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
     return false;
   }
 
+  PowerShellLaunchMode launch_mode = PowerShellLaunchMode::kNormal;
+  if (request_elevation_if_needed && !CanWriteDirectory(target_directory)) {
+    if (IsProcessElevated()) {
+      *error = "Target directory is not writable while running elevated.";
+      return false;
+    }
+    launch_mode = PowerShellLaunchMode::kElevated;
+  }
+
   const fs::path script_path = fs::temp_directory_path() /
       (L"desktop_updater_" + std::to_wstring(GetCurrentProcessId()) + L".ps1");
 
   std::ostringstream script;
   script
       << "$ErrorActionPreference = 'Stop'\n"
+      << "$scriptSelf = " << PowerShellQuote(script_path.wstring()) << "\n"
       << "$pidToWait = " << GetCurrentProcessId() << "\n"
       << "$staging = " << PowerShellQuote(staging_path) << "\n"
       << "$target = " << PowerShellQuote(target_directory.wstring()) << "\n"
       << "$exe = " << PowerShellQuote(executable_path) << "\n"
       << "$diagnosticsLog = " << PowerShellQuote(diagnostics_log_path) << "\n"
+      << "$elevationReason = "
+      << PowerShellQuote(launch_mode == PowerShellLaunchMode::kElevated
+                             ? L"Target directory is not writable. Requesting UAC elevation."
+                             : L"")
+      << "\n"
       << "$removed = " << PowerShellArray(removed_files) << "\n"
       << "$skipRelaunch = $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH\n"
       << "function Write-DiagnosticsEvent([string]$Event) {\n"
@@ -173,6 +435,9 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "    $line = @{timestamp=$timestamp; event=$Event} | ConvertTo-Json -Compress\n"
       << "    Add-Content -LiteralPath $diagnosticsLog -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue\n"
       << "  } catch {}\n"
+      << "}\n"
+      << "if (-not [string]::IsNullOrWhiteSpace($elevationReason)) {\n"
+      << "  Write-DiagnosticsEvent 'elevation requested'\n"
       << "}\n"
       << "Write-DiagnosticsEvent 'helper scheduled'\n"
       << "Write-DiagnosticsEvent 'waiting for parent process'\n"
@@ -308,15 +573,16 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "  Write-DiagnosticsEvent 'relaunch attempt'\n"
       << "  Start-Process -FilePath $exe -WorkingDirectory $target\n"
       << "}\n"
-      << "Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue\n";
+      << "Remove-Item -LiteralPath $scriptSelf -Force -ErrorAction SilentlyContinue\n";
 
-  if (!WriteUtf8PowerShellScript(script_path, script.str())) {
+  const std::string script_contents = Utf8PowerShellScriptContents(script.str());
+  if (!WriteUtf8PowerShellScript(script_path, script_contents)) {
     *error = "Unable to write update helper script.";
     return false;
   }
 
-  if (!StartDetachedPowerShell(script_path)) {
-    *error = "Unable to start update helper script.";
+  if (!StartPowerShell(script_path, script_contents, launch_mode, error)) {
+    DeleteFileW(script_path.wstring().c_str());
     return false;
   }
 
@@ -495,7 +761,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(version_stream.str()));
   } else if (method_call.method_name().compare("restartApp") == 0) {
     std::string error;
-    if (!ScheduleInstallAndRelaunch(L"", {}, L"", &error)) {
+    if (!ScheduleInstallAndRelaunch(L"", {}, L"", false, &error)) {
       result->Error("RestartError", error);
       return;
     }
@@ -526,7 +792,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     std::string error;
     if (!ScheduleInstallAndRelaunch(
             Utf8ToWide(*staging_path), RemovedFilesFromArguments(*arguments),
-            DiagnosticsLogPathFromArguments(*arguments), &error)) {
+            DiagnosticsLogPathFromArguments(*arguments), true, &error)) {
       result->Error("InstallError", error);
       return;
     }

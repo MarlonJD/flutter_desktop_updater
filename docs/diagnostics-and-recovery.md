@@ -124,6 +124,14 @@ before passing the path. If the path is missing, the parent directory does not
 exist, or the file cannot be written, the helper ignores the logging failure and
 continues the install, rollback, cleanup, or relaunch attempt.
 
+On Windows, a machine-wide install under `Program Files` may require UAC. When
+the helper detects a non-writable app directory and the user accepts elevation,
+the native helper log includes `elevation requested` before the usual
+`helper scheduled`, backup, copy, rollback, cleanup, and relaunch events. If
+the user cancels the UAC prompt, the app remains open and `installUpdate`
+returns an `InstallError`; no post-exit helper log is written because the helper
+never starts.
+
 ## Recovery Store
 
 `diagnosticsLogPath` tells you what happened inside the native helper. It does

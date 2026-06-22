@@ -850,6 +850,15 @@ What you should do for production trust:
 - Keep the app executable and package identity stable.
 - Test update install from a normal user account, not only an admin shell.
 
+When the app is installed under a protected machine-wide directory such as
+`C:\Program Files`, the Windows helper checks whether the app directory is
+writable before scheduling the install. If the current process cannot write
+there and is not already elevated, it starts the verified helper through the
+normal Windows UAC prompt. If the user cancels the prompt, `installUpdate`
+returns an `InstallError` and the app stays open. Per-user installs under
+locations such as `AppData\Local` continue without a UAC prompt when the app
+directory is writable.
+
 Unsigned Windows Release builds can be release-mechanics ready, but users can
 still see publisher-trust warnings.
 
