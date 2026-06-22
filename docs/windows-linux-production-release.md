@@ -61,6 +61,30 @@ Notes:
 - SmartScreen reputation is separate from a valid signature. A new publisher or
   newly issued certificate can still see warnings until reputation builds.
 
+### Windows Install Location And UAC
+
+Windows applies different write permissions depending on where the app is
+installed. A per-user install under `AppData\Local` is usually writable by the
+current user. A machine-wide install under `C:\Program Files` or
+`C:\Program Files (x86)` usually requires elevation.
+
+During `installUpdate`, the Windows helper performs a write preflight against
+the current app directory:
+
+- If the directory is writable, the normal hidden helper script is scheduled.
+- If the directory is not writable and the process is not elevated, the helper
+  starts the same install script through Windows UAC.
+- If the user cancels UAC, `installUpdate` returns `InstallError` and the app
+  remains open.
+- If the process is already elevated but the directory is still not writable,
+  the helper returns `InstallError` instead of exiting into a doomed install.
+
+The elevated path keeps the 2.x staged update context: `stagingPath`,
+`removedFiles`, the app target directory, relaunch path, and optional
+`diagnosticsLogPath` are written into the helper script before elevation. The
+elevated bootstrap verifies the helper script hash before executing it, so the
+UAC flow does not depend on rediscovering update folders after relaunch.
+
 ### Microsoft Artifact Signing
 
 Microsoft Artifact Signing is a managed signing service. It is useful when you

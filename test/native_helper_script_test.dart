@@ -165,4 +165,30 @@ void main() {
     expect(copyIndex, lessThan(registryIndex));
     expect(registryIndex, lessThan(relaunchIndex));
   });
+
+  test("Windows helper requests UAC with verified script for protected targets",
+      () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    expect(source, contains("#include <shellapi.h>"));
+    expect(source, contains("IsProcessElevated"));
+    expect(source, contains("CanWriteDirectory"));
+    expect(source, contains("StartElevatedPowerShell"));
+    expect(source, contains('launch_mode == PowerShellLaunchMode::kElevated'));
+    expect(source, contains("ShellExecuteExW"));
+    expect(source, contains('L"runas"'));
+    expect(source, contains("-EncodedCommand"));
+    expect(source, contains("SHA256"));
+    expect(source, contains(r"Invoke-Expression $scriptText"));
+    expect(source, contains("Write-DiagnosticsEvent 'elevation requested'"));
+    expect(
+      source,
+      contains("Target directory is not writable. Requesting UAC elevation."),
+    );
+    expect(
+      source,
+      contains("User cancelled the Windows UAC update prompt."),
+    );
+  });
 }
