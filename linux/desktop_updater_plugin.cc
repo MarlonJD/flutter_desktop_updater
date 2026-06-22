@@ -259,7 +259,6 @@ bool schedule_install_update(const std::string &staging_path,
                        "trap - ERR\n"
                        "if [ \"$skip_relaunch\" != \"1\" ]; then\n"
                        "  log_event \"relaunch attempt\"\n"
-                       "  chmod +x \"$exe\" 2>/dev/null || true\n"
                        "  cd \"$target\"\n"
                        "  \"$exe\" &\n"
                        "fi\n"

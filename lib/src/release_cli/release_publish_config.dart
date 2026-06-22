@@ -13,6 +13,7 @@ class ReleasePublishOverrides {
     this.buildNumber,
     this.packageId,
     this.appName,
+    this.dartDefines = const [],
     this.mandatory = false,
     this.notarize = false,
   });
@@ -25,6 +26,7 @@ class ReleasePublishOverrides {
   final int? buildNumber;
   final String? packageId;
   final String? appName;
+  final List<String> dartDefines;
 
   /// Whether app-archive.json should mark this release as mandatory.
   final bool mandatory;

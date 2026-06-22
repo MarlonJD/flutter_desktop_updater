@@ -109,7 +109,13 @@ class ReleasePublisher {
     );
 
     if (!skipBuild) {
-      await _build(projectRoot, metadata, output, _startBuildProcess);
+      await _build(
+        projectRoot,
+        metadata,
+        overrides.dartDefines,
+        output,
+        _startBuildProcess,
+      );
     }
 
     if (platform == "macos" && config.macos.notarize) {
@@ -456,13 +462,18 @@ void _verifyNotarySubmissionAccepted(String response) {
 Future<void> _build(
   Directory projectRoot,
   ProjectMetadata metadata,
+  List<String> dartDefines,
   StringSink output,
   BuildProcessStarter startBuildProcess,
 ) async {
   output.writeln("Building ${metadata.platform} release...");
+  final flutterBuildArgs = [
+    ...metadata.profile.flutterBuildArgs,
+    for (final define in dartDefines) "--dart-define=$define",
+  ];
   final process = await startBuildProcess(
     "flutter",
-    metadata.profile.flutterBuildArgs,
+    flutterBuildArgs,
     workingDirectory: projectRoot.path,
     runInShell: _shouldRunFlutterBuildInShell(metadata.platform),
   );
@@ -479,7 +490,7 @@ Future<void> _build(
   if (exitCode != 0) {
     throw ProcessException(
       "flutter",
-      metadata.profile.flutterBuildArgs,
+      flutterBuildArgs,
       "Build failed with exit code $exitCode",
       exitCode,
     );

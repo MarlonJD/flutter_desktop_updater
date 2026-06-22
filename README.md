@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.3.0
+  desktop_updater: ^2.3.2
 ```
 
 Point your app at the hosted archive:
@@ -54,6 +54,14 @@ With only `updates.baseUrl`, publish creates an upload-ready package under
 `dist/desktop_updater` and prints the manual upload and validate instructions.
 With an upload provider configured, it uploads versioned files first, validates
 them, uploads `app-archive.json` last, then validates hosted update selection.
+
+## Linux Zip Permissions
+
+Linux update zips must keep Unix file mode metadata for executable files in the
+bundle. `release publish --platform linux` creates artifacts with those modes,
+and the updater restores them while staging the verified zip before the native
+helper replaces the installed bundle. If you build Linux update zips with custom
+tooling, make sure the app runner remains executable in the archive.
 
 ## EL10
 
