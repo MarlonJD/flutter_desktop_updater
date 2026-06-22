@@ -49,6 +49,34 @@ void main() {
     }
   });
 
+  test("preserves Unix executable bits when extracting Linux zips", () async {
+    if (Platform.isWindows) {
+      return;
+    }
+
+    final tempDir = await Directory.systemTemp.createTemp("zip_extract_");
+    try {
+      final executable = ArchiveFile.string("app_runner", "ok");
+      executable.mode = 0x81ed; // Regular file, 0755 permissions.
+      final archiveFile = await _writeZip(
+        tempDir,
+        Archive()..addFile(executable),
+      );
+      final destination = Directory(path.join(tempDir.path, "out"));
+
+      await const SafeZipExtractor().extract(
+        archiveFile: archiveFile,
+        destination: destination,
+        platform: "linux",
+      );
+
+      final mode = await File(path.join(destination.path, "app_runner")).stat();
+      expect(mode.mode & 0x1ff, 0x1ed);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("rejects symlink entries on Windows and Linux by default", () async {
     if (Platform.isWindows) {
       return;
