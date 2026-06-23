@@ -56,7 +56,7 @@ class _HomePageState extends State<HomePage> {
       releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
       allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
-      localization: const DesktopUpdateLocalization(
+      localization: DesktopUpdateLocalization(
         updateAvailableText: "Update available",
         newVersionAvailableText: "{} {} is available",
         newVersionLongText:

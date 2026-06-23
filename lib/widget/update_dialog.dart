@@ -214,8 +214,7 @@ Future<void> showManualUpdateCheckResultDialog(
               style: TextStyle(color: textColor),
             ),
             content: Text(
-              getLocalizedString(localization?.upToDateText, [versionLabel]) ??
-                  "$versionLabel is the latest available version.",
+              getLocalizedString(localization?.upToDateText, [versionLabel]),
               style: TextStyle(color: textColor),
             ),
             actions: [
@@ -387,11 +386,9 @@ class UpdateDialogWidget extends StatelessWidget {
                 style: TextStyle(color: textColor),
               ),
               content: Text(
-                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
+                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion])}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
                           _formatMegabytes(totalBytes),
-                        ]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [
-                          _formatMegabytes(totalBytes),
-                        ])) ?? ""}",
+                        ])}",
                 style: TextStyle(color: buttonTextColor),
               ),
               actions: [

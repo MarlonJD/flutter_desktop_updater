@@ -127,7 +127,7 @@ void main() {
     });
     final controller = _NotesTestController(
       factory: () => Future.value(notes),
-      localization: const DesktopUpdateLocalization(
+      localization: DesktopUpdateLocalization(
         releaseNotesTitleText: "Nouveautés",
       ),
     );
@@ -148,7 +148,7 @@ void main() {
     });
     final controller = _NotesTestController(
       factory: () => Future.value(notes),
-      localization: const DesktopUpdateLocalization(
+      localization: DesktopUpdateLocalization(
         releaseNotesTypeLabels: {"feat": "Nouvelles fonctionnalités"},
       ),
     );

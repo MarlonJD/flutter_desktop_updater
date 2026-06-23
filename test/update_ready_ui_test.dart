@@ -109,7 +109,7 @@ void main() {
     tester,
   ) async {
     final controller = _ReadyUiTestController(
-      localization: const DesktopUpdateLocalization(
+      localization: DesktopUpdateLocalization(
         onUpdateFailedTooltip: _customTooltip,
       ),
     )..showFailedUpdate();
@@ -133,7 +133,7 @@ void main() {
     tester,
   ) async {
     final controller = _ReadyUiTestController(
-      localization: const DesktopUpdateLocalization(
+      localization: DesktopUpdateLocalization(
         releaseNotesErrorText: "Could not load release notes.",
       ),
     )..showFailedUpdate();

@@ -343,12 +343,7 @@ String _availableVersionText(DesktopUpdaterController notifier) {
   return getLocalizedString(
         notifier.getLocalization?.newVersionAvailableText,
         [notifier.appName, notifier.appVersion],
-      ) ??
-      getLocalizedString("{} {} is available", [
-        notifier.appName,
-        notifier.appVersion,
-      ]) ??
-      "";
+      );
 }
 
 String _longUpdateText(DesktopUpdaterController notifier) {
@@ -364,13 +359,7 @@ String _longUpdateText(DesktopUpdaterController notifier) {
   return getLocalizedString(
         notifier.getLocalization?.newVersionLongText,
         [_formatMegabytes(totalBytes)],
-      ) ??
-      getLocalizedString(
-        "New version is ready to download, click the button below to start "
-        "downloading. This will download {} MB of data.",
-        [_formatMegabytes(totalBytes)],
-      ) ??
-      "";
+      );
 }
 
 int _updateTotalBytes({

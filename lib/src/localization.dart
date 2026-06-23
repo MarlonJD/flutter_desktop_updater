@@ -1,177 +1,237 @@
-/// Localization for the update card texts.
-/// Fields that can be localized:
+import "dart:convert";
+
+import 'package:flutter/services.dart';
+
+/// Provides localized strings for the desktop update card.
 ///
-/// - updateAvailableText
-/// - newVersionAvailableText
-/// - newVersionLongText
-/// - restartText
-/// - restartWarningText
-/// - warningCancelText
-/// - warningConfirmText
-/// - upToDateTitleText
-/// - upToDateText
-/// - updateCheckFailedTitleText
-/// - updateCheckFailedText
-/// - okText
-/// - onUpdateFailedTooltip
-/// - updateFailedTooltipText
-/// - releaseNotesButtonTooltipText
-/// - releaseNotesTitleText
-/// - releaseNotesTypeLabels
-/// - releaseNotesSectionLabels
-/// - releaseNotesErrorText
-/// - releaseNotesRetryText
-/// - releaseNotesEmptyText
+/// The localization can be loaded from a JSON file located at
+/// `langs/<language>.json`.
+///
+/// Supported localized fields include update messages, restart prompts,
+/// release notes labels, and error messages.
 class DesktopUpdateLocalization {
-  /// constructor
-  const DesktopUpdateLocalization({
-    this.updateAvailableText,
-    this.newVersionAvailableText,
-    this.newVersionLongText,
-    this.restartText,
-    this.warningTitleText,
-    this.restartWarningText,
-    this.warningCancelText,
-    this.warningConfirmText,
-    this.skipThisVersionText,
-    this.downloadText,
-    this.upToDateTitleText,
-    this.upToDateText,
-    this.updateCheckFailedTitleText,
-    this.updateCheckFailedText,
-    this.okText,
+  /// Creates a desktop update localization instance.
+  ///
+  /// If a value is not provided, the default English text is used.
+  DesktopUpdateLocalization({
+    String? lang,
+    String? updateAvailableText,
+    String? newVersionAvailableText,
+    String? newVersionLongText,
+    String? restartText,
+    String? warningTitleText,
+    String? restartWarningText,
+    String? warningCancelText,
+    String? warningConfirmText,
+    String? skipThisVersionText,
+    String? downloadText,
+    String? upToDateTitleText,
+    String? upToDateText,
+    String? updateCheckFailedTitleText,
+    String? updateCheckFailedText,
+    String? okText,
     this.onUpdateFailedTooltip,
-    this.updateFailedTooltipText,
-    this.releaseNotesButtonTooltipText,
-    this.releaseNotesTitleText,
-    this.releaseNotesTypeLabels,
-    this.releaseNotesSectionLabels,
-    this.releaseNotesErrorText,
-    this.releaseNotesRetryText,
-    this.releaseNotesEmptyText,
-  });
+    String? updateFailedTooltipText,
+    String? releaseNotesButtonTooltipText,
+    String? releaseNotesTitleText,
+    Map<String, String>? releaseNotesTypeLabels,
+    Map<String, String>? releaseNotesSectionLabels,
+    String? releaseNotesErrorText,
+    String? releaseNotesRetryText,
+    String? releaseNotesEmptyText,
+  }) {
+    this.lang = lang ?? defaultLang;
+    this.updateAvailableText = updateAvailableText ?? "Update available";
+    this.newVersionAvailableText =
+        newVersionAvailableText ?? "{} {} is available";
+    this.newVersionLongText = newVersionLongText ??
+        "New version is ready to download, click the button below to start downloading. This will download {} MB of data.";
+    this.restartText = restartText ?? "Restart to update";
+    this.warningTitleText = warningTitleText ?? "Are you sure?";
+    this.restartWarningText = restartWarningText ??
+        "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?";
+    this.warningCancelText = warningCancelText ?? "Not now";
+    this.warningConfirmText = warningConfirmText ?? "Restart";
+    this.skipThisVersionText = skipThisVersionText ?? "Skip this version";
+    this.downloadText = downloadText ?? "Download";
+    this.upToDateTitleText = upToDateTitleText ?? "Application is up to date";
+    this.upToDateText = upToDateText ?? "{} is the latest available version.";
+    this.updateCheckFailedTitleText =
+        updateCheckFailedTitleText ?? "Could not check for updates";
+    this.updateCheckFailedText =
+        updateCheckFailedText ?? "Please try again later.";
+    this.okText = okText ?? "OK";
+    this.updateFailedTooltipText =
+        updateFailedTooltipText ?? "Update failed. Please try again.";
+    this.releaseNotesButtonTooltipText =
+        releaseNotesButtonTooltipText ?? "Release notes";
+    this.releaseNotesTitleText = releaseNotesTitleText ?? "What's new";
+    this.releaseNotesTypeLabels = releaseNotesTypeLabels ??
+        const {
+          "feat": "New features",
+          "fix": "Bug fixes",
+          "other": "Other changes",
+        };
+    this.releaseNotesSectionLabels = releaseNotesSectionLabels ??
+        const {
+          "features": "Features",
+          "fixes": "Fixes",
+          "security": "Security",
+          "breaking": "Breaking changes",
+          "other": "Other changes",
+        };
+    this.releaseNotesErrorText =
+        releaseNotesErrorText ?? "Could not load release notes.";
+    this.releaseNotesRetryText = releaseNotesRetryText ?? "Try again";
+    this.releaseNotesEmptyText =
+        releaseNotesEmptyText ?? "No release notes available.";
+    setLang(this.lang!);
+  }
 
-  /// Default: "Update available"
-  final String? updateAvailableText;
+  /// Default language used when no language is specified.
+  static String defaultLang = "en";
 
-  /// Default: "{} {} is available"
+  /// Loads localized strings from the specified language file.
   ///
-  /// ie: Appname 1.0.1 is available
-  final String? newVersionAvailableText;
-
-  /// Default: "New version is ready to download, click the button below to start downloading. This will download {} MB of data."
+  /// The file must exist at `langs/<newLang>.json`.
   ///
-  /// "New version is ready to download, click the button below to start downloading. This will download 35.34 MB of data."
-  final String? newVersionLongText;
+  /// Invalid JSON files are ignored and existing values are preserved.
+  Future<void> setLang(String newLang) async {
+    if (newLang == defaultLang) {
+      return;
+    }
+    try {
+      final jsonString =
+          await rootBundle.loadString("packages/desktop_updater/lib/src/langs/$lang.json");
+      final raw = jsonDecode(jsonString) as Map<String, dynamic>;
+      lang = raw["lang"] ?? newLang;
+      updateAvailableText = raw["updateAvailableText"] ?? updateAvailableText;
+      newVersionAvailableText =
+          raw["newVersionAvailableText"] ?? newVersionAvailableText;
+      newVersionLongText = raw["newVersionLongText"] ?? newVersionLongText;
+      restartText = raw["restartText"] ?? restartText;
+      warningTitleText = raw["warningTitleText"] ?? warningTitleText;
+      restartWarningText = raw["restartWarningText"] ?? restartWarningText;
+      warningCancelText = raw["warningCancelText"] ?? warningCancelText;
+      warningConfirmText = raw["warningConfirmText"] ?? warningConfirmText;
+      skipThisVersionText = raw["skipThisVersionText"] ?? skipThisVersionText;
+      downloadText = raw["downloadText"] ?? downloadText;
+      upToDateTitleText = raw["upToDateTitleText"] ?? upToDateTitleText;
+      upToDateText = raw["upToDateText"] ?? upToDateText;
+      updateCheckFailedTitleText =
+          raw["updateCheckFailedTitleText"] ?? updateCheckFailedTitleText;
+      updateCheckFailedText =
+          raw["updateCheckFailedText"] ?? updateCheckFailedText;
+      okText = raw["okText"] ?? okText;
+      updateFailedTooltipText =
+          raw["updateFailedTooltipText"] ?? updateFailedTooltipText;
+      releaseNotesButtonTooltipText =
+          raw["releaseNotesButtonTooltipText"] ?? releaseNotesButtonTooltipText;
+      releaseNotesTitleText =
+          raw["releaseNotesTitleText"] ?? releaseNotesTitleText;
+      if (raw["releaseNotesTypeLabels"] != null) {
+        releaseNotesTypeLabels = Map<String, String>.from(
+          raw["releaseNotesTypeLabels"],
+        );
+      }
+      if (raw["releaseNotesSectionLabels"] != null) {
+        releaseNotesSectionLabels = Map<String, String>.from(
+          raw["releaseNotesSectionLabels"],
+        );
+      }
+      releaseNotesErrorText =
+          raw["releaseNotesErrorText"] ?? releaseNotesErrorText;
+      releaseNotesRetryText =
+          raw["releaseNotesRetryText"] ?? releaseNotesRetryText;
+      releaseNotesEmptyText =
+          raw["releaseNotesEmptyText"] ?? releaseNotesEmptyText;
+    } catch (_) {
+      // JSON invalide -> on ignore et garde la langue actuelle
+    }
+  }
 
-  /// Default: "Restart to update"
-  final String? restartText;
+  /// Current language code.
+  late String lang;
 
-  /// Default: "Are you sure?"
-  final String? warningTitleText;
+  /// Text displayed when an update is available.
+  late String updateAvailableText;
 
-  /// Default: "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?"
-  final String? restartWarningText;
+  /// Text displayed with the available version information.
+  late String newVersionAvailableText;
 
-  /// Default: "Not now"
-  final String? warningCancelText;
+  /// Long description displayed before downloading an update.
+  late String newVersionLongText;
 
-  /// Default: "Restart"
-  final String? warningConfirmText;
+  /// Text displayed on the restart update button.
+  late String restartText;
 
-  /// Default: "Skip this version"
-  final String? skipThisVersionText;
+  /// Title displayed in the restart confirmation dialog.
+  late String warningTitleText;
 
-  /// Default: "Download"
-  final String? downloadText;
+  /// Warning message displayed before restarting.
+  late String restartWarningText;
 
-  /// Default: "Application is up to date"
-  final String? upToDateTitleText;
+  /// Text displayed for cancelling a restart.
+  late String warningCancelText;
 
-  /// Default: "{} is the latest available version."
-  final String? upToDateText;
+  /// Text displayed for confirming a restart.
+  late String warningConfirmText;
 
-  /// Default: "Could not check for updates"
-  final String? updateCheckFailedTitleText;
+  /// Text displayed for skipping the current version.
+  late String skipThisVersionText;
 
-  /// Default: "Please try again later."
-  final String? updateCheckFailedText;
+  /// Text displayed on the download button.
+  late String downloadText;
 
-  /// Default: "OK"
-  final String? okText;
+  /// Title displayed when the application is up to date.
+  late String upToDateTitleText;
 
-  /// Called with the raw update error to produce a tooltip string for the
-  /// error icon. Return `null` to fall through to [updateFailedTooltipText].
-  ///
-  /// To return a single static string for all error cases:
-  /// ```dart
-  /// onUpdateFailedTooltip: (_) => "Update failed. Please contact support.",
-  /// ```
-  ///
-  /// To return specific messages per error type:
-  /// ```dart
-  /// onUpdateFailedTooltip: (error) {
-  ///   if (error is SocketException) return "No internet connection.";
-  ///   if (error is TimeoutException) return "Connection timed out.";
-  ///   return null; // fall through to updateFailedTooltipText
-  /// },
-  /// ```
-  final String? Function(Object error)? onUpdateFailedTooltip;
+  /// Message displayed when no update is available.
+  late String upToDateText;
 
-  /// Fallback tooltip shown for the update error icon.
-  ///
-  /// Default: "Update failed. Please try again."
-  final String? updateFailedTooltipText;
+  /// Title displayed when checking for updates fails.
+  late String updateCheckFailedTitleText;
 
-  /// Tooltip for the ready-made release notes icon.
-  ///
-  /// Default: "Release notes"
-  final String? releaseNotesButtonTooltipText;
+  /// Message displayed when the update check fails.
+  late String updateCheckFailedText;
 
-  /// Title of the release notes bottom sheet.
-  ///
-  /// Default: "What's new"
-  final String? releaseNotesTitleText;
+  /// Generic confirmation button text.
+  late String okText;
 
-  /// Section header labels for release note type groups.
-  ///
-  /// Keys: "feat", "fix", "other".
-  /// Merges with the built-in English defaults at render time; only supply
-  /// the keys you want to override.
-  ///
-  /// Built-in defaults:
-  /// - "feat"  → "New features"
-  /// - "fix"   → "Bug fixes"
-  /// - "other" → "Other changes"
-  final Map<String, String>? releaseNotesTypeLabels;
+  /// Callback used to generate a tooltip when an update fails.
+  String? Function(Object error)? onUpdateFailedTooltip;
 
-  /// Section header labels for rich release note sections.
-  ///
-  /// Keys: "features", "fixes", "security", "breaking", "other".
-  /// [releaseNotesTypeLabels] is still supported for the simple contributor
-  /// keys "feat", "fix", and "other".
-  final Map<String, String>? releaseNotesSectionLabels;
+  /// Tooltip text displayed when an update fails.
+  late String updateFailedTooltipText;
 
-  /// Error message shown in the release notes bottom sheet when the fetch fails.
-  ///
-  /// Default: "Could not load release notes."
-  final String? releaseNotesErrorText;
+  /// Tooltip text for the release notes button.
+  late String releaseNotesButtonTooltipText;
 
-  /// Label for the retry button in the release notes error state.
-  ///
-  /// Default: "Try again"
-  final String? releaseNotesRetryText;
+  /// Title displayed for release notes.
+  late String releaseNotesTitleText;
 
-  /// Message shown when the release notes list is empty.
-  ///
-  /// Default: "No release notes available."
-  final String? releaseNotesEmptyText;
+  /// Labels used for release note change types.
+  late Map<String, String> releaseNotesTypeLabels;
+
+  /// Labels used for release note sections.
+  late Map<String, String> releaseNotesSectionLabels;
+
+  /// Error message displayed when release notes cannot be loaded.
+  late String releaseNotesErrorText;
+
+  /// Text displayed for retrying release notes loading.
+  late String releaseNotesRetryText;
+
+  /// Message displayed when no release notes exist.
+  late String releaseNotesEmptyText;
 }
 
-/// Replaces `{}` placeholders in [key] with the provided [args].
-String? getLocalizedString(String? key, List<dynamic> args) {
+/// Replaces `{}` placeholders in [key] with values from [args].
+///
+/// Returns an empty string if [key] is null.
+String getLocalizedString(String? key, List<dynamic> args) {
   for (var i = 0; i < args.length; i++) {
     key = key?.replaceFirst("{}", args[i].toString());
   }
-  return key;
+  return key ?? "";
 }
