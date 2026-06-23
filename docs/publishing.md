@@ -184,9 +184,13 @@ work:
 - Ready-made available-update UI hides `Skip this version`.
 - After download, `UpdateReadyToInstall` keeps the mandatory state.
 - Restart confirmation shows `Save first` and `Restart`.
-- `Save first` only closes the confirmation so the user can save work. It does
-  not persist a skipped version, and the update surface remains active.
+- In card-based UI, `Save first` only closes the confirmation so the user can
+  save work while the update surface remains active.
+- In `UpdateDialogListener`, `Save first` dismisses the modal update flow so the
+  user can return to the app and save work.
 - The label can be localized with `DesktopUpdateLocalization.saveFirstText`.
+- Dialog-based UI can pass `MandatoryReadyToInstallBehavior.restartWithoutPrompt`
+  to restart from the ready-to-install action without showing `Save first`.
 
 For security-critical or protocol-breaking mandatory releases, also add a
 support deadline so old clients eventually fail closed.

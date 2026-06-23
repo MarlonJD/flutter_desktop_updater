@@ -259,9 +259,14 @@ already being shown.
 
 Mandatory update dialogs are intentionally not the same as optional restart
 prompts. A mandatory release removes skip and "Not now" choices, but still keeps
-a "Save first" action in the restart confirmation. That action only closes the
-confirmation so the user can save work; it does not persist a skipped version,
-and the update surface remains active.
+a "Save first" action in the restart confirmation by default. In
+`UpdateDialogListener`, that action dismisses the modal update flow so the user
+can return to the app and save work; it does not persist a skipped version.
+
+If a dialog-based integration should restart without the extra confirmation,
+pass `mandatoryReadyToInstallBehavior:
+MandatoryReadyToInstallBehavior.restartWithoutPrompt` to
+`UpdateDialogListener` or `showUpdateDialog()`.
 
 Fresh-install dialogs use the package default copy plus the optional
 release-specific `freshInstall.message`, and route users to `Download latest`.
@@ -274,6 +279,8 @@ You can also open the dialog yourself:
 await showUpdateDialog<void>(
   context,
   controller: controller,
+  mandatoryReadyToInstallBehavior:
+      MandatoryReadyToInstallBehavior.restartWithoutPrompt,
 );
 ```
 

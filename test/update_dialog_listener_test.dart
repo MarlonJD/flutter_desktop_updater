@@ -51,6 +51,61 @@ void main() {
     },
   );
 
+  testWidgets(
+    "mandatory save-first from listener dismisses dialogs so the app can save",
+    (tester) async {
+      final controller = _TestDesktopUpdaterController();
+
+      await tester.pumpWidget(_buildTestApp(controller));
+
+      controller.showAvailableUpdate(mandatory: true);
+      await tester.pump();
+      await tester.pump();
+
+      controller.showReadyToInstallUpdate(mandatory: true);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text("Restart to update"));
+      await tester.pumpAndSettle();
+
+      expect(find.text("Save first"), findsOneWidget);
+
+      await tester.tap(find.text("Save first"));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(controller.restartAppCallCount, 0);
+    },
+  );
+
+  testWidgets(
+    "mandatory ready-to-install listener can restart without a confirmation",
+    (tester) async {
+      final controller = _TestDesktopUpdaterController();
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          controller,
+          mandatoryReadyToInstallBehavior:
+              MandatoryReadyToInstallBehavior.restartWithoutPrompt,
+        ),
+      );
+
+      controller.showAvailableUpdate(mandatory: true);
+      await tester.pump();
+      await tester.pump();
+
+      controller.showReadyToInstallUpdate(mandatory: true);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text("Restart to update"));
+      await tester.pump();
+
+      expect(controller.restartAppCallCount, 1);
+      expect(find.text("Are you sure?"), findsNothing);
+    },
+  );
+
   testWidgets("manual up-to-date result helper shows one confirmation dialog", (
     tester,
   ) async {
@@ -147,11 +202,16 @@ void main() {
   });
 }
 
-Widget _buildTestApp(_TestDesktopUpdaterController controller) {
+Widget _buildTestApp(
+  _TestDesktopUpdaterController controller, {
+  MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior =
+      MandatoryReadyToInstallBehavior.promptToSaveFirst,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: UpdateDialogListener(
         controller: controller,
+        mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       ),
     ),
   );
@@ -211,8 +271,8 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
         );
 
   bool _skipUpdate = false;
-  bool _hasAvailableUpdate = false;
-  UpdateProblemReport? _failedReport;
+  UpdateState _state = const UpdateIdle();
+  int restartAppCallCount = 0;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
     schemaVersion: 3,
@@ -244,25 +304,31 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
 
   @override
   ReleaseDescriptor? get activeDescriptor =>
-      _hasAvailableUpdate ? _descriptor : null;
+      _state is UpdateIdle ? null : _descriptor;
 
   @override
-  UpdateState get state => _hasAvailableUpdate
-      ? UpdateAvailable(descriptor: _descriptor, mandatory: false)
-      : _failedReport == null
-          ? const UpdateIdle()
-          : UpdateFailed(StateError("network down"), report: _failedReport);
+  UpdateState get state => _state;
 
-  void showAvailableUpdate() {
-    _hasAvailableUpdate = true;
-    _failedReport = null;
+  void showAvailableUpdate({bool mandatory = false}) {
+    _state = UpdateAvailable(descriptor: _descriptor, mandatory: mandatory);
+    _skipUpdate = false;
+    notifyListeners();
+  }
+
+  void showReadyToInstallUpdate({bool mandatory = false}) {
+    _state = UpdateReadyToInstall(
+      stagingPath: "/tmp/stage",
+      mandatory: mandatory,
+    );
     _skipUpdate = false;
     notifyListeners();
   }
 
   void showFailedUpdate() {
-    _hasAvailableUpdate = false;
-    _failedReport = _testProblemReport();
+    _state = UpdateFailed(
+      StateError("network down"),
+      report: _testProblemReport(),
+    );
     notifyListeners();
   }
 
@@ -270,6 +336,11 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
   Future<void> makeSkipUpdate() async {
     _skipUpdate = true;
     notifyListeners();
+  }
+
+  @override
+  Future<void> restartApp() async {
+    restartAppCallCount += 1;
   }
 }
 

@@ -1,3 +1,11 @@
+## 2.3.4-dev.1
+
+* Added `MandatoryReadyToInstallBehavior` for dialog-based mandatory update
+  flows so apps can choose the default `Save first` prompt or restart without an
+  extra confirmation.
+* Fixed `UpdateDialogListener` mandatory `Save first` handling so it dismisses
+  the modal update flow and lets the user return to the app to save work.
+
 ## 2.3.3
 
 * Added mandatory ready-to-install UX that preserves mandatory state after staging and shows `Save first` plus `Restart`.

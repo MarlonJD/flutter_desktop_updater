@@ -5,6 +5,15 @@ import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
+/// Controls mandatory ready-to-install behavior in dialog-based update UI.
+enum MandatoryReadyToInstallBehavior {
+  /// Show a restart confirmation with `Save first` and `Restart`.
+  promptToSaveFirst,
+
+  /// Restart immediately when the user presses the ready-to-install action.
+  restartWithoutPrompt,
+}
+
 /// Listens for available updates and presents them in a dialog.
 class UpdateDialogListener extends StatefulWidget {
   /// Creates a listener that shows an update dialog for [controller].
@@ -17,6 +26,8 @@ class UpdateDialogListener extends StatefulWidget {
     this.textColor,
     this.buttonTextColor,
     this.buttonIconColor,
+    this.mandatoryReadyToInstallBehavior =
+        MandatoryReadyToInstallBehavior.promptToSaveFirst,
   });
 
   /// The controller that provides update state and actions.
@@ -40,6 +51,9 @@ class UpdateDialogListener extends StatefulWidget {
   /// The color of the button icon. if null, it will use Theme.of(context).colorScheme.primary,
   final Color? buttonIconColor;
 
+  /// Dialog behavior after a mandatory update has been staged.
+  final MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior;
+
   @override
   State<UpdateDialogListener> createState() => _UpdateDialogListenerState();
 
@@ -55,7 +69,13 @@ class UpdateDialogListener extends StatefulWidget {
       ..add(ColorProperty("shadowColor", shadowColor))
       ..add(ColorProperty("buttonTextColor", buttonTextColor))
       ..add(ColorProperty("buttonIconColor", buttonIconColor))
-      ..add(ColorProperty("textColor", textColor));
+      ..add(ColorProperty("textColor", textColor))
+      ..add(
+        EnumProperty<MandatoryReadyToInstallBehavior>(
+          "mandatoryReadyToInstallBehavior",
+          mandatoryReadyToInstallBehavior,
+        ),
+      );
   }
 }
 
@@ -103,6 +123,8 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
               textColor: widget.textColor,
               buttonTextColor: widget.buttonTextColor,
               buttonIconColor: widget.buttonIconColor,
+              mandatoryReadyToInstallBehavior:
+                  widget.mandatoryReadyToInstallBehavior,
             );
           },
         ).whenComplete(() {
@@ -163,6 +185,8 @@ Future showUpdateDialog<T>(
   Color? backgroundColor,
   Color? iconColor,
   Color? shadowColor,
+  MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior =
+      MandatoryReadyToInstallBehavior.promptToSaveFirst,
 }) {
   return showDialog(
     context: context,
@@ -173,6 +197,7 @@ Future showUpdateDialog<T>(
         backgroundColor: backgroundColor,
         iconColor: iconColor,
         shadowColor: shadowColor,
+        mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       );
     },
   );
@@ -189,6 +214,8 @@ Future<void> showManualUpdateCheckResultDialog(
   Color? shadowColor,
   Color? textColor,
   Color? buttonTextColor,
+  MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior =
+      MandatoryReadyToInstallBehavior.promptToSaveFirst,
 }) async {
   switch (result) {
     case ManualUpdateCheckAvailable():
@@ -201,6 +228,7 @@ Future<void> showManualUpdateCheckResultDialog(
         backgroundColor: backgroundColor,
         iconColor: iconColor,
         shadowColor: shadowColor,
+        mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       );
     case ManualUpdateCheckFreshInstallRequired() ||
           ManualUpdateCheckBlockedBySupportPolicy():
@@ -210,6 +238,7 @@ Future<void> showManualUpdateCheckResultDialog(
         backgroundColor: backgroundColor,
         iconColor: iconColor,
         shadowColor: shadowColor,
+        mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       );
     case ManualUpdateCheckUpToDate():
       await showDialog<void>(
@@ -308,6 +337,8 @@ class UpdateDialogWidget extends StatelessWidget {
     this.textColor,
     this.buttonTextColor,
     this.buttonIconColor,
+    this.mandatoryReadyToInstallBehavior =
+        MandatoryReadyToInstallBehavior.promptToSaveFirst,
   }) : notifier = controller;
 
   /// The controller for the update dialog.
@@ -330,6 +361,9 @@ class UpdateDialogWidget extends StatelessWidget {
 
   /// The color of the button icon. if null, it will use Theme.of(context).colorScheme.primary,
   final Color? buttonIconColor;
+
+  /// Dialog behavior after a mandatory update has been staged.
+  final MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -449,10 +483,17 @@ class UpdateDialogWidget extends StatelessWidget {
                         onPressed: () {
                           final isMandatory =
                               _isMandatoryUpdate(notifier.state);
+                          if (isMandatory &&
+                              mandatoryReadyToInstallBehavior ==
+                                  MandatoryReadyToInstallBehavior
+                                      .restartWithoutPrompt) {
+                            unawaited(notifier.restartApp());
+                            return;
+                          }
                           showDialog(
                             context: context,
                             barrierDismissible: !isMandatory,
-                            builder: (context) {
+                            builder: (restartContext) {
                               return AlertDialog(
                                 title: Text(
                                   notifier.getLocalization?.warningTitleText ??
@@ -468,7 +509,10 @@ class UpdateDialogWidget extends StatelessWidget {
                                 actions: [
                                   TextButton(
                                     onPressed: () {
-                                      Navigator.of(context).pop();
+                                      Navigator.of(restartContext).pop();
+                                      if (isMandatory) {
+                                        Navigator.of(context).pop();
+                                      }
                                     },
                                     child: Text(
                                       isMandatory
@@ -569,7 +613,13 @@ class UpdateDialogWidget extends StatelessWidget {
       ..add(ColorProperty("shadowColor", shadowColor))
       ..add(ColorProperty("buttonTextColor", buttonTextColor))
       ..add(ColorProperty("buttonIconColor", buttonIconColor))
-      ..add(ColorProperty("textColor", textColor));
+      ..add(ColorProperty("textColor", textColor))
+      ..add(
+        EnumProperty<MandatoryReadyToInstallBehavior>(
+          "mandatoryReadyToInstallBehavior",
+          mandatoryReadyToInstallBehavior,
+        ),
+      );
   }
 }
 
