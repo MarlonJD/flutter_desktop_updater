@@ -71,12 +71,12 @@ void main() {
     expect(source, contains("Default package behavior writes no files"));
   });
 
-  test("package metadata and changelog agree on 2.3.4-dev.1", () {
+  test("package metadata and changelog agree on 2.3.4", () {
     final pubspec = File("pubspec.yaml").readAsStringSync();
     final changelog = File("CHANGELOG.md").readAsStringSync();
 
-    expect(pubspec, contains("version: 2.3.4-dev.1"));
-    expect(changelog, startsWith("## 2.3.4-dev.1"));
+    expect(pubspec, contains("version: 2.3.4"));
+    expect(changelog, startsWith("## 2.3.4"));
     expect(changelog, contains("MandatoryReadyToInstallBehavior"));
     expect(changelog, contains("supportPolicy"));
     expect(changelog, contains("freshInstall"));

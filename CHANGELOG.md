@@ -1,4 +1,4 @@
-## 2.3.4-dev.1
+## 2.3.4
 
 * Added `MandatoryReadyToInstallBehavior` for dialog-based mandatory update
   flows so apps can choose the default `Save first` prompt or restart without an
