@@ -13,9 +13,19 @@
 * Added `freshInstall` metadata, ready-made fresh-install UI, external download launching, and release publish flags.
 * Added `release publish` help and validation for support-policy and fresh-install flags.
 
+## 2.3.2
+
+* Fixed Linux zip staging so Unix permission bits are restored from the update
+  archive, preserving executable bundle files before native relaunch.
+* Added a Linux native helper fallback that restores the target executable bit
+  after replacement and rolls back if relaunch would be impossible.
+* Documented Linux zip permission expectations for apps that produce update
+  artifacts outside `release publish`.
+
 ## 2.3.1
 
-* Added `release publish --dart-define` support so build-time Dart environment values are forwarded to `flutter build`.
+* Added `release publish --dart-define` support so build-time Dart environment
+  values are forwarded to `flutter build`.
 
 ## 2.3.0
 

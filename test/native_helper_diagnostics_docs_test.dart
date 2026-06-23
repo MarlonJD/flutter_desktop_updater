@@ -5,8 +5,9 @@ import "package:flutter_test/flutter_test.dart";
 void main() {
   test("README surfaces native helper diagnostics and current setup", () {
     final source = File("README.md").readAsStringSync();
+    final version = _currentPackageVersion();
 
-    expect(source, contains("desktop_updater: ^2.3.0"));
+    expect(source, contains("desktop_updater: ^$version"));
     expect(source, contains("## Diagnostics And Recovery"));
     expect(source, contains("diagnosticsLogPath"));
     expect(source, contains("UpdateRecoveryStore"));
@@ -71,18 +72,20 @@ void main() {
     expect(source, contains("Default package behavior writes no files"));
   });
 
-  test("package metadata and changelog agree on 2.3.4", () {
+  test("package metadata and changelog agree on current version", () {
     final pubspec = File("pubspec.yaml").readAsStringSync();
     final changelog = File("CHANGELOG.md").readAsStringSync();
+    final version = _currentPackageVersion();
 
-    expect(pubspec, contains("version: 2.3.4"));
-    expect(changelog, startsWith("## 2.3.4"));
+    expect(pubspec, contains("version: $version"));
+    expect(changelog, startsWith("## $version"));
     expect(changelog, contains("MandatoryReadyToInstallBehavior"));
     expect(changelog, contains("supportPolicy"));
     expect(changelog, contains("freshInstall"));
     expect(changelog, contains("## 2.3.3"));
+    expect(changelog, contains("Linux zip staging"));
     expect(changelog, contains("## 2.3.1"));
-    expect(changelog, contains("## 2.3.0"));
+    expect(changelog, contains("release publish --dart-define"));
     expect(changelog, contains("release notes support"));
     expect(changelog, contains("## 2.2.0"));
     expect(changelog, contains("native helper diagnostics"));
@@ -101,4 +104,14 @@ void main() {
     expect(uiDocs, contains("Side sheet"));
     expect(uiDocs, contains("Changelog page"));
   });
+}
+
+String _currentPackageVersion() {
+  final pubspec = File("pubspec.yaml").readAsStringSync();
+  final match =
+      RegExp(r"^version:\s*(\S+)", multiLine: true).firstMatch(pubspec);
+  if (match == null) {
+    throw StateError("pubspec.yaml is missing a package version.");
+  }
+  return match.group(1)!;
 }
