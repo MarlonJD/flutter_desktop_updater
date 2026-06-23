@@ -113,7 +113,14 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
   }
 
   bool _shouldShowDialog(DesktopUpdaterController controller) {
-    return controller.state is UpdateAvailable && !controller.skipUpdate;
+    return !controller.skipUpdate &&
+        switch (controller.state) {
+          UpdateAvailable() ||
+          UpdateFreshInstallRequired() ||
+          UpdateBlockedBySupportPolicy() =>
+            true,
+          _ => false,
+        };
   }
 
   void _clearDialogRequest(Object request) {
@@ -188,6 +195,15 @@ Future<void> showManualUpdateCheckResultDialog(
       if (!showAvailableUpdate) {
         return;
       }
+      await showUpdateDialog<void>(
+        context,
+        controller: controller,
+        backgroundColor: backgroundColor,
+        iconColor: iconColor,
+        shadowColor: shadowColor,
+      );
+    case ManualUpdateCheckFreshInstallRequired() ||
+          ManualUpdateCheckBlockedBySupportPolicy():
       await showUpdateDialog<void>(
         context,
         controller: controller,
@@ -387,11 +403,11 @@ class UpdateDialogWidget extends StatelessWidget {
                 style: TextStyle(color: textColor),
               ),
               content: Text(
-                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
-                          _formatMegabytes(totalBytes),
-                        ]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [
-                          _formatMegabytes(totalBytes),
-                        ])) ?? ""}",
+                _dialogContentText(
+                  notifier: notifier,
+                  state: state,
+                  totalBytes: totalBytes,
+                ),
                 style: TextStyle(color: buttonTextColor),
               ),
               actions: [
@@ -431,8 +447,11 @@ class UpdateDialogWidget extends StatelessWidget {
                               "Restart to update",
                         ),
                         onPressed: () {
+                          final isMandatory =
+                              _isMandatoryUpdate(notifier.state);
                           showDialog(
                             context: context,
+                            barrierDismissible: !isMandatory,
                             builder: (context) {
                               return AlertDialog(
                                 title: Text(
@@ -442,7 +461,9 @@ class UpdateDialogWidget extends StatelessWidget {
                                 content: Text(
                                   notifier.getLocalization
                                           ?.restartWarningText ??
-                                      "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
+                                      (isMandatory
+                                          ? "This update is required. Save your work before restarting to finish the installation."
+                                          : "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?"),
                                 ),
                                 actions: [
                                   TextButton(
@@ -450,9 +471,13 @@ class UpdateDialogWidget extends StatelessWidget {
                                       Navigator.of(context).pop();
                                     },
                                     child: Text(
-                                      notifier.getLocalization
-                                              ?.warningCancelText ??
-                                          "Not now",
+                                      isMandatory
+                                          ? notifier.getLocalization
+                                                  ?.saveFirstText ??
+                                              "Save first"
+                                          : notifier.getLocalization
+                                                  ?.warningCancelText ??
+                                              "Not now",
                                     ),
                                   ),
                                   TextButton(
@@ -468,6 +493,34 @@ class UpdateDialogWidget extends StatelessWidget {
                             },
                           );
                         },
+                      ),
+                    ],
+                  )
+                else if (state is UpdateFreshInstallRequired)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (!_isMandatoryUpdate(state))
+                        TextButton.icon(
+                          icon: Icon(Icons.close, color: buttonIconColor),
+                          label: Text(
+                            notifier.getLocalization?.warningCancelText ??
+                                "Not now",
+                            style: TextStyle(color: buttonTextColor),
+                          ),
+                          onPressed: () {
+                            unawaited(notifier.makeSkipUpdate());
+                          },
+                        ),
+                      if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
+                      TextButton.icon(
+                        icon: Icon(Icons.open_in_new, color: buttonIconColor),
+                        label: Text(
+                          notifier.getLocalization?.downloadLatestText ??
+                              "Download latest",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: notifier.openFreshInstallDownload,
                       ),
                     ],
                   )
@@ -525,7 +578,70 @@ bool _canDismissDialog(UpdateState state) {
 }
 
 bool _isMandatoryUpdate(UpdateState state) {
-  return state is UpdateAvailable && state.mandatory;
+  return switch (state) {
+    UpdateAvailable(:final mandatory) ||
+    UpdateReadyToInstall(:final mandatory) ||
+    UpdateFreshInstallRequired(:final mandatory) =>
+      mandatory,
+    UpdateBlockedBySupportPolicy() => true,
+    _ => false,
+  };
+}
+
+String _dialogContentText({
+  required DesktopUpdaterController notifier,
+  required UpdateState state,
+  required int totalBytes,
+}) {
+  if (state is UpdateFreshInstallRequired) {
+    return state.freshInstall.message ??
+        notifier.getLocalization?.freshInstallRequiredText ??
+        "This version cannot safely install the update. Please download the "
+            "latest version.";
+  }
+  if (state is UpdateBlockedBySupportPolicy) {
+    return notifier.getLocalization?.supportPolicyBlockedText ??
+        "This version is no longer supported. Please update to continue.";
+  }
+  if (state is UpdateAvailable && state.supportPolicy != null) {
+    final policy = state.supportPolicy!;
+    return getLocalizedString(
+          notifier.getLocalization?.supportPolicyWarningText,
+          [
+            policy.minimumSupportedVersion,
+            policy.enforcedAfter.toIso8601String(),
+          ],
+        ) ??
+        getLocalizedString(
+          "Please update to version {} before {}.",
+          [
+            policy.minimumSupportedVersion,
+            policy.enforcedAfter.toIso8601String(),
+          ],
+        ) ??
+        "";
+  }
+
+  final availableText = getLocalizedString(
+        notifier.getLocalization?.newVersionAvailableText,
+        [notifier.appName, notifier.appVersion],
+      ) ??
+      getLocalizedString(
+        "{} {} is available",
+        [notifier.appName, notifier.appVersion],
+      ) ??
+      "";
+  final longText = getLocalizedString(
+        notifier.getLocalization?.newVersionLongText,
+        [_formatMegabytes(totalBytes)],
+      ) ??
+      getLocalizedString(
+        "New version is ready to download, click the button below to start "
+        "downloading. This will download {} MB of data.",
+        [_formatMegabytes(totalBytes)],
+      ) ??
+      "";
+  return "$availableText, $longText";
 }
 
 int _updateTotalBytes({

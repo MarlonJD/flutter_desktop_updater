@@ -185,6 +185,113 @@ void main() {
     }
   });
 
+  test("downloadUpdate keeps mandatory policy after staging", () async {
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: true,
+      validArtifact: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+      expect((controller.state as UpdateAvailable).mandatory, isTrue);
+
+      await controller.downloadUpdate();
+
+      final ready = controller.state as UpdateReadyToInstall;
+      expect(ready.stagingPath, isNotEmpty);
+      expect(ready.mandatory, isTrue);
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("freshInstall moves controller to fresh-install state", () async {
+    final openedUrls = <Uri>[];
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: true,
+      freshInstall: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        externalUrlLauncher: (url) async {
+          openedUrls.add(url);
+        },
+      );
+
+      await controller.checkVersion();
+
+      final state = controller.state as UpdateFreshInstallRequired;
+      expect(state.mandatory, isTrue);
+      expect(state.freshInstall.message, "Install from a fresh download.");
+      expect(
+        state.freshInstall.downloadUrl.toString(),
+        "https://example.com/download/latest",
+      );
+      await expectLater(
+        controller.downloadUpdate(),
+        throwsStateError,
+      );
+
+      await controller.openFreshInstallDownload();
+      expect(
+          openedUrls.single.toString(), "https://example.com/download/latest");
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("supportPolicy past deadline moves controller to blocking state",
+      () async {
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      supportPolicy: true,
+      enforcedAfter: DateTime.utc(2000),
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+
+      final state = controller.state as UpdateBlockedBySupportPolicy;
+      expect(state.supportPolicy.minimumSupportedVersion, "2.4.0");
+      expect(state.descriptor.version, "2.0.1");
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("supportPolicy before deadline keeps app usable with warning policy",
+      () async {
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      supportPolicy: true,
+      enforcedAfter: DateTime.utc(2999),
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+
+      final state = controller.state as UpdateAvailable;
+      expect(state.supportPolicy?.minimumSupportedVersion, "2.4.0");
+      expect(state.mandatory, isFalse);
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("restartApp writes a recovery marker before native handoff", () async {
     final recoveryStore = _MemoryRecoveryStore();
     final fixture = await _ControllerUpdateFixture.create(
@@ -795,6 +902,9 @@ class _ControllerUpdateFixture {
   static Future<_ControllerUpdateFixture> create({
     required bool mandatory,
     bool validArtifact = false,
+    bool supportPolicy = false,
+    DateTime? enforcedAfter,
+    bool freshInstall = false,
   }) async {
     final root = await Directory.systemTemp.createTemp(
       "updater_controller_",
@@ -825,6 +935,13 @@ class _ControllerUpdateFixture {
       "${const JsonEncoder.withIndent("  ").convert({
             "schemaVersion": 3,
             "appName": appName,
+            if (supportPolicy)
+              "supportPolicy": {
+                "minimumSupportedVersion": "2.4.0",
+                "enforcedAfter": (enforcedAfter ?? DateTime.utc(2999))
+                    .toUtc()
+                    .toIso8601String(),
+              },
             "items": [
               {
                 "version": "2.0.1",
@@ -832,6 +949,11 @@ class _ControllerUpdateFixture {
                 "platform": Platform.operatingSystem,
                 "channel": "stable",
                 "mandatory": mandatory,
+                if (freshInstall)
+                  "freshInstall": {
+                    "downloadUrl": "https://example.com/download/latest",
+                    "message": "Install from a fresh download.",
+                  },
                 "release": releaseUrl.toString(),
               },
             ],

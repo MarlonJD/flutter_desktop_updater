@@ -12,6 +12,18 @@ dart run desktop_updater:release publish --platform linux
 The command builds one platform, packages the release, writes a consistent local
 layout, optionally uploads it, and validates the hosted update path.
 
+Build-time Dart defines can be forwarded to Flutter with repeated
+`--dart-define` options:
+
+```sh
+dart run desktop_updater:release publish --platform windows \
+  --dart-define=MY_VAR=value \
+  --dart-define=FEATURE_FLAG=true
+```
+
+Those values are passed to `flutter build` so the app can read them through
+`String.fromEnvironment`, `bool.fromEnvironment`, or `int.fromEnvironment`.
+
 ## EL10 Working Scenario
 
 Think of your update host as one shelf on the internet.
@@ -141,6 +153,172 @@ matching private key before the updater trusts artifact metadata such as URL,
 length, and SHA-256. It does not replace app-owned platform trust: Authenticode,
 Apple Developer ID notarization, native package signing, store review, and
 Linux repository signing remain the app publisher's responsibility.
+
+## Update Policy Modes
+
+`mandatory` is implemented today on each `app-archive.json` item. Use it for
+updates that must keep appearing until installed:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --mandatory
+```
+
+### Optional Updates
+
+When `mandatory` is absent or `false`, the ready-made UI treats the release as a
+soft prompt:
+
+- Shows `Download`.
+- Shows `Skip this version` when skip persistence is available.
+- Allows the restart confirmation to use `Not now`.
+- May persist a skipped version through the app-supplied `UpdatePreferences`.
+
+### Mandatory Updates
+
+When `mandatory` is `true`, the release is required but still protects unsaved
+work:
+
+- Skipped versions are ignored for update selection.
+- Ready-made available-update UI hides `Skip this version`.
+- After download, `UpdateReadyToInstall` keeps the mandatory state.
+- Restart confirmation shows `Save first` and `Restart`.
+- `Save first` only closes the confirmation so the user can save work. It does
+  not persist a skipped version, and the update surface remains active.
+- The label can be localized with `DesktopUpdateLocalization.saveFirstText`.
+
+For security-critical or protocol-breaking mandatory releases, also add a
+support deadline so old clients eventually fail closed.
+
+### Support Policy
+
+`supportPolicy` is a top-level `app-archive.json` fail-safe. It belongs at the
+top level because the app needs the policy before downloading any artifact:
+
+```json
+{
+  "schemaVersion": 3,
+  "appName": "Example App",
+  "supportPolicy": {
+    "minimumSupportedVersion": "2.4.0",
+    "enforcedAfter": "2026-07-15T00:00:00Z"
+  },
+  "items": [
+    {
+      "version": "2.4.0",
+      "buildNumber": 240,
+      "platform": "macos",
+      "channel": "stable",
+      "mandatory": true,
+      "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+    }
+  ]
+}
+```
+
+Runtime behavior:
+
+- Missing `supportPolicy`: no support deadline is used.
+- If one support-policy field is present, both fields are required.
+- Before `enforcedAfter`: warn strongly, but allow normal app usage.
+- After `enforcedAfter`: replace normal usage with blocking required-update UI.
+- If a selected release also has `freshInstall`, the blocking UI points to the
+  fresh download instead of the in-app updater.
+
+### Fresh Install
+
+`freshInstall` is separate from `mandatory`. It means this release should be
+installed from a fresh download instead of the in-app updater. It is item-level
+because the requirement can differ by version, platform, channel, signing
+transition, or updater-runtime transition.
+
+```json
+{
+  "version": "2.4.0",
+  "buildNumber": 240,
+  "platform": "macos",
+  "channel": "stable",
+  "mandatory": true,
+  "freshInstall": {
+    "downloadUrl": "https://example.com/download/latest",
+    "message": "This update must be installed from a fresh download."
+  },
+  "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+}
+```
+
+Runtime behavior:
+
+- Missing `freshInstall`: use the normal in-app update flow.
+- Present `freshInstall`: show package-provided fresh-install UI, unless the app
+  supplies custom UI for that state.
+- `downloadUrl` is required.
+- `message` is optional release-specific copy.
+- Default titles, buttons, and common body text should live in Flutter
+  localization, not in `app-archive.json`.
+- The ready-made UI opens `downloadUrl` through the controller's external URL
+  launcher. Apps can pass a custom launcher when they need analytics, routing,
+  or a controlled support flow.
+
+### Publish Flags
+
+The CLI generates policy JSON only when the matching optional flags are
+provided:
+
+Mandatory only:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --mandatory
+```
+
+This writes `"mandatory": true` on the generated `app-archive.json` item.
+
+Support deadline only:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --minimum-supported-version 2.4.0 \
+  --enforced-after 2026-07-15T00:00:00Z
+```
+
+This writes top-level `supportPolicy` and leaves the release item optional
+unless `--mandatory` is also present.
+
+Fresh install only:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --fresh-install-url https://example.com/download/latest \
+  --fresh-install-message "This update must be installed from a fresh download."
+```
+
+This writes item-level `freshInstall`. Omit `--fresh-install-message` when the
+default localized ready-made UI copy is enough.
+
+Mandatory update with a fail-safe deadline and fresh download fallback:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform macos \
+  --mandatory \
+  --minimum-supported-version 2.4.0 \
+  --enforced-after 2026-07-15T00:00:00Z \
+  --fresh-install-url https://example.com/download/latest \
+  --fresh-install-message "This update must be installed from a fresh download."
+```
+
+Generation rules:
+
+- If `--minimum-supported-version` and `--enforced-after` are both absent,
+  omit `supportPolicy`.
+- If one support-policy flag is present, require the other.
+- If `--fresh-install-url` is absent, omit `freshInstall`.
+- `--fresh-install-message` is valid only with `--fresh-install-url`.
 
 ## Runtime Policies
 

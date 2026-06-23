@@ -8,6 +8,7 @@ Future<ReleaseIndex> upsertAppArchive({
   required File archiveFile,
   required String appName,
   required ReleaseIndexItem item,
+  ReleaseSupportPolicy? supportPolicy,
 }) async {
   final existing = await _readExistingIndex(archiveFile, appName);
   final items = [
@@ -19,6 +20,7 @@ Future<ReleaseIndex> upsertAppArchive({
   final updated = ReleaseIndex(
     schemaVersion: 3,
     appName: appName,
+    supportPolicy: supportPolicy ?? existing.supportPolicy,
     items: items,
   );
 
@@ -38,6 +40,7 @@ Future<ReleaseIndex> _readExistingIndex(
     return ReleaseIndex(
       schemaVersion: 3,
       appName: appName,
+      supportPolicy: null,
       items: const [],
     );
   }

@@ -1,4 +1,5 @@
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 
 /// Base type for the updater lifecycle states exposed by the controller.
@@ -22,13 +23,62 @@ final class UpdateChecking extends UpdateState {
 /// A release newer than the installed app is available.
 final class UpdateAvailable extends UpdateState {
   /// Creates an available-update state for [descriptor].
-  const UpdateAvailable({required this.descriptor, required this.mandatory});
+  const UpdateAvailable({
+    required this.descriptor,
+    required this.mandatory,
+    this.supportPolicy,
+  });
 
   /// Release descriptor selected from the app archive.
   final ReleaseDescriptor descriptor;
 
   /// Whether the selected release should be treated as mandatory.
   final bool mandatory;
+
+  /// Optional support deadline that applies to the current app version.
+  final ReleaseSupportPolicy? supportPolicy;
+}
+
+/// A newer release exists but must be installed from a fresh download.
+final class UpdateFreshInstallRequired extends UpdateState {
+  /// Creates a fresh-install-required state.
+  const UpdateFreshInstallRequired({
+    required this.descriptor,
+    required this.freshInstall,
+    required this.mandatory,
+    this.supportPolicy,
+  });
+
+  /// Release descriptor selected from the app archive.
+  final ReleaseDescriptor descriptor;
+
+  /// Fresh download policy for the selected release.
+  final ReleaseFreshInstall freshInstall;
+
+  /// Whether the prompt should block skip/dismiss choices.
+  final bool mandatory;
+
+  /// Optional support deadline that applies to the current app version.
+  final ReleaseSupportPolicy? supportPolicy;
+}
+
+/// The current app version is past the support deadline.
+final class UpdateBlockedBySupportPolicy extends UpdateState {
+  /// Creates a support-policy blocking state.
+  const UpdateBlockedBySupportPolicy({
+    required this.descriptor,
+    required this.supportPolicy,
+    this.freshInstall,
+  });
+
+  /// Release descriptor selected from the app archive.
+  final ReleaseDescriptor descriptor;
+
+  /// Support policy forcing the blocking update UI.
+  final ReleaseSupportPolicy supportPolicy;
+
+  /// Optional fresh download policy for the selected release.
+  final ReleaseFreshInstall? freshInstall;
 }
 
 /// The selected update artifact is being downloaded and verified.
@@ -49,10 +99,16 @@ final class UpdateDownloading extends UpdateState {
 /// The update artifact has been staged and can be installed.
 final class UpdateReadyToInstall extends UpdateState {
   /// Creates a ready-to-install state for [stagingPath].
-  const UpdateReadyToInstall({required this.stagingPath});
+  const UpdateReadyToInstall({
+    required this.stagingPath,
+    this.mandatory = false,
+  });
 
   /// Platform-specific path passed to the native install helper.
   final String stagingPath;
+
+  /// Whether the staged update should still be treated as mandatory.
+  final bool mandatory;
 }
 
 /// The native install or restart helper is running.

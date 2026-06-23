@@ -136,6 +136,137 @@ updates:
     }
   });
 
+  test("publish writes support policy and fresh install flags", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "publish",
+          "--platform",
+          fixture.platform,
+          "--skip-build-for-test",
+          "--mandatory",
+          "--minimum-supported-version",
+          "2.4.0",
+          "--enforced-after",
+          "2026-07-15T00:00:00Z",
+          "--fresh-install-url",
+          "https://example.com/download/latest",
+          "--fresh-install-message",
+          "Install from a fresh download.",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      final appArchive = File(
+        path.join(
+          fixture.root.path,
+          "dist",
+          "desktop_updater",
+          "app-archive.json",
+        ),
+      );
+      final archive =
+          jsonDecode(await appArchive.readAsString()) as Map<String, dynamic>;
+      expect(archive["supportPolicy"], {
+        "minimumSupportedVersion": "2.4.0",
+        "enforcedAfter": "2026-07-15T00:00:00.000Z",
+      });
+
+      final items = archive["items"] as List<dynamic>;
+      final firstItem = items.single as Map<String, dynamic>;
+      expect(firstItem["mandatory"], isTrue);
+      expect(firstItem["freshInstall"], {
+        "downloadUrl": "https://example.com/download/latest",
+        "message": "Install from a fresh download.",
+      });
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("publish rejects partial support policy flags", () async {
+    final output = StringBuffer();
+
+    final exitCode = await runReleaseCommand(
+      const [
+        "publish",
+        "--platform",
+        "macos",
+        "--minimum-supported-version",
+        "2.4.0",
+      ],
+      output: output,
+    );
+
+    expect(exitCode, 64);
+    expect(
+      output.toString(),
+      contains("--minimum-supported-version and --enforced-after"),
+    );
+  });
+
+  test("publish rejects fresh install message without URL", () async {
+    final output = StringBuffer();
+
+    final exitCode = await runReleaseCommand(
+      const [
+        "publish",
+        "--platform",
+        "macos",
+        "--fresh-install-message",
+        "Install from a fresh download.",
+      ],
+      output: output,
+    );
+
+    expect(exitCode, 64);
+    expect(
+      output.toString(),
+      contains("--fresh-install-message requires --fresh-install-url"),
+    );
+  });
+
+  test("publish accepts repeated dart define options", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "publish",
+          "--platform",
+          fixture.platform,
+          "--dart-define",
+          "MY_VAR=value",
+          "--dart-define=FEATURE_FLAG=true",
+          "--skip-build-for-test",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("Manual publish package is ready."));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("notarize flag is only accepted for macOS", () async {
     final fixture = await createReleasePublishFixture(
       config: """
@@ -185,6 +316,28 @@ macos:
     expect(
       output.toString(),
       contains("dart run desktop_updater:release doctor --platform macos"),
+    );
+  });
+
+  test("publish help explains repeatable defines and mandatory behavior",
+      () async {
+    final output = StringBuffer();
+
+    final exitCode = await runReleaseCommand(
+      const ["publish", "--help"],
+      output: output,
+    );
+
+    expect(exitCode, 0);
+    expect(output.toString(), contains("--dart-define=<key=value>"));
+    expect(output.toString(), contains("Repeat for multiple values."));
+    expect(output.toString(), contains("--mandatory"));
+    expect(output.toString(), contains("hides skip actions"));
+    expect(output.toString(), contains("--minimum-supported-version"));
+    expect(output.toString(), contains("--fresh-install-url"));
+    expect(
+      output.toString(),
+      contains("keeps prompting until installed"),
     );
   });
 }

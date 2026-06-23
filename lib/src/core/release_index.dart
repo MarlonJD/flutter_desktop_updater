@@ -10,6 +10,7 @@ class ReleaseIndex {
     required this.schemaVersion,
     required this.appName,
     required this.items,
+    this.supportPolicy,
   });
 
   /// Parses and validates a schema-v3 app archive index from JSON.
@@ -24,6 +25,7 @@ class ReleaseIndex {
     return ReleaseIndex(
       schemaVersion: schemaVersion,
       appName: json["appName"] as String? ?? "",
+      supportPolicy: _parseReleaseSupportPolicy(json["supportPolicy"]),
       items: (json["items"] as List<dynamic>? ?? const [])
           .map(
             (item) => ReleaseIndexItem.fromJson(
@@ -43,11 +45,15 @@ class ReleaseIndex {
   /// Release entries available for platforms and channels.
   final List<ReleaseIndexItem> items;
 
+  /// Optional app-wide support deadline policy.
+  final ReleaseSupportPolicy? supportPolicy;
+
   /// Converts this app archive to JSON.
   Map<String, dynamic> toJson() {
     return {
       "schemaVersion": schemaVersion,
       "appName": appName,
+      if (supportPolicy != null) "supportPolicy": supportPolicy!.toJson(),
       "items": items.map((item) => item.toJson()).toList(),
     };
   }
@@ -63,6 +69,7 @@ class ReleaseIndexItem {
     required this.channel,
     required this.mandatory,
     required this.release,
+    this.freshInstall,
     this.rollout,
   });
 
@@ -83,6 +90,7 @@ class ReleaseIndexItem {
       channel: json["channel"] as String? ?? "stable",
       mandatory: json["mandatory"] as bool? ?? false,
       release: Uri.parse(releaseValue?.toString() ?? ""),
+      freshInstall: _parseReleaseFreshInstall(json["freshInstall"]),
       rollout: _parseReleaseRollout(json["rollout"]),
     );
   }
@@ -105,6 +113,9 @@ class ReleaseIndexItem {
   /// URL for the versioned `release.json` descriptor.
   final Uri release;
 
+  /// Optional policy requiring a fresh download instead of in-app install.
+  final ReleaseFreshInstall? freshInstall;
+
   /// Optional deterministic rollout gate for this release item.
   final ReleaseRollout? rollout;
 
@@ -116,8 +127,117 @@ class ReleaseIndexItem {
       "platform": platform,
       "channel": channel,
       "mandatory": mandatory,
+      if (freshInstall != null) "freshInstall": freshInstall!.toJson(),
       "release": release.toString(),
       if (rollout != null) "rollout": rollout!.toJson(),
+    };
+  }
+}
+
+/// App-wide minimum supported version policy from `app-archive.json`.
+class ReleaseSupportPolicy {
+  /// Creates a support policy.
+  const ReleaseSupportPolicy({
+    required this.minimumSupportedVersion,
+    required this.enforcedAfter,
+  });
+
+  /// Parses support policy metadata from `app-archive.json`.
+  factory ReleaseSupportPolicy.fromJson(Map<String, dynamic> json) {
+    final minimumSupportedVersion = json["minimumSupportedVersion"];
+    if (minimumSupportedVersion is! String ||
+        minimumSupportedVersion.trim().isEmpty) {
+      throw const FormatException(
+        "supportPolicy.minimumSupportedVersion must be a non-empty string.",
+      );
+    }
+
+    final enforcedAfterValue = json["enforcedAfter"];
+    if (enforcedAfterValue is! String || enforcedAfterValue.trim().isEmpty) {
+      throw const FormatException(
+        "supportPolicy.enforcedAfter must be a non-empty ISO-8601 string.",
+      );
+    }
+
+    return ReleaseSupportPolicy(
+      minimumSupportedVersion: minimumSupportedVersion,
+      enforcedAfter: DateTime.parse(enforcedAfterValue).toUtc(),
+    );
+  }
+
+  /// Minimum app version accepted by the update host.
+  final String minimumSupportedVersion;
+
+  /// Deadline after which unsupported clients must use blocking update UI.
+  final DateTime enforcedAfter;
+
+  /// Whether [currentVersion] is older than [minimumSupportedVersion].
+  bool appliesTo(DesktopVersionInfo currentVersion) {
+    return compareDesktopVersions(
+          currentVersion,
+          DesktopVersionInfo.parse(minimumSupportedVersion),
+        ) <
+        0;
+  }
+
+  /// Whether [currentVersion] is unsupported and [now] is past the deadline.
+  bool isEnforced({
+    required DesktopVersionInfo currentVersion,
+    required DateTime now,
+  }) {
+    return appliesTo(currentVersion) && !now.toUtc().isBefore(enforcedAfter);
+  }
+
+  /// Converts this policy to JSON.
+  Map<String, dynamic> toJson() {
+    return {
+      "minimumSupportedVersion": minimumSupportedVersion,
+      "enforcedAfter": enforcedAfter.toUtc().toIso8601String(),
+    };
+  }
+}
+
+/// Item-level policy requiring users to download a fresh installer.
+class ReleaseFreshInstall {
+  /// Creates a fresh-install policy.
+  const ReleaseFreshInstall({
+    required this.downloadUrl,
+    this.message,
+  });
+
+  /// Parses fresh-install metadata from `app-archive.json`.
+  factory ReleaseFreshInstall.fromJson(Map<String, dynamic> json) {
+    final downloadUrlValue = json["downloadUrl"];
+    if (downloadUrlValue is! String || downloadUrlValue.trim().isEmpty) {
+      throw const FormatException(
+        "freshInstall.downloadUrl must be a non-empty string.",
+      );
+    }
+
+    final messageValue = json["message"];
+    if (messageValue != null && messageValue is! String) {
+      throw const FormatException(
+        "freshInstall.message must be a string when present.",
+      );
+    }
+
+    return ReleaseFreshInstall(
+      downloadUrl: Uri.parse(downloadUrlValue),
+      message: messageValue,
+    );
+  }
+
+  /// App-owned page or installer URL for the latest release.
+  final Uri downloadUrl;
+
+  /// Optional release-specific explanation.
+  final String? message;
+
+  /// Converts this policy to JSON.
+  Map<String, dynamic> toJson() {
+    return {
+      "downloadUrl": downloadUrl.toString(),
+      if (message != null) "message": message,
     };
   }
 }
@@ -229,6 +349,30 @@ ReleaseRollout? _parseReleaseRollout(Object? value) {
     );
   }
   return ReleaseRollout.fromJson(value);
+}
+
+ReleaseSupportPolicy? _parseReleaseSupportPolicy(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is! Map<String, dynamic>) {
+    throw const FormatException(
+      "Release index supportPolicy must be an object.",
+    );
+  }
+  return ReleaseSupportPolicy.fromJson(value);
+}
+
+ReleaseFreshInstall? _parseReleaseFreshInstall(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is! Map<String, dynamic>) {
+    throw const FormatException(
+      "Release index freshInstall must be an object.",
+    );
+  }
+  return ReleaseFreshInstall.fromJson(value);
 }
 
 bool _isRolloutEligible(

@@ -86,6 +86,68 @@ void main() {
     });
   });
 
+  test("parses optional support policy and fresh install metadata", () {
+    final index = ReleaseIndex.fromJson({
+      "schemaVersion": 3,
+      "appName": "Example App",
+      "supportPolicy": {
+        "minimumSupportedVersion": "2.4.0",
+        "enforcedAfter": "2026-07-15T00:00:00Z",
+      },
+      "items": [
+        {
+          "version": "2.4.0",
+          "buildNumber": 240,
+          "platform": "macos",
+          "channel": "stable",
+          "mandatory": true,
+          "freshInstall": {
+            "downloadUrl": "https://example.com/download/latest",
+            "message": "Install from a fresh download.",
+          },
+          "release": "https://updates.example.com/macos.json",
+        },
+      ],
+    });
+
+    final policy = index.supportPolicy;
+    expect(policy, isNotNull);
+    expect(policy!.minimumSupportedVersion, "2.4.0");
+    expect(policy.enforcedAfter, DateTime.utc(2026, 7, 15));
+    expect(
+      policy.appliesTo(
+        DesktopVersionInfo.fromParts(versionName: "2.3.0"),
+      ),
+      isTrue,
+    );
+    expect(
+      policy.isEnforced(
+        currentVersion: DesktopVersionInfo.fromParts(versionName: "2.3.0"),
+        now: DateTime.utc(2026, 7, 15),
+      ),
+      isTrue,
+    );
+
+    final freshInstall = index.items.single.freshInstall;
+    expect(freshInstall, isNotNull);
+    expect(
+      freshInstall!.downloadUrl.toString(),
+      "https://example.com/download/latest",
+    );
+    expect(freshInstall.message, "Install from a fresh download.");
+
+    final json = index.toJson();
+    expect(json["supportPolicy"], {
+      "minimumSupportedVersion": "2.4.0",
+      "enforcedAfter": "2026-07-15T00:00:00.000Z",
+    });
+    final items = json["items"] as List<dynamic>;
+    expect((items.single as Map<String, dynamic>)["freshInstall"], {
+      "downloadUrl": "https://example.com/download/latest",
+      "message": "Install from a fresh download.",
+    });
+  });
+
   test("rejects schema v3 items without release", () {
     expect(
       () => ReleaseIndex.fromJson({

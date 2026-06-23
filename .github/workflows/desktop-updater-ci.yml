@@ -26,6 +26,7 @@ jobs:
         run: |
           dart run desktop_updater:package --help
           dart run desktop_updater:verify --help
+          dart run desktop_updater:release publish --help
       - name: Pub publish dry-run
         run: dart pub publish --dry-run
 
@@ -89,6 +90,59 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-release-diagnostics
+          path: example/build/desktop-updater-helper-release.jsonl
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Test Dart surface on macOS
+        run: flutter test --no-pub
+      - name: Build example
+        working-directory: example
+        run: flutter build macos --debug
+      - name: Run integration tests
+        working-directory: example
+        run: flutter test integration_test -d macos
+      - name: Rebuild example for smoke
+        working-directory: example
+        run: flutter build macos --debug
+      - name: Run update smoke
+        working-directory: example
+        run: dart run tool/updater_smoke.dart --diagnostics-log build/desktop-updater-helper-debug.jsonl
+      - name: Upload update smoke diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-update-smoke-debug-diagnostics
+          path: example/build/desktop-updater-helper-debug.jsonl
+          if-no-files-found: ignore
+      - name: Build example release
+        working-directory: example
+        run: flutter build macos --release
+      - name: Run integration tests release
+        working-directory: example
+        run: flutter test integration_test -d macos
+      - name: Run release publish smoke
+        working-directory: example
+        run: dart run tool/release_publish_smoke.dart --platform macos
+      - name: Run update smoke release
+        working-directory: example
+        run: dart run tool/updater_smoke.dart --config Release --diagnostics-log build/desktop-updater-helper-release.jsonl
+      - name: Upload update smoke release diagnostics
+        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-update-smoke-release-diagnostics
           path: example/build/desktop-updater-helper-release.jsonl
           if-no-files-found: ignore
 

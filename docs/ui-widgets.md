@@ -112,10 +112,125 @@ wrapper widgets handle placement.
 `UpdateCard` switches its actions from the typed update state:
 
 - `UpdateAvailable`: shows download and, when optional, skip actions.
+- `UpdateFreshInstallRequired`: shows the fresh-install message and
+  `Download latest` action instead of in-app download.
+- `UpdateBlockedBySupportPolicy`: shows blocking required-update UI and hides
+  skip actions.
 - `UpdateDownloading`: shows a progress action.
-- `UpdateReadyToInstall`: shows the restart/install action.
+- `UpdateReadyToInstall`: shows the restart/install action. Optional releases
+  keep the normal "Not now" restart prompt. Mandatory releases keep the staged
+  update active, hide "Not now", and show "Save first" plus "Restart" so users
+  can save unsaved work without skipping the required update.
 - `UpdateFailed`: shows a retry action and, when a diagnostics report exists,
   a "View report" action.
+
+## Release Notes Patterns
+
+Release notes are an optional controller capability attached to the selected
+update descriptor. The built-in card and custom UI should both use
+`controller.loadReleaseNotes()` rather than fetching notes directly in a widget.
+
+Do not fetch release notes directly from a widget when the controller already
+has a loader. Use the controller so caching, retry state, descriptor context,
+and ready-made UI stay aligned.
+
+### Built-in card and bottom sheet
+
+Pass either a descriptor-aware loader or a simple URL. The stock card shows a
+description icon when the active update can load notes, then opens a Material
+bottom sheet:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  releaseNotesLoader: (descriptor) {
+    return myNotesApi.fetch(
+      version: descriptor.version,
+      platform: descriptor.platform,
+      channel: descriptor.channel,
+    );
+  },
+);
+
+DesktopUpdateDirectCard(controller: controller);
+```
+
+Simple hosted notes can use `releaseNotesUrl` instead:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: archiveUrl,
+  releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
+);
+```
+
+### Inline panel
+
+Inline panels work well inside Settings > Updates, where the app already has
+room to show the changelog below the update actions:
+
+```dart
+Future<void> loadInlineNotes() async {
+  final notes = await controller.loadReleaseNotes();
+  setState(() => visibleNotes = notes);
+}
+```
+
+Render from `controller.releaseNotesState` so loading, empty, loaded, and failed
+states stay consistent with the built-in bottom sheet.
+
+### Side sheet
+
+For wide desktop layouts, keep update actions in the main pane and open notes
+in a side sheet or drawer:
+
+```dart
+Future<void> openSideSheet(BuildContext context) async {
+  final notes = await controller.loadReleaseNotes();
+  if (!context.mounted) return;
+  showDialog<void>(
+    context: context,
+    builder: (_) => Dialog(
+      alignment: Alignment.centerRight,
+      child: ReleaseNotesSidePane(notes: notes),
+    ),
+  );
+}
+```
+
+### Changelog page
+
+A dedicated changelog page is useful when Settings already has an Updates tab.
+The page can request notes on entry, retry through
+`controller.loadReleaseNotes(forceRefresh: true)`, and keep the rest of the
+update flow on the same controller:
+
+```dart
+class ChangelogPage extends StatelessWidget {
+  const ChangelogPage({super.key, required this.controller});
+
+  final DesktopUpdaterController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return switch (controller.releaseNotesState) {
+          ReleaseNotesLoaded(:final notes) => NotesList(notes: notes),
+          ReleaseNotesFailed() => TextButton(
+              onPressed: () {
+                controller.loadReleaseNotes(forceRefresh: true);
+              },
+              child: const Text("Retry"),
+            ),
+          _ => const CircularProgressIndicator(),
+        };
+      },
+    );
+  }
+}
+```
 
 ## `UpdateDialogListener` And Dialog Helpers
 
@@ -141,6 +256,17 @@ Why it exists: some apps want update discovery to interrupt the current screen,
 while others prefer quiet inline UI. The listener keeps that choice explicit.
 It also guards against duplicate dialogs while the same update request is
 already being shown.
+
+Mandatory update dialogs are intentionally not the same as optional restart
+prompts. A mandatory release removes skip and "Not now" choices, but still keeps
+a "Save first" action in the restart confirmation. That action only closes the
+confirmation so the user can save work; it does not persist a skipped version,
+and the update surface remains active.
+
+Fresh-install dialogs use the package default copy plus the optional
+release-specific `freshInstall.message`, and route users to `Download latest`.
+Support-policy blocking dialogs are not dismissible through the ready-made
+listener.
 
 You can also open the dialog yourself:
 

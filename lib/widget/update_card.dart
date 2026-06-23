@@ -5,6 +5,7 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 import "package:desktop_updater/widget/update_problem_report_dialog.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
@@ -192,12 +193,31 @@ class _ExpandedUpdateCard extends StatelessWidget {
               children: [
                 Flexible(child: _UpdateCardActions(notifier: notifier)),
                 if (state is UpdateFailed)
-                  Icon(
-                    Icons.error_outline,
-                    color: colorScheme.error,
+                  Tooltip(
+                    message: _updateFailedTooltip(
+                      state.error,
+                      notifier.getLocalization,
+                    ),
+                    child: Icon(
+                      Icons.error_outline,
+                      color: colorScheme.error,
+                    ),
                   )
-                else
-                  const Icon(Icons.description_outlined),
+                else if (notifier.canLoadReleaseNotes)
+                  IconButton(
+                    tooltip: notifier
+                            .getLocalization?.releaseNotesButtonTooltipText ??
+                        "Release notes",
+                    icon: const Icon(Icons.description_outlined),
+                    onPressed: () {
+                      unawaited(
+                        showReleaseNotesBottomSheet(
+                          context,
+                          controller: notifier,
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
           ],
@@ -242,6 +262,30 @@ class _UpdateCardActions extends StatelessWidget {
             notifier.getLocalization?.restartText ?? "Restart to update",
           ),
           onPressed: () => _showRestartDialog(context, notifier),
+        ),
+      UpdateFreshInstallRequired() => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              icon: const Icon(Icons.open_in_new),
+              label: Text(
+                notifier.getLocalization?.downloadLatestText ??
+                    "Download latest",
+              ),
+              onPressed: notifier.openFreshInstallDownload,
+            ),
+            if (!_isMandatoryUpdate(state))
+              OutlinedButton.icon(
+                icon: const Icon(Icons.close),
+                label: Text(
+                  notifier.getLocalization?.warningCancelText ?? "Not now",
+                ),
+                onPressed: () {
+                  unawaited(notifier.makeSkipUpdate());
+                },
+              ),
+          ],
         ),
       UpdateFailed(:final report) => Wrap(
           spacing: 8,
@@ -307,6 +351,8 @@ bool _shouldShowReadyUi(DesktopUpdaterController controller) {
 
   return switch (controller.state) {
     UpdateAvailable() ||
+    UpdateFreshInstallRequired() ||
+    UpdateBlockedBySupportPolicy() ||
     UpdateDownloading() ||
     UpdateReadyToInstall() ||
     UpdateFailed() =>
@@ -316,7 +362,14 @@ bool _shouldShowReadyUi(DesktopUpdaterController controller) {
 }
 
 bool _isMandatoryUpdate(UpdateState state) {
-  return state is UpdateAvailable && state.mandatory;
+  return switch (state) {
+    UpdateAvailable(:final mandatory) ||
+    UpdateReadyToInstall(:final mandatory) ||
+    UpdateFreshInstallRequired(:final mandatory) =>
+      mandatory,
+    UpdateBlockedBySupportPolicy() => true,
+    _ => false,
+  };
 }
 
 String _availableVersionText(DesktopUpdaterController notifier) {
@@ -335,6 +388,34 @@ String _longUpdateText(DesktopUpdaterController notifier) {
   final state = notifier.state;
   if (state is UpdateFailed) {
     return "Please try again later.";
+  }
+  if (state is UpdateFreshInstallRequired) {
+    return state.freshInstall.message ??
+        notifier.getLocalization?.freshInstallRequiredText ??
+        "This version cannot safely install the update. Please download the "
+            "latest version.";
+  }
+  if (state is UpdateBlockedBySupportPolicy) {
+    return notifier.getLocalization?.supportPolicyBlockedText ??
+        "This version is no longer supported. Please update to continue.";
+  }
+  if (state is UpdateAvailable && state.supportPolicy != null) {
+    final policy = state.supportPolicy!;
+    return getLocalizedString(
+          notifier.getLocalization?.supportPolicyWarningText,
+          [
+            policy.minimumSupportedVersion,
+            policy.enforcedAfter.toIso8601String(),
+          ],
+        ) ??
+        getLocalizedString(
+          "Please update to version {} before {}.",
+          [
+            policy.minimumSupportedVersion,
+            policy.enforcedAfter.toIso8601String(),
+          ],
+        ) ??
+        "";
   }
 
   final totalBytes = _updateTotalBytes(
@@ -384,8 +465,10 @@ void _showRestartDialog(
   BuildContext context,
   DesktopUpdaterController notifier,
 ) {
+  final isMandatory = _isMandatoryUpdate(notifier.state);
   showDialog<void>(
     context: context,
+    barrierDismissible: !isMandatory,
     builder: (context) {
       return AlertDialog(
         title: Text(
@@ -393,9 +476,12 @@ void _showRestartDialog(
         ),
         content: Text(
           notifier.getLocalization?.restartWarningText ??
-              "A restart is required to complete the update installation.\n"
-                  "Any unsaved changes will be lost. Would you like to "
-                  "restart now?",
+              (isMandatory
+                  ? "This update is required. Save your work before "
+                      "restarting to finish the installation."
+                  : "A restart is required to complete the update "
+                      "installation.\nAny unsaved changes will be lost. "
+                      "Would you like to restart now?"),
         ),
         actions: [
           TextButton(
@@ -403,7 +489,9 @@ void _showRestartDialog(
               Navigator.of(context).pop();
             },
             child: Text(
-              notifier.getLocalization?.warningCancelText ?? "Not now",
+              isMandatory
+                  ? notifier.getLocalization?.saveFirstText ?? "Save first"
+                  : notifier.getLocalization?.warningCancelText ?? "Not now",
             ),
           ),
           TextButton(
@@ -416,4 +504,13 @@ void _showRestartDialog(
       );
     },
   );
+}
+
+String _updateFailedTooltip(
+  Object error,
+  DesktopUpdateLocalization? loc,
+) {
+  final custom = loc?.onUpdateFailedTooltip?.call(error);
+  if (custom != null) return custom;
+  return loc?.updateFailedTooltipText ?? "Update failed. Please try again.";
 }

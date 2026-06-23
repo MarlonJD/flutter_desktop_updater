@@ -1,3 +1,22 @@
+## 2.3.3
+
+* Added mandatory ready-to-install UX that preserves mandatory state after staging and shows `Save first` plus `Restart`.
+* Added `supportPolicy` for minimum supported app versions with warning-before-deadline and blocking-after-deadline ready-made UI.
+* Added `freshInstall` metadata, ready-made fresh-install UI, external download launching, and release publish flags.
+* Added `release publish` help and validation for support-policy and fresh-install flags.
+
+## 2.3.1
+
+* Added `release publish --dart-define` support so build-time Dart environment values are forwarded to `flutter build`.
+
+## 2.3.0
+
+* Added optional release notes support for update UIs through `releaseNotesUrl`, `releaseNotesLoader`, `releaseNotesState`, and `loadReleaseNotes()`.
+* Added public release notes models that keep the simple `{ "data": [{ "type", "message" }] }` format supported while allowing richer sections, summaries, and item metadata.
+* Added a built-in Material release notes bottom sheet and wired the ready-made update card to show a release notes action when notes are available.
+* Added example custom release notes UIs for inline panels, side sheets, and changelog pages.
+* Fixed the release notes bottom sheet so its first load starts after the route has built, avoiding build-time listener notifications.
+
 ## 2.2.0
 
 * Added opt-in update diagnostics sinks with redacted log formatting for app-owned lifecycle logs.

@@ -57,7 +57,12 @@ bool _shouldShowSliver(DesktopUpdaterController controller) {
   }
 
   return switch (controller.state) {
-    UpdateAvailable() || UpdateDownloading() || UpdateReadyToInstall() => true,
+    UpdateAvailable() ||
+    UpdateFreshInstallRequired() ||
+    UpdateBlockedBySupportPolicy() ||
+    UpdateDownloading() ||
+    UpdateReadyToInstall() =>
+      true,
     _ => false,
   };
 }
