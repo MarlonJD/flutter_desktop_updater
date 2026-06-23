@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
 
+set(DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE_DEFAULT OFF)
+if(DEFINED ENV{DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE} AND "$ENV{DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE}" STREQUAL "1")
+  set(DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE_DEFAULT ON)
+endif()
+option(DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE "Build the opt-in Win32 child HWND evidence probe." ${DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE_DEFAULT})
+
 # Define the application target. To change its name, change BINARY_NAME in the
 # top-level CMakeLists.txt, not the value here, or `flutter run` will no longer
 # work.
@@ -35,6 +41,12 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+if(DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE)
+  target_sources(${BINARY_NAME} PRIVATE "child_hwnd_probe.cpp")
+  target_compile_definitions(${BINARY_NAME} PRIVATE "DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE=1")
+  target_link_libraries(${BINARY_NAME} PRIVATE "comctl32.lib")
+endif()
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

@@ -26,6 +26,10 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+#ifdef DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE
+  child_hwnd_probe_.Create(GetHandle());
+  child_hwnd_probe_.Resize(frame);
+#endif
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -40,6 +44,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+#ifdef DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE
+  child_hwnd_probe_.Destroy();
+#endif
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -57,11 +65,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
     if (result) {
+#ifdef DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE
+      if (message == WM_SIZE || message == WM_DPICHANGED) {
+        child_hwnd_probe_.Resize(GetClientArea());
+      }
+#endif
       return *result;
     }
   }
 
   switch (message) {
+#ifdef DESKTOP_UPDATER_WIN32_CHILD_HWND_PROBE
+    case WM_SIZE:
+    case WM_DPICHANGED: {
+      LRESULT result =
+          Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+      child_hwnd_probe_.Resize(GetClientArea());
+      return result;
+    }
+#endif
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
