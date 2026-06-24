@@ -44,7 +44,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// the controller starts an asynchronous update check during construction.
   DesktopUpdaterController({
     required Uri? appArchiveUrl,
-    this.localization,
+    DesktopUpdateLocalization? localization,
     this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
@@ -59,7 +59,8 @@ class DesktopUpdaterController extends ChangeNotifier {
     bool skipInitialVersionCheck = false,
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
-  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
+  })  : _localization = localization,
+        _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
@@ -81,7 +82,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   @visibleForTesting
   DesktopUpdaterController.forTesting({
     required Uri? appArchiveUrl,
-    this.localization,
+    DesktopUpdateLocalization? localization,
     this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
@@ -97,7 +98,8 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
-  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
+  })  : _localization = localization,
+        _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
         _onProblemReport = onProblemReport,
@@ -116,11 +118,22 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Whether construction should avoid starting the first automatic check.
   bool get skipInitialVersionCheck => _skipInitialVersionCheck;
 
+  DesktopUpdateLocalization? _localization;
+
   /// Optional strings used by bundled update UI.
-  DesktopUpdateLocalization? localization;
+  DesktopUpdateLocalization? get localization => _localization;
+
+  /// Updates localization values used by bundled update UI.
+  set localization(DesktopUpdateLocalization? value) {
+    if (identical(_localization, value)) {
+      return;
+    }
+    _localization = value;
+    notifyListeners();
+  }
 
   /// Current localization values used by bundled update UI.
-  DesktopUpdateLocalization? get getLocalization => localization;
+  DesktopUpdateLocalization? get getLocalization => _localization;
 
   /// Release channel used for update selection and skip preferences.
   final String channel;

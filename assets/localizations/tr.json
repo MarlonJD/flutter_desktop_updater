@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "tr",
+  "textDirection": "ltr",
+  "translationQuality": "makine-starter",
+  "strings": {
+    "updateAvailableText": "Güncelleme mevcut",
+    "downloadText": "İndir",
+    "restartText": "Güncellemek için yeniden başlat",
+    "warningCancelText": "Şimdi değil",
+    "warningConfirmText": "Yeniden başlat",
+    "skipThisVersionText": "Bu sürümü atla",
+    "okText": "Tamam",
+    "releaseNotesTitleText": "Yenilikler",
+    "updateCheckFailedTitleText": "Güncellemeler denetlenemedi",
+    "updateCheckFailedText": "Lütfen daha sonra tekrar deneyin.",
+    "releaseNotesRetryText": "Tekrar dene"
+  }
+}

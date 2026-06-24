@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "kk",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Жаңарту қолжетімді",
+    "downloadText": "Жүктеп алу",
+    "restartText": "Жаңарту үшін қайта іске қосыңыз",
+    "warningCancelText": "Қазір емес",
+    "warningConfirmText": "Қайта іске қосу",
+    "skipThisVersionText": "Бұл нұсқаны өткізіп жіберу",
+    "okText": "OK",
+    "releaseNotesTitleText": "Жаңалықтар",
+    "updateCheckFailedTitleText": "Жаңартуларды тексеру мүмкін болмады",
+    "updateCheckFailedText": "Кейінірек қайталап көріңіз.",
+    "releaseNotesRetryText": "Қайталау"
+  }
+}

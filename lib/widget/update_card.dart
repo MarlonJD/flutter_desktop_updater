@@ -80,7 +80,7 @@ class _CompactUpdateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card.filled(
+    final card = Card.filled(
       margin: margin,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -116,6 +116,8 @@ class _CompactUpdateCard extends StatelessWidget {
         ),
       ),
     );
+
+    return _withLocalizationDirection(notifier, card);
   }
 
   @override
@@ -143,7 +145,7 @@ class _ExpandedUpdateCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final state = notifier.state;
 
-    return Card.filled(
+    final card = Card.filled(
       margin: margin,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -224,6 +226,8 @@ class _ExpandedUpdateCard extends StatelessWidget {
         ),
       ),
     );
+
+    return _withLocalizationDirection(notifier, card);
   }
 
   @override
@@ -320,6 +324,17 @@ class _UpdateCardActions extends StatelessWidget {
   }
 }
 
+Widget _withLocalizationDirection(
+  DesktopUpdaterController notifier,
+  Widget child,
+) {
+  final textDirection = notifier.getLocalization?.textDirection;
+  if (textDirection == null) {
+    return child;
+  }
+  return Directionality(textDirection: textDirection, child: child);
+}
+
 bool _shouldShowReadyUi(DesktopUpdaterController controller) {
   if (controller.skipUpdate) {
     return false;
@@ -343,7 +358,12 @@ String _availableVersionText(DesktopUpdaterController notifier) {
   return getLocalizedString(
         notifier.getLocalization?.newVersionAvailableText,
         [notifier.appName, notifier.appVersion],
-      );
+      ) ??
+      getLocalizedString(
+        defaultDesktopUpdateLocalization.newVersionAvailableText,
+        [notifier.appName, notifier.appVersion],
+      ) ??
+      "";
 }
 
 String _longUpdateText(DesktopUpdaterController notifier) {
@@ -359,7 +379,12 @@ String _longUpdateText(DesktopUpdaterController notifier) {
   return getLocalizedString(
         notifier.getLocalization?.newVersionLongText,
         [_formatMegabytes(totalBytes)],
-      );
+      ) ??
+      getLocalizedString(
+        defaultDesktopUpdateLocalization.newVersionLongText,
+        [_formatMegabytes(totalBytes)],
+      ) ??
+      "";
 }
 
 int _updateTotalBytes({

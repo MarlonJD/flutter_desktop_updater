@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "az",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yeniləmə mövcuddur",
+    "downloadText": "Endir",
+    "restartText": "Yeniləmək üçün yenidən başladın",
+    "warningCancelText": "İndi yox",
+    "warningConfirmText": "Yenidən başlat",
+    "skipThisVersionText": "Bu versiyanı ötür",
+    "okText": "OK",
+    "releaseNotesTitleText": "Yeniliklər",
+    "updateCheckFailedTitleText": "Yeniləmələri yoxlamaq mümkün olmadı",
+    "updateCheckFailedText": "Zəhmət olmasa sonra yenidən cəhd edin.",
+    "releaseNotesRetryText": "Yenidən cəhd et"
+  }
+}

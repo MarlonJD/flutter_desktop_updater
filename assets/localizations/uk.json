@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "uk",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Доступне оновлення",
+    "downloadText": "Завантажити",
+    "restartText": "Перезапустити для оновлення",
+    "warningCancelText": "Не зараз",
+    "warningConfirmText": "Перезапустити",
+    "skipThisVersionText": "Пропустити цю версію",
+    "okText": "OK",
+    "releaseNotesTitleText": "Що нового",
+    "updateCheckFailedTitleText": "Не вдалося перевірити оновлення",
+    "updateCheckFailedText": "Спробуйте пізніше.",
+    "releaseNotesRetryText": "Повторити"
+  }
+}

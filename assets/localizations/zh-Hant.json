@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-Hant",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "有可用更新",
+    "downloadText": "下載",
+    "restartText": "重新啟動以更新",
+    "warningCancelText": "暫不",
+    "warningConfirmText": "重新啟動",
+    "skipThisVersionText": "略過此版本",
+    "okText": "確定",
+    "releaseNotesTitleText": "新功能",
+    "updateCheckFailedTitleText": "無法檢查更新",
+    "updateCheckFailedText": "請稍後再試。",
+    "releaseNotesRetryText": "重試"
+  }
+}

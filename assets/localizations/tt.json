@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "tt",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Яңарту бар",
+    "downloadText": "Йөкләү",
+    "restartText": "Яңарту өчен яңадан башлату",
+    "warningCancelText": "Хәзер түгел",
+    "warningConfirmText": "Яңадан башлату",
+    "skipThisVersionText": "Бу версияне калдырып тору",
+    "okText": "OK",
+    "releaseNotesTitleText": "Яңалыклар",
+    "updateCheckFailedTitleText": "Яңартуларны тикшереп булмады",
+    "updateCheckFailedText": "Зинһар соңрак кабатлап карагыз.",
+    "releaseNotesRetryText": "Кабатлау"
+  }
+}

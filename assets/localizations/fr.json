@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "locale": "fr",
+  "textDirection": "ltr",
+  "translationQuality": "community-starter",
+  "strings": {
+    "updateAvailableText": "Mise à jour disponible",
+    "newVersionAvailableText": "{} {} est disponible",
+    "newVersionLongText": "Une nouvelle version est prête à être téléchargée. Cliquez sur le bouton ci-dessous pour commencer le téléchargement. Cela téléchargera {} Mo de données.",
+    "restartText": "Redémarrer pour mettre à jour",
+    "warningTitleText": "Êtes-vous sûr ?",
+    "restartWarningText": "Un redémarrage est nécessaire pour terminer l'installation de la mise à jour.\nToutes les modifications non enregistrées seront perdues. Voulez-vous redémarrer maintenant ?",
+    "warningCancelText": "Pas maintenant",
+    "warningConfirmText": "Redémarrer",
+    "skipThisVersionText": "Ignorer cette version",
+    "downloadText": "Télécharger",
+    "upToDateTitleText": "L'application est à jour",
+    "upToDateText": "{} est la dernière version disponible.",
+    "updateCheckFailedTitleText": "Impossible de vérifier les mises à jour",
+    "updateCheckFailedText": "Veuillez réessayer plus tard.",
+    "okText": "OK",
+    "updateFailedTooltipText": "Échec de la mise à jour. Veuillez réessayer.",
+    "releaseNotesButtonTooltipText": "Notes de version",
+    "releaseNotesTitleText": "Nouveautés",
+    "releaseNotesErrorText": "Impossible de charger les notes de version.",
+    "releaseNotesRetryText": "Réessayer",
+    "releaseNotesEmptyText": "Aucune note de version disponible.",
+    "releaseNotesTypeLabels": {
+      "feat": "Nouvelles fonctionnalités",
+      "fix": "Corrections de bugs",
+      "other": "Autres modifications"
+    },
+    "releaseNotesSectionLabels": {
+      "features": "Fonctionnalités",
+      "fixes": "Corrections",
+      "security": "Sécurité",
+      "breaking": "Changements importants",
+      "other": "Autres modifications"
+    }
+  }
+}

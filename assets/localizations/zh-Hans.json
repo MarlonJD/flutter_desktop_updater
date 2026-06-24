@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-Hans",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "有可用更新",
+    "downloadText": "下载",
+    "restartText": "重启以更新",
+    "warningCancelText": "暂不",
+    "warningConfirmText": "重启",
+    "skipThisVersionText": "跳过此版本",
+    "okText": "确定",
+    "releaseNotesTitleText": "新功能",
+    "updateCheckFailedTitleText": "无法检查更新",
+    "updateCheckFailedText": "请稍后重试。",
+    "releaseNotesRetryText": "重试"
+  }
+}

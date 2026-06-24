@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "tk",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Täzelenme bar",
+    "downloadText": "Ýükle",
+    "restartText": "Täzelemek üçin gaýtadan başlat",
+    "warningCancelText": "Häzir däl",
+    "warningConfirmText": "Gaýtadan başlat",
+    "skipThisVersionText": "Bu wersiýany geç",
+    "okText": "OK",
+    "releaseNotesTitleText": "Näme täze",
+    "updateCheckFailedTitleText": "Täzelenmeleri barlap bolmady",
+    "updateCheckFailedText": "Soňrak gaýtadan synanyşyň.",
+    "releaseNotesRetryText": "Gaýtadan synanyş"
+  }
+}

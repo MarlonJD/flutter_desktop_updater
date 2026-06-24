@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "kum",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yangırtıw bar",
+    "downloadText": "Yükle",
+    "restartText": "Yangırtıw üçün qayta başlat",
+    "warningCancelText": "Häzir tügül",
+    "warningConfirmText": "Qayta başlat",
+    "skipThisVersionText": "Bu versiyanı atla",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne yangı",
+    "updateCheckFailedTitleText": "Yangırtıwlarnı tekşerip bolmadı",
+    "updateCheckFailedText": "Sonra qayta synap gör.",
+    "releaseNotesRetryText": "Qayta synap gör"
+  }
+}
