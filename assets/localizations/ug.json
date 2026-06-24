@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ug",
+  "textDirection": "rtl",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "يېڭىلانما بار",
+    "downloadText": "چۈشۈرۈش",
+    "restartText": "يېڭىلاش ئۈچۈن قايتا قوزغىتىڭ",
+    "warningCancelText": "ھازىر ئەمەس",
+    "warningConfirmText": "قايتا قوزغىتىش",
+    "skipThisVersionText": "بۇ نەشرىنى ئاتلاپ ئۆتۈش",
+    "okText": "OK",
+    "releaseNotesTitleText": "نېمە يېڭى",
+    "updateCheckFailedTitleText": "يېڭىلانمىلارنى تەكشۈرگىلى بولمىدى",
+    "updateCheckFailedText": "كېيىن قايتا سىناڭ.",
+    "releaseNotesRetryText": "قايتا سىناڭ"
+  }
+}

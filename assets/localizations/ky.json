@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ky",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Жаңыртуу жеткиликтүү",
+    "downloadText": "Жүктөп алуу",
+    "restartText": "Жаңыртуу үчүн кайра баштаңыз",
+    "warningCancelText": "Азыр эмес",
+    "warningConfirmText": "Кайра баштоо",
+    "skipThisVersionText": "Бул версияны өткөрүп жиберүү",
+    "okText": "OK",
+    "releaseNotesTitleText": "Эмне жаңы",
+    "updateCheckFailedTitleText": "Жаңыртууларды текшерүү мүмкүн болгон жок",
+    "updateCheckFailedText": "Кийинчерээк кайра аракет кылыңыз.",
+    "releaseNotesRetryText": "Кайра аракет кылуу"
+  }
+}

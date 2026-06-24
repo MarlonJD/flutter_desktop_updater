@@ -42,6 +42,39 @@ void main() {
     expect(find.text("Skip this version"), findsNothing);
   });
 
+  testWidgets("ready UI uses localization text direction", (tester) async {
+    final controller = _ReadyUiTestController(
+      localization: const DesktopUpdateLocalization(
+        textDirection: TextDirection.rtl,
+        updateAvailableText: "تحديث متوفر",
+      ),
+    )..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MaterialApp(
+          home: Scaffold(
+            body: DesktopUpdateDirectCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    final textElement = tester.element(find.text("تحديث متوفر"));
+    TextDirection? closestDirection;
+    textElement.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is Directionality) {
+        closestDirection = widget.textDirection;
+        return false;
+      }
+      return true;
+    });
+
+    expect(closestDirection, TextDirection.rtl);
+  });
+
   testWidgets("ready UI shows download progress from typed state", (
     tester,
   ) async {

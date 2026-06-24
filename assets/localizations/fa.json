@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "fa",
+  "textDirection": "rtl",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "به‌روزرسانی موجود است",
+    "downloadText": "دانلود",
+    "restartText": "برای به‌روزرسانی راه‌اندازی مجدد کنید",
+    "warningCancelText": "اکنون نه",
+    "warningConfirmText": "راه‌اندازی مجدد",
+    "skipThisVersionText": "رد کردن این نسخه",
+    "okText": "تأیید",
+    "releaseNotesTitleText": "تازه‌ها",
+    "updateCheckFailedTitleText": "امکان بررسی به‌روزرسانی‌ها وجود ندارد",
+    "updateCheckFailedText": "لطفاً بعداً دوباره تلاش کنید.",
+    "releaseNotesRetryText": "تلاش دوباره"
+  }
+}

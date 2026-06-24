@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "hi",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "अपडेट उपलब्ध है",
+    "downloadText": "डाउनलोड करें",
+    "restartText": "अपडेट करने के लिए पुनः प्रारंभ करें",
+    "warningCancelText": "अभी नहीं",
+    "warningConfirmText": "पुनः प्रारंभ करें",
+    "skipThisVersionText": "इस संस्करण को छोड़ें",
+    "okText": "ठीक है",
+    "releaseNotesTitleText": "नया क्या है",
+    "updateCheckFailedTitleText": "अपडेट की जाँच नहीं हो सकी",
+    "updateCheckFailedText": "कृपया बाद में पुनः प्रयास करें।",
+    "releaseNotesRetryText": "पुनः प्रयास करें"
+  }
+}

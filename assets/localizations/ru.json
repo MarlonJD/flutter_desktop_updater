@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ru",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Доступно обновление",
+    "downloadText": "Скачать",
+    "restartText": "Перезапустить для обновления",
+    "warningCancelText": "Не сейчас",
+    "warningConfirmText": "Перезапустить",
+    "skipThisVersionText": "Пропустить эту версию",
+    "okText": "OK",
+    "releaseNotesTitleText": "Что нового",
+    "updateCheckFailedTitleText": "Не удалось проверить обновления",
+    "updateCheckFailedText": "Повторите попытку позже.",
+    "releaseNotesRetryText": "Повторить"
+  }
+}

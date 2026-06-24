@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "cv",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Ҫӗнетӳ пур",
+    "downloadText": "Тиесе ил",
+    "restartText": "Ҫӗнетме каллех яра",
+    "warningCancelText": "Халь мар",
+    "warningConfirmText": "Каллех яра",
+    "skipThisVersionText": "Ку версине ирттер",
+    "okText": "OK",
+    "releaseNotesTitleText": "Мӗн ҫӗнӗ",
+    "updateCheckFailedTitleText": "Ҫӗнетӳсене тӗрӗслеме май килмерӗ",
+    "updateCheckFailedText": "Тархасшӑн кайран каллех тӑрӑшса пӑхӑр.",
+    "releaseNotesRetryText": "Каллех тӑрӑш"
+  }
+}

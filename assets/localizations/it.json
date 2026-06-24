@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "it",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Aggiornamento disponibile",
+    "downloadText": "Scarica",
+    "restartText": "Riavvia per aggiornare",
+    "warningCancelText": "Non ora",
+    "warningConfirmText": "Riavvia",
+    "skipThisVersionText": "Salta questa versione",
+    "okText": "OK",
+    "releaseNotesTitleText": "Novità",
+    "updateCheckFailedTitleText": "Impossibile controllare gli aggiornamenti",
+    "updateCheckFailedText": "Riprova più tardi.",
+    "releaseNotesRetryText": "Riprova"
+  }
+}

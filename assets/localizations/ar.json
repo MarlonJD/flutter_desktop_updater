@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ar",
+  "textDirection": "rtl",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "يتوفر تحديث",
+    "downloadText": "تنزيل",
+    "restartText": "إعادة التشغيل للتحديث",
+    "warningCancelText": "ليس الآن",
+    "warningConfirmText": "إعادة التشغيل",
+    "skipThisVersionText": "تخطي هذا الإصدار",
+    "okText": "حسنًا",
+    "releaseNotesTitleText": "ما الجديد",
+    "updateCheckFailedTitleText": "تعذر التحقق من التحديثات",
+    "updateCheckFailedText": "يرجى المحاولة مرة أخرى لاحقًا.",
+    "releaseNotesRetryText": "إعادة المحاولة"
+  }
+}

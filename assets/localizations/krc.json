@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "krc",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Djangırtıw bar",
+    "downloadText": "Djukle",
+    "restartText": "Djangırtıw üchün qayta başlat",
+    "warningCancelText": "Hazır tügül",
+    "warningConfirmText": "Qayta başlat",
+    "skipThisVersionText": "Bu versiyanı atla",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne djangı",
+    "updateCheckFailedTitleText": "Djangırtıwlanı tekşerip bolmadı",
+    "updateCheckFailedText": "Sonra qayta synap körügüz.",
+    "releaseNotesRetryText": "Qayta synap kör"
+  }
+}

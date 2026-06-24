@@ -42,6 +42,25 @@ void main() {
     expect(notifications, 1);
   });
 
+  test("localization updates notify ready-made UI listeners", () {
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+    );
+    var notifications = 0;
+
+    controller
+      ..addListener(() {
+        notifications += 1;
+      })
+      ..localization = const DesktopUpdateLocalization(
+        restartText: "Install update",
+      );
+
+    expect(controller.getLocalization?.restartText, "Install update");
+    expect(notifications, 1);
+  });
+
   test(
     "automatic startup check failure updates state without unhandled error",
     () async {

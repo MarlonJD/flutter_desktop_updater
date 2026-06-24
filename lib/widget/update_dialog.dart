@@ -161,11 +161,14 @@ Future showUpdateDialog<T>(
     context: context,
     barrierDismissible: _canDismissDialog(controller.state),
     builder: (context) {
-      return UpdateDialogWidget(
-        controller: controller,
-        backgroundColor: backgroundColor,
-        iconColor: iconColor,
-        shadowColor: shadowColor,
+      return _withLocalizationDirection(
+        controller,
+        UpdateDialogWidget(
+          controller: controller,
+          backgroundColor: backgroundColor,
+          iconColor: iconColor,
+          shadowColor: shadowColor,
+        ),
       );
     },
   );
@@ -205,7 +208,7 @@ Future<void> showManualUpdateCheckResultDialog(
           final versionLabel =
               appVersion.isEmpty ? appName : "$appName $appVersion";
 
-          return AlertDialog(
+          final dialog = AlertDialog(
             backgroundColor: backgroundColor,
             iconColor: iconColor,
             shadowColor: shadowColor,
@@ -215,7 +218,11 @@ Future<void> showManualUpdateCheckResultDialog(
             ),
             content: Text(
               getLocalizedString(localization?.upToDateText, [versionLabel]) ??
-                  "$versionLabel is the latest available version.",
+                  getLocalizedString(
+                    defaultDesktopUpdateLocalization.upToDateText,
+                    [versionLabel],
+                  ) ??
+                  "",
               style: TextStyle(color: textColor),
             ),
             actions: [
@@ -228,6 +235,7 @@ Future<void> showManualUpdateCheckResultDialog(
               ),
             ],
           );
+          return _withLocalizationDirection(controller, dialog);
         },
       );
     case ManualUpdateCheckFailed():
@@ -238,7 +246,7 @@ Future<void> showManualUpdateCheckResultDialog(
           final state = controller.state;
           final report = state is UpdateFailed ? state.report : null;
 
-          return AlertDialog(
+          final dialog = AlertDialog(
             backgroundColor: backgroundColor,
             iconColor: iconColor,
             shadowColor: shadowColor,
@@ -275,6 +283,7 @@ Future<void> showManualUpdateCheckResultDialog(
               ),
             ],
           );
+          return _withLocalizationDirection(controller, dialog);
         },
       );
   }
@@ -317,192 +326,195 @@ class UpdateDialogWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return ListenableBuilder(
-          listenable: notifier,
-          builder: (context, child) {
-            final state = notifier.state;
-            if (state is UpdateFailed) {
+    return _withLocalizationDirection(
+      notifier,
+      StatefulBuilder(
+        builder: (context, setState) {
+          return ListenableBuilder(
+            listenable: notifier,
+            builder: (context, child) {
+              final state = notifier.state;
+              if (state is UpdateFailed) {
+                return AlertDialog(
+                  backgroundColor: backgroundColor,
+                  iconColor: iconColor,
+                  shadowColor: shadowColor,
+                  title: Text(
+                    "Update failed",
+                    style: TextStyle(color: textColor),
+                  ),
+                  content: Text(
+                    "Please try again later.",
+                    style: TextStyle(color: textColor),
+                  ),
+                  actions: [
+                    TextButton.icon(
+                      icon: Icon(Icons.refresh, color: buttonIconColor),
+                      label: Text(
+                        "Check again",
+                        style: TextStyle(color: buttonTextColor),
+                      ),
+                      onPressed: notifier.checkVersion,
+                    ),
+                    if (state.report != null)
+                      TextButton.icon(
+                        icon: Icon(
+                          Icons.assignment_outlined,
+                          color: buttonIconColor,
+                        ),
+                        label: Text(
+                          "View report",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          showUpdateProblemReportDialog(
+                            context,
+                            controller: notifier,
+                            report: state.report!,
+                          );
+                        },
+                      ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        "Close",
+                        style: TextStyle(color: buttonTextColor),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              final totalBytes = _updateTotalBytes(
+                state: state,
+                descriptor: notifier.activeDescriptor,
+              );
               return AlertDialog(
                 backgroundColor: backgroundColor,
                 iconColor: iconColor,
                 shadowColor: shadowColor,
                 title: Text(
-                  "Update failed",
+                  notifier.getLocalization?.updateAvailableText ??
+                      "Update Available",
                   style: TextStyle(color: textColor),
                 ),
                 content: Text(
-                  "Please try again later.",
-                  style: TextStyle(color: textColor),
+                  "${_availableVersionText(notifier)}, "
+                  "${_longUpdateText(notifier, totalBytes)}",
+                  style: TextStyle(color: buttonTextColor),
                 ),
                 actions: [
-                  TextButton.icon(
-                    icon: Icon(Icons.refresh, color: buttonIconColor),
-                    label: Text(
-                      "Check again",
-                      style: TextStyle(color: buttonTextColor),
-                    ),
-                    onPressed: notifier.checkVersion,
-                  ),
-                  if (state.report != null)
-                    TextButton.icon(
-                      icon: Icon(
-                        Icons.assignment_outlined,
-                        color: buttonIconColor,
-                      ),
-                      label: Text(
-                        "View report",
-                        style: TextStyle(color: buttonTextColor),
-                      ),
-                      onPressed: () {
-                        showUpdateProblemReportDialog(
-                          context,
-                          controller: notifier,
-                          report: state.report!,
-                        );
-                      },
-                    ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      "Close",
-                      style: TextStyle(color: buttonTextColor),
-                    ),
-                  ),
-                ],
-              );
-            }
-            final totalBytes = _updateTotalBytes(
-              state: state,
-              descriptor: notifier.activeDescriptor,
-            );
-            return AlertDialog(
-              backgroundColor: backgroundColor,
-              iconColor: iconColor,
-              shadowColor: shadowColor,
-              title: Text(
-                notifier.getLocalization?.updateAvailableText ??
-                    "Update Available",
-                style: TextStyle(color: textColor),
-              ),
-              content: Text(
-                "${getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [notifier.appName, notifier.appVersion]) ?? (getLocalizedString("{} {} is available", [notifier.appName, notifier.appVersion])) ?? ""}, ${getLocalizedString(notifier.getLocalization?.newVersionLongText, [
-                          _formatMegabytes(totalBytes),
-                        ]) ?? (getLocalizedString("New version is ready to download, click the button below to start downloading. This will download {} MB of data.", [
-                          _formatMegabytes(totalBytes),
-                        ])) ?? ""}",
-                style: TextStyle(color: buttonTextColor),
-              ),
-              actions: [
-                if (state is UpdateDownloading)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        icon: SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            value: _progressValue(state),
-                          ),
-                        ),
-                        label: Row(
-                          children: [
-                            Text(
-                              "${(_progressValue(state) * 100).toInt()}% "
-                              "(${_formatMegabytes(state.receivedBytes)} MB / "
-                              "${_formatMegabytes(state.totalBytes)} MB)",
-                            ),
-                          ],
-                        ),
-                        onPressed: null,
-                      ),
-                    ],
-                  )
-                else if (state is UpdateReadyToInstall)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        icon: const Icon(Icons.restart_alt),
-                        label: Text(
-                          notifier.getLocalization?.restartText ??
-                              "Restart to update",
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) {
-                              return AlertDialog(
-                                title: Text(
-                                  notifier.getLocalization?.warningTitleText ??
-                                      "Are you sure?",
-                                ),
-                                content: Text(
-                                  notifier.getLocalization
-                                          ?.restartWarningText ??
-                                      "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text(
-                                      notifier.getLocalization
-                                              ?.warningCancelText ??
-                                          "Not now",
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: notifier.restartApp,
-                                    child: Text(
-                                      notifier.getLocalization
-                                              ?.warningConfirmText ??
-                                          "Restart",
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (!_isMandatoryUpdate(state))
+                  if (state is UpdateDownloading)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
                         TextButton.icon(
-                          icon: Icon(Icons.close, color: buttonIconColor),
+                          icon: SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              value: _progressValue(state),
+                            ),
+                          ),
+                          label: Row(
+                            children: [
+                              Text(
+                                "${(_progressValue(state) * 100).toInt()}% "
+                                "(${_formatMegabytes(state.receivedBytes)} MB / "
+                                "${_formatMegabytes(state.totalBytes)} MB)",
+                              ),
+                            ],
+                          ),
+                          onPressed: null,
+                        ),
+                      ],
+                    )
+                  else if (state is UpdateReadyToInstall)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.restart_alt),
                           label: Text(
-                            notifier.getLocalization?.skipThisVersionText ??
-                                "Skip this version",
-                            style: TextStyle(color: buttonTextColor),
+                            notifier.getLocalization?.restartText ??
+                                "Restart to update",
                           ),
                           onPressed: () {
-                            unawaited(notifier.makeSkipUpdate());
+                            showDialog(
+                              context: context,
+                              builder: (context) {
+                                return AlertDialog(
+                                  title: Text(
+                                    notifier.getLocalization
+                                            ?.warningTitleText ??
+                                        "Are you sure?",
+                                  ),
+                                  content: Text(
+                                    notifier.getLocalization
+                                            ?.restartWarningText ??
+                                        "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).pop();
+                                      },
+                                      child: Text(
+                                        notifier.getLocalization
+                                                ?.warningCancelText ??
+                                            "Not now",
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: notifier.restartApp,
+                                      child: Text(
+                                        notifier.getLocalization
+                                                ?.warningConfirmText ??
+                                            "Restart",
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
                           },
                         ),
-                      if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
-                      TextButton.icon(
-                        icon: Icon(Icons.download, color: buttonIconColor),
-                        label: Text(
-                          notifier.getLocalization?.downloadText ?? "Download",
-                          style: TextStyle(color: buttonTextColor),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!_isMandatoryUpdate(state))
+                          TextButton.icon(
+                            icon: Icon(Icons.close, color: buttonIconColor),
+                            label: Text(
+                              notifier.getLocalization?.skipThisVersionText ??
+                                  "Skip this version",
+                              style: TextStyle(color: buttonTextColor),
+                            ),
+                            onPressed: () {
+                              unawaited(notifier.makeSkipUpdate());
+                            },
+                          ),
+                        if (!_isMandatoryUpdate(state))
+                          const SizedBox(width: 8),
+                        TextButton.icon(
+                          icon: Icon(Icons.download, color: buttonIconColor),
+                          label: Text(
+                            notifier.getLocalization?.downloadText ??
+                                "Download",
+                            style: TextStyle(color: buttonTextColor),
+                          ),
+                          onPressed: notifier.downloadUpdate,
                         ),
-                        onPressed: notifier.downloadUpdate,
-                      ),
-                    ],
-                  ),
-              ],
-            );
-          },
-        );
-      },
+                      ],
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -526,6 +538,44 @@ bool _canDismissDialog(UpdateState state) {
 
 bool _isMandatoryUpdate(UpdateState state) {
   return state is UpdateAvailable && state.mandatory;
+}
+
+Widget _withLocalizationDirection(
+  DesktopUpdaterController controller,
+  Widget child,
+) {
+  final textDirection = controller.getLocalization?.textDirection;
+  if (textDirection == null) {
+    return child;
+  }
+  return Directionality(textDirection: textDirection, child: child);
+}
+
+String _availableVersionText(DesktopUpdaterController notifier) {
+  return getLocalizedString(
+        notifier.getLocalization?.newVersionAvailableText,
+        [notifier.appName, notifier.appVersion],
+      ) ??
+      getLocalizedString(
+        defaultDesktopUpdateLocalization.newVersionAvailableText,
+        [notifier.appName, notifier.appVersion],
+      ) ??
+      "";
+}
+
+String _longUpdateText(
+  DesktopUpdaterController notifier,
+  int totalBytes,
+) {
+  return getLocalizedString(
+        notifier.getLocalization?.newVersionLongText,
+        [_formatMegabytes(totalBytes)],
+      ) ??
+      getLocalizedString(
+        defaultDesktopUpdateLocalization.newVersionLongText,
+        [_formatMegabytes(totalBytes)],
+      ) ??
+      "";
 }
 
 int _updateTotalBytes({

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ja",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "アップデートがあります",
+    "downloadText": "ダウンロード",
+    "restartText": "再起動して更新",
+    "warningCancelText": "今はしない",
+    "warningConfirmText": "再起動",
+    "skipThisVersionText": "このバージョンをスキップ",
+    "okText": "OK",
+    "releaseNotesTitleText": "新機能",
+    "updateCheckFailedTitleText": "アップデートを確認できませんでした",
+    "updateCheckFailedText": "後でもう一度お試しください。",
+    "releaseNotesRetryText": "再試行"
+  }
+}
