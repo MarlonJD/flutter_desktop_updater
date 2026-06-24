@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "gag",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yenilemä var",
+    "downloadText": "İndir",
+    "restartText": "Yenilemek için yeniden başlat",
+    "warningCancelText": "Şindi diil",
+    "warningConfirmText": "Yeniden başlat",
+    "skipThisVersionText": "Bu versiyonu atla",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne eni",
+    "updateCheckFailedTitleText": "Yenilemeleri yoklama olmadı",
+    "updateCheckFailedText": "Lütfen sora yeniden dene.",
+    "releaseNotesRetryText": "Yeniden dene"
+  }
+}

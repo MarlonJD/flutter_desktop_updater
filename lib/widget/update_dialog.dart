@@ -139,8 +139,7 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
         switch (controller.state) {
           UpdateAvailable() ||
           UpdateFreshInstallRequired() ||
-          UpdateBlockedBySupportPolicy() =>
-            true,
+          UpdateBlockedBySupportPolicy() => true,
           _ => false,
         };
   }
@@ -192,12 +191,15 @@ Future showUpdateDialog<T>(
     context: context,
     barrierDismissible: _canDismissDialog(controller.state),
     builder: (context) {
-      return UpdateDialogWidget(
-        controller: controller,
-        backgroundColor: backgroundColor,
-        iconColor: iconColor,
-        shadowColor: shadowColor,
-        mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
+      return _withLocalizationDirection(
+        controller,
+        UpdateDialogWidget(
+          controller: controller,
+          backgroundColor: backgroundColor,
+          iconColor: iconColor,
+          shadowColor: shadowColor,
+          mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
+        ),
       );
     },
   );
@@ -231,7 +233,7 @@ Future<void> showManualUpdateCheckResultDialog(
         mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       );
     case ManualUpdateCheckFreshInstallRequired() ||
-          ManualUpdateCheckBlockedBySupportPolicy():
+        ManualUpdateCheckBlockedBySupportPolicy():
       await showUpdateDialog<void>(
         context,
         controller: controller,
@@ -247,10 +249,11 @@ Future<void> showManualUpdateCheckResultDialog(
           final localization = controller.getLocalization;
           final appName = controller.appName ?? "This application";
           final appVersion = controller.appVersion ?? "";
-          final versionLabel =
-              appVersion.isEmpty ? appName : "$appName $appVersion";
+          final versionLabel = appVersion.isEmpty
+              ? appName
+              : "$appName $appVersion";
 
-          return AlertDialog(
+          final dialog = AlertDialog(
             backgroundColor: backgroundColor,
             iconColor: iconColor,
             shadowColor: shadowColor,
@@ -273,6 +276,7 @@ Future<void> showManualUpdateCheckResultDialog(
               ),
             ],
           );
+          return _withLocalizationDirection(controller, dialog);
         },
       );
     case ManualUpdateCheckFailed():
@@ -283,7 +287,7 @@ Future<void> showManualUpdateCheckResultDialog(
           final state = controller.state;
           final report = state is UpdateFailed ? state.report : null;
 
-          return AlertDialog(
+          final dialog = AlertDialog(
             backgroundColor: backgroundColor,
             iconColor: iconColor,
             shadowColor: shadowColor,
@@ -320,6 +324,7 @@ Future<void> showManualUpdateCheckResultDialog(
               ),
             ],
           );
+          return _withLocalizationDirection(controller, dialog);
         },
       );
   }
@@ -367,239 +372,252 @@ class UpdateDialogWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return ListenableBuilder(
-          listenable: notifier,
-          builder: (context, child) {
-            final state = notifier.state;
-            if (state is UpdateFailed) {
+    return _withLocalizationDirection(
+      notifier,
+      StatefulBuilder(
+        builder: (context, setState) {
+          return ListenableBuilder(
+            listenable: notifier,
+            builder: (context, child) {
+              final state = notifier.state;
+              if (state is UpdateFailed) {
+                return AlertDialog(
+                  backgroundColor: backgroundColor,
+                  iconColor: iconColor,
+                  shadowColor: shadowColor,
+                  title: Text(
+                    "Update failed",
+                    style: TextStyle(color: textColor),
+                  ),
+                  content: Text(
+                    "Please try again later.",
+                    style: TextStyle(color: textColor),
+                  ),
+                  actions: [
+                    TextButton.icon(
+                      icon: Icon(Icons.refresh, color: buttonIconColor),
+                      label: Text(
+                        "Check again",
+                        style: TextStyle(color: buttonTextColor),
+                      ),
+                      onPressed: notifier.checkVersion,
+                    ),
+                    if (state.report != null)
+                      TextButton.icon(
+                        icon: Icon(
+                          Icons.assignment_outlined,
+                          color: buttonIconColor,
+                        ),
+                        label: Text(
+                          "View report",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          showUpdateProblemReportDialog(
+                            context,
+                            controller: notifier,
+                            report: state.report!,
+                          );
+                        },
+                      ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        "Close",
+                        style: TextStyle(color: buttonTextColor),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              final totalBytes = _updateTotalBytes(
+                state: state,
+                descriptor: notifier.activeDescriptor,
+              );
               return AlertDialog(
                 backgroundColor: backgroundColor,
                 iconColor: iconColor,
                 shadowColor: shadowColor,
                 title: Text(
-                  "Update failed",
+                  notifier.getLocalization?.updateAvailableText ??
+                      "Update Available",
                   style: TextStyle(color: textColor),
                 ),
                 content: Text(
-                  "Please try again later.",
-                  style: TextStyle(color: textColor),
+                  _dialogContentText(
+                    notifier: notifier,
+                    state: state,
+                    totalBytes: totalBytes,
+                  ),
+                  style: TextStyle(color: buttonTextColor),
                 ),
                 actions: [
-                  TextButton.icon(
-                    icon: Icon(Icons.refresh, color: buttonIconColor),
-                    label: Text(
-                      "Check again",
-                      style: TextStyle(color: buttonTextColor),
+                  if (state is UpdateDownloading)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              value: _progressValue(state),
+                            ),
+                          ),
+                          label: Row(
+                            children: [
+                              Text(
+                                "${(_progressValue(state) * 100).toInt()}% "
+                                "(${_formatMegabytes(state.receivedBytes)} MB / "
+                                "${_formatMegabytes(state.totalBytes)} MB)",
+                              ),
+                            ],
+                          ),
+                          onPressed: null,
+                        ),
+                      ],
+                    )
+                  else if (state is UpdateReadyToInstall)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.restart_alt),
+                          label: Text(
+                            notifier.getLocalization?.restartText ??
+                                "Restart to update",
+                          ),
+                          onPressed: () {
+                            final isMandatory = _isMandatoryUpdate(
+                              notifier.state,
+                            );
+                            if (isMandatory &&
+                                mandatoryReadyToInstallBehavior ==
+                                    MandatoryReadyToInstallBehavior
+                                        .restartWithoutPrompt) {
+                              unawaited(notifier.restartApp());
+                              return;
+                            }
+                            showDialog(
+                              context: context,
+                              barrierDismissible: !isMandatory,
+                              builder: (restartContext) {
+                                return AlertDialog(
+                                  title: Text(
+                                    notifier
+                                            .getLocalization
+                                            ?.warningTitleText ??
+                                        "Are you sure?",
+                                  ),
+                                  content: Text(
+                                    notifier
+                                            .getLocalization
+                                            ?.restartWarningText ??
+                                        (isMandatory
+                                            ? "This update is required. Save your work before restarting to finish the installation."
+                                            : "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?"),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.of(restartContext).pop();
+                                        if (isMandatory) {
+                                          Navigator.of(context).pop();
+                                        }
+                                      },
+                                      child: Text(
+                                        isMandatory
+                                            ? notifier
+                                                      .getLocalization
+                                                      ?.saveFirstText ??
+                                                  "Save first"
+                                            : notifier
+                                                      .getLocalization
+                                                      ?.warningCancelText ??
+                                                  "Not now",
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: notifier.restartApp,
+                                      child: Text(
+                                        notifier
+                                                .getLocalization
+                                                ?.warningConfirmText ??
+                                            "Restart",
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                    )
+                  else if (state is UpdateFreshInstallRequired)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!_isMandatoryUpdate(state))
+                          TextButton.icon(
+                            icon: Icon(Icons.close, color: buttonIconColor),
+                            label: Text(
+                              notifier.getLocalization?.warningCancelText ??
+                                  "Not now",
+                              style: TextStyle(color: buttonTextColor),
+                            ),
+                            onPressed: () {
+                              unawaited(notifier.makeSkipUpdate());
+                            },
+                          ),
+                        if (!_isMandatoryUpdate(state))
+                          const SizedBox(width: 8),
+                        TextButton.icon(
+                          icon: Icon(Icons.open_in_new, color: buttonIconColor),
+                          label: Text(
+                            notifier.getLocalization?.downloadLatestText ??
+                                "Download latest",
+                            style: TextStyle(color: buttonTextColor),
+                          ),
+                          onPressed: notifier.openFreshInstallDownload,
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!_isMandatoryUpdate(state))
+                          TextButton.icon(
+                            icon: Icon(Icons.close, color: buttonIconColor),
+                            label: Text(
+                              notifier.getLocalization?.skipThisVersionText ??
+                                  "Skip this version",
+                              style: TextStyle(color: buttonTextColor),
+                            ),
+                            onPressed: () {
+                              unawaited(notifier.makeSkipUpdate());
+                            },
+                          ),
+                        if (!_isMandatoryUpdate(state))
+                          const SizedBox(width: 8),
+                        TextButton.icon(
+                          icon: Icon(Icons.download, color: buttonIconColor),
+                          label: Text(
+                            notifier.getLocalization?.downloadText ??
+                                "Download",
+                            style: TextStyle(color: buttonTextColor),
+                          ),
+                          onPressed: notifier.downloadUpdate,
+                        ),
+                      ],
                     ),
-                    onPressed: notifier.checkVersion,
-                  ),
-                  if (state.report != null)
-                    TextButton.icon(
-                      icon: Icon(
-                        Icons.assignment_outlined,
-                        color: buttonIconColor,
-                      ),
-                      label: Text(
-                        "View report",
-                        style: TextStyle(color: buttonTextColor),
-                      ),
-                      onPressed: () {
-                        showUpdateProblemReportDialog(
-                          context,
-                          controller: notifier,
-                          report: state.report!,
-                        );
-                      },
-                    ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      "Close",
-                      style: TextStyle(color: buttonTextColor),
-                    ),
-                  ),
                 ],
               );
-            }
-            final totalBytes = _updateTotalBytes(
-              state: state,
-              descriptor: notifier.activeDescriptor,
-            );
-            return AlertDialog(
-              backgroundColor: backgroundColor,
-              iconColor: iconColor,
-              shadowColor: shadowColor,
-              title: Text(
-                notifier.getLocalization?.updateAvailableText ??
-                    "Update Available",
-                style: TextStyle(color: textColor),
-              ),
-              content: Text(
-                _dialogContentText(
-                  notifier: notifier,
-                  state: state,
-                  totalBytes: totalBytes,
-                ),
-                style: TextStyle(color: buttonTextColor),
-              ),
-              actions: [
-                if (state is UpdateDownloading)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        icon: SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            value: _progressValue(state),
-                          ),
-                        ),
-                        label: Row(
-                          children: [
-                            Text(
-                              "${(_progressValue(state) * 100).toInt()}% "
-                              "(${_formatMegabytes(state.receivedBytes)} MB / "
-                              "${_formatMegabytes(state.totalBytes)} MB)",
-                            ),
-                          ],
-                        ),
-                        onPressed: null,
-                      ),
-                    ],
-                  )
-                else if (state is UpdateReadyToInstall)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        icon: const Icon(Icons.restart_alt),
-                        label: Text(
-                          notifier.getLocalization?.restartText ??
-                              "Restart to update",
-                        ),
-                        onPressed: () {
-                          final isMandatory =
-                              _isMandatoryUpdate(notifier.state);
-                          if (isMandatory &&
-                              mandatoryReadyToInstallBehavior ==
-                                  MandatoryReadyToInstallBehavior
-                                      .restartWithoutPrompt) {
-                            unawaited(notifier.restartApp());
-                            return;
-                          }
-                          showDialog(
-                            context: context,
-                            barrierDismissible: !isMandatory,
-                            builder: (restartContext) {
-                              return AlertDialog(
-                                title: Text(
-                                  notifier.getLocalization?.warningTitleText ??
-                                      "Are you sure?",
-                                ),
-                                content: Text(
-                                  notifier.getLocalization
-                                          ?.restartWarningText ??
-                                      (isMandatory
-                                          ? "This update is required. Save your work before restarting to finish the installation."
-                                          : "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?"),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(restartContext).pop();
-                                      if (isMandatory) {
-                                        Navigator.of(context).pop();
-                                      }
-                                    },
-                                    child: Text(
-                                      isMandatory
-                                          ? notifier.getLocalization
-                                                  ?.saveFirstText ??
-                                              "Save first"
-                                          : notifier.getLocalization
-                                                  ?.warningCancelText ??
-                                              "Not now",
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: notifier.restartApp,
-                                    child: Text(
-                                      notifier.getLocalization
-                                              ?.warningConfirmText ??
-                                          "Restart",
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
-                  )
-                else if (state is UpdateFreshInstallRequired)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (!_isMandatoryUpdate(state))
-                        TextButton.icon(
-                          icon: Icon(Icons.close, color: buttonIconColor),
-                          label: Text(
-                            notifier.getLocalization?.warningCancelText ??
-                                "Not now",
-                            style: TextStyle(color: buttonTextColor),
-                          ),
-                          onPressed: () {
-                            unawaited(notifier.makeSkipUpdate());
-                          },
-                        ),
-                      if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
-                      TextButton.icon(
-                        icon: Icon(Icons.open_in_new, color: buttonIconColor),
-                        label: Text(
-                          notifier.getLocalization?.downloadLatestText ??
-                              "Download latest",
-                          style: TextStyle(color: buttonTextColor),
-                        ),
-                        onPressed: notifier.openFreshInstallDownload,
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (!_isMandatoryUpdate(state))
-                        TextButton.icon(
-                          icon: Icon(Icons.close, color: buttonIconColor),
-                          label: Text(
-                            notifier.getLocalization?.skipThisVersionText ??
-                                "Skip this version",
-                            style: TextStyle(color: buttonTextColor),
-                          ),
-                          onPressed: () {
-                            unawaited(notifier.makeSkipUpdate());
-                          },
-                        ),
-                      if (!_isMandatoryUpdate(state)) const SizedBox(width: 8),
-                      TextButton.icon(
-                        icon: Icon(Icons.download, color: buttonIconColor),
-                        label: Text(
-                          notifier.getLocalization?.downloadText ?? "Download",
-                          style: TextStyle(color: buttonTextColor),
-                        ),
-                        onPressed: notifier.downloadUpdate,
-                      ),
-                    ],
-                  ),
-              ],
-            );
-          },
-        );
-      },
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -631,8 +649,7 @@ bool _isMandatoryUpdate(UpdateState state) {
   return switch (state) {
     UpdateAvailable(:final mandatory) ||
     UpdateReadyToInstall(:final mandatory) ||
-    UpdateFreshInstallRequired(:final mandatory) =>
-      mandatory,
+    UpdateFreshInstallRequired(:final mandatory) => mandatory,
     UpdateBlockedBySupportPolicy() => true,
     _ => false,
   };
@@ -662,29 +679,27 @@ String _dialogContentText({
             policy.enforcedAfter.toIso8601String(),
           ],
         ) ??
-        getLocalizedString(
-          "Please update to version {} before {}.",
-          [
-            policy.minimumSupportedVersion,
-            policy.enforcedAfter.toIso8601String(),
-          ],
-        ) ??
+        getLocalizedString("Please update to version {} before {}.", [
+          policy.minimumSupportedVersion,
+          policy.enforcedAfter.toIso8601String(),
+        ]) ??
         "";
   }
 
-  final availableText = getLocalizedString(
-        notifier.getLocalization?.newVersionAvailableText,
-        [notifier.appName, notifier.appVersion],
-      ) ??
-      getLocalizedString(
-        "{} {} is available",
-        [notifier.appName, notifier.appVersion],
-      ) ??
+  final availableText =
+      getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [
+        notifier.appName,
+        notifier.appVersion,
+      ]) ??
+      getLocalizedString("{} {} is available", [
+        notifier.appName,
+        notifier.appVersion,
+      ]) ??
       "";
-  final longText = getLocalizedString(
-        notifier.getLocalization?.newVersionLongText,
-        [_formatMegabytes(totalBytes)],
-      ) ??
+  final longText =
+      getLocalizedString(notifier.getLocalization?.newVersionLongText, [
+        _formatMegabytes(totalBytes),
+      ]) ??
       getLocalizedString(
         "New version is ready to download, click the button below to start "
         "downloading. This will download {} MB of data.",
@@ -692,6 +707,17 @@ String _dialogContentText({
       ) ??
       "";
   return "$availableText, $longText";
+}
+
+Widget _withLocalizationDirection(
+  DesktopUpdaterController controller,
+  Widget child,
+) {
+  final textDirection = controller.getLocalization?.textDirection;
+  if (textDirection == null) {
+    return child;
+  }
+  return Directionality(textDirection: textDirection, child: child);
 }
 
 int _updateTotalBytes({

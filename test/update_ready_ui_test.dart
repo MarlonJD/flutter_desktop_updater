@@ -9,9 +9,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
@@ -31,9 +29,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
@@ -49,9 +45,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
@@ -65,19 +59,49 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
     expect(
       find.text(
-          "This version is no longer supported. Please update to continue."),
+        "This version is no longer supported. Please update to continue.",
+      ),
       findsOneWidget,
     );
     expect(find.text("Download"), findsOneWidget);
     expect(find.text("Skip this version"), findsNothing);
+  });
+
+  testWidgets("ready UI uses localization text direction", (tester) async {
+    final controller = _ReadyUiTestController(
+      localization: const DesktopUpdateLocalization(
+        textDirection: TextDirection.rtl,
+        updateAvailableText: "تحديث متوفر",
+      ),
+    )..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MaterialApp(
+          home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
+        ),
+      ),
+    );
+
+    final textElement = tester.element(find.text("تحديث متوفر"));
+    TextDirection? closestDirection;
+    textElement.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is Directionality) {
+        closestDirection = widget.textDirection;
+        return false;
+      }
+      return true;
+    });
+
+    expect(closestDirection, TextDirection.rtl);
   });
 
   testWidgets("ready UI shows download progress from typed state", (
@@ -91,9 +115,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
@@ -101,37 +123,36 @@ void main() {
     expect(find.text("50% (50.00 MB / 100.00 MB)"), findsOneWidget);
   });
 
-  testWidgets(
-    "mandatory ready-to-install card offers a save-first deferral",
-    (tester) async {
-      final controller = _ReadyUiTestController()
-        ..showReadyToInstallUpdate(mandatory: true);
+  testWidgets("mandatory ready-to-install card offers a save-first deferral", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController()
+      ..showReadyToInstallUpdate(mandatory: true);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 300,
-              child: UpdateCard(controller: controller),
-            ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
           ),
         ),
-      );
+      ),
+    );
 
-      await tester.tap(find.text("Restart to update"));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text("Restart to update"));
+    await tester.pumpAndSettle();
 
-      expect(find.text("Not now"), findsNothing);
-      expect(find.text("Save first"), findsOneWidget);
-      expect(find.text("Restart"), findsOneWidget);
+    expect(find.text("Not now"), findsNothing);
+    expect(find.text("Save first"), findsOneWidget);
+    expect(find.text("Restart"), findsOneWidget);
 
-      await tester.tap(find.text("Save first"));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text("Save first"));
+    await tester.pumpAndSettle();
 
-      expect(find.text("Are you sure?"), findsNothing);
-      expect(find.text("Restart to update"), findsOneWidget);
-    },
-  );
+    expect(find.text("Are you sure?"), findsNothing);
+    expect(find.text("Restart to update"), findsOneWidget);
+  });
 
   testWidgets(
     "mandatory ready-to-install dialog offers a save-first deferral",
@@ -146,10 +167,7 @@ void main() {
               builder: (context) {
                 return TextButton(
                   onPressed: () {
-                    showUpdateDialog<void>(
-                      context,
-                      controller: controller,
-                    );
+                    showUpdateDialog<void>(context, controller: controller);
                   },
                   child: const Text("Show update"),
                 );
@@ -200,9 +218,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: DesktopUpdateDirectCard(controller: controller),
-        ),
+        home: Scaffold(body: DesktopUpdateDirectCard(controller: controller)),
       ),
     );
 
@@ -236,30 +252,30 @@ void main() {
     expect(tooltip.message, isNotEmpty);
   });
 
-  testWidgets("error tooltip uses onUpdateFailedTooltip callback when provided",
-      (
-    tester,
-  ) async {
-    final controller = _ReadyUiTestController(
-      localization: const DesktopUpdateLocalization(
-        onUpdateFailedTooltip: _customTooltip,
-      ),
-    )..showFailedUpdate();
+  testWidgets(
+    "error tooltip uses onUpdateFailedTooltip callback when provided",
+    (tester) async {
+      final controller = _ReadyUiTestController(
+        localization: const DesktopUpdateLocalization(
+          onUpdateFailedTooltip: _customTooltip,
+        ),
+      )..showFailedUpdate();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            height: 300,
-            child: UpdateCard(controller: controller),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 300,
+              child: UpdateCard(controller: controller),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
-    expect(tooltip.message, "Custom error message");
-  });
+      final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      expect(tooltip.message, "Custom error message");
+    },
+  );
 
   testWidgets("error tooltip does not reuse release notes error text", (
     tester,
@@ -375,17 +391,16 @@ void main() {
           controller: controller,
           child: Builder(
             builder: (context) {
-              final notifier =
-                  DesktopUpdaterInheritedNotifier.of(context).notifier!;
+              final notifier = DesktopUpdaterInheritedNotifier.of(
+                context,
+              ).notifier!;
               final state = notifier.state;
 
-              return Text(
-                switch (state) {
-                  UpdateAvailable(:final mandatory) =>
-                    mandatory ? "Custom mandatory update" : "Custom update",
-                  _ => "Custom idle",
-                },
-              );
+              return Text(switch (state) {
+                UpdateAvailable(:final mandatory) =>
+                  mandatory ? "Custom mandatory update" : "Custom update",
+                _ => "Custom idle",
+              });
             },
           ),
         ),
@@ -406,10 +421,7 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     super.releaseNotesUrl,
     super.releaseNotesLoader,
     super.localization,
-  }) : super(
-          appArchiveUrl: null,
-          skipInitialVersionCheck: true,
-        );
+  }) : super(appArchiveUrl: null, skipInitialVersionCheck: true);
 
   bool _skipUpdate = false;
   UpdateState _state = const UpdateIdle();
@@ -459,10 +471,7 @@ class _ReadyUiTestController extends DesktopUpdaterController {
 
   void showAvailableUpdate({bool mandatory = false}) {
     _skipUpdate = false;
-    _state = UpdateAvailable(
-      descriptor: _descriptor,
-      mandatory: mandatory,
-    );
+    _state = UpdateAvailable(descriptor: _descriptor, mandatory: mandatory);
     notifyListeners();
   }
 
@@ -511,10 +520,7 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   }
 
   void showFailedUpdate() {
-    _state = UpdateFailed(
-      StateError("network down"),
-      report: _testReport(),
-    );
+    _state = UpdateFailed(StateError("network down"), report: _testReport());
     notifyListeners();
   }
 

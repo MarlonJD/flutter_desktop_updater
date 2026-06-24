@@ -33,9 +33,8 @@ export "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 
 /// Loads release notes for the selected update descriptor.
-typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
-  ReleaseDescriptor descriptor,
-);
+typedef ReleaseNotesLoader =
+    Future<ReleaseNotes> Function(ReleaseDescriptor descriptor);
 
 /// Opens an external URL, such as a fresh installer download page.
 typedef ExternalUrlLauncher = Future<void> Function(Uri url);
@@ -53,7 +52,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// the controller starts an asynchronous update check during construction.
   DesktopUpdaterController({
     required Uri? appArchiveUrl,
-    this.localization,
+    DesktopUpdateLocalization? localization,
     this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
@@ -70,17 +69,18 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ExternalUrlLauncher? externalUrlLauncher,
-  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
-        _diagnosticsRecorder =
-            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
-        _onProblemReport = onProblemReport,
-        _onCleanupReport = onCleanupReport,
-        _releaseNotesLoader = releaseNotesLoader,
-        _releaseNotesUrl = releaseNotesUrl,
-        _externalUrlLauncher =
-            externalUrlLauncher ?? defaultExternalUrlLauncher,
-        _releaseNotesFetcher =
-            releaseNotesUrl == null ? null : ReleaseNotesFetcher() {
+  }) : _localization = localization,
+       _skipInitialVersionCheck = skipInitialVersionCheck,
+       _diagnosticsRecorder =
+           diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+       _onProblemReport = onProblemReport,
+       _onCleanupReport = onCleanupReport,
+       _releaseNotesLoader = releaseNotesLoader,
+       _releaseNotesUrl = releaseNotesUrl,
+       _externalUrlLauncher = externalUrlLauncher ?? defaultExternalUrlLauncher,
+       _releaseNotesFetcher = releaseNotesUrl == null
+           ? null
+           : ReleaseNotesFetcher() {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -94,7 +94,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   @visibleForTesting
   DesktopUpdaterController.forTesting({
     required Uri? appArchiveUrl,
-    this.localization,
+    DesktopUpdateLocalization? localization,
     this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
@@ -112,17 +112,18 @@ class DesktopUpdaterController extends ChangeNotifier {
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
     ExternalUrlLauncher? externalUrlLauncher,
-  })  : _skipInitialVersionCheck = skipInitialVersionCheck,
-        _diagnosticsRecorder =
-            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
-        _onProblemReport = onProblemReport,
-        _onCleanupReport = onCleanupReport,
-        _releaseNotesLoader = releaseNotesLoader,
-        _releaseNotesUrl = releaseNotesUrl,
-        _externalUrlLauncher =
-            externalUrlLauncher ?? defaultExternalUrlLauncher,
-        _releaseNotesFetcher = releaseNotesFetcher ??
-            (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
+  }) : _localization = localization,
+       _skipInitialVersionCheck = skipInitialVersionCheck,
+       _diagnosticsRecorder =
+           diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+       _onProblemReport = onProblemReport,
+       _onCleanupReport = onCleanupReport,
+       _releaseNotesLoader = releaseNotesLoader,
+       _releaseNotesUrl = releaseNotesUrl,
+       _externalUrlLauncher = externalUrlLauncher ?? defaultExternalUrlLauncher,
+       _releaseNotesFetcher =
+           releaseNotesFetcher ??
+           (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -133,11 +134,22 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Whether construction should avoid starting the first automatic check.
   bool get skipInitialVersionCheck => _skipInitialVersionCheck;
 
+  DesktopUpdateLocalization? _localization;
+
   /// Optional strings used by bundled update UI.
-  DesktopUpdateLocalization? localization;
+  DesktopUpdateLocalization? get localization => _localization;
+
+  /// Updates localization values used by bundled update UI.
+  set localization(DesktopUpdateLocalization? value) {
+    if (identical(_localization, value)) {
+      return;
+    }
+    _localization = value;
+    notifyListeners();
+  }
 
   /// Current localization values used by bundled update UI.
-  DesktopUpdateLocalization? get getLocalization => localization;
+  DesktopUpdateLocalization? get getLocalization => _localization;
 
   /// Release channel used for update selection and skip preferences.
   final String channel;
@@ -362,10 +374,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     _state = const UpdateChecking();
     emitUpdateTelemetry(
       telemetry,
-      UpdateTelemetryEvent.checkStarted(
-        source: archiveUrl,
-        channel: channel,
-      ),
+      UpdateTelemetryEvent.checkStarted(source: archiveUrl, channel: channel),
     );
     notifyListeners();
 
@@ -407,9 +416,10 @@ class DesktopUpdaterController extends ChangeNotifier {
       final supportPolicy = result.index.supportPolicy;
       final activeSupportPolicy =
           supportPolicy != null && supportPolicy.appliesTo(currentVersion)
-              ? supportPolicy
-              : null;
-      final supportPolicyEnforced = activeSupportPolicy?.isEnforced(
+          ? supportPolicy
+          : null;
+      final supportPolicyEnforced =
+          activeSupportPolicy?.isEnforced(
             currentVersion: currentVersion,
             now: DateTime.now().toUtc(),
           ) ??
@@ -445,7 +455,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.descriptor,
         level: UpdateDiagnosticLevel.info,
-        message: "Update selected: ${result.descriptor.version} "
+        message:
+            "Update selected: ${result.descriptor.version} "
             "(${result.descriptor.platform}/${result.descriptor.channel}).",
       );
       if (freshInstall != null) {
@@ -519,10 +530,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     try {
       await checkVersion();
     } on Object catch (error, stackTrace) {
-      _state = UpdateFailed(
-        error,
-        report: _reportFromStateOrBuild(error),
-      );
+      _state = UpdateFailed(error, report: _reportFromStateOrBuild(error));
       notifyListeners();
       return ManualUpdateCheckFailed(error, stackTrace);
     }
@@ -551,10 +559,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
 
     if (currentState is UpdateFailed) {
-      return ManualUpdateCheckFailed(
-        currentState.error,
-        StackTrace.current,
-      );
+      return ManualUpdateCheckFailed(currentState.error, StackTrace.current);
     }
 
     return const ManualUpdateCheckUpToDate();
@@ -571,14 +576,11 @@ class DesktopUpdaterController extends ChangeNotifier {
       throw StateError("No zip-first update is available.");
     }
     if (_state is UpdateFreshInstallRequired) {
-      throw StateError(
-        "This update must be installed from a fresh download.",
-      );
+      throw StateError("This update must be installed from a fresh download.");
     }
     final mandatory = switch (_state) {
       UpdateAvailable(:final mandatory) ||
-      UpdateFreshInstallRequired(:final mandatory) =>
-        mandatory,
+      UpdateFreshInstallRequired(:final mandatory) => mandatory,
       UpdateBlockedBySupportPolicy() => true,
       _ => false,
     };
@@ -766,7 +768,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       ..record(
         stage: UpdateDiagnosticStage.install,
         level: UpdateDiagnosticLevel.warning,
-        message: "Pending install marker found for "
+        message:
+            "Pending install marker found for "
             "${marker.updateVersion ?? "unknown update"}.",
       );
 
@@ -993,7 +996,7 @@ bool _matchesRecoveredTarget(
   final hasTargetVersion = targetVersion != null && targetVersion.isNotEmpty;
   final versionMatches = hasTargetVersion
       ? currentVersion.versionName == targetVersion ||
-          currentVersion.rawVersion == targetVersion
+            currentVersion.rawVersion == targetVersion
       : null;
   final buildMatches = targetBuildNumber == null
       ? null

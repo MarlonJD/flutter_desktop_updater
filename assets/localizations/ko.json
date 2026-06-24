@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ko",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "업데이트 사용 가능",
+    "downloadText": "다운로드",
+    "restartText": "업데이트하려면 다시 시작",
+    "warningCancelText": "나중에",
+    "warningConfirmText": "다시 시작",
+    "skipThisVersionText": "이 버전 건너뛰기",
+    "okText": "확인",
+    "releaseNotesTitleText": "새로운 기능",
+    "updateCheckFailedTitleText": "업데이트를 확인할 수 없습니다",
+    "updateCheckFailedText": "나중에 다시 시도하세요.",
+    "releaseNotesRetryText": "다시 시도"
+  }
+}

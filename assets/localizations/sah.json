@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "sah",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Саҥардыы баар",
+    "downloadText": "Хачайдаа",
+    "restartText": "Саҥардыыга хат ыыт",
+    "warningCancelText": "Билигин суох",
+    "warningConfirmText": "Хат ыыт",
+    "skipThisVersionText": "Бу барылын атыннаа",
+    "okText": "OK",
+    "releaseNotesTitleText": "Туох саҥа",
+    "updateCheckFailedTitleText": "Саҥардыылары тургутар сатаммата",
+    "updateCheckFailedText": "Кэлин хат тургутан көрүҥ.",
+    "releaseNotesRetryText": "Хат тургут"
+  }
+}

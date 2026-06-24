@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "he",
+  "textDirection": "rtl",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "עדכון זמין",
+    "downloadText": "הורדה",
+    "restartText": "הפעל מחדש כדי לעדכן",
+    "warningCancelText": "לא עכשיו",
+    "warningConfirmText": "הפעל מחדש",
+    "skipThisVersionText": "דלג על גרסה זו",
+    "okText": "אישור",
+    "releaseNotesTitleText": "מה חדש",
+    "updateCheckFailedTitleText": "לא ניתן לבדוק עדכונים",
+    "updateCheckFailedText": "נסה שוב מאוחר יותר.",
+    "releaseNotesRetryText": "נסה שוב"
+  }
+}

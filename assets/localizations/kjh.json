@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "kjh",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Чаңыртығ бар",
+    "downloadText": "Чүкте",
+    "restartText": "Чаңыртырға қайта паста",
+    "warningCancelText": "Хазыр нимес",
+    "warningConfirmText": "Қайта паста",
+    "skipThisVersionText": "Пу версияны атла",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ниме чаа",
+    "updateCheckFailedTitleText": "Чаңыртығларны тиксерерге полбады",
+    "updateCheckFailedText": "Соңыра қайта сынап көріңіз.",
+    "releaseNotesRetryText": "Қайта сына"
+  }
+}

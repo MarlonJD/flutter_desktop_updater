@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "locale": "en",
+  "textDirection": "ltr",
+  "translationQuality": "canonical",
+  "strings": {
+    "updateAvailableText": "Update available",
+    "newVersionAvailableText": "{} {} is available",
+    "newVersionLongText": "New version is ready to download, click the button below to start downloading. This will download {} MB of data.",
+    "restartText": "Restart to update",
+    "warningTitleText": "Are you sure?",
+    "restartWarningText": "A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?",
+    "warningCancelText": "Not now",
+    "warningConfirmText": "Restart",
+    "skipThisVersionText": "Skip this version",
+    "downloadText": "Download",
+    "upToDateTitleText": "Application is up to date",
+    "upToDateText": "{} is the latest available version.",
+    "updateCheckFailedTitleText": "Could not check for updates",
+    "updateCheckFailedText": "Please try again later.",
+    "okText": "OK",
+    "updateFailedTooltipText": "Update failed. Please try again.",
+    "releaseNotesButtonTooltipText": "Release notes",
+    "releaseNotesTitleText": "What's new",
+    "releaseNotesErrorText": "Could not load release notes.",
+    "releaseNotesRetryText": "Try again",
+    "releaseNotesEmptyText": "No release notes available.",
+    "releaseNotesTypeLabels": {
+      "feat": "New features",
+      "fix": "Bug fixes",
+      "other": "Other changes"
+    },
+    "releaseNotesSectionLabels": {
+      "features": "Features",
+      "fixes": "Fixes",
+      "security": "Security",
+      "breaking": "Breaking changes",
+      "other": "Other changes"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "nog",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yañartuv bar",
+    "downloadText": "Jükle",
+    "restartText": "Yañartuv üşin qayta başlat",
+    "warningCancelText": "Äzir emes",
+    "warningConfirmText": "Qayta başlat",
+    "skipThisVersionText": "Bu nusqanı ötker",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne jaña",
+    "updateCheckFailedTitleText": "Yañartuvlardı tekserip bolmadı",
+    "updateCheckFailedText": "Keyin qayta sınap körin.",
+    "releaseNotesRetryText": "Qayta sınap kör"
+  }
+}

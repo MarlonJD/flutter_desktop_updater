@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "kaa",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Jańalaw bar",
+    "downloadText": "Júklew",
+    "restartText": "Jańalaw ushın qayta iske qosıń",
+    "warningCancelText": "Házir emes",
+    "warningConfirmText": "Qayta iske qosıw",
+    "skipThisVersionText": "Bul nusqanı ótkerip jiberiw",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne jańa",
+    "updateCheckFailedTitleText": "Jańalawlardı tekserip bolmadı",
+    "updateCheckFailedText": "Keyinirek qayta háreket etiń.",
+    "releaseNotesRetryText": "Qayta háreket etiw"
+  }
+}

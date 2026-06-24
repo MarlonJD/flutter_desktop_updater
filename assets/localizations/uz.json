@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "uz",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yangilanish mavjud",
+    "downloadText": "Yuklab olish",
+    "restartText": "Yangilash uchun qayta ishga tushiring",
+    "warningCancelText": "Hozir emas",
+    "warningConfirmText": "Qayta ishga tushirish",
+    "skipThisVersionText": "Bu versiyani o‘tkazib yuborish",
+    "okText": "OK",
+    "releaseNotesTitleText": "Nima yangilik",
+    "updateCheckFailedTitleText": "Yangilanishlarni tekshirib bo‘lmadi",
+    "updateCheckFailedText": "Iltimos, keyinroq qayta urinib ko‘ring.",
+    "releaseNotesRetryText": "Qayta urinish"
+  }
+}

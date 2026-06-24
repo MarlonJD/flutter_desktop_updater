@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "tyv",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Шинечилел бар",
+    "downloadText": "Чүктүр",
+    "restartText": "Шинечилээрге катап эгелээр",
+    "warningCancelText": "Ам эмес",
+    "warningConfirmText": "Катап эгелээр",
+    "skipThisVersionText": "Бо версияны алгаш чор",
+    "okText": "OK",
+    "releaseNotesTitleText": "Чаа чүүлдер",
+    "updateCheckFailedTitleText": "Шинечилелдерни шалгап болбады",
+    "updateCheckFailedText": "Соонда катап туршуп көрүңер.",
+    "releaseNotesRetryText": "Катап туршуу"
+  }
+}

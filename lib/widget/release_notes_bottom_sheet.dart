@@ -87,7 +87,7 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
     final emptyText =
         localization?.releaseNotesEmptyText ?? "No release notes available.";
 
-    return DraggableScrollableSheet(
+    final sheet = DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.5,
       maxChildSize: 0.9,
@@ -188,6 +188,11 @@ class _ReleaseNotesSheetState extends State<_ReleaseNotesSheet> {
         );
       },
     );
+    final textDirection = localization?.textDirection;
+    if (textDirection == null) {
+      return sheet;
+    }
+    return Directionality(textDirection: textDirection, child: sheet);
   }
 }
 

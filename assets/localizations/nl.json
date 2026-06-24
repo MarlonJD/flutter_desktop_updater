@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "nl",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Update beschikbaar",
+    "downloadText": "Downloaden",
+    "restartText": "Herstarten om bij te werken",
+    "warningCancelText": "Niet nu",
+    "warningConfirmText": "Herstarten",
+    "skipThisVersionText": "Deze versie overslaan",
+    "okText": "OK",
+    "releaseNotesTitleText": "Nieuw",
+    "updateCheckFailedTitleText": "Kan niet controleren op updates",
+    "updateCheckFailedText": "Probeer het later opnieuw.",
+    "releaseNotesRetryText": "Opnieuw proberen"
+  }
+}

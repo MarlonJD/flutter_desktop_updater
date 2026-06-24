@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "crh",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Yañartma mevcut",
+    "downloadText": "Endir",
+    "restartText": "Yañartmaq içün kene başlat",
+    "warningCancelText": "Şimdi degil",
+    "warningConfirmText": "Kene başlat",
+    "skipThisVersionText": "Bu sürümni atla",
+    "okText": "OK",
+    "releaseNotesTitleText": "Ne yañı",
+    "updateCheckFailedTitleText": "Yañartmalarnı teşkerip olmadı",
+    "updateCheckFailedText": "Lütfen soñra tekrar deñeñiz.",
+    "releaseNotesRetryText": "Tekrar dene"
+  }
+}

@@ -122,8 +122,16 @@ guidance, and when to choose each surface.
 
 For custom UI, switch on `controller.state`.
 
-For full i18n wiring, locale switching, and localized release notes examples,
-see [Internationalization](docs/i18n.md).
+## Localization And i18n
+
+Ready-made updater UI can load bundled starter translations, app-owned JSON
+assets, direct string overrides, or an app-owned resolver such as
+`AppLocalizations` or `_()`. RTL locales such as Arabic and Hebrew can set or
+infer `TextDirection.rtl`.
+
+See [Localization and i18n](docs/localization.md) for the recommended setup,
+JSON schema, runtime language switching, RTL behavior, and Arabic, Hebrew,
+Japanese, Korean, and Cyrillic screenshots.
 
 ## Update Policy Modes
 
@@ -277,8 +285,9 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   restrictions.
 - [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
-- [Internationalization](docs/i18n.md): full `DesktopUpdateLocalization`
-  setup, locale switching, and localized release notes examples.
+- [Localization and i18n](docs/localization.md): bundled translations, custom
+  JSON, resolver-based i18n, runtime locale changes, RTL behavior, and
+  multi-script screenshots.
 - [Diagnostics and recovery](docs/diagnostics-and-recovery.md): where logs are
   written, how helper diagnostics work, and how to wire support collection.
 - [GitHub Actions CI/CD guide](docs/github-actions-ci-cd.md): longer CI

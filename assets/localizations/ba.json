@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "locale": "ba",
+  "textDirection": "ltr",
+  "translationQuality": "machine-starter",
+  "strings": {
+    "updateAvailableText": "Яңыртыу бар",
+    "downloadText": "Йөкләү",
+    "restartText": "Яңыртыу өсөн яңынан башлатыу",
+    "warningCancelText": "Хәҙер түгел",
+    "warningConfirmText": "Яңынан башлатыу",
+    "skipThisVersionText": "Был версияны үткәреп ебәреү",
+    "okText": "OK",
+    "releaseNotesTitleText": "Яңылыҡтар",
+    "updateCheckFailedTitleText": "Яңыртыуҙарҙы тикшереп булманы",
+    "updateCheckFailedText": "Зинһар һуңыраҡ ҡабатлап ҡарағыҙ.",
+    "releaseNotesRetryText": "Ҡабатлау"
+  }
+}
