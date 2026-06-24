@@ -1,7 +1,10 @@
+import "dart:io";
+
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 class MockDesktopUpdaterPlatform
@@ -66,5 +69,26 @@ void main() {
     );
 
     expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
+  });
+
+  test("checkZipFirstUpdate accepts app-owned request headers provider",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("desktop_updater_");
+    try {
+      final archive = File(path.join(tempDir.path, "app-archive.json"));
+      await archive.writeAsString(
+        '{"schemaVersion":3,"appName":"Example","items":[]}',
+      );
+
+      final result = await DesktopUpdater().checkZipFirstUpdate(
+        appArchiveUrl: archive.uri,
+        currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
+        requestHeadersProvider: (_) => {"x-update-auth": "runtime-token"},
+      );
+
+      expect(result, isNull);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
   });
 }

@@ -2,17 +2,24 @@ import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/current_version.dart";
+import "package:desktop_updater/src/io/http_update_transport.dart"
+    show UpdateRequestHeadersProvider;
 import "package:desktop_updater/src/version_info.dart";
 
 export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
 export "package:desktop_updater/src/core/release_notes.dart";
+export "package:desktop_updater/src/core/update_client.dart"
+    show UpdateCheckResult, UpdateStageResult;
 export "package:desktop_updater/src/core/update_diagnostics.dart";
 export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_state.dart";
+export "package:desktop_updater/src/io/http_update_transport.dart"
+    show UpdateRequestHeadersProvider;
 export "package:desktop_updater/src/localization.dart";
 export "package:desktop_updater/src/manual_update_check_result.dart";
+export "package:desktop_updater/src/version_info.dart" show DesktopVersionInfo;
 export "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 export "package:desktop_updater/widget/update_card.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
@@ -22,6 +29,7 @@ export "package:desktop_updater/widget/update_sliver.dart";
 export "package:desktop_updater/widget/update_widget.dart";
 
 export "desktop_updater_inherited_widget.dart";
+export "updater_controller.dart";
 
 /// Entry point for platform update helpers and zip-first update operations.
 class DesktopUpdater {
@@ -102,11 +110,15 @@ class DesktopUpdater {
 
     /// Stable app-owned identity used for deterministic staged rollouts.
     String? installationIdentity,
+
+    /// Optional app-owned HTTP headers for update metadata requests.
+    UpdateRequestHeadersProvider? requestHeadersProvider,
   }) {
     return UpdateClient(
       appArchiveUrl: appArchiveUrl,
       currentVersion: currentVersion,
       installationIdentity: installationIdentity,
+      requestHeadersProvider: requestHeadersProvider,
     ).checkForUpdate();
   }
 
@@ -123,10 +135,14 @@ class DesktopUpdater {
 
     /// Optional download progress callback.
     void Function(int receivedBytes, int? totalBytes)? onProgress,
+
+    /// Optional app-owned HTTP headers for artifact requests.
+    UpdateRequestHeadersProvider? requestHeadersProvider,
   }) {
     return UpdateClient(
       appArchiveUrl: appArchiveUrl,
       currentVersion: currentVersion,
+      requestHeadersProvider: requestHeadersProvider,
     ).downloadVerifyAndStage(
       descriptor: descriptor,
       onProgress: onProgress,

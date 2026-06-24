@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.3.4
+  desktop_updater: ^2.3.6
 ```
 
 Point your app at the hosted archive:
@@ -29,6 +29,10 @@ final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
 );
 ```
+
+Private update hosts can add runtime authentication headers with
+`requestHeadersProvider`; see
+[Runtime request headers](doc/runtime-request-headers.md).
 
 Add `desktop_updater.yaml` at your app repository root, next to
 `pubspec.yaml`:

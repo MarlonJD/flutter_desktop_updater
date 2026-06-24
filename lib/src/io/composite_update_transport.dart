@@ -7,8 +7,10 @@ import "package:desktop_updater/src/io/update_transport.dart";
 class CompositeUpdateTransport implements UpdateTransport {
   CompositeUpdateTransport({
     HttpUpdateTransport? httpTransport,
+    UpdateRequestHeadersProvider? requestHeadersProvider,
     FileUpdateTransport fileTransport = const FileUpdateTransport(),
-  })  : _httpTransport = httpTransport ?? HttpUpdateTransport(),
+  })  : _httpTransport = httpTransport ??
+            HttpUpdateTransport(requestHeadersProvider: requestHeadersProvider),
         _fileTransport = fileTransport;
 
   final HttpUpdateTransport _httpTransport;

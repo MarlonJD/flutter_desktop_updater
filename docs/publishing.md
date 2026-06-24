@@ -441,6 +441,46 @@ staging or install handoff.
 Apps do not need a separate API to opt in. Use HTTPS storage that supports
 range requests for the best recovery behavior, especially for large artifacts.
 
+### Runtime Request Headers
+
+For private hosts that require app-owned authentication, pass
+`requestHeadersProvider` at runtime:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  requestHeadersProvider: (source) async {
+    final token = await myAuth.currentUpdateToken();
+    return {"authorization": "Bearer $token"};
+  },
+);
+```
+
+How it works:
+
+1. The updater asks the provider for each HTTP(S) request.
+2. The returned headers are added before the request is sent.
+3. If a partial artifact exists, the updater still adds its own `Range` header
+   after app headers so resumable downloads keep working.
+
+The provider runs for:
+
+- `app-archive.json`
+- the selected `release.json`
+- the selected update artifact zip
+
+Keep credentials out of `release.json`, `app-archive.json`, and
+`desktop_updater.yaml`; those files can be signed, cached, uploaded, and
+inspected independently of the user's runtime session. Use the provider for
+short-lived bearer tokens, account-scoped update tokens, or private reverse
+proxy headers owned by your app session.
+
+When possible, signed URLs or an app-owned private proxy remain good fits
+because the update descriptor can still point at exact URLs without exposing
+bucket listing. S3-compatible publish credentials still belong to the
+publish/upload side; runtime S3 access should be exposed as fetchable HTTPS
+URLs, signed URLs, proxy URLs, or app-owned request headers.
+
 ## Common Minimum Setup
 
 Do this once in the app repository.

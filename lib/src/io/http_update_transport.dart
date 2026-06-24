@@ -5,16 +5,24 @@ import "package:desktop_updater/src/core/update_retry_policy.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:http/http.dart" as http;
 
+/// Provides app-owned HTTP headers for one update metadata or artifact request.
+typedef UpdateRequestHeadersProvider = FutureOr<Map<String, String>> Function(
+  Uri source,
+);
+
 class HttpUpdateTransport implements UpdateTransport {
   HttpUpdateTransport({
     http.Client? client,
+    UpdateRequestHeadersProvider? requestHeadersProvider,
     UpdateRetryPolicy retryPolicy = const UpdateRetryPolicy(),
     Future<void> Function(Duration duration) delay = _defaultDelay,
   })  : _client = client ?? http.Client(),
+        _requestHeadersProvider = requestHeadersProvider,
         _retryPolicy = retryPolicy,
         _delay = delay;
 
   final http.Client _client;
+  final UpdateRequestHeadersProvider? _requestHeadersProvider;
   final UpdateRetryPolicy _retryPolicy;
   final Future<void> Function(Duration duration) _delay;
 
@@ -99,6 +107,10 @@ class HttpUpdateTransport implements UpdateTransport {
   }) async {
     final resumeFrom = await partial.exists() ? await partial.length() : 0;
     final request = http.Request("GET", source);
+    final requestHeadersProvider = _requestHeadersProvider;
+    if (requestHeadersProvider != null) {
+      request.headers.addAll(await requestHeadersProvider(source));
+    }
     if (resumeFrom > 0) {
       request.headers[HttpHeaders.rangeHeader] = "bytes=$resumeFrom-";
     }

@@ -137,6 +137,39 @@ void main() {
     }
   });
 
+  test("http transport sends app-owned request headers", () async {
+    final tempDir = await Directory.systemTemp.createTemp("http_transport_");
+    Map<String, String>? capturedHeaders;
+    try {
+      final transport = HttpUpdateTransport(
+        client: MockClient((request) async {
+          capturedHeaders = Map<String, String>.of(request.headers);
+          return http.Response("ok", HttpStatus.ok);
+        }),
+        requestHeadersProvider: (source) {
+          return {
+            HttpHeaders.authorizationHeader: "Bearer token",
+            "x-update-host": source.host,
+          };
+        },
+      );
+      final destination = File(path.join(tempDir.path, "download.txt"));
+
+      await transport.download(
+        Uri.parse("https://updates.example.com/download.txt"),
+        destination,
+      );
+
+      expect(
+        capturedHeaders?[HttpHeaders.authorizationHeader],
+        "Bearer token",
+      );
+      expect(capturedHeaders?["x-update-host"], "updates.example.com");
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("http transport resumes existing partial with valid range response",
       () async {
     final tempDir = await Directory.systemTemp.createTemp("http_transport_");

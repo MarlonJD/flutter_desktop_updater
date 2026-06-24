@@ -1,5 +1,4 @@
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
@@ -18,5 +17,6 @@ void main() {
     expect(UpdateDiagnosticsRecorder, isNotNull);
     expect(UpdateInstallRecoveryMarker, isNotNull);
     expect(UpdateCleanupReport, isNotNull);
+    expect(DesktopVersionInfo.parse("2.2.0").versionName, "2.2.0");
   });
 }

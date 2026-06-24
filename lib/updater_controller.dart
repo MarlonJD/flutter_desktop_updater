@@ -13,6 +13,8 @@ import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/current_version.dart";
+import "package:desktop_updater/src/io/http_update_transport.dart"
+    show UpdateRequestHeadersProvider;
 import "package:desktop_updater/src/io/release_notes_fetcher.dart";
 import "package:desktop_updater/src/localization.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
@@ -27,6 +29,8 @@ export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_preferences.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
 export "package:desktop_updater/src/core/update_telemetry.dart";
+export "package:desktop_updater/src/io/http_update_transport.dart"
+    show UpdateRequestHeadersProvider;
 
 /// Loads release notes for the selected update descriptor.
 typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
@@ -58,6 +62,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.diagnosticsLogPath,
     this.telemetry,
     this.isMinimumOSSupported,
+    this.requestHeadersProvider,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -98,6 +103,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.diagnosticsLogPath,
     this.telemetry,
     this.isMinimumOSSupported,
+    this.requestHeadersProvider,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -183,6 +189,9 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional app-owned minimum OS support policy.
   final MinimumOSSupportChecker? isMinimumOSSupported;
+
+  /// Optional app-owned HTTP headers for update metadata and artifact requests.
+  final UpdateRequestHeadersProvider? requestHeadersProvider;
 
   /// Allows macOS Release installs to bypass native signing, Gatekeeper,
   /// stapler, and Team ID checks.
@@ -372,6 +381,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         currentVersion: currentVersion,
         channel: channel,
         installationIdentity: installationIdentity,
+        requestHeadersProvider: requestHeadersProvider,
         telemetry: telemetry,
         isMinimumOSSupported: isMinimumOSSupported,
       );

@@ -8,6 +8,8 @@ import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
+import "package:desktop_updater/src/io/http_update_transport.dart"
+    show UpdateRequestHeadersProvider;
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package_version.dart";
@@ -35,6 +37,7 @@ class UpdateClient {
     DesktopVersionInfo? currentUpdaterVersion,
     String? platform,
     this.channel = "stable",
+    UpdateRequestHeadersProvider? requestHeadersProvider,
     UpdateTransport? transport,
     ArtifactVerifier verifier = const ArtifactVerifier(),
     SafeZipExtractor extractor = const SafeZipExtractor(),
@@ -46,7 +49,10 @@ class UpdateClient {
   })  : platform = platform ?? Platform.operatingSystem,
         _currentUpdaterVersion = currentUpdaterVersion ??
             DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
-        _transport = transport ?? CompositeUpdateTransport(),
+        _transport = transport ??
+            CompositeUpdateTransport(
+              requestHeadersProvider: requestHeadersProvider,
+            ),
         _verifier = verifier,
         _extractor = extractor,
         _stagingParent = stagingParent,

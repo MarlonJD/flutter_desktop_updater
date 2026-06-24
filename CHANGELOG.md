@@ -1,3 +1,17 @@
+## 2.3.6
+
+* Exported `DesktopUpdaterController` and core public update result/version
+  types from `package:desktop_updater/desktop_updater.dart` so README quick
+  start examples work with a single package import.
+
+## 2.3.5
+
+* Added `requestHeadersProvider` so apps can attach runtime-owned HTTP headers
+  to private update host requests for `app-archive.json`, `release.json`, and
+  update artifact downloads.
+* Documented private update host authentication with a short README pointer and
+  detailed publishing guide coverage.
+
 ## 2.3.4
 
 * Added `MandatoryReadyToInstallBehavior` for dialog-based mandatory update
