@@ -153,6 +153,32 @@ hooks:
     ]);
   });
 
+  test("loads additional release files", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+additionalFiles:
+  - source: release-assets/manuals/*
+    destination: docs/manuals
+    platforms: [linux, windows]
+  - source: release-assets/macos-help
+    destination: Contents/Resources/Help
+    platforms: [macos]
+""");
+
+    expect(config.additionalFiles, hasLength(2));
+    expect(config.additionalFiles.first.source, "release-assets/manuals/*");
+    expect(config.additionalFiles.first.destination, "docs/manuals");
+    expect(config.additionalFiles.first.platforms, ["linux", "windows"]);
+    expect(config.additionalFiles.last.source, "release-assets/macos-help");
+    expect(
+      config.additionalFiles.last.destination,
+      "Contents/Resources/Help",
+    );
+    expect(config.additionalFiles.last.platforms, ["macos"]);
+  });
+
   test("rejects secrets in hook config", () async {
     await expectLater(
       ReleasePublishConfig.fromYaml("""

@@ -795,6 +795,51 @@ Use optional provider blocks when you want automatic upload:
 Only one provider block can be configured at a time. If no provider block is
 configured, `manual` is used.
 
+### Additional Release Files
+
+Use `additionalFiles` for release-owned files that should be installed with the
+desktop app but are not created by Flutter itself, such as PDF manuals, language
+packs, help bundles, templates, or app-specific data files:
+
+```yaml
+additionalFiles:
+  - source: release-assets/manuals/*
+    destination: docs/manuals
+    platforms: [windows, linux]
+  - source: release-assets/manuals/*
+    destination: Contents/Resources/Manuals
+    platforms: [macos]
+```
+
+Each entry has:
+
+- `source`: a file, directory, or glob. Relative paths are resolved from the app
+  project root; absolute paths are also accepted. `*` matches within one path
+  segment, and `**` can be used for recursive matches.
+- `destination`: a relative directory inside the platform release output. The
+  command rejects absolute destinations and paths that would escape the app
+  output.
+- `platforms`: optional platform filter. Omit it when one entry should apply to
+  every platform.
+
+Matching files and directories are copied into `destination` by basename. On
+macOS, put extra resources under the app bundle, normally
+`Contents/Resources/...`; on Windows and Linux, use a directory relative to the
+release bundle root. Symbolic links are rejected so release packages cannot
+silently point outside the app output.
+
+`release publish` copies additional files after `flutter build` and before:
+
+- built-in macOS signing, notarization, stapling, and Gatekeeper checks;
+- app-owned `hooks.prePackage` signing or trust gates;
+- zip packaging and SHA-256/length descriptor generation.
+
+That order is intentional: the release output is not mutated after the platform
+trust gates run, so macOS signatures and notarization stay valid and Windows or
+Linux signing hooks see the final files. Do not use `hooks.postPackage` to add
+or change files inside the already packaged app; use `additionalFiles` or a
+build-system resource step instead.
+
 ### App-Owned Release Hooks
 
 Optional hooks let your app keep platform trust work in your own scripts while

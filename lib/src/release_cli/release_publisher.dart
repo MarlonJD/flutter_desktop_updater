@@ -118,6 +118,13 @@ class ReleasePublisher {
       );
     }
 
+    await _copyAdditionalFiles(
+      additionalFiles: config.additionalFiles,
+      projectRoot: projectRoot,
+      metadata: metadata,
+      output: output,
+    );
+
     if (platform == "macos" && config.macos.notarize) {
       await _notarizeMacOS(
         app: metadata.input,
@@ -226,6 +233,276 @@ class ReleasePublisher {
 
     return manifest;
   }
+}
+
+Future<void> _copyAdditionalFiles({
+  required List<AdditionalReleaseFileConfig> additionalFiles,
+  required Directory projectRoot,
+  required ProjectMetadata metadata,
+  required StringSink output,
+}) async {
+  final matchingFiles = additionalFiles
+      .where((file) => file.appliesTo(metadata.platform))
+      .toList(growable: false);
+  if (matchingFiles.isEmpty) {
+    return;
+  }
+
+  for (final additionalFile in matchingFiles) {
+    final destination = _additionalFileDestination(
+      appRoot: metadata.input,
+      relativeDestination: additionalFile.destination,
+    );
+    final sources = await _additionalFileSources(
+      projectRoot: projectRoot,
+      source: additionalFile.source,
+    );
+    for (final source in sources) {
+      output.writeln(
+        "Adding release file: ${source.path} -> ${destination.path}",
+      );
+      await _copyAdditionalFileSource(
+        source: source,
+        destination: destination,
+      );
+    }
+  }
+}
+
+Directory _additionalFileDestination({
+  required FileSystemEntity appRoot,
+  required String relativeDestination,
+}) {
+  final destination = relativeDestination.trim();
+  if (destination.isEmpty || path.isAbsolute(destination)) {
+    throw const FormatException(
+      "additionalFiles destination must be relative to the release app.",
+    );
+  }
+
+  final appRootPath = path.normalize(appRoot.path);
+  final targetPath = path.normalize(path.join(appRootPath, destination));
+  if (!path.equals(targetPath, appRootPath) &&
+      !path.isWithin(appRootPath, targetPath)) {
+    throw const FormatException(
+      "additionalFiles destination must stay inside the release app.",
+    );
+  }
+  return Directory(targetPath);
+}
+
+Future<List<FileSystemEntity>> _additionalFileSources({
+  required Directory projectRoot,
+  required String source,
+}) async {
+  final sourcePattern = source.trim();
+  if (sourcePattern.isEmpty) {
+    throw const FormatException("additionalFiles source is required.");
+  }
+
+  final absolutePattern = path.normalize(
+    path.isAbsolute(sourcePattern)
+        ? sourcePattern
+        : path.join(projectRoot.path, sourcePattern),
+  );
+  if (!_containsGlob(absolutePattern)) {
+    final type = await FileSystemEntity.type(
+      absolutePattern,
+      followLinks: false,
+    );
+    if (type == FileSystemEntityType.notFound) {
+      throw FileSystemException(
+        "additionalFiles source does not exist",
+        source,
+      );
+    }
+    return [_entityForType(absolutePattern, type)];
+  }
+
+  final searchRoot = _globSearchRoot(absolutePattern);
+  if (!await Directory(searchRoot).exists()) {
+    throw FileSystemException(
+      "additionalFiles source root does not exist",
+      source,
+    );
+  }
+
+  final matcher = _globRegExp(absolutePattern);
+  final matches = <FileSystemEntity>[];
+  await for (final entity in Directory(searchRoot).list(
+    recursive: _globNeedsRecursive(absolutePattern),
+    followLinks: false,
+  )) {
+    if (matcher.hasMatch(path.normalize(entity.path))) {
+      matches.add(entity);
+    }
+  }
+  matches.sort((a, b) => a.path.compareTo(b.path));
+  if (matches.isEmpty) {
+    throw FileSystemException(
+      "additionalFiles source matched no files",
+      source,
+    );
+  }
+  return matches;
+}
+
+FileSystemEntity _entityForType(String entityPath, FileSystemEntityType type) {
+  if (type == FileSystemEntityType.file) {
+    return File(entityPath);
+  }
+  if (type == FileSystemEntityType.directory) {
+    return Directory(entityPath);
+  }
+  if (type == FileSystemEntityType.link) {
+    return Link(entityPath);
+  }
+  return File(entityPath);
+}
+
+Future<void> _copyAdditionalFileSource({
+  required FileSystemEntity source,
+  required Directory destination,
+}) async {
+  final type = await FileSystemEntity.type(source.path, followLinks: false);
+  if (type == FileSystemEntityType.link) {
+    throw FileSystemException(
+      "additionalFiles sources must not be symbolic links",
+      source.path,
+    );
+  }
+  if (type == FileSystemEntityType.file) {
+    final target =
+        File(path.join(destination.path, path.basename(source.path)));
+    await _copyFile(File(source.path), target);
+    return;
+  }
+  if (type == FileSystemEntityType.directory) {
+    final target = Directory(
+      path.join(destination.path, path.basename(source.path)),
+    );
+    await _replaceExisting(target.path);
+    await _copyDirectory(Directory(source.path), target);
+    return;
+  }
+  throw FileSystemException(
+    "additionalFiles source must be a file or directory",
+    source.path,
+  );
+}
+
+Future<void> _copyDirectory(Directory source, Directory target) async {
+  await target.create(recursive: true);
+  await _preserveMode(source, target);
+  await for (final entity in source.list(followLinks: false)) {
+    final type = await FileSystemEntity.type(entity.path, followLinks: false);
+    final targetPath = path.join(target.path, path.basename(entity.path));
+    if (type == FileSystemEntityType.file) {
+      await _copyFile(File(entity.path), File(targetPath));
+    } else if (type == FileSystemEntityType.directory) {
+      await _copyDirectory(Directory(entity.path), Directory(targetPath));
+    } else if (type == FileSystemEntityType.link) {
+      throw FileSystemException(
+        "additionalFiles sources must not contain symbolic links",
+        entity.path,
+      );
+    } else {
+      throw FileSystemException(
+        "additionalFiles source must contain only files and directories",
+        entity.path,
+      );
+    }
+  }
+}
+
+Future<void> _copyFile(File source, File target) async {
+  await _replaceExisting(target.path);
+  await target.parent.create(recursive: true);
+  await source.copy(target.path);
+  await _preserveMode(source, target);
+}
+
+Future<void> _replaceExisting(String targetPath) async {
+  final type = await FileSystemEntity.type(targetPath, followLinks: false);
+  if (type == FileSystemEntityType.notFound) {
+    return;
+  }
+  if (type == FileSystemEntityType.directory) {
+    await Directory(targetPath).delete(recursive: true);
+  } else if (type == FileSystemEntityType.link) {
+    await Link(targetPath).delete();
+  } else {
+    await File(targetPath).delete();
+  }
+}
+
+Future<void> _preserveMode(
+  FileSystemEntity source,
+  FileSystemEntity target,
+) async {
+  if (Platform.isWindows) {
+    return;
+  }
+  final mode = (await source.stat()).mode & 0x1ff;
+  final result = await Process.run(
+    "/bin/chmod",
+    [mode.toRadixString(8), target.path],
+  );
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      "/bin/chmod",
+      [mode.toRadixString(8), target.path],
+      "${result.stdout}\n${result.stderr}",
+      result.exitCode,
+    );
+  }
+}
+
+bool _containsGlob(String value) => value.contains("*");
+
+String _globSearchRoot(String pattern) {
+  final parts = path.split(path.normalize(pattern));
+  final rootParts = <String>[];
+  for (final part in parts) {
+    if (_containsGlob(part)) {
+      break;
+    }
+    rootParts.add(part);
+  }
+  if (rootParts.isEmpty) {
+    return Directory.current.path;
+  }
+  return path.joinAll(rootParts);
+}
+
+bool _globNeedsRecursive(String pattern) {
+  if (pattern.contains("**")) {
+    return true;
+  }
+  final root = _globSearchRoot(pattern);
+  final relativePattern = path.relative(pattern, from: root);
+  return path.split(relativePattern).length > 1;
+}
+
+RegExp _globRegExp(String pattern) {
+  final separator = RegExp.escape(path.separator);
+  final normalized = path.normalize(pattern);
+  final buffer = StringBuffer("^");
+  for (var i = 0; i < normalized.length; i += 1) {
+    final char = normalized[i];
+    if (char == "*") {
+      if (i + 1 < normalized.length && normalized[i + 1] == "*") {
+        buffer.write(".*");
+        i += 1;
+      } else {
+        buffer.write("[^$separator]*");
+      }
+      continue;
+    }
+    buffer.write(RegExp.escape(char));
+  }
+  buffer.write(r"$");
+  return RegExp(buffer.toString());
 }
 
 Future<void> _runReleaseHooks({

@@ -1,6 +1,7 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:archive/archive_io.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -262,6 +263,56 @@ updates:
 
       expect(exitCode, 0);
       expect(output.toString(), contains("Manual publish package is ready."));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("publish copies additional files into the packaged artifact", () async {
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+
+additionalFiles:
+  - source: release-assets/manuals/*
+    destination: docs/manuals
+    platforms: [linux]
+""",
+    );
+    try {
+      final manuals = Directory(
+        path.join(fixture.root.path, "release-assets", "manuals"),
+      );
+      await manuals.create(recursive: true);
+      await File(path.join(manuals.path, "pilot-guide.pdf"))
+          .writeAsString("manual");
+      await File(path.join(manuals.path, "language-en.json"))
+          .writeAsString("{}");
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
+        projectRoot: fixture.root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      final artifact = File(
+        path.join(
+          fixture.root.path,
+          "dist",
+          "desktop_updater",
+          "releases",
+          "2.0.1",
+          fixture.platform,
+          "Release Fixture-2.0.1-${fixture.platform}.zip",
+        ),
+      );
+      final archive = ZipDecoder().decodeBytes(await artifact.readAsBytes());
+      final names = archive.files.map((file) => file.name).toSet();
+      expect(names, contains("docs/manuals/pilot-guide.pdf"));
+      expect(names, contains("docs/manuals/language-en.json"));
     } finally {
       await fixture.delete();
     }

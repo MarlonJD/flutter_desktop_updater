@@ -11,6 +11,7 @@ void main() {
   test("macOS notarization runs before packaging when explicitly enabled",
       () async {
     final root = await _createMacOSFixture();
+    await _writeAdditionalFilesConfig(root);
     final commands = <String>[];
     final packager = _RecordingPackager(commands);
     try {
@@ -18,7 +19,22 @@ void main() {
         skipBuild: true,
         packager: packager,
         runProcess: (executable, arguments) async {
-          commands.add([executable, ...arguments].join(" "));
+          final extraCopied = await File(
+            path.join(
+              _macOSAppPath(root),
+              "Contents",
+              "Resources",
+              "Manuals",
+              "pilot-guide.pdf",
+            ),
+          ).exists();
+          commands.add(
+            [
+              if (executable == "/usr/bin/codesign") "extraCopied=$extraCopied",
+              executable,
+              ...arguments,
+            ].join(" "),
+          );
           if (executable == "/usr/bin/xcrun" &&
               arguments.length >= 2 &&
               arguments[0] == "notarytool" &&
@@ -42,6 +58,7 @@ void main() {
       );
 
       final appPath = _macOSAppPath(root);
+      expect(commands[0], contains("extraCopied=true"));
       expect(commands[0], contains("/usr/bin/codesign --force"));
       expect(
         commands[0],
@@ -140,6 +157,30 @@ void main() {
       await root.delete(recursive: true);
     }
   });
+}
+
+Future<void> _writeAdditionalFilesConfig(Directory root) async {
+  await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+
+additionalFiles:
+  - source: release-assets/manuals/*
+    destination: Contents/Resources/Manuals
+    platforms: [macos]
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+""");
+  final manuals = Directory(
+    path.join(root.path, "release-assets", "manuals"),
+  );
+  await manuals.create(recursive: true);
+  await File(path.join(manuals.path, "pilot-guide.pdf"))
+      .writeAsString("manual");
 }
 
 Future<Directory> _createMacOSFixture() async {

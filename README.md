@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.3.6
+  desktop_updater: ^2.3.7
 ```
 
 Point your app at the hosted archive:
@@ -58,6 +58,25 @@ With only `updates.baseUrl`, publish creates an upload-ready package under
 `dist/desktop_updater` and prints the manual upload and validate instructions.
 With an upload provider configured, it uploads versioned files first, validates
 them, uploads `app-archive.json` last, then validates hosted update selection.
+
+## Additional Release Files
+
+Use `additionalFiles` when PDFs, language packs, manuals, or other app-owned
+files must ship with the desktop update but are not produced by Flutter:
+
+```yaml
+additionalFiles:
+  - source: release-assets/manuals/*
+    destination: docs/manuals
+    platforms: [windows, linux]
+  - source: release-assets/manuals/*
+    destination: Contents/Resources/Manuals
+    platforms: [macos]
+```
+
+`release publish` copies these files after `flutter build` and before macOS
+notarization, app-owned `prePackage` signing hooks, and zip packaging. That
+keeps the packaged artifact consistent with platform signing and trust gates.
 
 ## Linux Zip Permissions
 
@@ -101,13 +120,27 @@ Other built-in surfaces:
 See [Ready-made UI widgets](docs/ui-widgets.md) for screenshots, placement
 guidance, and when to choose each surface.
 
-For optional, mandatory, support-policy, and fresh-install behavior, see
-[Publishing desktop updates](docs/publishing.md#update-policy-modes).
-
 For custom UI, switch on `controller.state`.
 
 For full i18n wiring, locale switching, and localized release notes examples,
 see [Internationalization](docs/i18n.md).
+
+## Update Policy Modes
+
+Update policy lives in `app-archive.json`, so apps can change release pressure
+without rebuilding the old client:
+
+- Optional updates are soft prompts with `Download`, optional skip persistence,
+  and restart deferral.
+- Mandatory updates keep prompting until installed, hide skip actions, and keep
+  a `Save first` path so users can protect unsaved work before restart.
+- `supportPolicy` adds a minimum supported version and enforcement deadline so
+  old clients can warn first, then fail closed after the deadline.
+- `freshInstall` marks releases that should send users to a fresh download
+  instead of the in-app updater.
+
+See [Update policy modes](doc/update-policy-modes.md) for JSON examples, CLI
+flags, and the built-in card, sliver, and dialog behavior for each state.
 
 ## Release Notes
 
@@ -234,9 +267,11 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
 
 ## Documentation
 
+- [Update policy modes](doc/update-policy-modes.md): optional, mandatory,
+  support-policy, and fresh-install release behavior.
 - [Publishing desktop updates](docs/publishing.md): setup, YAML config,
-  manual upload, providers, update policy modes, validation, CI, and
-  platform-specific release work.
+  additional release files, manual upload, providers, update policy modes,
+  validation, CI, and platform-specific release work.
 - [Windows and Linux production release options](docs/windows-linux-production-release.md):
   signing choices, native package channels, and country or provider
   restrictions.

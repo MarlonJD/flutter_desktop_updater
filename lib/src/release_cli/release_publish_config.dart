@@ -49,6 +49,7 @@ class ReleasePublishConfig {
     required this.uploadProvider,
     required this.macos,
     required this.hooks,
+    required this.additionalFiles,
   });
 
   final Uri baseUrl;
@@ -57,6 +58,9 @@ class ReleasePublishConfig {
   final UploadConfig uploadProvider;
   final MacOSPublishConfig macos;
   final ReleaseHooksConfig hooks;
+
+  /// Files copied into the platform release output before signing and zipping.
+  final List<AdditionalReleaseFileConfig> additionalFiles;
 
   static Future<ReleasePublishConfig> load({
     required Directory projectRoot,
@@ -97,6 +101,7 @@ class ReleasePublishConfig {
     final provider = _readUploadProvider(document);
     final macos = _readMacOSConfig(document, cliOverrides);
     final hooks = _readHooksConfig(document);
+    final additionalFiles = _readAdditionalFilesConfig(document);
 
     return ReleasePublishConfig(
       baseUrl: _normalizeBaseUrl(baseUrlValue),
@@ -111,7 +116,32 @@ class ReleasePublishConfig {
       uploadProvider: provider,
       macos: macos,
       hooks: hooks,
+      additionalFiles: additionalFiles,
     );
+  }
+}
+
+/// App-owned files to copy into a release output before platform trust gates.
+class AdditionalReleaseFileConfig {
+  /// Creates an additional release file rule.
+  const AdditionalReleaseFileConfig({
+    required this.source,
+    required this.destination,
+    this.platforms = const [],
+  });
+
+  /// File, directory, or glob resolved from the app project root.
+  final String source;
+
+  /// Relative directory inside the platform release output.
+  final String destination;
+
+  /// Optional platform filter.
+  final List<String> platforms;
+
+  /// Whether this rule applies to [platform].
+  bool appliesTo(String platform) {
+    return platforms.isEmpty || platforms.contains(platform);
   }
 }
 
@@ -299,7 +329,55 @@ List<String> _readHookPlatforms(
   Map<String, dynamic> hook,
   String displayName,
 ) {
-  final value = hook["platforms"];
+  return _readPlatformList(hook, displayName);
+}
+
+List<AdditionalReleaseFileConfig> _readAdditionalFilesConfig(
+  Map<String, dynamic> document,
+) {
+  final value = document["additionalFiles"];
+  if (value == null) {
+    return const [];
+  }
+  if (value is! List) {
+    throw const FormatException("additionalFiles must be a list.");
+  }
+  return [
+    for (var i = 0; i < value.length; i += 1)
+      _readAdditionalFileConfig(
+        _additionalFileMap(value[i], "additionalFiles[$i]"),
+        "additionalFiles[$i]",
+      ),
+  ];
+}
+
+AdditionalReleaseFileConfig _readAdditionalFileConfig(
+  Map<String, dynamic> additionalFile,
+  String displayName,
+) {
+  return AdditionalReleaseFileConfig(
+    source: _requiredString(additionalFile, "source", "$displayName.source"),
+    destination: _requiredString(
+      additionalFile,
+      "destination",
+      "$displayName.destination",
+    ),
+    platforms: _readPlatformList(additionalFile, "$displayName.platforms"),
+  );
+}
+
+Map<String, dynamic> _additionalFileMap(Object? value, String displayName) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  throw FormatException("$displayName must be a map.");
+}
+
+List<String> _readPlatformList(
+  Map<String, dynamic> map,
+  String displayName,
+) {
+  final value = map["platforms"];
   if (value == null) {
     return const [];
   }

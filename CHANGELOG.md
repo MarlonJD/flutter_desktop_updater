@@ -1,3 +1,11 @@
+## 2.3.7
+
+* Added `release publish` `additionalFiles` support for packaging app-owned
+  manuals, language packs, and other external files before platform signing,
+  notarization, pre-package hooks, and zip descriptor generation.
+* Added a packaged update policy guide and README summary for optional,
+  mandatory, support-policy, and fresh-install update modes.
+
 ## 2.3.6
 
 * Exported `DesktopUpdaterController` and core public update result/version
