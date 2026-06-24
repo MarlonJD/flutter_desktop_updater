@@ -2,7 +2,6 @@ import "dart:io";
 import "dart:ui" as ui;
 
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/material.dart";
 import "package:flutter/rendering.dart";
 import "package:flutter/services.dart";
@@ -58,9 +57,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
 
       await tester.runAsync(() async {
-        final boundary =
-            boundaryKey.currentContext!.findRenderObject()!
-                as RenderRepaintBoundary;
+        final boundary = boundaryKey.currentContext!.findRenderObject()!
+            as RenderRepaintBoundary;
         final image = await boundary.toImage(pixelRatio: 2);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         final output = File("$_outputDirectory/${example.fileName}");
@@ -200,11 +198,11 @@ class _ScreenshotExample {
 
 class _ScreenshotController extends DesktopUpdaterController {
   _ScreenshotController({super.localization})
-    : super(
-        appArchiveUrl: null,
-        releaseNotesUrl: Uri.parse("https://example.com/release-notes.json"),
-        skipInitialVersionCheck: true,
-      );
+      : super(
+          appArchiveUrl: null,
+          releaseNotesUrl: Uri.parse("https://example.com/release-notes.json"),
+          skipInitialVersionCheck: true,
+        );
 
   UpdateState _state = const UpdateIdle();
 

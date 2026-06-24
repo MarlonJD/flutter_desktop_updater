@@ -33,11 +33,14 @@ export "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 
 /// Loads release notes for the selected update descriptor.
-typedef ReleaseNotesLoader =
-    Future<ReleaseNotes> Function(ReleaseDescriptor descriptor);
+typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
+  ReleaseDescriptor descriptor,
+);
 
 /// Opens an external URL, such as a fresh installer download page.
-typedef ExternalUrlLauncher = Future<void> Function(Uri url);
+typedef ExternalUrlLauncher = Future<void> Function(
+  Uri url,
+);
 
 /// Coordinates update checks, downloads, and install handoff for UI code.
 ///
@@ -69,18 +72,18 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ExternalUrlLauncher? externalUrlLauncher,
-  }) : _localization = localization,
-       _skipInitialVersionCheck = skipInitialVersionCheck,
-       _diagnosticsRecorder =
-           diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
-       _onProblemReport = onProblemReport,
-       _onCleanupReport = onCleanupReport,
-       _releaseNotesLoader = releaseNotesLoader,
-       _releaseNotesUrl = releaseNotesUrl,
-       _externalUrlLauncher = externalUrlLauncher ?? defaultExternalUrlLauncher,
-       _releaseNotesFetcher = releaseNotesUrl == null
-           ? null
-           : ReleaseNotesFetcher() {
+  })  : _localization = localization,
+        _skipInitialVersionCheck = skipInitialVersionCheck,
+        _diagnosticsRecorder =
+            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+        _onProblemReport = onProblemReport,
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
+        _releaseNotesUrl = releaseNotesUrl,
+        _externalUrlLauncher =
+            externalUrlLauncher ?? defaultExternalUrlLauncher,
+        _releaseNotesFetcher =
+            releaseNotesUrl == null ? null : ReleaseNotesFetcher() {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -112,18 +115,18 @@ class DesktopUpdaterController extends ChangeNotifier {
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
     ExternalUrlLauncher? externalUrlLauncher,
-  }) : _localization = localization,
-       _skipInitialVersionCheck = skipInitialVersionCheck,
-       _diagnosticsRecorder =
-           diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
-       _onProblemReport = onProblemReport,
-       _onCleanupReport = onCleanupReport,
-       _releaseNotesLoader = releaseNotesLoader,
-       _releaseNotesUrl = releaseNotesUrl,
-       _externalUrlLauncher = externalUrlLauncher ?? defaultExternalUrlLauncher,
-       _releaseNotesFetcher =
-           releaseNotesFetcher ??
-           (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
+  })  : _localization = localization,
+        _skipInitialVersionCheck = skipInitialVersionCheck,
+        _diagnosticsRecorder =
+            diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
+        _onProblemReport = onProblemReport,
+        _onCleanupReport = onCleanupReport,
+        _releaseNotesLoader = releaseNotesLoader,
+        _releaseNotesUrl = releaseNotesUrl,
+        _externalUrlLauncher =
+            externalUrlLauncher ?? defaultExternalUrlLauncher,
+        _releaseNotesFetcher = releaseNotesFetcher ??
+            (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -416,10 +419,9 @@ class DesktopUpdaterController extends ChangeNotifier {
       final supportPolicy = result.index.supportPolicy;
       final activeSupportPolicy =
           supportPolicy != null && supportPolicy.appliesTo(currentVersion)
-          ? supportPolicy
-          : null;
-      final supportPolicyEnforced =
-          activeSupportPolicy?.isEnforced(
+              ? supportPolicy
+              : null;
+      final supportPolicyEnforced = activeSupportPolicy?.isEnforced(
             currentVersion: currentVersion,
             now: DateTime.now().toUtc(),
           ) ??
@@ -455,8 +457,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.descriptor,
         level: UpdateDiagnosticLevel.info,
-        message:
-            "Update selected: ${result.descriptor.version} "
+        message: "Update selected: ${result.descriptor.version} "
             "(${result.descriptor.platform}/${result.descriptor.channel}).",
       );
       if (freshInstall != null) {
@@ -580,7 +581,8 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
     final mandatory = switch (_state) {
       UpdateAvailable(:final mandatory) ||
-      UpdateFreshInstallRequired(:final mandatory) => mandatory,
+      UpdateFreshInstallRequired(:final mandatory) =>
+        mandatory,
       UpdateBlockedBySupportPolicy() => true,
       _ => false,
     };
@@ -768,8 +770,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       ..record(
         stage: UpdateDiagnosticStage.install,
         level: UpdateDiagnosticLevel.warning,
-        message:
-            "Pending install marker found for "
+        message: "Pending install marker found for "
             "${marker.updateVersion ?? "unknown update"}.",
       );
 
@@ -996,7 +997,7 @@ bool _matchesRecoveredTarget(
   final hasTargetVersion = targetVersion != null && targetVersion.isNotEmpty;
   final versionMatches = hasTargetVersion
       ? currentVersion.versionName == targetVersion ||
-            currentVersion.rawVersion == targetVersion
+          currentVersion.rawVersion == targetVersion
       : null;
   final buildMatches = targetBuildNumber == null
       ? null

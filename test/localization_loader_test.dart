@@ -11,12 +11,12 @@ void main() {
   test("bundled locale loads strings and explicit overrides win", () async {
     final localization =
         await DesktopUpdateLocalizationLoader.fromBundledLocale(
-          "fr",
-          overrides: const DesktopUpdateLocalization(
-            restartText: "Installer maintenant",
-            onUpdateFailedTooltip: _customTooltip,
-          ),
-        );
+      "fr",
+      overrides: const DesktopUpdateLocalization(
+        restartText: "Installer maintenant",
+        onUpdateFailedTooltip: _customTooltip,
+      ),
+    );
 
     expect(localization.updateAvailableText, "Mise à jour disponible");
     expect(localization.restartText, "Installer maintenant");
@@ -105,28 +105,32 @@ void main() {
       (await DesktopUpdateLocalizationLoader.fromAsset(
         "assets/i18n/ar.json",
         bundle: bundle,
-      )).textDirection,
+      ))
+          .textDirection,
       TextDirection.rtl,
     );
     expect(
       (await DesktopUpdateLocalizationLoader.fromAsset(
         "assets/i18n/az-Arab.json",
         bundle: bundle,
-      )).textDirection,
+      ))
+          .textDirection,
       TextDirection.rtl,
     );
     expect(
       (await DesktopUpdateLocalizationLoader.fromAsset(
         "assets/i18n/az-Latn.json",
         bundle: bundle,
-      )).textDirection,
+      ))
+          .textDirection,
       TextDirection.ltr,
     );
     expect(
       (await DesktopUpdateLocalizationLoader.fromAsset(
         "assets/i18n/en-rtl.json",
         bundle: bundle,
-      )).textDirection,
+      ))
+          .textDirection,
       TextDirection.rtl,
     );
   });

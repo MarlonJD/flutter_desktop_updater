@@ -5,8 +5,10 @@ import "package:flutter/services.dart";
 import "package:flutter/widgets.dart";
 
 /// Resolves a desktop updater localization key into an app-owned translation.
-typedef DesktopUpdateTextResolver =
-    String? Function(DesktopUpdateLocalizationKey key, String fallback);
+typedef DesktopUpdateTextResolver = String? Function(
+  DesktopUpdateLocalizationKey key,
+  String fallback,
+);
 
 /// Stable string keys used by resolver-based localization.
 enum DesktopUpdateLocalizationKey {
@@ -517,7 +519,7 @@ const defaultDesktopUpdateLocalization = DesktopUpdateLocalization(
 class DesktopUpdateLocalizationLoader {
   /// Creates a loader backed by [bundle].
   DesktopUpdateLocalizationLoader({AssetBundle? bundle})
-    : bundle = bundle ?? rootBundle;
+      : bundle = bundle ?? rootBundle;
 
   /// Asset bundle used to read localization JSON.
   final AssetBundle bundle;
@@ -619,9 +621,8 @@ class DesktopUpdateLocalizationLoader {
     String assetPath, {
     String? package,
   }) async {
-    final resolvedPath = package == null
-        ? assetPath
-        : "packages/$package/$assetPath";
+    final resolvedPath =
+        package == null ? assetPath : "packages/$package/$assetPath";
     try {
       final raw = await bundle.loadString(resolvedPath);
       return parseDesktopUpdateLocalizationJson(raw);
@@ -653,8 +654,7 @@ DesktopUpdateLocalization desktopUpdateLocalizationFromJson(
   final locale = _readString(raw, "locale");
 
   return DesktopUpdateLocalization(
-    textDirection:
-        _readTextDirection(raw["textDirection"]) ??
+    textDirection: _readTextDirection(raw["textDirection"]) ??
         _inferTextDirectionFromLocaleTag(locale),
     updateAvailableText: _readString(strings, "updateAvailableText"),
     newVersionAvailableText: _readString(strings, "newVersionAvailableText"),
@@ -735,8 +735,7 @@ DesktopUpdateLocalization mergeDesktopUpdateLocalizations(
         overrides.onUpdateFailedTooltip ?? base.onUpdateFailedTooltip,
     updateFailedTooltipText:
         overrides.updateFailedTooltipText ?? base.updateFailedTooltipText,
-    releaseNotesButtonTooltipText:
-        overrides.releaseNotesButtonTooltipText ??
+    releaseNotesButtonTooltipText: overrides.releaseNotesButtonTooltipText ??
         base.releaseNotesButtonTooltipText,
     releaseNotesTitleText:
         overrides.releaseNotesTitleText ?? base.releaseNotesTitleText,
@@ -789,10 +788,10 @@ List<String> _localeCandidates(Object locale) {
 String _localeTag(Object locale) {
   return switch (locale) {
     Locale(:final languageCode, :final scriptCode, :final countryCode) => [
-      languageCode,
-      if (scriptCode != null && scriptCode.isNotEmpty) scriptCode,
-      if (countryCode != null && countryCode.isNotEmpty) countryCode,
-    ].join("-"),
+        languageCode,
+        if (scriptCode != null && scriptCode.isNotEmpty) scriptCode,
+        if (countryCode != null && countryCode.isNotEmpty) countryCode,
+      ].join("-"),
     _ => locale.toString(),
   };
 }

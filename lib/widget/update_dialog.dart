@@ -1,7 +1,6 @@
 import "dart:async";
 
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 
@@ -139,7 +138,8 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
         switch (controller.state) {
           UpdateAvailable() ||
           UpdateFreshInstallRequired() ||
-          UpdateBlockedBySupportPolicy() => true,
+          UpdateBlockedBySupportPolicy() =>
+            true,
           _ => false,
         };
   }
@@ -233,7 +233,7 @@ Future<void> showManualUpdateCheckResultDialog(
         mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
       );
     case ManualUpdateCheckFreshInstallRequired() ||
-        ManualUpdateCheckBlockedBySupportPolicy():
+          ManualUpdateCheckBlockedBySupportPolicy():
       await showUpdateDialog<void>(
         context,
         controller: controller,
@@ -249,9 +249,8 @@ Future<void> showManualUpdateCheckResultDialog(
           final localization = controller.getLocalization;
           final appName = controller.appName ?? "This application";
           final appVersion = controller.appVersion ?? "";
-          final versionLabel = appVersion.isEmpty
-              ? appName
-              : "$appName $appVersion";
+          final versionLabel =
+              appVersion.isEmpty ? appName : "$appName $appVersion";
 
           final dialog = AlertDialog(
             backgroundColor: backgroundColor,
@@ -504,14 +503,12 @@ class UpdateDialogWidget extends StatelessWidget {
                               builder: (restartContext) {
                                 return AlertDialog(
                                   title: Text(
-                                    notifier
-                                            .getLocalization
+                                    notifier.getLocalization
                                             ?.warningTitleText ??
                                         "Are you sure?",
                                   ),
                                   content: Text(
-                                    notifier
-                                            .getLocalization
+                                    notifier.getLocalization
                                             ?.restartWarningText ??
                                         (isMandatory
                                             ? "This update is required. Save your work before restarting to finish the installation."
@@ -527,21 +524,18 @@ class UpdateDialogWidget extends StatelessWidget {
                                       },
                                       child: Text(
                                         isMandatory
-                                            ? notifier
-                                                      .getLocalization
-                                                      ?.saveFirstText ??
-                                                  "Save first"
-                                            : notifier
-                                                      .getLocalization
-                                                      ?.warningCancelText ??
-                                                  "Not now",
+                                            ? notifier.getLocalization
+                                                    ?.saveFirstText ??
+                                                "Save first"
+                                            : notifier.getLocalization
+                                                    ?.warningCancelText ??
+                                                "Not now",
                                       ),
                                     ),
                                     TextButton(
                                       onPressed: notifier.restartApp,
                                       child: Text(
-                                        notifier
-                                                .getLocalization
+                                        notifier.getLocalization
                                                 ?.warningConfirmText ??
                                             "Restart",
                                       ),
@@ -649,7 +643,8 @@ bool _isMandatoryUpdate(UpdateState state) {
   return switch (state) {
     UpdateAvailable(:final mandatory) ||
     UpdateReadyToInstall(:final mandatory) ||
-    UpdateFreshInstallRequired(:final mandatory) => mandatory,
+    UpdateFreshInstallRequired(:final mandatory) =>
+      mandatory,
     UpdateBlockedBySupportPolicy() => true,
     _ => false,
   };
@@ -688,24 +683,24 @@ String _dialogContentText({
 
   final availableText =
       getLocalizedString(notifier.getLocalization?.newVersionAvailableText, [
-        notifier.appName,
-        notifier.appVersion,
-      ]) ??
-      getLocalizedString("{} {} is available", [
-        notifier.appName,
-        notifier.appVersion,
-      ]) ??
-      "";
+            notifier.appName,
+            notifier.appVersion,
+          ]) ??
+          getLocalizedString("{} {} is available", [
+            notifier.appName,
+            notifier.appVersion,
+          ]) ??
+          "";
   final longText =
       getLocalizedString(notifier.getLocalization?.newVersionLongText, [
-        _formatMegabytes(totalBytes),
-      ]) ??
-      getLocalizedString(
-        "New version is ready to download, click the button below to start "
-        "downloading. This will download {} MB of data.",
-        [_formatMegabytes(totalBytes)],
-      ) ??
-      "";
+            _formatMegabytes(totalBytes),
+          ]) ??
+          getLocalizedString(
+            "New version is ready to download, click the button below to start "
+            "downloading. This will download {} MB of data.",
+            [_formatMegabytes(totalBytes)],
+          ) ??
+          "";
   return "$availableText, $longText";
 }
 

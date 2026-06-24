@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.3.7
+  desktop_updater: ^2.4.0
 ```
 
 Point your app at the hosted archive:

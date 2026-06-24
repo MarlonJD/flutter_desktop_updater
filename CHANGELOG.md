@@ -1,3 +1,14 @@
+## 2.4.0
+
+* Added ready-made updater UI localization loading from bundled package JSON,
+  app-owned JSON assets, direct string overrides, and app-owned resolver
+  callbacks.
+* Added bundled starter translations, automatic locale fallback, runtime
+  localization switching, and RTL text direction support for locales such as
+  Arabic and Hebrew.
+* Documented i18n setup with JSON schema guidance and screenshots for Arabic,
+  Hebrew, Japanese, Korean, and Cyrillic examples.
+
 ## 2.3.7
 
 * Added `release publish` `additionalFiles` support for packaging app-owned

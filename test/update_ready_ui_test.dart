@@ -1,5 +1,4 @@
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -396,11 +395,13 @@ void main() {
               ).notifier!;
               final state = notifier.state;
 
-              return Text(switch (state) {
-                UpdateAvailable(:final mandatory) =>
-                  mandatory ? "Custom mandatory update" : "Custom update",
-                _ => "Custom idle",
-              });
+              return Text(
+                switch (state) {
+                  UpdateAvailable(:final mandatory) =>
+                    mandatory ? "Custom mandatory update" : "Custom update",
+                  _ => "Custom idle",
+                },
+              );
             },
           ),
         ),
