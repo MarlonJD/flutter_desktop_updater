@@ -1,3 +1,12 @@
+## 2.4.1
+
+* Added customizable support-policy date formatting for localized ready-made
+  UI, with a default `YYYY-MM-DD HH:mm UTC` display.
+* Documented explicit locale loading such as `tr_TR`, including bundled locale
+  fallback and app-owned date formatting overrides.
+* Removed the default macOS CI runner from push/PR checks while keeping the
+  notarized macOS publish smoke as an opt-in workflow.
+
 ## 2.4.0
 
 * Added ready-made updater UI localization loading from bundled package JSON,

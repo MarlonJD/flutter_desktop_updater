@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.4.0
+  desktop_updater: ^2.4.1
 ```
 
 Point your app at the hosted archive:
@@ -128,6 +128,12 @@ Ready-made updater UI can load bundled starter translations, app-owned JSON
 assets, direct string overrides, or an app-owned resolver such as
 `AppLocalizations` or `_()`. RTL locales such as Arabic and Hebrew can set or
 infer `TextDirection.rtl`.
+
+Use `DesktopUpdateLocalizationLoader.fromBundledLocale("tr_TR")` to force a
+specific bundled language, or `fromPlatformLocale()` to follow the system
+locale. Support-policy dates default to `YYYY-MM-DD HH:mm UTC`; pass
+`DesktopUpdateLocalization(formatDateTime: ...)` when the app needs its own
+date format.
 
 See [Localization and i18n](docs/localization.md) for the recommended setup,
 JSON schema, runtime language switching, RTL behavior, and Arabic, Hebrew,

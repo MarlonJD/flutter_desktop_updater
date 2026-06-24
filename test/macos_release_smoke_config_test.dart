@@ -17,41 +17,17 @@ void main() {
     expect(source, contains("--diagnostics-log <path>"));
   });
 
-  test(
-    "macOS CI runs package, debug, integration, publish, and smoke checks",
-    () {
-      final workflow =
-          File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
+  test("default CI skips the macOS runner", () {
+    final workflow =
+        File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
 
-      expect(workflow, contains("macos:"));
-      expect(workflow, contains("name: macOS"));
-      expect(workflow, contains("runs-on: macos-latest"));
-      expect(workflow, contains("flutter test --no-pub"));
-      expect(workflow, contains("flutter build macos --debug"));
-      expect(workflow, contains("flutter test integration_test -d macos"));
-      expect(workflow, contains("Rebuild example for smoke"));
-      expect(
-        workflow,
-        contains(
-          "dart run tool/updater_smoke.dart "
-          "--diagnostics-log build/desktop-updater-helper-debug.jsonl",
-        ),
-      );
-      expect(workflow, contains("macos-update-smoke-debug-diagnostics"));
-      expect(workflow, contains("flutter build macos --release"));
-      expect(workflow, contains("Run release publish smoke"));
-      expect(
-        workflow,
-        contains("dart run tool/release_publish_smoke.dart --platform macos"),
-      );
-      expect(
-        workflow,
-        contains(
-          "dart run tool/updater_smoke.dart --config Release "
-          "--diagnostics-log build/desktop-updater-helper-release.jsonl",
-        ),
-      );
-      expect(workflow, contains("macos-update-smoke-release-diagnostics"));
-    },
-  );
+    expect(workflow, isNot(contains("\n  macos:\n")));
+    expect(workflow, isNot(contains("name: macOS\n")));
+    expect(workflow, isNot(contains("flutter build macos --debug")));
+    expect(workflow, isNot(contains("flutter test integration_test -d macos")));
+    expect(workflow, isNot(contains("macos-update-smoke-debug-diagnostics")));
+
+    expect(workflow, contains("macos-notarized:"));
+    expect(workflow, contains("DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E"));
+  });
 }

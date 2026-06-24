@@ -72,6 +72,63 @@ void main() {
     expect(find.text("Skip this version"), findsNothing);
   });
 
+  testWidgets("support policy warning uses a readable UTC deadline", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController()
+      ..showAvailableUpdate(
+        supportPolicy: ReleaseSupportPolicy(
+          minimumSupportedVersion: "2.4.0",
+          enforcedAfter: DateTime.utc(2026, 7, 15, 9, 5, 30),
+        ),
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text("Please update to version 2.4.0 before 2026-07-15 09:05 UTC."),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets("support policy warning can use a custom date formatter", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      localization: DesktopUpdateLocalization(
+        supportPolicyWarningText: "Install {} by {}.",
+        formatDateTime: (dateTime) => "15 Jul 2026, 12:05",
+      ),
+    )..showAvailableUpdate(
+        supportPolicy: ReleaseSupportPolicy(
+          minimumSupportedVersion: "2.4.0",
+          enforcedAfter: DateTime.utc(2026, 7, 15, 9, 5, 30),
+        ),
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text("Install 2.4.0 by 15 Jul 2026, 12:05."), findsOneWidget);
+  });
+
   testWidgets("ready UI uses localization text direction", (tester) async {
     final controller = _ReadyUiTestController(
       localization: const DesktopUpdateLocalization(
@@ -470,9 +527,16 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   @override
   UpdateState get state => _state;
 
-  void showAvailableUpdate({bool mandatory = false}) {
+  void showAvailableUpdate({
+    bool mandatory = false,
+    ReleaseSupportPolicy? supportPolicy,
+  }) {
     _skipUpdate = false;
-    _state = UpdateAvailable(descriptor: _descriptor, mandatory: mandatory);
+    _state = UpdateAvailable(
+      descriptor: _descriptor,
+      mandatory: mandatory,
+      supportPolicy: supportPolicy,
+    );
     notifyListeners();
   }
 

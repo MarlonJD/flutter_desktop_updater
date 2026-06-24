@@ -10,6 +10,9 @@ typedef DesktopUpdateTextResolver = String? Function(
   String fallback,
 );
 
+/// Formats updater dates before they are inserted into localized strings.
+typedef DesktopUpdateDateTimeFormatter = String Function(DateTime dateTime);
+
 /// Stable string keys used by resolver-based localization.
 enum DesktopUpdateLocalizationKey {
   /// Text displayed when an update is available.
@@ -158,6 +161,7 @@ class DesktopUpdateLocalization {
     this.releaseNotesErrorText,
     this.releaseNotesRetryText,
     this.releaseNotesEmptyText,
+    this.formatDateTime,
   });
 
   /// Creates a localization object from an app-owned translation resolver.
@@ -168,6 +172,7 @@ class DesktopUpdateLocalization {
     required DesktopUpdateTextResolver translate,
     TextDirection? textDirection,
     String? Function(Object error)? onUpdateFailedTooltip,
+    DesktopUpdateDateTimeFormatter? formatDateTime,
   }) {
     const defaults = defaultDesktopUpdateLocalization;
     final typeLabels = defaults.releaseNotesTypeLabels!;
@@ -350,6 +355,7 @@ class DesktopUpdateLocalization {
         DesktopUpdateLocalizationKey.releaseNotesEmptyText,
         defaults.releaseNotesEmptyText!,
       ),
+      formatDateTime: formatDateTime,
     );
   }
 
@@ -463,6 +469,11 @@ class DesktopUpdateLocalization {
   ///
   /// Default: "No release notes available."
   final String? releaseNotesEmptyText;
+
+  /// Formats dates before inserting them into localized text templates.
+  ///
+  /// By default, dates render as `YYYY-MM-DD HH:mm UTC`.
+  final DesktopUpdateDateTimeFormatter? formatDateTime;
 }
 
 /// Built-in English localization values used as the canonical fallback.
@@ -753,6 +764,7 @@ DesktopUpdateLocalization mergeDesktopUpdateLocalizations(
         overrides.releaseNotesRetryText ?? base.releaseNotesRetryText,
     releaseNotesEmptyText:
         overrides.releaseNotesEmptyText ?? base.releaseNotesEmptyText,
+    formatDateTime: overrides.formatDateTime ?? base.formatDateTime,
   );
 }
 
@@ -762,6 +774,24 @@ String? getLocalizedString(String? key, List<dynamic> args) {
     key = key?.replaceFirst("{}", args[i].toString());
   }
   return key;
+}
+
+/// Formats a date with the localization override or the package default.
+String formatDesktopUpdateDateTime(
+  DateTime dateTime, {
+  DesktopUpdateLocalization? localization,
+}) {
+  final formatter = localization?.formatDateTime;
+  if (formatter != null) {
+    return formatter(dateTime);
+  }
+
+  final utc = dateTime.toUtc();
+  return "${utc.year.toString().padLeft(4, "0")}-"
+      "${utc.month.toString().padLeft(2, "0")}-"
+      "${utc.day.toString().padLeft(2, "0")} "
+      "${utc.hour.toString().padLeft(2, "0")}:"
+      "${utc.minute.toString().padLeft(2, "0")} UTC";
 }
 
 String _resolveText(

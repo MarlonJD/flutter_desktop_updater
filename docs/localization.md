@@ -105,6 +105,7 @@ final localization =
 The loader accepts either a string tag or a Flutter `Locale`:
 
 ```dart
+await DesktopUpdateLocalizationLoader.fromBundledLocale("tr_TR");
 await DesktopUpdateLocalizationLoader.fromBundledLocale("pt-BR");
 await DesktopUpdateLocalizationLoader.fromBundledLocale(
   const Locale.fromSubtags(languageCode: "zh", scriptCode: "Hans"),
@@ -114,10 +115,16 @@ await DesktopUpdateLocalizationLoader.fromBundledLocale(
 Locale fallback is exact tag first, then language code, then English:
 
 ```text
+tr_TR -> tr-TR -> tr -> en
 pt-BR -> pt -> en
 zh-Hans -> zh -> en
 az-Arab -> az -> en
 ```
+
+There is intentionally no `language: "tr_TR"` field on
+`DesktopUpdateLocalization`. Loading bundled or app-owned JSON is asynchronous,
+so language selection belongs to the loader. Use `overrides` in the same call
+for app-specific copy or formatting.
 
 Current bundled files:
 
@@ -256,8 +263,32 @@ when translating:
 - `newVersionAvailableText`: first `{}` is app name, second `{}` is version.
 - `newVersionLongText`: `{}` is download size in megabytes.
 - `supportPolicyWarningText`: first `{}` is the minimum supported version,
-  second `{}` is the enforcement timestamp.
+  second `{}` is the formatted enforcement date.
 - `upToDateText`: `{}` is the latest version.
+
+Support-policy dates default to `YYYY-MM-DD HH:mm UTC`, for example
+`2026-07-15 09:05 UTC`. Override `formatDateTime` when the app wants a local
+timezone, a locale-specific date formatter, or product-specific wording:
+
+```dart
+final localization =
+    await DesktopUpdateLocalizationLoader.fromBundledLocale(
+  "tr_TR",
+  overrides: DesktopUpdateLocalization(
+    supportPolicyWarningText:
+        "{} surumune {} tarihinden once guncelleyin.",
+    formatDateTime: (dateTime) {
+      final local = dateTime.toLocal();
+      return "${local.day}.${local.month}.${local.year} "
+          "${local.hour.toString().padLeft(2, "0")}:"
+          "${local.minute.toString().padLeft(2, "0")}";
+    },
+  ),
+);
+```
+
+JSON files only provide the sentence template. Date formatting is code-owned
+because JSON cannot carry a Dart callback.
 
 ## Existing app i18n resolver
 

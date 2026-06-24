@@ -55,6 +55,35 @@ void main() {
     expect(localization.saveFirstText, "Save safely");
   });
 
+  test("bundled locale accepts language tags and region fallbacks", () async {
+    final bundle = _MapAssetBundle({
+      "packages/desktop_updater/assets/localizations/tr.json": jsonEncode({
+        "schemaVersion": 1,
+        "locale": "tr",
+        "strings": {"updateAvailableText": "TR update"},
+      }),
+    });
+
+    final localization =
+        await DesktopUpdateLocalizationLoader.fromBundledLocale(
+      "tr_TR",
+      bundle: bundle,
+      overrides: DesktopUpdateLocalization(
+        formatDateTime: (value) => "merged ${value.toUtc().year}",
+      ),
+    );
+
+    expect(localization.updateAvailableText, "TR update");
+    expect(localization.downloadText, "Download");
+    expect(
+      formatDesktopUpdateDateTime(
+        DateTime.utc(2026),
+        localization: localization,
+      ),
+      "merged 2026",
+    );
+  });
+
   test("resolver constructor supports app-owned i18n functions", () {
     final localization = DesktopUpdateLocalization.resolvedBy(
       translate: (key, fallback) {
@@ -74,6 +103,21 @@ void main() {
     expect(localization.supportPolicyBlockedText, "Translated blocked");
     expect(localization.updateAvailableText, "Update available");
     expect(localization.onUpdateFailedTooltip?.call(Object()), "Custom error");
+  });
+
+  test("date formatting can use the default or an app override", () {
+    final dateTime = DateTime.utc(2026, 7, 15, 9, 5, 30);
+
+    expect(formatDesktopUpdateDateTime(dateTime), "2026-07-15 09:05 UTC");
+    expect(
+      formatDesktopUpdateDateTime(
+        dateTime,
+        localization: DesktopUpdateLocalization(
+          formatDateTime: (value) => "custom ${value.toUtc().year}",
+        ),
+      ),
+      "custom 2026",
+    );
   });
 
   test("locale and script infer text direction with JSON override", () async {

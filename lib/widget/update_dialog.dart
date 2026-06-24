@@ -667,16 +667,17 @@ String _dialogContentText({
   }
   if (state is UpdateAvailable && state.supportPolicy != null) {
     final policy = state.supportPolicy!;
+    final enforcedAfterText = formatDesktopUpdateDateTime(
+      policy.enforcedAfter,
+      localization: notifier.getLocalization,
+    );
     return getLocalizedString(
           notifier.getLocalization?.supportPolicyWarningText,
-          [
-            policy.minimumSupportedVersion,
-            policy.enforcedAfter.toIso8601String(),
-          ],
+          [policy.minimumSupportedVersion, enforcedAfterText],
         ) ??
         getLocalizedString("Please update to version {} before {}.", [
           policy.minimumSupportedVersion,
-          policy.enforcedAfter.toIso8601String(),
+          enforcedAfterText,
         ]) ??
         "";
   }
