@@ -318,3 +318,13 @@ dart run desktop_updater:package --help
 dart run desktop_updater:app_archive --help
 dart run desktop_updater:verify --help
 ```
+
+## Support
+
+If `desktop_updater` saves you maintenance time, you can support ongoing work
+through GitHub Sponsors.
+
+Sponsorship helps fund cross-platform testing, release tooling, and maintenance
+for Windows, macOS, and Linux update flows.
+
+[Become a sponsor](https://github.com/sponsors/MarlonJD)
