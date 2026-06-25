@@ -184,11 +184,34 @@ void main() {
     expect(source, contains("Write-DiagnosticsEvent 'elevation requested'"));
     expect(
       source,
-      contains("Target directory is not writable. Requesting UAC elevation."),
+      contains(
+        "Target directory is protected or not writable. "
+        "Requesting UAC elevation.",
+      ),
     );
     expect(
       source,
       contains("User cancelled the Windows UAC update prompt."),
+    );
+  });
+
+  test("Windows helper treats Program Files roots as protected installs", () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    expect(source, contains("IsKnownProtectedInstallDirectory"));
+    expect(source, contains("ProtectedInstallRootPaths"));
+    expect(
+      source,
+      contains("IsKnownProtectedInstallDirectory(target_directory"),
+    );
+    expect(source, contains("const bool target_is_protected"));
+    expect(
+      source,
+      contains(
+        "if (!process_is_elevated && "
+        "(target_is_protected || !target_is_writable))",
+      ),
     );
   });
 }

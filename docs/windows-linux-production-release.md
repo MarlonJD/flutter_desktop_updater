@@ -69,11 +69,15 @@ current user. A machine-wide install under `C:\Program Files` or
 `C:\Program Files (x86)` usually requires elevation.
 
 During `installUpdate`, the Windows helper performs a write preflight against
-the current app directory:
+the current app directory and checks for known protected install roots:
 
-- If the directory is writable, the normal hidden helper script is scheduled.
+- If the directory is a known protected root such as `C:\Program Files`, and
+  the process is not elevated, the helper starts the same install script
+  through Windows UAC.
+- If the directory is not protected and is writable, the normal hidden helper
+  script is scheduled.
 - If the directory is not writable and the process is not elevated, the helper
-  starts the same install script through Windows UAC.
+  also starts the install script through Windows UAC.
 - If the user cancels UAC, `installUpdate` returns `InstallError` and the app
   remains open.
 - If the process is already elevated but the directory is still not writable,

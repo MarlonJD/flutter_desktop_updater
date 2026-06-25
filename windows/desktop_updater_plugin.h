@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace desktop_updater {
 
@@ -21,6 +22,10 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
 
 bool IsStrictChildPathForTesting(const std::wstring& root,
                                  const std::wstring& candidate);
+
+bool IsKnownProtectedInstallDirectoryForTesting(
+    const std::wstring& directory,
+    const std::vector<std::wstring>& protected_roots);
 
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:

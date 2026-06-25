@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "desktop_updater_plugin.h"
 
@@ -49,6 +50,24 @@ TEST(DesktopUpdaterPlugin, RemovedFileMustBeStrictChildPath) {
   EXPECT_TRUE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\App\\data.txt"));
   EXPECT_FALSE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\App"));
   EXPECT_FALSE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\Other\\data.txt"));
+}
+
+TEST(DesktopUpdaterPlugin, ProgramFilesInstallDirectoryIsProtected) {
+  const std::vector<std::wstring> protected_roots = {
+      L"C:\\Program Files",
+      L"C:\\Program Files (x86)",
+  };
+
+  EXPECT_TRUE(IsKnownProtectedInstallDirectoryForTesting(
+      L"C:\\Program Files\\egas-manager", protected_roots));
+  EXPECT_TRUE(IsKnownProtectedInstallDirectoryForTesting(
+      L"C:\\Program Files (x86)\\egas-manager", protected_roots));
+  EXPECT_TRUE(IsKnownProtectedInstallDirectoryForTesting(
+      L"C:\\Program Files", protected_roots));
+  EXPECT_FALSE(IsKnownProtectedInstallDirectoryForTesting(
+      L"C:\\Users\\alex\\AppData\\Local\\egas-manager", protected_roots));
+  EXPECT_FALSE(IsKnownProtectedInstallDirectoryForTesting(
+      L"C:\\Program Files Backup\\egas-manager", protected_roots));
 }
 
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {

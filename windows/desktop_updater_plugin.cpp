@@ -362,6 +362,64 @@ bool IsProcessElevated() {
   return result == TRUE && elevation.TokenIsElevated != 0;
 }
 
+std::wstring EnvironmentVariableValue(const wchar_t* name) {
+  const DWORD required_length = GetEnvironmentVariableW(name, nullptr, 0);
+  if (required_length == 0) {
+    return L"";
+  }
+
+  std::vector<wchar_t> buffer(required_length);
+  const DWORD written_length =
+      GetEnvironmentVariableW(name, buffer.data(), required_length);
+  if (written_length == 0 || written_length >= required_length) {
+    return L"";
+  }
+
+  return std::wstring(buffer.data(), written_length);
+}
+
+std::wstring NormalizedDirectoryPath(const fs::path& path) {
+  std::wstring value = path.lexically_normal().wstring();
+  while (!value.empty() && (value.back() == L'\\' || value.back() == L'/')) {
+    value.pop_back();
+  }
+  return value;
+}
+
+bool IsSameOrChildPath(const fs::path& root, const fs::path& candidate) {
+  const std::wstring root_value = NormalizedDirectoryPath(root);
+  const std::wstring candidate_value = NormalizedDirectoryPath(candidate);
+  if (root_value.empty() || candidate_value.empty()) {
+    return false;
+  }
+
+  if (_wcsicmp(candidate_value.c_str(), root_value.c_str()) == 0) {
+    return true;
+  }
+
+  const std::wstring root_with_slash = root_value + L"\\";
+  return candidate_value.size() > root_with_slash.size() &&
+         _wcsnicmp(candidate_value.c_str(), root_with_slash.c_str(),
+                   root_with_slash.size()) == 0;
+}
+
+std::vector<std::wstring> ProtectedInstallRootPaths() {
+  std::vector<std::wstring> roots;
+  for (const wchar_t* variable_name :
+       {L"ProgramFiles", L"ProgramFiles(x86)", L"ProgramW6432"}) {
+    const std::wstring value = EnvironmentVariableValue(variable_name);
+    if (!value.empty()) {
+      roots.push_back(value);
+    }
+  }
+  return roots;
+}
+
+bool IsKnownProtectedInstallDirectory(const fs::path& directory) {
+  return IsKnownProtectedInstallDirectoryForTesting(
+      directory.wstring(), ProtectedInstallRootPaths());
+}
+
 bool CanWriteDirectory(const fs::path& directory) {
   const fs::path probe_path = directory /
       (L".desktop_updater_write_probe_" +
@@ -401,12 +459,18 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
   }
 
   PowerShellLaunchMode launch_mode = PowerShellLaunchMode::kNormal;
-  if (request_elevation_if_needed && !CanWriteDirectory(target_directory)) {
-    if (IsProcessElevated()) {
+  if (request_elevation_if_needed) {
+    const bool target_is_protected =
+        IsKnownProtectedInstallDirectory(target_directory);
+    const bool target_is_writable = CanWriteDirectory(target_directory);
+    const bool process_is_elevated = IsProcessElevated();
+    if (!target_is_writable && process_is_elevated) {
       *error = "Target directory is not writable while running elevated.";
       return false;
     }
-    launch_mode = PowerShellLaunchMode::kElevated;
+    if (!process_is_elevated && (target_is_protected || !target_is_writable)) {
+      launch_mode = PowerShellLaunchMode::kElevated;
+    }
   }
 
   const fs::path script_path = fs::temp_directory_path() /
@@ -423,7 +487,7 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "$diagnosticsLog = " << PowerShellQuote(diagnostics_log_path) << "\n"
       << "$elevationReason = "
       << PowerShellQuote(launch_mode == PowerShellLaunchMode::kElevated
-                             ? L"Target directory is not writable. Requesting UAC elevation."
+                             ? L"Target directory is protected or not writable. Requesting UAC elevation."
                              : L"")
       << "\n"
       << "$removed = " << PowerShellArray(removed_files) << "\n"
@@ -705,22 +769,24 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
 
 bool IsStrictChildPathForTesting(const std::wstring& root,
                                  const std::wstring& candidate) {
-  fs::path root_path(root);
-  fs::path candidate_path(candidate);
-  std::wstring root_value = root_path.lexically_normal().wstring();
-  std::wstring candidate_value = candidate_path.lexically_normal().wstring();
-  while (!root_value.empty() &&
-         (root_value.back() == L'\\' || root_value.back() == L'/')) {
-    root_value.pop_back();
-  }
-  while (!candidate_value.empty() &&
-         (candidate_value.back() == L'\\' || candidate_value.back() == L'/')) {
-    candidate_value.pop_back();
-  }
+  const std::wstring root_value = NormalizedDirectoryPath(fs::path(root));
+  const std::wstring candidate_value =
+      NormalizedDirectoryPath(fs::path(candidate));
   const std::wstring root_with_slash = root_value + L"\\";
   return candidate_value.size() > root_with_slash.size() &&
          _wcsnicmp(candidate_value.c_str(), root_with_slash.c_str(),
                    root_with_slash.size()) == 0;
+}
+
+bool IsKnownProtectedInstallDirectoryForTesting(
+    const std::wstring& directory,
+    const std::vector<std::wstring>& protected_roots) {
+  for (const std::wstring& root : protected_roots) {
+    if (IsSameOrChildPath(fs::path(root), fs::path(directory))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // static

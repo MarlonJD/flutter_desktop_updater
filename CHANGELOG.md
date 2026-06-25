@@ -1,3 +1,12 @@
+## 2.4.3-dev.1
+
+* Previewed a Windows protected-directory install fix that treats
+  `C:\Program Files` and `C:\Program Files (x86)` app directories as requiring
+  UAC elevation when the app is launched by a non-admin user, even if a simple
+  write probe can create a temporary file there.
+* Documented the updated Windows UAC decision path for protected install roots,
+  writable per-user installs, and helper diagnostics.
+
 ## 2.4.2
 
 * Extended `requestHeadersProvider` to hosted release notes loaded through
