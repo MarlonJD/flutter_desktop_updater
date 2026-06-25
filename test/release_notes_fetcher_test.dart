@@ -69,6 +69,30 @@ void main() {
     expect(capturedUri, Uri.parse(_url));
   });
 
+  test("fetch sends app-owned request headers", () async {
+    Map<String, String>? capturedHeaders;
+    final fetcher = ReleaseNotesFetcher(
+      client: MockClient((request) async {
+        capturedHeaders = Map<String, String>.of(request.headers);
+        return http.Response(jsonEncode({"data": []}), 200);
+      }),
+      requestHeadersProvider: (source) {
+        return {
+          HttpHeaders.authorizationHeader: "Bearer notes-token",
+          "x-release-notes-host": source.host,
+        };
+      },
+    );
+
+    await fetcher.fetch(Uri.parse(_url));
+
+    expect(
+      capturedHeaders?[HttpHeaders.authorizationHeader],
+      "Bearer notes-token",
+    );
+    expect(capturedHeaders?["x-release-notes-host"], "example.com");
+  });
+
   test("fetch handles empty data array", () async {
     final fetcher = ReleaseNotesFetcher(
       client: MockClient(

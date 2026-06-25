@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.4.1
+  desktop_updater: ^2.4.2
 ```
 
 Point your app at the hosted archive:
@@ -30,8 +30,8 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-Private update hosts can add runtime authentication headers with
-`requestHeadersProvider`; see
+Private update hosts can add runtime authentication headers for update metadata,
+artifacts, and hosted release notes with `requestHeadersProvider`; see
 [Runtime request headers](doc/runtime-request-headers.md).
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -182,6 +182,12 @@ final controller = DesktopUpdaterController(
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
 );
 ```
+
+When `releaseNotesUrl` points at a private host, `requestHeadersProvider` is
+used for the release notes request too. See
+[Runtime request headers](doc/runtime-request-headers.md) for sharing one auth
+token across update files and release notes, or routing different headers by
+request URL.
 
 The simple contributor-friendly JSON shape uses a `data` array:
 

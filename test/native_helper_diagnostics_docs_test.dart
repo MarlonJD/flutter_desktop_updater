@@ -94,10 +94,17 @@ void main() {
 
   test("release notes docs show built-in and custom UI patterns", () {
     final readme = File("README.md").readAsStringSync();
+    final requestHeadersDoc =
+        File("doc/runtime-request-headers.md").readAsStringSync();
     final uiDocs = File("docs/ui-widgets.md").readAsStringSync();
 
     expect(readme, contains("releaseNotesLoader"));
     expect(readme, contains("releaseNotesUrl"));
+    expect(readme, contains("Runtime request headers"));
+    expect(readme, contains("hosted release notes"));
+    expect(requestHeadersDoc, contains("releaseNotesUrl"));
+    expect(requestHeadersDoc, contains("source.path.endsWith"));
+    expect(requestHeadersDoc, contains("x-notes-auth"));
     expect(uiDocs, contains("Release Notes Patterns"));
     expect(uiDocs, contains("Built-in card and bottom sheet"));
     expect(uiDocs, contains("Inline panel"));

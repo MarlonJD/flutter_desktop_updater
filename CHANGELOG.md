@@ -1,3 +1,9 @@
+## 2.4.2
+
+* Extended `requestHeadersProvider` to hosted release notes loaded through
+  `releaseNotesUrl`, so private update hosts can use the same runtime-owned
+  headers for update metadata, artifacts, and release notes.
+
 ## 2.4.1
 
 * Added customizable support-policy date formatting for localized ready-made

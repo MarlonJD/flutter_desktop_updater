@@ -82,8 +82,11 @@ class DesktopUpdaterController extends ChangeNotifier {
         _releaseNotesUrl = releaseNotesUrl,
         _externalUrlLauncher =
             externalUrlLauncher ?? defaultExternalUrlLauncher,
-        _releaseNotesFetcher =
-            releaseNotesUrl == null ? null : ReleaseNotesFetcher() {
+        _releaseNotesFetcher = releaseNotesUrl == null
+            ? null
+            : ReleaseNotesFetcher(
+                requestHeadersProvider: requestHeadersProvider,
+              ) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }
@@ -126,7 +129,11 @@ class DesktopUpdaterController extends ChangeNotifier {
         _externalUrlLauncher =
             externalUrlLauncher ?? defaultExternalUrlLauncher,
         _releaseNotesFetcher = releaseNotesFetcher ??
-            (releaseNotesUrl == null ? null : ReleaseNotesFetcher()) {
+            (releaseNotesUrl == null
+                ? null
+                : ReleaseNotesFetcher(
+                    requestHeadersProvider: requestHeadersProvider,
+                  )) {
     if (appArchiveUrl != null) {
       init(appArchiveUrl);
     }

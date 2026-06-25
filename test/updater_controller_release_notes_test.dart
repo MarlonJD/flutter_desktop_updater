@@ -122,6 +122,29 @@ void main() {
     expect(fetcher.callCount, 1);
   });
 
+  test("releaseNotesUrl uses app-owned request headers provider", () async {
+    final server = await _ReleaseNotesServer.start();
+    try {
+      final notes = await HttpOverrides.runZoned(
+        () {
+          final controller = _UrlReleaseNotesControllerForTest(
+            releaseNotesUrl: server.url,
+            requestHeadersProvider: (source) {
+              return {"x-update-auth": "runtime-token"};
+            },
+          );
+          return controller.loadReleaseNotes();
+        },
+        createHttpClient: _RealHttpOverrides().createHttpClient,
+      );
+
+      expect(notes.entries.single.message, "Private release notes");
+      expect(server.authHeaders, ["runtime-token"]);
+    } finally {
+      await server.close();
+    }
+  });
+
   test("checkVersion clears the cached release notes", () async {
     final fetcher = _CountingNotesFetcher(_fakeNotes);
     final missingArchive = Uri.file(
@@ -165,7 +188,8 @@ class _UrlReleaseNotesControllerForTest extends DesktopUpdaterController {
   _UrlReleaseNotesControllerForTest({
     super.appArchiveUrl,
     required Uri releaseNotesUrl,
-    required ReleaseNotesFetcher releaseNotesFetcher,
+    ReleaseNotesFetcher? releaseNotesFetcher,
+    super.requestHeadersProvider,
   }) : super.forTesting(
           skipInitialVersionCheck: true,
           releaseNotesUrl: releaseNotesUrl,
@@ -187,6 +211,44 @@ class _CountingNotesFetcher extends ReleaseNotesFetcher {
   Future<ReleaseNotes> fetch(Uri url) async {
     callCount++;
     return _notes;
+  }
+}
+
+class _ReleaseNotesServer {
+  _ReleaseNotesServer._(this._server);
+
+  final HttpServer _server;
+  final authHeaders = <String?>[];
+
+  Uri get url => Uri.parse("http://127.0.0.1:${_server.port}/notes.json");
+
+  static Future<_ReleaseNotesServer> start() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final fixture = _ReleaseNotesServer._(server);
+    fixture._serve();
+    return fixture;
+  }
+
+  void _serve() {
+    _server.listen((request) async {
+      authHeaders.add(request.headers.value("x-update-auth"));
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(
+          '{"data":[{"type":"feat","message":"Private release notes"}]}',
+        );
+      await request.response.close();
+    });
+  }
+
+  Future<void> close() => _server.close(force: true);
+}
+
+class _RealHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context);
   }
 }
 
