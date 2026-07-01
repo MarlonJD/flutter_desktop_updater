@@ -40,7 +40,10 @@ void main() {
     );
     expect(
       workflow,
-      contains("--diagnostics-log build/desktop-updater-helper-release.jsonl"),
+      contains(
+        "--diagnostics-log "
+        "../reports/windows-update-smoke-release-diagnostics.jsonl",
+      ),
     );
     expect(workflow, contains("actions/upload-artifact@v4"));
     expect(

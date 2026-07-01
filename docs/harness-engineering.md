@@ -35,6 +35,18 @@ flutter test --no-pub
 dart pub publish --dry-run
 ```
 
+To run the full local ladder with a small review artifact:
+
+```sh
+dart run tool/harness_check.dart
+```
+
+The runner executes format, analyze, the focused harness docs test, the full
+Flutter test suite, and publish dry-run in that order. It writes command output
+and exit status to `reports/harness-check.md`. Keep it local and secretless;
+platform services, signing credentials, and release approvals belong in CI or
+manual release lanes.
+
 The broad platform gates are in GitHub Actions:
 
 - Dart package formatting, analysis, tests, CLI entrypoints, and publish dry
@@ -61,6 +73,12 @@ Use feedback loops in this order:
 For UI or native update behavior, leave evidence under `reports/` when a
 screenshot, diagnostics log, or policy response explains the result better than
 terminal output alone.
+
+Use mechanical platform smoke evidence names:
+`reports/<platform>-update-smoke-<mode>-diagnostics.jsonl`. Local work can use
+that path when no secrets are needed. Windows and Linux smoke evidence usually
+belongs to CI. macOS notarized smoke requires manual release approval and
+secrets.
 
 ## Entropy Controls
 

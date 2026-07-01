@@ -32,6 +32,7 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 build/
 .vscode/
+reports/harness-check.md
 Frameworks
 Frameworks/
 macos/FlutterFramework

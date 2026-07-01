@@ -95,4 +95,98 @@ void main() {
     expect(activePlan, isNot(contains("Non-Negotiable Constraints")));
     expect(activePlan, isNot(contains("REQUIRED SUB-SKILL")));
   });
+
+  test("local harness runner records the validation ladder", () {
+    final runner = File("tool/harness_check.dart");
+    final gitignore = File(".gitignore").readAsStringSync();
+
+    expect(
+      runner.existsSync(),
+      isTrue,
+      reason: "Stage 2 requires a local secretless harness runner.",
+    );
+
+    final source = runner.readAsStringSync();
+    const orderedCommands = [
+      "dart format --set-exit-if-changed .",
+      "flutter analyze --no-fatal-infos --no-pub",
+      "flutter test --no-pub test/harness_engineering_docs_test.dart",
+      "flutter test --no-pub",
+      "dart pub publish --dry-run",
+    ];
+
+    var previousIndex = -1;
+    for (final command in orderedCommands) {
+      final index = source.indexOf(command, previousIndex + 1);
+
+      expect(index, isNot(-1), reason: "Missing harness command: $command");
+      expect(
+        index,
+        greaterThan(previousIndex),
+        reason: "Harness command is out of order: $command",
+      );
+
+      previousIndex = index;
+    }
+
+    expect(source, contains("reports/harness-check.md"));
+    expect(source, contains("Exit code"));
+    expect(source, isNot(contains("GITHUB_TOKEN")));
+    expect(source, isNot(contains("API_KEY")));
+    expect(source, isNot(contains("SECRET")));
+    expect(source, isNot(contains("PASSWORD")));
+    expect(gitignore, contains("reports/harness-check.md"));
+  });
+
+  test("harness docs describe runner and smoke evidence naming", () {
+    final harness = File("docs/harness-engineering.md").readAsStringSync();
+    final activePlan = File(
+      "docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md",
+    ).readAsStringSync();
+
+    expect(harness, contains("dart run tool/harness_check.dart"));
+    expect(harness, contains("reports/harness-check.md"));
+    expect(
+      harness,
+      contains("reports/<platform>-update-smoke-<mode>-diagnostics.jsonl"),
+    );
+    expect(harness, contains("manual release approval"));
+
+    expect(activePlan, contains("- [x] Add `tool/harness_check.dart`."));
+    expect(
+      activePlan,
+      contains("- [x] Have it run format, analyze, test, and publish dry-run"),
+    );
+    expect(
+      activePlan,
+      contains("- [x] Write `reports/harness-check.md`"),
+    );
+    expect(
+      activePlan,
+      contains("- [x] Standardize platform-smoke evidence under `reports/`."),
+    );
+    expect(
+      activePlan,
+      contains("- [x] Document when platform smoke belongs to local work"),
+    );
+  });
+
+  test("platform smoke diagnostics use mechanical reports paths", () {
+    final workflow =
+        File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
+
+    const diagnosticsPaths = [
+      "reports/windows-update-smoke-debug-diagnostics.jsonl",
+      "reports/windows-update-smoke-release-diagnostics.jsonl",
+      "reports/linux-update-smoke-debug-diagnostics.jsonl",
+      "reports/linux-update-smoke-release-diagnostics.jsonl",
+    ];
+
+    for (final path in diagnosticsPaths) {
+      expect(workflow, contains(path), reason: "Missing evidence path $path");
+    }
+
+    expect(workflow, isNot(contains("build/desktop-updater-helper-debug")));
+    expect(workflow, isNot(contains("build/desktop-updater-helper-release")));
+  });
 }

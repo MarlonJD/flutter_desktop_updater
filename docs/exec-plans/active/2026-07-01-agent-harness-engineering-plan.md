@@ -36,14 +36,14 @@ dart pub publish --dry-run
 
 ## Stage 2: Local Harness Runner
 
-- [ ] Add `tool/harness_check.dart`.
-- [ ] Have it run format, analyze, test, and publish dry-run in order.
-- [ ] Write `reports/harness-check.md` with command output and exit status.
+- [x] Add `tool/harness_check.dart`.
+- [x] Have it run format, analyze, test, and publish dry-run in order.
+- [x] Write `reports/harness-check.md` with command output and exit status.
 
 ## Stage 3: Evidence Naming
 
-- [ ] Standardize platform-smoke evidence under `reports/`.
-- [ ] Document when platform smoke belongs to local work, CI, or manual release
+- [x] Standardize platform-smoke evidence under `reports/`.
+- [x] Document when platform smoke belongs to local work, CI, or manual release
   approval.
 
 ## Notes
