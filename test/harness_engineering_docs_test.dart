@@ -2,11 +2,19 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+const harnessPlanPath =
+    "docs/exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md";
+const harnessPlanLink =
+    "completed/2026-07-01-agent-harness-engineering-plan.md";
+const oldActiveHarnessPlanPath =
+    "docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md";
+
 void main() {
   test("agent harness entrypoints stay discoverable", () {
     final agents = File("AGENTS.md").readAsStringSync();
     final harness = File("docs/harness-engineering.md").readAsStringSync();
     final plansIndex = File("docs/exec-plans/index.md").readAsStringSync();
+    final readme = File("README.md").readAsStringSync();
 
     expect(agents, contains("docs/harness-engineering.md"));
     expect(agents, contains("docs/exec-plans/index.md"));
@@ -25,12 +33,14 @@ void main() {
       plansIndex,
       contains("2026-07-01 - Agent harness engineering"),
     );
+    expect(plansIndex, contains(harnessPlanLink));
+    expect(readme, contains("AGENTS.md"));
+    expect(readme, contains("docs/harness-engineering.md"));
+    expect(readme, contains("docs/exec-plans/index.md"));
   });
 
   test("harness plan records stage boundaries and local commands", () {
-    final plan = File(
-      "docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md",
-    ).readAsStringSync();
+    final plan = File(harnessPlanPath).readAsStringSync();
 
     expect(plan, contains("Stage 0"));
     expect(plan, contains("Stage 1"));
@@ -46,23 +56,33 @@ void main() {
     final index = File("docs/exec-plans/index.md").readAsStringSync();
     final debtTracker =
         File("docs/exec-plans/tech-debt-tracker.md").readAsStringSync();
+    final activePlansDirectory = Directory("docs/exec-plans/active");
 
     expect(Directory("docs/plans").existsSync(), isFalse);
-    expect(Directory("docs/exec-plans/active").existsSync(), isTrue);
+    if (activePlansDirectory.existsSync()) {
+      expect(activePlansDirectory.listSync(), isEmpty);
+    }
     expect(Directory("docs/exec-plans/completed").existsSync(), isTrue);
     expect(File("docs/exec-plans/tech-debt-tracker.md").existsSync(), isTrue);
 
     expect(index, contains("# Execution Plans"));
     expect(index, contains("## Active"));
+    expect(index, contains("No active plans."));
     expect(index, contains("## Completed"));
-    expect(
-      index,
-      contains("active/2026-07-01-agent-harness-engineering-plan.md"),
-    );
+    expect(index, contains(harnessPlanLink));
+    expect(index, isNot(contains("active/2026-07-01")));
     expect(index, isNot(contains("docs/plans")));
 
     expect(debtTracker, contains("# Tech Debt Tracker"));
     expect(debtTracker, contains("Harness"));
+    expect(
+      debtTracker,
+      isNot(contains("Add a local `tool/harness_check.dart` runner")),
+    );
+    expect(
+      debtTracker,
+      isNot(contains("Standardize evidence file names under `reports/`")),
+    );
   });
 
   test("exec plan index links resolve", () {
@@ -84,16 +104,15 @@ void main() {
     }
   });
 
-  test("harness avoids redundant prompt routers and oversized active plans",
-      () {
-    final activePlan = File(
-      "docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md",
-    ).readAsStringSync();
+  test("harness avoids redundant prompt routers and oversized plans", () {
+    final completedPlan = File(harnessPlanPath).readAsStringSync();
 
     expect(File("docs/migration/agent-prompt.md").existsSync(), isFalse);
-    expect(activePlan.split("\n"), hasLength(lessThanOrEqualTo(120)));
-    expect(activePlan, isNot(contains("Non-Negotiable Constraints")));
-    expect(activePlan, isNot(contains("REQUIRED SUB-SKILL")));
+    expect(File(oldActiveHarnessPlanPath).existsSync(), isFalse);
+    expect(Directory("agent-harness").existsSync(), isFalse);
+    expect(completedPlan.split("\n"), hasLength(lessThanOrEqualTo(120)));
+    expect(completedPlan, isNot(contains("Non-Negotiable Constraints")));
+    expect(completedPlan, isNot(contains("REQUIRED SUB-SKILL")));
   });
 
   test("local harness runner records the validation ladder", () {
@@ -140,9 +159,7 @@ void main() {
 
   test("harness docs describe runner and smoke evidence naming", () {
     final harness = File("docs/harness-engineering.md").readAsStringSync();
-    final activePlan = File(
-      "docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md",
-    ).readAsStringSync();
+    final completedPlan = File(harnessPlanPath).readAsStringSync();
 
     expect(harness, contains("dart run tool/harness_check.dart"));
     expect(harness, contains("reports/harness-check.md"));
@@ -152,21 +169,21 @@ void main() {
     );
     expect(harness, contains("manual release approval"));
 
-    expect(activePlan, contains("- [x] Add `tool/harness_check.dart`."));
+    expect(completedPlan, contains("- [x] Add `tool/harness_check.dart`."));
     expect(
-      activePlan,
+      completedPlan,
       contains("- [x] Have it run format, analyze, test, and publish dry-run"),
     );
     expect(
-      activePlan,
+      completedPlan,
       contains("- [x] Write `reports/harness-check.md`"),
     );
     expect(
-      activePlan,
+      completedPlan,
       contains("- [x] Standardize platform-smoke evidence under `reports/`."),
     );
     expect(
-      activePlan,
+      completedPlan,
       contains("- [x] Document when platform smoke belongs to local work"),
     );
   });

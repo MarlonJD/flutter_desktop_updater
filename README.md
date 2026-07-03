@@ -308,6 +308,11 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   commands and compatibility notes.
 - [2.0 roadmap](docs/2.0-roadmap.md)
 
+Maintainers and agentic contributors should start with [AGENTS.md](AGENTS.md),
+then use [Harness engineering](docs/harness-engineering.md) and the
+[execution plan index](docs/exec-plans/index.md) for repo-local workflow,
+validation, and plan status.
+
 ## Advanced Commands
 
 Most apps should start with `release publish`. Use low-level commands only when

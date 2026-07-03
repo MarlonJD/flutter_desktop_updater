@@ -58,7 +58,8 @@ The broad platform gates are in GitHub Actions:
 - macOS notarized publish smoke only when explicitly dispatched with secrets.
 
 `test/harness_engineering_docs_test.dart` is the first harness guard. It keeps
-the agent map, this document, and the staged implementation plan discoverable.
+the agent map, this document, and the completed staged implementation record
+discoverable.
 
 ## Agent Feedback Loops
 
@@ -93,14 +94,18 @@ Agents copy local patterns. Keep the patterns worth copying:
 
 ## Staged Adoption Plan
 
-Stage 0 is the foundation added with this document:
+The original staged adoption plan was tracked in `docs/exec-plans/` and moved to
+`docs/exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md` after
+verification. The stages below remain as adoption history.
+
+Stage 0 added the foundation:
 
 - Add a short `AGENTS.md` repo map.
 - Add this harness model.
-- Add `docs/exec-plans/active/2026-07-01-agent-harness-engineering-plan.md`.
+- Track the harness plan in `docs/exec-plans/`.
 - Add `test/harness_engineering_docs_test.dart`.
 
-Stage 1 should harden doc freshness:
+Stage 1 hardened doc freshness:
 
 - Check that `docs/exec-plans/index.md` links every active plan that should
   remain discoverable.
@@ -108,14 +113,14 @@ Stage 1 should harden doc freshness:
 - Check that harness and diagnostics docs avoid stale references to plans as
   user-facing guidance.
 
-Stage 2 should add a local harness runner:
+Stage 2 added a local harness runner:
 
 - Create a single Dart tool that runs the validation ladder in a predictable
   order.
 - Emit a small Markdown report under `reports/` for agent and human review.
 - Keep the tool local and secretless.
 
-Stage 3 should improve app-readable evidence:
+Stage 3 improved app-readable evidence:
 
 - Standardize screenshot and diagnostics-log naming under `reports/`.
 - Document when a platform smoke requires manual approval, CI, or secrets.
