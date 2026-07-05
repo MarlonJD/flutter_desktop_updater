@@ -1,4 +1,4 @@
-## 2.4.3-dev.1
+## 2.4.3
 
 * Previewed a Windows protected-directory install fix that treats
   `C:\Program Files` and `C:\Program Files (x86)` app directories as requiring
@@ -6,6 +6,8 @@
   write probe can create a temporary file there.
 * Documented the updated Windows UAC decision path for protected install roots,
   writable per-user installs, and helper diagnostics.
+* Updated the pub.dev description and topics to better position
+  `desktop_updater` as a Sparkle-style updater for Flutter desktop apps.
 
 ## 2.4.2
 
