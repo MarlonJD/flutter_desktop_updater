@@ -48,6 +48,9 @@ void main() {
     expect(source, contains("one JSON object per line"));
     expect(source, contains("helper scheduled"));
     expect(source, contains("relaunch attempt"));
+    expect(source, contains("cleanup retry"));
+    expect(source, contains("desktop_updater_stage_*"));
+    expect(source, contains("stale-staging window"));
     expect(source, contains("does not include a logging backend"));
     expect(source, isNot(contains("docs/plans")));
   });
@@ -70,6 +73,9 @@ void main() {
     expect(source, contains("descriptor signing"));
     expect(source, contains("repository signing"));
     expect(source, contains("Default package behavior writes no files"));
+    expect(source, contains("Inno Setup"));
+    expect(source, contains("unins###.exe"));
+    expect(source, contains("not full Inno installer updating"));
   });
 
   test("package metadata and changelog agree on current version", () {

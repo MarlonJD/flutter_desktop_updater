@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
+import "package:desktop_updater/src/core/staging_directory_cleanup.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart"
@@ -143,8 +144,11 @@ class UpdateClient {
     await _verifier.verifyDescriptor(descriptor);
     _ensureDescriptorPolicyAllowsDownload(descriptor);
 
-    final stagingRoot = await (_stagingParent ?? Directory.systemTemp)
-        .createTemp("desktop_updater_stage_");
+    final stagingParent = _stagingParent ?? Directory.systemTemp;
+    await cleanupStaleDesktopUpdaterStagingDirectories(parent: stagingParent);
+    final stagingRoot = await stagingParent.createTemp(
+      desktopUpdaterStagingPrefix,
+    );
     final artifactFile = File(path.join(stagingRoot.path, "artifact.zip"));
 
     try {

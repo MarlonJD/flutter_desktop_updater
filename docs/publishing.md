@@ -1117,6 +1117,25 @@ What you should do for production trust:
 - Keep the app executable and package identity stable.
 - Test update install from a normal user account, not only an admin shell.
 
+For apps that were originally installed with Inno Setup, Windows direct zip
+updates preserve Inno uninstall artifacts named `unins###.exe`,
+`unins###.dat`, and `unins###.msg` in the app root. This keeps the existing
+Windows uninstall entry usable when the updater replaces the Flutter Release
+payload.
+
+This is Inno-compatible direct zip updating, not full Inno installer updating.
+The updater does not download or execute an Inno `.exe` installer, and it does
+not regenerate Inno's uninstall log. If a zip update adds new files that were
+not part of the original installer, Inno may leave those files behind during
+uninstall.
+
+A successful Windows install should remove its `desktop_updater_stage_*`
+directory after the payload copy succeeds. If the app downloads an update but
+the install is cancelled, never handed to the native helper, or fails before the
+successful copy point, a staging directory can remain temporarily. Future update
+checks prune stale staging directories conservatively after they age past the
+cleanup window.
+
 When the app is installed under a protected machine-wide directory such as
 `C:\Program Files`, the Windows helper treats that install root as requiring
 elevation when the current process is not already elevated. It also checks

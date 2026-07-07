@@ -550,6 +550,33 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "    }\n"
       << "  }\n"
       << "}\n"
+      << "function Test-InstallerOwnedWindowsFile([string]$Name) {\n"
+      << "  if ([string]::IsNullOrWhiteSpace($Name)) { return $false }\n"
+      << "  return $Name -imatch '^unins[0-9][0-9][0-9]\\.(exe|dat|msg)$'\n"
+      << "}\n"
+      << "function Remove-StagingDirectoryWithRetry([string]$Path) {\n"
+      << "  if ([string]::IsNullOrWhiteSpace($Path)) { return }\n"
+      << "  Write-DiagnosticsEvent 'cleanup start'\n"
+      << "  if (-not (Test-Path -LiteralPath $Path)) {\n"
+      << "    Write-DiagnosticsEvent 'cleanup success'\n"
+      << "    return\n"
+      << "  }\n"
+      << "  $cleanupDeadline = (Get-Date).AddSeconds(30)\n"
+      << "  while ($true) {\n"
+      << "    try {\n"
+      << "      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop\n"
+      << "      Write-DiagnosticsEvent 'cleanup success'\n"
+      << "      return\n"
+      << "    } catch {\n"
+      << "      if ((Get-Date) -gt $cleanupDeadline) {\n"
+      << "        Write-DiagnosticsEvent 'cleanup failure'\n"
+      << "        return\n"
+      << "      }\n"
+      << "      Write-DiagnosticsEvent 'cleanup retry'\n"
+      << "      Start-Sleep -Milliseconds 500\n"
+      << "    }\n"
+      << "  }\n"
+      << "}\n"
       << "$backup = Join-Path ([IO.Path]::GetTempPath()) "
          "('desktop_updater_backup_' + $pidToWait)\n"
       << "if (Test-Path -LiteralPath $backup) { "
@@ -583,7 +610,11 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "    try {\n"
       << "      Write-DiagnosticsEvent 'move start'\n"
       << "      Get-ChildItem -LiteralPath $target -Force | ForEach-Object {\n"
-      << "        Remove-Item -LiteralPath $_.FullName -Recurse -Force\n"
+      << "        if ($_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)) {\n"
+      << "          Remove-Item -LiteralPath $_.FullName -Recurse -Force\n"
+      << "        } else {\n"
+      << "          Write-DiagnosticsEvent ('preserve installer file ' + $_.Name)\n"
+      << "        }\n"
       << "      }\n"
       << "      Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {\n"
       << "        Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force\n"
@@ -610,13 +641,7 @@ bool ScheduleInstallAndRelaunch(const std::wstring& staging_path,
       << "      Start-Sleep -Seconds 1\n"
       << "    }\n"
       << "  }\n"
-      << "  Write-DiagnosticsEvent 'cleanup start'\n"
-      << "  try {\n"
-      << "    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Stop\n"
-      << "    Write-DiagnosticsEvent 'cleanup success'\n"
-      << "  } catch {\n"
-      << "    Write-DiagnosticsEvent 'cleanup failure'\n"
-      << "  }\n"
+      << "  Remove-StagingDirectoryWithRetry -Path $staging\n"
       << "}\n"
       << "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
       << "} catch {\n"
@@ -787,6 +812,38 @@ bool IsKnownProtectedInstallDirectoryForTesting(
     }
   }
   return false;
+}
+
+bool IsInstallerOwnedWindowsFileForTesting(const std::wstring& file_name) {
+  const std::wstring name = fs::path(file_name).filename().wstring();
+  if (name.empty()) {
+    return false;
+  }
+
+  const size_t dot_position = name.rfind(L'.');
+  if (dot_position == std::wstring::npos) {
+    return false;
+  }
+
+  const std::wstring stem = name.substr(0, dot_position);
+  const std::wstring extension = name.substr(dot_position);
+  if (stem.size() != 8) {
+    return false;
+  }
+
+  if (_wcsnicmp(stem.c_str(), L"unins", 5) != 0) {
+    return false;
+  }
+
+  for (size_t index = 5; index < stem.size(); index += 1) {
+    if (stem[index] < L'0' || stem[index] > L'9') {
+      return false;
+    }
+  }
+
+  return _wcsicmp(extension.c_str(), L".exe") == 0 ||
+         _wcsicmp(extension.c_str(), L".dat") == 0 ||
+         _wcsicmp(extension.c_str(), L".msg") == 0;
 }
 
 // static

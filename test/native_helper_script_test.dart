@@ -146,6 +146,58 @@ void main() {
     expect(pruneIndex, lessThan(copyIndex));
   });
 
+  test("Windows helper preserves Inno uninstall artifacts during prune", () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    const predicateSnippet = "function Test-InstallerOwnedWindowsFile";
+    const preserveCondition =
+        r"$_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)";
+    const preserveEvent = "preserve installer file";
+    const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
+    const copySnippet =
+        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
+
+    final predicateIndex = source.indexOf(predicateSnippet);
+    final pruneIndex = source.indexOf(pruneSnippet);
+    final conditionIndex = source.indexOf(preserveCondition);
+    final eventIndex = source.indexOf(preserveEvent);
+    final copyIndex = source.indexOf(copySnippet);
+
+    expect(predicateIndex, isNonNegative);
+    expect(pruneIndex, isNonNegative);
+    expect(conditionIndex, isNonNegative);
+    expect(eventIndex, isNonNegative);
+    expect(copyIndex, isNonNegative);
+    expect(predicateIndex, lessThan(pruneIndex));
+    expect(pruneIndex, lessThan(copyIndex));
+    expect(conditionIndex, lessThan(copyIndex));
+  });
+
+  test("Windows helper retries staging cleanup after successful copy", () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    const cleanupFunction = "function Remove-StagingDirectoryWithRetry";
+    const retryEvent = "Write-DiagnosticsEvent 'cleanup retry'";
+    const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $staging";
+    const moveSuccess = "Write-DiagnosticsEvent 'move success'";
+    const relaunchSnippet = r"Start-Process -FilePath $exe";
+
+    final functionIndex = source.indexOf(cleanupFunction);
+    final retryIndex = source.indexOf(retryEvent);
+    final moveSuccessIndex = source.indexOf(moveSuccess);
+    final cleanupCallIndex = source.indexOf(cleanupCall);
+    final relaunchIndex = source.indexOf(relaunchSnippet);
+
+    expect(functionIndex, isNonNegative);
+    expect(retryIndex, isNonNegative);
+    expect(moveSuccessIndex, isNonNegative);
+    expect(cleanupCallIndex, isNonNegative);
+    expect(relaunchIndex, isNonNegative);
+    expect(functionIndex, lessThan(moveSuccessIndex));
+    expect(moveSuccessIndex, lessThan(cleanupCallIndex));
+    expect(cleanupCallIndex, lessThan(relaunchIndex));
+  });
+
   test("Windows helper updates uninstall DisplayVersion after overlay", () {
     final source =
         File("windows/desktop_updater_plugin.cpp").readAsStringSync();

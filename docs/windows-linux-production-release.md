@@ -61,6 +61,21 @@ Notes:
 - SmartScreen reputation is separate from a valid signature. A new publisher or
   newly issued certificate can still see warnings until reputation builds.
 
+### Inno Setup Installed Apps
+
+`desktop_updater` can update an app that was originally installed with Inno
+Setup when the update artifact is still the normal Windows Release directory
+zip. During Windows `wholeDirectoryReplace`, the helper preserves Inno uninstall
+artifacts named `unins###.exe`, `unins###.dat`, and `unins###.msg` in the app
+root so the existing uninstall entry remains usable.
+
+This is not full Inno installer updating, and this compatibility path does not
+run an Inno installer. Use it when you want Inno for first install and
+`desktop_updater` for direct zip updates. If your update policy requires
+installer-owned repair, modify, uninstall-log, or enterprise deployment
+behavior, track that as installer-based update support instead of relying on
+direct zip updates.
+
 ### Windows Install Location And UAC
 
 Windows applies different write permissions depending on where the app is
