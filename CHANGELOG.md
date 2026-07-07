@@ -1,3 +1,11 @@
+## 2.4.4
+
+* Fixed macOS `release publish` metadata so `release.json` preserves the
+  top-level `.app` bundle name while generated artifact zip filenames keep the
+  existing extension-stripped format.
+* Added regression coverage for macOS bundle-name staging metadata and
+  cross-platform zip packaging behavior.
+
 ## 2.4.3
 
 * Previewed a Windows protected-directory install fix that treats
