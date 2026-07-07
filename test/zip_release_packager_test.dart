@@ -68,4 +68,45 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("macOS zip artifact filename strips .app but descriptor keeps it",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("packager_");
+    try {
+      final input = Directory(path.join(tempDir.path, "Example.app"));
+      await input.create();
+      File(path.join(input.path, "app.txt")).writeAsStringSync("hello");
+      final output = Directory(path.join(tempDir.path, "out"));
+
+      final dittoCalls = <List<String>>[];
+      final result = await ZipReleasePackager(
+        runProcess: (executable, arguments) async {
+          dittoCalls.add([executable, ...arguments]);
+          await File(arguments.last).writeAsString("zip");
+          return ProcessResult(0, 0, "", "");
+        },
+      ).package(
+        ReleasePackageRequest(
+          input: input,
+          outputDirectory: output,
+          packageId: "com.example.app",
+          appName: "Example.app",
+          version: "2.0.0",
+          platform: "macos",
+          channel: "stable",
+          artifactUrl: Uri.parse(
+            "https://cdn.example.com/Example-2.0.0-macos.zip",
+          ),
+          installStrategy: "wholeBundleReplace",
+        ),
+      );
+
+      expect(path.basename(result.artifact.path), "Example-2.0.0-macos.zip");
+      expect(result.descriptor.appName, "Example.app");
+      expect(dittoCalls, hasLength(1));
+      expect(dittoCalls.single.first, "/usr/bin/ditto");
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
 }

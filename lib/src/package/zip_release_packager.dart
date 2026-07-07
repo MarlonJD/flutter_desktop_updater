@@ -20,7 +20,7 @@ class ZipReleasePackager implements ReleasePackager {
     final artifact = File(
       path.join(
         request.outputDirectory.path,
-        "${request.appName}-${request.version}-${request.platform}.zip",
+        "${_artifactNameStem(request.appName)}-${request.version}-${request.platform}.zip",
       ),
     );
 
@@ -90,4 +90,15 @@ class ZipReleasePackager implements ReleasePackager {
       throw FileSystemException("Package input does not exist", input.path);
     }
   }
+}
+
+String _artifactNameStem(String appName) {
+  var stem = path.basename(appName);
+  if (stem.endsWith(".app")) {
+    stem = stem.substring(0, stem.length - ".app".length);
+  }
+  if (stem.endsWith(".exe")) {
+    stem = stem.substring(0, stem.length - ".exe".length);
+  }
+  return stem;
 }
