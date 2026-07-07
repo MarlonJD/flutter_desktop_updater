@@ -158,6 +158,35 @@ void main() {
     });
   }
 
+  test("macOS publish keeps .app bundle name in release descriptor", () async {
+    final root = await _createFixture("macos");
+    final commands = <String>[];
+    final packager = _RecordingPackager(commands);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: packager,
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "macos",
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+      );
+
+      expect(packager.requests, hasLength(1));
+      expect(packager.requests.single.appName, "Egas Manager.app");
+      expect(
+        packager.requests.single.artifactUrl.toString(),
+        "https://updates.example.com/releases/2.1.0/macos/"
+        "Egas%20Manager-2.1.0-macos.zip",
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   test("release hooks run around packaging with environment contract",
       () async {
     final root = await _createHookFixture();
@@ -305,9 +334,11 @@ class _RecordingPackager implements ReleasePackager {
   _RecordingPackager(this.commands);
 
   final List<String> commands;
+  final List<ReleasePackageRequest> requests = [];
 
   @override
   Future<ReleasePackageResult> package(ReleasePackageRequest request) async {
+    requests.add(request);
     commands.add("PACKAGE ${request.input.path}");
     await request.outputDirectory.create(recursive: true);
     final artifact = File(

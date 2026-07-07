@@ -146,13 +146,13 @@ class ReleasePublisher {
     );
 
     output.writeln("Packaging update...");
-    final packageAppName = _artifactNameStem(metadata.appName);
+    final archiveAppName = _artifactNameStem(metadata.appName);
     final packageResult = await packager.package(
       ReleasePackageRequest(
         input: metadata.input,
         outputDirectory: layout.releaseDirectory,
         packageId: metadata.packageId,
-        appName: packageAppName,
+        appName: metadata.appName,
         version: metadata.version,
         buildNumber: metadata.buildNumber,
         platform: platform,
@@ -164,7 +164,7 @@ class ReleasePublisher {
 
     await upsertAppArchive(
       archiveFile: layout.appArchiveFile,
-      appName: packageAppName,
+      appName: archiveAppName,
       supportPolicy: overrides.minimumSupportedVersion == null
           ? null
           : ReleaseSupportPolicy(
