@@ -1,3 +1,15 @@
+## 2.4.5
+
+* Preserved Inno Setup uninstall artifacts named `unins###.exe`,
+  `unins###.dat`, and `unins###.msg` during Windows direct zip
+  `wholeDirectoryReplace` updates.
+* Retried Windows staging cleanup after a successful payload copy without
+  rolling back the already-installed update when cleanup still fails.
+* Added conservative Dart cleanup for old `desktop_updater_stage_*` directories
+  before creating a new staging directory.
+* Documented the Inno-compatible direct zip update boundary and clarified that
+  the updater still does not download or execute Inno `.exe` installers.
+
 ## 2.4.4
 
 * Fixed macOS `release publish` metadata so `release.json` preserves the

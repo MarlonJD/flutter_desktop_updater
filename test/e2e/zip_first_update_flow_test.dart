@@ -128,6 +128,49 @@ void main() {
     }
   });
 
+  test("removes stale staging directories before creating a new Windows stage",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
+    UpdateServer? server;
+    try {
+      final staleStage =
+          await Directory(path.join(tempDir.path, "desktop_updater_stage_old"))
+              .create();
+      await _setDirectoryLastModified(
+        staleStage,
+        DateTime.now().subtract(const Duration(days: 8)),
+      );
+
+      server = await UpdateServer.bind(tempDir);
+      await buildReleaseFixture(
+        root: tempDir,
+        baseUri: server.uri,
+        platform: "windows",
+      );
+
+      final client = UpdateClient(
+        appArchiveUrl: server.uri.resolve("app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "1.0.0",
+          buildNumber: "100",
+        ),
+        platform: "windows",
+        stagingParent: tempDir,
+      );
+      final check = await client.checkForUpdate();
+
+      final staged = await client.downloadVerifyAndStage(
+        descriptor: check!.descriptor,
+      );
+
+      expect(staleStage.existsSync(), isFalse);
+      expect(Directory(staged.stagingPath).existsSync(), isTrue);
+    } finally {
+      await server?.close();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("checksum mismatch fails before extraction", () async {
     final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
     UpdateServer? server;
@@ -189,4 +232,47 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+}
+
+Future<void> _setDirectoryLastModified(
+  Directory directory,
+  DateTime value,
+) async {
+  final result = Platform.isWindows
+      ? await _setDirectoryLastModifiedWithPowerShell(directory, value)
+      : await _setDirectoryLastModifiedWithTouch(directory, value);
+  if (result.exitCode != 0) {
+    fail(
+      "Unable to set last modified for ${directory.path}: "
+      "${result.stderr}${result.stdout}",
+    );
+  }
+}
+
+Future<ProcessResult> _setDirectoryLastModifiedWithPowerShell(
+  Directory directory,
+  DateTime value,
+) {
+  final escapedPath = directory.path.replaceAll("'", "''");
+  final timestamp = value.toUtc().toIso8601String();
+  return Process.run("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    "\$item = Get-Item -LiteralPath '$escapedPath'; "
+        "\$item.LastWriteTimeUtc = [DateTime]::Parse('$timestamp')",
+  ]);
+}
+
+Future<ProcessResult> _setDirectoryLastModifiedWithTouch(
+  Directory directory,
+  DateTime value,
+) {
+  final local = value.toLocal();
+  final timestamp = "${local.year.toString().padLeft(4, "0")}"
+      "${local.month.toString().padLeft(2, "0")}"
+      "${local.day.toString().padLeft(2, "0")}"
+      "${local.hour.toString().padLeft(2, "0")}"
+      "${local.minute.toString().padLeft(2, "0")}"
+      ".${local.second.toString().padLeft(2, "0")}";
+  return Process.run("touch", ["-t", timestamp, directory.path]);
 }

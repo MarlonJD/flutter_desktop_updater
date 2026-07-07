@@ -52,6 +52,22 @@ TEST(DesktopUpdaterPlugin, RemovedFileMustBeStrictChildPath) {
   EXPECT_FALSE(IsStrictChildPathForTesting(L"C:\\App", L"C:\\Other\\data.txt"));
 }
 
+TEST(DesktopUpdaterPlugin, InnoUninstallArtifactsAreInstallerOwnedFiles) {
+  EXPECT_TRUE(IsInstallerOwnedWindowsFileForTesting(L"unins000.exe"));
+  EXPECT_TRUE(IsInstallerOwnedWindowsFileForTesting(L"unins000.dat"));
+  EXPECT_TRUE(IsInstallerOwnedWindowsFileForTesting(L"unins000.msg"));
+  EXPECT_TRUE(IsInstallerOwnedWindowsFileForTesting(L"UNINS001.EXE"));
+  EXPECT_TRUE(IsInstallerOwnedWindowsFileForTesting(
+      L"C:\\Program Files\\Example\\unins002.dat"));
+
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L"unins.exe"));
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L"unins00.exe"));
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L"unins000.tmp"));
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L"uninstall.exe"));
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L"example.exe"));
+  EXPECT_FALSE(IsInstallerOwnedWindowsFileForTesting(L""));
+}
+
 TEST(DesktopUpdaterPlugin, ProgramFilesInstallDirectoryIsProtected) {
   const std::vector<std::wstring> protected_roots = {
       L"C:\\Program Files",

@@ -133,6 +133,18 @@ the user cancels the UAC prompt, the app remains open and `installUpdate`
 returns an `InstallError`; no post-exit helper log is written because the helper
 never starts.
 
+After a successful Windows copy, the helper retries staging cleanup for a short
+bounded window. The diagnostics log may include `cleanup retry` before
+`cleanup success` when antivirus, indexing, or another process temporarily
+holds a file. If cleanup still fails, the helper writes `cleanup failure` and
+continues to relaunch because the update has already been copied into place.
+
+Before staging a new update, the Dart update client removes old
+`desktop_updater_stage_*` directories from the staging parent when they are
+older than the bounded stale-staging window. Recent staging directories are left
+alone so a user who downloaded an update but has not installed it yet does not
+lose the staged update.
+
 ## Recovery Store
 
 `diagnosticsLogPath` tells you what happened inside the native helper. It does
