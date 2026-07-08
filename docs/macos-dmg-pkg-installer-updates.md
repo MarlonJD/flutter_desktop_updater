@@ -175,6 +175,17 @@ export DESKTOP_UPDATER_NOTARY_PROFILE="desktop-updater-notary"
 export DESKTOP_UPDATER_TEST_BUNDLE_ID="com.example.desktopUpdaterSmoke"
 ```
 
+Optional smoke overrides:
+
+```sh
+export DESKTOP_UPDATER_TEST_APP_NAME="Desktop Updater Smoke"
+export DESKTOP_UPDATER_TEST_VERSION_V1="1.0.0"
+export DESKTOP_UPDATER_TEST_VERSION_V2="1.0.1"
+export DESKTOP_UPDATER_TEST_BUILD_V1="100"
+export DESKTOP_UPDATER_TEST_BUILD_V2="101"
+export DESKTOP_UPDATER_TEST_WORKDIR="/tmp/desktop_updater_macos_smoke"
+```
+
 Smoke commands:
 
 ```sh
@@ -204,3 +215,7 @@ not run: macOS production smoke requires local Developer ID Application cert, De
 
 Use `blocked` when a macOS host is available but a required certificate,
 identity, keychain, or notary profile is missing.
+
+```text
+blocked: DESKTOP_UPDATER_DEV_ID_APP is required for macOS production smoke.
+```

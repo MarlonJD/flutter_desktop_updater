@@ -28,9 +28,48 @@ void main() {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 
     expect(source, contains("cleanup: removed smoke app from /Applications"));
+    expect(source, contains("_isSmokeOwnedMacOSApp"));
+    expect(source, contains("desktop_updater_smoke_owner.txt"));
     expect(source, contains("--cleanup-forget-receipt"));
     expect(source, contains("pkgutil --forget"));
     expect(source, contains("silent privileged install not run"));
+  });
+
+  test("DMG update smoke runs the hosted update flow before success evidence",
+      () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    final hostedFlow = source.indexOf("expectInstallerHandoff: false");
+    final replacementEvidence =
+        source.indexOf("dmg-update: whole-bundle replacement OK");
+    final relaunchEvidence = source.indexOf("dmg-update: v2 relaunch OK");
+
+    expect(hostedFlow, isNonNegative);
+    expect(replacementEvidence, greaterThan(hostedFlow));
+    expect(relaunchEvidence, greaterThan(hostedFlow));
+    expect(source, contains("--production-gates"));
+    expect(source, contains("--relaunch"));
+  });
+
+  test("PKG installer smoke stages through hosted flow before handoff", () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    final hostedFlow = source.indexOf("expectInstallerHandoff: true");
+    final installerEvidence =
+        source.indexOf("pkg-installer: Installer.app handoff OK");
+
+    expect(hostedFlow, isNonNegative);
+    expect(installerEvidence, greaterThan(hostedFlow));
+    expect(source, contains("--expect-installer-handoff"));
+    expect(source, contains("pkg-installer: staged PKG update flow OK"));
+  });
+
+  test("macOS production smoke writes blocked evidence for missing trust env",
+      () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    expect(source, contains(r"blocked: $name is required"));
+    expect(source, contains("blocked: macOS production smoke requires"));
   });
 
   test("CI documents production smoke as local manual evidence", () {

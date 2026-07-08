@@ -55,6 +55,7 @@ class _HomePageState extends State<HomePage> {
       appArchiveUrl: _configuredAppArchiveUrl(),
       releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
+      diagnosticsLogPath: _configuredHostedDiagnosticsLogPath(),
       allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
       localization: const DesktopUpdateLocalization(
         updateAvailableText: "Update available",
@@ -105,6 +106,15 @@ class _HomePageState extends State<HomePage> {
       return Uri.parse(_defaultReleaseNotesUrl);
     }
     return Uri.parse(value.trim());
+  }
+
+  String? _configuredHostedDiagnosticsLogPath() {
+    final value =
+        Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"];
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    return value.trim();
   }
 
   Future<void> _checkForUpdatesManually() async {

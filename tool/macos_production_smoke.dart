@@ -1,6 +1,8 @@
 import "dart:async";
+import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart" as crypto;
 import "package:path/path.dart" as path;
 
 const _requiredEnv = [
@@ -14,8 +16,13 @@ const _optionalEnv = {
   "DESKTOP_UPDATER_TEST_APP_NAME": "Desktop Updater Smoke",
   "DESKTOP_UPDATER_TEST_VERSION_V1": "1.0.0",
   "DESKTOP_UPDATER_TEST_VERSION_V2": "1.0.1",
+  "DESKTOP_UPDATER_TEST_BUILD_V1": "100",
+  "DESKTOP_UPDATER_TEST_BUILD_V2": "101",
   "DESKTOP_UPDATER_TEST_WORKDIR": "/tmp/desktop_updater_macos_smoke",
 };
+
+const _smokeOwnerFileName = "desktop_updater_smoke_owner.txt";
+const _updateSentinelFileName = "desktop_updater_smoke.txt";
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
@@ -32,23 +39,28 @@ Future<void> main(List<String> args) async {
     cleanupForgetReceipt: cleanupForgetReceipt,
   );
 
-  switch (command) {
-    case "doctor":
-      await smoke.doctor();
-    case "dmg-first-install":
-      await smoke.dmgFirstInstall();
-    case "move-to-applications":
-      await smoke.moveToApplications();
-    case "dmg-update":
-      await smoke.dmgUpdate();
-    case "pkg-installer":
-      await smoke.pkgInstaller();
-    case "all":
-      await smoke.all();
-    default:
-      stderr.writeln("Unknown macOS production smoke command: $command");
-      _usage();
-      exitCode = 64;
+  try {
+    switch (command) {
+      case "doctor":
+        await smoke.doctor();
+      case "dmg-first-install":
+        await smoke.dmgFirstInstall();
+      case "move-to-applications":
+        await smoke.moveToApplications();
+      case "dmg-update":
+        await smoke.dmgUpdate();
+      case "pkg-installer":
+        await smoke.pkgInstaller();
+      case "all":
+        await smoke.all();
+      default:
+        stderr.writeln("Unknown macOS production smoke command: $command");
+        _usage();
+        exitCode = 64;
+    }
+  } on Object catch (error) {
+    stderr.writeln(error);
+    exitCode = 1;
   }
 }
 
@@ -72,6 +84,8 @@ Optional environment:
   DESKTOP_UPDATER_TEST_APP_NAME
   DESKTOP_UPDATER_TEST_VERSION_V1
   DESKTOP_UPDATER_TEST_VERSION_V2
+  DESKTOP_UPDATER_TEST_BUILD_V1
+  DESKTOP_UPDATER_TEST_BUILD_V2
   DESKTOP_UPDATER_TEST_UPDATE_BASE_URL
   DESKTOP_UPDATER_TEST_WORKDIR
   DESKTOP_UPDATER_KEEP_MACOS_SMOKE
@@ -98,6 +112,26 @@ class _MacOSProductionSmoke {
   String get packageId => _env("DESKTOP_UPDATER_TEST_BUNDLE_ID", "");
 
   String get packageReceiptId => "$packageId.pkg";
+
+  String get versionV1 => _env(
+        "DESKTOP_UPDATER_TEST_VERSION_V1",
+        _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V1"]!,
+      );
+
+  String get versionV2 => _env(
+        "DESKTOP_UPDATER_TEST_VERSION_V2",
+        _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V2"]!,
+      );
+
+  String get buildV1 => _env(
+        "DESKTOP_UPDATER_TEST_BUILD_V1",
+        _optionalEnv["DESKTOP_UPDATER_TEST_BUILD_V1"]!,
+      );
+
+  String get buildV2 => _env(
+        "DESKTOP_UPDATER_TEST_BUILD_V2",
+        _optionalEnv["DESKTOP_UPDATER_TEST_BUILD_V2"]!,
+      );
 
   Directory get workDir {
     return Directory(
@@ -130,7 +164,7 @@ class _MacOSProductionSmoke {
         await _requireExecutable(executable);
       }
 
-      final env = _readRequiredEnvironment();
+      final env = _readRequiredEnvironment(evidence: evidence);
       await _requireIdentity(
         identity: env["DESKTOP_UPDATER_DEV_ID_APP"]!,
         policy: "codesigning",
@@ -158,10 +192,9 @@ class _MacOSProductionSmoke {
     try {
       final env = await _requireLocalProductionPrerequisites(evidence);
       final app = await _buildSignedExampleApp(
-        version: _env(
-          "DESKTOP_UPDATER_TEST_VERSION_V1",
-          _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V1"]!,
-        ),
+        version: versionV1,
+        buildNumber: buildV1,
+        includeUpdateSentinel: false,
         evidence: evidence,
         env: env,
       );
@@ -173,7 +206,8 @@ class _MacOSProductionSmoke {
       try {
         evidence.line("dmg-first-install: mounted read-only OK");
         await _verifyAppTrust(
-            Directory(path.join(mountPoint, path.basename(app.path))));
+          Directory(path.join(mountPoint, path.basename(app.path))),
+        );
         evidence.line("dmg-first-install: contained app Gatekeeper OK");
       } finally {
         await _detachDmg(mountPoint);
@@ -191,10 +225,9 @@ class _MacOSProductionSmoke {
       final dmg = File(path.join(workDir.path, "$appName.dmg"));
       if (!await dmg.exists()) {
         final app = await _buildSignedExampleApp(
-          version: _env(
-            "DESKTOP_UPDATER_TEST_VERSION_V1",
-            _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V1"]!,
-          ),
+          version: versionV1,
+          buildNumber: buildV1,
+          includeUpdateSentinel: false,
           evidence: evidence,
           env: env,
         );
@@ -204,8 +237,10 @@ class _MacOSProductionSmoke {
       try {
         evidence.line("move-to-applications: source classified as diskImage");
         final sourceApp = Directory(path.join(mountPoint, appBundleName));
-        final targetApp = Directory(path.join("/Applications", appBundleName));
-        await _runChecked("/usr/bin/ditto", [sourceApp.path, targetApp.path]);
+        final targetApp = await _installSmokeAppToApplications(
+          app: sourceApp,
+          evidence: evidence,
+        );
         evidence.line("move-to-applications: copied to /Applications OK");
         await _runChecked("/usr/bin/open", ["-n", targetApp.path]);
         evidence.line("move-to-applications: relaunched copied app OK");
@@ -222,17 +257,26 @@ class _MacOSProductionSmoke {
     final evidence = await _Evidence.open("dmg-update");
     try {
       final env = await _requireLocalProductionPrerequisites(evidence);
+      final v1App = await _buildSignedExampleApp(
+        version: versionV1,
+        buildNumber: buildV1,
+        includeUpdateSentinel: false,
+        evidence: evidence,
+        env: env,
+      );
+      final installedApp = await _installSmokeAppToApplications(
+        app: v1App,
+        evidence: evidence,
+      );
       final app = await _buildSignedExampleApp(
-        version: _env(
-          "DESKTOP_UPDATER_TEST_VERSION_V2",
-          _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V2"]!,
-        ),
+        version: versionV2,
+        buildNumber: buildV2,
+        includeUpdateSentinel: true,
         evidence: evidence,
         env: env,
       );
       final dmg =
           await _createSignedDmg(app: app, evidence: evidence, env: env);
-      evidence.line("dmg-update: hosted app archive OK");
       await _runChecked("/usr/bin/shasum", ["-a", "256", dmg.path]);
       evidence.line("dmg-update: DMG artifact SHA-256 OK");
       await _assessDmg(dmg);
@@ -240,14 +284,38 @@ class _MacOSProductionSmoke {
       final mountPoint = await _mountDmg(dmg);
       try {
         await _verifyAppTrust(
-            Directory(path.join(mountPoint, path.basename(app.path))));
+          Directory(path.join(mountPoint, path.basename(app.path))),
+        );
         evidence.line("dmg-update: contained app Apple trust OK");
       } finally {
         await _detachDmg(mountPoint);
       }
-      evidence
-        ..line("dmg-update: whole-bundle replacement OK")
-        ..line("dmg-update: v2 relaunch OK");
+      await _withHostedRelease(
+        artifact: dmg,
+        artifactKind: "dmg",
+        version: versionV2,
+        buildNumber: buildV2,
+        install: {
+          "strategy": "wholeBundleReplace",
+          "macosDmg": {
+            "appBundleName": appBundleName,
+            "verifyPrimarySignature": true,
+          },
+        },
+        evidence: evidence,
+        hostedEvidenceLine: "dmg-update: hosted app archive OK",
+        body: (appArchiveUrl) {
+          return _runHostedUpdateSmoke(
+            app: installedApp,
+            appArchiveUrl: appArchiveUrl,
+            expectInstallerHandoff: false,
+          );
+        },
+      );
+      evidence.line("dmg-update: whole-bundle replacement OK");
+      await _waitForRelaunchedApp(installedApp);
+      evidence.line("dmg-update: v2 relaunch OK");
+      await _terminateSmokeApp(installedApp);
     } finally {
       await evidence.close();
     }
@@ -257,11 +325,21 @@ class _MacOSProductionSmoke {
     final evidence = await _Evidence.open("pkg-installer");
     try {
       final env = await _requireLocalProductionPrerequisites(evidence);
+      final v1App = await _buildSignedExampleApp(
+        version: versionV1,
+        buildNumber: buildV1,
+        includeUpdateSentinel: false,
+        evidence: evidence,
+        env: env,
+      );
+      final installedApp = await _installSmokeAppToApplications(
+        app: v1App,
+        evidence: evidence,
+      );
       final app = await _buildSignedExampleApp(
-        version: _env(
-          "DESKTOP_UPDATER_TEST_VERSION_V2",
-          _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V2"]!,
-        ),
+        version: versionV2,
+        buildNumber: buildV2,
+        includeUpdateSentinel: true,
         evidence: evidence,
         env: env,
       );
@@ -271,7 +349,29 @@ class _MacOSProductionSmoke {
         ..line("pkg-installer: package signature OK")
         ..line("pkg-installer: Gatekeeper install assessment OK")
         ..line("pkg-installer: stapler validation OK");
-      await _runChecked("/usr/bin/open", [pkg.path]);
+      await _withHostedRelease(
+        artifact: pkg,
+        artifactKind: "pkgInstaller",
+        version: versionV2,
+        buildNumber: buildV2,
+        install: {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [packageReceiptId],
+            "relaunchAfterInstall": false,
+          },
+        },
+        evidence: evidence,
+        hostedEvidenceLine: "pkg-installer: staged PKG update flow OK",
+        body: (appArchiveUrl) {
+          return _runHostedUpdateSmoke(
+            app: installedApp,
+            appArchiveUrl: appArchiveUrl,
+            expectInstallerHandoff: true,
+          );
+        },
+      );
       evidence
         ..line("pkg-installer: Installer.app handoff OK")
         ..line("pkg-installer: silent privileged install not run");
@@ -296,7 +396,13 @@ class _MacOSProductionSmoke {
     try {
       final app = Directory(path.join("/Applications", appBundleName));
       if (await app.exists()) {
-        await app.delete(recursive: true);
+        if (await _isSmokeOwnedMacOSApp(app)) {
+          await app.delete(recursive: true);
+        } else {
+          evidence.line(
+            "cleanup: skipped non-smoke app at ${app.path}",
+          );
+        }
       }
       evidence.line("cleanup: removed smoke app from /Applications");
 
@@ -333,25 +439,30 @@ class _MacOSProductionSmoke {
       );
       throw StateError("macOS production smoke requires macOS.");
     }
-    return _readRequiredEnvironment();
+    return _readRequiredEnvironment(evidence: evidence);
   }
 
   Future<Directory> _buildSignedExampleApp({
     required String version,
+    required String buildNumber,
+    required bool includeUpdateSentinel,
     required _Evidence evidence,
     required Map<String, String> env,
   }) async {
     await workDir.create(recursive: true);
     await _runChecked(
-        "flutter",
-        [
-          "build",
-          "macos",
-          "--release",
-          "--build-name",
-          version,
-        ],
-        workingDirectory: "example");
+      "flutter",
+      [
+        "build",
+        "macos",
+        "--release",
+        "--build-name",
+        version,
+        "--build-number",
+        buildNumber,
+      ],
+      workingDirectory: "example",
+    );
     final builtApp = Directory(
       path.join(
         "example",
@@ -365,7 +476,30 @@ class _MacOSProductionSmoke {
     );
     if (!await builtApp.exists()) {
       throw FileSystemException(
-          "Built example app was not found.", builtApp.path);
+        "Built example app was not found.",
+        builtApp.path,
+      );
+    }
+    final smokeApp = Directory(
+      path.join(workDir.path, "apps", version, appBundleName),
+    );
+    if (await smokeApp.exists()) {
+      await smokeApp.delete(recursive: true);
+    }
+    await smokeApp.parent.create(recursive: true);
+    await _runChecked("/usr/bin/ditto", [builtApp.path, smokeApp.path]);
+    await _writeSmokeOwnerMarker(smokeApp);
+    if (includeUpdateSentinel) {
+      await File(
+        path.join(
+          smokeApp.path,
+          "Contents",
+          "Resources",
+          _updateSentinelFileName,
+        ),
+      ).writeAsString(
+        "desktop_updater macOS production smoke $version+$buildNumber\n",
+      );
     }
     await _runChecked("/usr/bin/codesign", [
       "--force",
@@ -375,11 +509,11 @@ class _MacOSProductionSmoke {
       "--timestamp",
       "--sign",
       env["DESKTOP_UPDATER_DEV_ID_APP"]!,
-      builtApp.path,
+      smokeApp.path,
     ]);
-    await _notarizeAndStaple(builtApp.path, env);
+    await _notarizeAndStaple(smokeApp.path, env);
     evidence.line("build: signed, notarized, and stapled app OK");
-    return builtApp;
+    return smokeApp;
   }
 
   Future<File> _createSignedDmg({
@@ -464,6 +598,169 @@ class _MacOSProductionSmoke {
     await _notarizeAndStaple(product.path, env);
     evidence.line("pkg: signed, notarized, and stapled PKG OK");
     return product;
+  }
+
+  Future<Directory> _installSmokeAppToApplications({
+    required Directory app,
+    required _Evidence evidence,
+  }) async {
+    final targetApp = Directory(path.join("/Applications", appBundleName));
+    if (await targetApp.exists() && !await _isSmokeOwnedMacOSApp(targetApp)) {
+      evidence.line(
+        "blocked: refusing to replace non-smoke app at ${targetApp.path}",
+      );
+      throw StateError(
+        "Refusing to replace non-smoke app at ${targetApp.path}.",
+      );
+    }
+    if (await targetApp.exists()) {
+      await targetApp.delete(recursive: true);
+    }
+    await _runChecked("/usr/bin/ditto", [app.path, targetApp.path]);
+    await _verifyAppTrust(targetApp);
+    return targetApp;
+  }
+
+  Future<void> _withHostedRelease({
+    required File artifact,
+    required String artifactKind,
+    required String version,
+    required String buildNumber,
+    required Map<String, Object?> install,
+    required _Evidence evidence,
+    required String hostedEvidenceLine,
+    required Future<void> Function(Uri appArchiveUrl) body,
+  }) async {
+    final hostedRoot =
+        Directory(path.join(workDir.path, "hosted", artifactKind));
+    if (await hostedRoot.exists()) {
+      await hostedRoot.delete(recursive: true);
+    }
+    await hostedRoot.create(recursive: true);
+
+    final hostedArtifact = File(
+      path.join(hostedRoot.path, path.basename(artifact.path)),
+    );
+    await artifact.copy(hostedArtifact.path);
+
+    await _withStaticServer(hostedRoot, (baseUrl) async {
+      final artifactUrl =
+          _resolveUrl(baseUrl, path.basename(hostedArtifact.path));
+      final releaseUrl = _resolveUrl(baseUrl, "release.json");
+      final appArchiveUrl = _resolveUrl(baseUrl, "app-archive.json");
+      final artifactSha256 = await _sha256File(hostedArtifact);
+      await File(path.join(hostedRoot.path, "release.json")).writeAsString(
+        const JsonEncoder.withIndent("  ").convert({
+          "schemaVersion": 3,
+          "packageId": packageId,
+          "appName": appBundleName,
+          "version": version,
+          "buildNumber": int.parse(buildNumber),
+          "platform": "macos",
+          "channel": "stable",
+          "artifact": {
+            "kind": artifactKind,
+            "url": artifactUrl.toString(),
+            "sha256": artifactSha256,
+            "length": await hostedArtifact.length(),
+          },
+          "install": install,
+          "minimumUpdaterVersion": "2.0.0",
+          "generatedAt": DateTime.now().toUtc().toIso8601String(),
+        }),
+      );
+      await File(path.join(hostedRoot.path, "app-archive.json")).writeAsString(
+        const JsonEncoder.withIndent("  ").convert({
+          "schemaVersion": 3,
+          "appName": appName,
+          "items": [
+            {
+              "version": version,
+              "buildNumber": int.parse(buildNumber),
+              "platform": "macos",
+              "channel": "stable",
+              "mandatory": false,
+              "release": releaseUrl.toString(),
+            },
+          ],
+        }),
+      );
+      evidence.line(hostedEvidenceLine);
+      await body(appArchiveUrl);
+    });
+  }
+
+  Future<void> _runHostedUpdateSmoke({
+    required Directory app,
+    required Uri appArchiveUrl,
+    required bool expectInstallerHandoff,
+  }) async {
+    final diagnosticsLogPath = path.join(
+      workDir.path,
+      "hosted-smoke-diagnostics-${expectInstallerHandoff ? "pkg" : "dmg"}.jsonl",
+    );
+    await File(diagnosticsLogPath).parent.create(recursive: true);
+    final arguments = [
+      "run",
+      "example/tool/hosted_update_smoke.dart",
+      "--app",
+      app.path,
+      "--app-archive-url",
+      appArchiveUrl.toString(),
+      "--production-gates",
+      "--diagnostics-log",
+      diagnosticsLogPath,
+      if (expectInstallerHandoff)
+        "--expect-installer-handoff"
+      else
+        "--relaunch",
+    ];
+    await _runChecked("dart", arguments);
+  }
+
+  Future<void> _waitForRelaunchedApp(Directory app) async {
+    final executable = _macOSExecutablePath(app);
+    final deadline = DateTime.now().add(const Duration(seconds: 45));
+    while (DateTime.now().isBefore(deadline)) {
+      final result = await Process.run("/usr/bin/pgrep", ["-f", executable]);
+      if (result.exitCode == 0) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    throw TimeoutException("Timed out waiting for relaunched app: $executable");
+  }
+
+  Future<void> _terminateSmokeApp(Directory app) async {
+    await Process.run("/usr/bin/pkill", ["-f", _macOSExecutablePath(app)]);
+  }
+
+  Future<void> _writeSmokeOwnerMarker(Directory app) async {
+    final marker = File(
+      path.join(app.path, "Contents", "Resources", _smokeOwnerFileName),
+    );
+    await marker.parent.create(recursive: true);
+    await marker.writeAsString(
+      "desktop_updater macOS production smoke\n"
+      "appName=$appName\n"
+      "packageId=$packageId\n",
+    );
+  }
+
+  Future<bool> _isSmokeOwnedMacOSApp(Directory app) async {
+    final marker = File(
+      path.join(app.path, "Contents", "Resources", _smokeOwnerFileName),
+    );
+    if (!await marker.exists()) {
+      return false;
+    }
+    final contents = await marker.readAsString();
+    return contents.contains("desktop_updater macOS production smoke") &&
+        contents.contains("packageId=$packageId");
+  }
+
+  String _macOSExecutablePath(Directory app) {
+    return path.join(app.path, "Contents", "MacOS", "desktop_updater_example");
   }
 
   Future<void> _notarizeAndStaple(
@@ -565,6 +862,53 @@ class _MacOSProductionSmoke {
   }
 }
 
+Future<T> _withStaticServer<T>(
+  Directory root,
+  Future<T> Function(Uri baseUrl) body,
+) async {
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  final subscription = server.listen((request) async {
+    final relativePath = path.normalize(
+      path.joinAll(request.uri.pathSegments.map(Uri.decodeComponent)),
+    );
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await request.response.close();
+      return;
+    }
+
+    final file = File(path.join(root.path, relativePath));
+    if (!await file.exists()) {
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+      return;
+    }
+
+    request.response.headers.contentLength = await file.length();
+    if (file.path.endsWith(".json")) {
+      request.response.headers.contentType = ContentType.json;
+    }
+    await file.openRead().pipe(request.response);
+  });
+
+  try {
+    final baseUrl = Uri.parse("http://127.0.0.1:${server.port}/");
+    return await body(baseUrl);
+  } finally {
+    await subscription.cancel();
+    await server.close(force: true);
+  }
+}
+
+Uri _resolveUrl(Uri baseUrl, String segment) {
+  return baseUrl.resolveUri(Uri(pathSegments: [segment]));
+}
+
+Future<String> _sha256File(File file) async {
+  final digest = await crypto.sha256.bind(file.openRead()).first;
+  return digest.toString();
+}
+
 class _Evidence {
   _Evidence._(this.file, this._sink);
 
@@ -592,11 +936,15 @@ class _Evidence {
   }
 }
 
-Map<String, String> _readRequiredEnvironment() {
+Map<String, String> _readRequiredEnvironment({_Evidence? evidence}) {
   final values = <String, String>{};
   for (final name in _requiredEnv) {
     final value = Platform.environment[name];
     if (value == null || value.trim().isEmpty) {
+      evidence?.line("blocked: $name is required for macOS production smoke.");
+      evidence?.line(
+        "blocked: macOS production smoke requires local Developer ID Application cert, Developer ID Installer cert, notary profile, and Apple notarization service access.",
+      );
       throw StateError("$name is required for macOS production smoke.");
     }
     values[name] = value;
