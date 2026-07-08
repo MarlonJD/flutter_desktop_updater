@@ -10,13 +10,152 @@ void main() {
     expect(descriptor.install.strategy, "wholeBundleReplace");
   });
 
-  test("rejects missing artifact fields", () {
-    final json = _descriptorJson()..remove("artifact");
+  test("parses a macOS DMG update descriptor", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "platform": "macos",
+      "artifact": {
+        "kind": "dmg",
+        "url": "https://cdn.example.com/Example-2.6.0.dmg",
+        "sha256": "b" * 64,
+        "length": 42,
+      },
+      "install": {
+        "strategy": "wholeBundleReplace",
+        "macosDmg": {
+          "appBundleName": "Example.app",
+          "verifyPrimarySignature": true,
+        },
+      },
+      "minimumUpdaterVersion": "2.6.0",
+    });
+
+    expect(descriptor.artifact.kind, "dmg");
+    expect(descriptor.install.strategy, "wholeBundleReplace");
+    expect(descriptor.install.macosDmg!.appBundleName, "Example.app");
+    expect(descriptor.install.macosDmg!.verifyPrimarySignature, isTrue);
+  });
+
+  test("parses a macOS PKG installer descriptor", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "platform": "macos",
+      "artifact": {
+        "kind": "pkgInstaller",
+        "url": "https://cdn.example.com/Example-2.6.0.pkg",
+        "sha256": "c" * 64,
+        "length": 43,
+      },
+      "install": {
+        "strategy": "pkgInstaller",
+        "macosPkg": {
+          "launchMode": "installerApp",
+          "expectedPackageIds": ["com.example.app.pkg"],
+          "relaunchAfterInstall": false,
+        },
+      },
+      "minimumUpdaterVersion": "2.6.0",
+    });
+
+    expect(descriptor.artifact.kind, "pkgInstaller");
+    expect(descriptor.install.strategy, "pkgInstaller");
+    expect(descriptor.install.macosPkg!.launchMode, "installerApp");
+    expect(descriptor.install.macosPkg!.expectedPackageIds, [
+      "com.example.app.pkg",
+    ]);
+    expect(descriptor.install.macosPkg!.relaunchAfterInstall, isFalse);
+  });
+
+  test("rejects DMG artifacts outside macOS whole-bundle replacement", () {
+    final json = {
+      ..._descriptorJson(),
+      "platform": "windows",
+      "artifact": {
+        "kind": "dmg",
+        "url": "https://cdn.example.com/Example.dmg",
+        "sha256": "b" * 64,
+        "length": 42,
+      },
+      "install": {"strategy": "wholeBundleReplace"},
+    };
 
     expect(
       () => ReleaseDescriptor.fromJson(json),
-      throwsFormatException,
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("dmg artifacts are only supported for macos"),
+        ),
+      ),
     );
+  });
+
+  test("rejects PKG artifacts without pkgInstaller strategy", () {
+    final json = {
+      ..._descriptorJson(),
+      "platform": "macos",
+      "artifact": {
+        "kind": "pkgInstaller",
+        "url": "https://cdn.example.com/Example.pkg",
+        "sha256": "c" * 64,
+        "length": 43,
+      },
+      "install": {"strategy": "wholeBundleReplace"},
+    };
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains(
+            "pkgInstaller artifacts require install.strategy pkgInstaller",
+          ),
+        ),
+      ),
+    );
+  });
+
+  test("rejects pkgInstaller strategy without PKG artifact", () {
+    final json = {
+      ..._descriptorJson(),
+      "platform": "macos",
+      "artifact": {
+        "kind": "zip",
+        "url": "https://cdn.example.com/Example.zip",
+        "sha256": "a" * 64,
+        "length": 12,
+      },
+      "install": {
+        "strategy": "pkgInstaller",
+        "macosPkg": {
+          "launchMode": "installerApp",
+          "expectedPackageIds": ["com.example.app.pkg"],
+        },
+      },
+    };
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains(
+            "pkgInstaller strategy is only supported for pkgInstaller "
+            "artifacts",
+          ),
+        ),
+      ),
+    );
+  });
+
+  test("rejects missing artifact fields", () {
+    final json = _descriptorJson()..remove("artifact");
+
+    expect(() => ReleaseDescriptor.fromJson(json), throwsFormatException);
   });
 
   test("keeps buildNumber optional in release descriptors", () {
@@ -38,8 +177,9 @@ void main() {
       },
     });
 
-    final signature = descriptor.toCanonicalSignatureJson()["signature"]
-        as Map<String, dynamic>;
+    final signature =
+        descriptor.toCanonicalSignatureJson()["signature"]
+            as Map<String, dynamic>;
     expect(signature["value"], "");
   });
 
