@@ -171,6 +171,26 @@ class UpdateClient {
         ),
       );
 
+      if (descriptor.artifact.kind == "innoInstaller") {
+        if (descriptor.platform != "windows" || platform != "windows") {
+          throw UnsupportedError(
+            "Inno installer updates are only supported on Windows.",
+          );
+        }
+        final installerFile =
+            File(path.join(stagingRoot.path, "installer.exe"));
+        await artifactFile.rename(installerFile.path);
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
+        return UpdateStageResult(
+          descriptor: descriptor,
+          stagingPath: stagingRoot.path,
+        );
+      }
+
       if (descriptor.platform == "macos") {
         await runDittoExtractZip(
           archivePath: artifactFile.path,
