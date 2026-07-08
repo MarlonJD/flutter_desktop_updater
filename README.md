@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.4.5
+  desktop_updater: ^2.4.6-inno.0
 ```
 
 Point your app at the hosted archive:

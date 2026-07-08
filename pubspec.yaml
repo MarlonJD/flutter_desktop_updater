@@ -1,6 +1,6 @@
 name: desktop_updater
 description: "Sparkle-style auto-updates for Flutter desktop apps with verified releases, release CLI, built-in UI, and Windows/macOS/Linux support."
-version: 2.4.5
+version: 2.4.6-inno.0
 homepage: https://github.com/MarlonJD/flutter_desktop_updater
 repository: https://github.com/MarlonJD/flutter_desktop_updater
 
