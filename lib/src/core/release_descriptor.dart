@@ -2,11 +2,11 @@ import "dart:convert";
 
 /// Parsed `release.json` metadata for one platform-specific update artifact.
 ///
-/// Descriptors use schema version 3 and point at a single zip artifact plus the
-/// install strategy needed by the native helper. Optional delta artifact
-/// metadata can be published ahead of runtime support; the updater continues to
-/// choose the full zip artifact until delta verification and patch application
-/// are implemented.
+/// Descriptors use schema version 3 and point at one platform-specific artifact
+/// plus the install strategy needed by the native helper. Optional delta
+/// artifact metadata can be published ahead of runtime support; the updater
+/// continues to choose the full artifact until delta verification and patch
+/// application are implemented.
 class ReleaseDescriptor {
   /// Creates release metadata for one downloadable artifact.
   const ReleaseDescriptor({
@@ -235,7 +235,7 @@ List<String> _parseStringList(Object? value, String displayName) {
   ]);
 }
 
-/// Download metadata for the zip artifact referenced by a descriptor.
+/// Download metadata for the artifact referenced by a descriptor.
 class ReleaseArtifact {
   /// Creates artifact metadata.
   const ReleaseArtifact({
@@ -255,7 +255,8 @@ class ReleaseArtifact {
     );
   }
 
-  /// Artifact type. Version 3 descriptors currently support `zip`.
+  /// Artifact type. Version 3 descriptors support `zip`, `dmg`,
+  /// `pkgInstaller`, and `innoInstaller`.
   final String kind;
 
   /// Absolute URL for downloading the artifact.
@@ -279,7 +280,10 @@ class ReleaseArtifact {
 
   /// Validates artifact kind, digest shape, and byte length.
   void validate() {
-    if (kind != "zip" && kind != "innoInstaller") {
+    if (kind != "zip" &&
+        kind != "dmg" &&
+        kind != "pkgInstaller" &&
+        kind != "innoInstaller") {
       throw FormatException("Unsupported release artifact kind: $kind");
     }
     if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
@@ -376,7 +380,12 @@ class ReleaseDeltaArtifact {
 /// Install metadata for a staged release artifact.
 class ReleaseInstall {
   /// Creates install metadata with the requested [strategy].
-  const ReleaseInstall({required this.strategy, this.inno});
+  const ReleaseInstall({
+    required this.strategy,
+    this.inno,
+    this.macosDmg,
+    this.macosPkg,
+  });
 
   /// Parses install metadata from the descriptor `install` object.
   factory ReleaseInstall.fromJson(Map<String, dynamic> json) {
@@ -387,6 +396,16 @@ class ReleaseInstall {
           : ReleaseInnoInstall.fromJson(
               json["inno"] as Map<String, dynamic>,
             ),
+      macosDmg: json["macosDmg"] == null
+          ? null
+          : ReleaseMacOSDmgInstall.fromJson(
+              json["macosDmg"] as Map<String, dynamic>,
+            ),
+      macosPkg: json["macosPkg"] == null
+          ? null
+          : ReleaseMacOSPkgInstall.fromJson(
+              json["macosPkg"] as Map<String, dynamic>,
+            ),
     );
   }
 
@@ -396,11 +415,19 @@ class ReleaseInstall {
   /// Windows Inno Setup installer execution metadata.
   final ReleaseInnoInstall? inno;
 
+  /// macOS DMG update metadata.
+  final ReleaseMacOSDmgInstall? macosDmg;
+
+  /// macOS PKG installer metadata.
+  final ReleaseMacOSPkgInstall? macosPkg;
+
   /// Converts this install metadata to descriptor JSON.
   Map<String, dynamic> toJson() {
     return {
       "strategy": strategy,
       if (inno != null) "inno": inno!.toJson(),
+      if (macosDmg != null) "macosDmg": macosDmg!.toJson(),
+      if (macosPkg != null) "macosPkg": macosPkg!.toJson(),
     };
   }
 
@@ -413,6 +440,40 @@ class ReleaseInstall {
       throw const FormatException(
         "release.json innoInstaller artifacts require install.strategy "
         "innoInstaller.",
+      );
+    }
+    if (artifactKind == "dmg") {
+      if (platform != "macos" || strategy != "wholeBundleReplace") {
+        throw const FormatException(
+          "release.json dmg artifacts are only supported for macos "
+          "wholeBundleReplace.",
+        );
+      }
+      if (macosDmg == null) {
+        throw const FormatException(
+          "release.json install.macosDmg is required for dmg artifacts.",
+        );
+      }
+      macosDmg!.validate();
+    }
+    if (artifactKind == "pkgInstaller") {
+      if (platform != "macos" || strategy != "pkgInstaller") {
+        throw const FormatException(
+          "release.json pkgInstaller artifacts require install.strategy "
+          "pkgInstaller on macos.",
+        );
+      }
+      if (macosPkg == null) {
+        throw const FormatException(
+          "release.json install.macosPkg is required for pkgInstaller.",
+        );
+      }
+      macosPkg!.validate();
+    }
+    if (strategy == "pkgInstaller" && artifactKind != "pkgInstaller") {
+      throw const FormatException(
+        "release.json pkgInstaller strategy is only supported for "
+        "pkgInstaller artifacts.",
       );
     }
     if (strategy == "innoInstaller") {
@@ -428,6 +489,101 @@ class ReleaseInstall {
         );
       }
       inno!.validate();
+    }
+  }
+}
+
+/// macOS DMG update metadata from `release.json`.
+class ReleaseMacOSDmgInstall {
+  /// Creates DMG update metadata.
+  const ReleaseMacOSDmgInstall({
+    required this.appBundleName,
+    required this.verifyPrimarySignature,
+  });
+
+  /// Parses DMG update metadata.
+  factory ReleaseMacOSDmgInstall.fromJson(Map<String, dynamic> json) {
+    return ReleaseMacOSDmgInstall(
+      appBundleName: json["appBundleName"] as String? ?? "",
+      verifyPrimarySignature: json["verifyPrimarySignature"] as bool? ?? true,
+    );
+  }
+
+  /// Simple `.app` bundle name expected in the mounted DMG.
+  final String appBundleName;
+
+  /// Whether to assess the DMG primary signature before mounting.
+  final bool verifyPrimarySignature;
+
+  /// Converts this policy to descriptor JSON.
+  Map<String, dynamic> toJson() {
+    return {
+      "appBundleName": appBundleName,
+      "verifyPrimarySignature": verifyPrimarySignature,
+    };
+  }
+
+  /// Validates the DMG policy.
+  void validate() {
+    if (!appBundleName.endsWith(".app") || appBundleName.contains("/")) {
+      throw const FormatException(
+        "release.json install.macosDmg.appBundleName must be a simple .app "
+        "name.",
+      );
+    }
+  }
+}
+
+/// macOS PKG installer metadata from `release.json`.
+class ReleaseMacOSPkgInstall {
+  /// Creates PKG installer metadata.
+  const ReleaseMacOSPkgInstall({
+    required this.launchMode,
+    required this.expectedPackageIds,
+    required this.relaunchAfterInstall,
+  });
+
+  /// Parses PKG installer metadata.
+  factory ReleaseMacOSPkgInstall.fromJson(Map<String, dynamic> json) {
+    return ReleaseMacOSPkgInstall(
+      launchMode: json["launchMode"] as String? ?? "installerApp",
+      expectedPackageIds: _parseStringList(
+        json["expectedPackageIds"],
+        "install.macosPkg.expectedPackageIds",
+      ),
+      relaunchAfterInstall: json["relaunchAfterInstall"] as bool? ?? false,
+    );
+  }
+
+  /// Native handoff mode. The runtime currently supports Installer.app only.
+  final String launchMode;
+
+  /// Package identifiers expected inside the installer package metadata.
+  final List<String> expectedPackageIds;
+
+  /// Whether the app should relaunch after Installer.app completes.
+  final bool relaunchAfterInstall;
+
+  /// Converts this policy to descriptor JSON.
+  Map<String, dynamic> toJson() {
+    return {
+      "launchMode": launchMode,
+      "expectedPackageIds": expectedPackageIds,
+      "relaunchAfterInstall": relaunchAfterInstall,
+    };
+  }
+
+  /// Validates the PKG policy.
+  void validate() {
+    if (launchMode != "installerApp") {
+      throw const FormatException(
+        "release.json install.macosPkg.launchMode must be installerApp.",
+      );
+    }
+    if (expectedPackageIds.isEmpty) {
+      throw const FormatException(
+        "release.json install.macosPkg.expectedPackageIds must not be empty.",
+      );
     }
   }
 }
