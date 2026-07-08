@@ -43,10 +43,43 @@ void main() {
       final parsed = await PublishManifest.readFrom(file);
 
       expect(parsed.release.version, "2.0.1");
+      expect(parsed.artifact.kind, "zip");
       expect(parsed.artifact.length, 12);
       expect(await file.readAsString(), endsWith("\n"));
     } finally {
       await tempDir.delete(recursive: true);
     }
+  });
+
+  test("round-trips Inno installer artifact kind", () async {
+    final manifest = PublishManifest.fromJson({
+      "schemaVersion": 1,
+      "baseUrl": "https://updates.example.com/",
+      "localRoot": "/tmp/dist",
+      "appArchive": {
+        "path": "app-archive.json",
+        "url": "https://updates.example.com/app-archive.json",
+      },
+      "release": {
+        "version": "2.5.0",
+        "buildNumber": 250,
+        "platform": "windows",
+        "channel": "stable",
+        "path": "releases/2.5.0/windows/release.json",
+        "url":
+            "https://updates.example.com/releases/2.5.0/windows/release.json",
+      },
+      "artifact": {
+        "kind": "innoInstaller",
+        "path": "releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+        "url":
+            "https://updates.example.com/releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+        "sha256": "b" * 64,
+        "length": 42,
+      },
+    });
+
+    expect(manifest.artifact.kind, "innoInstaller");
+    expect(manifest.toJson()["artifact"]["kind"], "innoInstaller");
   });
 }

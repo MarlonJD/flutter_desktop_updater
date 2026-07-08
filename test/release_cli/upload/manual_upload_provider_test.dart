@@ -19,6 +19,7 @@ void main() {
     expect(output.toString(), contains("Manual publish package is ready."));
     expect(output.toString(), contains("file:///tmp/dist/desktop_updater/"));
     expect(output.toString(), contains("Expected remote root:"));
+    expect(output.toString(), contains("Artifact kind: zip"));
     expect(output.toString(), contains("release validate --manifest"));
     expect(output.toString(), contains("docs/publishing.md"));
   });

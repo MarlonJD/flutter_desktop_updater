@@ -15,6 +15,7 @@ void main() {
       await script.writeAsString("""
 #!/bin/sh
 printf '%s\\n' "\$DESKTOP_UPDATER_PUBLISH_MANIFEST" > "${logFile.path}"
+printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
 """);
       if (!Platform.isWindows) {
         final chmod = await Process.run("chmod", ["+x", script.path]);
@@ -34,6 +35,7 @@ printf '%s\\n' "\$DESKTOP_UPDATER_PUBLISH_MANIFEST" > "${logFile.path}"
         await logFile.readAsString(),
         contains(".desktop_updater_publish.json"),
       );
+      expect(await logFile.readAsString(), contains("zip"));
     } finally {
       await tempDir.delete(recursive: true);
     }

@@ -49,6 +49,7 @@ class CustomCommandUploadProvider implements UploadProvider {
       "DESKTOP_UPDATER_APP_ARCHIVE_URL": manifest.appArchive.url.toString(),
       "DESKTOP_UPDATER_RELEASE_URL": manifest.release.url.toString(),
       "DESKTOP_UPDATER_ARTIFACT_URL": manifest.artifact.url.toString(),
+      "DESKTOP_UPDATER_ARTIFACT_KIND": manifest.artifact.kind,
       "DESKTOP_UPDATER_PLATFORM": manifest.release.platform,
       "DESKTOP_UPDATER_VERSION": manifest.release.version,
       "DESKTOP_UPDATER_CHANNEL": manifest.release.channel,
