@@ -282,6 +282,9 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   enabled, notarized, stapled, and Gatekeeper accepted before packaging.
 - Windows production updates should use Authenticode when publisher trust is
   required.
+- Windows can publish either direct zip artifacts or Inno Setup installer
+  artifacts. Use Inno installer mode when uninstall metadata must stay owned by
+  Inno across updates.
 - Linux direct zip distribution should add descriptor signing or another
   publisher-authenticity policy when production trust matters.
 

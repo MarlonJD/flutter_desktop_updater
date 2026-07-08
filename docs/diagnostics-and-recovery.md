@@ -125,6 +125,12 @@ For Windows Inno installer updates, native helper diagnostics may include:
 `inno installer success`, `inno installer failure exitCode=<code>`, and
 `inno relaunch attempt`.
 
+These events are specific to Inno installer update mode. The staged artifact is
+an installer with `artifact.kind: innoInstaller`, and the helper runs it with
+the configured silent arguments instead of extracting a zip. Inno owns the
+uninstall log and installed-file metadata in this mode, including later-version
+files that direct zip compatibility cannot add to Inno's uninstall record.
+
 The helpers do not create a support directory for you. Create the parent directory
 before passing the path. If the path is missing, the parent directory does not
 exist, or the file cannot be written, the helper ignores the logging failure and

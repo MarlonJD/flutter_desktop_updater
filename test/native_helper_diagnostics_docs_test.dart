@@ -80,6 +80,19 @@ void main() {
     expect(source, contains("not full Inno installer updating"));
   });
 
+  test("publishing docs describe full Inno installer update mode", () {
+    final source = [
+      File("docs/publishing.md").readAsStringSync(),
+      File("docs/windows-linux-production-release.md").readAsStringSync(),
+      File("docs/diagnostics-and-recovery.md").readAsStringSync(),
+    ].join("\n");
+
+    expect(source, contains("Inno installer update mode"));
+    expect(source, contains("Inno owns the uninstall log"));
+    expect(source, contains("artifact.kind"));
+    expect(source, contains("innoInstaller"));
+  });
+
   test("package metadata and changelog agree on current version", () {
     final pubspec = File("pubspec.yaml").readAsStringSync();
     final changelog = File("CHANGELOG.md").readAsStringSync();

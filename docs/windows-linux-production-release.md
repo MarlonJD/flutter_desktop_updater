@@ -76,6 +76,14 @@ installer-owned repair, modify, uninstall-log, or enterprise deployment
 behavior, track that as installer-based update support instead of relying on
 direct zip updates.
 
+Use Windows Inno installer update mode when first install, update, and
+uninstall must be owned by Inno Setup. Direct zip compatibility preserves
+existing `unins###` files, but Inno installer mode is the path that keeps
+Inno's uninstall log aware of files added by later versions. In this mode,
+`release.json` uses `artifact.kind: innoInstaller` and `install.strategy:
+innoInstaller`, and the updater stages the verified installer without zip
+extraction.
+
 ### Windows Install Location And UAC
 
 Windows applies different write permissions depending on where the app is
