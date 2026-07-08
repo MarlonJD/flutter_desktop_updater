@@ -108,6 +108,10 @@ jobs:
     name: macOS Notarized Publish
     runs-on: macos-latest
     if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
+    # The full DMG/PKG production smoke is local/manual unless a future
+    # workflow_dispatch lane explicitly configures Developer ID Application,
+    # Developer ID Installer, and notary credentials:
+    # dart run tool/macos_production_smoke.dart all --cleanup
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
