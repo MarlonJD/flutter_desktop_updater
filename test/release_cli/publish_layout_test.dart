@@ -45,4 +45,36 @@ void main() {
       "https://updates.example.com/app/releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
     );
   });
+
+  test("creates dmg artifact layout for macOS DMG updates", () {
+    final layout = PublishLayout.create(
+      outputDirectory: Directory("/tmp/out"),
+      baseUrl: Uri.parse("https://updates.example.com"),
+      version: "2.6.0",
+      platform: "macos",
+      appName: "Example.app",
+      artifactExtension: ".dmg",
+    );
+
+    expect(
+      layout.artifactRelativePath,
+      "releases/2.6.0/macos/Example-2.6.0-macos.dmg",
+    );
+  });
+
+  test("creates pkg artifact layout for macOS PKG installers", () {
+    final layout = PublishLayout.create(
+      outputDirectory: Directory("/tmp/out"),
+      baseUrl: Uri.parse("https://updates.example.com"),
+      version: "2.6.0",
+      platform: "macos",
+      appName: "Example.app",
+      artifactExtension: ".pkg",
+    );
+
+    expect(
+      layout.artifactRelativePath,
+      "releases/2.6.0/macos/Example-2.6.0-macos.pkg",
+    );
+  });
 }

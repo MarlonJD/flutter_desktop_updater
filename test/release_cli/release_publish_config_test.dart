@@ -80,6 +80,179 @@ macos:
     expect(config.macos.gatekeeperAssess, isFalse);
   });
 
+  test("loads macOS DMG artifact publish config", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  artifact:
+    kind: dmg
+  dmg:
+    volumeName: Example
+    appBundleName: Example.app
+    applicationsAlias: true
+""");
+
+    expect(config.macos.artifactKind.name, "dmg");
+    expect(config.macos.dmg.volumeName, "Example");
+    expect(config.macos.dmg.appBundleName, "Example.app");
+    expect(config.macos.dmg.applicationsAlias, isTrue);
+  });
+
+  test("macOS artifact config defaults to zip", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+""");
+
+    expect(config.macos.artifactKind.name, "zip");
+  });
+
+  test("macOS DMG defaults use the configured app name", () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  artifact:
+    kind: dmg
+""",
+      cliOverrides: const ReleasePublishOverrides(
+        appName: "Example Studio",
+      ),
+    );
+
+    expect(config.macos.dmg.volumeName, "Example Studio");
+    expect(config.macos.dmg.appBundleName, "Example Studio.app");
+    expect(config.macos.dmg.applicationsAlias, isTrue);
+  });
+
+  test("rejects invalid macOS artifact kinds", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  artifact:
+    kind: tarball
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.artifact.kind must be zip, dmg, or pkg"),
+        ),
+      ),
+    );
+  });
+
+  test("loads macOS PKG artifact publish config", () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  artifact:
+    kind: pkg
+  pkg:
+    packageIdentifier: com.example.app.pkg
+    installLocation: /Applications
+    signingIdentifier: "Developer ID Installer: Example Corp (TEAMID1234)"
+""");
+
+    expect(config.macos.artifactKind.name, "pkg");
+    expect(config.macos.pkg.packageIdentifier, "com.example.app.pkg");
+    expect(config.macos.pkg.installLocation, "/Applications");
+    expect(
+      config.macos.pkg.signingIdentifier,
+      "Developer ID Installer: Example Corp (TEAMID1234)",
+    );
+  });
+
+  test("rejects macOS PKG config without a package identifier", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  artifact:
+    kind: pkg
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.pkg.packageIdentifier is required"),
+        ),
+      ),
+    );
+  });
+
+  test("rejects macOS PKG config without notarization", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  artifact:
+    kind: pkg
+  pkg:
+    packageIdentifier: com.example.app.pkg
+    installLocation: /Applications
+    signingIdentifier: "Developer ID Installer: Example Corp (TEAMID1234)"
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.notarize: true is required"),
+        ),
+      ),
+    );
+  });
+
+  test("rejects macOS PKG config without stapling", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  staple: false
+  artifact:
+    kind: pkg
+  pkg:
+    packageIdentifier: com.example.app.pkg
+    installLocation: /Applications
+    signingIdentifier: "Developer ID Installer: Example Corp (TEAMID1234)"
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.staple must be true"),
+        ),
+      ),
+    );
+  });
+
   test("loads Windows Inno installer publish config", () async {
     final root = await Directory.systemTemp.createTemp("inno_config_");
     addTearDown(() async {

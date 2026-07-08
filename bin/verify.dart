@@ -3,9 +3,11 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
+import "package:desktop_updater/src/release_cli/macos/apple_trust_commands.dart";
 import "package:path/path.dart" as path;
 
 Future<void> main(List<String> args) async {
@@ -47,7 +49,12 @@ Future<void> main(List<String> args) async {
     "desktop_updater_verify_",
   );
   try {
-    final artifactFile = File(path.join(tempDir.path, "artifact.zip"));
+    final artifactFile = File(
+      path.join(
+        tempDir.path,
+        "artifact${_artifactExtensionForKind(descriptor.artifact.kind)}",
+      ),
+    );
     await CompositeUpdateTransport().download(
       descriptor.artifact.url,
       artifactFile,
@@ -59,6 +66,25 @@ Future<void> main(List<String> args) async {
 
     if (descriptor.artifact.kind == "innoInstaller") {
       stdout.writeln("Installer artifact verified.");
+      return;
+    }
+
+    if (descriptor.artifact.kind == "dmg") {
+      await _verifyMacOSDmgArtifact(
+        descriptor: descriptor,
+        artifactFile: artifactFile,
+        tempDir: tempDir,
+      );
+      stdout.writeln("release.json verified");
+      return;
+    }
+
+    if (descriptor.artifact.kind == "pkgInstaller") {
+      await _verifyMacOSPkgArtifact(
+        descriptor: descriptor,
+        artifactFile: artifactFile,
+      );
+      stdout.writeln("release.json verified");
       return;
     }
 
@@ -76,4 +102,64 @@ Future<void> main(List<String> args) async {
   }
 
   stdout.writeln("release.json verified");
+}
+
+Future<void> _verifyMacOSDmgArtifact({
+  required ReleaseDescriptor descriptor,
+  required File artifactFile,
+  required Directory tempDir,
+}) async {
+  if (!Platform.isMacOS) {
+    stdout.writeln(
+      "macOS artifact trust validation: not run (requires macOS host)",
+    );
+    return;
+  }
+  final verifier = const MacOSDistributionVerifier();
+  final copiedApp = await verifier.withMountedVerifiedDmg(
+    dmg: artifactFile,
+    verifyPrimarySignature:
+        descriptor.install.macosDmg?.verifyPrimarySignature ?? true,
+    body: (mounted) {
+      return verifier.copyAppFromMountedDmg(
+        mounted: mounted,
+        appBundleName: descriptor.install.macosDmg!.appBundleName,
+        destinationParent: Directory(path.join(tempDir.path, "dmg-app")),
+      );
+    },
+  );
+  final trust = const AppleTrustCommands();
+  await trust.verifyApp(copiedApp);
+  await trust.assessExecute(copiedApp);
+  await trust.validateStaple(copiedApp);
+  stdout.writeln("macOS DMG artifact verified.");
+}
+
+Future<void> _verifyMacOSPkgArtifact({
+  required ReleaseDescriptor descriptor,
+  required File artifactFile,
+}) async {
+  if (!Platform.isMacOS) {
+    stdout.writeln(
+      "macOS artifact trust validation: not run (requires macOS host)",
+    );
+    return;
+  }
+  await const MacOSDistributionVerifier().verifyPkgInstaller(
+    pkg: artifactFile,
+    expectedPackageIds: descriptor.install.macosPkg!.expectedPackageIds,
+  );
+  stdout.writeln("macOS PKG artifact verified.");
+}
+
+String _artifactExtensionForKind(String artifactKind) {
+  switch (artifactKind) {
+    case "dmg":
+      return ".dmg";
+    case "pkgInstaller":
+      return ".pkg";
+    case "innoInstaller":
+      return ".exe";
+  }
+  return ".zip";
 }

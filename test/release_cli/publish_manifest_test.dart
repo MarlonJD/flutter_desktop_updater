@@ -82,4 +82,66 @@ void main() {
     expect(manifest.artifact.kind, "innoInstaller");
     expect(manifest.toJson()["artifact"]["kind"], "innoInstaller");
   });
+
+  test("round-trips macOS DMG artifact kind", () async {
+    final manifest = PublishManifest.fromJson({
+      "schemaVersion": 1,
+      "baseUrl": "https://updates.example.com/",
+      "localRoot": "/tmp/dist",
+      "appArchive": {
+        "path": "app-archive.json",
+        "url": "https://updates.example.com/app-archive.json",
+      },
+      "release": {
+        "version": "2.6.0",
+        "buildNumber": 260,
+        "platform": "macos",
+        "channel": "stable",
+        "path": "releases/2.6.0/macos/release.json",
+        "url": "https://updates.example.com/releases/2.6.0/macos/release.json",
+      },
+      "artifact": {
+        "kind": "dmg",
+        "path": "releases/2.6.0/macos/Example-2.6.0-macos.dmg",
+        "url":
+            "https://updates.example.com/releases/2.6.0/macos/Example-2.6.0-macos.dmg",
+        "sha256": "c" * 64,
+        "length": 43,
+      },
+    });
+
+    expect(manifest.artifact.kind, "dmg");
+    expect(manifest.toJson()["artifact"]["kind"], "dmg");
+  });
+
+  test("round-trips macOS PKG installer artifact kind", () async {
+    final manifest = PublishManifest.fromJson({
+      "schemaVersion": 1,
+      "baseUrl": "https://updates.example.com/",
+      "localRoot": "/tmp/dist",
+      "appArchive": {
+        "path": "app-archive.json",
+        "url": "https://updates.example.com/app-archive.json",
+      },
+      "release": {
+        "version": "2.6.0",
+        "buildNumber": 260,
+        "platform": "macos",
+        "channel": "stable",
+        "path": "releases/2.6.0/macos/release.json",
+        "url": "https://updates.example.com/releases/2.6.0/macos/release.json",
+      },
+      "artifact": {
+        "kind": "pkgInstaller",
+        "path": "releases/2.6.0/macos/Example-2.6.0-macos.pkg",
+        "url":
+            "https://updates.example.com/releases/2.6.0/macos/Example-2.6.0-macos.pkg",
+        "sha256": "d" * 64,
+        "length": 44,
+      },
+    });
+
+    expect(manifest.artifact.kind, "pkgInstaller");
+    expect(manifest.toJson()["artifact"]["kind"], "pkgInstaller");
+  });
 }

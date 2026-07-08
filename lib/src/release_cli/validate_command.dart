@@ -3,12 +3,14 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:http/http.dart" as http;
+import "package:path/path.dart" as path;
 
 ArgParser buildValidateParser() {
   return ArgParser()
@@ -71,10 +73,16 @@ class ReleaseValidator {
   ReleaseValidator({
     http.Client? client,
     this.artifactVerifier = const ArtifactVerifier(),
-  }) : client = client ?? http.Client();
+    MacOSDistributionVerifier? macosVerifier,
+    bool? isMacOSHost,
+  })  : client = client ?? http.Client(),
+        macosVerifier = macosVerifier ?? const MacOSDistributionVerifier(),
+        isMacOSHost = isMacOSHost ?? Platform.isMacOS;
 
   final http.Client client;
   final ArtifactVerifier artifactVerifier;
+  final MacOSDistributionVerifier macosVerifier;
+  final bool isMacOSHost;
 
   Future<void> validate({
     required File manifestFile,
@@ -130,6 +138,11 @@ class ReleaseValidator {
       output
         ..writeln("Hosted artifact length: OK")
         ..writeln("Hosted artifact SHA-256: OK");
+      await _validateMacOSArtifactTrust(
+        descriptor: descriptor,
+        artifactFile: artifactFile,
+        output: output,
+      );
     } finally {
       if (await artifactFile.exists()) {
         final tempDir = artifactFile.parent;
@@ -164,10 +177,56 @@ class ReleaseValidator {
   Future<File> _downloadArtifact(Uri url) async {
     final response = await _get(url);
     final tempDir = await Directory.systemTemp.createTemp("release_validate_");
-    final file = File("${tempDir.path}/artifact.zip");
+    final file = File(
+      path.join(tempDir.path, "artifact${_artifactExtensionForUrl(url)}"),
+    );
     await file.writeAsBytes(response.bodyBytes);
     return file;
   }
+
+  Future<void> _validateMacOSArtifactTrust({
+    required ReleaseDescriptor descriptor,
+    required File artifactFile,
+    required StringSink output,
+  }) async {
+    if (descriptor.platform != "macos" ||
+        (descriptor.artifact.kind != "dmg" &&
+            descriptor.artifact.kind != "pkgInstaller")) {
+      return;
+    }
+    if (!isMacOSHost) {
+      output.writeln(
+        "macOS artifact trust validation: not run (requires macOS host)",
+      );
+      return;
+    }
+
+    switch (descriptor.artifact.kind) {
+      case "dmg":
+        if (descriptor.install.macosDmg?.verifyPrimarySignature == false) {
+          output.writeln(
+            "macOS DMG primary signature: not run (descriptor disabled)",
+          );
+          return;
+        }
+        await macosVerifier.verifyDmgPrimarySignature(artifactFile);
+        output.writeln("macOS DMG primary signature: OK");
+      case "pkgInstaller":
+        await macosVerifier.verifyPkgInstaller(
+          pkg: artifactFile,
+          expectedPackageIds: descriptor.install.macosPkg!.expectedPackageIds,
+        );
+        output
+          ..writeln("macOS PKG signature: OK")
+          ..writeln("macOS PKG Gatekeeper install assessment: OK")
+          ..writeln("macOS PKG stapler validation: OK");
+    }
+  }
+}
+
+String _artifactExtensionForUrl(Uri url) {
+  final extension = path.extension(url.path);
+  return extension.isEmpty ? ".bin" : extension;
 }
 
 DesktopVersionInfo _currentVersionForValidation({
