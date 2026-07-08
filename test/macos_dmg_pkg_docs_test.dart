@@ -16,6 +16,11 @@ void main() {
       doc,
       contains("dart run tool/macos_production_smoke.dart doctor"),
     );
+    expect(
+      doc,
+      contains("dart run tool/macos_production_smoke.dart pkg-install-verify"),
+    );
+    expect(doc, contains("separate opt-in QA gate"));
     expect(doc, contains("hdiutil attach -readonly -nobrowse"));
     expect(doc, contains("pkgutil --check-signature"));
   });
@@ -27,7 +32,9 @@ void main() {
 
     expect(readme, contains("docs/macos-dmg-pkg-installer-updates.md"));
     expect(
-        readme.split("docs/macos-dmg-pkg-installer-updates.md"), hasLength(2));
+      readme.split("docs/macos-dmg-pkg-installer-updates.md"),
+      hasLength(2),
+    );
   });
 
   test("publishing docs include concise macOS DMG and PKG config examples", () {

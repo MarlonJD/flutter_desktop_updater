@@ -7,10 +7,12 @@ void main() {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 
     expect(source, contains("doctor"));
+    expect(source, contains("app-update"));
     expect(source, contains("dmg-first-install"));
     expect(source, contains("move-to-applications"));
     expect(source, contains("dmg-update"));
     expect(source, contains("pkg-installer"));
+    expect(source, contains("pkg-install-verify"));
     expect(source, contains("all"));
     expect(source, contains("--cleanup"));
   });
@@ -33,6 +35,24 @@ void main() {
     expect(source, contains("--cleanup-forget-receipt"));
     expect(source, contains("pkgutil --forget"));
     expect(source, contains("silent privileged install not run"));
+  });
+
+  test("normal app update smoke uses direct staged app replacement", () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    expect(source, contains("Future<void> appUpdate()"));
+    expect(source, contains("example/tool/updater_smoke.dart"));
+    expect(source, contains("--staged-app"));
+    expect(source, contains("app-update: whole-bundle replacement OK"));
+    expect(source, contains("app-update: v2 relaunch OK"));
+  });
+
+  test("macOS production smoke clears stale sentinel from v1 app builds", () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    expect(source, contains("final updateSentinel = File("));
+    expect(source, contains("if (await updateSentinel.exists())"));
+    expect(source, contains("await updateSentinel.delete();"));
   });
 
   test("DMG update smoke runs the hosted update flow before success evidence",
@@ -64,12 +84,49 @@ void main() {
     expect(source, contains("pkg-installer: staged PKG update flow OK"));
   });
 
+  test("PKG install verification is explicit and outside all smoke", () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    expect(source, contains("Future<void> pkgInstallVerify()"));
+    expect(source, contains("with administrator privileges"));
+    expect(source, contains("/usr/sbin/installer"));
+    expect(source, contains("pkg-install-verify: receipt OK"));
+    expect(source, contains("pkg-install-verify: installed v2 app OK"));
+    expect(source, contains("administratorApprovedReplacement: true"));
+    expect(source, contains("_removeSmokeOwnedAppWithAdministratorApproval"));
+
+    final allBodyStart = source.indexOf("Future<void> all() async");
+    final allBodyEnd =
+        source.indexOf("Future<void> cleanupSmokeOwnedArtifacts");
+    expect(allBodyStart, isNonNegative);
+    expect(allBodyEnd, greaterThan(allBodyStart));
+    expect(
+      source.substring(allBodyStart, allBodyEnd),
+      isNot(contains("pkgInstallVerify")),
+    );
+  });
+
   test("macOS production smoke writes blocked evidence for missing trust env",
       () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 
     expect(source, contains(r"blocked: $name is required"));
     expect(source, contains("blocked: macOS production smoke requires"));
+  });
+
+  test("macOS production smoke notarizes app bundles through zip archives", () {
+    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
+
+    expect(source, contains("_notarizeAndStapleApp"));
+    expect(source, contains("notary-upload.zip"));
+    expect(source, contains("--keepParent"));
+    expect(source, contains("_notarizeAndStapleZip"));
+    expect(
+      source,
+      isNot(
+        contains("notarytool submit /tmp/desktop_updater_macos_smoke/apps"),
+      ),
+    );
   });
 
   test("CI documents production smoke as local manual evidence", () {

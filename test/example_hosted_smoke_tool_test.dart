@@ -35,4 +35,16 @@ void main() {
       isFalse,
     );
   });
+
+  test("hosted installer handoff waits for all diagnostics events", () {
+    final source =
+        File("example/tool/hosted_update_smoke.dart").readAsStringSync();
+
+    expect(source, contains("expectedEvents.every"));
+    expect(source, contains("missingEvents"));
+    expect(
+      source,
+      contains("Timed out waiting for helper diagnostics events"),
+    );
+  });
 }

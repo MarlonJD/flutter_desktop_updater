@@ -194,10 +194,18 @@ dart run tool/macos_production_smoke.dart dmg-first-install
 dart run tool/macos_production_smoke.dart move-to-applications
 dart run tool/macos_production_smoke.dart dmg-update
 dart run tool/macos_production_smoke.dart pkg-installer
+dart run tool/macos_production_smoke.dart pkg-install-verify
 dart run tool/macos_production_smoke.dart all --cleanup
 ```
 
 Evidence is written under `reports/macos-production-smoke/`.
+
+`pkg-installer` verifies the updater-owned PKG boundary: download, checksum,
+Apple trust checks, package metadata validation, and Installer.app handoff.
+It does not perform a silent privileged install. `pkg-install-verify` is a
+separate opt-in QA gate that uses macOS administrator approval to run the
+system installer, then verifies the smoke receipt, installed v2 app sentinel,
+and final app Apple trust.
 
 Cleanup removes only smoke-owned paths: the smoke app in `/Applications`, smoke
 DMG volumes, smoke temp roots, and listed smoke package receipts. Receipt

@@ -176,20 +176,30 @@ Future<void> _expectDiagnosticsLog(
   List<String> expectedEvents,
 ) async {
   final log = File(logPath);
+  var contents = "";
   await _waitFor(
-    log.existsSync,
-    const Duration(seconds: 10),
-    "Timed out waiting for helper diagnostics log at $logPath.",
+    () {
+      if (!log.existsSync()) {
+        return false;
+      }
+      contents = log.readAsStringSync();
+      return expectedEvents.every(
+        (event) => contents.contains('"event":"$event"'),
+      );
+    },
+    const Duration(seconds: 45),
+    "Timed out waiting for helper diagnostics events in $logPath.",
   );
 
-  final contents = await log.readAsString();
-  for (final event in expectedEvents) {
-    if (!contents.contains('"event":"$event"')) {
-      stderr.writeln(contents);
-      throw StateError(
-        "Helper diagnostics log missing event '$event' in $logPath.",
-      );
-    }
+  final missingEvents = expectedEvents
+      .where((event) => !contents.contains('"event":"$event"'))
+      .toList(growable: false);
+  if (missingEvents.isNotEmpty) {
+    stderr.writeln(contents);
+    throw StateError(
+      "Helper diagnostics log missing events ${missingEvents.join(", ")} "
+      "in $logPath.",
+    );
   }
 }
 
