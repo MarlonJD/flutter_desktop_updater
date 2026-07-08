@@ -177,9 +177,8 @@ void main() {
       },
     });
 
-    final signature =
-        descriptor.toCanonicalSignatureJson()["signature"]
-            as Map<String, dynamic>;
+    final signature = descriptor.toCanonicalSignatureJson()["signature"]
+        as Map<String, dynamic>;
     expect(signature["value"], "");
   });
 

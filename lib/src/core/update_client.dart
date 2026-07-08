@@ -50,22 +50,20 @@ class UpdateClient {
     MinimumOSSupportChecker? isMinimumOSSupported,
     DesktopUpdaterTelemetry? telemetry,
     this.installationIdentity,
-  }) : platform = platform ?? Platform.operatingSystem,
-       _currentUpdaterVersion =
-           currentUpdaterVersion ??
-           DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
-       _transport =
-           transport ??
-           CompositeUpdateTransport(
-             requestHeadersProvider: requestHeadersProvider,
-           ),
-       _verifier = verifier,
-       _extractor = extractor,
-       _stagingParent = stagingParent,
-       _runProcess = runProcess,
-       _macosDistributionVerifier = macosDistributionVerifier,
-       _isMinimumOSSupported = isMinimumOSSupported,
-       _telemetry = telemetry;
+  })  : platform = platform ?? Platform.operatingSystem,
+        _currentUpdaterVersion = currentUpdaterVersion ??
+            DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
+        _transport = transport ??
+            CompositeUpdateTransport(
+              requestHeadersProvider: requestHeadersProvider,
+            ),
+        _verifier = verifier,
+        _extractor = extractor,
+        _stagingParent = stagingParent,
+        _runProcess = runProcess,
+        _macosDistributionVerifier = macosDistributionVerifier,
+        _isMinimumOSSupported = isMinimumOSSupported,
+        _telemetry = telemetry;
 
   /// Hosted `app-archive.json` URL.
   final Uri appArchiveUrl;
@@ -157,11 +155,13 @@ class UpdateClient {
       desktopUpdaterStagingPrefix,
     );
     final artifactFile = File(
-      path.join(stagingRoot.path, switch (descriptor.artifact.kind) {
-        "dmg" => "artifact.dmg",
-        "pkgInstaller" => "artifact.pkg",
-        _ => "artifact.zip",
-      }),
+      path.join(
+          stagingRoot.path,
+          switch (descriptor.artifact.kind) {
+            "dmg" => "artifact.dmg",
+            "pkgInstaller" => "artifact.pkg",
+            _ => "artifact.zip",
+          }),
     );
 
     try {
@@ -189,23 +189,23 @@ class UpdateClient {
           throw UnsupportedError("DMG updates are only supported on macOS.");
         }
         final dmg = descriptor.install.macosDmg!;
-        final stagedApp = await _macosDistributionVerifier
-            .withMountedVerifiedDmg<Directory>(
-              dmg: artifactFile,
-              verifyPrimarySignature: dmg.verifyPrimarySignature,
-              body: (mounted) {
-                return _macosDistributionVerifier.copyAppFromMountedDmg(
-                  mounted: mounted,
-                  appBundleName: dmg.appBundleName,
-                  destinationParent: stagingRoot,
-                );
-              },
+        final stagedApp =
+            await _macosDistributionVerifier.withMountedVerifiedDmg<Directory>(
+          dmg: artifactFile,
+          verifyPrimarySignature: dmg.verifyPrimarySignature,
+          body: (mounted) {
+            return _macosDistributionVerifier.copyAppFromMountedDmg(
+              mounted: mounted,
+              appBundleName: dmg.appBundleName,
+              destinationParent: stagingRoot,
             );
+          },
+        );
         await rejectTopLevelMacOSAppSymlink(stagedApp.path);
         await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
             .writeAsString(
-              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-            );
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
         return UpdateStageResult(
           descriptor: descriptor,
           stagingPath: stagedApp.path,
@@ -228,8 +228,8 @@ class UpdateClient {
         await artifactFile.rename(installerFile.path);
         await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
             .writeAsString(
-              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-            );
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
         return UpdateStageResult(
           descriptor: descriptor,
           stagingPath: stagingRoot.path,
@@ -257,13 +257,13 @@ class UpdateClient {
         await rejectTopLevelMacOSAppSymlink(stagedPath);
         await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
             .writeAsString(
-              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-            );
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
       } else if (descriptor.platform == "windows") {
         await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
             .writeAsString(
-              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-            );
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
       }
 
       return UpdateStageResult(descriptor: descriptor, stagingPath: stagedPath);

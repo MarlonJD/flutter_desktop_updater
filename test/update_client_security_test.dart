@@ -572,27 +572,39 @@ class _UpdateFixture {
 
     await File(path.join(root.path, "app-archive.json")).writeAsString(
       "${const JsonEncoder.withIndent("  ").convert({
-        "schemaVersion": 3,
-        "appName": "Example",
-        "items": [
-          {"version": indexVersion, "buildNumber": indexBuildNumber, "platform": "macos", "channel": "stable", "mandatory": true, "release": releaseUrl.toString()},
-        ],
-      })}\n",
+            "schemaVersion": 3,
+            "appName": "Example",
+            "items": [
+              {
+                "version": indexVersion,
+                "buildNumber": indexBuildNumber,
+                "platform": "macos",
+                "channel": "stable",
+                "mandatory": true,
+                "release": releaseUrl.toString()
+              },
+            ],
+          })}\n",
     );
     await File(path.join(root.path, "release.json")).writeAsString(
       "${const JsonEncoder.withIndent("  ").convert({
-        "schemaVersion": 3,
-        "packageId": "com.example.app",
-        "appName": "Example",
-        "version": descriptorVersion,
-        "buildNumber": descriptorBuildNumber,
-        "platform": "macos",
-        "channel": "stable",
-        "artifact": {"kind": "zip", "url": artifactUrl.toString(), "sha256": artifactSha256, "length": artifactLength},
-        "install": {"strategy": "wholeBundleReplace"},
-        "minimumUpdaterVersion": "2.0.0",
-        "generatedAt": DateTime.utc(2026, 6, 12).toIso8601String(),
-      })}\n",
+            "schemaVersion": 3,
+            "packageId": "com.example.app",
+            "appName": "Example",
+            "version": descriptorVersion,
+            "buildNumber": descriptorBuildNumber,
+            "platform": "macos",
+            "channel": "stable",
+            "artifact": {
+              "kind": "zip",
+              "url": artifactUrl.toString(),
+              "sha256": artifactSha256,
+              "length": artifactLength
+            },
+            "install": {"strategy": "wholeBundleReplace"},
+            "minimumUpdaterVersion": "2.0.0",
+            "generatedAt": DateTime.utc(2026, 6, 12).toIso8601String(),
+          })}\n",
     );
 
     return _UpdateFixture(
