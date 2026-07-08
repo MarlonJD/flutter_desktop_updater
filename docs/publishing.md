@@ -954,6 +954,62 @@ Important trust boundary:
 - If you need production-trusted macOS updates, configure that explicit
   notarization gate before packaging the artifact that will be uploaded.
 
+macOS can publish three artifact kinds. Direct zip remains the default. DMG
+artifacts are for first-install distribution UX and DMG update artifacts that
+mount and copy a verified `.app`. PKG artifacts are installer-owned updates that
+hand off to Installer.app.
+
+Quick config notes:
+
+- `macos.artifact.kind: dmg` writes `artifact.kind: dmg` and keeps
+  `install.strategy: wholeBundleReplace`.
+- `macos.artifact.kind: pkg` writes `artifact.kind: pkgInstaller` and
+  `install.strategy: pkgInstaller`.
+- PKG mode requires `packageIdentifier`, `signingIdentifier`, notarization, and
+  stapling because runtime validation expects a signed, notarized, stapled PKG.
+
+DMG example:
+
+```yaml
+updates:
+  baseUrl: https://updates.example.com
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  artifact:
+    kind: dmg
+  dmg:
+    volumeName: Example
+    appBundleName: Example.app
+    applicationsAlias: true
+```
+
+PKG example:
+
+```yaml
+updates:
+  baseUrl: https://updates.example.com
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  staple: true
+  artifact:
+    kind: pkg
+  pkg:
+    packageIdentifier: com.example.app.pkg
+    installLocation: /Applications
+    signingIdentifier: "Developer ID Installer: Example Corp (TEAMID1234)"
+```
+
+For support boundaries, Apple acceptance gates, Move to Applications, and the
+local production smoke harness, see
+[macOS DMG and PKG installer updates](macos-dmg-pkg-installer-updates.md)
+(repo path: `docs/macos-dmg-pkg-installer-updates.md`).
+
 What you must do for production-trusted macOS updates:
 
 - Sign with a `Developer ID Application` identity.

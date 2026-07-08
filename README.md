@@ -285,6 +285,10 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
 - Linux direct zip distribution should add descriptor signing or another
   publisher-authenticity policy when production trust matters.
 
+For macOS DMG first installs, DMG update artifacts, PKG installer artifacts,
+and the local Apple-trust smoke harness, see
+[macOS DMG and PKG installer updates](docs/macos-dmg-pkg-installer-updates.md).
+
 ## Documentation
 
 - [Update policy modes](doc/update-policy-modes.md): optional, mandatory,

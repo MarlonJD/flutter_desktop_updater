@@ -27,6 +27,11 @@ diagnostics run. The package does not upload helper logs by default.
 
 The package CI intentionally does not publish app update artifacts. Automatic updates belong to the app that is shipping the update because that app owns the bundle ID, signing identity, notarization credentials, versioning, update hosting, and release approval policy.
 
+The full macOS DMG/PKG production smoke is local/manual unless a workflow is
+explicitly given Developer ID Application, Developer ID Installer, keychain, and
+notary credentials. CI runs without those credentials should label that evidence
+as `not run`, not as production-ready Apple trust.
+
 ## App Repository CD
 
 Use an app-owned workflow when you want CI/CD to publish real desktop updates.

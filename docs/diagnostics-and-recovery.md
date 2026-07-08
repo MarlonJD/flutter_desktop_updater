@@ -119,6 +119,14 @@ macOS may also emit `package identity checks` before bundle replacement.
 Windows may emit repeated `move start` entries while it waits for locked files
 to become replaceable.
 
+For macOS DMG update artifacts, diagnostics may include:
+`dmg primary signature verified`, `dmg mounted`, `dmg app copied`, and
+`dmg detached`.
+
+For macOS PKG installer update artifacts, diagnostics may include:
+`pkg manifest loaded`, `pkg installer open`, `pkg installer opened`, and
+`pkg installer open failure`.
+
 The helpers do not create a support directory for you. Create the parent directory
 before passing the path. If the path is missing, the parent directory does not
 exist, or the file cannot be written, the helper ignores the logging failure and
