@@ -81,10 +81,16 @@ void main() {
   test("package metadata and changelog agree on current version", () {
     final pubspec = File("pubspec.yaml").readAsStringSync();
     final changelog = File("CHANGELOG.md").readAsStringSync();
+    final packageVersion =
+        File("lib/src/package_version.dart").readAsStringSync();
     final version = _currentPackageVersion();
 
     expect(pubspec, contains("version: $version"));
     expect(changelog, startsWith("## $version"));
+    expect(
+      packageVersion,
+      contains('desktopUpdaterPackageVersion = "$version"'),
+    );
     expect(changelog, contains("MandatoryReadyToInstallBehavior"));
     expect(changelog, contains("supportPolicy"));
     expect(changelog, contains("freshInstall"));
