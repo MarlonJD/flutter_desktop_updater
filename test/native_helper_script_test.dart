@@ -218,6 +218,50 @@ void main() {
     expect(registryIndex, lessThan(relaunchIndex));
   });
 
+  test("Windows helper executes staged Inno installer from manifest", () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    const manifestSnippet =
+        r"$manifest = Join-Path $staging '.desktop_updater_release_manifest.json'";
+    const strategySnippet =
+        r"if ($descriptor.install.strategy -eq 'innoInstaller')";
+    const invokeSnippet = "function Invoke-InnoInstallerUpdate";
+    const installerPathSnippet =
+        r"$installer = Join-Path $staging 'installer.exe'";
+    const startSnippet = "Write-DiagnosticsEvent 'inno installer start'";
+    const waitSnippet = r"Start-Process -FilePath $installer";
+
+    final manifestIndex = source.indexOf(manifestSnippet);
+    final strategyIndex = source.indexOf(strategySnippet);
+    final invokeIndex = source.indexOf(invokeSnippet);
+    final installerPathIndex = source.indexOf(installerPathSnippet);
+    final startIndex = source.indexOf(startSnippet);
+    final waitIndex = source.indexOf(waitSnippet);
+
+    expect(invokeIndex, isNonNegative);
+    expect(manifestIndex, isNonNegative);
+    expect(strategyIndex, isNonNegative);
+    expect(installerPathIndex, isNonNegative);
+    expect(startIndex, isNonNegative);
+    expect(waitIndex, isNonNegative);
+    expect(invokeIndex, lessThan(strategyIndex));
+    expect(invokeIndex, lessThan(waitIndex));
+  });
+
+  test("Windows helper verifies Authenticode thumbprints for Inno installers",
+      () {
+    final source =
+        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+
+    expect(source, contains("function Test-AuthenticodePolicy"));
+    expect(source, contains(r"Get-AuthenticodeSignature -FilePath $installer"));
+    expect(source, contains("SignerCertificate"));
+    expect(source, contains("Thumbprint"));
+    expect(source, contains("inno authenticode verified"));
+    expect(source, contains("inno authenticode failure"));
+  });
+
   test("Windows helper requests UAC with verified script for protected targets",
       () {
     final source =
