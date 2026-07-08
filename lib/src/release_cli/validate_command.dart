@@ -120,6 +120,7 @@ class ReleaseValidator {
   }) async {
     final descriptor = await _fetchReleaseDescriptor(manifest);
     output.writeln("Hosted release descriptor: OK");
+    output.writeln("Artifact kind: ${descriptor.artifact.kind}");
     final artifactFile = await _downloadArtifact(descriptor.artifact.url);
     try {
       await artifactVerifier.verifyArtifactFile(
@@ -238,6 +239,11 @@ void _verifyDescriptorMatchesManifest(
   if (descriptor.artifact.url.toString() != manifest.artifact.url.toString()) {
     throw StateError(
       "release.json artifact URL mismatch: expected ${manifest.artifact.url}, got ${descriptor.artifact.url}.",
+    );
+  }
+  if (descriptor.artifact.kind != manifest.artifact.kind) {
+    throw StateError(
+      "release.json artifact kind mismatch: expected ${manifest.artifact.kind}, got ${descriptor.artifact.kind}.",
     );
   }
   if (descriptor.artifact.sha256 != manifest.artifact.sha256) {

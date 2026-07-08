@@ -43,6 +43,43 @@ void main() {
     }
   });
 
+  test("validate reports hosted Inno installer artifact kind", () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.5.0",
+      targetBuildNumber: 250,
+      platform: "windows",
+      artifactKind: "innoInstaller",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.4.0+240",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("Hosted artifact SHA-256: OK"));
+      expect(output.toString(), contains("Artifact kind: innoInstaller"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("verify command skips zip extraction for Inno installers", () {
+    final source = File("bin/verify.dart").readAsStringSync();
+
+    expect(source, contains('descriptor.artifact.kind == "innoInstaller"'));
+    expect(source, contains("Installer artifact verified."));
+  });
+
   test("validate rejects hosted descriptor identity mismatch", () async {
     final fixture = await createHostedPublishFixture(
       targetVersion: "2.0.1",
@@ -209,6 +246,8 @@ class HostedPublishFixture {
 Future<HostedPublishFixture> createHostedPublishFixture({
   required String targetVersion,
   required int targetBuildNumber,
+  String platform = "macos",
+  String artifactKind = "zip",
 }) async {
   final projectRoot = await Directory.systemTemp.createTemp("hosted_publish_");
   final webRoot = Directory(path.join(projectRoot.path, "web"));
@@ -218,14 +257,16 @@ Future<HostedPublishFixture> createHostedPublishFixture({
   final releaseRelativePath = path.posix.join(
     "releases",
     targetVersion,
-    "macos",
+    platform,
     "release.json",
   );
   final artifactRelativePath = path.posix.join(
     "releases",
     targetVersion,
-    "macos",
-    "Example-$targetVersion-macos.zip",
+    platform,
+    artifactKind == "innoInstaller"
+        ? "Example-$targetVersion-windows-setup.exe"
+        : "Example-$targetVersion-$platform.zip",
   );
   final releaseUrl = server.uri.resolve(releaseRelativePath);
   final artifactUrl = server.uri.resolve(artifactRelativePath);
@@ -246,7 +287,7 @@ Future<HostedPublishFixture> createHostedPublishFixture({
             {
               "version": targetVersion,
               "buildNumber": targetBuildNumber,
-              "platform": "macos",
+              "platform": platform,
               "channel": "stable",
               "mandatory": false,
               "release": releaseUrl.toString(),
@@ -261,16 +302,33 @@ Future<HostedPublishFixture> createHostedPublishFixture({
           "appName": "Example",
           "version": targetVersion,
           "buildNumber": targetBuildNumber,
-          "platform": "macos",
+          "platform": platform,
           "channel": "stable",
           "artifact": {
-            "kind": "zip",
+            "kind": artifactKind,
             "url": artifactUrl.toString(),
             "sha256": artifactSha256,
             "length": artifactLength,
           },
-          "install": {"strategy": "wholeBundleReplace"},
-          "minimumUpdaterVersion": "2.0.0",
+          "install": artifactKind == "innoInstaller"
+              ? {
+                  "strategy": "innoInstaller",
+                  "inno": {
+                    "silentArgs": [
+                      "/VERYSILENT",
+                      "/SUPPRESSMSGBOXES",
+                      "/NORESTART",
+                    ],
+                    "inheritInstallDirectory": true,
+                    "logFileName": "desktop_updater_inno_install.log",
+                    "relaunchAfterInstall": true,
+                    "requiresElevation": "auto",
+                    "authenticode": {"required": false},
+                  },
+                }
+              : {"strategy": "wholeBundleReplace"},
+          "minimumUpdaterVersion":
+              artifactKind == "innoInstaller" ? "2.5.0" : "2.0.0",
           "generatedAt": DateTime.utc(2026, 6, 12).toIso8601String(),
         })}\n",
   );
@@ -286,12 +344,13 @@ Future<HostedPublishFixture> createHostedPublishFixture({
     release: PublishManifestRelease(
       version: targetVersion,
       buildNumber: targetBuildNumber,
-      platform: "macos",
+      platform: platform,
       channel: "stable",
       path: releaseRelativePath,
       url: releaseUrl,
     ),
     artifact: PublishManifestArtifact(
+      kind: artifactKind,
       path: artifactRelativePath,
       url: artifactUrl,
       sha256: artifactSha256,

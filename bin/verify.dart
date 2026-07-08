@@ -57,6 +57,11 @@ Future<void> main(List<String> args) async {
       file: artifactFile,
     );
 
+    if (descriptor.artifact.kind == "innoInstaller") {
+      stdout.writeln("Installer artifact verified.");
+      return;
+    }
+
     if (descriptor.platform != "macos") {
       await const SafeZipExtractor().extract(
         archiveFile: artifactFile,
