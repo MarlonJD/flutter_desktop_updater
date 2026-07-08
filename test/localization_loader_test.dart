@@ -92,6 +92,8 @@ void main() {
           DesktopUpdateLocalizationKey.downloadText => "Translated download",
           DesktopUpdateLocalizationKey.supportPolicyBlockedText =>
             "Translated blocked",
+          DesktopUpdateLocalizationKey.macosMoveToApplicationsTitleText =>
+            "Translated move title",
           _ => null,
         };
       },
@@ -101,8 +103,44 @@ void main() {
     expect(localization.restartText, "Translated restart");
     expect(localization.downloadText, "Translated download");
     expect(localization.supportPolicyBlockedText, "Translated blocked");
+    expect(
+      localization.macosMoveToApplicationsTitleText,
+      "Translated move title",
+    );
     expect(localization.updateAvailableText, "Update available");
     expect(localization.onUpdateFailedTooltip?.call(Object()), "Custom error");
+  });
+
+  test("loads macOS Move to Applications localization keys", () async {
+    final localization = await DesktopUpdateLocalizationLoader.fromAsset(
+      "assets/i18n/macos_move.json",
+      bundle: _MapAssetBundle({
+        "assets/i18n/macos_move.json": jsonEncode({
+          "schemaVersion": 1,
+          "locale": "custom",
+          "strings": {
+            "macosMoveToApplicationsTitleText": "Move custom?",
+            "macosMoveToApplicationsBodyText": "Move body",
+            "macosMoveToApplicationsMoveText": "Move custom",
+            "macosMoveToApplicationsSkipText": "Skip custom",
+            "macosMoveToApplicationsReplaceTitleText": "Replace custom?",
+            "macosMoveToApplicationsReplaceBodyText": "Replace body",
+            "macosMoveToApplicationsReplaceText": "Replace custom",
+          },
+        }),
+      }),
+    );
+
+    expect(localization.macosMoveToApplicationsTitleText, "Move custom?");
+    expect(localization.macosMoveToApplicationsBodyText, "Move body");
+    expect(localization.macosMoveToApplicationsMoveText, "Move custom");
+    expect(localization.macosMoveToApplicationsSkipText, "Skip custom");
+    expect(
+      localization.macosMoveToApplicationsReplaceTitleText,
+      "Replace custom?",
+    );
+    expect(localization.macosMoveToApplicationsReplaceBodyText, "Replace body");
+    expect(localization.macosMoveToApplicationsReplaceText, "Replace custom");
   });
 
   test("date formatting can use the default or an app override", () {

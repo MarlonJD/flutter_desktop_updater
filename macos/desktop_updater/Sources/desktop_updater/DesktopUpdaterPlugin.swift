@@ -58,6 +58,15 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
                 "buildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
             ])
+        case "checkMacOSInstallLocation":
+            result(macOSInstallLocationStatus())
+        case "moveMacOSAppToApplications":
+            let arguments = call.arguments as? [String: Any]
+            let replaceExisting = arguments?["replaceExisting"] as? Bool ?? false
+            moveMacOSAppToApplications(
+                replaceExisting: replaceExisting,
+                result: result
+            )
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -178,6 +187,26 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         script += """
         if [ -n "$STAGING" ]; then
           log_event "staging path validation"
+          MANIFEST="$STAGING/.desktop_updater_release_manifest.json"
+          if [ -f "$MANIFEST" ] && \\
+             /usr/bin/grep -q '"strategy"[[:space:]]*:[[:space:]]*"pkgInstaller"' "$MANIFEST" && \\
+             /usr/bin/grep -q '"launchMode"[[:space:]]*:[[:space:]]*"installerApp"' "$MANIFEST"; then
+            log_event "pkg manifest loaded"
+            PKG="$STAGING/installer.pkg"
+            if [ ! -f "$PKG" ]; then
+              echo "Staged macOS PKG installer is missing." >&2
+              exit 1
+            fi
+            log_event "pkg installer open"
+            if /usr/bin/open "$PKG"; then
+              log_event "pkg installer opened"
+              rm -f "$0"
+              exit 0
+            fi
+            log_event "pkg installer open failure"
+            exit 1
+          fi
+
           case "$STAGING" in
             *.app) ;;
             *)
@@ -277,5 +306,144 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
 
     private func shellQuote(_ value: String) -> String {
         return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func macOSInstallLocationStatus() -> [String: Any] {
+        let bundleURL = Bundle.main.bundleURL.standardizedFileURL
+        let targetURL = applicationsTargetURL(for: bundleURL)
+        return [
+            "kind": classifyInstallLocation(bundleURL),
+            "bundlePath": bundleURL.path,
+            "targetPath": targetURL.path,
+        ]
+    }
+
+    private func classifyInstallLocation(_ bundleURL: URL) -> String {
+        let bundlePath = bundleURL.standardizedFileURL.path
+        if isPath(bundlePath, under: "/Applications") ||
+            isPath(bundlePath, under: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Applications")
+                .path) {
+            return "installed"
+        }
+        if isPath(bundlePath, under: "/Volumes") {
+            return "diskImage"
+        }
+        if let downloads = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first?.path, isPath(bundlePath, under: downloads) {
+            return "downloads"
+        }
+        return "other"
+    }
+
+    private func moveMacOSAppToApplications(
+        replaceExisting: Bool,
+        result: @escaping FlutterResult
+    ) {
+        let sourceURL = Bundle.main.bundleURL.standardizedFileURL
+        let destinationURL = applicationsTargetURL(for: sourceURL)
+        let fileManager = FileManager.default
+
+        do {
+            if sourceURL.path == destinationURL.path {
+                result(nil)
+                return
+            }
+
+            let stagingURL = destinationURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(".\(destinationURL.lastPathComponent).desktop_updater_move_staging_\(UUID().uuidString)")
+            let backupURL = destinationURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(".\(destinationURL.lastPathComponent).desktop_updater_move_backup_\(UUID().uuidString)")
+
+            try fileManager.copyItem(at: sourceURL, to: stagingURL)
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                if !replaceExisting {
+                    try? fileManager.removeItem(at: stagingURL)
+                    result(
+                        FlutterError(
+                            code: "AlreadyExists",
+                            message: "An app already exists at the Applications target.",
+                            details: destinationURL.path
+                        )
+                    )
+                    return
+                }
+                try fileManager.moveItem(at: destinationURL, to: backupURL)
+            }
+
+            do {
+                try fileManager.moveItem(at: stagingURL, to: destinationURL)
+            } catch {
+                restoreMoveBackup(
+                    fileManager: fileManager,
+                    backupURL: backupURL,
+                    destinationURL: destinationURL
+                )
+                try? fileManager.removeItem(at: stagingURL)
+                throw error
+            }
+
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.removeItem(at: backupURL)
+            }
+
+            let configuration = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.openApplication(
+                at: destinationURL,
+                configuration: configuration
+            ) { _, error in
+                DispatchQueue.main.async {
+                    if let error {
+                        result(
+                            FlutterError(
+                                code: "LaunchFailed",
+                                message: "Unable to launch the copied app.",
+                                details: error.localizedDescription
+                            )
+                        )
+                        return
+                    }
+                    result(nil)
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+        } catch {
+            result(
+                FlutterError(
+                    code: "MoveFailed",
+                    message: "Unable to move the app to Applications.",
+                    details: error.localizedDescription
+                )
+            )
+        }
+    }
+
+    private func restoreMoveBackup(
+        fileManager: FileManager,
+        backupURL: URL,
+        destinationURL: URL
+    ) {
+        if fileManager.fileExists(atPath: backupURL.path) &&
+            !fileManager.fileExists(atPath: destinationURL.path) {
+            try? fileManager.moveItem(at: backupURL, to: destinationURL)
+        }
+    }
+
+    private func applicationsTargetURL(for sourceURL: URL) -> URL {
+        return URL(fileURLWithPath: "/Applications")
+            .appendingPathComponent(sourceURL.lastPathComponent)
+    }
+
+    private func isPath(_ path: String, under root: String) -> Bool {
+        let normalizedRoot = URL(fileURLWithPath: root)
+            .standardizedFileURL
+            .path
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let rootPath = "/" + normalizedRoot
+        return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 }

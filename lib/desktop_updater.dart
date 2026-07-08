@@ -4,6 +4,7 @@ import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:desktop_updater/src/version_info.dart";
 
 export "package:desktop_updater/src/core/release_descriptor.dart";
@@ -18,9 +19,11 @@ export "package:desktop_updater/src/core/update_state.dart";
 export "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 export "package:desktop_updater/src/localization.dart";
+export "package:desktop_updater/src/macos_install_location.dart";
 export "package:desktop_updater/src/manual_update_check_result.dart";
 export "package:desktop_updater/src/version_info.dart" show DesktopVersionInfo;
 export "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
+export "package:desktop_updater/widget/macos_move_to_applications_prompt.dart";
 export "package:desktop_updater/widget/update_card.dart";
 export "package:desktop_updater/widget/update_dialog.dart";
 export "package:desktop_updater/widget/update_direct_card.dart";
@@ -93,6 +96,20 @@ class DesktopUpdater {
   /// Returns the raw current app version string.
   Future<String?> getCurrentVersion() {
     return DesktopUpdaterPlatform.instance.getCurrentVersion();
+  }
+
+  /// Returns macOS install-location status for optional move prompts.
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() {
+    return DesktopUpdaterPlatform.instance.checkMacOSInstallLocation();
+  }
+
+  /// Moves the running macOS app to `/Applications`.
+  Future<void> moveMacOSAppToApplications({
+    bool replaceExisting = false,
+  }) {
+    return DesktopUpdaterPlatform.instance.moveMacOSAppToApplications(
+      replaceExisting: replaceExisting,
+    );
   }
 
   /// Returns the structured current app version.

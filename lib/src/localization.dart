@@ -116,6 +116,30 @@ enum DesktopUpdateLocalizationKey {
 
   /// Release notes section label for uncategorized entries.
   releaseNotesSectionOtherLabel,
+
+  /// Title displayed by the macOS Move to Applications prompt.
+  macosMoveToApplicationsTitleText,
+
+  /// Body displayed by the macOS Move to Applications prompt.
+  macosMoveToApplicationsBodyText,
+
+  /// Move button label displayed by the macOS Move to Applications prompt.
+  macosMoveToApplicationsMoveText,
+
+  /// Skip button label displayed by the macOS Move to Applications prompt.
+  macosMoveToApplicationsSkipText,
+
+  /// Replace confirmation title for the macOS Move to Applications prompt.
+  macosMoveToApplicationsReplaceTitleText,
+
+  /// Replace confirmation body for the macOS Move to Applications prompt.
+  macosMoveToApplicationsReplaceBodyText,
+
+  /// Replace button label for the macOS Move to Applications prompt.
+  macosMoveToApplicationsReplaceText,
+
+  /// Cancel button label for the macOS Move to Applications prompt.
+  macosMoveToApplicationsCancelText,
 }
 
 /// Localization for the update card texts.
@@ -161,6 +185,14 @@ class DesktopUpdateLocalization {
     this.releaseNotesErrorText,
     this.releaseNotesRetryText,
     this.releaseNotesEmptyText,
+    this.macosMoveToApplicationsTitleText,
+    this.macosMoveToApplicationsBodyText,
+    this.macosMoveToApplicationsMoveText,
+    this.macosMoveToApplicationsSkipText,
+    this.macosMoveToApplicationsReplaceTitleText,
+    this.macosMoveToApplicationsReplaceBodyText,
+    this.macosMoveToApplicationsReplaceText,
+    this.macosMoveToApplicationsCancelText,
     this.formatDateTime,
   });
 
@@ -355,6 +387,46 @@ class DesktopUpdateLocalization {
         DesktopUpdateLocalizationKey.releaseNotesEmptyText,
         defaults.releaseNotesEmptyText!,
       ),
+      macosMoveToApplicationsTitleText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsTitleText,
+        defaults.macosMoveToApplicationsTitleText!,
+      ),
+      macosMoveToApplicationsBodyText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsBodyText,
+        defaults.macosMoveToApplicationsBodyText!,
+      ),
+      macosMoveToApplicationsMoveText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsMoveText,
+        defaults.macosMoveToApplicationsMoveText!,
+      ),
+      macosMoveToApplicationsSkipText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsSkipText,
+        defaults.macosMoveToApplicationsSkipText!,
+      ),
+      macosMoveToApplicationsReplaceTitleText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsReplaceTitleText,
+        defaults.macosMoveToApplicationsReplaceTitleText!,
+      ),
+      macosMoveToApplicationsReplaceBodyText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsReplaceBodyText,
+        defaults.macosMoveToApplicationsReplaceBodyText!,
+      ),
+      macosMoveToApplicationsReplaceText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsReplaceText,
+        defaults.macosMoveToApplicationsReplaceText!,
+      ),
+      macosMoveToApplicationsCancelText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosMoveToApplicationsCancelText,
+        defaults.macosMoveToApplicationsCancelText!,
+      ),
       formatDateTime: formatDateTime,
     );
   }
@@ -470,6 +542,30 @@ class DesktopUpdateLocalization {
   /// Default: "No release notes available."
   final String? releaseNotesEmptyText;
 
+  /// Title displayed by the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsTitleText;
+
+  /// Body displayed by the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsBodyText;
+
+  /// Move button label displayed by the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsMoveText;
+
+  /// Skip button label displayed by the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsSkipText;
+
+  /// Replace confirmation title for the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsReplaceTitleText;
+
+  /// Replace confirmation body for the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsReplaceBodyText;
+
+  /// Replace button label for the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsReplaceText;
+
+  /// Cancel button label for the macOS Move to Applications prompt.
+  final String? macosMoveToApplicationsCancelText;
+
   /// Formats dates before inserting them into localized text templates.
   ///
   /// By default, dates render as `YYYY-MM-DD HH:mm UTC`.
@@ -524,6 +620,16 @@ const defaultDesktopUpdateLocalization = DesktopUpdateLocalization(
   releaseNotesErrorText: "Could not load release notes.",
   releaseNotesRetryText: "Try again",
   releaseNotesEmptyText: "No release notes available.",
+  macosMoveToApplicationsTitleText: "Move to Applications?",
+  macosMoveToApplicationsBodyText:
+      "Move this app to Applications so future launches use the installed copy.",
+  macosMoveToApplicationsMoveText: "Move",
+  macosMoveToApplicationsSkipText: "Skip",
+  macosMoveToApplicationsReplaceTitleText: "Replace existing app?",
+  macosMoveToApplicationsReplaceBodyText:
+      "An app already exists in Applications. Replace it with this copy?",
+  macosMoveToApplicationsReplaceText: "Replace",
+  macosMoveToApplicationsCancelText: "Cancel",
 );
 
 /// Loads desktop updater localization from bundled or app-owned JSON assets.
@@ -704,6 +810,38 @@ DesktopUpdateLocalization desktopUpdateLocalizationFromJson(
     releaseNotesErrorText: _readString(strings, "releaseNotesErrorText"),
     releaseNotesRetryText: _readString(strings, "releaseNotesRetryText"),
     releaseNotesEmptyText: _readString(strings, "releaseNotesEmptyText"),
+    macosMoveToApplicationsTitleText: _readString(
+      strings,
+      "macosMoveToApplicationsTitleText",
+    ),
+    macosMoveToApplicationsBodyText: _readString(
+      strings,
+      "macosMoveToApplicationsBodyText",
+    ),
+    macosMoveToApplicationsMoveText: _readString(
+      strings,
+      "macosMoveToApplicationsMoveText",
+    ),
+    macosMoveToApplicationsSkipText: _readString(
+      strings,
+      "macosMoveToApplicationsSkipText",
+    ),
+    macosMoveToApplicationsReplaceTitleText: _readString(
+      strings,
+      "macosMoveToApplicationsReplaceTitleText",
+    ),
+    macosMoveToApplicationsReplaceBodyText: _readString(
+      strings,
+      "macosMoveToApplicationsReplaceBodyText",
+    ),
+    macosMoveToApplicationsReplaceText: _readString(
+      strings,
+      "macosMoveToApplicationsReplaceText",
+    ),
+    macosMoveToApplicationsCancelText: _readString(
+      strings,
+      "macosMoveToApplicationsCancelText",
+    ),
   );
 }
 
@@ -764,6 +902,30 @@ DesktopUpdateLocalization mergeDesktopUpdateLocalizations(
         overrides.releaseNotesRetryText ?? base.releaseNotesRetryText,
     releaseNotesEmptyText:
         overrides.releaseNotesEmptyText ?? base.releaseNotesEmptyText,
+    macosMoveToApplicationsTitleText:
+        overrides.macosMoveToApplicationsTitleText ??
+            base.macosMoveToApplicationsTitleText,
+    macosMoveToApplicationsBodyText:
+        overrides.macosMoveToApplicationsBodyText ??
+            base.macosMoveToApplicationsBodyText,
+    macosMoveToApplicationsMoveText:
+        overrides.macosMoveToApplicationsMoveText ??
+            base.macosMoveToApplicationsMoveText,
+    macosMoveToApplicationsSkipText:
+        overrides.macosMoveToApplicationsSkipText ??
+            base.macosMoveToApplicationsSkipText,
+    macosMoveToApplicationsReplaceTitleText:
+        overrides.macosMoveToApplicationsReplaceTitleText ??
+            base.macosMoveToApplicationsReplaceTitleText,
+    macosMoveToApplicationsReplaceBodyText:
+        overrides.macosMoveToApplicationsReplaceBodyText ??
+            base.macosMoveToApplicationsReplaceBodyText,
+    macosMoveToApplicationsReplaceText:
+        overrides.macosMoveToApplicationsReplaceText ??
+            base.macosMoveToApplicationsReplaceText,
+    macosMoveToApplicationsCancelText:
+        overrides.macosMoveToApplicationsCancelText ??
+            base.macosMoveToApplicationsCancelText,
     formatDateTime: overrides.formatDateTime ?? base.formatDateTime,
   );
 }

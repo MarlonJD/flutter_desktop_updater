@@ -218,6 +218,43 @@ void main() {
     expect(registryIndex, lessThan(relaunchIndex));
   });
 
+  test(
+      "macOS helper opens staged PKG installers without silent privilege escalation",
+      () {
+    final source = File(
+      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    ).readAsStringSync();
+
+    expect(source, contains("pkgInstaller"));
+    expect(source, contains("launchMode"));
+    expect(source, contains("installerApp"));
+    expect(source, contains("installer.pkg"));
+    expect(source, contains("pkg installer open"));
+    expect(source, contains("/usr/bin/open"));
+    expect(source, isNot(contains("/usr/sbin/installer -pkg")));
+    expect(source, isNot(contains("sudo")));
+    expect(source, isNot(contains("osascript")));
+
+    final pkgBranchIndex = source.indexOf("pkg manifest loaded");
+    final appValidationIndex = source.indexOf(r'case "$STAGING" in');
+    expect(pkgBranchIndex, isNonNegative);
+    expect(appValidationIndex, isNonNegative);
+    expect(pkgBranchIndex, lessThan(appValidationIndex));
+  });
+
+  test("macOS move to Applications avoids destructive replacement", () {
+    final source = File(
+      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    ).readAsStringSync();
+
+    expect(source, contains("sourceURL.path == destinationURL.path"));
+    expect(source, contains("desktop_updater_move_staging"));
+    expect(source, contains("desktop_updater_move_backup"));
+    expect(source, contains("restoreMoveBackup"));
+    expect(source,
+        isNot(contains("try fileManager.removeItem(at: destinationURL)")));
+  });
+
   test("Windows helper requests UAC with verified script for protected targets",
       () {
     final source =
