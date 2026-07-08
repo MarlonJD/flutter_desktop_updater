@@ -1,4 +1,5 @@
 import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 /// Platform interface implemented by macOS, Windows, and Linux helpers.
@@ -58,5 +59,25 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
   /// Returns the raw current app version string from the native plugin.
   Future<String?> getCurrentVersion() {
     throw UnimplementedError("getCurrentVersion() has not been implemented.");
+  }
+
+  /// Returns macOS install-location status when supported.
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() {
+    return Future.value(
+      const MacOSInstallLocationStatus(
+        kind: MacOSInstallLocationKind.unsupported,
+        bundlePath: null,
+        targetPath: null,
+      ),
+    );
+  }
+
+  /// Moves the running macOS app to `/Applications`.
+  Future<void> moveMacOSAppToApplications({
+    bool replaceExisting = false,
+  }) {
+    throw UnimplementedError(
+      "moveMacOSAppToApplications() has not been implemented.",
+    );
   }
 }

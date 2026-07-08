@@ -1,4 +1,5 @@
 import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -88,5 +89,38 @@ void main() {
       "allowUnsignedMacOSUpdates": false,
       "diagnosticsLogPath": "/tmp/desktop-updater-helper.jsonl",
     });
+  });
+
+  test("checkMacOSInstallLocation parses native status", () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == "checkMacOSInstallLocation") {
+        return {
+          "kind": "diskImage",
+          "bundlePath": "/Volumes/Example/Example.app",
+          "targetPath": "/Applications/Example.app",
+        };
+      }
+      return "42";
+    });
+
+    final status = await platform.checkMacOSInstallLocation();
+
+    expect(status.kind, MacOSInstallLocationKind.diskImage);
+    expect(status.targetPath, "/Applications/Example.app");
+  });
+
+  test("moveMacOSAppToApplications forwards replace policy", () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.moveMacOSAppToApplications(replaceExisting: true);
+
+    expect(capturedCall.method, "moveMacOSAppToApplications");
+    expect(capturedCall.arguments, {"replaceExisting": true});
   });
 }

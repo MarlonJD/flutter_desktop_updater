@@ -3,6 +3,7 @@ import "dart:io";
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
@@ -11,6 +12,13 @@ class MockDesktopUpdaterPlatform
     with MockPlatformInterfaceMixin
     implements DesktopUpdaterPlatform {
   String? lastDiagnosticsLogPath;
+  bool? lastReplaceExisting;
+  MacOSInstallLocationStatus macOSInstallLocationStatus =
+      const MacOSInstallLocationStatus(
+    kind: MacOSInstallLocationKind.unsupported,
+    bundlePath: null,
+    targetPath: null,
+  );
 
   @override
   Future<String?> getPlatformVersion() => Future.value("42");
@@ -38,6 +46,19 @@ class MockDesktopUpdaterPlatform
 
   @override
   Future<String?> getCurrentVersion() {
+    return Future.value();
+  }
+
+  @override
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() {
+    return Future.value(macOSInstallLocationStatus);
+  }
+
+  @override
+  Future<void> moveMacOSAppToApplications({
+    bool replaceExisting = false,
+  }) {
+    lastReplaceExisting = replaceExisting;
     return Future.value();
   }
 }
@@ -69,6 +90,35 @@ void main() {
     );
 
     expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
+  });
+
+  test("checkMacOSInstallLocation forwards to platform", () async {
+    final desktopUpdaterPlugin = DesktopUpdater();
+    final fakePlatform = MockDesktopUpdaterPlatform()
+      ..macOSInstallLocationStatus = const MacOSInstallLocationStatus(
+        kind: MacOSInstallLocationKind.diskImage,
+        bundlePath: "/Volumes/Example/Example.app",
+        targetPath: "/Applications/Example.app",
+      );
+    DesktopUpdaterPlatform.instance = fakePlatform;
+
+    final status = await desktopUpdaterPlugin.checkMacOSInstallLocation();
+
+    expect(status.kind, MacOSInstallLocationKind.diskImage);
+    expect(status.targetPath, "/Applications/Example.app");
+  });
+
+  test("moveMacOSAppToApplications forwards replace policy to platform",
+      () async {
+    final desktopUpdaterPlugin = DesktopUpdater();
+    final fakePlatform = MockDesktopUpdaterPlatform();
+    DesktopUpdaterPlatform.instance = fakePlatform;
+
+    await desktopUpdaterPlugin.moveMacOSAppToApplications(
+      replaceExisting: true,
+    );
+
+    expect(fakePlatform.lastReplaceExisting, isTrue);
   });
 
   test("checkZipFirstUpdate accepts app-owned request headers provider",

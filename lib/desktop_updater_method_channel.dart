@@ -1,4 +1,5 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 
@@ -47,6 +48,33 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
   @override
   Future<String?> getCurrentVersion() async {
     return methodChannel.invokeMethod<String>("getCurrentVersion");
+  }
+
+  @override
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() async {
+    final status = await methodChannel.invokeMapMethod<String, Object?>(
+      "checkMacOSInstallLocation",
+    );
+    if (status == null) {
+      return const MacOSInstallLocationStatus(
+        kind: MacOSInstallLocationKind.unsupported,
+        bundlePath: null,
+        targetPath: null,
+      );
+    }
+    return MacOSInstallLocationStatus.fromJson(
+      Map<String, Object?>.from(status),
+    );
+  }
+
+  @override
+  Future<void> moveMacOSAppToApplications({
+    bool replaceExisting = false,
+  }) async {
+    await methodChannel.invokeMethod<void>(
+      "moveMacOSAppToApplications",
+      {"replaceExisting": replaceExisting},
+    );
   }
 
   /// Returns structured native version metadata for update checks.
