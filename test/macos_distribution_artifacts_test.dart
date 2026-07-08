@@ -69,21 +69,29 @@ void main() {
   test(
       "PKG verification runs package signature, install assessment, and stapler",
       () async {
-    final root = await Directory.systemTemp.createTemp("pkg_expanded_");
+    final root = await Directory.systemTemp.createTemp("pkg_expand_parent_");
     addTearDown(() async {
       if (await root.exists()) {
         await root.delete(recursive: true);
       }
     });
-    await File(path.join(root.path, "PackageInfo")).writeAsString(
-      '<pkg-info identifier="com.example.app.pkg" />',
-    );
 
     final commands = <String>[];
+    String? expandedPath;
     final verifier = MacOSDistributionVerifier(
       createTempDirectory: () async => root,
       runProcess: (executable, arguments) async {
         commands.add([executable, ...arguments].join(" "));
+        if (executable == "/usr/sbin/pkgutil" &&
+            arguments.first == "--expand-full") {
+          expandedPath = arguments.last;
+          expect(expandedPath, isNot(root.path));
+          expect(Directory(expandedPath!).existsSync(), isFalse);
+          await Directory(expandedPath!).create(recursive: true);
+          await File(path.join(expandedPath!, "PackageInfo")).writeAsString(
+            '<pkg-info identifier="com.example.app.pkg" />',
+          );
+        }
         return ProcessResult(0, 0, "", "");
       },
     );
@@ -97,25 +105,32 @@ void main() {
       "/usr/sbin/pkgutil --check-signature /tmp/Example.pkg",
       "/usr/sbin/spctl --assess --type install --verbose=2 /tmp/Example.pkg",
       "/usr/bin/xcrun stapler validate /tmp/Example.pkg",
-      "/usr/sbin/pkgutil --expand-full /tmp/Example.pkg ${root.path}",
+      "/usr/sbin/pkgutil --expand-full /tmp/Example.pkg $expandedPath",
     ]);
   });
 
   test("PKG verification rejects missing expected package identifiers",
       () async {
-    final root = await Directory.systemTemp.createTemp("pkg_expanded_");
+    final root = await Directory.systemTemp.createTemp("pkg_expand_parent_");
     addTearDown(() async {
       if (await root.exists()) {
         await root.delete(recursive: true);
       }
     });
-    await File(path.join(root.path, "Distribution")).writeAsString(
-      '<installer-gui-script><pkg-ref id="com.example.other.pkg" /></installer-gui-script>',
-    );
 
     final verifier = MacOSDistributionVerifier(
       createTempDirectory: () async => root,
-      runProcess: (executable, arguments) async => ProcessResult(0, 0, "", ""),
+      runProcess: (executable, arguments) async {
+        if (executable == "/usr/sbin/pkgutil" &&
+            arguments.first == "--expand-full") {
+          final expanded = Directory(arguments.last);
+          await expanded.create(recursive: true);
+          await File(path.join(expanded.path, "Distribution")).writeAsString(
+            '<installer-gui-script><pkg-ref id="com.example.other.pkg" /></installer-gui-script>',
+          );
+        }
+        return ProcessResult(0, 0, "", "");
+      },
     );
 
     await expectLater(
@@ -134,19 +149,26 @@ void main() {
   });
 
   test("PKG verification ignores unrelated XML id attributes", () async {
-    final root = await Directory.systemTemp.createTemp("pkg_expanded_");
+    final root = await Directory.systemTemp.createTemp("pkg_expand_parent_");
     addTearDown(() async {
       if (await root.exists()) {
         await root.delete(recursive: true);
       }
     });
-    await File(path.join(root.path, "Distribution")).writeAsString(
-      '<installer-gui-script><choice id="com.example.app.pkg" /></installer-gui-script>',
-    );
 
     final verifier = MacOSDistributionVerifier(
       createTempDirectory: () async => root,
-      runProcess: (executable, arguments) async => ProcessResult(0, 0, "", ""),
+      runProcess: (executable, arguments) async {
+        if (executable == "/usr/sbin/pkgutil" &&
+            arguments.first == "--expand-full") {
+          final expanded = Directory(arguments.last);
+          await expanded.create(recursive: true);
+          await File(path.join(expanded.path, "Distribution")).writeAsString(
+            '<installer-gui-script><choice id="com.example.app.pkg" /></installer-gui-script>',
+          );
+        }
+        return ProcessResult(0, 0, "", "");
+      },
     );
 
     await expectLater(

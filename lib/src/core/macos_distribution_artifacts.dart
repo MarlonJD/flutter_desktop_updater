@@ -84,7 +84,7 @@ class MacOSDistributionVerifier {
   /// Process runner used for macOS system tools.
   final ProcessRunner runProcess;
 
-  /// Creates a temporary directory for expanded package metadata.
+  /// Creates a temporary parent directory for expanded package metadata.
   final Future<Directory> Function() createTempDirectory;
 
   /// Assesses a DMG primary signature with Gatekeeper.
@@ -175,7 +175,8 @@ class MacOSDistributionVerifier {
       pkg.path,
     ]);
     await _runChecked("/usr/bin/xcrun", ["stapler", "validate", pkg.path]);
-    final expanded = await createTempDirectory();
+    final expandedParent = await createTempDirectory();
+    final expanded = Directory(path.join(expandedParent.path, "expanded"));
     try {
       await _runChecked("/usr/sbin/pkgutil", [
         "--expand-full",
@@ -187,8 +188,8 @@ class MacOSDistributionVerifier {
         expectedPackageIds: expectedPackageIds,
       );
     } finally {
-      if (await expanded.exists()) {
-        await expanded.delete(recursive: true);
+      if (await expandedParent.exists()) {
+        await expandedParent.delete(recursive: true);
       }
     }
   }
