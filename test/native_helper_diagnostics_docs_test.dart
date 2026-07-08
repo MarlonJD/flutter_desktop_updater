@@ -49,6 +49,8 @@ void main() {
     expect(source, contains("helper scheduled"));
     expect(source, contains("relaunch attempt"));
     expect(source, contains("cleanup retry"));
+    expect(source, contains("inno installer start"));
+    expect(source, contains("inno authenticode verified"));
     expect(source, contains("desktop_updater_stage_*"));
     expect(source, contains("stale-staging window"));
     expect(source, contains("does not include a logging backend"));

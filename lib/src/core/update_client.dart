@@ -168,6 +168,8 @@ class UpdateClient {
           version: descriptor.version,
           channel: descriptor.channel,
           platform: descriptor.platform,
+          artifactKind: descriptor.artifact.kind,
+          installStrategy: descriptor.install.strategy,
         ),
       );
 

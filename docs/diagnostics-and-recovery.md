@@ -119,6 +119,12 @@ macOS may also emit `package identity checks` before bundle replacement.
 Windows may emit repeated `move start` entries while it waits for locked files
 to become replaceable.
 
+For Windows Inno installer updates, native helper diagnostics may include:
+`inno manifest loaded`, `inno authenticode verified`,
+`inno authenticode failure`, `inno installer start`,
+`inno installer success`, `inno installer failure exitCode=<code>`, and
+`inno relaunch attempt`.
+
 The helpers do not create a support directory for you. Create the parent directory
 before passing the path. If the path is missing, the parent directory does not
 exist, or the file cannot be written, the helper ignores the logging failure and
