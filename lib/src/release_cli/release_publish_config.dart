@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:path/path.dart" as path;
 import "package:yaml/yaml.dart";
 
@@ -48,6 +49,7 @@ class ReleasePublishConfig {
     required this.channel,
     required this.uploadProvider,
     required this.macos,
+    required this.windows,
     required this.hooks,
     required this.additionalFiles,
   });
@@ -57,6 +59,7 @@ class ReleasePublishConfig {
   final String channel;
   final UploadConfig uploadProvider;
   final MacOSPublishConfig macos;
+  final WindowsPublishConfig windows;
   final ReleaseHooksConfig hooks;
 
   /// Files copied into the platform release output before signing and zipping.
@@ -100,6 +103,7 @@ class ReleasePublishConfig {
         cliOverrides.channel ?? _stringValue(updates, "channel") ?? "stable";
     final provider = _readUploadProvider(document);
     final macos = _readMacOSConfig(document, cliOverrides);
+    final windows = _readWindowsConfig(document);
     final hooks = _readHooksConfig(document);
     final additionalFiles = _readAdditionalFilesConfig(document);
 
@@ -115,6 +119,7 @@ class ReleasePublishConfig {
       channel: channelValue,
       uploadProvider: provider,
       macos: macos,
+      windows: windows,
       hooks: hooks,
       additionalFiles: additionalFiles,
     );
@@ -505,6 +510,69 @@ MacOSPublishConfig _readMacOSConfig(
   return config;
 }
 
+WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
+  final windows = _mapValue(document, "windows");
+  final installer = _mapValue(windows, "installer");
+  if (installer.isEmpty) {
+    return const WindowsPublishConfig();
+  }
+  final kind = _stringValue(installer, "kind") ?? "";
+  if (kind != "inno") {
+    throw const FormatException("windows.installer.kind must be inno.");
+  }
+  final config = InnoPublishConfig(
+    kind: kind,
+    mode: _stringValue(installer, "mode") ?? "generated",
+    script: _stringValue(installer, "script"),
+    isccPath: _stringValue(installer, "isccPath"),
+    outputBaseName: _stringValue(installer, "outputBaseName"),
+    appId: _stringValue(installer, "appId"),
+    publisher: _stringValue(installer, "publisher"),
+    publisherUrl: _stringValue(installer, "publisherUrl"),
+    supportUrl: _stringValue(installer, "supportUrl"),
+    updatesUrl: _stringValue(installer, "updatesUrl"),
+    privilegesRequired:
+        _stringValue(installer, "privilegesRequired") ?? "lowest",
+    architecturesAllowed:
+        _stringValue(installer, "architecturesAllowed") ?? "x64",
+    architecturesInstallIn64BitMode:
+        _stringValue(installer, "architecturesInstallIn64BitMode") ?? "x64",
+    setupIcon: _stringValue(installer, "setupIcon"),
+    licenseFile: _stringValue(installer, "licenseFile"),
+    silentArgs: _stringListValue(installer, "silentArgs") ??
+        const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+    requiresElevation: _stringValue(installer, "requiresElevation") ?? "auto",
+    authenticodeThumbprints:
+        _stringListValue(installer, "authenticodeThumbprints") ?? const [],
+  );
+  _validateInnoConfig(config);
+  return WindowsPublishConfig(installer: config);
+}
+
+void _validateInnoConfig(InnoPublishConfig config) {
+  if (!const ["generated", "script"].contains(config.mode)) {
+    throw const FormatException(
+      "windows.installer.mode must be generated or script.",
+    );
+  }
+  if (config.mode == "script" &&
+      (config.script == null || config.script!.trim().isEmpty)) {
+    throw const FormatException(
+      "windows.installer.script is required when mode is script.",
+    );
+  }
+  if (!const ["admin", "lowest"].contains(config.privilegesRequired)) {
+    throw const FormatException(
+      "windows.installer.privilegesRequired must be admin or lowest.",
+    );
+  }
+  if (!const ["auto", "always", "never"].contains(config.requiresElevation)) {
+    throw const FormatException(
+      "windows.installer.requiresElevation must be auto, always, or never.",
+    );
+  }
+}
+
 Uri _normalizeBaseUrl(String value) {
   final uri = Uri.parse(value.trim());
   if (!uri.hasScheme || uri.host.isEmpty) {
@@ -557,6 +625,17 @@ Map<String, dynamic> _mapValue(Map<String, dynamic> map, String key) {
 String? _stringValue(Map<String, dynamic> map, String key) {
   final value = map[key];
   return value?.toString();
+}
+
+List<String>? _stringListValue(Map<String, dynamic> map, String key) {
+  final value = map[key];
+  if (value == null) {
+    return null;
+  }
+  if (value is! List) {
+    throw FormatException("$key must be a list.");
+  }
+  return List.unmodifiable([for (final entry in value) entry.toString()]);
 }
 
 String _requiredString(
