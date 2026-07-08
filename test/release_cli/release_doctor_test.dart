@@ -131,6 +131,53 @@ updates:
     }
   });
 
+  test("doctor warns when Inno installer lacks Authenticode policy", () async {
+    final root = await _createProject(
+      config: """
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    appId: com.example.app
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        ["doctor", "--platform", "windows"],
+        projectRoot: root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      expect(
+        output.toString(),
+        contains(
+          "WARNING: Windows Inno installer updates should configure Authenticode thumbprints.",
+        ),
+      );
+      expect(
+        output.toString(),
+        contains(
+          "INFO: Windows Inno installer publish will produce .exe artifacts and use Inno for uninstall metadata.",
+        ),
+      );
+      expect(
+        output.toString(),
+        isNot(
+          contains(
+            "WARNING: Windows production releases should configure a hooks.prePackage command for Authenticode signing.",
+          ),
+        ),
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   test("linux direct zip without signed release.json hook warns only",
       () async {
     final root = await _createProject(config: _minimalConfig);

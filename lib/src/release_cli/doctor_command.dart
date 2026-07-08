@@ -56,7 +56,7 @@ Future<int> runDoctorCommand(
     );
     output.writeln("OK: desktop_updater.yaml loaded.");
     await _writeProjectMetadata(projectRoot, output);
-    _writeConfigDiagnostics(config, platform, output);
+    await _writeConfigDiagnostics(config, platform, output);
     return 0;
   } on FormatException catch (error) {
     output.writeln("ERROR: ${error.message}");
@@ -117,11 +117,11 @@ Future<void> _writeProjectMetadata(
   }
 }
 
-void _writeConfigDiagnostics(
+Future<void> _writeConfigDiagnostics(
   ReleasePublishConfig config,
   String platform,
   StringSink output,
-) {
+) async {
   output.writeln("OK: updates.baseUrl = ${config.baseUrl}");
   if (config.baseUrl.scheme == "http") {
     output.writeln(
@@ -140,7 +140,7 @@ void _writeConfigDiagnostics(
 
   switch (platform) {
     case "windows":
-      _writeWindowsDiagnostics(config, output);
+      await _writeWindowsDiagnostics(config, output);
     case "linux":
       _writeLinuxDiagnostics(config, output);
     case "macos":
@@ -148,10 +148,29 @@ void _writeConfigDiagnostics(
   }
 }
 
-void _writeWindowsDiagnostics(
+Future<void> _writeWindowsDiagnostics(
   ReleasePublishConfig config,
   StringSink output,
-) {
+) async {
+  final installer = config.windows.installer;
+  if (installer.enabled) {
+    if (installer.authenticodeThumbprints.isEmpty) {
+      output.writeln(
+        "WARNING: Windows Inno installer updates should configure Authenticode thumbprints.",
+      );
+    }
+    if ((installer.isccPath == null || installer.isccPath!.trim().isEmpty) &&
+        !await _executableOnPath("iscc")) {
+      output.writeln(
+        "WARNING: Windows Inno installer publish should configure windows.installer.isccPath or make iscc available on PATH.",
+      );
+    }
+    output.writeln(
+      "INFO: Windows Inno installer publish will produce .exe artifacts and use Inno for uninstall metadata.",
+    );
+    return;
+  }
+
   if (config.hooks.hasPrePackageHookFor("windows")) {
     output.writeln("OK: Windows pre-package hook configured.");
     return;
@@ -185,6 +204,27 @@ void _writeMacOSDiagnostics(
   output.writeln(
     "WARNING: macOS production releases should enable macos.notarize or run an app-owned notarization gate before packaging. Unsigned/internal flows can use allowUnsignedMacOSUpdates, but are not production-trusted.",
   );
+}
+
+Future<bool> _executableOnPath(String executable) async {
+  final pathValue = Platform.environment["PATH"];
+  if (pathValue == null || pathValue.trim().isEmpty) {
+    return false;
+  }
+
+  final extensions =
+      Platform.isWindows ? const ["", ".exe", ".cmd", ".bat"] : const [""];
+  for (final directory in pathValue.split(Platform.isWindows ? ";" : ":")) {
+    if (directory.trim().isEmpty) {
+      continue;
+    }
+    for (final extension in extensions) {
+      if (await File(path.join(directory, "$executable$extension")).exists()) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 String _required(ArgResults results, String name) {
