@@ -125,6 +125,14 @@ For Windows Inno installer updates, native helper diagnostics may include:
 `inno installer success`, `inno installer failure exitCode=<code>`, and
 `inno relaunch attempt`.
 
+For macOS DMG update artifacts, diagnostics may include:
+`dmg primary signature verified`, `dmg mounted`, `dmg app copied`, and
+`dmg detached`.
+
+For macOS PKG installer update artifacts, diagnostics may include:
+`pkg manifest loaded`, `pkg installer open`, `pkg installer opened`, and
+`pkg installer open failure`.
+
 These events are specific to Inno installer update mode. The staged artifact is
 an installer with `artifact.kind: innoInstaller`, and the helper runs it with
 the configured silent arguments instead of extracting a zip. Inno owns the
