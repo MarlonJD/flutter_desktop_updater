@@ -84,6 +84,9 @@ Inno's uninstall log aware of files added by later versions. In this mode,
 innoInstaller`, and the updater stages the verified installer without zip
 extraction.
 
+For the full config and publish flow, see
+[Windows Inno Installer Updates](windows-inno-installer-updates.md).
+
 ### Windows Install Location And UAC
 
 Windows applies different write permissions depending on where the app is
