@@ -763,7 +763,9 @@ class _MacOSProductionSmoke {
             "length": await hostedArtifact.length(),
           },
           "install": install,
-          "minimumUpdaterVersion": "2.0.0",
+          "minimumUpdaterVersion": _minimumUpdaterVersionForArtifact(
+            artifactKind,
+          ),
           "generatedAt": DateTime.now().toUtc().toIso8601String(),
         }),
       );
@@ -1079,6 +1081,16 @@ class _MacOSProductionSmoke {
         .map((line) => line.trim())
         .where((line) => line.contains(packageId))
         .toList(growable: false);
+  }
+}
+
+String _minimumUpdaterVersionForArtifact(String artifactKind) {
+  switch (artifactKind) {
+    case "dmg":
+    case "pkgInstaller":
+      return "2.6.0";
+    default:
+      return "2.0.0";
   }
 }
 
