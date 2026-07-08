@@ -27,6 +27,7 @@ The CI smoke tools still use environment variables to drive unattended checks:
 - `DESKTOP_UPDATER_SMOKE_MARKER`
 - `DESKTOP_UPDATER_HOSTED_SMOKE`
 - `DESKTOP_UPDATER_HOSTED_SMOKE_MARKER`
+- `DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG`
 - `DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS`
 
 For public macOS distribution, keep unsigned updates disabled and use signed,

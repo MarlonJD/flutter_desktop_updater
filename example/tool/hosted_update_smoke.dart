@@ -2,14 +2,23 @@ import "dart:async";
 import "dart:io";
 
 Future<void> main(List<String> args) async {
+  if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
+    _usage();
+    return;
+  }
+
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
+  final expectInstallerHandoff = args.contains("--expect-installer-handoff");
   final appPath = _absolutePath(_argValue(args, "--app") ?? _defaultAppPath());
   final appArchiveUrl = _argValue(args, "--app-archive-url");
+  final diagnosticsLogPath =
+      _absolutePath(_argValue(args, "--diagnostics-log"));
 
   if (appPath == null ||
       appArchiveUrl == null ||
-      appArchiveUrl.trim().isEmpty) {
+      appArchiveUrl.trim().isEmpty ||
+      (expectInstallerHandoff && diagnosticsLogPath == null)) {
     _usage();
     exit(64);
   }
@@ -60,6 +69,8 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_APP_ARCHIVE_URL": appArchiveUrl.trim(),
       "DESKTOP_UPDATER_HOSTED_SMOKE": "1",
       "DESKTOP_UPDATER_HOSTED_SMOKE_MARKER": markerPath,
+      if (diagnosticsLogPath != null)
+        "DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
       if (!productionGates) "DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS": "1",
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
     },
@@ -90,6 +101,19 @@ Future<void> main(List<String> args) async {
   );
 
   stdout.writeln("Initial hosted app process exited with code $exitCode");
+
+  if (expectInstallerHandoff) {
+    await _expectDiagnosticsLog(
+      diagnosticsLogPath!,
+      const <String>[
+        "pkg manifest loaded",
+        "pkg installer open",
+        "pkg installer opened",
+      ],
+    );
+    stdout.writeln("Hosted smoke Installer.app handoff scheduled.");
+    return;
+  }
 
   await _waitFor(
     installedSentinel.existsSync,
@@ -145,6 +169,28 @@ Future<void> _waitForFileText(
     timeout,
     "Timed out waiting for hosted smoke marker '$expected'.",
   );
+}
+
+Future<void> _expectDiagnosticsLog(
+  String logPath,
+  List<String> expectedEvents,
+) async {
+  final log = File(logPath);
+  await _waitFor(
+    log.existsSync,
+    const Duration(seconds: 10),
+    "Timed out waiting for helper diagnostics log at $logPath.",
+  );
+
+  final contents = await log.readAsString();
+  for (final event in expectedEvents) {
+    if (!contents.contains('"event":"$event"')) {
+      stderr.writeln(contents);
+      throw StateError(
+        "Helper diagnostics log missing event '$event' in $logPath.",
+      );
+    }
+  }
 }
 
 bool markerHasReached(String actual, String expected) {
@@ -238,8 +284,9 @@ String? _absolutePath(String? path) {
 
 void _usage() {
   stderr.writeln(
-    "Usage: dart run tool/hosted_update_smoke.dart --app <path> "
-    "--app-archive-url <url> [--production-gates] [--relaunch]\n"
+    "Usage: dart run example/tool/hosted_update_smoke.dart --app <path> "
+    "--app-archive-url <url> [--production-gates] [--relaunch] "
+    "[--expect-installer-handoff --diagnostics-log <path>]\n"
     "\n"
     "Use --production-gates on macOS with signed, notarized, stapled Release "
     ".app bundles.",

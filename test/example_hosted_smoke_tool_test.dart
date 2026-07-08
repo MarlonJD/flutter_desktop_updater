@@ -14,7 +14,10 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_APP_ARCHIVE_URL"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"));
+    expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"));
+    expect(source, contains("--expect-installer-handoff"));
+    expect(source, contains("pkg installer opened"));
     expect(source, contains("if (!productionGates)"));
     expect(source, contains("checking"));
     expect(source, contains("downloading"));
