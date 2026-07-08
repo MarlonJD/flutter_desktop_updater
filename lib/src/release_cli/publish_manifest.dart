@@ -127,10 +127,12 @@ class PublishManifestArtifact extends PublishManifestFile {
     required super.url,
     required this.sha256,
     required this.length,
+    this.kind = "zip",
   });
 
   factory PublishManifestArtifact.fromJson(Map<String, dynamic> json) {
     return PublishManifestArtifact(
+      kind: json["kind"] as String? ?? "zip",
       path: json["path"] as String? ?? "",
       url: Uri.parse(json["url"] as String? ?? ""),
       sha256: json["sha256"] as String? ?? "",
@@ -138,6 +140,7 @@ class PublishManifestArtifact extends PublishManifestFile {
     );
   }
 
+  final String kind;
   final String sha256;
   final int length;
 
@@ -145,6 +148,7 @@ class PublishManifestArtifact extends PublishManifestFile {
   Map<String, dynamic> toJson() {
     return {
       ...super.toJson(),
+      "kind": kind,
       "sha256": sha256,
       "length": length,
     };

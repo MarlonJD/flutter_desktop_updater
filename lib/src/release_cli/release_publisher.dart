@@ -6,6 +6,9 @@ import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
+import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
+import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
+import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
 import "package:desktop_updater/src/release_cli/project_metadata_resolver.dart";
 import "package:desktop_updater/src/release_cli/publish_layout.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
@@ -67,6 +70,8 @@ class ReleasePublisher {
   const ReleasePublisher({
     this.skipBuild = false,
     this.packager = const ZipReleasePackager(),
+    this.dmgPackager = const DmgPackager(),
+    this.pkgPackager = const PkgPackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
     this.runProcess = defaultProcessRunner,
     this.runHookCommand = defaultReleaseHookCommandRunner,
@@ -75,6 +80,8 @@ class ReleasePublisher {
 
   final bool skipBuild;
   final ReleasePackager packager;
+  final DmgPackager dmgPackager;
+  final PkgPackager pkgPackager;
   final ProjectMetadataResolver metadataResolver;
   final ProcessRunner runProcess;
   final ReleaseHookCommandRunner runHookCommand;
@@ -100,12 +107,20 @@ class ReleasePublisher {
       platform: platform,
       overrides: overrides,
     );
+    final macosArtifact =
+        platform == "macos" ? config.macos.artifactKind : null;
+    final artifactExtension = switch (macosArtifact) {
+      MacOSArtifactKind.dmg => ".dmg",
+      MacOSArtifactKind.pkg => ".pkg",
+      _ => ".zip",
+    };
     final layout = PublishLayout.create(
       outputDirectory: config.outputDirectory,
       baseUrl: config.baseUrl,
       version: metadata.version,
       platform: platform,
       appName: metadata.appName,
+      artifactExtension: artifactExtension,
     );
 
     if (!skipBuild) {
@@ -147,20 +162,61 @@ class ReleasePublisher {
 
     output.writeln("Packaging update...");
     final archiveAppName = _artifactNameStem(metadata.appName);
-    final packageResult = await packager.package(
-      ReleasePackageRequest(
-        input: metadata.input,
-        outputDirectory: layout.releaseDirectory,
-        packageId: metadata.packageId,
-        appName: metadata.appName,
-        version: metadata.version,
-        buildNumber: metadata.buildNumber,
-        platform: platform,
-        channel: config.channel,
-        artifactUrl: layout.artifactUrl,
-        installStrategy: metadata.profile.installStrategy,
-      ),
-    );
+    late final ReleasePackageResult packageResult;
+    if (platform == "macos" &&
+        config.macos.artifactKind == MacOSArtifactKind.dmg) {
+      packageResult = await dmgPackager.package(
+        ReleasePackageRequest(
+          input: metadata.input,
+          outputDirectory: layout.releaseDirectory,
+          packageId: metadata.packageId,
+          appName: metadata.appName,
+          version: metadata.version,
+          buildNumber: metadata.buildNumber,
+          platform: platform,
+          channel: config.channel,
+          artifactUrl: layout.artifactUrl,
+          installStrategy: "wholeBundleReplace",
+          minimumUpdaterVersion: "2.6.0",
+        ),
+        config: config.macos.dmg.resolveDefaultsForAppName(metadata.appName),
+        publishConfig: config.macos,
+      );
+    } else if (platform == "macos" &&
+        config.macos.artifactKind == MacOSArtifactKind.pkg) {
+      packageResult = await pkgPackager.package(
+        ReleasePackageRequest(
+          input: metadata.input,
+          outputDirectory: layout.releaseDirectory,
+          packageId: metadata.packageId,
+          appName: metadata.appName,
+          version: metadata.version,
+          buildNumber: metadata.buildNumber,
+          platform: platform,
+          channel: config.channel,
+          artifactUrl: layout.artifactUrl,
+          installStrategy: "pkgInstaller",
+          minimumUpdaterVersion: "2.6.0",
+        ),
+        config: config.macos.pkg,
+        publishConfig: config.macos,
+      );
+    } else {
+      packageResult = await packager.package(
+        ReleasePackageRequest(
+          input: metadata.input,
+          outputDirectory: layout.releaseDirectory,
+          packageId: metadata.packageId,
+          appName: metadata.appName,
+          version: metadata.version,
+          buildNumber: metadata.buildNumber,
+          platform: platform,
+          channel: config.channel,
+          artifactUrl: layout.artifactUrl,
+          installStrategy: metadata.profile.installStrategy,
+        ),
+      );
+    }
 
     await upsertAppArchive(
       archiveFile: layout.appArchiveFile,
@@ -204,6 +260,7 @@ class ReleasePublisher {
         url: layout.releaseUrl,
       ),
       artifact: PublishManifestArtifact(
+        kind: packageResult.descriptor.artifact.kind,
         path: layout.artifactRelativePath,
         url: layout.artifactUrl,
         sha256: packageResult.descriptor.artifact.sha256,
@@ -569,6 +626,8 @@ Map<String, String> _releaseHookEnvironment({
     "DESKTOP_UPDATER_APP_ARCHIVE_FILE": layout.appArchiveFile.path,
     "DESKTOP_UPDATER_RELEASE_FILE": layout.releaseFile.path,
     "DESKTOP_UPDATER_ARTIFACT_FILE": layout.artifactFile.path,
+    "DESKTOP_UPDATER_ARTIFACT_KIND":
+        _artifactKindForPath(layout.artifactFile.path),
     "DESKTOP_UPDATER_APP_ARCHIVE_URL": layout.appArchiveUrl.toString(),
     "DESKTOP_UPDATER_RELEASE_URL": layout.releaseUrl.toString(),
     "DESKTOP_UPDATER_ARTIFACT_URL": layout.artifactUrl.toString(),
@@ -954,4 +1013,14 @@ String _artifactNameStem(String appName) {
     stem = stem.substring(0, stem.length - ".exe".length);
   }
   return stem;
+}
+
+String _artifactKindForPath(String artifactPath) {
+  if (artifactPath.endsWith(".dmg")) {
+    return "dmg";
+  }
+  if (artifactPath.endsWith(".pkg")) {
+    return "pkgInstaller";
+  }
+  return "zip";
 }
