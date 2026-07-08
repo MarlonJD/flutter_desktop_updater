@@ -451,10 +451,9 @@ class ReleaseInnoInstall {
         json["silentArgs"],
         "install.inno.silentArgs",
       ),
-      inheritInstallDirectory:
-          json["inheritInstallDirectory"] as bool? ?? true,
-      logFileName: json["logFileName"] as String? ??
-          "desktop_updater_inno_install.log",
+      inheritInstallDirectory: json["inheritInstallDirectory"] as bool? ?? true,
+      logFileName:
+          json["logFileName"] as String? ?? "desktop_updater_inno_install.log",
       relaunchAfterInstall: json["relaunchAfterInstall"] as bool? ?? true,
       requiresElevation: json["requiresElevation"] as String? ?? "auto",
       authenticode: json["authenticode"] == null
@@ -555,8 +554,7 @@ class ReleaseAuthenticodePolicy {
   Map<String, dynamic> toJson() {
     return {
       "required": required,
-      if (sha256Thumbprints.isNotEmpty)
-        "sha256Thumbprints": sha256Thumbprints,
+      if (sha256Thumbprints.isNotEmpty) "sha256Thumbprints": sha256Thumbprints,
     };
   }
 
