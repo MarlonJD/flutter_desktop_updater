@@ -24,4 +24,25 @@ void main() {
       "https://updates.example.com/releases/2.0.1/macos/release.json",
     );
   });
+
+  test("creates exe artifact layout for Windows Inno installers", () {
+    final layout = PublishLayout.create(
+      outputDirectory: Directory("/tmp/out"),
+      baseUrl: Uri.parse("https://updates.example.com/app"),
+      version: "2.5.0",
+      platform: "windows",
+      appName: "Example",
+      artifactExtension: ".exe",
+      artifactSuffix: "-setup",
+    );
+
+    expect(
+      layout.artifactRelativePath,
+      "releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+    );
+    expect(
+      layout.artifactUrl.toString(),
+      "https://updates.example.com/app/releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+    );
+  });
 }
