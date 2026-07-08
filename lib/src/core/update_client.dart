@@ -2,6 +2,7 @@ import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
@@ -44,22 +45,27 @@ class UpdateClient {
     SafeZipExtractor extractor = const SafeZipExtractor(),
     Directory? stagingParent,
     ProcessRunner runProcess = defaultProcessRunner,
+    MacOSDistributionVerifier macosDistributionVerifier =
+        const MacOSDistributionVerifier(),
     MinimumOSSupportChecker? isMinimumOSSupported,
     DesktopUpdaterTelemetry? telemetry,
     this.installationIdentity,
-  })  : platform = platform ?? Platform.operatingSystem,
-        _currentUpdaterVersion = currentUpdaterVersion ??
-            DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
-        _transport = transport ??
-            CompositeUpdateTransport(
-              requestHeadersProvider: requestHeadersProvider,
-            ),
-        _verifier = verifier,
-        _extractor = extractor,
-        _stagingParent = stagingParent,
-        _runProcess = runProcess,
-        _isMinimumOSSupported = isMinimumOSSupported,
-        _telemetry = telemetry;
+  }) : platform = platform ?? Platform.operatingSystem,
+       _currentUpdaterVersion =
+           currentUpdaterVersion ??
+           DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
+       _transport =
+           transport ??
+           CompositeUpdateTransport(
+             requestHeadersProvider: requestHeadersProvider,
+           ),
+       _verifier = verifier,
+       _extractor = extractor,
+       _stagingParent = stagingParent,
+       _runProcess = runProcess,
+       _macosDistributionVerifier = macosDistributionVerifier,
+       _isMinimumOSSupported = isMinimumOSSupported,
+       _telemetry = telemetry;
 
   /// Hosted `app-archive.json` URL.
   final Uri appArchiveUrl;
@@ -82,6 +88,7 @@ class UpdateClient {
   final SafeZipExtractor _extractor;
   final Directory? _stagingParent;
   final ProcessRunner _runProcess;
+  final MacOSDistributionVerifier _macosDistributionVerifier;
   final MinimumOSSupportChecker? _isMinimumOSSupported;
   final DesktopUpdaterTelemetry? _telemetry;
 
@@ -149,7 +156,13 @@ class UpdateClient {
     final stagingRoot = await stagingParent.createTemp(
       desktopUpdaterStagingPrefix,
     );
-    final artifactFile = File(path.join(stagingRoot.path, "artifact.zip"));
+    final artifactFile = File(
+      path.join(stagingRoot.path, switch (descriptor.artifact.kind) {
+        "dmg" => "artifact.dmg",
+        "pkgInstaller" => "artifact.pkg",
+        _ => "artifact.zip",
+      }),
+    );
 
     try {
       await _transport.download(
@@ -171,6 +184,58 @@ class UpdateClient {
         ),
       );
 
+      if (descriptor.artifact.kind == "dmg") {
+        if (descriptor.platform != "macos" || platform != "macos") {
+          throw UnsupportedError("DMG updates are only supported on macOS.");
+        }
+        final dmg = descriptor.install.macosDmg!;
+        final stagedApp = await _macosDistributionVerifier
+            .withMountedVerifiedDmg<Directory>(
+              dmg: artifactFile,
+              verifyPrimarySignature: dmg.verifyPrimarySignature,
+              body: (mounted) {
+                return _macosDistributionVerifier.copyAppFromMountedDmg(
+                  mounted: mounted,
+                  appBundleName: dmg.appBundleName,
+                  destinationParent: stagingRoot,
+                );
+              },
+            );
+        await rejectTopLevelMacOSAppSymlink(stagedApp.path);
+        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
+            .writeAsString(
+              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+            );
+        return UpdateStageResult(
+          descriptor: descriptor,
+          stagingPath: stagedApp.path,
+        );
+      }
+
+      if (descriptor.artifact.kind == "pkgInstaller") {
+        if (descriptor.platform != "macos" || platform != "macos") {
+          throw UnsupportedError(
+            "PKG installer updates are only supported on macOS.",
+          );
+        }
+        await _macosDistributionVerifier.verifyPkgInstaller(
+          pkg: artifactFile,
+          expectedPackageIds: descriptor.install.macosPkg!.expectedPackageIds,
+        );
+        final installerFile = File(
+          path.join(stagingRoot.path, "installer.pkg"),
+        );
+        await artifactFile.rename(installerFile.path);
+        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
+            .writeAsString(
+              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+            );
+        return UpdateStageResult(
+          descriptor: descriptor,
+          stagingPath: stagingRoot.path,
+        );
+      }
+
       if (descriptor.platform == "macos") {
         await runDittoExtractZip(
           archivePath: artifactFile.path,
@@ -190,23 +255,18 @@ class UpdateClient {
           : stagingRoot.path;
       if (descriptor.platform == "macos") {
         await rejectTopLevelMacOSAppSymlink(stagedPath);
-        await File(
-          path.join(stagingRoot.path, stagedReleaseManifestFileName),
-        ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-        );
+        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
+            .writeAsString(
+              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+            );
       } else if (descriptor.platform == "windows") {
-        await File(
-          path.join(stagingRoot.path, stagedReleaseManifestFileName),
-        ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
-        );
+        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
+            .writeAsString(
+              const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+            );
       }
 
-      return UpdateStageResult(
-        descriptor: descriptor,
-        stagingPath: stagedPath,
-      );
+      return UpdateStageResult(descriptor: descriptor, stagingPath: stagedPath);
     } catch (_) {
       if (await stagingRoot.exists()) {
         await stagingRoot.delete(recursive: true);

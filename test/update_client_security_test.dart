@@ -2,8 +2,11 @@ import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
+import "package:desktop_updater/src/release_manifest.dart"
+    show sha256File, stagedReleaseManifestFileName;
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -74,142 +77,152 @@ void main() {
     }
   });
 
-  test("filters staged rollout index items before descriptor download",
-      () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.com/app-archive.json");
-    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
-    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
-    final rollout = {"percentage": 25, "salt": "stable-2026-06"};
+  test(
+    "filters staged rollout index items before descriptor download",
+    () async {
+      final archiveUrl = Uri.parse(
+        "https://updates.example.com/app-archive.json",
+      );
+      final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+      final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+      final rollout = {"percentage": 25, "salt": "stable-2026-06"};
 
-    final withoutIdentityTransport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
-      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
-    });
-    final withoutIdentity = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
-      platform: "macos",
-      transport: withoutIdentityTransport,
-    );
+      final withoutIdentityTransport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+        releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+      });
+      final withoutIdentity = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: withoutIdentityTransport,
+      );
 
-    expect(await withoutIdentity.checkForUpdate(), isNull);
-    expect(withoutIdentityTransport.downloadedSources, [archiveUrl]);
+      expect(await withoutIdentity.checkForUpdate(), isNull);
+      expect(withoutIdentityTransport.downloadedSources, [archiveUrl]);
 
-    final outsideRolloutTransport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
-      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
-    });
-    final outsideRollout = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
-      platform: "macos",
-      transport: outsideRolloutTransport,
-      installationIdentity: "device-1",
-    );
+      final outsideRolloutTransport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+        releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+      });
+      final outsideRollout = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: outsideRolloutTransport,
+        installationIdentity: "device-1",
+      );
 
-    expect(await outsideRollout.checkForUpdate(), isNull);
-    expect(outsideRolloutTransport.downloadedSources, [archiveUrl]);
+      expect(await outsideRollout.checkForUpdate(), isNull);
+      expect(outsideRolloutTransport.downloadedSources, [archiveUrl]);
 
-    final eligibleTransport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl, rollout: rollout),
-      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
-    });
-    final eligible = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
-      platform: "macos",
-      transport: eligibleTransport,
-      installationIdentity: "pilot-a",
-    );
+      final eligibleTransport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl, rollout: rollout),
+        releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+      });
+      final eligible = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: eligibleTransport,
+        installationIdentity: "pilot-a",
+      );
 
-    final result = await eligible.checkForUpdate();
+      final result = await eligible.checkForUpdate();
 
-    expect(result, isNotNull);
-    expect(result!.item.version, "2.1.0");
-    expect(eligibleTransport.downloadedSources, [archiveUrl, releaseUrl]);
-  });
+      expect(result, isNotNull);
+      expect(result!.item.version, "2.1.0");
+      expect(eligibleTransport.downloadedSources, [archiveUrl, releaseUrl]);
+    },
+  );
 
-  test("keeps rollout metadata absent items eligible without identity",
-      () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.com/app-archive.json");
-    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
-    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
-    final transport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl),
-      releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
-    });
-    final client = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
-      platform: "macos",
-      transport: transport,
-    );
+  test(
+    "keeps rollout metadata absent items eligible without identity",
+    () async {
+      final archiveUrl = Uri.parse(
+        "https://updates.example.com/app-archive.json",
+      );
+      final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+      final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+      final transport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl),
+        releaseUrl: _descriptorJson(artifactUrl: artifactUrl),
+      });
+      final client = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: transport,
+      );
 
-    final result = await client.checkForUpdate();
+      final result = await client.checkForUpdate();
 
-    expect(result, isNotNull);
-    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
-  });
+      expect(result, isNotNull);
+      expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+    },
+  );
 
-  test("keeps delta artifacts descriptor-only during update selection",
-      () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.com/app-archive.json");
-    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
-    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
-    final deltaUrl = Uri.parse(
-      "https://updates.example.com/2.0.0-to-2.1.0.patch",
-    );
-    final transport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl),
-      releaseUrl: _descriptorJson(
-        artifactUrl: artifactUrl,
-        deltaArtifacts: [
-          {
-            "fromVersion": "2.0.0",
-            "kind": "bsdiff",
-            "url": deltaUrl.toString(),
-            "sha256": "b" * 64,
-            "length": 456,
-          },
-        ],
-      ),
-    });
-    final client = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
-      platform: "macos",
-      transport: transport,
-    );
+  test(
+    "keeps delta artifacts descriptor-only during update selection",
+    () async {
+      final archiveUrl = Uri.parse(
+        "https://updates.example.com/app-archive.json",
+      );
+      final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+      final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+      final deltaUrl = Uri.parse(
+        "https://updates.example.com/2.0.0-to-2.1.0.patch",
+      );
+      final transport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl),
+        releaseUrl: _descriptorJson(
+          artifactUrl: artifactUrl,
+          deltaArtifacts: [
+            {
+              "fromVersion": "2.0.0",
+              "kind": "bsdiff",
+              "url": deltaUrl.toString(),
+              "sha256": "b" * 64,
+              "length": 456,
+            },
+          ],
+        ),
+      });
+      final client = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: transport,
+      );
 
-    final result = await client.checkForUpdate();
+      final result = await client.checkForUpdate();
 
-    expect(result, isNotNull);
-    expect(result!.descriptor.artifact.url, artifactUrl);
-    expect(result.descriptor.deltaArtifacts.single.url, deltaUrl);
-    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
-  });
+      expect(result, isNotNull);
+      expect(result!.descriptor.artifact.url, artifactUrl);
+      expect(result.descriptor.deltaArtifacts.single.url, deltaUrl);
+      expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+    },
+  );
 
   test("skips descriptors that require a newer updater", () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.com/app-archive.json");
+    final archiveUrl = Uri.parse(
+      "https://updates.example.com/app-archive.json",
+    );
     final releaseUrl = Uri.parse("https://updates.example.com/release.json");
     final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
     final transport = _MapUpdateTransport({
@@ -263,43 +276,143 @@ void main() {
     expect(transport.downloadedSources, isEmpty);
   });
 
-  test("skips descriptors when minimum OS policy rejects the platform",
-      () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.com/app-archive.json");
-    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
-    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
-    final transport = _MapUpdateTransport({
-      archiveUrl: _indexJson(releaseUrl),
-      releaseUrl: _descriptorJson(
-        artifactUrl: artifactUrl,
-        minimumOS: {"macos": "13.0"},
-      ),
+  test("stages macOS DMG artifacts as verified app bundles", () async {
+    final root = await Directory.systemTemp.createTemp("dmg_stage_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
     });
-    final checkedPolicies = <String>[];
-    final client = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.fromParts(
-        versionName: "2.0.0",
-        buildNumber: "200",
-      ),
+
+    final dmg = File(path.join(root.path, "Example.dmg"));
+    await dmg.writeAsBytes([1, 2, 3, 4]);
+    final descriptor = _descriptor(
       platform: "macos",
-      transport: transport,
-      isMinimumOSSupported: ({
-        required minimumOS,
-        required platform,
-      }) {
-        checkedPolicies.add("$platform:$minimumOS");
-        return false;
-      },
+      artifactKind: "dmg",
+      artifactUrl: dmg.uri,
+      artifactSha256: await sha256File(dmg),
+      artifactLength: await dmg.length(),
+      minimumUpdaterVersion: "2.6.0",
+      install: const ReleaseInstall(
+        strategy: "wholeBundleReplace",
+        macosDmg: ReleaseMacOSDmgInstall(
+          appBundleName: "Example.app",
+          verifyPrimarySignature: true,
+        ),
+      ),
     );
 
-    final result = await client.checkForUpdate();
+    final client = UpdateClient(
+      appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      currentUpdaterVersion: DesktopVersionInfo.parse("2.6.0"),
+      platform: "macos",
+      stagingParent: root,
+      macosDistributionVerifier: const _FakeMacOSDistributionVerifier(
+        copiedAppName: "Example.app",
+      ),
+    );
 
-    expect(result, isNull);
-    expect(checkedPolicies, ["macos:13.0"]);
-    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+    final staged = await client.downloadVerifyAndStage(descriptor: descriptor);
+
+    expect(staged.stagingPath, endsWith("Example.app"));
+    expect(
+      File(
+        path.join(
+          Directory(staged.stagingPath).parent.path,
+          stagedReleaseManifestFileName,
+        ),
+      ).existsSync(),
+      isTrue,
+    );
   });
+
+  test("stages macOS PKG installer artifacts without extracting", () async {
+    final root = await Directory.systemTemp.createTemp("pkg_stage_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+
+    final pkg = File(path.join(root.path, "Example.pkg"));
+    await pkg.writeAsBytes([4, 3, 2, 1]);
+    final descriptor = _descriptor(
+      platform: "macos",
+      artifactKind: "pkgInstaller",
+      artifactUrl: pkg.uri,
+      artifactSha256: await sha256File(pkg),
+      artifactLength: await pkg.length(),
+      minimumUpdaterVersion: "2.6.0",
+      install: const ReleaseInstall(
+        strategy: "pkgInstaller",
+        macosPkg: ReleaseMacOSPkgInstall(
+          launchMode: "installerApp",
+          expectedPackageIds: ["com.example.app.pkg"],
+          relaunchAfterInstall: false,
+        ),
+      ),
+    );
+
+    final client = UpdateClient(
+      appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      currentUpdaterVersion: DesktopVersionInfo.parse("2.6.0"),
+      platform: "macos",
+      stagingParent: root,
+      macosDistributionVerifier: const _FakeMacOSDistributionVerifier(),
+    );
+
+    final staged = await client.downloadVerifyAndStage(descriptor: descriptor);
+
+    expect(
+      File(path.join(staged.stagingPath, "installer.pkg")).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(path.join(staged.stagingPath, stagedReleaseManifestFileName))
+          .existsSync(),
+      isTrue,
+    );
+  });
+
+  test(
+    "skips descriptors when minimum OS policy rejects the platform",
+    () async {
+      final archiveUrl = Uri.parse(
+        "https://updates.example.com/app-archive.json",
+      );
+      final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+      final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+      final transport = _MapUpdateTransport({
+        archiveUrl: _indexJson(releaseUrl),
+        releaseUrl: _descriptorJson(
+          artifactUrl: artifactUrl,
+          minimumOS: {"macos": "13.0"},
+        ),
+      });
+      final checkedPolicies = <String>[];
+      final client = UpdateClient(
+        appArchiveUrl: archiveUrl,
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "2.0.0",
+          buildNumber: "200",
+        ),
+        platform: "macos",
+        transport: transport,
+        isMinimumOSSupported: ({required minimumOS, required platform}) {
+          checkedPolicies.add("$platform:$minimumOS");
+          return false;
+        },
+      );
+
+      final result = await client.checkForUpdate();
+
+      expect(result, isNull);
+      expect(checkedPolicies, ["macos:13.0"]);
+      expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+    },
+  );
 }
 
 String _indexJson(Uri releaseUrl, {Map<String, dynamic>? rollout}) {
@@ -334,13 +447,16 @@ String _descriptorJson({
   if (deltaArtifacts.isNotEmpty) {
     json["deltaArtifacts"] = deltaArtifacts;
   }
-  return jsonEncode(
-    json,
-  );
+  return jsonEncode(json);
 }
 
 ReleaseDescriptor _descriptor({
   required Uri artifactUrl,
+  String platform = "macos",
+  String artifactKind = "zip",
+  String? artifactSha256,
+  int? artifactLength,
+  ReleaseInstall install = const ReleaseInstall(strategy: "wholeBundleReplace"),
   String minimumUpdaterVersion = "2.0.0",
   Map<String, String> minimumOS = const {},
 }) {
@@ -350,15 +466,15 @@ ReleaseDescriptor _descriptor({
     appName: "Example",
     version: "2.1.0",
     buildNumber: 210,
-    platform: "macos",
+    platform: platform,
     channel: "stable",
     artifact: ReleaseArtifact(
-      kind: "zip",
+      kind: artifactKind,
       url: artifactUrl,
-      sha256: "a" * 64,
-      length: 12,
+      sha256: artifactSha256 ?? "a" * 64,
+      length: artifactLength ?? 12,
     ),
-    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    install: install,
     minimumUpdaterVersion: minimumUpdaterVersion,
     minimumOS: minimumOS,
     generatedAt: DateTime.utc(2026, 6, 13),
@@ -387,6 +503,42 @@ class _MapUpdateTransport implements UpdateTransport {
     await destination.writeAsString(response);
     onProgress?.call(response.length, response.length);
   }
+}
+
+class _FakeMacOSDistributionVerifier extends MacOSDistributionVerifier {
+  const _FakeMacOSDistributionVerifier({this.copiedAppName});
+
+  final String? copiedAppName;
+
+  @override
+  Future<T> withMountedVerifiedDmg<T>({
+    required File dmg,
+    required bool verifyPrimarySignature,
+    required Future<T> Function(MountedDmg mounted) body,
+  }) {
+    return body(
+      MountedDmg(imagePath: dmg.path, mountPoint: "/Volumes/Example"),
+    );
+  }
+
+  @override
+  Future<Directory> copyAppFromMountedDmg({
+    required MountedDmg mounted,
+    required String appBundleName,
+    required Directory destinationParent,
+  }) async {
+    final app = Directory(
+      path.join(destinationParent.path, copiedAppName ?? appBundleName),
+    );
+    await app.create(recursive: true);
+    return app;
+  }
+
+  @override
+  Future<void> verifyPkgInstaller({
+    required File pkg,
+    required List<String> expectedPackageIds,
+  }) async {}
 }
 
 class _UpdateFixture {
@@ -420,39 +572,27 @@ class _UpdateFixture {
 
     await File(path.join(root.path, "app-archive.json")).writeAsString(
       "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "appName": "Example",
-            "items": [
-              {
-                "version": indexVersion,
-                "buildNumber": indexBuildNumber,
-                "platform": "macos",
-                "channel": "stable",
-                "mandatory": true,
-                "release": releaseUrl.toString(),
-              },
-            ],
-          })}\n",
+        "schemaVersion": 3,
+        "appName": "Example",
+        "items": [
+          {"version": indexVersion, "buildNumber": indexBuildNumber, "platform": "macos", "channel": "stable", "mandatory": true, "release": releaseUrl.toString()},
+        ],
+      })}\n",
     );
     await File(path.join(root.path, "release.json")).writeAsString(
       "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "packageId": "com.example.app",
-            "appName": "Example",
-            "version": descriptorVersion,
-            "buildNumber": descriptorBuildNumber,
-            "platform": "macos",
-            "channel": "stable",
-            "artifact": {
-              "kind": "zip",
-              "url": artifactUrl.toString(),
-              "sha256": artifactSha256,
-              "length": artifactLength,
-            },
-            "install": {"strategy": "wholeBundleReplace"},
-            "minimumUpdaterVersion": "2.0.0",
-            "generatedAt": DateTime.utc(2026, 6, 12).toIso8601String(),
-          })}\n",
+        "schemaVersion": 3,
+        "packageId": "com.example.app",
+        "appName": "Example",
+        "version": descriptorVersion,
+        "buildNumber": descriptorBuildNumber,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {"kind": "zip", "url": artifactUrl.toString(), "sha256": artifactSha256, "length": artifactLength},
+        "install": {"strategy": "wholeBundleReplace"},
+        "minimumUpdaterVersion": "2.0.0",
+        "generatedAt": DateTime.utc(2026, 6, 12).toIso8601String(),
+      })}\n",
     );
 
     return _UpdateFixture(
