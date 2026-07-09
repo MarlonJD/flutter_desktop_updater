@@ -60,14 +60,18 @@ void main() {
 
     expect(Directory("docs/plans").existsSync(), isFalse);
     if (activePlansDirectory.existsSync()) {
-      expect(activePlansDirectory.listSync(), isEmpty);
+      for (final entity in activePlansDirectory.listSync()) {
+        expect(entity, isA<File>());
+        expect(entity.path, endsWith(".md"));
+        final activePlanLink = "active/${entity.uri.pathSegments.last}";
+        expect(index, contains(activePlanLink));
+      }
     }
     expect(Directory("docs/exec-plans/completed").existsSync(), isTrue);
     expect(File("docs/exec-plans/tech-debt-tracker.md").existsSync(), isTrue);
 
     expect(index, contains("# Execution Plans"));
     expect(index, contains("## Active"));
-    expect(index, contains("No active plans."));
     expect(index, contains("## Completed"));
     expect(index, contains(harnessPlanLink));
     expect(index, isNot(contains("active/2026-07-01")));

@@ -8,7 +8,12 @@ verification, and record recurring cleanup work in `tech-debt-tracker.md`.
 
 ## Active
 
-No active plans.
+- [2026-07-09 - Windows Inno preview feedback fixes](active/2026-07-09-windows-inno-preview-feedback-fixes-plan.md)
+- [2026-07-08 - macOS DMG and PKG production integration](active/2026-07-08-macos-dmg-pkg-production-integration-plan.md)
+- [2026-07-08 - Windows full Inno integration](active/2026-07-08-windows-full-inno-integration-plan.md)
+- [2026-07-07 - Windows Inno direct update compatibility](active/2026-07-07-windows-inno-direct-update-compat-plan.md)
+- [2026-07-05 - Native SDK monorepo](active/2026-07-05-native-sdk-monorepo-plan.md)
+- [2026-07-05 - Full native runtime preview](active/2026-07-05-full-native-runtime-preview-plan.md)
 
 ## Completed
 
