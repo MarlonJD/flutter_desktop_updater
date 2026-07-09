@@ -7,6 +7,7 @@ import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
@@ -112,6 +113,14 @@ class ReleasePublisher {
     );
     final useInnoInstaller =
         platform == "windows" && config.windows.installer.enabled;
+    final innoOutputBaseName = useInnoInstaller
+        ? await resolveInnoOutputBaseName(
+            config: config.windows.installer,
+            appName: metadata.appName,
+            version: metadata.version,
+            platform: platform,
+          )
+        : null;
     final macosArtifact =
         platform == "macos" ? config.macos.artifactKind : null;
     final artifactExtension = switch (macosArtifact) {
@@ -127,6 +136,7 @@ class ReleasePublisher {
       appName: metadata.appName,
       artifactExtension: artifactExtension,
       artifactSuffix: useInnoInstaller ? "-setup" : "",
+      artifactFileName: useInnoInstaller ? "$innoOutputBaseName.exe" : null,
     );
 
     if (!skipBuild) {
@@ -185,6 +195,7 @@ class ReleasePublisher {
           minimumUpdaterVersion: "2.5.0",
         ),
         config: config.windows.installer,
+        outputBaseName: innoOutputBaseName,
       );
     } else if (platform == "macos" &&
         config.macos.artifactKind == MacOSArtifactKind.dmg) {

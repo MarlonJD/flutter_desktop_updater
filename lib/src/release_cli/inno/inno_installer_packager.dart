@@ -4,6 +4,7 @@ import "dart:io";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_compiler.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_script_builder.dart";
 import "package:desktop_updater/src/release_cli/platform_release_profile.dart";
@@ -30,15 +31,21 @@ class InnoInstallerPackager {
   Future<ReleasePackageResult> package(
     ReleasePackageRequest request, {
     required InnoPublishConfig config,
+    String? outputBaseName,
   }) async {
     await request.outputDirectory.create(recursive: true);
-    final outputBaseName = config.outputBaseName ??
-        "${_artifactNameStem(request.appName)}-${request.version}-${request.platform}-setup";
+    final resolvedOutputBaseName = outputBaseName ??
+        await resolveInnoOutputBaseName(
+          config: config,
+          appName: request.appName,
+          version: request.version,
+          platform: request.platform,
+        );
     final outputExe = File(
-      path.join(request.outputDirectory.path, "$outputBaseName.exe"),
+      path.join(request.outputDirectory.path, "$resolvedOutputBaseName.exe"),
     );
     final scriptFile = File(
-      path.join(request.outputDirectory.path, "$outputBaseName.iss"),
+      path.join(request.outputDirectory.path, "$resolvedOutputBaseName.iss"),
     );
 
     if (config.mode == "script") {
@@ -58,7 +65,7 @@ class InnoInstallerPackager {
           metadata: metadata,
           config: config,
           outputDirectoryPath: request.outputDirectory.path,
-          outputBaseName: outputBaseName,
+          outputBaseName: resolvedOutputBaseName,
         ),
       );
     }
@@ -122,12 +129,4 @@ class InnoInstallerPackager {
       descriptor: descriptor,
     );
   }
-}
-
-String _artifactNameStem(String appName) {
-  var stem = path.basename(appName);
-  if (stem.endsWith(".exe")) {
-    stem = stem.substring(0, stem.length - ".exe".length);
-  }
-  return stem;
 }
