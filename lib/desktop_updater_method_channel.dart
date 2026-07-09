@@ -29,6 +29,44 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     bool allowUnsignedMacOSUpdates = false,
     String? diagnosticsLogPath,
   }) async {
+    await _invokeInstallUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+    );
+  }
+
+  /// Installs a staged update with optional native target validation context.
+  Future<void> installUpdateWithContext({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+    String? installRoot,
+    String? executableRelativePath,
+    String? packageId,
+  }) async {
+    await _invokeInstallUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+      installRoot: installRoot,
+      executableRelativePath: executableRelativePath,
+      packageId: packageId,
+    );
+  }
+
+  Future<void> _invokeInstallUpdate({
+    required String stagingPath,
+    required List<String> removedFiles,
+    required bool allowUnsignedMacOSUpdates,
+    String? diagnosticsLogPath,
+    String? installRoot,
+    String? executableRelativePath,
+    String? packageId,
+  }) async {
     final arguments = <String, Object?>{
       "stagingPath": stagingPath,
       "removedFiles": removedFiles,
@@ -36,6 +74,15 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     };
     if (diagnosticsLogPath != null && diagnosticsLogPath.isNotEmpty) {
       arguments["diagnosticsLogPath"] = diagnosticsLogPath;
+    }
+    if (installRoot != null && installRoot.isNotEmpty) {
+      arguments["installRoot"] = installRoot;
+    }
+    if (executableRelativePath != null && executableRelativePath.isNotEmpty) {
+      arguments["executableRelativePath"] = executableRelativePath;
+    }
+    if (packageId != null && packageId.isNotEmpty) {
+      arguments["packageId"] = packageId;
     }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }

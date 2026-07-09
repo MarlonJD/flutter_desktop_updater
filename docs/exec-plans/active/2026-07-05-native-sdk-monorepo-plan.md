@@ -183,12 +183,18 @@ install-root inference as compatible behavior.
 
 - Create: `docs/native-contract.md`
 - Create: `test/native_contract_baseline_test.dart`
+- Modify: `lib/desktop_updater_platform_interface.dart`
+- Modify: `lib/desktop_updater_method_channel.dart`
+- Modify: `lib/updater_controller.dart`
 - Modify: `test/compat/flutter_220_public_api_test.dart`
 - Modify: `test/compat/flutter_220_channel_controller_contract_test.dart`
 - Modify: `test/compat/native_helper_events_220_contract_test.dart`
+- Modify: `test/desktop_updater_method_channel_test.dart`
 - Modify: `test/native_helper_script_test.dart`
+- Modify: `test/updater_controller_test.dart`
 - Modify: `linux/desktop_updater_plugin_private.h`
 - Modify: `linux/desktop_updater_plugin.cc`
+- Modify: `linux/test/desktop_updater_plugin_test.cc`
 
 **Interfaces:**
 
@@ -217,14 +223,14 @@ struct LinuxInstallTarget {
 - Produces:
   `ValidateLinuxInstallTarget(const LinuxInstallTarget&) -> InstallResult`.
 
-- [ ] **Step 0.1: Write the 2.7 baseline test**
+- [x] **Step 0.1: Write the 2.7 baseline test**
 
 Add `test/native_contract_baseline_test.dart` assertions for representative
 schema-v3 descriptors containing all four artifact kinds, integer build
 numbers, non-empty install strategies, and non-empty minimum updater versions.
 Do not add public production API solely to make the test easier.
 
-- [ ] **Step 0.2: Run the baseline before extraction**
+- [x] **Step 0.2: Run the baseline before extraction**
 
 Run:
 
@@ -238,7 +244,9 @@ flutter test --no-pub \
 
 Expected: PASS against the pre-extraction repository.
 
-- [ ] **Step 0.3: Add failing Linux protected-root tests**
+Verified locally on 2026-07-10: PASS, 5 tests.
+
+- [x] **Step 0.3: Add failing Linux protected-root tests**
 
 Add native/helper tests that reject these exact canonical install roots before
 creating or launching a script:
@@ -289,7 +297,11 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedOptBundle) {
 }
 ```
 
-- [ ] **Step 0.4: Implement fail-closed Linux target validation**
+RED verified locally on 2026-07-10: the new MethodChannel context,
+controller package identity, and Linux target-validation tests failed for the
+expected missing behavior.
+
+- [x] **Step 0.4: Implement fail-closed Linux target validation**
 
 Validation must:
 
@@ -314,7 +326,7 @@ executable parent for compatibility, but it must pass that candidate through
 the same validator. `/usr/bin/my-app` therefore fails closed instead of
 treating `/usr/bin` as an application bundle.
 
-- [ ] **Step 0.5: Preserve Flutter API compatibility**
+- [x] **Step 0.5: Preserve Flutter API compatibility**
 
 Keep existing public calls valid. Additional install context may be carried as
 optional internal MethodChannel arguments:
@@ -331,7 +343,7 @@ continue only when the native helper can independently prove a self-contained
 bundle; otherwise return a clear `InstallError` directing the app to a fresh
 installer.
 
-- [ ] **Step 0.6: Run the safety regression**
+- [x] **Step 0.6: Run the safety regression**
 
 Run:
 
@@ -345,7 +357,16 @@ flutter test --no-pub \
 Expected: PASS, including rejection of `/usr/bin` before destructive commands
 are emitted.
 
-- [ ] **Step 0.7: Commit the safety baseline**
+Verified locally on 2026-07-10:
+
+- focused Stage 0 and compatibility suite: PASS;
+- `dart format --set-exit-if-changed .`: PASS, 179 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with existing info-only lints;
+- `flutter test --no-pub`: PASS, 449 tests with 3 external E2E skips;
+- `dart pub publish --dry-run`: exit 0 with the expected dirty-tree warning;
+- Linux native build/tests: not run locally on macOS; CI evidence pending.
+
+- [x] **Step 0.7: Commit the safety baseline**
 
 ```sh
 git add docs/native-contract.md test/native_contract_baseline_test.dart \

@@ -91,6 +91,33 @@ void main() {
     });
   });
 
+  test("installUpdateWithContext forwards verified Linux install identity",
+      () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.installUpdateWithContext(
+      stagingPath: "/tmp/desktop-updater-stage",
+      installRoot: "/opt/example-app",
+      executableRelativePath: "bin/example-app",
+      packageId: "com.example.app",
+    );
+
+    expect(capturedCall.method, "installUpdate");
+    expect(capturedCall.arguments, {
+      "stagingPath": "/tmp/desktop-updater-stage",
+      "removedFiles": <String>[],
+      "allowUnsignedMacOSUpdates": false,
+      "installRoot": "/opt/example-app",
+      "executableRelativePath": "bin/example-app",
+      "packageId": "com.example.app",
+    });
+  });
+
   test("checkMacOSInstallLocation parses native status", () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {

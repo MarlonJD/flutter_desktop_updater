@@ -702,10 +702,11 @@ class DesktopUpdaterController extends ChangeNotifier {
 
     try {
       await _writePendingRecoveryMarker(stagingPath);
-      await DesktopUpdaterPlatform.instance.installUpdate(
+      await DesktopUpdaterPlatform.instance.installUpdateWithContext(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
         diagnosticsLogPath: diagnosticsLogPath,
+        packageId: _activeDescriptor?.packageId,
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,

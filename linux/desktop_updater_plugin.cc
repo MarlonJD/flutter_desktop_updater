@@ -1,25 +1,22 @@
-#include "include/desktop_updater/desktop_updater_plugin.h"
+#include "desktop_updater_plugin_private.h"
 
+#include <cerrno>
+#include <cstring>
+#include <cstdlib>
+#include <fstream>
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
-#include <sys/utsname.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
 #include <libgen.h>
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
 #include <linux/limits.h>
-
-// Forward declarations
-FlMethodResponse *get_platform_version();
-bool schedule_install_update(const std::string &staging_path,
-                             const std::vector<std::string> &removed_files,
-                             const std::string &diagnostics_log_path,
-                             std::string *error);
+#include <sys/stat.h>
+#include <sys/utsname.h>
+#include <sys/wait.h>
+#include <iostream>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include <unistd.h>
 
 // Function to copy file from source to destination
 bool copy_file(const char *source, const char *destination)
@@ -95,6 +92,214 @@ std::string base_name(const std::string &file_path)
   return result;
 }
 
+namespace
+{
+const std::unordered_set<std::string> kProtectedInstallRoots = {
+    "/",          "/bin",       "/sbin",      "/usr",
+    "/usr/bin",   "/usr/sbin",  "/usr/local", "/usr/local/bin",
+    "/opt",       "/etc",       "/var",       "/home",
+};
+
+bool is_canonical_absolute_path(const std::string &path)
+{
+  if (path.empty() || path.front() != '/')
+  {
+    return false;
+  }
+  if (path == "/")
+  {
+    return true;
+  }
+  if (path.back() == '/')
+  {
+    return false;
+  }
+
+  size_t segment_start = 1;
+  while (segment_start < path.size())
+  {
+    const size_t segment_end = path.find('/', segment_start);
+    const size_t length =
+        segment_end == std::string::npos ? std::string::npos
+                                         : segment_end - segment_start;
+    const std::string segment = path.substr(segment_start, length);
+    if (segment.empty() || segment == "." || segment == "..")
+    {
+      return false;
+    }
+    if (segment_end == std::string::npos)
+    {
+      break;
+    }
+    segment_start = segment_end + 1;
+  }
+  return true;
+}
+
+bool is_canonical_relative_path(const std::string &path)
+{
+  if (path.empty() || path.front() == '/' || path.back() == '/')
+  {
+    return false;
+  }
+
+  size_t segment_start = 0;
+  while (segment_start < path.size())
+  {
+    const size_t segment_end = path.find('/', segment_start);
+    const size_t length =
+        segment_end == std::string::npos ? std::string::npos
+                                         : segment_end - segment_start;
+    const std::string segment = path.substr(segment_start, length);
+    if (segment.empty() || segment == "." || segment == "..")
+    {
+      return false;
+    }
+    if (segment_end == std::string::npos)
+    {
+      break;
+    }
+    segment_start = segment_end + 1;
+  }
+  return true;
+}
+
+std::string join_path(const std::string &root, const std::string &relative)
+{
+  return root == "/" ? root + relative : root + "/" + relative;
+}
+
+bool is_strict_descendant(const std::string &path, const std::string &root)
+{
+  if (root == "/")
+  {
+    return path.size() > 1 && path.front() == '/';
+  }
+  return path.size() > root.size() &&
+         path.compare(0, root.size(), root) == 0 &&
+         path[root.size()] == '/';
+}
+
+bool paths_overlap(const std::string &first, const std::string &second)
+{
+  return first == second || is_strict_descendant(first, second) ||
+         is_strict_descendant(second, first);
+}
+
+bool has_symlink_component(const std::string &path)
+{
+  if (!is_canonical_absolute_path(path))
+  {
+    return true;
+  }
+
+  std::string current;
+  size_t segment_start = 1;
+  while (segment_start < path.size())
+  {
+    const size_t segment_end = path.find('/', segment_start);
+    const size_t length =
+        segment_end == std::string::npos ? std::string::npos
+                                         : segment_end - segment_start;
+    current += "/" + path.substr(segment_start, length);
+    struct stat path_stat = {};
+    if (lstat(current.c_str(), &path_stat) == 0 && S_ISLNK(path_stat.st_mode))
+    {
+      return true;
+    }
+    if (segment_end == std::string::npos)
+    {
+      break;
+    }
+    segment_start = segment_end + 1;
+  }
+  return false;
+}
+
+bool resolve_existing_path(const std::string &path, std::string *resolved)
+{
+  char buffer[PATH_MAX];
+  if (realpath(path.c_str(), buffer) == nullptr)
+  {
+    return false;
+  }
+  *resolved = buffer;
+  return true;
+}
+
+bool read_optional_string(FlValue *args,
+                          const char *key,
+                          std::string *value,
+                          std::string *error)
+{
+  FlValue *argument = fl_value_lookup_string(args, key);
+  if (argument == nullptr)
+  {
+    value->clear();
+    return true;
+  }
+  if (fl_value_get_type(argument) != FL_VALUE_TYPE_STRING)
+  {
+    *error = std::string(key) + " must be a string when provided.";
+    return false;
+  }
+  *value = fl_value_get_string(argument);
+  return true;
+}
+} // namespace
+
+InstallResult ValidateLinuxInstallTarget(const LinuxInstallTarget &target)
+{
+  if (!is_canonical_absolute_path(target.install_root))
+  {
+    return {false, "Linux install root must be an absolute canonical path."};
+  }
+  if (kProtectedInstallRoots.count(target.install_root) != 0)
+  {
+    return {false, "Linux install root is a protected shared/system root."};
+  }
+  if (has_symlink_component(target.install_root))
+  {
+    return {false, "Linux install root must not contain symbolic links."};
+  }
+  if (!is_canonical_relative_path(target.executable_relative_path))
+  {
+    return {false,
+            "Linux executable path must be a canonical relative path without "
+            "dot segments."};
+  }
+
+  const std::string executable_path =
+      join_path(target.install_root, target.executable_relative_path);
+  if (!is_strict_descendant(executable_path, target.install_root) ||
+      has_symlink_component(executable_path))
+  {
+    return {false, "Linux executable must resolve inside install root."};
+  }
+
+  std::string resolved_root;
+  if (resolve_existing_path(target.install_root, &resolved_root) &&
+      resolved_root != target.install_root)
+  {
+    return {false, "Linux install root must already be canonical."};
+  }
+  std::string resolved_executable;
+  if (resolve_existing_path(executable_path, &resolved_executable) &&
+      !is_strict_descendant(resolved_executable, target.install_root))
+  {
+    return {false, "Linux executable resolves outside install root."};
+  }
+
+  if (target.operation == LinuxInstallOperation::kInstall &&
+      target.package_id.find_first_not_of(" \t\r\n") == std::string::npos)
+  {
+    return {false,
+            "Linux install package identity is required; use a fresh "
+            "installer when identity cannot be verified."};
+  }
+  return {true, ""};
+}
+
 std::string shell_array(const std::vector<std::string> &values)
 {
   if (values.empty())
@@ -132,41 +337,127 @@ bool start_detached_script(const std::string &script_path)
   return pid > 0;
 }
 
-bool schedule_install_update(const std::string &staging_path,
+bool schedule_install_update(LinuxInstallOperation operation,
+                             const std::string &staging_path,
                              const std::vector<std::string> &removed_files,
                              const std::string &diagnostics_log_path,
+                             const std::string &install_root,
+                             const std::string &executable_relative_path,
+                             const std::string &package_id,
                              std::string *error)
 {
-  const std::string executable_path = current_executable_path();
-  if (executable_path.empty())
+  std::string executable_path;
+  if (!resolve_existing_path(current_executable_path(), &executable_path))
   {
     *error = "Unable to resolve executable path.";
     return false;
   }
 
-  if (!staging_path.empty())
+  const std::string target_directory =
+      install_root.empty() ? parent_directory(executable_path) : install_root;
+  std::string target_executable_relative_path = executable_relative_path;
+  if (target_executable_relative_path.empty())
   {
-    struct stat staging_stat = {};
-    if (stat(staging_path.c_str(), &staging_stat) != 0 || !S_ISDIR(staging_stat.st_mode))
+    if (is_strict_descendant(executable_path, target_directory))
     {
-      *error = "Staged update directory does not exist.";
-      return false;
+      target_executable_relative_path =
+          executable_path.substr(target_directory.size() + 1);
+    }
+    else
+    {
+      target_executable_relative_path = base_name(executable_path);
     }
   }
 
-  const std::string target_directory = parent_directory(executable_path);
+  const LinuxInstallTarget target = {
+      operation,
+      target_directory,
+      target_executable_relative_path,
+      package_id,
+  };
+  const InstallResult validation = ValidateLinuxInstallTarget(target);
+  if (!validation.ok)
+  {
+    *error = validation.error;
+    return false;
+  }
+
+  std::string canonical_target;
+  if (!resolve_existing_path(target.install_root, &canonical_target) ||
+      canonical_target != target.install_root)
+  {
+    *error = "Linux install root does not resolve to an existing canonical directory.";
+    return false;
+  }
+  const std::string requested_executable =
+      join_path(canonical_target, target.executable_relative_path);
+  std::string canonical_requested_executable;
+  if (!resolve_existing_path(requested_executable,
+                             &canonical_requested_executable) ||
+      canonical_requested_executable != executable_path)
+  {
+    *error = "Linux install executable does not match the running app.";
+    return false;
+  }
+
+  std::string canonical_staging_path;
+  if (operation == LinuxInstallOperation::kInstall)
+  {
+    struct stat staging_stat = {};
+    if (staging_path.empty() ||
+        lstat(staging_path.c_str(), &staging_stat) != 0 ||
+        !S_ISDIR(staging_stat.st_mode) || S_ISLNK(staging_stat.st_mode) ||
+        !resolve_existing_path(staging_path, &canonical_staging_path))
+    {
+      *error = "Staged update directory does not exist or is not a real directory.";
+      return false;
+    }
+    if (paths_overlap(canonical_staging_path, canonical_target))
+    {
+      *error = "Staging path must not overlap install root.";
+      return false;
+    }
+
+    for (const auto &relative : removed_files)
+    {
+      if (relative.empty())
+      {
+        continue;
+      }
+      if (!is_canonical_relative_path(relative))
+      {
+        *error = "Removed file path escapes install root.";
+        return false;
+      }
+      const std::string candidate = join_path(canonical_target, relative);
+      if (!is_strict_descendant(candidate, canonical_target) ||
+          has_symlink_component(candidate))
+      {
+        *error = "Removed file path escapes install root.";
+        return false;
+      }
+      std::string resolved_candidate;
+      if (resolve_existing_path(candidate, &resolved_candidate) &&
+          !is_strict_descendant(resolved_candidate, canonical_target))
+      {
+        *error = "Removed file path escapes install root.";
+        return false;
+      }
+    }
+  }
+
   const std::string script_path =
       "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
   const std::string removed_values = shell_array(removed_files);
-  const std::string script =
+  std::string script =
       "#!/bin/bash\n"
       "set -euo pipefail\n"
       "pid_to_wait=" +
       std::to_string(getpid()) + "\n"
                               "staging=" +
-      shell_quote(staging_path) + "\n"
+      shell_quote(canonical_staging_path) + "\n"
                                   "target=" +
-      shell_quote(target_directory) + "\n"
+      shell_quote(canonical_target) + "\n"
                                       "exe=" +
       shell_quote(executable_path) + "\n"
                                      "diagnostics_log=" +
@@ -182,7 +473,28 @@ bool schedule_install_update(const std::string &staging_path,
                        "log_event \"waiting for parent process\"\n"
                        "while kill -0 \"$pid_to_wait\" 2>/dev/null; do sleep 0.5; done\n"
                        "log_event \"parent process exited\"\n"
-                       "target_root=\"$(cd \"$target\" && pwd -P)\"\n"
+                       "resolved_target=\"$(cd \"$target\" && pwd -P)\"\n"
+                       "if [ \"$resolved_target\" != \"$target\" ]; then exit 1; fi\n";
+
+  if (operation == LinuxInstallOperation::kRestart)
+  {
+    script += "if [ \"$skip_relaunch\" != \"1\" ]; then\n"
+              "  log_event \"relaunch attempt\"\n"
+              "  cd \"$target\"\n"
+              "  \"$exe\" &\n"
+              "fi\n"
+              "rm -f \"$0\"\n";
+  }
+  else
+  {
+    script += "target_root=\"$resolved_target\"\n"
+                       "staging_root=\"$(cd \"$staging\" && pwd -P)\"\n"
+                       "case \"$staging_root\" in\n"
+                       "  \"$target_root\"|\"$target_root\"/*) exit 1 ;;\n"
+                       "esac\n"
+                       "case \"$target_root\" in\n"
+                       "  \"$staging_root\"/*) exit 1 ;;\n"
+                       "esac\n"
                        "backup=\"$(mktemp -d /tmp/desktop_updater_backup_XXXXXX)\"\n"
                        "rollback() {\n"
                        "  [ -d \"$backup\" ] || return 0\n"
@@ -263,6 +575,7 @@ bool schedule_install_update(const std::string &staging_path,
                        "  \"$exe\" &\n"
                        "fi\n"
                        "rm -f \"$0\"\n";
+  }
 
   if (!write_file(script_path, script))
   {
@@ -273,6 +586,7 @@ bool schedule_install_update(const std::string &staging_path,
   chmod(script_path.c_str(), 0755);
   if (!start_detached_script(script_path))
   {
+    unlink(script_path.c_str());
     *error = "Unable to start update helper script.";
     return false;
   }
@@ -317,7 +631,8 @@ static void desktop_updater_plugin_handle_method_call(
   else if (strcmp(method, "restartApp") == 0)
   {
     std::string error;
-    if (!schedule_install_update("", {}, "", &error))
+    if (!schedule_install_update(LinuxInstallOperation::kRestart,
+                                 "", {}, "", "", "", "", &error))
     {
       g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
@@ -365,29 +680,45 @@ static void desktop_updater_plugin_handle_method_call(
         }
 
         std::string diagnostics_log_path;
-        FlValue *diagnostics_value =
-            fl_value_lookup_string(args, "diagnosticsLogPath");
-        if (diagnostics_value != nullptr &&
-            fl_value_get_type(diagnostics_value) == FL_VALUE_TYPE_STRING)
+        std::string install_root;
+        std::string executable_relative_path;
+        std::string package_id;
+        std::string argument_error;
+        const bool context_is_valid =
+            read_optional_string(args, "diagnosticsLogPath",
+                                 &diagnostics_log_path, &argument_error) &&
+            read_optional_string(args, "installRoot", &install_root,
+                                 &argument_error) &&
+            read_optional_string(args, "executableRelativePath",
+                                 &executable_relative_path, &argument_error) &&
+            read_optional_string(args, "packageId", &package_id,
+                                 &argument_error);
+        if (!context_is_valid)
         {
-          diagnostics_log_path = fl_value_get_string(diagnostics_value);
-        }
-
-        std::string error;
-        if (!schedule_install_update(fl_value_get_string(staging_value),
-                                     removed_files, diagnostics_log_path,
-                                     &error))
-        {
-          g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
           response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-              "InstallError", error.c_str(), details));
+              "InvalidArguments", argument_error.c_str(), nullptr));
         }
         else
         {
-          response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
-          fl_method_call_respond(method_call, response, nullptr);
-          exit(0);
-          return;
+          std::string error;
+          if (!schedule_install_update(
+                  LinuxInstallOperation::kInstall,
+                  fl_value_get_string(staging_value), removed_files,
+                  diagnostics_log_path, install_root,
+                  executable_relative_path, package_id, &error))
+          {
+            g_autoptr(FlValue) details = fl_value_new_string(error.c_str());
+            response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+                "InstallError", error.c_str(), details));
+          }
+          else
+          {
+            response =
+                FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+            fl_method_call_respond(method_call, response, nullptr);
+            exit(0);
+            return;
+          }
         }
       }
     }

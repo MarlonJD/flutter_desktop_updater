@@ -16,6 +16,64 @@ void main() {
     expect(source, contains("removed=("));
   });
 
+  test("Linux helper validates an app-owned install target before scripting",
+      () {
+    final header =
+        File("linux/desktop_updater_plugin_private.h").readAsStringSync();
+    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+
+    expect(header, contains("enum class LinuxInstallOperation"));
+    expect(header, contains("struct LinuxInstallTarget"));
+    expect(header, contains("ValidateLinuxInstallTarget"));
+
+    for (final protectedRoot in <String>[
+      "/",
+      "/bin",
+      "/sbin",
+      "/usr",
+      "/usr/bin",
+      "/usr/sbin",
+      "/usr/local",
+      "/usr/local/bin",
+      "/opt",
+      "/etc",
+      "/var",
+      "/home",
+    ]) {
+      expect(source, contains('"$protectedRoot"'));
+    }
+
+    final validationIndex = source.indexOf("ValidateLinuxInstallTarget(");
+    final scriptPathIndex = source.indexOf("const std::string script_path");
+    final writeIndex = source.indexOf("write_file(script_path, script)");
+    expect(validationIndex, isNonNegative);
+    expect(scriptPathIndex, isNonNegative);
+    expect(writeIndex, isNonNegative);
+    expect(validationIndex, lessThan(scriptPathIndex));
+    expect(validationIndex, lessThan(writeIndex));
+  });
+
+  test("Linux install validation bounds staging and removed paths", () {
+    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+
+    expect(source, contains("Staging path must not overlap install root"));
+    expect(source, contains("Removed file path escapes install root"));
+    expect(source, contains("Linux install package identity is required"));
+    expect(source, contains("package_id.find_first_not_of"));
+    expect(source, contains("LinuxInstallOperation::kRestart"));
+  });
+
+  test("Linux helper revalidates roots after the parent process exits", () {
+    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+
+    expect(
+        source, contains(r'resolved_target=\"$(cd \"$target\" && pwd -P)\"'));
+    expect(source, contains(r'[ \"$resolved_target\" != \"$target\" ]'));
+    expect(source, contains(r'staging_root=\"$(cd \"$staging\" && pwd -P)\"'));
+    expect(source, contains(r'\"$target_root\"/*'));
+    expect(source, contains(r'\"$staging_root\"/*'));
+  });
+
   test("native helpers append diagnostics only when an explicit path is passed",
       () {
     final macosSource = File(
@@ -107,7 +165,7 @@ void main() {
     final cleanupIndex = source.indexOf(cleanupSnippet, restoreSearchStart);
     final trapDisabledIndex =
         source.indexOf(trapDisabledSnippet, restoreSearchStart);
-    final relaunchIndex = source.indexOf(relaunchSnippet);
+    final relaunchIndex = source.indexOf(relaunchSnippet, restoreSearchStart);
 
     expect(copyIndex, isNonNegative);
     expect(existsIndex, isNonNegative);

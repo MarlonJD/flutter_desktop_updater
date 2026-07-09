@@ -81,3 +81,38 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     );
   }
 }
+
+/// Internal install-context handoff that preserves old platform implementers.
+extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
+  /// Installs a staged update with verified context when the default
+  /// MethodChannel implementation is active, otherwise uses the compatible
+  /// [DesktopUpdaterPlatform.installUpdate] call.
+  Future<void> installUpdateWithContext({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+    String? installRoot,
+    String? executableRelativePath,
+    String? packageId,
+  }) {
+    final platform = this;
+    if (platform is MethodChannelDesktopUpdater) {
+      return platform.installUpdateWithContext(
+        stagingPath: stagingPath,
+        removedFiles: removedFiles,
+        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+        diagnosticsLogPath: diagnosticsLogPath,
+        installRoot: installRoot,
+        executableRelativePath: executableRelativePath,
+        packageId: packageId,
+      );
+    }
+    return installUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+    );
+  }
+}
