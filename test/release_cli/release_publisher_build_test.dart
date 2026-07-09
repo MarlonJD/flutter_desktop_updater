@@ -115,6 +115,62 @@ void main() {
     }
   });
 
+  test(
+    "manual publish packages the complete artifact directory without Flutter",
+    () async {
+      final root = await Directory.systemTemp.createTemp("manual_publish_");
+      final artifactRoot = Directory(path.join(root.path, "prebuilt", "app"));
+      await artifactRoot.create(recursive: true);
+      await File(path.join(artifactRoot.path, "Example.exe"))
+          .writeAsString("binary");
+      await File(path.join(artifactRoot.path, "runtime.dll"))
+          .writeAsString("runtime");
+      await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com/
+""");
+      final packager = _RecordingPackager(<String>[]);
+      try {
+        final publisher = ReleasePublisher(
+          packager: packager,
+          startBuildProcess: (
+            executable,
+            arguments, {
+            workingDirectory,
+            runInShell = false,
+          }) {
+            fail("Manual publishing must not start Flutter.");
+          },
+        );
+
+        await publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: ReleasePublishOverrides(
+            projectType: "manual",
+            artifactRoot: artifactRoot.path,
+            appName: "Example",
+            packageId: "com.example.app",
+            version: "4.2.0",
+            buildNumber: 42,
+            executableRelativePath: "Example.exe",
+          ),
+          output: StringBuffer(),
+        );
+
+        expect(packager.requests, hasLength(1));
+        final request = packager.requests.single;
+        expect(request.input.path, artifactRoot.path);
+        expect(request.appName, "Example");
+        expect(request.packageId, "com.example.app");
+        expect(request.version, "4.2.0");
+        expect(request.buildNumber, 42);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
   for (final platform in ["linux", "macos"]) {
     test("$platform publish build does not force shell resolution", () async {
       final root = await _createFixture(platform);

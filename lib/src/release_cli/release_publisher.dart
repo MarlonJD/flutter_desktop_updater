@@ -6,11 +6,15 @@ import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
+import "package:desktop_updater/src/release_cli/flutter_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
+import "package:desktop_updater/src/release_cli/manual_project_adapter.dart";
+import "package:desktop_updater/src/release_cli/platform_release_profile.dart";
+import "package:desktop_updater/src/release_cli/project_adapter.dart";
 import "package:desktop_updater/src/release_cli/project_metadata_resolver.dart";
 import "package:desktop_updater/src/release_cli/publish_layout.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
@@ -24,49 +28,18 @@ import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 import "package:path/path.dart" as path;
 
-/// Starts the Flutter build subprocess used by `release publish`.
-typedef BuildProcessStarter = Future<BuildProcess> Function(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-  bool runInShell,
-});
+export "package:desktop_updater/src/release_cli/project_adapter.dart"
+    show
+        BuildProcess,
+        BuildProcessStarter,
+        StartedBuildProcess,
+        defaultBuildProcessStarter;
 
 /// Runs a configured release hook command.
 typedef ReleaseHookCommandRunner = Future<ProcessResult> Function(
   String command, {
   required Map<String, String> environment,
 });
-
-/// A started build subprocess.
-abstract interface class BuildProcess {
-  /// The process standard output stream.
-  Stream<List<int>> get stdout;
-
-  /// The process standard error stream.
-  Stream<List<int>> get stderr;
-
-  /// Completes with the process exit code.
-  Future<int> get exitCode;
-}
-
-/// Adapter for a real `dart:io` process.
-class StartedBuildProcess implements BuildProcess {
-  /// Creates an adapter for [process].
-  const StartedBuildProcess(this.process);
-
-  /// The underlying process.
-  final Process process;
-
-  @override
-  Stream<List<int>> get stdout => process.stdout;
-
-  @override
-  Stream<List<int>> get stderr => process.stderr;
-
-  @override
-  Future<int> get exitCode => process.exitCode;
-}
 
 class ReleasePublisher {
   const ReleasePublisher({
@@ -76,6 +49,7 @@ class ReleasePublisher {
     this.dmgPackager = const DmgPackager(),
     this.pkgPackager = const PkgPackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
+    this.projectAdapters = const [],
     this.runProcess = defaultProcessRunner,
     this.runHookCommand = defaultReleaseHookCommandRunner,
     BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
@@ -87,6 +61,9 @@ class ReleasePublisher {
   final DmgPackager dmgPackager;
   final PkgPackager pkgPackager;
   final ProjectMetadataResolver metadataResolver;
+
+  /// Future native adapters available for explicit and marker selection.
+  final List<ProjectAdapter> projectAdapters;
   final ProcessRunner runProcess;
   final ReleaseHookCommandRunner runHookCommand;
   final BuildProcessStarter _startBuildProcess;
@@ -106,10 +83,51 @@ class ReleasePublisher {
         "--notarize is only supported with --platform macos.",
       );
     }
-    final metadata = await metadataResolver.resolve(
-      projectRoot: projectRoot,
-      platform: platform,
+    final flutterAdapter = FlutterProjectAdapter(
       overrides: overrides,
+      output: output,
+      skipBuild: skipBuild,
+      metadataResolver: metadataResolver,
+      startBuildProcess: _startBuildProcess,
+    );
+    final adapter = DefaultProjectAdapterSelector(
+      adapters: [flutterAdapter, ...projectAdapters],
+    ).select(
+      ProjectAdapterSelectionRequest(
+        projectRoot: projectRoot,
+        explicitType: overrides.projectType,
+        manualArtifactRoot: _resolveManualArtifactRoot(
+          projectRoot,
+          overrides.artifactRoot,
+        ),
+        manualAppName:
+            overrides.artifactRoot == null ? null : overrides.appName,
+        manualPackageId:
+            overrides.artifactRoot == null ? null : overrides.packageId,
+        manualVersion:
+            overrides.artifactRoot == null ? null : overrides.version,
+        manualBuildNumber:
+            overrides.artifactRoot == null ? null : overrides.buildNumber,
+        manualExecutableRelativePath: overrides.artifactRoot == null
+            ? null
+            : overrides.executableRelativePath,
+      ),
+    );
+    final buildResult = await adapter.build(
+      ProjectBuildRequest(
+        projectRoot: projectRoot,
+        platform: platform,
+        releaseMode: true,
+      ),
+    );
+    final metadata = ProjectMetadata(
+      version: buildResult.version,
+      buildNumber: buildResult.buildNumber,
+      appName: buildResult.appName,
+      packageId: buildResult.packageId,
+      platform: platform,
+      profile: PlatformReleaseProfile.forPlatform(platform),
+      input: buildResult.artifactRoot,
     );
     final useInnoInstaller =
         platform == "windows" && config.windows.installer.enabled;
@@ -138,16 +156,6 @@ class ReleasePublisher {
       artifactSuffix: useInnoInstaller ? "-setup" : "",
       artifactFileName: useInnoInstaller ? "$innoOutputBaseName.exe" : null,
     );
-
-    if (!skipBuild) {
-      await _build(
-        projectRoot,
-        metadata,
-        overrides.dartDefines,
-        output,
-        _startBuildProcess,
-      );
-    }
 
     await _copyAdditionalFiles(
       additionalFiles: config.additionalFiles,
@@ -841,59 +849,22 @@ void _verifyNotarySubmissionAccepted(String response) {
   throw StateError("macOS notarization failed: $status$suffix.");
 }
 
-Future<void> _build(
+FileSystemEntity? _resolveManualArtifactRoot(
   Directory projectRoot,
-  ProjectMetadata metadata,
-  List<String> dartDefines,
-  StringSink output,
-  BuildProcessStarter startBuildProcess,
-) async {
-  output.writeln("Building ${metadata.platform} release...");
-  final flutterBuildArgs = [
-    ...metadata.profile.flutterBuildArgs,
-    for (final define in dartDefines) "--dart-define=$define",
-  ];
-  final process = await startBuildProcess(
-    "flutter",
-    flutterBuildArgs,
-    workingDirectory: projectRoot.path,
-    runInShell: _shouldRunFlutterBuildInShell(metadata.platform),
-  );
-
-  final stdoutDone = process.stdout.transform(utf8.decoder).forEach(
-        output.write,
-      );
-  final stderrDone = process.stderr.transform(utf8.decoder).forEach(
-        output.write,
-      );
-  final exitCode = await process.exitCode;
-  await Future.wait([stdoutDone, stderrDone]);
-
-  if (exitCode != 0) {
-    throw ProcessException(
-      "flutter",
-      flutterBuildArgs,
-      "Build failed with exit code $exitCode",
-      exitCode,
-    );
+  String? configuredPath,
+) {
+  final value = configuredPath?.trim();
+  if (value == null || value.isEmpty) {
+    return null;
   }
-}
-
-/// Default Flutter build process starter.
-Future<BuildProcess> defaultBuildProcessStarter(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-  bool runInShell = false,
-}) async {
-  return StartedBuildProcess(
-    await Process.start(
-      executable,
-      arguments,
-      workingDirectory: workingDirectory,
-      runInShell: runInShell,
-    ),
+  final resolved = path.normalize(
+    path.isAbsolute(value) ? value : path.join(projectRoot.path, value),
   );
+  return switch (FileSystemEntity.typeSync(resolved, followLinks: false)) {
+    FileSystemEntityType.file => File(resolved),
+    FileSystemEntityType.link => Link(resolved),
+    _ => Directory(resolved),
+  };
 }
 
 /// Default shell runner for configured release hook commands.
@@ -928,10 +899,6 @@ Future<ProcessResult> _runWindowsReleaseHook(
   } finally {
     await tempDir.delete(recursive: true);
   }
-}
-
-bool _shouldRunFlutterBuildInShell(String platform) {
-  return platform == "windows";
 }
 
 Future<ProcessResult> _runChecked(

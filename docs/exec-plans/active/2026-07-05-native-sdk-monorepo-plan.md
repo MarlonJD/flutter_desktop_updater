@@ -436,7 +436,7 @@ abstract interface class ProjectAdapter {
 must archive. It is never merely a Windows or Linux executable when sibling
 DLLs, data, or resources are required.
 
-- [ ] **Step 1.1: Write adapter selection tests**
+- [x] **Step 1.1: Write adapter selection tests**
 
 Cover this internal selection order:
 
@@ -453,14 +453,20 @@ Stage 8 exposes the corresponding CLI flags after this seam is stable.
 The manual selector test must supply `artifactRoot`, `appName`, `packageId`,
 and `version`; do not construct `ManualProjectAdapter` from an app path alone.
 
-- [ ] **Step 1.2: Extract existing Flutter behavior**
+RED verified locally on 2026-07-10: the adapter contract test failed because
+the project adapter files and selection types did not exist; the publisher
+integration test then failed because internal manual-project overrides were
+not implemented. A follow-up manual-root test also proved that symlinks were
+followed until artifact validation was changed to inspect the link itself.
+
+- [x] **Step 1.2: Extract existing Flutter behavior**
 
 Move existing `flutter build <platform> --release`, metadata resolution, and
 output-path logic behind `FlutterProjectAdapter`. Preserve command arguments,
 `--dart-define` forwarding, artifact layout, hook environment, and all current
 DMG/PKG/Inno branches.
 
-- [ ] **Step 1.3: Add the manual bundle adapter**
+- [x] **Step 1.3: Add the manual bundle adapter**
 
 The adapter validates:
 
@@ -471,13 +477,13 @@ The adapter validates:
   `--single-file-artifact` mode is added and tested separately;
 - Linux input is a self-contained directory bundle.
 
-- [ ] **Step 1.4: Keep the Flutter default**
+- [x] **Step 1.4: Keep the Flutter default**
 
 With no new flags inside a Flutter project, selection must return
 `FlutterProjectAdapter`. Existing `dart run desktop_updater:release publish`
 fixtures must remain unchanged.
 
-- [ ] **Step 1.5: Run focused CLI tests**
+- [x] **Step 1.5: Run focused CLI tests**
 
 ```sh
 flutter test --no-pub \
@@ -487,7 +493,14 @@ flutter test --no-pub \
   test/release_cli/release_command_test.dart
 ```
 
-- [ ] **Step 1.6: Commit the adapter seam**
+Verified locally on 2026-07-10:
+
+- focused Stage 1 CLI suite: PASS, 49 tests;
+- `dart format --set-exit-if-changed .`: PASS, 183 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with existing info-only lints;
+- `flutter test --no-pub`: PASS, 461 tests with 3 external E2E skips.
+
+- [x] **Step 1.6: Commit the adapter seam**
 
 ```sh
 git add lib/src/release_cli test/release_cli

@@ -15,6 +15,9 @@ class ReleasePublishOverrides {
     this.buildNumber,
     this.packageId,
     this.appName,
+    this.projectType,
+    this.artifactRoot,
+    this.executableRelativePath,
     this.dartDefines = const [],
     this.mandatory = false,
     this.minimumSupportedVersion,
@@ -32,6 +35,16 @@ class ReleasePublishOverrides {
   final int? buildNumber;
   final String? packageId;
   final String? appName;
+
+  /// Internal project adapter type. Stage 8 exposes this through the CLI.
+  final String? projectType;
+
+  /// Internal complete manual artifact path. Stage 8 exposes the CLI flag.
+  final String? artifactRoot;
+
+  /// Executable path relative to a manual artifact root.
+  final String? executableRelativePath;
+
   final List<String> dartDefines;
 
   /// Whether app-archive.json should mark this release as mandatory.
