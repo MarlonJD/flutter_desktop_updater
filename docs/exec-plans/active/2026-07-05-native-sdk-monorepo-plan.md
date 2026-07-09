@@ -1,62 +1,108 @@
 # Native SDK Monorepo Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> `superpowers:subagent-driven-development` (recommended) or
+> `superpowers:executing-plans` to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep the existing `desktop_updater` Flutter package, public API, plugin registration, and Dart CLI behavior fully compatible while adding standalone native updater SDKs for macOS, Windows, and Linux from the same repository.
+**Goal:** Preserve the existing Flutter package and Dart runtime while adding
+safe, independently consumable native install-helper SDKs for macOS, Windows,
+and Linux. Full native check/download/verify/stage APIs remain a gated child
+preview and must not be documented or published as production-ready by this
+master plan.
 
-**Architecture:** The pub.dev surface remains one package: `desktop_updater`. Native SDKs are Flutter-free packages that can be consumed directly by native apps and are also used by the Flutter plugin adapters. CLI release-contract logic remains shared in Dart; project-specific build behavior is isolated behind adapters so old Flutter commands keep their current defaults and native projects can opt into Xcode, CMake, or manual app-path flows.
+**Architecture:** The repository keeps the Flutter/Dart package at its root.
+Each Flutter platform adapter links the same local native helper sources that
+non-Flutter consumers receive through SwiftPM, CMake, or NuGet. The master plan
+owns safety contracts, helper extraction, package consumption, CLI build
+adapters, and release gates; the child plan owns the duplicated Swift/C++
+runtime that reads `app-archive.json` and `release.json`.
 
-**Tech Stack:** Dart/Flutter plugin, Dart CLI, SwiftPM, Swift/XCTest, C++/CMake, GoogleTest, GitHub Actions, existing zip-first `app-archive.json` and `release.json` contract.
+**Tech Stack:** Dart/Flutter, schema-v3 release contracts as implemented by
+`desktop_updater` 2.7.0, SwiftPM/Swift/XCTest, CocoaPods fallback integration,
+C++/CMake/GoogleTest, Windows C ABI, .NET P/Invoke, GitHub Actions, and local
+consumer smoke projects.
 
----
+## Global Constraints
 
-## Non-Negotiable Compatibility Rules
-
-- The pub.dev package remains `desktop_updater`; do not introduce a separate pub package such as `desktop_updater_core`.
-- Existing Flutter imports remain valid:
-  - `package:desktop_updater/desktop_updater.dart`
-  - `package:desktop_updater/updater_controller.dart`
-  - `package:desktop_updater/desktop_updater_platform_interface.dart`
-  - `package:desktop_updater/desktop_updater_method_channel.dart`
-- Existing Flutter plugin registration remains valid:
-  - Linux `pluginClass: DesktopUpdaterPlugin`
-  - macOS `pluginClass: DesktopUpdaterPlugin`
-  - Windows `pluginClass: DesktopUpdaterPluginCApi`
-- Existing Dart CLI commands keep their default Flutter behavior when run in a Flutter project:
-  - `dart run desktop_updater:package`
-  - `dart run desktop_updater:verify`
-  - `dart run desktop_updater:app_archive`
-  - `dart run desktop_updater:release publish --platform <platform>`
-  - `dart run desktop_updater:release doctor --platform <platform>`
-  - `dart run desktop_updater:release validate`
-  - `dart run desktop_updater:release sign`
-- Existing runtime semantics remain valid:
-  - Dart lifecycle diagnostics stay in Dart for Flutter apps.
-  - Native helper JSONL events stay stable.
-  - `diagnosticsLogPath` remains app-owned and optional.
-  - `UpdateProblemReport` redaction and bounded report behavior remain stable.
-  - Windows/Linux Release CI lanes continue to build, run native tests, run integration tests, run publish smoke, and run update smoke.
-- No current behavior is marked deprecated during this migration.
-- Versioning has one source of truth: root `pubspec.yaml`. Do not use `.env`
-  files for package versions.
-- Flutter builds must not download SwiftPM, NuGet, CMake, or pkg-config
-  packages from remote package feeds to use the plugin. The Flutter package
-  consumes the native SDKs from local source targets included in the pub
+- Root `pubspec.yaml` remains the single canonical version source.
+- Do not bump versions, changelog headings, lockfiles, or tags while executing
+  this plan unless release/version work is explicitly requested.
+- The pub.dev package remains `desktop_updater`; do not add another pub
   package.
-- Windows native distribution must expose a stable `extern "C"` ABI for broad
-  native app compatibility. C++ implementation details must not leak into the
-  public ABI used by .NET P/Invoke, Rust, Go, Python, Electron native addons, or
-  non-MSVC consumers.
-- Windows .NET consumption is first-class from the initial Windows native SDK
-  release, not a later optional add-on. The .NET wrapper must bind through the C
-  ABI.
-- macOS native SDK distribution is SwiftPM-only. CocoaPods remains only as an
-  existing Flutter plugin fallback compatibility path; do not publish a
-  `DesktopUpdaterKit` pod.
+- Existing Flutter imports, plugin registration classes, MethodChannel method
+  names, and Dart CLI entrypoints remain source compatible.
+- Flutter apps continue to use the Dart `UpdateClient`, Dart diagnostics, and
+  the existing MethodChannel handoff.
+- The master plan exposes staged-artifact install helpers. It does not claim
+  native `checkForUpdate`, download, verification, or staging APIs.
+- Safety overrides compatibility. An install target that cannot be proven to
+  be an app-owned bundle must fail closed even if the old helper inferred a
+  target from the executable parent directory.
+- Flutter builds must use native sources shipped in the pub package. They must
+  not download SwiftPM, CocoaPods, NuGet, GoogleTest, or system CMake packages
+  to compile the plugin.
+- Native tests may fetch or locate test-only dependencies only when an
+  explicit native-test option is enabled.
+- Windows public interop uses a versioned C ABI. C++ STL types and C++
+  exceptions never cross that ABI.
+- The Windows Flutter plugin links a static native helper target. Native and
+  .NET consumers load a shared DLL built from the same object sources.
+- Windows .NET support is not complete until a test loads the produced DLL and
+  exercises the C ABI, including `removedFiles`.
+- Native macOS distribution is SwiftPM-only. CocoaPods remains a Flutter
+  fallback and compiles the same helper sources inside the Flutter pod; it is
+  not a separately published `DesktopUpdaterKit` pod.
+- The first Linux native package is source-first through CMake. Do not publish
+  a generic prebuilt Linux binary until compiler ABI, architecture, and glibc
+  baselines have their own approved plan and consumer matrix.
+- Every `ctest` lane must enable native tests explicitly and fail when zero
+  tests are discovered.
+- Package publication requires local-path consumer builds. Building the
+  library inside its own source tree is not sufficient evidence.
+- Do not change schema version 3 in this plan.
 
-## Target Package Layout
+## Current 2.7 Contract Baseline
 
-Keep the root as the Flutter/Dart package:
+The plan must preserve or explicitly fail closed for this matrix:
+
+| Platform | Artifact kinds | Install strategies |
+| --- | --- | --- |
+| macOS | `zip`, `dmg`, `pkgInstaller` | `wholeBundleReplace`, `pkgInstaller` |
+| Windows | `zip`, `innoInstaller` | `wholeDirectoryReplace`, `innoInstaller` |
+| Linux | `zip` | `wholeDirectoryReplace` for a verified self-contained directory bundle |
+
+The shared contract also includes:
+
+- integer build-number ordering;
+- platform and channel selection;
+- deterministic staged rollout;
+- support policy and fresh-install metadata;
+- exact index-to-descriptor version, build number, platform, and channel
+  binding;
+- descriptor package identity;
+- `minimumUpdaterVersion` and `minimumOS`;
+- lowercase SHA-256 and exact byte length;
+- Ed25519 descriptor signatures using Dart-compatible canonical JSON and
+  pinned `publicKeyId` values;
+- install metadata for Inno, DMG, and PKG artifacts;
+- stable helper JSONL events and bounded/redacted diagnostics.
+
+This rebase adds one hardening rule beyond the current Dart selection API:
+native applications must supply an app-owned expected package identity and the
+native runtime must compare it with the signed descriptor. Do not describe
+that comparison as existing Dart parity unless a separate additive Dart API
+and its tests are implemented.
+
+`app-archive.json` is discovery metadata in schema version 3; it is not itself
+cryptographically authenticated. Trust comes from the signed descriptor,
+expected package identity, exact index-to-descriptor binding, artifact hash,
+and platform publisher checks. Do not claim that the index is signed. A signed
+index requires separate schema work.
+
+## Target Layout
+
+Keep the Flutter/Dart package at the repository root:
 
 ```text
 pubspec.yaml
@@ -69,128 +115,265 @@ windows/
 linux/
 ```
 
-Add native SDK surfaces without moving the Flutter package out of the root:
+Add these native and consumer surfaces:
 
 ```text
-Package.swift                                  # Root SwiftPM package for native Swift consumers.
-macos/desktop_updater/Package.swift            # Flutter macOS plugin SwiftPM package remains.
+Package.swift
+
+fixtures/compat/native-contract/
+  canonical-signature-cases.json
+  descriptor-validation-cases.json
+  diagnostics-redaction-cases.json
+  helper-events.json
+  release-contract/
+
 macos/desktop_updater/Sources/DesktopUpdaterKit/
-macos/desktop_updater/Sources/desktop_updater/ # Flutter adapter target remains.
+macos/desktop_updater/Sources/desktop_updater/
+macos/desktop_updater/Tests/DesktopUpdaterKitTests/
+example/native/macos/
 
-windows/native/
 windows/native/CMakeLists.txt
-windows/native/include/
+windows/native/include/desktop_updater_native_c.h
+windows/native/include/desktop_updater_version.h
 windows/native/src/
-windows/native/dotnet/DesktopUpdater.Native/   # First-class .NET wrapper over the C ABI.
 windows/native/test/
-windows/desktop_updater_plugin.cpp             # Flutter adapter remains.
+windows/native/cmake/
+windows/native/dotnet/DesktopUpdater.Native/
+windows/native/dotnet/DesktopUpdater.Native.Tests/
+example/native/windows-dotnet/
+example/native/windows-cmake/
 
-linux/native/
 linux/native/CMakeLists.txt
-linux/native/include/
+linux/native/include/desktop_updater_native.h
+linux/native/include/desktop_updater_version.h
 linux/native/src/
 linux/native/test/
-linux/desktop_updater_plugin.cc                # Flutter adapter remains.
+linux/native/cmake/
+example/native/linux-cmake/
 ```
 
-The native package names should be:
+Native package names:
 
 - macOS SwiftPM product: `DesktopUpdaterKit`
-- Windows CMake target: `desktop_updater_native`
-- Windows public ABI header: `desktop_updater_native_c.h`
-- Linux CMake target: `desktop_updater_native`
+- Windows shared DLL and CMake target: `desktop_updater_native`
+- Windows Flutter-only static target: `desktop_updater_native_static`
+- Windows CMake alias: `desktop_updater::native`
+- Windows NuGet package: `DesktopUpdater.Native`
+- Linux source CMake target: `desktop_updater_native`
+- Linux CMake alias: `desktop_updater::native`
 
-## Stage 0: Baseline Freeze Before Refactor
+## Execution Dependencies
 
-**Purpose:** Capture current Flutter behavior and native helper behavior before any extraction.
+1. Stage 0 freezes the current contract and adds the Linux destructive-root
+   blocker. No helper extraction may begin before it passes.
+2. Stages 1 and 2 establish CLI and fixture seams without changing behavior.
+3. Stages 3-5 extract macOS, Windows, and Linux helpers.
+4. Stage 6 proves that external consumers can install and link the packages.
+5. Stage 7 defines the rebased child plan now; executing that child remains
+   blocked until Stages 0-6 pass.
+6. Stages 8-10 add native build adapters, standalone CLI distribution,
+   versioning, publication, and final verification.
+
+## Stage 0: Rebase And Safety Gate
+
+**Purpose:** Freeze the actual 2.7 contract while refusing to freeze unsafe
+install-root inference as compatible behavior.
 
 **Files:**
+
+- Create: `docs/native-contract.md`
+- Create: `test/native_contract_baseline_test.dart`
 - Modify: `test/compat/flutter_220_public_api_test.dart`
 - Modify: `test/compat/flutter_220_channel_controller_contract_test.dart`
 - Modify: `test/compat/native_helper_events_220_contract_test.dart`
-- Modify: `test/macos_swift_package_test.dart`
-- Modify: `.github/workflows/desktop-updater-ci.yml`
+- Modify: `test/native_helper_script_test.dart`
+- Modify: `linux/desktop_updater_plugin_private.h`
+- Modify: `linux/desktop_updater_plugin.cc`
 
-- [ ] **Step 0.1: Add explicit no-deprecation public API checks**
+**Interfaces:**
 
-Add checks that the public Flutter facade and controller remain directly constructible:
+- Produces: one documented artifact/policy matrix used by all later stages.
+- Produces: a validated Linux install target contract:
 
-```dart
-test("Flutter facade remains the primary public API", () {
-  expect(DesktopUpdater(), isA<DesktopUpdater>());
-  expect(
-    DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-    ),
-    isA<DesktopUpdaterController>(),
-  );
-});
+```cpp
+struct InstallResult {
+  bool ok;
+  std::string error;
+};
+
+enum class LinuxInstallOperation {
+  kRestart,
+  kInstall,
+};
+
+struct LinuxInstallTarget {
+  LinuxInstallOperation operation;
+  std::string install_root;
+  std::string executable_relative_path;
+  std::string package_id;
+};
 ```
 
-- [ ] **Step 0.2: Add explicit CLI backwards compatibility fixture**
+- Produces:
+  `ValidateLinuxInstallTarget(const LinuxInstallTarget&) -> InstallResult`.
 
-Create a test in `test/release_cli/release_command_test.dart` that asserts help output still includes the existing command names:
+- [ ] **Step 0.1: Write the 2.7 baseline test**
 
-```dart
-test("release CLI keeps existing Flutter-first commands", () async {
-  final output = StringBuffer();
-  final exitCode = await runReleaseCommand(
-    const ["publish", "--help"],
-    output: output,
-  );
+Add `test/native_contract_baseline_test.dart` assertions for representative
+schema-v3 descriptors containing all four artifact kinds, integer build
+numbers, non-empty install strategies, and non-empty minimum updater versions.
+Do not add public production API solely to make the test easier.
 
-  expect(exitCode, 0);
-  expect(output.toString(), contains("--platform"));
-  expect(output.toString(), contains("--config"));
-  expect(output.toString(), contains("--version"));
-  expect(output.toString(), contains("--build-number"));
-});
-```
-
-- [ ] **Step 0.3: Run focused baseline tests**
+- [ ] **Step 0.2: Run the baseline before extraction**
 
 Run:
 
 ```sh
 flutter test --no-pub \
+  test/native_contract_baseline_test.dart \
   test/compat/flutter_220_public_api_test.dart \
   test/compat/flutter_220_channel_controller_contract_test.dart \
-  test/compat/native_helper_events_220_contract_test.dart \
-  test/release_cli/release_command_test.dart
+  test/compat/native_helper_events_220_contract_test.dart
 ```
 
-Expected: all pass before extraction.
+Expected: PASS against the pre-extraction repository.
 
-- [ ] **Step 0.4: Commit baseline guardrails**
+- [ ] **Step 0.3: Add failing Linux protected-root tests**
 
-Commit message:
+Add native/helper tests that reject these exact canonical install roots before
+creating or launching a script:
+
+```text
+/
+/bin
+/sbin
+/usr
+/usr/bin
+/usr/sbin
+/usr/local
+/usr/local/bin
+/opt
+/etc
+/var
+/home
+```
+
+The following remains valid because it is an app-owned directory below a
+shared root:
+
+```text
+/opt/example-app
+```
+
+Required test cases:
+
+```cpp
+TEST(LinuxInstallTarget, RejectsUsrBinExecutableParent) {
+  const auto result = ValidateLinuxInstallTarget({
+      LinuxInstallOperation::kInstall,
+      "/usr/bin",
+      "my-app",
+      "com.example.app",
+  });
+  EXPECT_FALSE(result.ok);
+}
+
+TEST(LinuxInstallTarget, AcceptsSelfContainedOptBundle) {
+  const auto result = ValidateLinuxInstallTarget({
+      LinuxInstallOperation::kInstall,
+      "/opt/example-app",
+      "bin/my-app",
+      "com.example.app",
+  });
+  EXPECT_TRUE(result.ok);
+}
+```
+
+- [ ] **Step 0.4: Implement fail-closed Linux target validation**
+
+Validation must:
+
+- separate non-mutating restart requests from install requests;
+- require an absolute canonical `install_root`;
+- reject symlinked install roots;
+- reject the exact protected roots listed in Step 0.3;
+- require a non-empty relative executable path with no `..` segment;
+- prove the executable resolves strictly inside `install_root`;
+- require a non-empty package identity;
+- reject staging paths equal to, inside, or an ancestor of `install_root`;
+- validate every removed-file path after canonical resolution;
+- generate no shell script when validation fails.
+
+A restart request does not require package identity, backup, pruning, copy, or
+rollback. It may only wait for the parent process and relaunch the already
+resolved executable. An install request requires the full target contract
+above before any backup or destructive command is generated.
+
+The Flutter adapter may derive the candidate bundle root from the current
+executable parent for compatibility, but it must pass that candidate through
+the same validator. `/usr/bin/my-app` therefore fails closed instead of
+treating `/usr/bin` as an application bundle.
+
+- [ ] **Step 0.5: Preserve Flutter API compatibility**
+
+Keep existing public calls valid. Additional install context may be carried as
+optional internal MethodChannel arguments:
+
+```text
+installRoot
+executableRelativePath
+packageId
+```
+
+Controller-owned update flows must populate the package identity from the
+verified active descriptor. Direct legacy calls without enough context may
+continue only when the native helper can independently prove a self-contained
+bundle; otherwise return a clear `InstallError` directing the app to a fresh
+installer.
+
+- [ ] **Step 0.6: Run the safety regression**
+
+Run:
 
 ```sh
-git commit -m "test: freeze updater compatibility contracts"
+flutter test --no-pub \
+  test/native_helper_script_test.dart \
+  test/desktop_updater_method_channel_test.dart \
+  test/compat/flutter_220_channel_controller_contract_test.dart
 ```
 
-## Stage 1: CLI Adapter Boundary With No Behavior Change
+Expected: PASS, including rejection of `/usr/bin` before destructive commands
+are emitted.
 
-**Purpose:** Make `release publish` choose a project adapter internally while preserving the existing Flutter default.
+- [ ] **Step 0.7: Commit the safety baseline**
+
+```sh
+git add docs/native-contract.md test/native_contract_baseline_test.dart \
+  test/native_helper_script_test.dart linux/desktop_updater_plugin.cc \
+  linux/desktop_updater_plugin_private.h
+git commit -m "fix: validate linux updater install roots"
+```
+
+## Stage 1: CLI Project Adapter Seam
+
+**Purpose:** Isolate project building from release packaging without changing
+the existing Flutter default or confusing an executable with a deployable
+bundle.
 
 **Files:**
+
 - Create: `lib/src/release_cli/project_adapter.dart`
 - Create: `lib/src/release_cli/flutter_project_adapter.dart`
 - Create: `lib/src/release_cli/manual_project_adapter.dart`
-- Modify: `lib/src/release_cli/release_publish_config.dart`
 - Modify: `lib/src/release_cli/release_publisher.dart`
 - Modify: `lib/src/release_cli/publish_command.dart`
+- Modify: `lib/src/release_cli/release_publish_config.dart`
+- Test: `test/release_cli/project_adapter_test.dart`
 - Test: `test/release_cli/release_publisher_build_test.dart`
-- Test: `test/release_cli/release_publish_config_test.dart`
 
-- [ ] **Step 1.1: Add `ProjectAdapter` contract**
-
-Create `lib/src/release_cli/project_adapter.dart`:
+**Interfaces:**
 
 ```dart
-import "dart:io";
-
 final class ProjectBuildRequest {
   const ProjectBuildRequest({
     required this.projectRoot,
@@ -205,16 +388,20 @@ final class ProjectBuildRequest {
 
 final class ProjectBuildResult {
   const ProjectBuildResult({
-    required this.appPath,
+    required this.artifactRoot,
+    required this.appName,
     required this.packageId,
     required this.version,
     this.buildNumber,
+    this.executableRelativePath,
   });
 
-  final String appPath;
+  final FileSystemEntity artifactRoot;
+  final String appName;
   final String packageId;
   final String version;
-  final String? buildNumber;
+  final int? buildNumber;
+  final String? executableRelativePath;
 }
 
 abstract interface class ProjectAdapter {
@@ -224,291 +411,184 @@ abstract interface class ProjectAdapter {
 }
 ```
 
-- [ ] **Step 1.2: Move current Flutter build behavior into `FlutterProjectAdapter`**
+`artifactRoot` is the complete directory or bundle that the release packager
+must archive. It is never merely a Windows or Linux executable when sibling
+DLLs, data, or resources are required.
 
-Create `lib/src/release_cli/flutter_project_adapter.dart` with the current `flutter build <platform> --release` behavior from `ReleasePublisher`. Preserve current output paths:
+- [ ] **Step 1.1: Write adapter selection tests**
 
-```dart
-import "dart:io";
-
-import "package:desktop_updater/src/release_cli/project_adapter.dart";
-import "package:path/path.dart" as path;
-import "package:pubspec_parse/pubspec_parse.dart";
-
-final class FlutterProjectAdapter implements ProjectAdapter {
-  const FlutterProjectAdapter();
-
-  @override
-  String get type => "flutter";
-
-  @override
-  bool canHandle(Directory projectRoot) {
-    final pubspecFile = File(path.join(projectRoot.path, "pubspec.yaml"));
-    if (!pubspecFile.existsSync()) {
-      return false;
-    }
-    final pubspec = Pubspec.parse(pubspecFile.readAsStringSync());
-    return pubspec.fields.containsKey("flutter");
-  }
-
-  @override
-  Future<ProjectBuildResult> build(ProjectBuildRequest request) async {
-    return buildFlutterProjectWithExistingReleasePublisherBehavior(request);
-  }
-}
-```
-
-`buildFlutterProjectWithExistingReleasePublisherBehavior` is a temporary
-extraction target for the current `ReleasePublisher` build and metadata
-resolution code. In this stage, move the existing implementation into that
-function without changing command arguments, metadata resolution, or output
-path resolution.
-
-- [ ] **Step 1.3: Add manual app-path adapter**
-
-Create `lib/src/release_cli/manual_project_adapter.dart`:
-
-```dart
-final class ManualProjectAdapter implements ProjectAdapter {
-  const ManualProjectAdapter({
-    required this.appPath,
-    required this.packageId,
-    required this.version,
-    this.buildNumber,
-  });
-
-  final String appPath;
-  final String packageId;
-  final String version;
-  final String? buildNumber;
-
-  @override
-  String get type => "manual";
-
-  @override
-  bool canHandle(Directory projectRoot) => appPath.isNotEmpty;
-
-  @override
-  Future<ProjectBuildResult> build(ProjectBuildRequest request) async {
-    return ProjectBuildResult(
-      appPath: appPath,
-      packageId: packageId,
-      version: version,
-      buildNumber: buildNumber,
-    );
-  }
-}
-```
-
-- [ ] **Step 1.4: Preserve old `release publish` default**
-
-Modify `publish_command.dart` so that when no `--project-type` or `--app-path` is passed, Flutter remains the default in a Flutter project.
-
-Detection order:
+Cover this internal selection order:
 
 ```text
-1. --app-path present => manual
-2. --project-type present => exact adapter
-3. pubspec.yaml with Flutter app/plugin markers => flutter
-4. one native project marker => native adapter in later stages
-5. ambiguous or missing marker => usage error
+1. explicit adapter type supplied by the internal request
+2. explicit manual artifact root and metadata
+3. Flutter project markers
+4. exactly one native project marker
+5. ambiguity or no marker => usage error
 ```
 
-- [ ] **Step 1.5: Add tests for no behavior change**
+Stage 8 exposes the corresponding CLI flags after this seam is stable.
 
-In `test/release_cli/release_publisher_build_test.dart`, add:
+The manual selector test must supply `artifactRoot`, `appName`, `packageId`,
+and `version`; do not construct `ManualProjectAdapter` from an app path alone.
 
-```dart
-test("release publish defaults to Flutter adapter in Flutter projects", () async {
-  final project = await createReleasePublishFixtureProject();
-  final adapter = selectProjectAdapter(project.root, projectType: null, appPath: null);
+- [ ] **Step 1.2: Extract existing Flutter behavior**
 
-  expect(adapter.type, "flutter");
-});
-```
+Move existing `flutter build <platform> --release`, metadata resolution, and
+output-path logic behind `FlutterProjectAdapter`. Preserve command arguments,
+`--dart-define` forwarding, artifact layout, hook environment, and all current
+DMG/PKG/Inno branches.
 
-In `test/release_cli/release_publish_config_test.dart`, add:
+- [ ] **Step 1.3: Add the manual bundle adapter**
 
-```dart
-test("manual app path does not require Flutter project detection", () {
-  final adapter = selectProjectAdapter(
-    Directory.systemTemp,
-    projectType: null,
-    appPath: "/tmp/MyApp",
-  );
+The adapter validates:
 
-  expect(adapter.type, "manual");
-});
-```
+- `artifactRoot` exists;
+- directory/bundle inputs are used when runtime siblings are required;
+- `buildNumber` is `int?`;
+- Windows `.exe` input is rejected unless an explicit
+  `--single-file-artifact` mode is added and tested separately;
+- Linux input is a self-contained directory bundle.
 
-- [ ] **Step 1.6: Run focused CLI tests**
+- [ ] **Step 1.4: Keep the Flutter default**
 
-Run:
+With no new flags inside a Flutter project, selection must return
+`FlutterProjectAdapter`. Existing `dart run desktop_updater:release publish`
+fixtures must remain unchanged.
+
+- [ ] **Step 1.5: Run focused CLI tests**
 
 ```sh
 flutter test --no-pub \
+  test/release_cli/project_adapter_test.dart \
   test/release_cli/release_publisher_build_test.dart \
   test/release_cli/release_publish_config_test.dart \
   test/release_cli/release_command_test.dart
 ```
 
-Expected: all pass; existing Flutter publish fixtures still call Flutter.
-
-- [ ] **Step 1.7: Commit CLI seam**
-
-Commit message:
+- [ ] **Step 1.6: Commit the adapter seam**
 
 ```sh
-git commit -m "refactor: add release project adapter seam"
+git add lib/src/release_cli test/release_cli
+git commit -m "refactor: add deployable project adapter seam"
 ```
 
-## Stage 2: Native Diagnostics Contract Fixtures
+## Stage 2: Canonical Cross-Language Contracts
 
-**Purpose:** Share diagnostics/report expectations across Dart, Swift, and C++ without forcing one language implementation.
+**Purpose:** Generate fixtures from the current Dart implementation so Swift
+and C++ cannot silently invent a different schema, signature payload, rollout
+algorithm, or diagnostics policy.
 
 **Files:**
-- Create: `fixtures/compat/diagnostic-redaction-cases.json`
-- Create: `fixtures/compat/native-helper-events.json` if it does not already exist
+
+- Create: `tool/generate_native_contract_fixtures.dart`
+- Create: `fixtures/compat/native-contract/README.md`
+- Create: `fixtures/compat/native-contract/canonical-signature-cases.json`
+- Create: `fixtures/compat/native-contract/descriptor-validation-cases.json`
+- Create: `fixtures/compat/native-contract/selection-cases.json`
+- Create: `fixtures/compat/native-contract/safe-path-cases.json`
+- Create: `fixtures/compat/native-contract/diagnostics-redaction-cases.json`
+- Create: `fixtures/compat/native-contract/helper-events.json`
+- Create: `fixtures/compat/native-contract/release-contract/`
+- Create: `test/native_contract_fixture_test.dart`
 - Modify: `test/update_diagnostics_test.dart`
-- Modify: `test/compat/diagnostics_recovery_220_contract_test.dart`
+- Modify: `test/compat/native_helper_events_220_contract_test.dart`
 
-- [ ] **Step 2.1: Add shared redaction fixture**
+**Interfaces:**
 
-Create `fixtures/compat/diagnostic-redaction-cases.json`:
+- Produces deterministic JSON generated by Dart serializers and canonical
+  signature functions.
+- Produces absolute `https://updates.example.test/...` fixture URLs.
+- Produces integer `buildNumber` values.
+- Produces one descriptor for every platform/artifact combination in the 2.7
+  matrix.
 
-```json
-{
-  "cases": [
-    {
-      "input": "Authorization: Bearer abc123 password=hunter2 signature=deadbeef",
-      "mustContain": [
-        "Authorization: <redacted>",
-        "password=<redacted>",
-        "signature=<redacted>"
-      ],
-      "mustNotContain": ["abc123", "hunter2", "deadbeef"]
-    },
-    {
-      "input": "GET https://updates.example.com/release.json?token=abc&key=def&safe=value",
-      "mustContain": [
-        "token=<redacted>",
-        "key=<redacted>",
-        "safe=value"
-      ],
-      "mustNotContain": ["token=abc", "key=def"]
-    }
-  ]
-}
-```
+- [ ] **Step 2.1: Write the generator determinism test**
 
-- [ ] **Step 2.2: Make Dart diagnostics test read shared fixture**
+Run the generator twice into separate temporary directories and assert
+byte-for-byte equality for every generated file.
 
-Add a test that loops over the fixture and verifies `UpdateDiagnosticEntry.toRedactedLogLine()` and `UpdateProblemReport.toPlainText()`.
+- [ ] **Step 2.2: Generate valid release fixtures**
 
-- [ ] **Step 2.3: Ensure helper events stay shared**
+Every descriptor must include schema version, package identity, app name,
+semantic version, integer build number, platform, channel, artifact kind,
+absolute artifact URL, real SHA-256, real length, install strategy, minimum
+updater version, and generated timestamp. Artifact-specific descriptors also
+include the complete current Inno, DMG, or PKG install metadata.
 
-Keep the existing event fixture as the canonical list for native helper JSONL event names:
+- [ ] **Step 2.3: Generate trust and selection cases**
 
-```json
-{
-  "events": [
-    "helper scheduled",
-    "waiting for parent process",
-    "parent process exited",
-    "backup start",
-    "backup success",
-    "backup failure",
-    "move start",
-    "move success",
-    "move failure",
-    "rollback start",
-    "rollback success",
-    "rollback failure",
-    "cleanup start",
-    "cleanup success",
-    "cleanup failure",
-    "relaunch attempt"
-  ]
-}
-```
+Include positive and negative cases for:
 
-- [ ] **Step 2.4: Run diagnostics tests**
+- canonical JSON ordering;
+- blanked signature value during canonicalization;
+- Ed25519 `publicKeyId` lookup;
+- wrong key, signature, package identity, version, build number, platform, or
+  channel;
+- build-number tiebreaking;
+- prerelease ordering;
+- rollout percentages 0, 1, 50, and 100 using fixed identities and salts;
+- `minimumUpdaterVersion`;
+- `minimumOS`;
+- support policy before and after its deadline;
+- fresh-install metadata.
 
-Run:
+- [ ] **Step 2.4: Generate safe-path and diagnostics cases**
+
+Safe-path cases must cover:
+
+- `..` traversal;
+- absolute POSIX paths;
+- Windows drive-prefixed paths;
+- backslash normalization;
+- symbolic links;
+- paths resolving outside the install root;
+- exact protected Linux roots;
+- valid nested bundle paths.
+
+Diagnostics fixtures must retain current redaction and helper event strings.
+
+- [ ] **Step 2.5: Run Dart fixture validation**
 
 ```sh
+dart run tool/generate_native_contract_fixtures.dart --check
 flutter test --no-pub \
+  test/native_contract_fixture_test.dart \
   test/update_diagnostics_test.dart \
-  test/compat/diagnostics_recovery_220_contract_test.dart \
   test/compat/native_helper_events_220_contract_test.dart
 ```
 
-Expected: all pass.
+Expected: every JSON file parses through the current Dart models, every
+descriptor validates, canonical bytes match, and generation is deterministic.
 
-- [ ] **Step 2.5: Commit diagnostics contract fixtures**
-
-Commit message:
+- [ ] **Step 2.6: Commit canonical fixtures**
 
 ```sh
-git commit -m "test: share diagnostics contract fixtures"
+git add tool/generate_native_contract_fixtures.dart \
+  fixtures/compat/native-contract test/native_contract_fixture_test.dart
+git commit -m "test: generate native contract fixtures"
 ```
 
-## Stage 3: macOS Standalone Swift SDK And Flutter Adapter
+## Stage 3: macOS Helper SDK And Flutter Adapters
 
-**Purpose:** Extract Flutter-free macOS updater code into `DesktopUpdaterKit` while keeping `DesktopUpdaterPlugin` as the Flutter MethodChannel adapter.
+**Purpose:** Extract Flutter-free macOS install helpers into
+`DesktopUpdaterKit` while keeping both SwiftPM and CocoaPods Flutter builds
+working.
 
 **Files:**
+
 - Create: `Package.swift`
 - Modify: `macos/desktop_updater/Package.swift`
-- Create: `macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterKit.swift`
+- Modify: `macos/desktop_updater.podspec`
+- Create: `macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift`
 - Create: `macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift`
 - Create: `macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift`
-- Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/DesktopUpdaterKitTests.swift`
+- Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/`
 - Modify: `macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift`
 - Modify: `test/macos_swift_package_test.dart`
+- Create: `test/macos_cocoapods_source_layout_test.dart`
 
-- [ ] **Step 3.1: Add root SwiftPM manifest for native consumers**
-
-Create root `Package.swift`:
-
-```swift
-// swift-tools-version: 5.9
-import PackageDescription
-
-let package = Package(
-    name: "desktop-updater-native",
-    platforms: [.macOS(.v10_15)],
-    products: [
-        .library(name: "DesktopUpdaterKit", targets: ["DesktopUpdaterKit"])
-    ],
-    targets: [
-        .target(
-            name: "DesktopUpdaterKit",
-            path: "macos/desktop_updater/Sources/DesktopUpdaterKit"
-        ),
-        .testTarget(
-            name: "DesktopUpdaterKitTests",
-            dependencies: ["DesktopUpdaterKit"],
-            path: "macos/desktop_updater/Tests/DesktopUpdaterKitTests"
-        )
-    ]
-)
-```
-
-- [ ] **Step 3.2: Add `DesktopUpdaterKit` target to Flutter macOS package**
-
-Modify `macos/desktop_updater/Package.swift` so:
-
-```swift
-.library(name: "DesktopUpdaterKit", targets: ["DesktopUpdaterKit"]),
-.library(name: "desktop-updater", targets: ["desktop_updater"])
-```
-
-and the Flutter target depends on both `FlutterFramework` and `DesktopUpdaterKit`.
-
-- [ ] **Step 3.3: Extract install helper into `MacInstallHelper`**
-
-Create `MacInstallHelper` with this public entry point:
+**Interfaces:**
 
 ```swift
 public struct MacInstallRequest: Sendable {
@@ -517,671 +597,538 @@ public struct MacInstallRequest: Sendable {
     public let diagnosticsLogPath: String?
     public let currentProcessIdentifier: Int32
     public let bundlePath: String
+
+    public init(
+        stagingPath: String?,
+        allowUnsignedUpdates: Bool,
+        diagnosticsLogPath: String?,
+        currentProcessIdentifier: Int32,
+        bundlePath: String
+    ) {
+        self.stagingPath = stagingPath
+        self.allowUnsignedUpdates = allowUnsignedUpdates
+        self.diagnosticsLogPath = diagnosticsLogPath
+        self.currentProcessIdentifier = currentProcessIdentifier
+        self.bundlePath = bundlePath
+    }
 }
 
 public struct MacInstallHelper {
     public init() {}
-
-    public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws {
-        let scriptURL = try writeHelperScript(request)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [scriptURL.path]
-        try process.run()
-    }
+    public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws
 }
 ```
 
-Move the existing script generation, shell quoting, bundle ID checks, codesign checks, Gatekeeper checks, stapler checks, backup, move, rollback, cleanup, and relaunch script contents into this target without changing emitted helper event strings.
+Every public Swift value type must declare public initializers; public stored
+properties do not make the synthesized memberwise initializer public.
 
-- [ ] **Step 3.4: Add Swift diagnostics types**
+Keep the existing compatibility floors unless separately approved:
 
-Create `Diagnostics.swift`:
-
-```swift
-public enum UpdateDiagnosticLevel: String, Sendable {
-    case info
-    case warning
-    case error
-}
-
-public enum UpdateDiagnosticStage: String, Sendable {
-    case check
-    case descriptor
-    case policy
-    case download
-    case verify
-    case stage
-    case install
-    case cleanup
-}
-
-public struct UpdateDiagnosticEntry: Sendable {
-    public let timestamp: Date
-    public let stage: UpdateDiagnosticStage
-    public let level: UpdateDiagnosticLevel
-    public let message: String
-    public let errorDescription: String?
-}
+```text
+SwiftPM package: macOS 10.15
+CocoaPods Flutter fallback: macOS 10.14, Swift 5.0
 ```
 
-Implement redaction using the shared fixture from Stage 2.
+Shared helper sources must compile at the CocoaPods 10.14 deployment target;
+do not use a 10.15-only API without an availability branch.
 
-- [ ] **Step 3.5: Make Flutter plugin call `DesktopUpdaterKit`**
+- [ ] **Step 3.1: Add root and plugin SwiftPM targets**
 
-Modify `DesktopUpdaterPlugin.swift`:
+Root `Package.swift` exposes `DesktopUpdaterKit` only. The Flutter package
+manifest exposes both `DesktopUpdaterKit` and the existing
+`desktop-updater` adapter product. The adapter target depends on
+`FlutterFramework` and `DesktopUpdaterKit`.
+
+- [ ] **Step 3.2: Preserve the CocoaPods fallback**
+
+The podspec compiles both source directories inside the existing Flutter pod:
+
+```ruby
+s.source_files = [
+  File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', '**', '*.swift'),
+  File.join('desktop_updater', 'Sources', 'desktop_updater', '**', '*.swift')
+]
+```
+
+The Flutter adapter uses:
 
 ```swift
-import Cocoa
-import FlutterMacOS
+#if canImport(DesktopUpdaterKit)
 import DesktopUpdaterKit
+#endif
 ```
 
-Replace direct helper implementation with:
+Under SwiftPM, helper types come from the `DesktopUpdaterKit` module. Under
+CocoaPods, both source trees compile in the existing `desktop_updater` module,
+so the same types are visible without publishing a native helper pod.
 
-```swift
-try MacInstallHelper().scheduleInstallAndRelaunch(
-    MacInstallRequest(
-        stagingPath: stagingPath,
-        allowUnsignedUpdates: allowUnsignedMacOSUpdates,
-        diagnosticsLogPath: diagnosticsLogPath,
-        currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
-        bundlePath: Bundle.main.bundlePath
-    )
-)
-```
+- [ ] **Step 3.3: Extract the complete current helper**
 
-Keep MethodChannel method names and argument parsing unchanged.
+Move shell generation, quoting, bundle identity, Team ID, codesign,
+Gatekeeper, stapler, backup, replacement, rollback, cleanup, relaunch, and
+PKG Installer.app handoff without weakening any current gate or changing
+helper event strings.
 
-- [ ] **Step 3.6: Add SwiftPM tests**
+Do not move Dart-owned discovery, rollout, HTTP, descriptor verification, DMG
+staging, or lifecycle diagnostics into this master stage.
 
-Create XCTest cases that assert:
+- [ ] **Step 3.4: Add Swift API and fixture tests**
 
-```swift
-func testHelperScriptContainsStableEvents() throws {
-    let script = try MacInstallHelper().makeScriptForTesting(...)
-    XCTAssertTrue(script.contains("helper scheduled"))
-    XCTAssertTrue(script.contains("backup start"))
-    XCTAssertTrue(script.contains("move start"))
-    XCTAssertTrue(script.contains("cleanup success"))
-}
-```
+Tests must:
 
-Add a no-Flutter import guard in `test/macos_swift_package_test.dart`:
+- instantiate every public request/diagnostics type from an external test
+  module;
+- prove `DesktopUpdaterKit` imports no Flutter module;
+- read canonical diagnostics and helper-event fixtures;
+- assert unsigned updates remain opt-in;
+- assert ZIP/DMG staged `.app` identity checks and PKG Installer.app handoff
+  remain available through the adapter.
 
-```dart
-test("DesktopUpdaterKit target does not import Flutter", () {
-  final sources = Directory("macos/desktop_updater/Sources/DesktopUpdaterKit")
-      .listSync(recursive: true)
-      .whereType<File>()
-      .map((file) => file.readAsStringSync())
-      .join("\n");
+- [ ] **Step 3.5: Run both macOS integration lanes**
 
-  expect(sources, isNot(contains("FlutterMacOS")));
-  expect(sources, isNot(contains("Flutter")));
-});
-```
-
-- [ ] **Step 3.7: Run macOS-focused tests**
-
-Run on macOS:
+SwiftPM lane:
 
 ```sh
+flutter config --enable-swift-package-manager
 swift test
-flutter test --no-pub test/macos_swift_package_test.dart test/desktop_updater_method_channel_test.dart
+flutter build macos --debug
+flutter test integration_test -d macos
 ```
 
-Expected: Swift tests pass; Flutter MethodChannel tests pass.
-
-- [ ] **Step 3.8: Commit macOS SDK extraction**
-
-Commit message:
+CocoaPods fallback lane:
 
 ```sh
-git commit -m "feat: add standalone macos updater kit"
+flutter config --no-enable-swift-package-manager
+flutter clean
+flutter build macos --debug
+flutter test integration_test -d macos
 ```
 
-## Stage 4: Windows Native SDK And Flutter Adapter
+Expected: both lanes compile the same helper behavior. Record CocoaPods as
+`blocked` only when CocoaPods itself is unavailable; do not mark it verified
+from source inspection alone.
 
-**Purpose:** Move Windows helper logic into a Flutter-free C++ library while the Flutter Windows plugin remains the MethodChannel adapter.
+- [ ] **Step 3.6: Restore the user's Flutter SwiftPM setting**
+
+Return the global Flutter SwiftPM setting to its value recorded before Step
+3.5.
+
+- [ ] **Step 3.7: Commit macOS extraction**
+
+```sh
+git add Package.swift macos test/macos_swift_package_test.dart \
+  test/macos_cocoapods_source_layout_test.dart
+git commit -m "feat: extract macos updater helper kit"
+```
+
+## Stage 4: Windows Native Helper, Versioned C ABI, And .NET
+
+**Purpose:** Build one Windows helper implementation as a static Flutter
+library and a loadable shared DLL with a stable C ABI.
 
 **Files:**
+
 - Create: `windows/native/CMakeLists.txt`
-- Create: `windows/native/include/desktop_updater_native.h`
 - Create: `windows/native/include/desktop_updater_native_c.h`
+- Create: `windows/native/include/desktop_updater_version.h`
 - Create: `windows/native/src/desktop_updater_native.cpp`
 - Create: `windows/native/src/desktop_updater_native_c.cpp`
-- Create: `windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj`
-- Create: `windows/native/dotnet/DesktopUpdater.Native/DesktopUpdaterNative.cs`
-- Create: `windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj`
-- Create: `windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdaterNativeTests.cs`
-- Create: `windows/native/test/desktop_updater_native_test.cpp`
+- Create: `windows/native/test/`
+- Create: `windows/native/dotnet/DesktopUpdater.Native/`
+- Create: `windows/native/dotnet/DesktopUpdater.Native.Tests/`
 - Modify: `windows/CMakeLists.txt`
 - Modify: `windows/desktop_updater_plugin.cpp`
 - Modify: `windows/desktop_updater_plugin.h`
 - Modify: `windows/test/desktop_updater_plugin_test.cpp`
-- Modify: `test/native_helper_script_test.dart`
 
-- [ ] **Step 4.1: Add internal C++ helper API**
-
-Create `desktop_updater_native.h`:
-
-```cpp
-#pragma once
-
-#include <string>
-#include <vector>
-
-namespace desktop_updater_native {
-
-struct InstallRequest {
-  std::wstring staging_path;
-  std::vector<std::wstring> removed_files;
-  std::wstring diagnostics_log_path;
-};
-
-struct InstallResult {
-  bool ok;
-  std::string error;
-};
-
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
-
-}  // namespace desktop_updater_native
-```
-
-- [ ] **Step 4.2: Add stable public C ABI**
-
-Create `desktop_updater_native_c.h`:
+**Interfaces:**
 
 ```c
-#pragma once
-
 #include <stddef.h>
+#include <stdint.h>
+
+#define DESKTOP_UPDATER_NATIVE_ABI_VERSION 1u
 
 #if defined(_WIN32)
-#if defined(DESKTOP_UPDATER_NATIVE_BUILDING_DLL)
-#define DESKTOP_UPDATER_EXPORT __declspec(dllexport)
+#define DESKTOP_UPDATER_CALL __cdecl
 #else
-#define DESKTOP_UPDATER_EXPORT __declspec(dllimport)
-#endif
-#else
-#define DESKTOP_UPDATER_EXPORT
+#define DESKTOP_UPDATER_CALL
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef struct desktop_updater_install_request {
-  const wchar_t* staging_path;
-  const wchar_t* diagnostics_log_path;
-  const wchar_t* const* removed_files;
+typedef struct desktop_updater_install_request_v1 {
+  uint32_t abi_version;
+  size_t struct_size;
+  const uint16_t* staging_path;
+  const uint16_t* diagnostics_log_path;
+  const uint16_t* const* removed_files;
   size_t removed_file_count;
-} desktop_updater_install_request;
+} desktop_updater_install_request_v1;
 
-typedef struct desktop_updater_result {
-  int ok;
-  const char* error_message;
-} desktop_updater_result;
+typedef struct desktop_updater_result_v1 {
+  uint32_t abi_version;
+  int32_t ok;
+  const char* error_message_utf8;
+} desktop_updater_result_v1;
 
-DESKTOP_UPDATER_EXPORT desktop_updater_result
-desktop_updater_schedule_install_and_relaunch(
-    const desktop_updater_install_request* request);
+desktop_updater_result_v1 DESKTOP_UPDATER_CALL
+desktop_updater_schedule_install_and_relaunch_v1(
+    const desktop_updater_install_request_v1* request);
 
-DESKTOP_UPDATER_EXPORT void desktop_updater_result_free(
-    desktop_updater_result result);
-
-#ifdef __cplusplus
-}
-#endif
+void DESKTOP_UPDATER_CALL desktop_updater_result_free_v1(
+    desktop_updater_result_v1* result);
 ```
 
-ABI rules:
+Exported functions use explicit names, C linkage, and one documented calling
+convention. Every entrypoint catches C++ exceptions and returns an owned error
+through `desktop_updater_result_free_v1`. The free function clears the pointer
+and status fields so calling it again on the same result object is safe.
 
-```text
-Do not expose std::string, std::wstring, std::vector, C++ exceptions, C++
-namespaces, templates, or STL-owned memory in desktop_updater_native_c.h.
-Use UTF-16 wchar_t paths on Windows.
-Return heap-owned error strings only through desktop_updater_result.
-Always release result-owned memory through desktop_updater_result_free.
+- [ ] **Step 4.1: Write ABI layout and failure tests**
+
+Test null requests, wrong ABI versions, undersized structs, invalid UTF-16,
+non-empty removed-file arrays, thrown internal exceptions, and repeated
+freeing rules.
+
+- [ ] **Step 4.2: Build static and shared targets from common objects**
+
+`windows/native/CMakeLists.txt` must define:
+
+```cmake
+add_library(desktop_updater_native_objects OBJECT ${NATIVE_SOURCES})
+add_library(desktop_updater_native_static STATIC
+  $<TARGET_OBJECTS:desktop_updater_native_objects>)
+add_library(desktop_updater_native SHARED
+  $<TARGET_OBJECTS:desktop_updater_native_objects>)
+add_library(desktop_updater::native ALIAS desktop_updater_native)
 ```
 
-- [ ] **Step 4.3: Add first-class .NET P/Invoke wrapper**
+Define `DESKTOP_UPDATER_NATIVE_BUILDING_DLL` only for the shared target.
 
-Create `windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj`:
-
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <PackageId>DesktopUpdater.Native</PackageId>
-    <Description>Windows native updater bindings for desktop_updater.</Description>
-  </PropertyGroup>
-</Project>
-```
-
-Create `DesktopUpdaterNative.cs` with P/Invoke bindings to the C ABI:
-
-```csharp
-using System;
-using System.Runtime.InteropServices;
-
-namespace DesktopUpdater.Native;
-
-public sealed class DesktopUpdaterException : Exception
-{
-    public DesktopUpdaterException(string message) : base(message) {}
-}
-
-public static class DesktopUpdaterNative
-{
-    public static void ScheduleInstallAndRelaunch(
-        string? stagingPath,
-        string? diagnosticsLogPath)
-    {
-        var request = new NativeInstallRequest
-        {
-            stagingPath = stagingPath,
-            diagnosticsLogPath = diagnosticsLogPath,
-            removedFiles = IntPtr.Zero,
-            removedFileCount = UIntPtr.Zero,
-        };
-        var result = desktop_updater_schedule_install_and_relaunch(ref request);
-        try
-        {
-            if (result.ok == 0)
-            {
-                var message = Marshal.PtrToStringUTF8(result.errorMessage)
-                    ?? "desktop_updater native call failed.";
-                throw new DesktopUpdaterException(message);
-            }
-        }
-        finally
-        {
-            desktop_updater_result_free(result);
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct NativeInstallRequest
-    {
-        public string? stagingPath;
-        public string? diagnosticsLogPath;
-        public IntPtr removedFiles;
-        public UIntPtr removedFileCount;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeResult
-    {
-        public int ok;
-        public IntPtr errorMessage;
-    }
-
-    [DllImport("desktop_updater_native", CharSet = CharSet.Unicode)]
-    private static extern NativeResult desktop_updater_schedule_install_and_relaunch(
-        ref NativeInstallRequest request);
-
-    [DllImport("desktop_updater_native")]
-    private static extern void desktop_updater_result_free(NativeResult result);
-}
-```
-
-The .NET package is part of the first Windows native SDK release and must use
-the C ABI, not the internal C++ API.
-
-- [ ] **Step 4.4: Move helper-only functions into native library**
-
-Move these Flutter-free functions from `windows/desktop_updater_plugin.cpp` into `desktop_updater_native.cpp`:
-
-```text
-Utf8ToWide
-WideToUtf8
-WindowsErrorMessage
-CurrentExecutablePath
-Utf8PowerShellScriptContents
-PowerShellQuote
-Base64Encode
-Base64EncodeWide
-Sha256Hex
-PowerShellArray
-IsProcessElevated
-ProtectedInstallRootPaths
-IsKnownProtectedInstallDirectory
-CanWriteDirectory
-StartElevatedPowerShell
-StartPowerShell
-ScheduleInstallAndRelaunch
-```
-
-Keep Flutter-specific MethodChannel parsing in `windows/desktop_updater_plugin.cpp`.
-
-- [ ] **Step 4.5: Link Flutter plugin against native target**
+- [ ] **Step 4.3: Link Flutter through the correct directory**
 
 Modify `windows/CMakeLists.txt`:
 
 ```cmake
-add_subdirectory("native/desktop_updater")
-target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
+add_subdirectory("native")
+target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native_static)
 ```
 
-The plugin target still includes `desktop_updater_plugin_c_api.cpp` and keeps `DesktopUpdaterPluginCApi`.
+Do not use the nonexistent `native/desktop_updater` path. Keep
+`DesktopUpdaterPluginCApi` and the existing Flutter plugin DLL name.
 
-- [ ] **Step 4.6: Guard native tests behind an explicit CMake option**
+- [ ] **Step 4.4: Extract helper behavior**
 
-In `windows/native/CMakeLists.txt`, add:
+Move only Flutter-free helper logic. Preserve UAC, protected-root detection,
+writeability checks, PowerShell encoding, Authenticode/Inno handling, backup,
+rollback, cleanup, relaunch, and stable JSONL events. MethodChannel parsing
+stays in the Flutter adapter.
 
-```cmake
-option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS "Build desktop_updater native tests" OFF)
+- [ ] **Step 4.5: Add complete .NET marshalling**
 
-add_library(desktop_updater_native STATIC
-  src/desktop_updater_native.cpp
-  src/desktop_updater_native_c.cpp
-)
-
-target_include_directories(desktop_updater_native PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-)
-
-if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
-  enable_testing()
-  add_executable(desktop_updater_native_test
-    test/desktop_updater_native_test.cpp
-  )
-  target_link_libraries(desktop_updater_native_test PRIVATE
-    desktop_updater_native
-    gtest_main
-    gmock
-  )
-endif()
-```
-
-Flutter plugin builds must not build or fetch native SDK GoogleTest targets.
-
-- [ ] **Step 4.7: Add Windows native tests**
-
-Create GoogleTest cases:
-
-```cpp
-TEST(DesktopUpdaterNative, ProductVersionBuildNumberWithMetadata) {
-  std::wstring build_number;
-  EXPECT_EQ(ParseProductVersionBuildNumber(L"1.2.3+4", &build_number),
-            ProductVersionBuildParseResult::kBuildNumber);
-  EXPECT_EQ(build_number, L"4");
-}
-
-TEST(DesktopUpdaterNative, ProgramFilesInstallDirectoryIsProtected) {
-  EXPECT_TRUE(IsKnownProtectedInstallDirectoryForTesting(
-      L"C:\\Program Files\\Example",
-      {L"C:\\Program Files", L"C:\\Program Files (x86)"}));
-}
-```
-
-- [ ] **Step 4.8: Add ABI tests**
-
-Add tests that call the C ABI directly:
-
-```cpp
-TEST(DesktopUpdaterNativeCAbi, NullRequestFailsWithoutThrowing) {
-  desktop_updater_result result =
-      desktop_updater_schedule_install_and_relaunch(nullptr);
-
-  EXPECT_EQ(result.ok, 0);
-  ASSERT_NE(result.error_message, nullptr);
-  desktop_updater_result_free(result);
-}
-```
-
-- [ ] **Step 4.9: Add .NET wrapper tests**
-
-Create `windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdaterNativeTests.cs`:
+The public .NET method accepts:
 
 ```csharp
-using DesktopUpdater.Native;
-using Xunit;
-
-public sealed class DesktopUpdaterNativeTests
-{
-    [Fact]
-    public void ExceptionTypeIsPublic()
-    {
-        var error = new DesktopUpdaterException("example");
-        Assert.Equal("example", error.Message);
-    }
-}
+public static void ScheduleInstallAndRelaunch(
+    string? stagingPath,
+    IReadOnlyList<string> removedFiles,
+    string? diagnosticsLogPath)
 ```
 
-This first test does not load the native DLL. Add host-specific P/Invoke tests
-after the C ABI build artifact is copied into the test output directory.
+Use explicit UTF-16 allocation for each removed-file pointer, free every
+allocation in `finally`, and declare P/Invoke with:
 
-- [ ] **Step 4.10: Keep Flutter plugin tests**
-
-Update `windows/test/desktop_updater_plugin_test.cpp` so it still verifies:
-
-```cpp
-TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
-  DesktopUpdaterPlugin plugin;
-  // Existing MethodChannel behavior remains.
-}
+```csharp
+[DllImport(
+    "desktop_updater_native",
+    EntryPoint = "desktop_updater_schedule_install_and_relaunch_v1",
+    ExactSpelling = true,
+    CallingConvention = CallingConvention.Cdecl)]
 ```
 
-- [ ] **Step 4.11: Run Windows lane**
+Do not ship a wrapper that always sends `removed_file_count == 0`.
 
-Run on Windows:
+- [ ] **Step 4.6: Add native DLL integration tests**
 
-```sh
+The .NET test output must receive the actual DLL. At least one test calls the
+C ABI with an invalid request and verifies the native error. Merely
+constructing `DesktopUpdaterException` is not sufficient.
+
+- [ ] **Step 4.7: Make native tests explicit and offline-safe for Flutter**
+
+Use:
+
+```cmake
+option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
+  "Build desktop_updater native tests" OFF)
+```
+
+When `OFF`, no GoogleTest discovery or download occurs. When `ON`, resolve a
+pinned GoogleTest dependency and register at least one test. Use GoogleTest
+v1.16.0, the final C++14-compatible release, from:
+
+```text
+https://github.com/google/googletest/archive/refs/tags/v1.16.0.zip
+SHA-256 a9607c9215866bd425a725610c5e0f739eeb50887a57903df48891446ce6fb3c
+```
+
+Prefer `find_package(GTest CONFIG QUIET)` when the target host already provides
+that exact version. Otherwise use `FetchContent` with `URL_HASH` set to the
+digest above. This branch is reachable only when native tests are explicitly
+enabled.
+
+- [ ] **Step 4.8: Run the Windows matrix**
+
+```powershell
 flutter build windows --debug
-cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+cmake -S windows/native -B windows/native/build `
+  -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+cmake --build windows/native/build --config Debug
+ctest --test-dir windows/native/build -C Debug --output-on-failure
 dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
 flutter test integration_test -d windows
 ```
 
-Expected: Flutter plugin and native helper behavior unchanged.
+After CTest, assert its output does not contain `No tests were found`.
 
-- [ ] **Step 4.12: Commit Windows SDK extraction**
-
-Commit message:
+- [ ] **Step 4.9: Commit Windows extraction**
 
 ```sh
-git commit -m "feat: add standalone windows updater native library"
+git add windows test/native_helper_script_test.dart
+git commit -m "feat: extract windows updater native helper"
 ```
 
-## Stage 5: Linux Native SDK And Flutter Adapter
+## Stage 5: Linux Source SDK And Safe Flutter Adapter
 
-**Purpose:** Move Linux helper logic into a Flutter-free C++ library while the Flutter Linux plugin remains the MethodChannel adapter.
+**Purpose:** Move the already hardened Linux helper into a Flutter-free source
+library without reintroducing executable-parent deletion.
 
 **Files:**
+
 - Create: `linux/native/CMakeLists.txt`
 - Create: `linux/native/include/desktop_updater_native.h`
+- Create: `linux/native/include/desktop_updater_version.h`
 - Create: `linux/native/src/desktop_updater_native.cc`
 - Create: `linux/native/test/desktop_updater_native_test.cc`
 - Modify: `linux/CMakeLists.txt`
 - Modify: `linux/desktop_updater_plugin.cc`
 - Modify: `linux/desktop_updater_plugin_private.h`
 - Modify: `linux/test/desktop_updater_plugin_test.cc`
-- Modify: `test/native_helper_script_test.dart`
 
-- [ ] **Step 5.1: Add Linux native helper API**
-
-Create `desktop_updater_native.h`:
+**Interfaces:**
 
 ```cpp
-#pragma once
-
-#include <string>
-#include <vector>
-
-namespace desktop_updater_native {
-
 struct InstallRequest {
+  LinuxInstallOperation operation;
   std::string staging_path;
+  std::string install_root;
+  std::string executable_relative_path;
+  std::string package_id;
   std::vector<std::string> removed_files;
   std::string diagnostics_log_path;
 };
 
-struct InstallResult {
-  bool ok;
-  std::string error;
-};
-
+InstallResult ValidateInstallRequest(const InstallRequest& request);
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
-
-}  // namespace desktop_updater_native
 ```
 
-- [ ] **Step 5.2: Move helper-only functions into native library**
+- [ ] **Step 5.1: Move the validated implementation**
 
-Move these Flutter-free functions from `linux/desktop_updater_plugin.cc`:
+Move shell quoting, process/executable lookup, file writing, detached launch,
+request validation, backup, copy, rollback, cleanup, permissions, and relaunch
+into `linux/native`. Do not expose GTK or Flutter types from native headers.
 
-```text
-shell_quote
-current_executable_path
-parent_directory
-base_name
-shell_array
-write_file
-start_detached_script
-schedule_install_update
-```
-
-Keep `FlMethodCall`, `FlMethodResponse`, GTK, and Flutter Linux code in `linux/desktop_updater_plugin.cc`.
-
-- [ ] **Step 5.3: Link Flutter plugin against native target**
+- [ ] **Step 5.2: Link the correct native directory**
 
 Modify `linux/CMakeLists.txt`:
 
 ```cmake
-add_subdirectory("native/desktop_updater")
+add_subdirectory("native")
 target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
 ```
 
-Keep existing `flutter` and `PkgConfig::GTK` links for the Flutter plugin target only.
+Do not use `native/desktop_updater`.
 
-- [ ] **Step 5.4: Add native tests**
+- [ ] **Step 5.3: Prove destructive commands are bounded**
 
-Create tests:
+Native tests must inspect generated scripts and execute filesystem tests in a
+temporary self-contained bundle. Required assertions:
 
-```cpp
-TEST(DesktopUpdaterNative, ShellQuoteEscapesSingleQuotes) {
-  EXPECT_EQ(ShellQuoteForTesting("a'b"), "'a'\\''b'");
-}
+- protected shared roots are rejected;
+- install root and executable are canonical descendants;
+- removed files cannot escape through `..` or symlinks;
+- the helper never calls destructive commands against a shared root;
+- rollback restores only the verified app-owned bundle;
+- staging cleanup cannot delete the install root.
 
-TEST(DesktopUpdaterNative, MissingStagingDirectoryFails) {
-  auto result = ScheduleInstallAndRelaunch({
-      "/tmp/desktop_updater_missing_staging",
-      {},
-      "",
-  });
-  EXPECT_FALSE(result.ok);
-  EXPECT_THAT(result.error, testing::HasSubstr("Staged update directory"));
-}
-```
+- [ ] **Step 5.4: Keep Linux publication source-first**
 
-- [ ] **Step 5.5: Run Linux lane**
+Add CMake install/export rules and a pkg-config template for source builds.
+Do not add a generic `.so` GitHub Release asset in this plan. Document that
+prebuilt Linux binaries require a later compiler/glibc/architecture matrix.
 
-Run on Linux:
+- [ ] **Step 5.5: Run the Linux matrix**
 
 ```sh
 flutter build linux --debug
-cmake --build example/build/linux/x64/debug --target desktop_updater_test
-ctest --test-dir example/build/linux/x64/debug --output-on-failure
+cmake -S linux/native -B linux/native/build \
+  -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+cmake --build linux/native/build
+ctest --test-dir linux/native/build --output-on-failure
 xvfb-run -a flutter test integration_test -d linux
 ```
 
-Expected: Flutter plugin and native helper behavior unchanged.
+Assert CTest discovers at least one test.
 
-- [ ] **Step 5.6: Commit Linux SDK extraction**
-
-Commit message:
+- [ ] **Step 5.6: Commit Linux extraction**
 
 ```sh
-git commit -m "feat: add standalone linux updater native library"
+git add linux test/native_helper_script_test.dart
+git commit -m "feat: extract safe linux updater helper"
 ```
 
-## Stage 6: Full Native Runtime Preview Child Plan
+## Stage 6: Installable Package Consumer Gates
+
+**Purpose:** Prove packages work outside their own source tree before calling
+them consumable.
 
 **Files:**
-- Create: `docs/exec-plans/active/2026-07-05-full-native-runtime-preview-plan.md`
-- Modify: `docs/exec-plans/index.md`
+
+- Create: `example/native/macos/`
+- Create: `example/native/windows-cmake/`
+- Create: `example/native/windows-dotnet/`
+- Create: `example/native/linux-cmake/`
+- Create: `windows/native/cmake/desktop_updater_nativeConfig.cmake.in`
+- Create: `windows/native/dotnet/DesktopUpdater.Native/buildTransitive/`
+- Create: `windows/native/dotnet/DesktopUpdater.Native/runtimes/win-x64/native/`
+- Create: `linux/native/cmake/desktop_updater_nativeConfig.cmake.in`
+- Create: `linux/native/cmake/desktop_updater_native.pc.in`
+- Modify: `.github/workflows/desktop-updater-ci.yml`
+
+- [ ] **Step 6.1: Add a local SwiftPM consumer**
+
+The sample depends on the repository root by local path, imports
+`DesktopUpdaterKit`, constructs a public `MacInstallRequest`, and compiles
+without importing Flutter.
+
+- [ ] **Step 6.2: Add installed CMake consumers**
+
+Windows and Linux tests must install to a temporary prefix, configure consumer
+projects with that prefix, build them, and run their tests. Consumer
+`CMakeLists.txt` uses:
+
+```cmake
+find_package(desktop_updater_native CONFIG REQUIRED)
+target_link_libraries(consumer PRIVATE desktop_updater::native)
+```
+
+- [ ] **Step 6.3: Pack and consume NuGet**
+
+The package must contain:
+
+```text
+lib/net8.0/DesktopUpdater.Native.dll
+lib/netstandard2.0/DesktopUpdater.Native.dll
+runtimes/win-x64/native/desktop_updater_native.dll
+buildTransitive/DesktopUpdater.Native.targets
+```
+
+Create a temporary console project, install the local `.nupkg`, run it, and
+exercise one native failure path.
+
+- [ ] **Step 6.4: Add package-content assertions**
+
+Assert:
+
+- pub dry-run contains local macOS/Windows/Linux helper sources;
+- SwiftPM has no Flutter dependency;
+- NuGet contains the DLL and wrapper for every advertised TFM/RID;
+- Linux source archive contains install/export/pkg-config files;
+- no package documentation claims full native runtime APIs yet.
+
+- [ ] **Step 6.5: Run consumer CI**
+
+Run each consumer on its target host. Package jobs fail when the consumer
+compile, link, load, or execution step fails.
+
+- [ ] **Step 6.6: Commit package gates**
+
+```sh
+git add example/native windows/native linux/native \
+  .github/workflows/desktop-updater-ci.yml
+git commit -m "test: verify native sdk consumers"
+```
+
+## Stage 7: Full Native Runtime Child Gate
+
+**Purpose:** Keep helper extraction separate from duplicated native discovery
+and staging runtimes.
+
+**Files:**
+
+- Modify:
+  `docs/exec-plans/active/2026-07-05-full-native-runtime-preview-plan.md`
+- Modify: `docs/exec-plans/index.md` only if its link is missing
 - Test: `test/harness_engineering_docs_test.dart`
 
-- [ ] **Step 6.1: Split full native runtime into a child plan**
+- [x] **Step 7.1: Rebase the child plan**
 
-Create `docs/exec-plans/active/2026-07-05-full-native-runtime-preview-plan.md`
-with this scope:
+The child plan must:
 
-```text
-Build preview native runtime APIs for non-Flutter apps:
-- check app-archive.json
-- parse release.json
-- select version/platform/channel
-- download artifact
-- verify length/SHA-256
-- safe extract/stage
-- hand off to the native helper SDKs from Stages 3-5
-```
+- depend on successful Stages 0-6;
+- consume generated fixtures from Stage 2;
+- cover all current 2.7 policies and artifact kinds;
+- use the extracted helpers from Stages 3-5;
+- add real macOS, Windows, and Linux sample update smokes;
+- remain preview until all target-host evidence exists.
 
-Out of scope for the child plan:
+- [x] **Step 7.2: Remove premature runtime documentation**
+
+Master-plan docs may show only helper APIs:
 
 ```text
-Replacing the Flutter Dart UpdateClient.
-Changing the existing Flutter public API.
-Changing release.json or app-archive.json schema.
-Publishing native runtime as production-ready before platform tests exist.
+scheduleInstallAndRelaunch(alreadyVerifiedStagedArtifact)
 ```
 
-- [ ] **Step 6.2: Add child plan to exec-plan index**
+Do not show `checkForUpdate` or `downloadVerifyAndStage` until the child plan
+implements and verifies them.
 
-Add:
+- [x] **Step 7.3: Keep plan tracking literal**
 
-```markdown
-- [2026-07-05 - Full native runtime preview](active/2026-07-05-full-native-runtime-preview-plan.md)
-```
+The child plan and index already exist. Do not leave their creation shown as
+unchecked future work. Record the rebase date and leave only unimplemented
+runtime tasks unchecked.
 
-- [ ] **Step 6.3: Keep Flutter runtime explicitly on Dart**
-
-Add this invariant to the child plan and docs:
-
-```text
-Flutter apps continue to use the Dart UpdateClient, Dart lifecycle diagnostics,
-and existing MethodChannel handoff. Native runtime preview APIs are additive
-for non-Flutter apps only.
-```
-
-- [ ] **Step 6.4: Run plan index test**
-
-Run:
+- [x] **Step 7.4: Run the plan/index test**
 
 ```sh
 flutter test --no-pub test/harness_engineering_docs_test.dart
 ```
 
-- [ ] **Step 6.5: Commit child plan split**
+Verified locally on 2026-07-10: PASS, 8 tests.
+
+- [x] **Step 7.5: Commit the plan rebase**
 
 ```sh
-git commit -m "docs: split native runtime preview plan"
+git add docs/exec-plans
+git commit -m "docs: rebase native runtime plans"
 ```
 
+## Stage 8: Native Publish Build Adapters
 
-## Stage 7: Native Build Adapters For CLI Publish
-
-**Purpose:** Let the same CLI publish Flutter, Xcode, CMake, and manual app-path projects without duplicating release packaging logic.
+**Purpose:** Build deployable Xcode/CMake install trees while keeping Flutter
+publish behavior unchanged.
 
 **Files:**
+
 - Create: `lib/src/release_cli/xcode_project_adapter.dart`
 - Create: `lib/src/release_cli/cmake_project_adapter.dart`
 - Modify: `lib/src/release_cli/project_adapter.dart`
 - Modify: `lib/src/release_cli/publish_command.dart`
 - Modify: `lib/src/release_cli/release_publish_config.dart`
-- Modify: `docs/publishing.md`
+- Test: `test/release_cli/project_adapter_test.dart`
 - Test: `test/release_cli/release_publisher_build_test.dart`
-- Test: `test/release_cli/release_publish_config_test.dart`
 
-- [ ] **Step 7.1: Add `--project-type` option**
+- [ ] **Step 8.1: Add explicit project-type options**
 
 Supported values:
 
@@ -1192,610 +1139,270 @@ cmake
 manual
 ```
 
-Validation:
+`manual` requires a complete artifact root, app name, package ID, and version.
+`xcode` requires a project/workspace and scheme. `cmake` requires a configured
+install target or an already installed bundle root.
 
-```text
---project-type manual requires --app-path, --package-id, --version
---project-type xcode requires --scheme or config project.xcode.scheme
---project-type cmake requires appPath or target output mapping
-```
+- [ ] **Step 8.2: Build Xcode into a deterministic output**
 
-- [ ] **Step 7.2: Add Xcode adapter**
+Use an explicit project/workspace, scheme, Release configuration, macOS
+destination, and derived-data path. Resolve the `.app` from build settings and
+return the whole bundle.
 
-Public behavior:
+- [ ] **Step 8.3: Build CMake through install staging**
 
-```sh
-desktop-updater release publish --platform macos --project-type xcode --scheme MyApp
-```
-
-Adapter behavior:
-
-```text
-run xcodebuild -scheme MyApp -configuration Release
-resolve .app path from build settings or config
-read CFBundleIdentifier
-read CFBundleShortVersionString
-read CFBundleVersion
-return ProjectBuildResult
-```
-
-- [ ] **Step 7.3: Add CMake adapter**
-
-Public behavior:
+Run configure/build and:
 
 ```sh
-desktop-updater release publish --platform linux --project-type cmake --app-path build/my_app
-desktop-updater release publish --platform windows --project-type cmake --app-path build/Release/MyApp.exe
+cmake --install <build-dir> --prefix <temporary-install-root>
 ```
 
-Adapter behavior:
+Return the application-owned install tree, not `MyApp.exe` or a single Linux
+executable. Require `executableRelativePath` for helper relaunch.
 
-```text
-run cmake build only when build command is configured
-use appPath for packaging
-read packageId/version/buildNumber from config or CLI flags
-return ProjectBuildResult
-```
+- [ ] **Step 8.4: Test ambiguity and Flutter default**
 
-- [ ] **Step 7.4: Keep Flutter default**
+Existing unqualified Flutter publish commands must select `flutter`.
+Directories containing both Xcode and CMake markers require explicit
+`--project-type`.
 
-Add tests:
-
-```dart
-test("unqualified release publish in Flutter project uses Flutter adapter", () {
-  final adapter = selectProjectAdapter(flutterFixture.root, projectType: null, appPath: null);
-  expect(adapter.type, "flutter");
-});
-
-test("ambiguous project requires explicit project type", () {
-  expect(
-    () => selectProjectAdapter(ambiguousRoot, projectType: null, appPath: null),
-    throwsA(isA<UsageException>()),
-  );
-});
-```
-
-- [ ] **Step 7.5: Run CLI tests**
-
-Run:
+- [ ] **Step 8.5: Run CLI tests**
 
 ```sh
 flutter test --no-pub \
+  test/release_cli/project_adapter_test.dart \
   test/release_cli/release_publisher_build_test.dart \
   test/release_cli/release_publish_config_test.dart \
-  test/release_cli/release_command_test.dart \
   test/release_cli/publish_layout_test.dart \
   test/release_cli/publish_manifest_test.dart
 ```
 
-Expected: old Flutter publish tests pass; new native adapter tests pass.
-
-- [ ] **Step 7.6: Commit native CLI adapters**
-
-Commit message:
+- [ ] **Step 8.6: Commit build adapters**
 
 ```sh
-git commit -m "feat: add native project adapters to release cli"
+git add lib/src/release_cli test/release_cli
+git commit -m "feat: add native install-tree build adapters"
 ```
 
-## Stage 8: Standalone CLI Distribution Without Breaking `dart run`
+## Stage 9: Standalone CLI Contract And Distribution
 
-**Purpose:** Native users can run `desktop-updater` without a Flutter project, while Flutter users keep `dart run desktop_updater:release`.
+**Purpose:** Provide one compiled CLI without inventing commands or flags that
+do not exist.
 
 **Files:**
+
 - Create: `bin/desktop_updater.dart`
-- Modify: `pubspec.yaml`
+- Create: `lib/src/cli/desktop_updater_cli.dart`
+- Refactor: `bin/package.dart`
+- Refactor: `bin/verify.dart`
+- Refactor: `bin/app_archive.dart`
+- Refactor: `bin/release.dart`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
-- Modify: `docs/github-actions-ci-cd.md`
+- Test: `test/desktop_updater_cli_test.dart`
 
-- [ ] **Step 8.1: Add standalone Dart CLI entrypoint**
-
-Create `bin/desktop_updater.dart`:
+**Interfaces:**
 
 ```dart
-import "package:desktop_updater/src/release_cli/release_command.dart";
-
-Future<void> main(List<String> args) {
-  return runDesktopUpdaterCli(args);
-}
+Future<int> runDesktopUpdaterCli(
+  List<String> args, {
+  Directory? projectRoot,
+  StringSink? output,
+  Map<String, String>? environment,
+});
 ```
 
-Keep existing `bin/package.dart`, `bin/verify.dart`, `bin/app_archive.dart`, and `bin/release.dart`.
+Top-level subcommands:
 
-- [ ] **Step 8.2: Add compiled binary CI check**
-
-Add CI step:
-
-```yaml
-- name: Compile standalone CLI
-  run: dart compile exe bin/desktop_updater.dart -o build/desktop-updater
-- name: Check standalone CLI help
-  run: build/desktop-updater release publish --help
-- name: Check standalone CLI version
-  run: build/desktop-updater --version
+```text
+release
+package
+verify
+app-archive
 ```
 
-- [ ] **Step 8.3: Define standalone CLI release assets**
+- [ ] **Step 9.1: Extract reusable command runners**
 
-Document and test these asset names:
+Refactor existing bin entrypoints so the dispatcher calls the same parsers and
+implementations. Existing `dart run desktop_updater:package` and other bin
+commands remain valid.
+
+- [ ] **Step 9.2: Keep flag names consistent**
+
+`desktop-updater package` uses the existing `--input` flag. Do not document
+`--app-path` for the package command unless it is intentionally added as a
+tested alias. `--app-path` belongs only to publish/project-adapter selection.
+
+- [ ] **Step 9.3: Test every documented command**
+
+Tests invoke:
+
+```text
+desktop-updater --help
+desktop-updater --version
+desktop-updater release publish --help
+desktop-updater package --help
+desktop-updater verify --help
+desktop-updater app-archive --help
+```
+
+No documentation may reference `runDesktopUpdaterCli` before this task creates
+it.
+
+- [ ] **Step 9.4: Build the release matrix**
+
+Build on native hosts:
 
 ```text
 desktop-updater-macos-arm64
 desktop-updater-macos-x64
 desktop-updater-windows-x64.exe
 desktop-updater-linux-x64
-desktop-updater-checksums.txt
 ```
 
-Each binary must print the same full version as root `pubspec.yaml`:
+Generate SHA-256 checksums. macOS and Windows production release assets require
+the repository's approved signing/notarization workflows; unsigned local
+builds are `candidate-only`.
+
+- [ ] **Step 9.5: Commit the CLI**
 
 ```sh
-desktop-updater --version
+git add bin lib/src/cli test/desktop_updater_cli_test.dart \
+  .github/workflows/desktop-updater-ci.yml
+git commit -m "feat: add standalone desktop updater cli"
 ```
 
-The checksums file must include SHA-256 values for every uploaded standalone CLI
-binary.
+## Stage 10: Versioning, Publication, Documentation, And Final Matrix
 
-- [ ] **Step 8.4: Keep old CLI checks**
-
-Keep existing CI:
-
-```yaml
-dart run desktop_updater:package --help
-dart run desktop_updater:verify --help
-dart run desktop_updater:release publish --help
-```
-
-- [ ] **Step 8.5: Commit standalone CLI entrypoint**
-
-Commit message:
-
-```sh
-git commit -m "feat: add standalone desktop updater cli entrypoint"
-```
-
-## Stage 9: Native Package Publication Surfaces
-
-**Purpose:** Make native SDKs consumable through their ecosystem package managers without changing pub.dev package identity. Flutter still consumes local native sources from the pub package; external native package feeds are for non-Flutter consumers.
+**Purpose:** Synchronize versions, publish only verified surfaces, and preserve
+literal evidence labels.
 
 **Files:**
+
+- Create: `tool/version_check.dart`
+- Create: `tool/sync_versions.dart`
+- Modify: `tool/harness_check.dart`
+- Create: `docs/native-sdk.md`
 - Modify: `README.md`
 - Modify: `docs/publishing.md`
-- Create: `docs/native-sdk.md`
-- Create: `windows/native/desktop_updater_nativeConfig.cmake.in`
-- Create: `linux/native/desktop_updater_native.pc.in`
-- Create: `windows/native/desktop_updater_native.nuspec`
+- Modify: `docs/github-actions-ci-cd.md`
+- Modify: `.github/workflows/desktop-updater-ci.yml`
+- Test: `test/native_sdk_docs_test.dart`
 
-- [ ] **Step 9.1: Document package channels**
+- [ ] **Step 10.1: Generate checked version constants**
+
+Read root `pubspec.yaml` and generate/check:
+
+- Dart package/CLI full version;
+- Swift helper version string;
+- Windows and Linux header version strings;
+- CMake numeric `MAJOR.MINOR.PATCH`;
+- NuGet-compatible SemVer.
+
+The sync tool never changes `pubspec.yaml`, changelog, or Git tags.
+
+- [ ] **Step 10.2: Document package surfaces honestly**
 
 Document:
 
 ```text
-Flutter: pub.dev package desktop_updater
-macOS: SwiftPM product DesktopUpdaterKit from repository tags; no native SDK CocoaPods publication
-Windows: CMake package, GitHub Release asset, NuGet package with .NET wrapper
-Linux: CMake package, pkg-config file, GitHub Release source/binary asset
-CLI: dart run desktop_updater:* for Flutter users, desktop-updater binary for native users
+Flutter: pub.dev desktop_updater with local native helper sources
+macOS helper: DesktopUpdaterKit through SwiftPM
+Windows helper: CMake DLL/static package and DesktopUpdater.Native NuGet
+Linux helper: source-first CMake package with generated pkg-config metadata
+CLI: dart run entrypoints and signed standalone release assets
+Full native runtime: preview child plan, unavailable until its gates pass
 ```
 
-macOS CocoaPods rule:
+- [ ] **Step 10.3: Add release asset and consumer checks**
 
-```text
-Keep macos/desktop_updater.podspec only for existing Flutter CocoaPods fallback
-compatibility. Do not document or publish DesktopUpdaterKit as a pod.
-```
+CI must validate package contents, versions, checksums, consumer builds, C ABI
+version, and target-host native tests. A package job cannot pass from source
+unit tests alone.
 
-- [ ] **Step 9.2: Document that Flutter uses local native sources**
-
-Add this rule to `docs/native-sdk.md` and release docs:
-
-```text
-Flutter apps do not install DesktopUpdaterKit, NuGet, or system CMake packages
-separately. The `desktop_updater` pub package includes the native adapter
-sources and links them locally through Flutter's normal macOS, Windows, and
-Linux plugin build.
-```
-
-Implementation expectation:
-
-```text
-macOS Flutter plugin -> local SwiftPM target DesktopUpdaterKit
-Windows Flutter plugin -> add_subdirectory(windows/native)
-Linux Flutter plugin -> add_subdirectory(linux/native)
-```
-
-- [ ] **Step 9.3: Add macOS Swift usage docs**
-
-Example:
-
-```swift
-import DesktopUpdaterKit
-
-let updater = DesktopUpdater(
-    archiveURL: URL(string: "https://updates.example.com/app-archive.json")!,
-    currentVersion: .fromMainBundle()
-)
-
-if let update = try await updater.checkForUpdate() {
-    let staged = try await updater.downloadVerifyAndStage(update.descriptor)
-    try await updater.installAndRelaunch(staged, diagnosticsLogURL: helperLogURL)
-}
-```
-
-- [ ] **Step 9.4: Add Windows/Linux usage docs**
-
-Example:
-
-```cpp
-desktop_updater_native::UpdateClient client({
-    .app_archive_url = "https://updates.example.com/app-archive.json",
-    .current_version = {"1.0.0", "100"},
-    .platform = "linux",
-});
-
-auto update = client.CheckForUpdate();
-if (update.has_value()) {
-  auto staged = client.DownloadVerifyAndStage(update->descriptor);
-  desktop_updater_native::ScheduleInstallAndRelaunch({
-      staged.staging_path,
-      {},
-      "/var/tmp/my_app_update_helper.jsonl",
-  });
-}
-```
-
-- [ ] **Step 9.5: Add docs drift tests**
-
-Add tests that verify README and docs mention:
-
-```text
-pub.dev package remains desktop_updater
-SwiftPM product DesktopUpdaterKit
-CMake target desktop_updater_native
-existing Dart CLI commands
-standalone desktop-updater CLI
-Flutter uses local native sources instead of external native package feeds
-```
-
-- [ ] **Step 9.6: Commit native package docs**
-
-Commit message:
+- [ ] **Step 10.4: Run the complete Flutter ladder**
 
 ```sh
-git commit -m "docs: describe native updater sdk packages"
-```
-
-## Stage 10: Single Version Source
-
-**Purpose:** Release all package surfaces from one canonical version without manually editing five package metadata files.
-
-**Files:**
-- Create: `tool/version_check.dart`
-- Create: `tool/sync_versions.dart`
-- Modify: `tool/harness_check.dart`
-- Modify: `lib/src/package_version.dart`
-- Create: `macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterKitVersion.swift`
-- Create: `windows/native/include/desktop_updater_version.h`
-- Create: `linux/native/include/desktop_updater_version.h`
-- Modify: `windows/native/CMakeLists.txt`
-- Modify: `linux/native/CMakeLists.txt`
-- Modify: `windows/native/desktop_updater_nativeConfig.cmake.in`
-- Modify: `linux/native/desktop_updater_native.pc.in`
-- Modify: `windows/native/desktop_updater_native.nuspec`
-- Test: `test/native_helper_diagnostics_docs_test.dart`
-- Test: `test/harness_engineering_docs_test.dart`
-
-- [ ] **Step 10.1: Declare root `pubspec.yaml` as canonical**
-
-Add this release rule to `docs/native-sdk.md`:
-
-```text
-The root `pubspec.yaml` version is the single source of truth for all release
-surfaces: pub.dev, SwiftPM tags, CMake packages, NuGet packages,
-pkg-config metadata, and the standalone CLI. Do not store release versions in
-`.env` files.
-```
-
-- [ ] **Step 10.2: Add generated/checked version surfaces**
-
-Use generated or checked constants:
-
-```dart
-// lib/src/package_version.dart
-const desktopUpdaterPackageVersion = "2.5.0";
-```
-
-```swift
-// macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterKitVersion.swift
-public enum DesktopUpdaterKitVersion {
-    public static let current = "2.5.0"
-}
-```
-
-```cpp
-// windows/native/include/desktop_updater_version.h
-#pragma once
-#define DESKTOP_UPDATER_NATIVE_VERSION "2.5.0"
-```
-
-```cpp
-// linux/native/include/desktop_updater_version.h
-#pragma once
-#define DESKTOP_UPDATER_NATIVE_VERSION "2.5.0"
-```
-
-The concrete version shown above is illustrative; implementation must read the
-actual value from root `pubspec.yaml`.
-
-Version normalization rules:
-
-```text
-fullVersion: exact pubspec value, for example 2.5.0-dev.1
-semverCore: numeric MAJOR.MINOR.PATCH, for example 2.5.0
-cmakeNumericVersion: same as semverCore because CMake project(VERSION) does not
-  accept prerelease suffixes
-nugetVersion: fullVersion converted to NuGet-compatible SemVer when needed
-swiftVersionString: fullVersion
-cliVersionString: fullVersion
-```
-
-Do not feed `2.5.0-dev.1` directly to CMake `project(VERSION ...)`.
-
-- [ ] **Step 10.3: Add version check tool**
-
-Create `tool/version_check.dart` that:
-
-```text
-reads root pubspec.yaml version
-derives fullVersion, semverCore, cmakeNumericVersion, nugetVersion, swiftVersionString, cliVersionString
-checks lib/src/package_version.dart
-checks DesktopUpdaterKitVersion.swift
-checks Windows desktop_updater_version.h
-checks Linux desktop_updater_version.h
-checks CMake project VERSION values against cmakeNumericVersion
-checks pkg-config Version value
-checks NuGet version value against nugetVersion
-exits non-zero with all mismatches listed
-```
-
-- [ ] **Step 10.4: Add version sync tool**
-
-Create `tool/sync_versions.dart` that:
-
-```text
-reads root pubspec.yaml version
-rewrites only generated version literals/templates
-does not bump pubspec.yaml
-does not edit CHANGELOG.md
-does not create git tags
-```
-
-This keeps release/version work explicit: humans change `pubspec.yaml`, then run
-the sync tool.
-
-- [ ] **Step 10.5: Add version check to local harness**
-
-Modify `tool/harness_check.dart` to run:
-
-```sh
-dart run tool/version_check.dart
-```
-
-Place it after formatting and before analyze so drift is caught early.
-
-- [ ] **Step 10.6: Add release publication order**
-
-Document the release order:
-
-```text
-1. Update root pubspec.yaml version only.
-2. Run dart run tool/sync_versions.dart.
-3. Run dart run tool/version_check.dart.
-4. Run dart run tool/harness_check.dart.
-5. Create one repository tag, for example v2.5.0.
-6. Publish pub.dev package desktop_updater.
-7. Publish native artifacts from the same tag:
-   - SwiftPM is available through the Git tag.
-   - GitHub Release uploads standalone CLI and CMake/pkg-config assets.
-   - NuGet package uses the same version.
-```
-
-- [ ] **Step 10.7: Add docs drift tests**
-
-Add tests that assert docs mention:
-
-```text
-pubspec.yaml is the single version source
-no .env file is used for package versions
-Flutter uses local native sources
-native package feeds are for non-Flutter consumers
-```
-
-- [ ] **Step 10.8: Run focused version tests**
-
-Run:
-
-```sh
-dart run tool/version_check.dart
-flutter test --no-pub test/harness_engineering_docs_test.dart test/native_helper_diagnostics_docs_test.dart
-```
-
-Expected: version check passes and docs tests pass.
-
-- [ ] **Step 10.9: Commit single version source**
-
-Commit message:
-
-```sh
-git commit -m "chore: add single version source checks"
-```
-
-## Stage 11: Full Verification Matrix
-
-**Purpose:** Prove Flutter did not regress and native SDKs work independently.
-
-**Files:**
-- Modify: `.github/workflows/desktop-updater-ci.yml`
-- Modify: `docs/harness-engineering.md`
-- Modify: `tool/harness_check.dart` only if a local native check can run secretlessly on the host
-
-- [ ] **Step 11.1: Keep local Flutter ladder**
-
-Run:
-
-```sh
-flutter test --no-pub test/<focused_test>.dart
 dart format --set-exit-if-changed .
 flutter analyze --no-fatal-infos
 flutter test --no-pub
 dart pub publish --dry-run
+dart run tool/version_check.dart
 ```
 
-- [ ] **Step 11.2: Add macOS native CI lane**
+- [ ] **Step 10.5: Run target-host helper and consumer matrices**
 
-Add macOS job:
-
-```yaml
-- name: Test SwiftPM native SDK
-  run: swift test
-- name: Compile standalone CLI
-  run: dart compile exe bin/desktop_updater.dart -o build/desktop-updater
-```
-
-- [ ] **Step 11.3: Extend Windows CI lane**
-
-Keep existing Windows steps and add:
-
-```yaml
-- name: Build Windows native SDK tests
-  working-directory: windows/native
-  run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-- name: Run Windows native SDK tests
-  working-directory: windows/native
-  run: cmake --build build --config Release && ctest --test-dir build -C Release --output-on-failure
-```
-
-- [ ] **Step 11.4: Extend Linux CI lane**
-
-Keep existing Linux steps and add:
-
-```yaml
-- name: Build Linux native SDK tests
-  working-directory: linux/native
-  run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-- name: Run Linux native SDK tests
-  working-directory: linux/native
-  run: cmake --build build && ctest --test-dir build --output-on-failure
-```
-
-- [ ] **Step 11.5: Run release smoke tests unchanged**
-
-Ensure existing smoke commands are still present:
-
-```sh
-dart run tool/release_publish_smoke.dart --platform windows
-dart run tool/updater_smoke.dart --config Release --diagnostics-log ../reports/windows-update-smoke-release-diagnostics.jsonl
-dart run tool/release_publish_smoke.dart --platform linux
-xvfb-run -a dart run tool/updater_smoke.dart --config Release --diagnostics-log ../reports/linux-update-smoke-release-diagnostics.jsonl
-```
-
-- [ ] **Step 11.6: Commit CI verification**
-
-Commit message:
-
-```sh
-git commit -m "ci: verify native updater sdk packages"
-```
-
-## Stage 12: Migration And Release Notes
-
-**Purpose:** Explain that this is additive and not a Flutter breaking change.
-
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/migration/1.x-to-2.0.md` only if needed for 2.x native SDK notes
-- Modify: `docs/publishing.md`
-- Modify: `docs/native-sdk.md`
-
-- [ ] **Step 12.1: Add additive-change language**
-
-Use this exact reader-facing claim:
+Required evidence:
 
 ```text
-The Flutter package remains the primary pub.dev package and keeps the existing Dart API, MethodChannel behavior, and release CLI commands. Native SDKs are additive package surfaces for apps that do not use Flutter.
+macOS SwiftPM helper tests: verified locally or CI
+macOS Flutter SwiftPM build/integration: verified locally or CI
+macOS Flutter CocoaPods fallback build/integration: verified locally or CI
+Windows static Flutter helper: verified in Windows CI
+Windows shared C ABI DLL: verified in Windows CI
+Windows .NET local NuGet consumer: verified in Windows CI
+Linux protected-root tests: verified in Linux CI
+Linux Flutter helper: verified in Linux CI
+Linux installed CMake consumer: verified in Linux CI
+Standalone CLI matrix: candidate-only until signed release workflow passes
 ```
 
-- [ ] **Step 12.2: Add command matrix**
+- [ ] **Step 10.6: Add full release smoke without weakening current lanes**
 
-Document:
+Keep current Windows/Linux publish and update smoke commands. Keep macOS
+Developer ID/notary smoke separately gated by explicit secrets and approved
+workflow dispatch.
 
-```text
-Flutter release publish:
-dart run desktop_updater:release publish --platform linux
-
-Standalone CLI Flutter project:
-desktop-updater release publish --platform linux --project-type flutter
-
-Native Xcode project:
-desktop-updater release publish --platform macos --project-type xcode --scheme MyApp
-
-Native CMake/manual output:
-desktop-updater package --platform linux --app-path build/my_app --package-id com.example.myapp --version 1.2.0 --build-number 42
-```
-
-- [ ] **Step 12.3: Run docs tests**
-
-Run:
+- [ ] **Step 10.7: Commit release documentation and gates**
 
 ```sh
-flutter test --no-pub \
-  test/harness_engineering_docs_test.dart \
-  test/native_helper_diagnostics_docs_test.dart \
-  test/release_cli/release_command_test.dart
-```
-
-- [ ] **Step 12.4: Commit docs**
-
-Commit message:
-
-```sh
-git commit -m "docs: document additive native sdk migration"
+git add tool docs README.md test/native_sdk_docs_test.dart \
+  .github/workflows/desktop-updater-ci.yml
+git commit -m "docs: define native sdk release gates"
 ```
 
 ## Final Release Gate
 
-Before merging the full migration:
+The master plan is complete only when:
 
-```sh
-dart run tool/harness_check.dart
-```
+- the Linux helper rejects shared/system roots before script creation;
+- the macOS helper builds through SwiftPM and CocoaPods fallback;
+- the Windows Flutter plugin links static helper objects;
+- the Windows NuGet consumer loads the shared DLL and exercises `removedFiles`;
+- Windows and Linux CMake consumers use installed package exports;
+- every native CTest lane discovers and runs tests;
+- pub dry-run includes all local helper sources;
+- existing Flutter API/CLI/plugin compatibility tests pass;
+- documentation exposes helper APIs only;
+- the child runtime plan is rebased but remains separately gated.
 
-Target platform evidence:
+Missing credentials or unavailable target hosts must be recorded as `blocked`
+or `not run`. They must not be rewritten as passing evidence.
 
-```sh
-swift test
-flutter build macos --debug
-flutter test integration_test -d macos
-flutter build windows --debug
-cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
-flutter build linux --debug
-cmake --build example/build/linux/x64/debug --target desktop_updater_test
-ctest --test-dir example/build/linux/x64/debug --output-on-failure
-```
+## Rebase Status
 
-CI evidence must include:
+As of 2026-07-10:
 
-```text
-Dart Package passed
-Windows passed
-Linux passed
-macOS SwiftPM native SDK passed
-```
+- the child plan file and index entry already exist;
+- the target `windows/native`, `linux/native`, root `Package.swift`,
+  standalone CLI, and native SDK documentation do not yet exist;
+- old checkbox counts are not execution evidence;
+- this rebase resets implementation work to the explicit unchecked tasks
+  above and treats the already-created child-plan file as repository context,
+  not completed runtime work.
 
 ## Self-Review
 
-- Spec coverage: The plan preserves the existing Flutter API, plugin registration, Dart diagnostics, old CLI commands, and old Flutter-first publish behavior while adding native package surfaces and native CLI adapters.
-- Duplication control: CLI release contract code stays in Dart and is shared. Repeated native runtime code is limited to language-specific SDK ergonomics and tested against shared fixtures.
-- Type consistency: `ProjectAdapter`, `ProjectBuildRequest`, `ProjectBuildResult`, `DesktopUpdaterKit`, and `desktop_updater_native` names are used consistently across stages.
-- Risk boundaries: Helper extraction is separate from full native runtime implementation, so Flutter plugin behavior can be verified before native apps get full check/download/stage APIs.
+- **Safety:** destructive Linux operations require a verified app-owned root;
+  executable-parent inference alone is never sufficient.
+- **Trust:** canonical JSON, Ed25519 key ID, package identity, index binding,
+  artifact integrity, and platform publisher gates are named explicitly.
+- **Platform integration:** macOS covers SwiftPM and CocoaPods; Windows covers
+  static Flutter and shared .NET/C ABI; Linux is source-first.
+- **Boundary:** helper extraction and full native runtime are separate plans.
+- **Buildability:** CMake paths match the target layout and native tests are
+  explicitly enabled.
+- **Packageability:** every package has an external consumer gate.
+- **CLI consistency:** documented entrypoints, subcommands, and flags are
+  created before use.
+- **2.7 parity:** DMG, PKG, Inno, rollout, build numbers, minimum policies,
+  support/fresh-install metadata, and signatures are in the baseline.
