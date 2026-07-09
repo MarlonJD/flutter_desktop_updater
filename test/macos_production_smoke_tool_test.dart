@@ -84,15 +84,6 @@ void main() {
     expect(source, contains("pkg-installer: staged PKG update flow OK"));
   });
 
-  test("DMG and PKG hosted smoke descriptors require updater 2.6.0", () {
-    final source = File("tool/macos_production_smoke.dart").readAsStringSync();
-
-    expect(source, contains("_minimumUpdaterVersionForArtifact"));
-    expect(source, contains('case "dmg":'));
-    expect(source, contains('case "pkgInstaller":'));
-    expect(source, contains('return "2.6.0";'));
-  });
-
   test("PKG install verification is explicit and outside all smoke", () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 

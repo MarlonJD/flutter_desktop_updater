@@ -38,6 +38,8 @@ class UpdateTelemetryEvent {
     this.platform,
     this.source,
     this.stagingPath,
+    this.artifactKind,
+    this.installStrategy,
     this.mandatory,
     this.error,
   });
@@ -84,12 +86,16 @@ class UpdateTelemetryEvent {
     String? version,
     String? channel,
     String? platform,
+    String? artifactKind,
+    String? installStrategy,
   }) : this(
           type: UpdateTelemetryEventType.downloadStarted,
           source: source,
           version: version,
           channel: channel,
           platform: platform,
+          artifactKind: artifactKind,
+          installStrategy: installStrategy,
         );
 
   /// Creates a download-failed event.
@@ -98,6 +104,8 @@ class UpdateTelemetryEvent {
     String? version,
     String? channel,
     String? platform,
+    String? artifactKind,
+    String? installStrategy,
     Object? error,
   }) : this(
           type: UpdateTelemetryEventType.downloadFailed,
@@ -105,6 +113,8 @@ class UpdateTelemetryEvent {
           version: version,
           channel: channel,
           platform: platform,
+          artifactKind: artifactKind,
+          installStrategy: installStrategy,
           error: error,
         );
 
@@ -114,12 +124,16 @@ class UpdateTelemetryEvent {
     String? version,
     String? channel,
     String? platform,
+    String? artifactKind,
+    String? installStrategy,
   }) : this(
           type: UpdateTelemetryEventType.artifactVerified,
           source: source,
           version: version,
           channel: channel,
           platform: platform,
+          artifactKind: artifactKind,
+          installStrategy: installStrategy,
         );
 
   /// Creates an install-scheduled event.
@@ -128,12 +142,16 @@ class UpdateTelemetryEvent {
     String? version,
     String? channel,
     String? platform,
+    String? artifactKind,
+    String? installStrategy,
   }) : this(
           type: UpdateTelemetryEventType.installScheduled,
           stagingPath: stagingPath,
           version: version,
           channel: channel,
           platform: platform,
+          artifactKind: artifactKind,
+          installStrategy: installStrategy,
         );
 
   /// Creates an install-failed event.
@@ -142,6 +160,8 @@ class UpdateTelemetryEvent {
     String? version,
     String? channel,
     String? platform,
+    String? artifactKind,
+    String? installStrategy,
     Object? error,
   }) : this(
           type: UpdateTelemetryEventType.installFailed,
@@ -149,6 +169,8 @@ class UpdateTelemetryEvent {
           version: version,
           channel: channel,
           platform: platform,
+          artifactKind: artifactKind,
+          installStrategy: installStrategy,
           error: error,
         );
 
@@ -169,6 +191,12 @@ class UpdateTelemetryEvent {
 
   /// Staged update path associated with install events, when known.
   final String? stagingPath;
+
+  /// Release artifact kind associated with the event, when known.
+  final String? artifactKind;
+
+  /// Install strategy associated with the event, when known.
+  final String? installStrategy;
 
   /// Whether the selected update is mandatory, when known.
   final bool? mandatory;

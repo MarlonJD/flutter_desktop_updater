@@ -3,9 +3,12 @@ import "dart:io";
 
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
+import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -184,6 +187,68 @@ void main() {
         packager.requests.single.artifactUrl.toString(),
         "https://updates.example.com/releases/2.1.0/macos/"
         "Egas%20Manager-2.1.0-macos.zip",
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("windows publish uses Inno installer package when configured", () async {
+    final root = await _createWindowsFixture();
+    final output = StringBuffer();
+    final innoPackager = _FakeInnoPackager();
+    final publisher = ReleasePublisher(
+      skipBuild: true,
+      packager: _RecordingPackager(<String>[]),
+      innoPackager: innoPackager,
+    );
+    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    appId: com.example.app
+    outputBaseName: CustomSetup
+""");
+    try {
+      final manifest = await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        output: output,
+      );
+
+      expect(manifest.artifact.kind, "innoInstaller");
+      expect(manifest.artifact.path, "releases/2.1.0/windows/CustomSetup.exe");
+      expect(
+        manifest.artifact.url.toString(),
+        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
+      );
+      expect(
+        innoPackager.requests.single.artifactUrl.toString(),
+        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
+      );
+      expect(innoPackager.requests.single.minimumUpdaterVersion, "2.5.0");
+      expect(innoPackager.outputBaseNames.single, "CustomSetup");
+      final writtenManifest = await PublishManifest.readFrom(
+        File(
+          path.join(
+            root.path,
+            "dist",
+            "desktop_updater",
+            ".desktop_updater_publish.json",
+          ),
+        ),
+      );
+      expect(
+        writtenManifest.artifact.path,
+        "releases/2.1.0/windows/CustomSetup.exe",
+      );
+      expect(
+        writtenManifest.artifact.url.toString(),
+        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
       );
     } finally {
       await root.delete(recursive: true);
@@ -456,6 +521,69 @@ class _RecordingPackager implements ReleasePackager {
       generatedAt: DateTime.utc(2026, 6, 12),
     );
     await release.writeAsString("{}");
+    return ReleasePackageResult(
+      artifact: artifact,
+      releaseFile: release,
+      descriptor: descriptor,
+    );
+  }
+}
+
+class _FakeInnoPackager extends InnoInstallerPackager {
+  _FakeInnoPackager();
+
+  final List<ReleasePackageRequest> requests = [];
+  final List<String?> outputBaseNames = [];
+
+  @override
+  Future<ReleasePackageResult> package(
+    ReleasePackageRequest request, {
+    required InnoPublishConfig config,
+    String? outputBaseName,
+  }) async {
+    requests.add(request);
+    outputBaseNames.add(outputBaseName);
+    await request.outputDirectory.create(recursive: true);
+    final artifactName = outputBaseName == null
+        ? "Egas-Manager-2.1.0-windows.exe"
+        : "$outputBaseName.exe";
+    final artifact = File(
+      path.join(request.outputDirectory.path, artifactName),
+    );
+    await artifact.writeAsString("exe");
+    final release =
+        File(path.join(request.outputDirectory.path, "release.json"));
+    final descriptor = ReleaseDescriptor(
+      schemaVersion: 3,
+      packageId: request.packageId,
+      appName: request.appName,
+      version: request.version,
+      buildNumber: request.buildNumber,
+      platform: request.platform,
+      channel: request.channel,
+      artifact: ReleaseArtifact(
+        kind: "innoInstaller",
+        url: request.artifactUrl,
+        sha256: "b" * 64,
+        length: await artifact.length(),
+      ),
+      install: const ReleaseInstall(
+        strategy: "innoInstaller",
+        inno: ReleaseInnoInstall(
+          silentArgs: ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+          inheritInstallDirectory: true,
+          logFileName: "desktop_updater_inno_install.log",
+          relaunchAfterInstall: true,
+          requiresElevation: "auto",
+          authenticode: ReleaseAuthenticodePolicy(required: false),
+        ),
+      ),
+      minimumUpdaterVersion: request.minimumUpdaterVersion,
+      generatedAt: DateTime.utc(2026, 6, 12),
+    );
+    await release.writeAsString(
+      const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+    );
     return ReleasePackageResult(
       artifact: artifact,
       releaseFile: release,

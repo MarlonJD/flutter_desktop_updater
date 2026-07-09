@@ -23,58 +23,10 @@ Example.dmg
   Applications -> /Applications
 ```
 
-Users can drag the app to Applications. Apps that want the app to offer that
-move itself can opt in to the Move to Applications prompt described below. That
-prompt is separate from update artifacts; it is a first-run install-location UX,
-not a replacement for the DMG or PKG update flows.
-
-## Auto Move To Applications
-
-`MacOSMoveToApplicationsPrompt` is the easiest opt-in path for DMG-launched or
-Downloads-launched apps. Wrap the app shell once, near the top of the widget
-tree:
-
-```dart
-import "package:desktop_updater/desktop_updater.dart";
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MacOSMoveToApplicationsPrompt(
-      child: MaterialApp(
-        home: const HomePage(),
-      ),
-    );
-  }
-}
-```
-
-On macOS, the prompt checks `DesktopUpdater().checkMacOSInstallLocation()` after
-the first frame. It stays quiet when the app is already in `/Applications` or
-`~/Applications`. It can prompt when the app is running from a DMG volume,
-Downloads, or another non-installed location.
-
-When the user chooses Move, the native helper copies the running `.app` to
-`/Applications/<App>.app`, launches that copied app, and terminates the source
-instance. If an app already exists at the target, the prompt asks for explicit
-replace confirmation before replacing it.
-
-Apps that need their own UI or policy can call the platform helpers directly:
-
-```dart
-final updater = DesktopUpdater();
-final status = await updater.checkMacOSInstallLocation();
-
-if (status.shouldOfferMovePrompt) {
-  await updater.moveMacOSAppToApplications(replaceExisting: false);
-}
-```
-
-The move helper does not download or install updates. Normal `.app.zip` and DMG
-updates still use whole-bundle replacement, and PKG updates still use
-Installer.app handoff.
+Users drag the app to Applications. Apps that want an in-app nudge can opt in to
+`MacOSMoveToApplicationsPrompt`; this prompt is separate from update artifacts.
+It can offer to copy a DMG-launched app to `/Applications`, relaunch that copy,
+and terminate the source instance.
 
 ## DMG Updates
 

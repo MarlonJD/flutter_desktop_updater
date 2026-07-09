@@ -45,6 +45,36 @@ void main() {
     }
   });
 
+  test("validate reports hosted Inno installer artifact kind", () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.5.0",
+      targetBuildNumber: 250,
+      platform: "windows",
+      artifactKind: "innoInstaller",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.4.0+240",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("Hosted artifact SHA-256: OK"));
+      expect(output.toString(), contains("Artifact kind: innoInstaller"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("validate reports hosted macOS DMG trust validation", () async {
     final fixture = await createHostedPublishFixture(
       targetVersion: "2.6.0",
@@ -182,6 +212,13 @@ void main() {
     } finally {
       await fixture.delete();
     }
+  });
+
+  test("verify command skips zip extraction for Inno installers", () {
+    final source = File("bin/verify.dart").readAsStringSync();
+
+    expect(source, contains('descriptor.artifact.kind == "innoInstaller"'));
+    expect(source, contains("Installer artifact verified."));
   });
 
   test("verify command supports macOS DMG and PKG artifact gates", () {
@@ -477,6 +514,8 @@ String _artifactFileName({
   required String targetVersion,
 }) {
   switch (artifactKind) {
+    case "innoInstaller":
+      return "Example-$targetVersion-windows-setup.exe";
     case "dmg":
       return "Example-$targetVersion-macos.dmg";
     case "pkgInstaller":
@@ -490,6 +529,22 @@ Map<String, Object?> _installDescriptorForArtifactKind(
   required bool dmgVerifyPrimarySignature,
 }) {
   switch (artifactKind) {
+    case "innoInstaller":
+      return {
+        "strategy": "innoInstaller",
+        "inno": {
+          "silentArgs": [
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+          ],
+          "inheritInstallDirectory": true,
+          "logFileName": "desktop_updater_inno_install.log",
+          "relaunchAfterInstall": true,
+          "requiresElevation": "auto",
+          "authenticode": {"required": false},
+        },
+      };
     case "dmg":
       return {
         "strategy": "wholeBundleReplace",
@@ -513,6 +568,8 @@ Map<String, Object?> _installDescriptorForArtifactKind(
 
 String _minimumUpdaterVersion(String artifactKind) {
   switch (artifactKind) {
+    case "innoInstaller":
+      return "2.5.0";
     case "dmg":
     case "pkgInstaller":
       return "2.6.0";

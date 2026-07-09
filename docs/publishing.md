@@ -31,10 +31,10 @@ Think of your update host as one shelf on the internet.
 1. Your app knows one URL: `https://updates.example.com/app-archive.json`.
 2. `app-archive.json` says which releases exist for each platform and channel.
 3. Each item points to a versioned `release.json`.
-4. `release.json` points to one zip and records its length and SHA-256.
-5. The app downloads the zip only after it has selected a valid newer release.
-6. The app checks the zip length and hash before staging or installing it.
-7. The publisher uploads the zip and `release.json` first.
+4. `release.json` points to one artifact and records its length and SHA-256.
+5. The app downloads the artifact only after it has selected a valid newer release.
+6. The app checks the artifact length and hash before staging or installing it.
+7. The publisher uploads the artifact and `release.json` first.
 8. The publisher uploads `app-archive.json` last, so users never see an index
    entry whose release files are missing.
 9. `release validate` pretends to be an older app and tests the hosted files in
@@ -66,7 +66,8 @@ best release for the current platform, channel, and installed version.
 }
 ```
 
-`release.json` describes exactly one zip artifact.
+`release.json` describes exactly one artifact. Most platforms use a zip
+artifact; Windows can also use an Inno Setup installer artifact.
 
 ```json
 {
@@ -135,6 +136,7 @@ Supported install strategies:
 
 - `wholeBundleReplace`: macOS `.app` bundle replacement.
 - `wholeDirectoryReplace`: Windows and Linux app directory replacement.
+- `innoInstaller`: Windows Inno Setup installer execution.
 
 The optional `signature` field adds package-owned metadata authenticity for
 `release.json`. It signs the canonical descriptor bytes with the signature
@@ -1208,6 +1210,44 @@ still see publisher-trust warnings.
 For Authenticode, Microsoft Artifact Signing, MSIX/Store, winget, enterprise
 trust, and country/provider constraints, see
 [Windows And Linux Production Release Options](windows-linux-production-release.md).
+
+### Windows Inno Installer Update Mode
+
+Windows releases can publish an Inno Setup `.exe` installer instead of a direct
+zip artifact. Inno installer update mode writes `artifact.kind:
+innoInstaller` and `install.strategy: innoInstaller` in `release.json`. The
+updater downloads and verifies the installer, stages it without extraction,
+exits the app, and the Windows helper runs the installer with the configured
+silent arguments.
+
+Inno owns the uninstall log, registry entry, installed file list, repair,
+modify, and uninstall behavior. This is the mode to use when uninstall cleanup
+must include files introduced by later updates. The updater does not edit or
+regenerate `unins###.dat`; Inno Setup owns that metadata.
+
+Example config:
+
+```yaml
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    appId: com.example.app
+    publisher: Example Inc.
+    privilegesRequired: admin
+    silentArgs:
+      - /VERYSILENT
+      - /SUPPRESSMSGBOXES
+      - /NORESTART
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+```
+
+For generated scripts, custom scripts, Authenticode policy, runtime behavior,
+and migration guidance, see
+[Windows Inno Installer Updates](windows-inno-installer-updates.md).
 
 ### Linux
 

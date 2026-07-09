@@ -64,6 +64,11 @@ Future<void> main(List<String> args) async {
       file: artifactFile,
     );
 
+    if (descriptor.artifact.kind == "innoInstaller") {
+      stdout.writeln("Installer artifact verified.");
+      return;
+    }
+
     if (descriptor.artifact.kind == "dmg") {
       await _verifyMacOSDmgArtifact(
         descriptor: descriptor,
@@ -153,6 +158,8 @@ String _artifactExtensionForKind(String artifactKind) {
       return ".dmg";
     case "pkgInstaller":
       return ".pkg";
+    case "innoInstaller":
+      return ".exe";
   }
   return ".zip";
 }

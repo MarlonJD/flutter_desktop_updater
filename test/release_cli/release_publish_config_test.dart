@@ -253,6 +253,55 @@ macos:
     );
   });
 
+  test("loads Windows Inno installer publish config", () async {
+    final root = await Directory.systemTemp.createTemp("inno_config_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+
+    final config = await ReleasePublishConfig.fromYaml(
+      r"""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    isccPath: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+    outputBaseName: ExampleSetup
+    appId: com.example.app
+    publisher: Example Inc.
+    publisherUrl: https://example.com
+    supportUrl: https://example.com/support
+    updatesUrl: https://example.com/download
+    privilegesRequired: admin
+    architecturesAllowed: x64
+    architecturesInstallIn64BitMode: x64
+    setupIcon: windows/runner/resources/app_icon.ico
+    licenseFile: LICENSE
+    silentArgs:
+      - /VERYSILENT
+      - /SUPPRESSMSGBOXES
+      - /NORESTART
+    requiresElevation: auto
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+""",
+      projectRoot: root,
+    );
+
+    final inno = config.windows.installer;
+    expect(inno.kind, "inno");
+    expect(inno.mode, "generated");
+    expect(inno.appId, "com.example.app");
+    expect(inno.publisher, "Example Inc.");
+    expect(inno.privilegesRequired, "admin");
+    expect(inno.silentArgs, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
+    expect(inno.authenticodeThumbprints.single, hasLength(64));
+  });
+
   test("cli notarize flag enables configured macOS notarization", () async {
     final config = await ReleasePublishConfig.fromYaml(
       """

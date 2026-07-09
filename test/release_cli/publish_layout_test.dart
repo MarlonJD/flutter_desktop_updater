@@ -25,6 +25,47 @@ void main() {
     );
   });
 
+  test("creates exe artifact layout for Windows Inno installers", () {
+    final layout = PublishLayout.create(
+      outputDirectory: Directory("/tmp/out"),
+      baseUrl: Uri.parse("https://updates.example.com/app"),
+      version: "2.5.0",
+      platform: "windows",
+      appName: "Example",
+      artifactExtension: ".exe",
+      artifactSuffix: "-setup",
+    );
+
+    expect(
+      layout.artifactRelativePath,
+      "releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+    );
+    expect(
+      layout.artifactUrl.toString(),
+      "https://updates.example.com/app/releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+    );
+  });
+
+  test("uses explicit artifact file name for custom installer artifacts", () {
+    final layout = PublishLayout.create(
+      outputDirectory: Directory("/tmp/out"),
+      baseUrl: Uri.parse("https://updates.example.com/app"),
+      version: "2.4.6",
+      platform: "windows",
+      appName: "Example",
+      artifactFileName: "ExampleSetup.exe",
+    );
+
+    expect(
+      layout.artifactRelativePath,
+      "releases/2.4.6/windows/ExampleSetup.exe",
+    );
+    expect(
+      layout.artifactUrl.toString(),
+      "https://updates.example.com/app/releases/2.4.6/windows/ExampleSetup.exe",
+    );
+  });
+
   test("creates dmg artifact layout for macOS DMG updates", () {
     final layout = PublishLayout.create(
       outputDirectory: Directory("/tmp/out"),

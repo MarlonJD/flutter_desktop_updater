@@ -6,6 +6,8 @@ import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
+import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
@@ -70,6 +72,7 @@ class ReleasePublisher {
   const ReleasePublisher({
     this.skipBuild = false,
     this.packager = const ZipReleasePackager(),
+    this.innoPackager = const InnoInstallerPackager(),
     this.dmgPackager = const DmgPackager(),
     this.pkgPackager = const PkgPackager(),
     this.metadataResolver = const ProjectMetadataResolver(),
@@ -80,6 +83,7 @@ class ReleasePublisher {
 
   final bool skipBuild;
   final ReleasePackager packager;
+  final InnoInstallerPackager innoPackager;
   final DmgPackager dmgPackager;
   final PkgPackager pkgPackager;
   final ProjectMetadataResolver metadataResolver;
@@ -107,12 +111,22 @@ class ReleasePublisher {
       platform: platform,
       overrides: overrides,
     );
+    final useInnoInstaller =
+        platform == "windows" && config.windows.installer.enabled;
+    final innoOutputBaseName = useInnoInstaller
+        ? await resolveInnoOutputBaseName(
+            config: config.windows.installer,
+            appName: metadata.appName,
+            version: metadata.version,
+            platform: platform,
+          )
+        : null;
     final macosArtifact =
         platform == "macos" ? config.macos.artifactKind : null;
     final artifactExtension = switch (macosArtifact) {
       MacOSArtifactKind.dmg => ".dmg",
       MacOSArtifactKind.pkg => ".pkg",
-      _ => ".zip",
+      _ => useInnoInstaller ? ".exe" : ".zip",
     };
     final layout = PublishLayout.create(
       outputDirectory: config.outputDirectory,
@@ -121,6 +135,8 @@ class ReleasePublisher {
       platform: platform,
       appName: metadata.appName,
       artifactExtension: artifactExtension,
+      artifactSuffix: useInnoInstaller ? "-setup" : "",
+      artifactFileName: useInnoInstaller ? "$innoOutputBaseName.exe" : null,
     );
 
     if (!skipBuild) {
@@ -163,7 +179,25 @@ class ReleasePublisher {
     output.writeln("Packaging update...");
     final archiveAppName = _artifactNameStem(metadata.appName);
     late final ReleasePackageResult packageResult;
-    if (platform == "macos" &&
+    if (useInnoInstaller) {
+      packageResult = await innoPackager.package(
+        ReleasePackageRequest(
+          input: metadata.input,
+          outputDirectory: layout.releaseDirectory,
+          packageId: metadata.packageId,
+          appName: metadata.appName,
+          version: metadata.version,
+          buildNumber: metadata.buildNumber,
+          platform: platform,
+          channel: config.channel,
+          artifactUrl: layout.artifactUrl,
+          installStrategy: "innoInstaller",
+          minimumUpdaterVersion: "2.5.0",
+        ),
+        config: config.windows.installer,
+        outputBaseName: innoOutputBaseName,
+      );
+    } else if (platform == "macos" &&
         config.macos.artifactKind == MacOSArtifactKind.dmg) {
       packageResult = await dmgPackager.package(
         ReleasePackageRequest(
@@ -1016,6 +1050,9 @@ String _artifactNameStem(String appName) {
 }
 
 String _artifactKindForPath(String artifactPath) {
+  if (artifactPath.endsWith(".exe")) {
+    return "innoInstaller";
+  }
   if (artifactPath.endsWith(".dmg")) {
     return "dmg";
   }

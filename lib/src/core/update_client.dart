@@ -156,12 +156,14 @@ class UpdateClient {
     );
     final artifactFile = File(
       path.join(
-          stagingRoot.path,
-          switch (descriptor.artifact.kind) {
-            "dmg" => "artifact.dmg",
-            "pkgInstaller" => "artifact.pkg",
-            _ => "artifact.zip",
-          }),
+        stagingRoot.path,
+        switch (descriptor.artifact.kind) {
+          "dmg" => "artifact.dmg",
+          "pkgInstaller" => "artifact.pkg",
+          "innoInstaller" => "artifact.exe",
+          _ => "artifact.zip",
+        },
+      ),
     );
 
     try {
@@ -181,8 +183,30 @@ class UpdateClient {
           version: descriptor.version,
           channel: descriptor.channel,
           platform: descriptor.platform,
+          artifactKind: descriptor.artifact.kind,
+          installStrategy: descriptor.install.strategy,
         ),
       );
+
+      if (descriptor.artifact.kind == "innoInstaller") {
+        if (descriptor.platform != "windows" || platform != "windows") {
+          throw UnsupportedError(
+            "Inno installer updates are only supported on Windows.",
+          );
+        }
+        final installerFile =
+            File(path.join(stagingRoot.path, "installer.exe"));
+        await artifactFile.rename(installerFile.path);
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
+          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+        );
+        return UpdateStageResult(
+          descriptor: descriptor,
+          stagingPath: stagingRoot.path,
+        );
+      }
 
       if (descriptor.artifact.kind == "dmg") {
         if (descriptor.platform != "macos" || platform != "macos") {
@@ -202,8 +226,9 @@ class UpdateClient {
           },
         );
         await rejectTopLevelMacOSAppSymlink(stagedApp.path);
-        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
-            .writeAsString(
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
         return UpdateStageResult(
@@ -222,12 +247,12 @@ class UpdateClient {
           pkg: artifactFile,
           expectedPackageIds: descriptor.install.macosPkg!.expectedPackageIds,
         );
-        final installerFile = File(
-          path.join(stagingRoot.path, "installer.pkg"),
-        );
+        final installerFile =
+            File(path.join(stagingRoot.path, "installer.pkg"));
         await artifactFile.rename(installerFile.path);
-        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
-            .writeAsString(
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
         return UpdateStageResult(
@@ -255,18 +280,23 @@ class UpdateClient {
           : stagingRoot.path;
       if (descriptor.platform == "macos") {
         await rejectTopLevelMacOSAppSymlink(stagedPath);
-        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
-            .writeAsString(
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
       } else if (descriptor.platform == "windows") {
-        await File(path.join(stagingRoot.path, stagedReleaseManifestFileName))
-            .writeAsString(
+        await File(
+          path.join(stagingRoot.path, stagedReleaseManifestFileName),
+        ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
       }
 
-      return UpdateStageResult(descriptor: descriptor, stagingPath: stagedPath);
+      return UpdateStageResult(
+        descriptor: descriptor,
+        stagingPath: stagedPath,
+      );
     } catch (_) {
       if (await stagingRoot.exists()) {
         await stagingRoot.delete(recursive: true);

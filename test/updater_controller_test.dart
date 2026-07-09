@@ -620,6 +620,79 @@ void main() {
     expect(failed.report!.entries.last.level, UpdateDiagnosticLevel.error);
   });
 
+  test("telemetry events include artifact and install metadata", () async {
+    final events = <UpdateTelemetryEvent>[];
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        telemetry: events.add,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      expect(
+        events,
+        contains(
+          isA<UpdateTelemetryEvent>()
+              .having(
+                (event) => event.type,
+                "type",
+                UpdateTelemetryEventType.downloadStarted,
+              )
+              .having((event) => event.artifactKind, "artifactKind", "zip")
+              .having(
+                (event) => event.installStrategy,
+                "installStrategy",
+                "wholeDirectoryReplace",
+              ),
+        ),
+      );
+      expect(
+        events,
+        contains(
+          isA<UpdateTelemetryEvent>()
+              .having(
+                (event) => event.type,
+                "type",
+                UpdateTelemetryEventType.artifactVerified,
+              )
+              .having((event) => event.artifactKind, "artifactKind", "zip")
+              .having(
+                (event) => event.installStrategy,
+                "installStrategy",
+                "wholeDirectoryReplace",
+              ),
+        ),
+      );
+      expect(
+        events,
+        contains(
+          isA<UpdateTelemetryEvent>()
+              .having(
+                (event) => event.type,
+                "type",
+                UpdateTelemetryEventType.installScheduled,
+              )
+              .having((event) => event.artifactKind, "artifactKind", "zip")
+              .having(
+                (event) => event.installStrategy,
+                "installStrategy",
+                "wholeDirectoryReplace",
+              ),
+        ),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("problem report callback is invoked only by explicit action", () async {
     final sentReports = <UpdateProblemReport>[];
     final report = UpdateProblemReport(

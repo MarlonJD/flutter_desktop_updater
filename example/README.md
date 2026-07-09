@@ -32,3 +32,17 @@ The CI smoke tools still use environment variables to drive unattended checks:
 
 For public macOS distribution, keep unsigned updates disabled and use signed,
 notarized, stapled artifacts.
+
+## Windows Inno Smoke Scaffold
+
+The repository includes a Windows-only Inno Setup smoke scaffold:
+
+```powershell
+pwsh ./tool/windows_inno_smoke.ps1
+```
+
+Run it from the repository root on Windows. The script exits with `not run`
+when Windows or the Inno Setup Compiler is unavailable. When prerequisites are
+present, it prepares
+`reports/windows-inno-update-smoke-diagnostics.jsonl` for the full install,
+update, uninstall, and cleanup smoke flow.

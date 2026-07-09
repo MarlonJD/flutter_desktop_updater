@@ -30,6 +30,8 @@ class ManualUploadProvider implements UploadProvider {
       ..writeln("Expected remote root:")
       ..writeln(manifest.baseUrl)
       ..writeln()
+      ..writeln("Artifact kind: ${manifest.artifact.kind}")
+      ..writeln()
       ..writeln("After upload, validate:")
       ..writeln(
         "dart run desktop_updater:release validate --manifest $manifestPath",

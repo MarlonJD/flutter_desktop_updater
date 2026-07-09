@@ -51,6 +51,38 @@ void main() {
     }
   });
 
+  test("round-trips Inno installer artifact kind", () async {
+    final manifest = PublishManifest.fromJson({
+      "schemaVersion": 1,
+      "baseUrl": "https://updates.example.com/",
+      "localRoot": "/tmp/dist",
+      "appArchive": {
+        "path": "app-archive.json",
+        "url": "https://updates.example.com/app-archive.json",
+      },
+      "release": {
+        "version": "2.5.0",
+        "buildNumber": 250,
+        "platform": "windows",
+        "channel": "stable",
+        "path": "releases/2.5.0/windows/release.json",
+        "url":
+            "https://updates.example.com/releases/2.5.0/windows/release.json",
+      },
+      "artifact": {
+        "kind": "innoInstaller",
+        "path": "releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+        "url":
+            "https://updates.example.com/releases/2.5.0/windows/Example-2.5.0-windows-setup.exe",
+        "sha256": "b" * 64,
+        "length": 42,
+      },
+    });
+
+    expect(manifest.artifact.kind, "innoInstaller");
+    expect(manifest.toJson()["artifact"]["kind"], "innoInstaller");
+  });
+
   test("round-trips macOS DMG artifact kind", () async {
     final manifest = PublishManifest.fromJson({
       "schemaVersion": 1,

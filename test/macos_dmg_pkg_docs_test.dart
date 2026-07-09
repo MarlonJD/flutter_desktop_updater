@@ -23,11 +23,6 @@ void main() {
     expect(doc, contains("separate opt-in QA gate"));
     expect(doc, contains("hdiutil attach -readonly -nobrowse"));
     expect(doc, contains("pkgutil --check-signature"));
-    expect(doc, contains("## Auto Move To Applications"));
-    expect(doc, contains("MacOSMoveToApplicationsPrompt"));
-    expect(doc, contains("checkMacOSInstallLocation"));
-    expect(doc, contains("moveMacOSAppToApplications"));
-    expect(doc, contains("status.shouldOfferMovePrompt"));
   });
 
   test(

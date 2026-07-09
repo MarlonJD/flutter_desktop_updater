@@ -119,6 +119,18 @@ macOS may also emit `package identity checks` before bundle replacement.
 Windows may emit repeated `move start` entries while it waits for locked files
 to become replaceable.
 
+For Windows Inno installer updates, native helper diagnostics may include:
+`inno manifest loaded`, `inno authenticode verified`,
+`inno authenticode failure`, `inno installer start`,
+`inno installer success`, `inno installer failure exitCode=<code>`, and
+`inno relaunch attempt`.
+
+These events are specific to Inno installer update mode. The staged artifact is
+an installer with `artifact.kind: innoInstaller`, and the helper runs it with
+the configured silent arguments instead of extracting a zip. Inno owns the
+uninstall log and installed-file metadata in this mode, including later-version
+files that direct zip compatibility cannot add to Inno's uninstall record.
+
 For macOS DMG update artifacts, diagnostics may include:
 `dmg primary signature verified`, `dmg mounted`, `dmg app copied`, and
 `dmg detached`.
