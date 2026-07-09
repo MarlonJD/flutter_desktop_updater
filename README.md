@@ -19,7 +19,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.4.5
+  desktop_updater: ^2.4.6-inno.0
 ```
 
 Point your app at the hosted archive:
@@ -282,9 +282,8 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
   enabled, notarized, stapled, and Gatekeeper accepted before packaging.
 - Windows production updates should use Authenticode when publisher trust is
   required.
-- Windows can publish either direct zip artifacts or Inno Setup installer
-  artifacts. Use Inno installer mode when uninstall metadata must stay owned by
-  Inno across updates.
+- Windows can publish direct zip artifacts or
+  [Inno Setup installer artifacts](docs/windows-inno-installer-updates.md).
 - Linux direct zip distribution should add descriptor signing or another
   publisher-authenticity policy when production trust matters.
 
@@ -302,6 +301,8 @@ and the local Apple-trust smoke harness, see
 - [Windows and Linux production release options](docs/windows-linux-production-release.md):
   signing choices, native package channels, and country or provider
   restrictions.
+- [Windows Inno installer updates](docs/windows-inno-installer-updates.md):
+  full Inno installer mode, config, signing, and migration boundaries.
 - [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
 - [Localization and i18n](docs/localization.md): bundled translations, custom

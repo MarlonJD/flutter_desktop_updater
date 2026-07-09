@@ -1245,6 +1245,10 @@ windows:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 ```
 
+For generated scripts, custom scripts, Authenticode policy, runtime behavior,
+and migration guidance, see
+[Windows Inno Installer Updates](windows-inno-installer-updates.md).
+
 ### Linux
 
 Command:

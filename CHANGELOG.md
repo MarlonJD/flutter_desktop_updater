@@ -1,3 +1,10 @@
+## 2.4.6-inno.0
+
+* Previewed full Windows Inno installer update mode, including installer
+  descriptors, installer staging without zip extraction, Windows helper
+  execution, Authenticode policy checks, release CLI publish support, and
+  documentation for generated and custom Inno scripts.
+
 ## 2.4.5
 
 * Preserved Inno Setup uninstall artifacts named `unins###.exe`,
