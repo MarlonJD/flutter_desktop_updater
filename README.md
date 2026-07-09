@@ -2,14 +2,15 @@
 
 Flutter desktop updater plugin for macOS, Windows, and Linux.
 
-2.x uses one small update index, one release descriptor, and one verified zip:
+2.x uses one small update index, one release descriptor, and one verified
+artifact:
 
 ```text
-app-archive.json -> release.json -> app.zip
+app-archive.json -> release.json -> app.zip / installer artifact
 ```
 
 No public folder listing is required. Clients fetch exact URLs and verify the
-zip length and SHA-256 before installation.
+artifact length and SHA-256 before installation.
 
 ![flutter_desktop_updater](https://github.com/user-attachments/assets/b05d9a13-0f44-4213-b3bd-58e07c18226d)
 
@@ -19,7 +20,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.4.6-inno.0
+  desktop_updater: ^2.7.0
 ```
 
 Point your app at the hosted archive:

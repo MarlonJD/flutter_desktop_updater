@@ -1,9 +1,22 @@
-## 2.4.6-inno.0
+## 2.7.0
 
-* Previewed full Windows Inno installer update mode, including installer
+* Added production macOS DMG and PKG artifact publishing, validation, and local
+  smoke evidence flows while preserving direct `.app.zip` whole-bundle update
+  behavior.
+* Added a macOS move-to-Applications prompt for apps launched from disk images.
+* Added DMG update staging that mounts a verified DMG, copies the contained
+  `.app`, and hands off to the existing whole-bundle replacement helper.
+* Added PKG update staging that verifies signed, notarized installer packages
+  and hands them to Installer.app without silent privileged installation.
+* Added full Windows Inno installer update mode, including installer
   descriptors, installer staging without zip extraction, Windows helper
   execution, Authenticode policy checks, release CLI publish support, and
   documentation for generated and custom Inno scripts.
+* Fixed Windows Inno release publishing so custom installer output names stay
+  consistent across the generated script, local artifact, release descriptor,
+  publish manifest, hooks, upload, and validation.
+* Documented macOS DMG first-install, DMG update, PKG installer update, and
+  Windows Inno installer support boundaries.
 
 ## 2.4.5
 
