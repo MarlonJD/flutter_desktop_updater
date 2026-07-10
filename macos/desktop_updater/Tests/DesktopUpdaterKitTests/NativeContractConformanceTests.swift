@@ -75,12 +75,187 @@ final class NativeContractConformanceTests: XCTestCase {
             )
             XCTAssertEqual(outcome, expected)
         }
+    }
+
+    func testFreshInstallFixturesExecuteUpdateClient() async throws {
+        let fixture = try fixtureObject("selection-cases.json")
+        let signatures = try fixtureObject("canonical-signature-cases.json")
+        let valid = try XCTUnwrap(try dictionaries(signatures["cases"]).first)
+        let descriptor = try dictionary(valid["descriptor"])
+        let indexURL = URL(
+            string: "https://updates.example.test/app-archive.json"
+        )!
+        let descriptorURL = URL(
+            string: "https://updates.example.test/releases/2.7.0/release.json"
+        )!
+        let publicKey = try XCTUnwrap(
+            Data(base64Encoded: try string(valid, "publicKeyBase64"))
+        )
         for entry in try dictionaries(fixture["freshInstallCases"]) {
-            XCTAssertEqual(
-                try string(entry, "expectedOutcome"),
-                RuntimeOutcome.freshInstallRequired.rawValue
+            let index: [String: Any] = [
+                "schemaVersion": 3,
+                "appName": "Example.app",
+                "items": [[
+                    "version": try string(descriptor, "version"),
+                    "buildNumber": try required(descriptor, "buildNumber"),
+                    "platform": try string(descriptor, "platform"),
+                    "channel": try string(descriptor, "channel"),
+                    "mandatory": true,
+                    "release": descriptorURL.absoluteString,
+                    "freshInstall": try required(entry, "input"),
+                ]],
+            ]
+            let transport = FixtureRuntimeTransport(metadata: [
+                indexURL: try JSONSerialization.data(withJSONObject: index),
+                descriptorURL: try JSONSerialization.data(
+                    withJSONObject: descriptor
+                ),
+            ])
+            let client = UpdateClient(
+                configuration: try RuntimeConfiguration(
+                    appArchiveUrl: indexURL,
+                    expectedPackageId: "com.example.native-contract",
+                    currentVersion: "2.6.0",
+                    currentBuildNumber: 260,
+                    currentUpdaterVersion: "2.7.0",
+                    platform: "macos",
+                    pinnedPublicKeysById: [
+                        try string(valid, "publicKeyId"): publicKey,
+                    ]
+                ),
+                transport: transport
             )
+
+            let result = await client.checkForUpdate()
+
+            XCTAssertEqual(
+                result.outcome.rawValue,
+                try string(entry, "expectedOutcome")
+            )
+            XCTAssertEqual(result.selectedItem?.mandatory, true)
+            XCTAssertNotNil(result.selectedItem?.freshInstall)
+            XCTAssertNotNil(result.descriptor)
+            XCTAssertEqual(
+                transport.metadataRequests,
+                [indexURL, descriptorURL]
+            )
+            XCTAssertEqual(transport.artifactRequestCount, 0)
             XCTAssertEqual(entry["expectedArtifactDownload"] as? Bool, false)
+        }
+    }
+
+    func testDescriptorValidationFixturesMatchDart() throws {
+        let fixture = try fixtureObject("descriptor-validation-cases.json")
+        for entry in try dictionaries(fixture["cases"]) {
+            let name = try string(entry, "name")
+            var error: Error?
+            do {
+                _ = try ReleaseDescriptor(
+                    jsonData: JSONSerialization.data(
+                        withJSONObject: try required(entry, "descriptor")
+                    )
+                )
+            } catch let caught {
+                error = caught
+            }
+            XCTAssertEqual(
+                error == nil,
+                entry["expectedValid"] as? Bool,
+                name
+            )
+        }
+    }
+
+    func testAdversarialNormalizationFixturesMatchDart() throws {
+        let fixture = try fixtureObject("selection-cases.json")
+        for entry in try dictionaries(fixture["indexValidationCases"]) {
+            let name = try string(entry, "name")
+            var index: ReleaseIndex?
+            var error: Error?
+            do {
+                index = try ReleaseIndex(
+                    jsonData: JSONSerialization.data(
+                        withJSONObject: try required(entry, "index")
+                    )
+                )
+            } catch let caught {
+                error = caught
+            }
+            XCTAssertEqual(error == nil, entry["expectedValid"] as? Bool, name)
+            XCTAssertEqual(
+                index?.items.first?.channel,
+                entry["expectedChannel"] as? String,
+                name
+            )
+        }
+        for entry in try dictionaries(fixture["parityCases"]) {
+            switch try string(entry, "name") {
+            case "rollout identity trims surrounding whitespace":
+                let rollout = try ReleaseRollout(json: [
+                    "percentage": 60,
+                    "salt": "native-contract-rollout",
+                ])
+                XCTAssertEqual(
+                    rollout.includes(
+                        channel: "stable",
+                        identity: try string(entry, "identity")
+                    ),
+                    rollout.includes(
+                        channel: "stable",
+                        identity: try string(entry, "expectedNormalizedIdentity")
+                    )
+                )
+            case "whitespace-only rollout identity is absent":
+                let rollout = try ReleaseRollout(json: [
+                    "percentage": 50,
+                    "salt": "native-contract-rollout",
+                ])
+                XCTAssertFalse(
+                    rollout.includes(
+                        channel: "stable",
+                        identity: try string(entry, "identity")
+                    )
+                )
+                XCTAssertTrue(entry["expectedSelectedVersion"] is NSNull)
+            case "minimum OS keys and values are trimmed":
+                var descriptor = try fixtureObject(
+                    "release-contract/release-macos-zip.json"
+                )
+                descriptor["minimumOS"] = try required(entry, "minimumOS")
+                let parsed = try ReleaseDescriptor(
+                    jsonData: JSONSerialization.data(withJSONObject: descriptor)
+                )
+                let expected = try dictionary(entry["expectedMinimumOS"])
+                    .compactMapValues { $0 as? String }
+                XCTAssertEqual(parsed.minimumOS, expected)
+            case "hyphen is valid inside prerelease identifier",
+                 "first numeric build metadata component is the build number":
+                XCTAssertGreaterThan(
+                    try DesktopVersion(try string(entry, "candidate")),
+                    try DesktopVersion(try string(entry, "current"))
+                )
+            case "ISO offset and UTC deadline represent the same instant":
+                XCTAssertEqual(
+                    RuntimeISO8601.date(try string(entry, "left")),
+                    RuntimeISO8601.date(try string(entry, "right"))
+                )
+            case "same-second fractional deadline remains warning":
+                let policy = try ReleaseSupportPolicy(json: [
+                    "minimumSupportedVersion": "9.0.0",
+                    "enforcedAfter": try string(entry, "deadline"),
+                ])
+                let now = try XCTUnwrap(
+                    RuntimeISO8601.date(try string(entry, "now"))
+                )
+                XCTAssertFalse(
+                    policy.isEnforced(
+                        currentVersion: try DesktopVersion("2.7.0"),
+                        now: now
+                    )
+                )
+            default:
+                XCTFail("Unknown parity fixture")
+            }
         }
     }
 
@@ -107,6 +282,19 @@ final class NativeContractConformanceTests: XCTestCase {
                     pinnedPublicKeysById: [try string(entry, "publicKeyId"): key]
                 ),
                 entry["expectedValid"] as? Bool
+            )
+        }
+        for entry in try dictionaries(signatureFixture["normalizationCases"]) {
+            let name = try string(entry, "name")
+            let descriptor = try ReleaseDescriptor(
+                jsonData: try JSONSerialization.data(
+                    withJSONObject: try required(entry, "inputDescriptor")
+                )
+            )
+            XCTAssertEqual(
+                try descriptor.canonicalSignatureBytes().base64EncodedString(),
+                try string(entry, "canonicalUtf8Base64"),
+                name
             )
         }
 
@@ -188,6 +376,38 @@ final class NativeContractConformanceTests: XCTestCase {
             XCTAssertNotNil(descriptor.install.rawJSON["strategy"])
             XCTAssertTrue(descriptor.artifact.url.isAbsoluteURL)
         }
+    }
+}
+
+private final class FixtureRuntimeTransport: RuntimeUpdateTransport {
+    let metadata: [URL: Data]
+    private(set) var metadataRequests: [URL] = []
+    private(set) var artifactRequestCount = 0
+
+    init(metadata: [URL: Data]) {
+        self.metadata = metadata
+    }
+
+    func downloadMetadata(
+        from url: URL,
+        configuration _: RuntimeConfiguration
+    ) async throws -> Data {
+        metadataRequests.append(url)
+        guard let data = metadata[url] else {
+            throw RuntimeError.outcome(
+                .downloadFailure,
+                message: "Missing fixture metadata."
+            )
+        }
+        return data
+    }
+
+    func downloadArtifact(
+        _: RuntimeArtifactDownload,
+        configuration _: RuntimeConfiguration,
+        progress _: (@Sendable (Int64, Int64?) -> Void)?
+    ) async throws {
+        artifactRequestCount += 1
     }
 }
 

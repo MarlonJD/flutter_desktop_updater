@@ -262,6 +262,18 @@ class UpdateClient::Impl {
       result.release_version = check_.descriptor.version;
       result.artifact_kind = check_.descriptor.artifact.kind;
     }
+    if (check_.has_selected_item) {
+      const auto& selected = check_.selected_item;
+      result.mandatory = selected.mandatory;
+      result.has_selected_build_number = selected.has_build_number;
+      result.selected_build_number = selected.build_number;
+      result.selected_platform = selected.platform;
+      result.selected_channel = selected.channel;
+      if (selected.has_fresh_install) {
+        result.fresh_install_url = selected.fresh_install.download_url;
+        result.fresh_install_message = selected.fresh_install.message;
+      }
+    }
     result.staged_path = staged_path_;
     result.support_policy_status = check_.support_policy_status;
     return result;

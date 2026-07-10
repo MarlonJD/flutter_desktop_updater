@@ -45,7 +45,10 @@ public struct DesktopVersion: Equatable, Comparable, Sendable {
             }
             : []
         let metadataBuild = versionAndBuild.count == 2
-            ? Int64(versionAndBuild[1])
+            ? versionAndBuild[1]
+                .split(separator: ".", omittingEmptySubsequences: false)
+                .first
+                .flatMap { Int64($0) }
             : nil
         if let buildNumber, buildNumber < 0 {
             throw RuntimeError.invalidConfiguration(

@@ -118,15 +118,6 @@ public final class UpdateClient {
                     supportPolicyStatus: supportPolicyStatus
                 )
             }
-            if selected.freshInstall != nil {
-                record(.policy, .warning, "Selected release requires a fresh install.")
-                return RuntimeUpdateCheck(
-                    outcome: .freshInstallRequired,
-                    selectedItem: selected,
-                    supportPolicyStatus: supportPolicyStatus
-                )
-            }
-
             let descriptorData: Data
             do {
                 descriptorData = try await transport.downloadMetadata(
@@ -173,6 +164,15 @@ public final class UpdateClient {
                         selectedItem: selected
                     )
                 }
+            }
+            if selected.freshInstall != nil {
+                record(.policy, .warning, "Selected release requires a fresh install.")
+                return RuntimeUpdateCheck(
+                    outcome: .freshInstallRequired,
+                    selectedItem: selected,
+                    descriptor: descriptor,
+                    supportPolicyStatus: supportPolicyStatus
+                )
             }
             guard supportedArtifactKinds().contains(descriptor.artifact.kind) else {
                 return failure(

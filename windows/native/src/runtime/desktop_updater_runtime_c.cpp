@@ -147,6 +147,22 @@ desktop_updater_runtime_result_v1 ClientResult(
     result.artifact_kind_utf8 =
         CopyMessage(client.check.descriptor.artifact.kind);
   }
+  if (client.check.has_selected_item) {
+    const auto& selected = client.check.selected_item;
+    result.mandatory = selected.mandatory ? 1 : 0;
+    result.has_selected_build_number = selected.has_build_number ? 1 : 0;
+    result.selected_build_number = selected.build_number;
+    result.selected_platform_utf8 = CopyMessage(selected.platform);
+    result.selected_channel_utf8 = CopyMessage(selected.channel);
+    if (selected.has_fresh_install) {
+      result.fresh_install_url_utf8 =
+          CopyMessage(selected.fresh_install.download_url);
+      if (!selected.fresh_install.message.empty()) {
+        result.fresh_install_message_utf8 =
+            CopyMessage(selected.fresh_install.message);
+      }
+    }
+  }
   if (!client.staged_path.empty()) {
     result.staged_path_utf8 = CopyMessage(client.staged_path);
   }
@@ -531,11 +547,22 @@ desktop_updater_runtime_result_free_v1(
   delete[] result->artifact_kind_utf8;
   delete[] result->staged_path_utf8;
   delete[] result->support_policy_status_utf8;
+  delete[] result->selected_platform_utf8;
+  delete[] result->selected_channel_utf8;
+  delete[] result->fresh_install_url_utf8;
+  delete[] result->fresh_install_message_utf8;
   result->message_utf8 = nullptr;
   result->release_version_utf8 = nullptr;
   result->artifact_kind_utf8 = nullptr;
   result->staged_path_utf8 = nullptr;
   result->support_policy_status_utf8 = nullptr;
+  result->selected_platform_utf8 = nullptr;
+  result->selected_channel_utf8 = nullptr;
+  result->fresh_install_url_utf8 = nullptr;
+  result->fresh_install_message_utf8 = nullptr;
+  result->mandatory = 0;
+  result->has_selected_build_number = 0;
+  result->selected_build_number = 0;
   result->client = nullptr;
   result->ok = 0;
 }

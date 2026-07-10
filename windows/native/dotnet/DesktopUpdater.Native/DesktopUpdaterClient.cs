@@ -216,7 +216,13 @@ public sealed class DesktopUpdaterRuntimeResult
         string? releaseVersion,
         string? artifactKind,
         string? stagedPath,
-        string? supportPolicyStatus)
+        string? supportPolicyStatus,
+        bool mandatory,
+        long? selectedBuildNumber,
+        string? selectedPlatform,
+        string? selectedChannel,
+        string? freshInstallUrl,
+        string? freshInstallMessage)
     {
         Outcome = outcome;
         Message = message;
@@ -224,6 +230,12 @@ public sealed class DesktopUpdaterRuntimeResult
         ArtifactKind = artifactKind;
         StagedPath = stagedPath;
         SupportPolicyStatus = supportPolicyStatus;
+        Mandatory = mandatory;
+        SelectedBuildNumber = selectedBuildNumber;
+        SelectedPlatform = selectedPlatform;
+        SelectedChannel = selectedChannel;
+        FreshInstallUrl = freshInstallUrl;
+        FreshInstallMessage = freshInstallMessage;
     }
 
     /// <summary>Typed runtime outcome.</summary>
@@ -238,6 +250,18 @@ public sealed class DesktopUpdaterRuntimeResult
     public string? StagedPath { get; }
     /// <summary>Current support-policy state: supported, warning, or blocked.</summary>
     public string? SupportPolicyStatus { get; }
+    /// <summary>Whether the selected release is mandatory.</summary>
+    public bool Mandatory { get; }
+    /// <summary>Selected platform build number, when present.</summary>
+    public long? SelectedBuildNumber { get; }
+    /// <summary>Selected release platform.</summary>
+    public string? SelectedPlatform { get; }
+    /// <summary>Selected release channel.</summary>
+    public string? SelectedChannel { get; }
+    /// <summary>Fresh-install URL when in-app installation is not allowed.</summary>
+    public string? FreshInstallUrl { get; }
+    /// <summary>Optional fresh-install explanation.</summary>
+    public string? FreshInstallMessage { get; }
 }
 
 /// <summary>Stateful check, verification, staging, and helper-handoff client.</summary>
@@ -538,7 +562,15 @@ public sealed class DesktopUpdaterClient : IDisposable
                 ReadUtf8(result.ReleaseVersionUtf8),
                 ReadUtf8(result.ArtifactKindUtf8),
                 ReadUtf8(result.StagedPathUtf8),
-                ReadUtf8(result.SupportPolicyStatusUtf8));
+                ReadUtf8(result.SupportPolicyStatusUtf8),
+                result.Mandatory != 0,
+                result.HasSelectedBuildNumber != 0
+                    ? result.SelectedBuildNumber
+                    : null,
+                ReadUtf8(result.SelectedPlatformUtf8),
+                ReadUtf8(result.SelectedChannelUtf8),
+                ReadUtf8(result.FreshInstallUrlUtf8),
+                ReadUtf8(result.FreshInstallMessageUtf8));
         }
         finally
         {
@@ -719,6 +751,13 @@ public sealed class DesktopUpdaterClient : IDisposable
         public IntPtr ArtifactKindUtf8;
         public IntPtr StagedPathUtf8;
         public IntPtr SupportPolicyStatusUtf8;
+        public int Mandatory;
+        public int HasSelectedBuildNumber;
+        public long SelectedBuildNumber;
+        public IntPtr SelectedPlatformUtf8;
+        public IntPtr SelectedChannelUtf8;
+        public IntPtr FreshInstallUrlUtf8;
+        public IntPtr FreshInstallMessageUtf8;
     }
 
     [StructLayout(LayoutKind.Sequential)]

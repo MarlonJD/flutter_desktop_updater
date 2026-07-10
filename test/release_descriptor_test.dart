@@ -10,6 +10,31 @@ void main() {
     expect(descriptor.install.strategy, "wholeBundleReplace");
   });
 
+  test("normalizes descriptor identity and install strategy", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "packageId": " com.example.app ",
+      "version": " 2.0.0 ",
+      "platform": " macos ",
+      "channel": " stable ",
+      "install": {"strategy": " wholeBundleReplace "},
+    });
+
+    expect(descriptor.packageId, "com.example.app");
+    expect(descriptor.version, "2.0.0");
+    expect(descriptor.platform, "macos");
+    expect(descriptor.channel, "stable");
+    expect(descriptor.install.strategy, "wholeBundleReplace");
+    expect(
+      descriptor.toCanonicalSignatureJson(),
+      containsPair("packageId", "com.example.app"),
+    );
+    expect(
+      descriptor.toCanonicalSignatureJson()["install"],
+      {"strategy": "wholeBundleReplace"},
+    );
+  });
+
   test("parses a Windows Inno installer descriptor", () {
     final descriptor = ReleaseDescriptor.fromJson({
       ..._descriptorJson(),
@@ -276,6 +301,22 @@ void main() {
     );
   });
 
+  test("rejects non-absolute artifact URLs", () {
+    final json = _descriptorJson();
+    (json["artifact"]! as Map<String, dynamic>)["url"] = "relative/update.zip";
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("artifact.url must be absolute"),
+        ),
+      ),
+    );
+  });
+
   test("keeps buildNumber optional in release descriptors", () {
     final descriptor = ReleaseDescriptor.fromJson(
       _descriptorJson()..remove("buildNumber"),
@@ -360,6 +401,32 @@ void main() {
       },
     ]);
     expect(delta.ensureRuntimeSupported, throwsUnsupportedError);
+  });
+
+  test("rejects non-absolute delta artifact URLs", () {
+    final json = {
+      ..._descriptorJson(),
+      "deltaArtifacts": [
+        {
+          "fromVersion": "2.1.4",
+          "kind": "bsdiff",
+          "url": "relative/update.patch",
+          "sha256": "b" * 64,
+          "length": 456,
+        },
+      ],
+    };
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("deltaArtifacts.url must be absolute"),
+        ),
+      ),
+    );
   });
 }
 

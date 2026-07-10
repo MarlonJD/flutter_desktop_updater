@@ -13,13 +13,22 @@ void main() {
 
     for (final fixture in <String>[
       "selection-cases.json",
+      "descriptor-validation-cases.json",
       "canonical-signature-cases.json",
+    ]) {
+      expect(swiftTests, contains(fixture));
+      expect(cppTests, contains(fixture));
+    }
+    for (final fixture in <String>[
       "descriptorBindingCases",
       "release-windows-inno.json",
       "release-linux-zip.json",
     ]) {
       expect("$swiftTests\n$cppTests", contains(fixture));
     }
+    expect(cppTests, contains("ParseReleaseDescriptor"));
+    expect(cppTests, contains("CheckForUpdateCore"));
+    expect(swiftTests, contains("UpdateClient("));
     expect(swiftTests, contains("ArtifactVerifier.verifyDescriptorSignature"));
     expect(cppTests, contains("VerifyDescriptorSignature"));
   });
@@ -50,8 +59,13 @@ void main() {
       expect(cmake, contains("desktop_updater_runtime_contract_test"));
     }
     expect(
-        flutterWindows, isNot(contains("DESKTOP_UPDATER_NATIVE_RUNTIME=ON")));
-    expect(flutterLinux, isNot(contains("DESKTOP_UPDATER_NATIVE_RUNTIME=ON")));
+      flutterWindows,
+      isNot(contains("DESKTOP_UPDATER_NATIVE_RUNTIME=ON")),
+    );
+    expect(
+      flutterLinux,
+      isNot(contains("DESKTOP_UPDATER_NATIVE_RUNTIME=ON")),
+    );
   });
 
   test("target-host CTest enables runtime conformance with zero-test guards",

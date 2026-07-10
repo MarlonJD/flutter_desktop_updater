@@ -75,6 +75,56 @@ enum RuntimeISO8601 {
     private static let plain = ISO8601DateFormatter()
 
     static func date(_ value: String) -> Date? {
-        return fractional.date(from: value) ?? plain.date(from: value)
+        guard let dot = value.firstIndex(of: ".") else {
+            return plain.date(from: value)
+        }
+        let fractionStart = value.index(after: dot)
+        var fractionEnd = fractionStart
+        while fractionEnd < value.endIndex,
+              value[fractionEnd].isNumber
+        {
+            fractionEnd = value.index(after: fractionEnd)
+        }
+        let fraction = String(value[fractionStart ..< fractionEnd])
+        guard !fraction.isEmpty else { return nil }
+        let milliseconds = String(fraction.prefix(3)) +
+            String(repeating: "0", count: max(0, 3 - fraction.count))
+        let normalized = String(value[...dot]) + milliseconds +
+            String(value[fractionEnd...])
+        guard let base = fractional.date(from: normalized) else { return nil }
+        let sixDigits = String(fraction.prefix(6)) +
+            String(repeating: "0", count: max(0, 6 - fraction.count))
+        guard let microseconds = Int(sixDigits) else { return nil }
+        let remainingMicroseconds = microseconds % 1_000
+        return base.addingTimeInterval(
+            TimeInterval(remainingMicroseconds) / 1_000_000
+        )
+    }
+
+    static func string(_ value: Date) -> String {
+        var wholeSeconds = floor(value.timeIntervalSince1970)
+        var microseconds = Int(
+            ((value.timeIntervalSince1970 - wholeSeconds) * 1_000_000)
+                .rounded()
+        )
+        if microseconds == 1_000_000 {
+            wholeSeconds += 1
+            microseconds = 0
+        }
+        let plainUTC = plain.string(
+            from: Date(timeIntervalSince1970: wholeSeconds)
+        )
+        let base = String(plainUTC.dropLast())
+        let milliseconds = microseconds / 1_000
+        let remainingMicroseconds = microseconds % 1_000
+        if remainingMicroseconds == 0 {
+            return String(format: "%@.%03dZ", base, milliseconds)
+        }
+        return String(
+            format: "%@.%03d%03dZ",
+            base,
+            milliseconds,
+            remainingMicroseconds
+        )
     }
 }

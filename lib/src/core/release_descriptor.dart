@@ -30,12 +30,12 @@ class ReleaseDescriptor {
   factory ReleaseDescriptor.fromJson(Map<String, dynamic> json) {
     final descriptor = ReleaseDescriptor(
       schemaVersion: json["schemaVersion"] as int? ?? 0,
-      packageId: json["packageId"] as String? ?? "",
+      packageId: (json["packageId"] as String? ?? "").trim(),
       appName: json["appName"] as String? ?? "",
-      version: json["version"] as String? ?? "",
+      version: (json["version"] as String? ?? "").trim(),
       buildNumber: json["buildNumber"] as int?,
-      platform: json["platform"] as String? ?? "",
-      channel: json["channel"] as String? ?? "stable",
+      platform: (json["platform"] as String? ?? "").trim(),
+      channel: (json["channel"] as String? ?? "stable").trim(),
       artifact: ReleaseArtifact.fromJson(
         json["artifact"] as Map<String, dynamic>? ?? const {},
       ),
@@ -162,6 +162,9 @@ class ReleaseDescriptor {
     if (platform.trim().isEmpty) {
       throw const FormatException("release.json platform is required.");
     }
+    if (channel.trim().isEmpty) {
+      throw const FormatException("release.json channel is required.");
+    }
     if (buildNumber != null && buildNumber! < 0) {
       throw const FormatException(
         "release.json buildNumber must be zero or greater when provided.",
@@ -230,9 +233,12 @@ List<String> _parseStringList(Object? value, String displayName) {
   if (value is! List) {
     throw FormatException("release.json $displayName must be a list.");
   }
-  return List.unmodifiable([
-    for (final entry in value) entry.toString(),
-  ]);
+  if (value.any((entry) => entry is! String)) {
+    throw FormatException(
+      "release.json $displayName must contain only strings.",
+    );
+  }
+  return List.unmodifiable(value.cast<String>());
 }
 
 /// Download metadata for the artifact referenced by a descriptor.
@@ -285,6 +291,11 @@ class ReleaseArtifact {
         kind != "pkgInstaller" &&
         kind != "innoInstaller") {
       throw FormatException("Unsupported release artifact kind: $kind");
+    }
+    if (!url.isAbsolute) {
+      throw const FormatException(
+        "release.json artifact.url must be absolute.",
+      );
     }
     if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
       throw const FormatException(
@@ -363,6 +374,11 @@ class ReleaseDeltaArtifact {
     if (kind != "bsdiff") {
       throw FormatException("Unsupported release delta artifact kind: $kind");
     }
+    if (!url.isAbsolute) {
+      throw const FormatException(
+        "release.json deltaArtifacts.url must be absolute.",
+      );
+    }
     if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
       throw const FormatException(
         "release.json deltaArtifacts.sha256 must be 64 lowercase hex "
@@ -390,7 +406,7 @@ class ReleaseInstall {
   /// Parses install metadata from the descriptor `install` object.
   factory ReleaseInstall.fromJson(Map<String, dynamic> json) {
     return ReleaseInstall(
-      strategy: json["strategy"] as String? ?? "",
+      strategy: (json["strategy"] as String? ?? "").trim(),
       inno: json["inno"] == null
           ? null
           : ReleaseInnoInstall.fromJson(

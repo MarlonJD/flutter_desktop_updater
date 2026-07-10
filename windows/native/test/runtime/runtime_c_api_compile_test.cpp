@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 namespace {
 
@@ -18,6 +19,13 @@ HeadersProvider(void*, const char*) {
   headers.abi_version = DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
   headers.struct_size = sizeof(headers);
   return headers;
+}
+
+const char* OwnedString(const char* value) {
+  const std::size_t length = std::strlen(value);
+  char* copy = new char[length + 1];
+  std::memcpy(copy, value, length + 1);
+  return copy;
 }
 
 }  // namespace
@@ -76,6 +84,42 @@ int main() {
   }
   desktop_updater_runtime_client_free_v1(result.client);
   result.client = nullptr;
+  result.message_utf8 = OwnedString("fresh install required");
+  result.release_version_utf8 = OwnedString("2.7.0");
+  result.artifact_kind_utf8 = OwnedString("innoInstaller");
+  result.staged_path_utf8 = OwnedString("C:\\staged\\update.exe");
+  result.support_policy_status_utf8 = OwnedString("warning");
+  result.selected_platform_utf8 = OwnedString("windows");
+  result.selected_channel_utf8 = OwnedString("stable");
+  result.fresh_install_url_utf8 = OwnedString("https://example.test/setup.exe");
+  result.fresh_install_message_utf8 = OwnedString("Download the installer.");
+  result.mandatory = 1;
+  result.has_selected_build_number = 1;
+  result.selected_build_number = 270;
+  if (result.selected_platform_utf8 == nullptr ||
+      result.selected_channel_utf8 == nullptr ||
+      result.fresh_install_url_utf8 == nullptr ||
+      result.fresh_install_message_utf8 == nullptr) {
+    return 1;
+  }
   desktop_updater_runtime_result_free_v1(&result);
+  if (result.message_utf8 != nullptr || result.release_version_utf8 != nullptr ||
+      result.artifact_kind_utf8 != nullptr || result.staged_path_utf8 != nullptr ||
+      result.support_policy_status_utf8 != nullptr ||
+      result.selected_platform_utf8 != nullptr ||
+      result.selected_channel_utf8 != nullptr ||
+      result.fresh_install_url_utf8 != nullptr ||
+      result.fresh_install_message_utf8 != nullptr || result.mandatory != 0 ||
+      result.has_selected_build_number != 0 ||
+      result.selected_build_number != 0) {
+    return 1;
+  }
+  desktop_updater_runtime_result_free_v1(&result);
+  if (result.selected_platform_utf8 != nullptr ||
+      result.selected_channel_utf8 != nullptr ||
+      result.fresh_install_url_utf8 != nullptr ||
+      result.fresh_install_message_utf8 != nullptr) {
+    return 1;
+  }
   return 0;
 }

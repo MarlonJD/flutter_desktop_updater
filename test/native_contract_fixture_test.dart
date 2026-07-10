@@ -140,6 +140,22 @@ void main() {
       File(path.join(fixturePath, "selection-cases.json")),
     );
 
+    for (final entry in _mapList(fixture, "indexValidationCases")) {
+      ReleaseIndex? index;
+      Object? error;
+      try {
+        index = ReleaseIndex.fromJson(_dynamicMap(entry["index"]));
+      } on Object catch (caught) {
+        error = caught;
+      }
+      expect(
+        error == null,
+        entry["expectedValid"],
+        reason: entry["name"] as String,
+      );
+      expect(index?.items.single.channel, entry["expectedChannel"]);
+    }
+
     for (final entry in _mapList(fixture, "versionComparisons")) {
       expect(
         compareDesktopVersions(

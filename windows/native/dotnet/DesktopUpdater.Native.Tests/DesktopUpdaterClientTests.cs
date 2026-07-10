@@ -33,6 +33,17 @@ public sealed class DesktopUpdaterClientTests
             typeof(DesktopUpdaterClient).GetMethod("InstallAndRelaunch"));
         Assert.NotNull(
             typeof(DesktopUpdaterRuntimeResult).GetProperty("SupportPolicyStatus"));
+        Assert.NotNull(typeof(DesktopUpdaterRuntimeResult).GetProperty("Mandatory"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedBuildNumber"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedPlatform"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedChannel"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("FreshInstallUrl"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("FreshInstallMessage"));
     }
 
     private static DesktopUpdaterConfiguration CreateConfiguration(

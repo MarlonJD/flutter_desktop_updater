@@ -68,6 +68,13 @@ struct RuntimeResult {
   std::string artifact_kind;
   std::string staged_path;
   std::string support_policy_status;
+  bool mandatory = false;
+  bool has_selected_build_number = false;
+  std::int64_t selected_build_number = 0;
+  std::string selected_platform;
+  std::string selected_channel;
+  std::string fresh_install_url;
+  std::string fresh_install_message;
 };
 
 RuntimeConfigurationValidation ValidateRuntimeConfiguration(

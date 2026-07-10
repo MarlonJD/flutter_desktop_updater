@@ -39,10 +39,12 @@ public struct ReleaseIndexItem {
     public let rollout: ReleaseRollout?
 
     public init(json: [String: Any]) throws {
-        version = try runtimeString(json, "version")
+        version = try runtimeTrimmedString(json, "version")
         buildNumber = try runtimeOptionalInt64(json["buildNumber"] ?? json["shortVersion"])
-        platform = try runtimeString(json, "platform")
-        channel = (json["channel"] as? String) ?? "stable"
+        platform = try runtimeTrimmedString(json, "platform")
+        channel = try json["channel"].map { _ in
+            try runtimeTrimmedString(json, "channel")
+        } ?? "stable"
         mandatory = (json["mandatory"] as? Bool) ?? false
         release = try runtimeAbsoluteURL(json, "release")
         freshInstall = try json["freshInstall"].map {
@@ -81,7 +83,12 @@ public struct ReleaseRollout {
 
     public func includes(channel: String, identity: String?) -> Bool {
         if percentage == 100 { return true }
-        guard percentage > 0, let identity, !identity.isEmpty else {
+        guard percentage > 0,
+              let identity = identity?.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ),
+              !identity.isEmpty
+        else {
             return false
         }
         let digest = SHA256.hash(
@@ -147,6 +154,15 @@ func runtimeString(_ source: [String: Any], _ key: String) throws -> String {
         throw RuntimeError.outcome(.invalidDescriptor, message: "Expected string \(key).")
     }
     return value
+}
+
+func runtimeTrimmedString(
+    _ source: [String: Any],
+    _ key: String
+) throws -> String {
+    return try runtimeString(source, key).trimmingCharacters(
+        in: .whitespacesAndNewlines
+    )
 }
 
 func runtimeInt(_ source: [String: Any], _ key: String) throws -> Int {

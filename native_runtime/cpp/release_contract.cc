@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <regex>
 #include <sstream>
@@ -16,8 +17,29 @@ namespace runtime {
 namespace internal {
 namespace {
 
+std::string Trim(const std::string& value) {
+  std::size_t start = 0;
+  while (start < value.size() &&
+         std::isspace(static_cast<unsigned char>(value[start]))) {
+    ++start;
+  }
+  std::size_t end = value.size();
+  while (end > start &&
+         std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+    --end;
+  }
+  return value.substr(start, end - start);
+}
+
 std::string RequiredString(const JsonValue& value, const std::string& key) {
   const std::string result = value.at(key).string();
+  if (result.empty()) throw JsonError("Empty JSON string: " + key);
+  return result;
+}
+
+std::string RequiredTrimmedString(const JsonValue& value,
+                                  const std::string& key) {
+  const std::string result = Trim(value.at(key).string());
   if (result.empty()) throw JsonError("Empty JSON string: " + key);
   return result;
 }
@@ -25,6 +47,143 @@ std::string RequiredString(const JsonValue& value, const std::string& key) {
 bool HasScheme(const std::string& value) {
   const std::size_t separator = value.find(':');
   return separator != std::string::npos && separator > 0;
+}
+
+std::int64_t ParseComponent(const std::string& value);
+
+struct ParsedInstant {
+  std::int64_t seconds = 0;
+  int microseconds = 0;
+};
+
+bool IsLeapYear(std::int64_t year) {
+  return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+int DaysInMonth(std::int64_t year, int month) {
+  static const int kDays[] = {31, 28, 31, 30, 31, 30,
+                              31, 31, 30, 31, 30, 31};
+  return month == 2 && IsLeapYear(year) ? 29 : kDays[month - 1];
+}
+
+std::int64_t DaysFromCivil(std::int64_t year, int month, int day) {
+  year -= month <= 2 ? 1 : 0;
+  const std::int64_t era = (year >= 0 ? year : year - 399) / 400;
+  const std::int64_t year_of_era = year - era * 400;
+  const int month_prime = month + (month > 2 ? -3 : 9);
+  const std::int64_t day_of_year =
+      (153 * month_prime + 2) / 5 + day - 1;
+  const std::int64_t day_of_era = year_of_era * 365 + year_of_era / 4 -
+                                  year_of_era / 100 + day_of_year;
+  return era * 146097 + day_of_era - 719468;
+}
+
+ParsedInstant ParseInstant(const std::string& value) {
+  if (value.size() < 20 || value[4] != '-' || value[7] != '-' ||
+      value[10] != 'T' || value[13] != ':' || value[16] != ':') {
+    throw JsonError("Invalid ISO-8601 instant.");
+  }
+  auto number = [&value](std::size_t offset, std::size_t length) {
+    return ParseComponent(value.substr(offset, length));
+  };
+  const std::int64_t year = number(0, 4);
+  const int month = static_cast<int>(number(5, 2));
+  const int day = static_cast<int>(number(8, 2));
+  const int hour = static_cast<int>(number(11, 2));
+  const int minute = static_cast<int>(number(14, 2));
+  const int second = static_cast<int>(number(17, 2));
+  if (month < 1 || month > 12 || day < 1 ||
+      day > DaysInMonth(year, month) || hour > 23 || minute > 59 ||
+      second > 59) {
+    throw JsonError("Invalid ISO-8601 instant.");
+  }
+
+  std::size_t zone = 19;
+  int microseconds = 0;
+  if (zone < value.size() && value[zone] == '.') {
+    ++zone;
+    const std::size_t fraction_start = zone;
+    int digits = 0;
+    while (zone < value.size() &&
+           std::isdigit(static_cast<unsigned char>(value[zone]))) {
+      if (digits < 6) {
+        microseconds = microseconds * 10 + (value[zone] - '0');
+      }
+      ++digits;
+      ++zone;
+    }
+    if (zone == fraction_start) throw JsonError("Invalid ISO-8601 instant.");
+    while (digits < 6) {
+      microseconds *= 10;
+      ++digits;
+    }
+  }
+
+  std::int64_t offset = 0;
+  if (zone < value.size() && value[zone] == 'Z' && zone + 1 == value.size()) {
+    offset = 0;
+  } else if (zone + 6 == value.size() &&
+             (value[zone] == '+' || value[zone] == '-') &&
+             value[zone + 3] == ':') {
+    const int offset_hour = static_cast<int>(number(zone + 1, 2));
+    const int offset_minute = static_cast<int>(number(zone + 4, 2));
+    if (offset_hour > 23 || offset_minute > 59) {
+      throw JsonError("Invalid ISO-8601 instant.");
+    }
+    offset = offset_hour * 3600 + offset_minute * 60;
+    if (value[zone] == '-') offset = -offset;
+  } else {
+    throw JsonError("Invalid ISO-8601 instant.");
+  }
+
+  return {DaysFromCivil(year, month, day) * 86400 + hour * 3600 +
+              minute * 60 + second - offset,
+          microseconds};
+}
+
+std::int64_t FloorDiv(std::int64_t value, std::int64_t divisor) {
+  std::int64_t quotient = value / divisor;
+  if (value % divisor < 0) --quotient;
+  return quotient;
+}
+
+std::string FormatInstant(const ParsedInstant& instant) {
+  const std::int64_t days = FloorDiv(instant.seconds, 86400);
+  const std::int64_t seconds_of_day = instant.seconds - days * 86400;
+  std::int64_t civil = days + 719468;
+  const std::int64_t era =
+      (civil >= 0 ? civil : civil - 146096) / 146097;
+  const std::int64_t day_of_era = civil - era * 146097;
+  const std::int64_t year_of_era =
+      (day_of_era - day_of_era / 1460 + day_of_era / 36524 -
+       day_of_era / 146096) /
+      365;
+  std::int64_t year = year_of_era + era * 400;
+  const std::int64_t day_of_year =
+      day_of_era -
+      (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+  const std::int64_t month_prime = (5 * day_of_year + 2) / 153;
+  const int day = static_cast<int>(day_of_year -
+                                   (153 * month_prime + 2) / 5 + 1);
+  const int month = static_cast<int>(month_prime + (month_prime < 10 ? 3 : -9));
+  year += month <= 2 ? 1 : 0;
+  const int hour = static_cast<int>(seconds_of_day / 3600);
+  const int minute = static_cast<int>((seconds_of_day % 3600) / 60);
+  const int second = static_cast<int>(seconds_of_day % 60);
+
+  char buffer[64];
+  if (instant.microseconds % 1000 == 0) {
+    std::snprintf(buffer, sizeof(buffer),
+                  "%04lld-%02d-%02dT%02d:%02d:%02d.%03dZ",
+                  static_cast<long long>(year), month, day, hour, minute,
+                  second, instant.microseconds / 1000);
+  } else {
+    std::snprintf(buffer, sizeof(buffer),
+                  "%04lld-%02d-%02dT%02d:%02d:%02d.%06dZ",
+                  static_cast<long long>(year), month, day, hour, minute,
+                  second, instant.microseconds);
+  }
+  return buffer;
 }
 
 std::int64_t ParseComponent(const std::string& value) {
@@ -79,9 +238,10 @@ bool RolloutIncludes(const ReleaseIndexItem& item,
                      const Sha256Function& sha256) {
   if (!item.has_rollout) return true;
   if (item.rollout.percentage == 100) return true;
-  if (item.rollout.percentage <= 0 || identity.empty()) return false;
+  const std::string normalized_identity = Trim(identity);
+  if (item.rollout.percentage <= 0 || normalized_identity.empty()) return false;
   const std::vector<std::uint8_t> digest = sha256(
-      item.rollout.salt + "\n" + item.channel + "\n" + identity);
+      item.rollout.salt + "\n" + item.channel + "\n" + normalized_identity);
   if (digest.size() != 32) throw JsonError("SHA-256 provider returned bad size.");
   std::uint32_t value = 0;
   for (std::size_t index = 0; index < 4; ++index) {
@@ -103,15 +263,120 @@ void ValidateArtifact(const ReleaseArtifact& artifact) {
   if (artifact.length < 0) throw JsonError("Invalid artifact length.");
 }
 
+bool OptionalBoolean(const JsonValue& value,
+                     const std::string& key,
+                     bool default_value) {
+  const JsonValue* found = value.find(key);
+  return found == nullptr ? default_value : found->boolean();
+}
+
+std::string OptionalStringWithDefault(const JsonValue& value,
+                                      const std::string& key,
+                                      const std::string& default_value) {
+  const JsonValue* found = value.find(key);
+  return found == nullptr ? default_value : found->string();
+}
+
+JsonValue::Array OptionalStringArray(const JsonValue& value,
+                                     const std::string& key) {
+  const JsonValue* found = value.find(key);
+  if (found == nullptr) return {};
+  JsonValue::Array result;
+  for (const JsonValue& entry : found->array()) {
+    if (entry.type() != JsonValue::Type::kString) {
+      throw JsonError("Unsupported string-list entry.");
+    }
+    result.emplace_back(entry.string());
+  }
+  return result;
+}
+
+JsonValue NormalizeInstall(const JsonValue& install) {
+  JsonValue::Object normalized;
+  normalized.emplace("strategy",
+                     JsonValue(RequiredTrimmedString(install, "strategy")));
+  if (const JsonValue* inno = install.find("inno")) {
+    JsonValue::Object authenticode;
+    const JsonValue* raw_authenticode = inno->find("authenticode");
+    const bool required = raw_authenticode == nullptr
+                              ? false
+                              : OptionalBoolean(*raw_authenticode, "required",
+                                                false);
+    authenticode.emplace("required", JsonValue(required));
+    if (raw_authenticode != nullptr) {
+      JsonValue::Array thumbprints =
+          OptionalStringArray(*raw_authenticode, "sha256Thumbprints");
+      if (!thumbprints.empty()) {
+        authenticode.emplace("sha256Thumbprints",
+                             JsonValue(std::move(thumbprints)));
+      }
+    }
+
+    JsonValue::Object metadata;
+    metadata.emplace("silentArgs",
+                     JsonValue(OptionalStringArray(*inno, "silentArgs")));
+    metadata.emplace(
+        "inheritInstallDirectory",
+        JsonValue(OptionalBoolean(*inno, "inheritInstallDirectory", true)));
+    metadata.emplace(
+        "logFileName",
+        JsonValue(OptionalStringWithDefault(
+            *inno, "logFileName", "desktop_updater_inno_install.log")));
+    metadata.emplace(
+        "relaunchAfterInstall",
+        JsonValue(OptionalBoolean(*inno, "relaunchAfterInstall", true)));
+    metadata.emplace(
+        "requiresElevation",
+        JsonValue(OptionalStringWithDefault(*inno, "requiresElevation",
+                                            "auto")));
+    metadata.emplace("authenticode", JsonValue(std::move(authenticode)));
+    normalized.emplace("inno", JsonValue(std::move(metadata)));
+  }
+  if (const JsonValue* dmg = install.find("macosDmg")) {
+    JsonValue::Object metadata;
+    metadata.emplace("appBundleName",
+                     JsonValue(RequiredString(*dmg, "appBundleName")));
+    metadata.emplace(
+        "verifyPrimarySignature",
+        JsonValue(OptionalBoolean(*dmg, "verifyPrimarySignature", true)));
+    normalized.emplace("macosDmg", JsonValue(std::move(metadata)));
+  }
+  if (const JsonValue* pkg = install.find("macosPkg")) {
+    JsonValue::Object metadata;
+    metadata.emplace(
+        "launchMode",
+        JsonValue(OptionalStringWithDefault(*pkg, "launchMode",
+                                            "installerApp")));
+    metadata.emplace(
+        "expectedPackageIds",
+        JsonValue(OptionalStringArray(*pkg, "expectedPackageIds")));
+    metadata.emplace(
+        "relaunchAfterInstall",
+        JsonValue(OptionalBoolean(*pkg, "relaunchAfterInstall", false)));
+    normalized.emplace("macosPkg", JsonValue(std::move(metadata)));
+  }
+  return JsonValue(std::move(normalized));
+}
+
 void ValidateInstall(const ReleaseDescriptor& descriptor) {
   const std::string strategy = RequiredString(descriptor.install, "strategy");
+  if (strategy == "pkgInstaller" &&
+      descriptor.artifact.kind != "pkgInstaller") {
+    throw JsonError("PKG strategy requires a PKG artifact.");
+  }
+  if (strategy == "innoInstaller" &&
+      (descriptor.platform != "windows" ||
+       descriptor.artifact.kind != "innoInstaller")) {
+    throw JsonError("Inno strategy requires a Windows installer artifact.");
+  }
   if (descriptor.artifact.kind == "dmg") {
     if (descriptor.platform != "macos" || strategy != "wholeBundleReplace") {
       throw JsonError("Invalid DMG install strategy.");
     }
     const JsonValue& metadata = descriptor.install.at("macosDmg");
     const std::string name = RequiredString(metadata, "appBundleName");
-    if (name.size() < 4 || name.substr(name.size() - 4) != ".app") {
+    if (name.size() < 4 || name.substr(name.size() - 4) != ".app" ||
+        name.find('/') != std::string::npos) {
       throw JsonError("Invalid DMG app bundle name.");
     }
   } else if (descriptor.artifact.kind == "pkgInstaller") {
@@ -128,11 +393,78 @@ void ValidateInstall(const ReleaseDescriptor& descriptor) {
       throw JsonError("Invalid Inno install strategy.");
     }
     const JsonValue& metadata = descriptor.install.at("inno");
-    if (metadata.at("silentArgs").array().empty()) {
+    const JsonValue::Array& arguments = metadata.at("silentArgs").array();
+    if (arguments.empty() ||
+        std::none_of(arguments.begin(), arguments.end(), [](const JsonValue& value) {
+          const std::string argument = value.string();
+          return argument == "/VERYSILENT" || argument == "/SILENT";
+        })) {
       throw JsonError("Invalid Inno silent arguments.");
     }
-    metadata.at("authenticode").object();
+    const JsonValue* log_value = metadata.find("logFileName");
+    const std::string log_file =
+        log_value == nullptr ? "desktop_updater_inno_install.log"
+                             : log_value->string();
+    if (Trim(log_file).empty() || log_file.find('/') != std::string::npos ||
+        log_file.find('\\') != std::string::npos) {
+      throw JsonError("Invalid Inno log file name.");
+    }
+    const JsonValue* elevation_value = metadata.find("requiresElevation");
+    const std::string elevation =
+        elevation_value == nullptr ? "auto" : elevation_value->string();
+    if (elevation != "auto" && elevation != "always" &&
+        elevation != "never") {
+      throw JsonError("Invalid Inno elevation policy.");
+    }
+    const JsonValue* authenticode = metadata.find("authenticode");
+    const JsonValue* required_value =
+        authenticode == nullptr ? nullptr : authenticode->find("required");
+    const bool required =
+        required_value != nullptr && required_value->boolean();
+    const JsonValue* thumbprints = authenticode == nullptr
+                                       ? nullptr
+                                       : authenticode->find("sha256Thumbprints");
+    if (required &&
+        (thumbprints == nullptr || thumbprints->array().empty())) {
+      throw JsonError("Missing required Authenticode thumbprints.");
+    }
+    if (thumbprints != nullptr) {
+      static const std::regex kThumbprint("^[0-9A-Fa-f]{64}$");
+      for (const JsonValue& thumbprint : thumbprints->array()) {
+        if (!std::regex_match(thumbprint.string(), kThumbprint)) {
+          throw JsonError("Invalid Authenticode thumbprint.");
+        }
+      }
+    }
   }
+}
+
+JsonValue NormalizeDelta(const JsonValue& delta) {
+  static const std::regex kSha256("^[0-9a-f]{64}$");
+  const std::string from_version = RequiredString(delta, "fromVersion");
+  const std::string kind = RequiredString(delta, "kind");
+  const std::string url = RequiredString(delta, "url");
+  const std::string sha256 = RequiredString(delta, "sha256");
+  const std::int64_t length = delta.at("length").integer();
+  if (Trim(from_version).empty() || kind != "bsdiff") {
+    throw JsonError("Invalid delta artifact identity.");
+  }
+  if (!HasScheme(url)) {
+    throw JsonError("Delta artifact URL is not absolute.");
+  }
+  if (!std::regex_match(sha256, kSha256)) {
+    throw JsonError("Invalid delta artifact SHA-256.");
+  }
+  if (length < 0) {
+    throw JsonError("Invalid delta artifact length.");
+  }
+  JsonValue::Object normalized;
+  normalized.emplace("fromVersion", JsonValue(from_version));
+  normalized.emplace("kind", JsonValue(kind));
+  normalized.emplace("url", JsonValue(url));
+  normalized.emplace("sha256", JsonValue(sha256));
+  normalized.emplace("length", JsonValue(length));
+  return JsonValue(std::move(normalized));
 }
 
 ReleaseArtifact ParseArtifact(const JsonValue& json) {
@@ -141,7 +473,12 @@ ReleaseArtifact ParseArtifact(const JsonValue& json) {
   result.url = RequiredString(json, "url");
   result.sha256 = RequiredString(json, "sha256");
   result.length = json.at("length").integer();
-  result.raw = json;
+  JsonValue::Object normalized;
+  normalized.emplace("kind", JsonValue(result.kind));
+  normalized.emplace("url", JsonValue(result.url));
+  normalized.emplace("sha256", JsonValue(result.sha256));
+  normalized.emplace("length", JsonValue(result.length));
+  result.raw = JsonValue(std::move(normalized));
   ValidateArtifact(result);
   return result;
 }
@@ -156,13 +493,18 @@ std::string OptionalString(const JsonValue& value, const std::string& key) {
 DesktopVersion ParseDesktopVersion(const std::string& value,
                                    bool has_build_number,
                                    std::int64_t build_number) {
-  if (value.empty()) throw JsonError("Version must not be empty.");
+  const std::string normalized = Trim(value);
+  if (normalized.empty()) throw JsonError("Version must not be empty.");
   DesktopVersion result;
-  result.raw = value;
-  const std::vector<std::string> build_split = Split(value, '+');
+  result.raw = normalized;
+  const std::vector<std::string> build_split = Split(normalized, '+');
   if (build_split.size() > 2) throw JsonError("Invalid version build metadata.");
-  const std::vector<std::string> prerelease_split = Split(build_split[0], '-');
-  if (prerelease_split.size() > 2) throw JsonError("Invalid prerelease version.");
+  std::vector<std::string> prerelease_split;
+  const std::size_t prerelease_separator = build_split[0].find('-');
+  prerelease_split.push_back(build_split[0].substr(0, prerelease_separator));
+  if (prerelease_separator != std::string::npos) {
+    prerelease_split.push_back(build_split[0].substr(prerelease_separator + 1));
+  }
   const std::vector<std::string> components = Split(prerelease_split[0], '.');
   if (components.size() != 3) throw JsonError("Version needs three components.");
   result.major = ParseComponent(components[0]);
@@ -178,8 +520,14 @@ DesktopVersion ParseDesktopVersion(const std::string& value,
   result.has_build_number = has_build_number;
   result.build_number = build_number;
   if (!has_build_number && build_split.size() == 2) {
-    result.build_number = ParseComponent(build_split[1]);
-    result.has_build_number = true;
+    const std::string first_metadata = Split(build_split[1], '.').front();
+    if (!first_metadata.empty() &&
+        std::all_of(first_metadata.begin(), first_metadata.end(), [](char byte) {
+          return std::isdigit(static_cast<unsigned char>(byte));
+        })) {
+      result.build_number = ParseComponent(first_metadata);
+      result.has_build_number = true;
+    }
   }
   if (result.has_build_number && result.build_number < 0) {
     throw JsonError("Negative build number.");
@@ -201,7 +549,7 @@ int CompareDesktopVersions(const DesktopVersion& left,
 
 ReleaseIndexItem ParseReleaseIndexItem(const JsonValue& json) {
   ReleaseIndexItem result;
-  result.version = RequiredString(json, "version");
+  result.version = RequiredTrimmedString(json, "version");
   ParseDesktopVersion(result.version);
   const JsonValue* build = json.find("buildNumber");
   if (build == nullptr) build = json.find("shortVersion");
@@ -210,9 +558,13 @@ ReleaseIndexItem ParseReleaseIndexItem(const JsonValue& json) {
     result.build_number = build->integer();
     if (result.build_number < 0) throw JsonError("Negative index build number.");
   }
-  result.platform = RequiredString(json, "platform");
-  result.channel = OptionalString(json, "channel");
-  if (result.channel.empty()) result.channel = "stable";
+  result.platform = RequiredTrimmedString(json, "platform");
+  const bool has_channel = json.find("channel") != nullptr;
+  result.channel = Trim(OptionalString(json, "channel"));
+  if (result.channel.empty()) {
+    if (has_channel) throw JsonError("Empty JSON string: channel");
+    result.channel = "stable";
+  }
   const JsonValue* mandatory = json.find("mandatory");
   result.mandatory = mandatory != nullptr && mandatory->boolean();
   result.release = RequiredString(json, "release");
@@ -250,31 +602,37 @@ ReleaseIndex ParseReleaseIndex(const std::string& json) {
     result.has_support_policy = true;
     result.support_policy.minimum_supported_version = ParseDesktopVersion(
         RequiredString(*policy, "minimumSupportedVersion"));
-    result.support_policy.enforced_after = RequiredString(*policy, "enforcedAfter");
+    result.support_policy.enforced_after =
+        RequiredString(*policy, "enforcedAfter");
+    ParseInstant(result.support_policy.enforced_after);
   }
   result.raw = root;
   return result;
 }
 
 ReleaseDescriptor ParseReleaseDescriptor(const std::string& json) {
-  const JsonValue root = ParseJson(json);
+  JsonValue root = ParseJson(json);
   ReleaseDescriptor result;
   result.schema_version = root.at("schemaVersion").integer();
   if (result.schema_version != 3) throw JsonError("Descriptor schema must be 3.");
-  result.package_id = RequiredString(root, "packageId");
+  result.package_id = RequiredTrimmedString(root, "packageId");
   result.app_name = RequiredString(root, "appName");
-  result.version = RequiredString(root, "version");
+  result.version = RequiredTrimmedString(root, "version");
   ParseDesktopVersion(result.version);
   if (const JsonValue* build = root.find("buildNumber")) {
     result.has_build_number = true;
     result.build_number = build->integer();
     if (result.build_number < 0) throw JsonError("Negative descriptor build.");
   }
-  result.platform = RequiredString(root, "platform");
-  result.channel = OptionalString(root, "channel");
-  if (result.channel.empty()) result.channel = "stable";
+  result.platform = RequiredTrimmedString(root, "platform");
+  const bool has_channel = root.find("channel") != nullptr;
+  result.channel = Trim(OptionalString(root, "channel"));
+  if (result.channel.empty()) {
+    if (has_channel) throw JsonError("Empty JSON string: channel");
+    result.channel = "stable";
+  }
   result.artifact = ParseArtifact(root.at("artifact"));
-  result.install = root.at("install");
+  result.install = NormalizeInstall(root.at("install"));
   if (const JsonValue* signature = root.find("signature")) {
     result.has_signature = true;
     result.signature.algorithm = RequiredString(*signature, "algorithm");
@@ -285,21 +643,60 @@ ReleaseDescriptor ParseReleaseDescriptor(const std::string& json) {
   ParseDesktopVersion(result.minimum_updater_version);
   if (const JsonValue* minimum_os = root.find("minimumOS")) {
     for (const auto& entry : minimum_os->object()) {
-      if (entry.first.empty() || entry.second.string().empty()) {
+      const std::string platform = Trim(entry.first);
+      const std::string version = Trim(entry.second.string());
+      if (platform.empty() || version.empty()) {
         throw JsonError("Invalid minimum OS entry.");
       }
-      result.minimum_os.emplace(entry.first, entry.second.string());
+      result.minimum_os[platform] = version;
     }
   }
   if (const JsonValue* deltas = root.find("deltaArtifacts")) {
     for (const JsonValue& delta : deltas->array()) {
-      delta.object();
-      result.delta_artifacts.push_back(delta);
+      result.delta_artifacts.push_back(NormalizeDelta(delta));
     }
   }
-  result.generated_at = RequiredString(root, "generatedAt");
-  result.raw = root;
+  result.generated_at =
+      FormatInstant(ParseInstant(RequiredString(root, "generatedAt")));
   ValidateInstall(result);
+  JsonValue::Object normalized;
+  normalized.emplace("schemaVersion", JsonValue(result.schema_version));
+  normalized.emplace("packageId", JsonValue(result.package_id));
+  normalized.emplace("appName", JsonValue(result.app_name));
+  normalized.emplace("version", JsonValue(result.version));
+  if (result.has_build_number) {
+    normalized.emplace("buildNumber", JsonValue(result.build_number));
+  }
+  normalized.emplace("platform", JsonValue(result.platform));
+  normalized.emplace("channel", JsonValue(result.channel));
+  normalized.emplace("artifact", result.artifact.raw);
+  normalized.emplace("install", result.install);
+  if (result.has_signature) {
+    JsonValue::Object signature;
+    signature.emplace("algorithm", JsonValue(result.signature.algorithm));
+    signature.emplace("publicKeyId",
+                      JsonValue(result.signature.public_key_id));
+    signature.emplace("value", JsonValue(result.signature.value));
+    normalized.emplace("signature", JsonValue(std::move(signature)));
+  }
+  normalized.emplace("minimumUpdaterVersion",
+                     JsonValue(result.minimum_updater_version));
+  if (!result.minimum_os.empty()) {
+    JsonValue::Object minimum_os;
+    for (const auto& entry : result.minimum_os) {
+      minimum_os.emplace(entry.first, JsonValue(entry.second));
+    }
+    normalized.emplace("minimumOS", JsonValue(std::move(minimum_os)));
+  }
+  if (!result.delta_artifacts.empty()) {
+    JsonValue::Array deltas;
+    for (const JsonValue& delta : result.delta_artifacts) {
+      deltas.push_back(delta);
+    }
+    normalized.emplace("deltaArtifacts", JsonValue(std::move(deltas)));
+  }
+  normalized.emplace("generatedAt", JsonValue(result.generated_at));
+  result.raw = JsonValue(std::move(normalized));
   return result;
 }
 
@@ -334,14 +731,50 @@ const ReleaseIndexItem* SelectReleaseIndexItem(
 }
 
 std::string CanonicalSignatureBytes(const ReleaseDescriptor& descriptor) {
-  JsonValue canonical = descriptor.raw;
-  JsonValue* signature = nullptr;
-  auto iterator = canonical.object().find("signature");
-  if (iterator != canonical.object().end()) signature = &iterator->second;
-  if (signature != nullptr) {
-    signature->object()["value"] = JsonValue(std::string());
+  JsonValue::Object artifact;
+  artifact.emplace("kind", JsonValue(descriptor.artifact.kind));
+  artifact.emplace("url", JsonValue(descriptor.artifact.url));
+  artifact.emplace("sha256", JsonValue(descriptor.artifact.sha256));
+  artifact.emplace("length", JsonValue(descriptor.artifact.length));
+
+  JsonValue::Object canonical;
+  canonical.emplace("schemaVersion", JsonValue(descriptor.schema_version));
+  canonical.emplace("packageId", JsonValue(descriptor.package_id));
+  canonical.emplace("appName", JsonValue(descriptor.app_name));
+  canonical.emplace("version", JsonValue(descriptor.version));
+  if (descriptor.has_build_number) {
+    canonical.emplace("buildNumber", JsonValue(descriptor.build_number));
   }
-  return EncodeCanonicalJson(canonical);
+  canonical.emplace("platform", JsonValue(descriptor.platform));
+  canonical.emplace("channel", JsonValue(descriptor.channel));
+  canonical.emplace("artifact", JsonValue(std::move(artifact)));
+  canonical.emplace("install", descriptor.install);
+  if (descriptor.has_signature) {
+    JsonValue::Object signature;
+    signature.emplace("algorithm", JsonValue(descriptor.signature.algorithm));
+    signature.emplace("publicKeyId",
+                      JsonValue(descriptor.signature.public_key_id));
+    signature.emplace("value", JsonValue(std::string()));
+    canonical.emplace("signature", JsonValue(std::move(signature)));
+  }
+  canonical.emplace("minimumUpdaterVersion",
+                    JsonValue(descriptor.minimum_updater_version));
+  if (!descriptor.minimum_os.empty()) {
+    JsonValue::Object minimum_os;
+    for (const auto& entry : descriptor.minimum_os) {
+      minimum_os.emplace(entry.first, JsonValue(entry.second));
+    }
+    canonical.emplace("minimumOS", JsonValue(std::move(minimum_os)));
+  }
+  if (!descriptor.delta_artifacts.empty()) {
+    JsonValue::Array deltas;
+    for (const JsonValue& delta : descriptor.delta_artifacts) {
+      deltas.push_back(delta);
+    }
+    canonical.emplace("deltaArtifacts", JsonValue(std::move(deltas)));
+  }
+  canonical.emplace("generatedAt", JsonValue(descriptor.generated_at));
+  return EncodeCanonicalJson(JsonValue(std::move(canonical)));
 }
 
 bool VerifyDescriptorSignature(
@@ -408,8 +841,12 @@ std::string SupportPolicyOutcome(const ReleaseSupportPolicy& policy,
                              policy.minimum_supported_version) >= 0) {
     return "updateAvailable";
   }
-  return now >= policy.enforced_after ? "supportPolicyBlocked"
-                                      : "supportPolicyWarning";
+  const ParsedInstant current = ParseInstant(now);
+  const ParsedInstant deadline = ParseInstant(policy.enforced_after);
+  const bool enforced = current.seconds > deadline.seconds ||
+                        (current.seconds == deadline.seconds &&
+                         current.microseconds >= deadline.microseconds);
+  return enforced ? "supportPolicyBlocked" : "supportPolicyWarning";
 }
 
 std::vector<std::uint8_t> DecodeBase64(const std::string& value) {

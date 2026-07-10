@@ -87,6 +87,301 @@
     },
     "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9"
   },
+  "normalizationCases": [
+    {
+      "name": "canonicalization applies omitted install defaults",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ]
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": false
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZSIsImFydGlmYWN0Ijp7ImtpbmQiOiJpbm5vSW5zdGFsbGVyIiwibGVuZ3RoIjo1NCwic2hhMjU2IjoiZDg3NDRjZjkxMTRiMGZlZDQ3MGEzNDViZDQzMTUxYWU3YjI3OTQ1MDA4NTQ5ZmI3YjdjNzVjMGM4ZTM0OWIwMSIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC93aW5kb3dzLWlubm8taW5zdGFsbGVyL2FydGlmYWN0LmV4ZSJ9LCJidWlsZE51bWJlciI6Mjc0LCJjaGFubmVsIjoic3RhYmxlIiwiZ2VuZXJhdGVkQXQiOiIyMDI2LTA3LTEwVDAwOjAwOjAwLjAwMFoiLCJpbnN0YWxsIjp7Imlubm8iOnsiYXV0aGVudGljb2RlIjp7InJlcXVpcmVkIjpmYWxzZX0sImluaGVyaXRJbnN0YWxsRGlyZWN0b3J5Ijp0cnVlLCJsb2dGaWxlTmFtZSI6ImRlc2t0b3BfdXBkYXRlcl9pbm5vX2luc3RhbGwubG9nIiwicmVsYXVuY2hBZnRlckluc3RhbGwiOnRydWUsInJlcXVpcmVzRWxldmF0aW9uIjoiYXV0byIsInNpbGVudEFyZ3MiOlsiL1ZFUllTSUxFTlQiLCIvU1VQUFJFU1NNU0dCT1hFUyIsIi9OT1JFU1RBUlQiXX0sInN0cmF0ZWd5IjoiaW5ub0luc3RhbGxlciJ9LCJtaW5pbXVtT1MiOnsid2luZG93cyI6IjEwLjAuMTkwNDUifSwibWluaW11bVVwZGF0ZXJWZXJzaW9uIjoiMi41LjAiLCJwYWNrYWdlSWQiOiJjb20uZXhhbXBsZS5uYXRpdmUtY29udHJhY3QiLCJwbGF0Zm9ybSI6IndpbmRvd3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+    },
+    {
+      "name": "canonicalization ignores unknown descriptor keys",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42,
+          "ignoredArtifactField": "ignored"
+        },
+        "install": {
+          "strategy": "wholeBundleReplace",
+          "ignoredInstallField": "ignored"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "ignoredTopLevel": true,
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/ignored-keys.patch",
+            "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "length": 42,
+            "ignoredDeltaField": "ignored"
+          }
+        ]
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/ignored-keys.patch",
+            "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "length": 42
+          }
+        ],
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJkZWx0YUFydGlmYWN0cyI6W3siZnJvbVZlcnNpb24iOiIyLjYuMCIsImtpbmQiOiJic2RpZmYiLCJsZW5ndGgiOjQyLCJzaGEyNTYiOiJlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlIiwidXJsIjoiaHR0cHM6Ly91cGRhdGVzLmV4YW1wbGUudGVzdC9pZ25vcmVkLWtleXMucGF0Y2gifV0sImdlbmVyYXRlZEF0IjoiMjAyNi0wNy0xMFQwMDowMDowMC4wMDBaIiwiaW5zdGFsbCI6eyJzdHJhdGVneSI6Indob2xlQnVuZGxlUmVwbGFjZSJ9LCJtaW5pbXVtT1MiOnsibWFjb3MiOiIxMy4wIn0sIm1pbmltdW1VcGRhdGVyVmVyc2lvbiI6IjIuMC4wIiwicGFja2FnZUlkIjoiY29tLmV4YW1wbGUubmF0aXZlLWNvbnRyYWN0IiwicGxhdGZvcm0iOiJtYWNvcyIsInNjaGVtYVZlcnNpb24iOjMsInZlcnNpb24iOiIyLjcuMCJ9"
+    },
+    {
+      "name": "canonicalization normalizes offset timestamp",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T03:00:00+03:00"
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+    },
+    {
+      "name": "canonicalization preserves six-digit microseconds",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.123456Z"
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.123456Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMTIzNDU2WiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+    },
+    {
+      "name": "canonicalization normalizes primary identity fields",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": " com.example.native-contract ",
+        "appName": "Example.app",
+        "version": " 2.7.0 ",
+        "buildNumber": 270,
+        "platform": " macos ",
+        "channel": " stable ",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": " wholeBundleReplace "
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+    }
+  ],
   "cases": [
     {
       "name": "valid signature",

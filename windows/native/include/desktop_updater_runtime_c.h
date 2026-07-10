@@ -115,6 +115,13 @@ typedef struct desktop_updater_runtime_result_v1 {
   const char* artifact_kind_utf8;
   const char* staged_path_utf8;
   const char* support_policy_status_utf8;
+  int32_t mandatory;
+  int32_t has_selected_build_number;
+  int64_t selected_build_number;
+  const char* selected_platform_utf8;
+  const char* selected_channel_utf8;
+  const char* fresh_install_url_utf8;
+  const char* fresh_install_message_utf8;
 } desktop_updater_runtime_result_v1;
 
 typedef struct desktop_updater_runtime_stage_request_v1 {

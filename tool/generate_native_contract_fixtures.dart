@@ -15,6 +15,45 @@ const _publicKeyId = "native-contract-stable";
 const _jsonEncoder = JsonEncoder.withIndent("  ");
 final _generatedAt = DateTime.utc(2026, 7, 10);
 
+const parityCases = <Map<String, Object?>>[
+  {
+    "name": "rollout identity trims surrounding whitespace",
+    "identity": " fixture-device-0 ",
+    "expectedNormalizedIdentity": "fixture-device-0",
+  },
+  {
+    "name": "whitespace-only rollout identity is absent",
+    "identity": " ",
+    "expectedSelectedVersion": null,
+  },
+  {
+    "name": "minimum OS keys and values are trimmed",
+    "minimumOS": {" macos ": " 13.0 "},
+    "expectedMinimumOS": {"macos": "13.0"},
+  },
+  {
+    "name": "hyphen is valid inside prerelease identifier",
+    "candidate": "2.8.0-beta-hotfix.1",
+    "current": "2.8.0-beta.1",
+  },
+  {
+    "name": "first numeric build metadata component is the build number",
+    "candidate": "2.7.0+271.sha",
+    "current": "2.7.0+270.sha",
+  },
+  {
+    "name": "ISO offset and UTC deadline represent the same instant",
+    "left": "2026-07-10T03:00:00+03:00",
+    "right": "2026-07-10T00:00:00Z",
+  },
+  {
+    "name": "same-second fractional deadline remains warning",
+    "now": "2026-07-10T00:00:00.100Z",
+    "deadline": "2026-07-10T00:00:00.900Z",
+    "expectedOutcome": "supportPolicyWarning",
+  },
+];
+
 const _helperEvents = <String>[
   "helper scheduled",
   "waiting for parent process",
@@ -83,7 +122,7 @@ Future<void> generateNativeContractFixtures({
   final descriptors = await _generateReleaseContract(outputDirectory);
   await _generateCanonicalSignatureCases(
     outputDirectory,
-    descriptors.values.first,
+    descriptors,
   );
   await _generateDescriptorValidationCases(outputDirectory, descriptors);
   await _generateSelectionCases(outputDirectory, descriptors.values.first);
@@ -306,8 +345,9 @@ String _minimumOS(String platform) {
 
 Future<void> _generateCanonicalSignatureCases(
   Directory outputDirectory,
-  Map<String, dynamic> baseDescriptor,
+  Map<String, Map<String, dynamic>> descriptors,
 ) async {
+  final baseDescriptor = descriptors.values.first;
   final algorithm = Ed25519();
   final keyPair = await algorithm.newKeyPairFromSeed(
     List<int>.generate(32, (index) => index),
@@ -354,6 +394,45 @@ Future<void> _generateCanonicalSignatureCases(
   final modifiedInstallStrategy = _cloneMap(signedJson);
   _mapAt(modifiedInstallStrategy, "install")["strategy"] =
       "wholeDirectoryReplace";
+  final omittedInstallDefaults =
+      _cloneMap(descriptors["windows-inno-installer"]!);
+  final omittedInno = _mapAt(_mapAt(omittedInstallDefaults, "install"), "inno");
+  omittedInno
+    ..remove("inheritInstallDirectory")
+    ..remove("logFileName")
+    ..remove("relaunchAfterInstall")
+    ..remove("requiresElevation")
+    ..remove("authenticode");
+  final ignoredUnknownKeys = _cloneMap(baseDescriptor);
+  ignoredUnknownKeys["ignoredTopLevel"] = true;
+  _mapAt(ignoredUnknownKeys, "artifact")["ignoredArtifactField"] = "ignored";
+  _mapAt(ignoredUnknownKeys, "install")["ignoredInstallField"] = "ignored";
+  ignoredUnknownKeys["deltaArtifacts"] = [
+    {
+      "fromVersion": "2.6.0",
+      "kind": "bsdiff",
+      "url": "https://updates.example.test/ignored-keys.patch",
+      "sha256": "e" * 64,
+      "length": 42,
+      "ignoredDeltaField": "ignored",
+    },
+  ];
+  final offsetTimestamp = _mutate(
+    baseDescriptor,
+    "generatedAt",
+    "2026-07-10T03:00:00+03:00",
+  );
+  final sixDigitTimestamp = _mutate(
+    baseDescriptor,
+    "generatedAt",
+    "2026-07-10T00:00:00.123456Z",
+  );
+  final normalizedIdentity = _cloneMap(baseDescriptor)
+    ..["packageId"] = " com.example.native-contract "
+    ..["version"] = " 2.7.0 "
+    ..["platform"] = " macos "
+    ..["channel"] = " stable ";
+  _mapAt(normalizedIdentity, "install")["strategy"] = " wholeBundleReplace ";
 
   final cases = <Map<String, dynamic>>[
     _signatureCase(
@@ -470,9 +549,44 @@ Future<void> _generateCanonicalSignatureCases(
         "canonicalUtf8Base64":
             base64Encode(signedDescriptor.canonicalSignatureBytes()),
       },
+      "normalizationCases": [
+        _canonicalNormalizationCase(
+          "canonicalization applies omitted install defaults",
+          omittedInstallDefaults,
+        ),
+        _canonicalNormalizationCase(
+          "canonicalization ignores unknown descriptor keys",
+          ignoredUnknownKeys,
+        ),
+        _canonicalNormalizationCase(
+          "canonicalization normalizes offset timestamp",
+          offsetTimestamp,
+        ),
+        _canonicalNormalizationCase(
+          "canonicalization preserves six-digit microseconds",
+          sixDigitTimestamp,
+        ),
+        _canonicalNormalizationCase(
+          "canonicalization normalizes primary identity fields",
+          normalizedIdentity,
+        ),
+      ],
       "cases": cases,
     },
   );
+}
+
+Map<String, dynamic> _canonicalNormalizationCase(
+  String name,
+  Map<String, dynamic> input,
+) {
+  final descriptor = ReleaseDescriptor.fromJson(input);
+  return {
+    "name": name,
+    "inputDescriptor": input,
+    "expectedDescriptor": descriptor.toJson(),
+    "canonicalUtf8Base64": base64Encode(descriptor.canonicalSignatureBytes()),
+  };
 }
 
 Map<String, dynamic> _signatureCase(
@@ -515,20 +629,151 @@ Future<void> _generateDescriptorValidationCases(
   final invalidPkg = _cloneMap(descriptors["macos-pkg-installer"]!);
   _mapAt(_mapAt(invalidPkg, "install"), "macosPkg")["expectedPackageIds"] =
       <String>[];
+  final zipWithPkgStrategy = _cloneMap(base);
+  _mapAt(zipWithPkgStrategy, "install")["strategy"] = "pkgInstaller";
+  final zipWithInnoStrategy = _cloneMap(base);
+  _mapAt(zipWithInnoStrategy, "install")["strategy"] = "innoInstaller";
+  final innoWrongPlatform =
+      _mutate(descriptors["windows-inno-installer"]!, "platform", "linux");
+  final dmgWrongPlatform =
+      _mutate(descriptors["macos-dmg"]!, "platform", "windows");
+  final pkgWrongPlatform =
+      _mutate(descriptors["macos-pkg-installer"]!, "platform", "windows");
+  Map<String, dynamic> invalidInnoField(String key, Object? value) {
+    final descriptor = _cloneMap(descriptors["windows-inno-installer"]!);
+    _mapAt(_mapAt(descriptor, "install"), "inno")[key] = value;
+    return descriptor;
+  }
+
+  Map<String, dynamic> invalidInnoListEntry(Object? value) {
+    final descriptor = _cloneMap(descriptors["windows-inno-installer"]!);
+    _mapAt(_mapAt(descriptor, "install"), "inno")["silentArgs"] = [
+      "/VERYSILENT",
+      value,
+    ];
+    return descriptor;
+  }
+
+  final invalidPkgListEntry = _cloneMap(descriptors["macos-pkg-installer"]!);
+  _mapAt(_mapAt(invalidPkgListEntry, "install"), "macosPkg")[
+      "expectedPackageIds"] = [
+    "com.example.native-contract.pkg",
+    {"unexpected": true},
+  ];
+  final invalidAuthenticodeListEntry =
+      _cloneMap(descriptors["windows-inno-installer"]!);
+  _mapAt(
+    _mapAt(_mapAt(invalidAuthenticodeListEntry, "install"), "inno"),
+    "authenticode",
+  )["sha256Thumbprints"] = ["AB" * 32, null];
+
+  final invalidAuthenticodeRequired =
+      _cloneMap(descriptors["windows-inno-installer"]!);
+  _mapAt(
+    _mapAt(_mapAt(invalidAuthenticodeRequired, "install"), "inno"),
+    "authenticode",
+  )["required"] = "true";
+  final invalidDmgSignatureFlag = _cloneMap(descriptors["macos-dmg"]!);
+  _mapAt(_mapAt(invalidDmgSignatureFlag, "install"), "macosDmg")[
+      "verifyPrimarySignature"] = "true";
+  final invalidPkgRelaunch = _cloneMap(descriptors["macos-pkg-installer"]!);
+  _mapAt(_mapAt(invalidPkgRelaunch, "install"), "macosPkg")[
+      "relaunchAfterInstall"] = "false";
+  final unsafeInnoLog = _cloneMap(descriptors["windows-inno-installer"]!);
+  _mapAt(_mapAt(unsafeInnoLog, "install"), "inno")["logFileName"] =
+      "../installer.log";
+  final invalidInnoElevation =
+      _cloneMap(descriptors["windows-inno-installer"]!);
+  _mapAt(_mapAt(invalidInnoElevation, "install"), "inno")["requiresElevation"] =
+      "sometimes";
+  final missingAuthenticodeThumbprints =
+      _cloneMap(descriptors["windows-inno-installer"]!);
+  _mapAt(
+    _mapAt(_mapAt(missingAuthenticodeThumbprints, "install"), "inno"),
+    "authenticode",
+  ).remove("sha256Thumbprints");
+  final invalidArtifactUrl = _cloneMap(base);
+  _mapAt(invalidArtifactUrl, "artifact")["url"] = "relative/artifact.zip";
+  final validDelta = _cloneMap(base)
+    ..["deltaArtifacts"] = [
+      {
+        "fromVersion": "2.6.0",
+        "kind": "bsdiff",
+        "url": "https://updates.example.test/delta.patch",
+        "sha256": "d" * 64,
+        "length": 42,
+      },
+    ];
+  Map<String, dynamic> invalidDelta(String key, Object? value) {
+    final descriptor = _cloneMap(validDelta);
+    final delta =
+        (descriptor["deltaArtifacts"]! as List).single as Map<String, dynamic>;
+    delta[key] = value;
+    return descriptor;
+  }
+
   final inputs = <(String, Map<String, dynamic>)>[
     ("valid descriptor", base),
     ("wrong schema", _mutate(base, "schemaVersion", 2)),
     ("blank package identity", _mutate(base, "packageId", " ")),
-    ("blank version", _mutate(base, "version", "")),
+    ("blank version", _mutate(base, "version", " ")),
     ("negative build number", _mutate(base, "buildNumber", -1)),
-    ("blank platform", _mutate(base, "platform", "")),
+    ("blank platform", _mutate(base, "platform", " ")),
+    ("blank channel", _mutate(base, "channel", " ")),
     ("invalid artifact hash", invalidHash),
     ("negative artifact length", invalidLength),
     ("unsupported artifact kind", invalidKind),
+    ("invalid artifact URL", invalidArtifactUrl),
     ("missing install strategy", missingStrategy),
+    ("zip artifact rejects pkgInstaller strategy", zipWithPkgStrategy),
+    ("zip artifact rejects innoInstaller strategy", zipWithInnoStrategy),
+    ("innoInstaller rejects non-Windows platform", innoWrongPlatform),
+    ("DMG rejects non-macOS platform", dmgWrongPlatform),
+    ("PKG rejects non-macOS platform", pkgWrongPlatform),
     ("incomplete Inno metadata", invalidInno),
+    (
+      "invalid Inno inherit directory type",
+      invalidInnoField("inheritInstallDirectory", "true"),
+    ),
+    (
+      "invalid Inno relaunch type",
+      invalidInnoField("relaunchAfterInstall", "true"),
+    ),
+    (
+      "invalid Inno log file name type",
+      invalidInnoField("logFileName", 42),
+    ),
+    (
+      "invalid Inno elevation type",
+      invalidInnoField("requiresElevation", true),
+    ),
+    ("unsafe Inno log file name", unsafeInnoLog),
+    ("invalid Inno elevation policy", invalidInnoElevation),
+    ("missing Authenticode thumbprints", missingAuthenticodeThumbprints),
+    ("invalid Authenticode required type", invalidAuthenticodeRequired),
+    ("Inno silent args reject null entry", invalidInnoListEntry(null)),
+    (
+      "Inno silent args reject object entry",
+      invalidInnoListEntry({"unexpected": true}),
+    ),
+    ("Inno silent args reject array entry", invalidInnoListEntry(["nested"])),
+    ("Inno silent args reject integer entry", invalidInnoListEntry(42)),
+    ("Inno silent args reject boolean entry", invalidInnoListEntry(true)),
+    ("PKG package IDs reject object entry", invalidPkgListEntry),
+    (
+      "Authenticode thumbprints reject null entry",
+      invalidAuthenticodeListEntry,
+    ),
     ("incomplete DMG metadata", invalidDmg),
+    ("invalid DMG signature flag type", invalidDmgSignatureFlag),
     ("incomplete PKG metadata", invalidPkg),
+    ("invalid PKG relaunch type", invalidPkgRelaunch),
+    ("valid delta metadata", validDelta),
+    ("invalid delta from version", invalidDelta("fromVersion", " ")),
+    ("invalid delta kind", invalidDelta("kind", "zip")),
+    ("invalid delta URL", invalidDelta("url", "relative/delta.patch")),
+    ("invalid delta hash", invalidDelta("sha256", "not-a-sha256")),
+    ("invalid delta length", invalidDelta("length", -1)),
   ];
   final cases = <Map<String, dynamic>>[];
   for (final input in inputs) {
@@ -636,6 +881,14 @@ Future<void> _generateSelectionCases(
       channel: "beta",
     ),
   ]);
+  final missingChannelIndex = _indexJson([
+    _indexItem(version: "2.8.0", buildNumber: 280),
+  ]);
+  ((missingChannelIndex["items"]! as List).single as Map<String, dynamic>)
+      .remove("channel");
+  final blankChannelIndex = _cloneMap(missingChannelIndex);
+  ((blankChannelIndex["items"]! as List).single
+      as Map<String, dynamic>)["channel"] = " ";
   final selectionCases = [
     _selectionCase(
       "platform filtering",
@@ -809,12 +1062,43 @@ Future<void> _generateSelectionCases(
       expectedPackageId: "com.example.other",
       expectedOutcome: "packageIdentityMismatch",
     ),
+    _descriptorBindingCase(
+      "normalized descriptor and index identity binding",
+      {
+        ...descriptorIndexItem,
+        "version": " ${descriptorIndexItem["version"]} ",
+        "platform": " ${descriptorIndexItem["platform"]} ",
+        "channel": " ${descriptorIndexItem["channel"]} ",
+      },
+      {
+        ..._cloneMap(baseDescriptor),
+        "packageId": " com.example.native-contract ",
+        "version": " ${baseDescriptor["version"]} ",
+        "platform": " ${baseDescriptor["platform"]} ",
+        "channel": " ${baseDescriptor["channel"]} ",
+      },
+      expectedOutcome: "match",
+    ),
   ];
 
   await _writeJson(
     File(path.join(outputDirectory.path, "selection-cases.json")),
     {
       "schemaVersion": 1,
+      "parityCases": parityCases,
+      "indexValidationCases": [
+        {
+          "name": "missing index channel defaults to stable",
+          "index": missingChannelIndex,
+          "expectedValid": true,
+          "expectedChannel": "stable",
+        },
+        {
+          "name": "present blank index channel is rejected",
+          "index": blankChannelIndex,
+          "expectedValid": false,
+        },
+      ],
       "versionComparisons": versionComparisons,
       "rolloutCases": rolloutCases,
       "selectionCases": selectionCases,

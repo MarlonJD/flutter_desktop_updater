@@ -90,7 +90,7 @@
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
         "appName": "Example.app",
-        "version": "",
+        "version": " ",
         "buildNumber": 270,
         "platform": "macos",
         "channel": "stable",
@@ -148,7 +148,7 @@
         "appName": "Example.app",
         "version": "2.7.0",
         "buildNumber": 270,
-        "platform": "",
+        "platform": " ",
         "channel": "stable",
         "artifact": {
           "kind": "zip",
@@ -167,6 +167,34 @@
       },
       "expectedValid": false,
       "expectedErrorContains": "release.json platform is required."
+    },
+    {
+      "name": "blank channel",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": " ",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json channel is required."
     },
     {
       "name": "invalid artifact hash",
@@ -253,6 +281,34 @@
       "expectedErrorContains": "Unsupported release artifact kind: tarball"
     },
     {
+      "name": "invalid artifact URL",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "relative/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json artifact.url must be absolute."
+    },
+    {
       "name": "missing install strategy",
       "descriptor": {
         "schemaVersion": 3,
@@ -279,6 +335,174 @@
       },
       "expectedValid": false,
       "expectedErrorContains": "release.json install.strategy is required."
+    },
+    {
+      "name": "zip artifact rejects pkgInstaller strategy",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "pkgInstaller"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json pkgInstaller strategy is only supported for pkgInstaller artifacts."
+    },
+    {
+      "name": "zip artifact rejects innoInstaller strategy",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "innoInstaller"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json innoInstaller is only supported for windows installer artifacts."
+    },
+    {
+      "name": "innoInstaller rejects non-Windows platform",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "linux",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json innoInstaller is only supported for windows installer artifacts."
+    },
+    {
+      "name": "DMG rejects non-macOS platform",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 271,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "dmg",
+          "url": "https://updates.example.test/release-contract/macos-dmg/artifact.dmg",
+          "sha256": "a87449bc85c2043a81ff6d35a9ab3b7e05940291b856459c797fe72c0972b2af",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace",
+          "macosDmg": {
+            "appBundleName": "Example.app",
+            "verifyPrimarySignature": true
+          }
+        },
+        "minimumUpdaterVersion": "2.6.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json dmg artifacts are only supported for macos wholeBundleReplace."
+    },
+    {
+      "name": "PKG rejects non-macOS platform",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.6.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json pkgInstaller artifacts require install.strategy pkgInstaller on macos."
     },
     {
       "name": "incomplete Inno metadata",
@@ -322,6 +546,671 @@
       "expectedErrorContains": "release.json install.inno.silentArgs must not be empty."
     },
     {
+      "name": "invalid Inno inherit directory type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": "true",
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'String' is not a subtype of type 'bool?' in type cast"
+    },
+    {
+      "name": "invalid Inno relaunch type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": "true",
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'String' is not a subtype of type 'bool?' in type cast"
+    },
+    {
+      "name": "invalid Inno log file name type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": 42,
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'int' is not a subtype of type 'String?' in type cast"
+    },
+    {
+      "name": "invalid Inno elevation type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": true,
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'bool' is not a subtype of type 'String?' in type cast"
+    },
+    {
+      "name": "unsafe Inno log file name",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "../installer.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.logFileName must be a simple file name."
+    },
+    {
+      "name": "invalid Inno elevation policy",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "sometimes",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.requiresElevation must be auto, always, or never."
+    },
+    {
+      "name": "missing Authenticode thumbprints",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.authenticode.sha256Thumbprints is required when Authenticode is required."
+    },
+    {
+      "name": "invalid Authenticode required type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": "true",
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'String' is not a subtype of type 'bool?' in type cast"
+    },
+    {
+      "name": "Inno silent args reject null entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              null
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.silentArgs must contain only strings."
+    },
+    {
+      "name": "Inno silent args reject object entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              {
+                "unexpected": true
+              }
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.silentArgs must contain only strings."
+    },
+    {
+      "name": "Inno silent args reject array entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              [
+                "nested"
+              ]
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.silentArgs must contain only strings."
+    },
+    {
+      "name": "Inno silent args reject integer entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              42
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.silentArgs must contain only strings."
+    },
+    {
+      "name": "Inno silent args reject boolean entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              true
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.silentArgs must contain only strings."
+    },
+    {
+      "name": "PKG package IDs reject object entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg",
+              {
+                "unexpected": true
+              }
+            ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.6.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.macosPkg.expectedPackageIds must contain only strings."
+    },
+    {
+      "name": "Authenticode thumbprints reject null entry",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example",
+        "version": "2.7.0",
+        "buildNumber": 274,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+          "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+          "length": 54
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": [
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "auto",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+                null
+              ]
+            }
+          }
+        },
+        "minimumUpdaterVersion": "2.5.0",
+        "minimumOS": {
+          "windows": "10.0.19045"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json install.inno.authenticode.sha256Thumbprints must contain only strings."
+    },
+    {
       "name": "incomplete DMG metadata",
       "descriptor": {
         "schemaVersion": 3,
@@ -352,6 +1241,38 @@
       },
       "expectedValid": false,
       "expectedErrorContains": "release.json install.macosDmg.appBundleName must be a simple .app name."
+    },
+    {
+      "name": "invalid DMG signature flag type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 271,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "dmg",
+          "url": "https://updates.example.test/release-contract/macos-dmg/artifact.dmg",
+          "sha256": "a87449bc85c2043a81ff6d35a9ab3b7e05940291b856459c797fe72c0972b2af",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace",
+          "macosDmg": {
+            "appBundleName": "Example.app",
+            "verifyPrimarySignature": "true"
+          }
+        },
+        "minimumUpdaterVersion": "2.6.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'String' is not a subtype of type 'bool?' in type cast"
     },
     {
       "name": "incomplete PKG metadata",
@@ -385,6 +1306,262 @@
       },
       "expectedValid": false,
       "expectedErrorContains": "release.json install.macosPkg.expectedPackageIds must not be empty."
+    },
+    {
+      "name": "invalid PKG relaunch type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
+            "relaunchAfterInstall": "false"
+          }
+        },
+        "minimumUpdaterVersion": "2.6.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "type 'String' is not a subtype of type 'bool?' in type cast"
+    },
+    {
+      "name": "valid delta metadata",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/delta.patch",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "length": 42
+          }
+        ]
+      },
+      "expectedValid": true
+    },
+    {
+      "name": "invalid delta from version",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": " ",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/delta.patch",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "length": 42
+          }
+        ]
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json deltaArtifacts.fromVersion is required."
+    },
+    {
+      "name": "invalid delta kind",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "zip",
+            "url": "https://updates.example.test/delta.patch",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "length": 42
+          }
+        ]
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "Unsupported release delta artifact kind: zip"
+    },
+    {
+      "name": "invalid delta URL",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "relative/delta.patch",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "length": 42
+          }
+        ]
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json deltaArtifacts.url must be absolute."
+    },
+    {
+      "name": "invalid delta hash",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/delta.patch",
+            "sha256": "not-a-sha256",
+            "length": 42
+          }
+        ]
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json deltaArtifacts.sha256 must be 64 lowercase hex characters."
+    },
+    {
+      "name": "invalid delta length",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z",
+        "deltaArtifacts": [
+          {
+            "fromVersion": "2.6.0",
+            "kind": "bsdiff",
+            "url": "https://updates.example.test/delta.patch",
+            "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "length": -1
+          }
+        ]
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json deltaArtifacts.length is required."
     }
   ]
 }

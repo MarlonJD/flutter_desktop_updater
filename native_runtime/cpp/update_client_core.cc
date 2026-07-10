@@ -136,11 +136,6 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
   result.support_policy_status = support_status;
   result.has_selected_item = true;
   result.selected_item = *selected;
-  if (selected->has_fresh_install) {
-    result.outcome = "freshInstallRequired";
-    result.message = "Selected release requires a fresh install.";
-    return result;
-  }
 
   std::vector<std::uint8_t> descriptor_bytes;
   try {
@@ -170,6 +165,11 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
                                  configuration.pinned_public_keys_by_id)) {
     result.outcome = "signatureFailure";
     result.message = "Descriptor Ed25519 signature is invalid.";
+    return result;
+  }
+  if (selected->has_fresh_install) {
+    result.outcome = "freshInstallRequired";
+    result.message = "Selected release requires a fresh install.";
     return result;
   }
   if (!SupportedArtifact(configuration.platform,

@@ -82,12 +82,21 @@ class ReleaseIndexItem {
       );
     }
 
+    final version = (json["version"] as String? ?? "").trim();
+    final platform = (json["platform"] as String? ?? "").trim();
+    final channel = (json["channel"] as String? ?? "stable").trim();
+    if (version.isEmpty || platform.isEmpty || channel.isEmpty) {
+      throw const FormatException(
+        "Release index identity fields must be non-empty strings.",
+      );
+    }
+
     return ReleaseIndexItem(
-      version: json["version"] as String? ?? "",
+      version: version,
       buildNumber:
           (json["buildNumber"] as int?) ?? (json["shortVersion"] as int?),
-      platform: json["platform"] as String? ?? "",
-      channel: json["channel"] as String? ?? "stable",
+      platform: platform,
+      channel: channel,
       mandatory: json["mandatory"] as bool? ?? false,
       release: Uri.parse(releaseValue?.toString() ?? ""),
       freshInstall: _parseReleaseFreshInstall(json["freshInstall"]),
