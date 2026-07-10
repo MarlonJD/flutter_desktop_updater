@@ -2,12 +2,14 @@
 
 #include <windows.h>
 #include <bcrypt.h>
+#include <knownfolders.h>
+#include <objbase.h>
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <array>
 #include <climits>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -442,6 +444,49 @@ void AddEnvironmentRoot(const wchar_t* name,
   }
 }
 
+std::wstring KnownFolderPath(REFKNOWNFOLDERID folder_id) {
+  PWSTR value = nullptr;
+  const HRESULT result =
+      SHGetKnownFolderPath(folder_id, KF_FLAG_DEFAULT, nullptr, &value);
+  if (FAILED(result) || value == nullptr) {
+    if (value != nullptr) {
+      CoTaskMemFree(value);
+    }
+    return L"";
+  }
+  const std::wstring path(value);
+  CoTaskMemFree(value);
+  return path;
+}
+
+void AddKnownFolderRoot(REFKNOWNFOLDERID folder_id,
+                        std::vector<std::wstring>* roots) {
+  const std::wstring value = KnownFolderPath(folder_id);
+  if (!value.empty()) {
+    roots->push_back(value);
+  }
+}
+
+void AddProfilePolicyRoots(const std::wstring& profile,
+                           bool include_users_container,
+                           std::vector<std::wstring>* exact_roots) {
+  if (profile.empty()) {
+    return;
+  }
+  exact_roots->push_back(profile);
+  if (include_users_container) {
+    const fs::path users_root = fs::path(profile).parent_path();
+    if (!users_root.empty()) {
+      exact_roots->push_back(users_root.wstring());
+    }
+  }
+  exact_roots->push_back((fs::path(profile) / L"bin").wstring());
+  exact_roots->push_back(
+      (fs::path(profile) / L".local" / L"bin").wstring());
+  exact_roots->push_back((fs::path(profile) / L"Desktop").wstring());
+  exact_roots->push_back((fs::path(profile) / L"Downloads").wstring());
+}
+
 std::wstring WindowsDirectoryPath() {
   std::vector<wchar_t> buffer(32768);
   const UINT length =
@@ -472,6 +517,7 @@ std::wstring TemporaryDirectoryPath() {
 struct UnsafeInstallRootPolicy {
   std::vector<std::wstring> exact_roots;
   std::vector<std::wstring> tree_roots;
+  bool authoritative_roots_available = false;
 };
 
 UnsafeInstallRootPolicy UnsafeInstallRootPaths() {
@@ -479,25 +525,27 @@ UnsafeInstallRootPolicy UnsafeInstallRootPaths() {
   for (const std::wstring& program_files : ProtectedInstallRootPaths()) {
     policy.exact_roots.push_back(program_files);
   }
+  const std::wstring known_program_data = KnownFolderPath(FOLDERID_ProgramData);
+  const std::wstring known_public = KnownFolderPath(FOLDERID_Public);
+  const std::wstring known_profile = KnownFolderPath(FOLDERID_Profile);
+  policy.authoritative_roots_available =
+      !known_program_data.empty() && !known_public.empty() &&
+      !known_profile.empty();
+  if (!known_program_data.empty()) {
+    policy.tree_roots.push_back(known_program_data);
+  }
+  if (!known_public.empty()) {
+    policy.tree_roots.push_back(known_public);
+  }
   AddEnvironmentRoot(L"ProgramData", &policy.tree_roots);
   AddEnvironmentRoot(L"ALLUSERSPROFILE", &policy.tree_roots);
   AddEnvironmentRoot(L"PUBLIC", &policy.tree_roots);
 
+  AddProfilePolicyRoots(known_profile, true, &policy.exact_roots);
+  AddKnownFolderRoot(FOLDERID_Desktop, &policy.exact_roots);
+  AddKnownFolderRoot(FOLDERID_Downloads, &policy.exact_roots);
   const std::wstring user_profile = EnvironmentVariableValue(L"USERPROFILE");
-  if (!user_profile.empty()) {
-    policy.exact_roots.push_back(user_profile);
-    const fs::path users_root = fs::path(user_profile).parent_path();
-    if (!users_root.empty()) {
-      policy.exact_roots.push_back(users_root.wstring());
-    }
-    policy.exact_roots.push_back((fs::path(user_profile) / L"bin").wstring());
-    policy.exact_roots.push_back(
-        (fs::path(user_profile) / L".local" / L"bin").wstring());
-    policy.exact_roots.push_back(
-        (fs::path(user_profile) / L"Desktop").wstring());
-    policy.exact_roots.push_back(
-        (fs::path(user_profile) / L"Downloads").wstring());
-  }
+  AddProfilePolicyRoots(user_profile, false, &policy.exact_roots);
   const std::wstring windows = WindowsDirectoryPath();
   if (!windows.empty()) {
     policy.tree_roots.push_back(windows);
@@ -600,22 +648,34 @@ bool HasMatchingInstallIdentityMarker(
     const std::wstring& expected_package_id) {
   const fs::path marker =
       canonical_target / L".desktop_updater_install_identity.json";
-  const DWORD attributes = GetFileAttributesW(marker.wstring().c_str());
-  if (attributes == INVALID_FILE_ATTRIBUTES ||
-      (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
-      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+  HANDLE marker_handle = CreateFileW(
+      marker.wstring().c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr);
+  if (marker_handle == INVALID_HANDLE_VALUE) {
     return false;
   }
-  std::error_code size_error;
-  const std::uintmax_t marker_size = fs::file_size(marker, size_error);
-  if (size_error || marker_size > kMaximumInstalledIdentityMarkerBytes) {
+
+  BY_HANDLE_FILE_INFORMATION information = {};
+  const bool metadata_ok =
+      GetFileInformationByHandle(marker_handle, &information) != FALSE;
+  const bool safe_file =
+      metadata_ok &&
+      (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+      (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+  std::array<char, kMaximumInstalledIdentityMarkerBytes + 1> buffer = {};
+  DWORD bytes_read = 0;
+  const bool read_ok =
+      safe_file &&
+      ReadFile(marker_handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+               &bytes_read, nullptr) != FALSE;
+  const bool close_ok = CloseHandle(marker_handle) != FALSE;
+  if (!read_ok || !close_ok ||
+      bytes_read > kMaximumInstalledIdentityMarkerBytes) {
     return false;
   }
-  std::ifstream input(marker, std::ios::binary);
-  const std::string contents((std::istreambuf_iterator<char>(input)),
-                             std::istreambuf_iterator<char>());
-  return (input.good() || input.eof()) &&
-         InstalledIdentityMarkerMatchesJson(contents, expected_package_id);
+  const std::string contents(buffer.data(), bytes_read);
+  return InstalledIdentityMarkerMatchesJson(contents, expected_package_id);
 }
 
 bool IsCanonicalRelativeExecutable(const fs::path& path) {
@@ -633,22 +693,24 @@ bool IsCanonicalRelativeExecutable(const fs::path& path) {
   return true;
 }
 
-bool PathContainsReparsePointImpl(const fs::path& staging_path) {
+WindowsPathComponentState ValidatePathComponentsImpl(
+    const fs::path& staging_path) {
   fs::path current = staging_path.root_path();
-  const DWORD root_attributes = GetFileAttributesW(current.c_str());
-  if (root_attributes != INVALID_FILE_ATTRIBUTES &&
-      (root_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-    return true;
+  WindowsPathComponentState state = ClassifyWindowsPathComponentAttributes(
+      GetFileAttributesW(current.c_str()));
+  if (state != WindowsPathComponentState::kSafe) {
+    return state;
   }
   for (const fs::path& component : staging_path.relative_path()) {
     current /= component;
-    const DWORD attributes = GetFileAttributesW(current.c_str());
-    if (attributes != INVALID_FILE_ATTRIBUTES &&
-        (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-      return true;
+    state = ClassifyWindowsPathComponentAttributes(
+        GetFileAttributesW(current.c_str()));
+    if (state == WindowsPathComponentState::kUnavailable ||
+        state == WindowsPathComponentState::kReparsePoint) {
+      return state;
     }
   }
-  return false;
+  return WindowsPathComponentState::kSafe;
 }
 
 InstallResult ValidateStagingRoot(const InstallRequest& request) {
@@ -661,7 +723,13 @@ InstallResult ValidateStagingRoot(const InstallRequest& request) {
                staging_path.lexically_normal().wstring().c_str()) != 0) {
     return {false, "Staged update root must be absolute and canonical."};
   }
-  if (PathContainsReparsePointImpl(staging_path)) {
+  const WindowsPathComponentState component_state =
+      ValidatePathComponentsImpl(staging_path);
+  if (component_state == WindowsPathComponentState::kUnavailable) {
+    return {false,
+            "Staged update path components must exist and be readable."};
+  }
+  if (component_state == WindowsPathComponentState::kReparsePoint) {
     return {false,
             "Staged update path components must not be reparse points."};
   }
@@ -699,6 +767,10 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
     return {false, "Windows install root must already be canonical."};
   }
   const UnsafeInstallRootPolicy unsafe_roots = UnsafeInstallRootPaths();
+  if (!unsafe_roots.authoritative_roots_available) {
+    return {false,
+            "Windows authoritative shared/profile roots are unavailable."};
+  }
   if (IsUnsafeWindowsInstallRoot(canonical_root.wstring(),
                                  unsafe_roots.exact_roots,
                                  unsafe_roots.tree_roots)) {
@@ -1184,6 +1256,17 @@ bool IsUnsafeWindowsInstallRoot(
     }
   }
   return false;
+}
+
+WindowsPathComponentState ClassifyWindowsPathComponentAttributes(
+    std::uint32_t attributes) {
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    return WindowsPathComponentState::kUnavailable;
+  }
+  if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return WindowsPathComponentState::kReparsePoint;
+  }
+  return WindowsPathComponentState::kSafe;
 }
 
 bool InstalledIdentityMarkerMatchesJson(

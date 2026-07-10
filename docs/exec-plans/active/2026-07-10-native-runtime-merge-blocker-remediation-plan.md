@@ -1014,6 +1014,39 @@ Task 5 final re-review closure evidence on 2026-07-10:
   execution, Linux target-host CMake/CTest, CI, credentials, signing,
   notarization, and release smoke remain literally not run on this macOS host.
 
+Task 5 Windows metadata follow-up evidence on 2026-07-10:
+
+- RED: the focused native source contract showed that
+  `INVALID_FILE_ATTRIBUTES` was treated as “not a reparse point,” shared/profile
+  roots came only from mutable environment aliases, and marker validation used
+  a separate size query followed by an unbounded iterator read. Windows unit
+  candidates also required explicit unavailable and ancestor-reparse component
+  states. A second RED required Known Folder resolution itself to fail closed
+  rather than allowing aliases to become authoritative when the APIs fail.
+- Resolution: staging traversal now classifies the root/share and every path
+  component as safe, unavailable, or reparse, and rejects both non-safe states
+  before target proof or helper construction. ProgramData, Public, and Profile
+  are resolved through `SHGetKnownFolderPath`; the users container is derived
+  only from the authoritative Profile value, and environment values are added
+  only as supplemental aliases. If any required authoritative root is
+  unavailable, target proof fails closed. Known-folder allocations are freed
+  with `CoTaskMemFree`, and the native targets link Ole32.
+- Installed identity markers now use one `CreateFileW` handle opened with
+  `FILE_FLAG_OPEN_REPARSE_POINT` and read sharing only, which blocks new
+  write/delete opens during validation. Handle metadata rejects directories
+  and reparse points. A fixed 64 KiB + 1 buffer bounds the sole `ReadFile` call;
+  oversize input fails before exact bytes are passed to the strict JSON parser.
+- GREEN: exact Task 5 Flutter passed 70 tests; supplemental native contracts
+  passed 38; portable Windows C ABI passed 10 and its C++14 header consumer
+  typechecked with `-Werror`; portable Linux behavior passed 12; macOS SwiftPM
+  passed 51 and the exact macOS 10.14 source set typechecked. Full Flutter
+  passed 576 tests with 3 explicit skips and 0 failures. Final formatting,
+  analysis, and diff checks are recorded at commit handoff.
+- The new Windows plugin tests are registered for target-host execution but
+  were not run on macOS. Windows target-host CMake/CTest, unreadable ACL and
+  junction behavior, registry/UAC/PowerShell/ZIP/Inno execution, CI, and
+  external release lanes remain not run.
+
 ---
 
 ### Task 6: Add Mount/Reparse Safety, Target Locks, and Durable Recovery

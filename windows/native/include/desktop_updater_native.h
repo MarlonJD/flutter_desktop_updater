@@ -1,6 +1,7 @@
 #ifndef DESKTOP_UPDATER_NATIVE_H_
 #define DESKTOP_UPDATER_NATIVE_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,12 @@ namespace native {
 enum class InstallTargetProofSource {
   kRegistryUninstallRecord,
   kInstalledIdentityMarker,
+};
+
+enum class WindowsPathComponentState {
+  kSafe,
+  kUnavailable,
+  kReparsePoint,
 };
 
 struct InstallTargetProof {
@@ -58,6 +65,9 @@ bool IsUnsafeWindowsInstallRoot(
     const std::wstring& canonical_root,
     const std::vector<std::wstring>& exact_roots,
     const std::vector<std::wstring>& tree_roots);
+
+WindowsPathComponentState ClassifyWindowsPathComponentAttributes(
+    std::uint32_t attributes);
 
 bool InstalledIdentityMarkerMatchesJson(
     const std::string& contents,

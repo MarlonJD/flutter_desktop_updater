@@ -100,6 +100,35 @@ TEST(DesktopUpdaterPlugin, ProgramFilesTargetRequiresMatchingInstalledIdentity) 
       L"C:\\Program Files\\Example", L"com.example.app"));
 }
 
+TEST(DesktopUpdaterPlugin, PathComponentAttributesFailClosed) {
+  EXPECT_EQ(native::ClassifyWindowsPathComponentAttributes(
+                INVALID_FILE_ATTRIBUTES),
+            native::WindowsPathComponentState::kUnavailable);
+  EXPECT_EQ(native::ClassifyWindowsPathComponentAttributes(
+                FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT),
+            native::WindowsPathComponentState::kReparsePoint);
+  EXPECT_EQ(native::ClassifyWindowsPathComponentAttributes(
+                FILE_ATTRIBUTE_DIRECTORY),
+            native::WindowsPathComponentState::kSafe);
+}
+
+TEST(DesktopUpdaterPlugin, AncestorReparseComponentFailsClosed) {
+  const std::vector<DWORD> component_attributes = {
+      FILE_ATTRIBUTE_DIRECTORY,
+      FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT,
+      FILE_ATTRIBUTE_DIRECTORY,
+  };
+  native::WindowsPathComponentState state =
+      native::WindowsPathComponentState::kSafe;
+  for (const DWORD attributes : component_attributes) {
+    state = native::ClassifyWindowsPathComponentAttributes(attributes);
+    if (state != native::WindowsPathComponentState::kSafe) {
+      break;
+    }
+  }
+  EXPECT_EQ(state, native::WindowsPathComponentState::kReparsePoint);
+}
+
 TEST(DesktopUpdaterPlugin, UnsafeInstallRootsUseComponentBoundaries) {
   const std::vector<std::wstring> exact_roots = {
       L"C:\\Program Files", L"C:\\Users", L"C:\\Users\\alex",

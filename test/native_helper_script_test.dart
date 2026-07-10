@@ -117,7 +117,7 @@ void main() {
     expect(windowsProof, lessThan(windowsScript));
 
     final reparseWalkStart = windows.indexOf(
-      "bool PathContainsReparsePointImpl(",
+      "WindowsPathComponentState ValidatePathComponentsImpl(",
     );
     final reparseWalkEnd =
         windows.indexOf("InstallResult ValidateStagingRoot(");
@@ -127,13 +127,16 @@ void main() {
       return;
     }
     final reparseWalk = windows.substring(reparseWalkStart, reparseWalkEnd);
-    expect(reparseWalk, contains("const DWORD root_attributes"));
+    expect(reparseWalk, contains("ClassifyWindowsPathComponentAttributes"));
+    expect(reparseWalk, contains("kUnavailable"));
+    expect(reparseWalk, contains("kReparsePoint"));
     expect(reparseWalk, contains("staging_path.relative_path()"));
     expect(reparseWalk, contains("for (const fs::path& component"));
     expect(reparseWalk, contains("GetFileAttributesW(current.c_str())"));
-    expect(reparseWalk, contains("FILE_ATTRIBUTE_REPARSE_POINT"));
+    expect(windows, contains("attributes == INVALID_FILE_ATTRIBUTES"));
+    expect(windows, contains("attributes & FILE_ATTRIBUTE_REPARSE_POINT"));
     expect(
-      windows.indexOf("PathContainsReparsePointImpl(staging_path)"),
+      windows.indexOf("ValidatePathComponentsImpl(staging_path)"),
       lessThan(windowsProof),
     );
 
@@ -159,9 +162,27 @@ void main() {
     ]) {
       expect(windows, contains(sharedTree), reason: sharedTree);
     }
+    for (final knownFolder in <String>[
+      "SHGetKnownFolderPath",
+      "FOLDERID_ProgramData",
+      "FOLDERID_Public",
+      "FOLDERID_Profile",
+      "CoTaskMemFree",
+    ]) {
+      expect(windows, contains(knownFolder), reason: knownFolder);
+    }
+    expect(windows, contains("bool authoritative_roots_available = false"));
     expect(
       windows,
-      contains("fs::path(user_profile).parent_path()"),
+      contains("!unsafe_roots.authoritative_roots_available"),
+    );
+    expect(
+      windows,
+      contains("AddProfilePolicyRoots(known_profile, true"),
+    );
+    expect(
+      windows,
+      contains("fs::path(profile).parent_path()"),
     );
     final unsafeRootCheck = windows.indexOf(
       "IsUnsafeWindowsInstallRoot(canonical_root.wstring(),",
@@ -182,6 +203,37 @@ void main() {
     expect(windows, contains("kMaximumInstalledIdentityMarkerBytes"));
     expect(windows, contains("identity.object().size() != 2"));
     expect(windows, isNot(contains("std::string JsonEscape(")));
+
+    final markerReadStart = windows.indexOf(
+      "bool HasMatchingInstallIdentityMarker(",
+    );
+    final markerReadEnd = windows.indexOf(
+      "bool IsCanonicalRelativeExecutable(",
+      markerReadStart,
+    );
+    expect(markerReadStart, isNonNegative);
+    expect(markerReadEnd, greaterThan(markerReadStart));
+    if (markerReadStart < 0 || markerReadEnd <= markerReadStart) {
+      return;
+    }
+    final markerRead = windows.substring(markerReadStart, markerReadEnd);
+    expect(markerRead, contains("CreateFileW"));
+    expect(markerRead, contains("GENERIC_READ"));
+    expect(markerRead, contains("FILE_SHARE_READ"));
+    expect(markerRead, isNot(contains("FILE_SHARE_WRITE")));
+    expect(markerRead, isNot(contains("FILE_SHARE_DELETE")));
+    expect(markerRead, contains("FILE_FLAG_OPEN_REPARSE_POINT"));
+    expect(markerRead, contains("GetFileInformationByHandle"));
+    expect(markerRead, contains("FILE_ATTRIBUTE_DIRECTORY"));
+    expect(markerRead, contains("FILE_ATTRIBUTE_REPARSE_POINT"));
+    expect(
+      markerRead,
+      contains("kMaximumInstalledIdentityMarkerBytes + 1"),
+    );
+    expect(markerRead, contains("ReadFile"));
+    expect(markerRead, contains("CloseHandle"));
+    expect(markerRead, isNot(contains("fs::file_size")));
+    expect(markerRead, isNot(contains("istreambuf_iterator")));
   });
 
   test("macOS public install request cannot select another PID or bundle", () {
