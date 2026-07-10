@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace DesktopUpdater.Native;
 
@@ -17,7 +18,10 @@ public static class DesktopUpdaterNative
         IReadOnlyList<string> removedFiles,
         string? diagnosticsLogPath)
     {
-        ArgumentNullException.ThrowIfNull(removedFiles);
+        if (removedFiles is null)
+        {
+            throw new ArgumentNullException(nameof(removedFiles));
+        }
 
         IntPtr stagingPointer = IntPtr.Zero;
         IntPtr diagnosticsPointer = IntPtr.Zero;
@@ -75,7 +79,7 @@ public static class DesktopUpdaterNative
             {
                 var message = result.ErrorMessageUtf8 == IntPtr.Zero
                     ? "The native desktop updater failed without an error message."
-                    : Marshal.PtrToStringUTF8(result.ErrorMessageUtf8)
+                    : ReadUtf8(result.ErrorMessageUtf8)
                         ?? "The native desktop updater returned an invalid error message.";
                 throw new DesktopUpdaterException(message);
             }
@@ -103,6 +107,22 @@ public static class DesktopUpdaterNative
                 Marshal.FreeHGlobal(stagingPointer);
             }
         }
+    }
+
+    private static string? ReadUtf8(IntPtr value)
+    {
+        if (value == IntPtr.Zero)
+        {
+            return null;
+        }
+        var length = 0;
+        while (Marshal.ReadByte(value, length) != 0)
+        {
+            length++;
+        }
+        var bytes = new byte[length];
+        Marshal.Copy(value, bytes, 0, length);
+        return Encoding.UTF8.GetString(bytes);
     }
 
     [StructLayout(LayoutKind.Sequential)]

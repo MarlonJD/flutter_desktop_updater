@@ -32,14 +32,39 @@ add_library(desktop_updater_native SHARED
   $<TARGET_OBJECTS:desktop_updater_native_objects>)
 add_library(desktop_updater::native ALIAS desktop_updater_native)
 target_include_directories(desktop_updater_native
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
 target_compile_definitions(desktop_updater_native
   PRIVATE DESKTOP_UPDATER_NATIVE_BUILDING_DLL)
+target_compile_definitions(desktop_updater_native
+  INTERFACE DESKTOP_UPDATER_NATIVE_USING_DLL)
 target_link_libraries(desktop_updater_native
   PRIVATE Bcrypt Shell32)
 set_target_properties(desktop_updater_native PROPERTIES
+  EXPORT_NAME native
   WINDOWS_EXPORT_ALL_SYMBOLS ON
   OUTPUT_NAME desktop_updater_native)
+
+include(GNUInstallDirs)
+install(TARGETS desktop_updater_native
+  EXPORT desktop_updater_nativeTargets
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY include/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT desktop_updater_nativeTargets
+  FILE desktop_updater_nativeTargets.cmake
+  NAMESPACE desktop_updater::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
+configure_file(
+  cmake/desktop_updater_nativeConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+  @ONLY)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
 
 if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   enable_testing()

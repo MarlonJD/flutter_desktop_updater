@@ -28,11 +28,18 @@ install(EXPORT desktop_updater_nativeTargets
   NAMESPACE desktop_updater::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
 configure_file(
+  cmake/desktop_updater_nativeConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+  @ONLY)
+configure_file(
   cmake/desktop_updater_native.pc.in
   ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_native.pc
   @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_native.pc
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
 
 if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   if(CMAKE_VERSION VERSION_LESS "3.14")

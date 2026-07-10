@@ -1,8 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>DesktopUpdater.Native</PackageId>
+    <Authors>desktop_updater contributors</Authors>
+    <BuildInParallel>false</BuildInParallel>
+    <Description>Versioned .NET wrapper and native Windows install helper for desktop_updater.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/MarlonJD/flutter_desktop_updater</RepositoryUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(NativeDllPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native"
+      Condition="'$(NativeDllPath)' != ''" />
+    <None
+      Include="README.md"
+      Pack="true"
+      PackagePath="/" />
+    <None
+      Include="buildTransitive/DesktopUpdater.Native.targets"
+      Pack="true"
+      PackagePath="buildTransitive/DesktopUpdater.Native.targets" />
+  </ItemGroup>
+
+  <Target Name="VerifyNativeDllForPack" BeforeTargets="Pack">
+    <Error
+      Condition="'$(NativeDllPath)' == ''"
+      Text="NativeDllPath must point to the built desktop_updater_native.dll." />
+    <Error
+      Condition="'$(NativeDllPath)' != '' and !Exists('$(NativeDllPath)')"
+      Text="Native desktop_updater DLL was not found: $(NativeDllPath)" />
+  </Target>
 </Project>

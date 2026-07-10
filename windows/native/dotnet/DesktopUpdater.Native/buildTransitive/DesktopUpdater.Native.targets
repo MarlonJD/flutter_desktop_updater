@@ -1,0 +1,16 @@
+<Project>
+  <ItemGroup>
+    <DesktopUpdaterNativeRuntime
+      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_native.dll" />
+  </ItemGroup>
+
+  <Target Name="CopyDesktopUpdaterNativeRuntime" AfterTargets="Build">
+    <Error
+      Condition="!Exists('@(DesktopUpdaterNativeRuntime)')"
+      Text="DesktopUpdater.Native package is missing its win-x64 native DLL." />
+    <Copy
+      SourceFiles="@(DesktopUpdaterNativeRuntime)"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1111,13 +1111,13 @@ them consumable.
 - Create: `linux/native/cmake/desktop_updater_native.pc.in`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 
-- [ ] **Step 6.1: Add a local SwiftPM consumer**
+- [x] **Step 6.1: Add a local SwiftPM consumer**
 
 The sample depends on the repository root by local path, imports
 `DesktopUpdaterKit`, constructs a public `MacInstallRequest`, and compiles
 without importing Flutter.
 
-- [ ] **Step 6.2: Add installed CMake consumers**
+- [x] **Step 6.2: Add installed CMake consumers**
 
 Windows and Linux tests must install to a temporary prefix, configure consumer
 projects with that prefix, build them, and run their tests. Consumer
@@ -1128,7 +1128,7 @@ find_package(desktop_updater_native CONFIG REQUIRED)
 target_link_libraries(consumer PRIVATE desktop_updater::native)
 ```
 
-- [ ] **Step 6.3: Pack and consume NuGet**
+- [x] **Step 6.3: Pack and consume NuGet**
 
 The package must contain:
 
@@ -1142,7 +1142,7 @@ buildTransitive/DesktopUpdater.Native.targets
 Create a temporary console project, install the local `.nupkg`, run it, and
 exercise one native failure path.
 
-- [ ] **Step 6.4: Add package-content assertions**
+- [x] **Step 6.4: Add package-content assertions**
 
 Assert:
 
@@ -1157,7 +1157,29 @@ Assert:
 Run each consumer on its target host. Package jobs fail when the consumer
 compile, link, load, or execution step fails.
 
-- [ ] **Step 6.6: Commit package gates**
+Candidate-only evidence on 2026-07-10:
+
+- the Stage 6 consumer/package contract suite failed first with all 5 expected
+  missing-consumer, install-config, NuGet-layout, and CI assertions;
+- focused native SDK, consumer/package, and harness suite: PASS, 26 tests;
+- external local-path SwiftPM consumer: build and execution PASS on macOS;
+- `DesktopUpdater.Native`: both `net8.0` and `netstandard2.0` build PASS with
+  0 warnings and 0 errors;
+- local NuGet pack: PASS, with both wrapper TFMs, the win-x64 native slot, and
+  build-transitive targets present; the local package consumer restored,
+  built, and copied the native slot into its output;
+- `dart format --set-exit-if-changed .`: PASS, 189 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
+- `flutter test --no-pub`: PASS, 486 tests with 3 external E2E skips;
+- `dart pub publish --dry-run`: package contents include all helper sources,
+  installed-package metadata, and consumer samples; pre-commit validation
+  reported only the expected dirty-tree warning and version hint;
+- real Windows DLL pack/load/failure execution and installed Windows/Linux
+  CMake consumer execution are `not run locally` on the macOS host; CI commands
+  are present and evidence is pending the final verification pass, so Step 6.5
+  remains unchecked.
+
+- [x] **Step 6.6: Commit package gates**
 
 ```sh
 git add example/native windows/native linux/native \
