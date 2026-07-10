@@ -24,11 +24,74 @@ jobs:
         run: flutter test --no-pub
       - name: Check CLI entrypoints
         run: |
+          dart run desktop_updater --help
+          dart run desktop_updater --version
+          dart run desktop_updater release publish --help
+          dart run desktop_updater package --help
+          dart run desktop_updater verify --help
+          dart run desktop_updater app-archive --help
           dart run desktop_updater:package --help
           dart run desktop_updater:verify --help
+          dart run desktop_updater:app_archive --help
           dart run desktop_updater:release publish --help
       - name: Pub publish dry-run
         run: dart pub publish --dry-run
+
+  cli-candidates:
+    name: Standalone CLI candidate (${{ matrix.artifact }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            artifact: desktop-updater-macos-arm64
+            checksum: shasum -a 256
+          - runner: macos-15-intel
+            artifact: desktop-updater-macos-x64
+            checksum: shasum -a 256
+          - runner: windows-latest
+            artifact: desktop-updater-windows-x64.exe
+          - runner: ubuntu-latest
+            artifact: desktop-updater-linux-x64
+            checksum: sha256sum
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build and checksum Unix candidate-only CLI
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          dart compile exe bin/desktop_updater.dart -o "artifacts/${{ matrix.artifact }}"
+          chmod +x "artifacts/${{ matrix.artifact }}"
+          "artifacts/${{ matrix.artifact }}" --version
+          cd artifacts
+          ${{ matrix.checksum }} "${{ matrix.artifact }}" > SHA256SUMS
+      - name: Build and checksum Windows candidate-only CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          dart compile exe bin/desktop_updater.dart -o "artifacts/${{ matrix.artifact }}"
+          & "artifacts/${{ matrix.artifact }}" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash "artifacts/${{ matrix.artifact }}" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.artifact }}" | Set-Content artifacts/SHA256SUMS
+      # CI outputs are unsigned candidate-only evidence. Production macOS and
+      # Windows assets must use the repository's approved signing workflows.
+      - name: Upload candidate-only CLI and SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-candidate-only
+          path: |
+            artifacts/${{ matrix.artifact }}
+            artifacts/SHA256SUMS
+          if-no-files-found: error
 
   windows:
     name: Windows

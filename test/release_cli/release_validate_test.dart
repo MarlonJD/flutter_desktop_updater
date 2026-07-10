@@ -215,15 +215,23 @@ void main() {
   });
 
   test("verify command skips zip extraction for Inno installers", () {
-    final source = File("bin/verify.dart").readAsStringSync();
+    final entrypoint = File("bin/verify.dart").readAsStringSync();
+    final source = File(
+      "lib/src/cli/verify_command.dart",
+    ).readAsStringSync();
 
+    expect(entrypoint, contains("runVerifyCommand(args)"));
     expect(source, contains('descriptor.artifact.kind == "innoInstaller"'));
     expect(source, contains("Installer artifact verified."));
   });
 
   test("verify command supports macOS DMG and PKG artifact gates", () {
-    final source = File("bin/verify.dart").readAsStringSync();
+    final entrypoint = File("bin/verify.dart").readAsStringSync();
+    final source = File(
+      "lib/src/cli/verify_command.dart",
+    ).readAsStringSync();
 
+    expect(entrypoint, contains("runVerifyCommand(args)"));
     expect(source, contains('descriptor.artifact.kind == "dmg"'));
     expect(source, contains('descriptor.artifact.kind == "pkgInstaller"'));
     expect(source, contains("macOS artifact trust validation: not run"));

@@ -1361,19 +1361,19 @@ verify
 app-archive
 ```
 
-- [ ] **Step 9.1: Extract reusable command runners**
+- [x] **Step 9.1: Extract reusable command runners**
 
 Refactor existing bin entrypoints so the dispatcher calls the same parsers and
 implementations. Existing `dart run desktop_updater:package` and other bin
 commands remain valid.
 
-- [ ] **Step 9.2: Keep flag names consistent**
+- [x] **Step 9.2: Keep flag names consistent**
 
 `desktop-updater package` uses the existing `--input` flag. Do not document
 `--app-path` for the package command unless it is intentionally added as a
 tested alias. `--app-path` belongs only to publish/project-adapter selection.
 
-- [ ] **Step 9.3: Test every documented command**
+- [x] **Step 9.3: Test every documented command**
 
 Tests invoke:
 
@@ -1389,7 +1389,7 @@ desktop-updater app-archive --help
 No documentation may reference `runDesktopUpdaterCli` before this task creates
 it.
 
-- [ ] **Step 9.4: Build the release matrix**
+- [x] **Step 9.4: Build the release matrix**
 
 Build on native hosts:
 
@@ -1404,7 +1404,23 @@ Generate SHA-256 checksums. macOS and Windows production release assets require
 the repository's approved signing/notarization workflows; unsigned local
 builds are `candidate-only`.
 
-- [ ] **Step 9.5: Commit the CLI**
+Verified locally on 2026-07-10: the CLI contract test passed 9 tests, the
+focused CLI/package/verify/release regression suite passed 32 tests, and the
+full Flutter suite passed 502 tests with 3 expected external E2E skips. All
+legacy bin entrypoint help commands and every new dispatcher help/version path
+returned exit code 0. A real macOS arm64 executable was compiled, identified as
+Mach-O arm64, and exercised through `release doctor`, `package`, `verify`, and
+`app-archive upsert`; its candidate SHA-256 was generated successfully.
+`dart format --set-exit-if-changed .` reported 196 files with 0 changes and
+`flutter analyze --no-fatal-infos` completed with 375 existing info-only
+findings. The pre-commit `dart pub publish --dry-run` included the standalone
+entrypoint and reusable runners, with only the dirty-worktree warning and the
+existing version hint. The workflow YAML parsed locally and defines all four
+native-host candidate names with checksums. The macOS x64, Windows x64, and
+Linux x64 executables remain CI-pending; no unsigned candidate is labeled as a
+production asset.
+
+- [x] **Step 9.5: Commit the CLI**
 
 ```sh
 git add bin lib/src/cli test/desktop_updater_cli_test.dart \
