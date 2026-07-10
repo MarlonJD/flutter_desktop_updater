@@ -117,6 +117,9 @@ Flutter plugin target, are the compile authority for these examples.
 
 ## Packaging Boundaries
 
+The native runtime is SwiftPM-only at macOS 10.15 or newer; the macOS 10.14
+CocoaPods fallback intentionally excludes `Runtime/**`.
+
 - macOS links the `DesktopUpdaterKit` SwiftPM product from an approved tag or a
   repository checkout. The package has no Flutter dependency.
 - Windows builds the runtime with `DESKTOP_UPDATER_NATIVE_RUNTIME=ON` and

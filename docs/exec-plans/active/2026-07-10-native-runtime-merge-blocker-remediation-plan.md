@@ -1411,7 +1411,7 @@ Task 7 final build-contract follow-up evidence on 2026-07-11:
   `DesktopUpdaterPlugin.swift`, macOS 10.14.
 - Runtime directory is absent from the pod target.
 
-- [ ] **Step 1: Rewrite the layout tests to fail on broad globs**
+- [x] **Step 1: Rewrite the layout tests to fail on broad globs**
 
 Assert the podspec names these exact helper files:
 
@@ -1425,19 +1425,19 @@ MacInstallRequest.swift
 Assert it includes the Flutter adapter, excludes `Runtime/**`, keeps 10.14,
 and both SwiftPM manifests keep 10.15 and `DesktopUpdaterKit`.
 
-- [ ] **Step 2: Replace the podspec Runtime glob with an allowlist**
+- [x] **Step 2: Replace the podspec Runtime glob with an allowlist**
 
 List the four helper files and adapter glob explicitly. Do not rename the Swift
 module, product, target, or public imports.
 
-- [ ] **Step 3: Add a macOS 10.14 launch fallback**
+- [x] **Step 3: Add a macOS 10.14 launch fallback**
 
 Keep the 10.15 `NSWorkspace.OpenConfiguration` path behind
 `if #available(macOS 10.15, *)`. On 10.14 use
 `NSWorkspace.shared.launchApplication(destinationURL.path)`; return the same
 Flutter error shape when launch fails.
 
-- [ ] **Step 4: Typecheck the exact pod source set**
+- [x] **Step 4: Typecheck the exact pod source set**
 
 Add the exact CI command:
 
@@ -1448,7 +1448,7 @@ xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -modul
 Expected: exit 0. Keep the current CocoaPods Flutter integration build and
 SwiftPM external consumer as separate gates.
 
-- [ ] **Step 5: Run macOS verification**
+- [x] **Step 5: Run macOS verification**
 
 Run:
 
@@ -1460,12 +1460,40 @@ swift test
 Expected: PASS; exact 10.14 typecheck exit 0; SwiftPM runtime tests remain
 macOS 10.15+.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~sh
 git add macos Package.swift test .github/workflows/desktop-updater-ci.yml docs/native-sdk.md docs/native-runtime-api.md
 git commit -m "fix: preserve macOS CocoaPods compatibility"
 ~~~
+
+Task 8 evidence on 2026-07-11:
+
+- RED: the stricter exact-source, CI-command, fallback, and documentation tests
+  ran before the Task 8 implementation. Seven tests passed and two failed for
+  the intended missing behavior: the workflow did not contain the exact macOS
+  10.14 `xcrun swiftc` command, and the native SDK/runtime documentation did
+  not state the 10.15 SwiftPM versus 10.14 CocoaPods boundary.
+- The podspec exact five-file allowlist, `Runtime/**` exclusion, macOS 10.14
+  floor, both macOS 10.15 SwiftPM manifests, `DesktopUpdaterKit` product and
+  import, and the availability-gated legacy launch fallback were already
+  correct from the earlier Task 4 remediation. Their stricter tests passed in
+  the RED run, so those production files were not churned to manufacture a
+  failure. No Flutter MethodChannel, signing, provenance, or trust behavior
+  changed in this task.
+- GREEN, verified locally: the focused Flutter command passed all 9 tests. The
+  exact five-file `xcrun swiftc -typecheck` command targeting
+  `x86_64-apple-macosx10.14` exited 0. Root SwiftPM passed 49 tests and the
+  plugin SwiftPM package passed 51 tests; the latter emitted only its existing
+  unhandled `PrivacyInfo.xcprivacy` warning.
+- Wider verification, verified locally: formatting checked 213 files with no
+  changes; analysis exited 0 with 395 existing info-only diagnostics; the full
+  Flutter suite passed 581 tests with 3 explicit environment-gated skips and
+  0 failures; `git diff --check` passed.
+- CI, the CocoaPods Flutter integration build, `pod lib lint`, and actual
+  macOS 10.14 runtime launch execution were not run. The local host has no
+  `pod` executable. Signed/notarized and credential-gated release lanes remain
+  not run, and the native runtime remains candidate-only.
 
 ---
 
@@ -1670,9 +1698,9 @@ git commit -m "docs: record native runtime merge gates"
 - [ ] Every generated validation fixture executes in Dart, Swift, and C++.
 - [ ] Native result fields preserve the full selected policy.
 - [ ] Windows non-ASCII paths and relative redirects pass target-host tests.
-- [ ] SwiftPM runtime remains macOS 10.15+ with
+- [x] SwiftPM runtime remains macOS 10.15+ with
   `import DesktopUpdaterKit`.
-- [ ] Exact CocoaPods helper + adapter source set typechecks for macOS 10.14.
+- [x] Exact CocoaPods helper + adapter source set typechecks for macOS 10.14.
 - [ ] Safe legacy Flutter install calls and custom platform overrides pass.
 - [ ] Unsafe ambiguous legacy roots fail before mutation with migration text.
 - [ ] NuGet contains Release DLLs and third-party notices.

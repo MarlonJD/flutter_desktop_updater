@@ -37,6 +37,43 @@ void main() {
     expect(pluginManifest, contains('"DesktopUpdaterKit"'));
   });
 
+  test("native docs separate SwiftPM runtime from CocoaPods fallback", () {
+    final nativeSdk = File(
+      "docs/native-sdk.md",
+    ).readAsStringSync().replaceAll(RegExp(r"\s+"), " ");
+    final runtimeApi = File(
+      "docs/native-runtime-api.md",
+    ).readAsStringSync().replaceAll(RegExp(r"\s+"), " ");
+
+    expect(
+      nativeSdk,
+      contains(
+        "SwiftPM keeps the `DesktopUpdaterKit` product and import at macOS "
+        "10.15 or newer.",
+      ),
+    );
+    expect(
+      nativeSdk,
+      contains(
+        "The CocoaPods fallback remains macOS 10.14 compatible and compiles "
+        "only `DesktopUpdaterVersion.swift`, `Diagnostics.swift`, "
+        "`MacInstallHelper.swift`, `MacInstallRequest.swift`, and "
+        "`DesktopUpdaterPlugin.swift`.",
+      ),
+    );
+    expect(
+      nativeSdk,
+      contains("It does not compile `DesktopUpdaterKit/Runtime/**`."),
+    );
+    expect(
+      runtimeApi,
+      contains(
+        "The native runtime is SwiftPM-only at macOS 10.15 or newer; the "
+        "macOS 10.14 CocoaPods fallback intentionally excludes `Runtime/**`.",
+      ),
+    );
+  });
+
   test("macOS helper kit exposes constructible public request API", () {
     final requestSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift",

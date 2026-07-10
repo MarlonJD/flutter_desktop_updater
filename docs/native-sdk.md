@@ -61,6 +61,12 @@ The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback
 for Flutter hosts that disable SwiftPM.
 
+SwiftPM keeps the `DesktopUpdaterKit` product and import at macOS 10.15 or
+newer. The CocoaPods fallback remains macOS 10.14 compatible and compiles only
+`DesktopUpdaterVersion.swift`, `Diagnostics.swift`, `MacInstallHelper.swift`,
+`MacInstallRequest.swift`, and `DesktopUpdaterPlugin.swift`. It does not compile
+`DesktopUpdaterKit/Runtime/**`.
+
 The same SwiftPM product now includes the preview `UpdateClient`. Its
 `checkForUpdate`, `downloadVerifyAndStage`, and `installAndRelaunch` operations
 are exercised by the external `example/native/macos-runtime` consumer. Linking
