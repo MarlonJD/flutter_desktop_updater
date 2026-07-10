@@ -4,12 +4,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UseAppHost>false</UseAppHost>
+    <UseAppHost>true</UseAppHost>
     <RollForward>Major</RollForward>
     <NuGetAudit>false</NuGetAudit>
+    <DesktopUpdaterNativeVersion Condition="'$(DesktopUpdaterNativeVersion)' == ''">2.7.0</DesktopUpdaterNativeVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj" />
+    <PackageReference Include="DesktopUpdater.Native" Version="$(DesktopUpdaterNativeVersion)" />
   </ItemGroup>
 </Project>

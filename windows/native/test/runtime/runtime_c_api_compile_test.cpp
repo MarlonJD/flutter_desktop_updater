@@ -23,6 +23,23 @@ HeadersProvider(void*, const char*) {
 }  // namespace
 
 int main() {
+  const auto check_for_update =
+      &desktop_updater_runtime_client_check_for_update_v1;
+  const auto download_verify_and_stage =
+      &desktop_updater_runtime_client_download_verify_and_stage_v1;
+  const auto install_and_relaunch =
+      &desktop_updater_runtime_client_install_and_relaunch_v1;
+  desktop_updater_runtime_stage_request_v1 stage_request{};
+  stage_request.abi_version = DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
+  stage_request.struct_size = sizeof(stage_request);
+  desktop_updater_runtime_install_request_v1 install_request{};
+  install_request.abi_version = DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
+  install_request.struct_size = sizeof(install_request);
+  if (check_for_update == nullptr || download_verify_and_stage == nullptr ||
+      install_and_relaunch == nullptr || stage_request.struct_size == 0 ||
+      install_request.struct_size == 0) {
+    return 1;
+  }
   const std::array<uint8_t, 32> public_key{};
   const desktop_updater_runtime_pinned_key_v1 pinned_key{
       "native-contract-stable", public_key.data(), public_key.size()};

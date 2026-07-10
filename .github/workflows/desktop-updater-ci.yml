@@ -173,7 +173,8 @@ jobs:
           }
           $version = $versionLine.Matches[0].Groups[1].Value
           $nativeDll = (Resolve-Path windows/native/build/Debug/desktop_updater_native.dll).Path
-          dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll"
+          $runtimeDll = (Resolve-Path windows/native/build/Debug/desktop_updater_runtime.dll).Path
+          dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll" "-p:RuntimeDllPath=$runtimeDll"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify DesktopUpdater.Native package contents
@@ -189,6 +190,7 @@ jobs:
               "lib/net8.0/DesktopUpdater.Native.dll",
               "lib/netstandard2.0/DesktopUpdater.Native.dll",
               "runtimes/win-x64/native/desktop_updater_native.dll",
+              "runtimes/win-x64/native/desktop_updater_runtime.dll",
               "buildTransitive/DesktopUpdater.Native.targets"
             )
             foreach ($entry in $required) {
@@ -220,6 +222,177 @@ jobs:
           dotnet restore example/native/windows-dotnet/DesktopUpdater.Consumer.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet run --project example/native/windows-dotnet --no-restore "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+      - name: Windows native runtime ZIP smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
+          $packageSource = (Resolve-Path windows/native/artifacts).Path
+          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+          dotnet restore example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $build = Join-Path $smokeRoot "build"
+          dotnet build example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --configuration Release --no-restore --output $build "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $install = Join-Path $smokeRoot "install"
+          $payload = Join-Path $smokeRoot "payload"
+          Copy-Item -LiteralPath $build -Destination $install -Recurse
+          Copy-Item -LiteralPath $build -Destination $payload -Recurse
+          "2.7.0" | Set-Content (Join-Path $install "version.txt")
+          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
+          $artifact = Join-Path $smokeRoot "update.zip"
+          Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $artifact
+          $ready = Join-Path $smokeRoot "ready.json"
+          $serverOut = Join-Path $smokeRoot "server.out"
+          $serverErr = Join-Path $smokeRoot "server.err"
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_runtime_smoke_server.dart",
+            "--artifact", $artifact,
+            "--artifact-kind", "zip",
+            "--platform", "windows",
+            "--package-id", "com.example.native-runtime-smoke",
+            "--app-name", "NativeRuntimeSmoke",
+            "--ready-file", $ready,
+            "--port", "43892"
+          ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              if (Test-Path -LiteralPath $ready) {
+                try {
+                  Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
+                  break
+                } catch {}
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not (Test-Path -LiteralPath $ready)) {
+              Get-Content $serverOut, $serverErr -ErrorAction SilentlyContinue
+              throw "Native runtime ZIP server did not start."
+            }
+            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
+            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            for ($attempt = 0; $attempt -lt 120; $attempt++) {
+              $versionFile = Join-Path $install "version.txt"
+              if ((Test-Path $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") {
+              throw "Windows ZIP runtime smoke did not install version 2.7.1."
+            }
+            if (Test-Path (Join-Path $smokeRoot "runtime/staging")) {
+              throw "Windows ZIP runtime smoke left its staging directory."
+            }
+            $diagnostics = Get-Content -Raw (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($diagnostics -notmatch '"event":"move success"' -or $diagnostics -notmatch '"event":"cleanup success"') {
+              throw "Windows ZIP runtime smoke diagnostics are incomplete."
+            }
+          } finally {
+            if (Test-Path -LiteralPath $ready) {
+              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+              try {
+                Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43892/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null
+              } catch {}
+            }
+            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Windows native runtime Inno smoke
+        if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_P12_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_P12_BASE64 }}
+          WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+            throw "Signed Inno runtime smoke credentials are required."
+          }
+          choco install innosetup --no-progress -y
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-inno"
+          $packageSource = (Resolve-Path windows/native/artifacts).Path
+          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+          dotnet restore example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          $build = Join-Path $smokeRoot "build"
+          dotnet build example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --configuration Release --no-restore --output $build "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          $install = Join-Path $smokeRoot "install"
+          $payload = Join-Path $smokeRoot "payload"
+          Copy-Item -LiteralPath $build -Destination $install -Recurse
+          Copy-Item -LiteralPath $build -Destination $payload -Recurse
+          "2.7.0" | Set-Content (Join-Path $install "version.txt")
+          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
+          $iss = Join-Path $smokeRoot "runtime-smoke.iss"
+          @(
+            "[Setup]",
+            "AppId=NativeRuntimeSmoke",
+            "AppName=NativeRuntimeSmoke",
+            "AppVersion=2.7.1",
+            "DefaultDirName={autopf}\NativeRuntimeSmoke",
+            "OutputDir=$smokeRoot",
+            "OutputBaseFilename=native-runtime-smoke",
+            "Uninstallable=no",
+            "PrivilegesRequired=lowest",
+            "ArchitecturesAllowed=x64compatible",
+            "[Files]",
+            "Source: `"$payload\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs"
+          ) | Set-Content -LiteralPath $iss -Encoding UTF8
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installer = Join-Path $smokeRoot "native-runtime-smoke.exe"
+          $pfx = Join-Path $smokeRoot "code-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_P12_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found." }
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CODE_SIGNING_P12_PASSWORD $installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:WINDOWS_CODE_SIGNING_P12_PASSWORD)
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $publisher = ([BitConverter]::ToString($sha256.ComputeHash($certificate.RawData))).Replace('-', '') } finally { $sha256.Dispose(); $certificate.Dispose() }
+          $ready = Join-Path $smokeRoot "ready.json"
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_runtime_smoke_server.dart",
+            "--artifact", $installer,
+            "--artifact-kind", "innoInstaller",
+            "--platform", "windows",
+            "--package-id", "com.example.native-runtime-smoke",
+            "--app-name", "NativeRuntimeSmoke",
+            "--publisher-thumbprint", $publisher,
+            "--ready-file", $ready,
+            "--port", "43895"
+          ) -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              if (Test-Path -LiteralPath $ready) {
+                try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null; break } catch {}
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null
+            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            for ($attempt = 0; $attempt -lt 240; $attempt++) {
+              if ((Test-Path (Join-Path $install "version.txt")) -and ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -eq "2.7.1")) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") { throw "Windows Inno runtime smoke did not install version 2.7.1." }
+            $diagnostics = Get-Content -Raw (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($diagnostics -notmatch '"event":"inno authenticode verified"' -or $diagnostics -notmatch '"event":"inno installer success"') { throw "Windows Inno runtime smoke diagnostics are incomplete." }
+          } finally {
+            if (Test-Path -LiteralPath $ready) {
+              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+              try { Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43895/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null } catch {}
+            }
+            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Build example
         working-directory: example
         run: flutter build windows --debug
@@ -303,10 +476,86 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
       - name: Run DesktopUpdaterKit SwiftPM tests
         run: swift test --package-path .
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
+      - name: macOS native runtime ZIP smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/native-runtime-macos-zip"
+          ready_file="$smoke_root/ready.json"
+          package_id="com.example.native-runtime-smoke"
+          app_name="NativeRuntimeSmoke.app"
+          rm -rf "$smoke_root"
+          mkdir -p "$smoke_root/install/$app_name/Contents/MacOS" "$smoke_root/install/$app_name/Contents/Resources"
+          mkdir -p "$smoke_root/payload/$app_name/Contents/MacOS" "$smoke_root/payload/$app_name/Contents/Resources"
+          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
+          swift build --package-path example/native/macos-runtime
+          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
+          for app_root in "$smoke_root/install/$app_name" "$smoke_root/payload/$app_name"; do
+            cp "$consumer_bin" "$app_root/Contents/MacOS/NativeRuntimeSmoke"
+            chmod +x "$app_root/Contents/MacOS/NativeRuntimeSmoke"
+            plutil -create xml1 "$app_root/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $package_id" "$app_root/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string NativeRuntimeSmoke" "$app_root/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$app_root/Contents/Info.plist"
+          done
+          printf '2.7.0\n' > "$smoke_root/install/$app_name/Contents/Resources/version.txt"
+          printf '2.7.1\n' > "$smoke_root/payload/$app_name/Contents/Resources/version.txt"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$smoke_root/payload/$app_name" "$smoke_root/update.zip"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$smoke_root/update.zip" \
+            --artifact-kind zip \
+            --platform macos \
+            --package-id "$package_id" \
+            --app-name "$app_name" \
+            --allow-unsigned-artifact \
+            --ready-file "$ready_file" \
+            --port 43892 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43892/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$smoke_root"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43892/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43892/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$smoke_root/install/$app_name/Contents/MacOS/NativeRuntimeSmoke" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$package_id" \
+            --smoke-root "$smoke_root/runtime" \
+            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl" \
+            --bundle-path "$smoke_root/install/$app_name" \
+            --allow-unsigned-updates
+          for attempt in $(seq 1 60); do
+            if [ "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi
+            sleep 0.25
+          done
+          test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.1"
+          test ! -e "$smoke_root/runtime/staging"
+          grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"
+          grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl"
+          test -s "$smoke_root/runtime/runtime-diagnostics.log"
 
   macos-flutter:
     name: macOS Flutter (${{ matrix.integration }})
@@ -354,9 +603,9 @@ jobs:
   macos-notarized:
     name: macOS Notarized Publish
     runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
-    # The full DMG/PKG production smoke is local/manual unless a future
-    # workflow_dispatch lane explicitly configures Developer ID Application,
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1')
+    # Signed production and native runtime lanes remain explicit
+    # workflow_dispatch gates requiring Developer ID Application,
     # Developer ID Installer, and notary credentials:
     # dart run tool/macos_production_smoke.dart all --cleanup
     steps:
@@ -404,11 +653,142 @@ jobs:
             --keychain "$DESKTOP_UPDATER_MACOS_KEYCHAIN"
           echo "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=$DESKTOP_UPDATER_MACOS_NOTARY_PROFILE" >> "$GITHUB_ENV"
       - name: Run notarized release publish smoke
+        if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
         working-directory: example
         env:
           DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E: "1"
           DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
         run: dart run tool/release_publish_smoke.dart --platform macos --notarize
+      - name: macOS native runtime DMG smoke
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_DEV_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
+          DESKTOP_UPDATER_DEV_ID_INSTALLER: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER }}
+          DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart run tool/macos_production_smoke.dart dmg-update
+          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
+          swift build --package-path example/native/macos-runtime
+          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
+          app_name="Desktop Updater Smoke"
+          app_path="/Applications/$app_name.app"
+          artifact="$DESKTOP_UPDATER_TEST_WORKDIR/$app_name.dmg"
+          runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-dmg-runtime"
+          ready_file="$runtime_root/ready.json"
+          mkdir -p "$runtime_root"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind dmg \
+            --platform macos \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --app-name "$app_name.app" \
+            --ready-file "$ready_file" \
+            --port 43893 > "$runtime_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43893/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43893/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:43893/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test -n "$team_id"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$consumer_bin" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --smoke-root "$runtime_root/client" \
+            --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
+            --bundle-path "$app_path" \
+            --expected-team-identifier "$team_id"
+          for attempt in $(seq 1 120); do
+            if grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          grep -q '"event":"move success"' "$runtime_root/helper-diagnostics.jsonl"
+          grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl"
+      - name: macOS native runtime PKG smoke
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_DEV_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
+          DESKTOP_UPDATER_DEV_ID_INSTALLER: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER }}
+          DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart run tool/macos_production_smoke.dart pkg-installer
+          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
+          swift build --package-path example/native/macos-runtime
+          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
+          app_name="Desktop Updater Smoke"
+          artifact="$DESKTOP_UPDATER_TEST_WORKDIR/$app_name.pkg"
+          runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-pkg-runtime"
+          ready_file="$runtime_root/ready.json"
+          mkdir -p "$runtime_root"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind pkgInstaller \
+            --platform macos \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --app-name "$app_name.app" \
+            --ready-file "$ready_file" \
+            --port 43894 > "$runtime_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43894/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43894/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:43894/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$consumer_bin" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --smoke-root "$runtime_root/client" \
+            --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
+            --bundle-path "/Applications/$app_name.app"
+          for attempt in $(seq 1 120); do
+            if grep -q '"event":"pkg installer opened"' "$runtime_root/helper-diagnostics.jsonl" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          grep -q '"event":"pkg manifest loaded"' "$runtime_root/helper-diagnostics.jsonl"
+          grep -q '"event":"pkg installer opened"' "$runtime_root/helper-diagnostics.jsonl"
+      - name: Clean native runtime macOS smoke roots
+        if: always() && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+        run: dart run tool/macos_production_smoke.dart cleanup
 
   linux:
     name: Linux
@@ -421,7 +801,7 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libcurl4-openssl-dev libgtk-3-dev libssl-dev ninja-build pkg-config xvfb
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev libgtk-3-dev libssl-dev ninja-build pkg-config xvfb zip
       - name: Configure standalone Linux native tests
         run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Linux native tests
@@ -477,6 +857,79 @@ jobs:
             echo "Linux installed consumer CTest registered zero tests"
             exit 1
           fi
+      - name: Linux native runtime ZIP smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S example/native/linux-cmake-runtime -B example/native/linux-cmake-runtime/build -DCMAKE_PREFIX_PATH="$PWD/linux/native/install"
+          cmake --build example/native/linux-cmake-runtime/build
+          set +e
+          compile_output="$(ctest --test-dir example/native/linux-cmake-runtime/build --output-on-failure 2>&1)"
+          compile_status=$?
+          set -e
+          printf '%s\n' "$compile_output"
+          if [ "$compile_status" -ne 0 ]; then exit "$compile_status"; fi
+          if [[ "$compile_output" == *"No tests were found"* ]]; then
+            echo "Linux runtime consumer CTest registered zero tests"
+            exit 1
+          fi
+          smoke_root="$RUNNER_TEMP/native-runtime-linux-zip"
+          ready_file="$smoke_root/ready.json"
+          rm -rf "$smoke_root"
+          mkdir -p "$smoke_root/install/bin" "$smoke_root/payload/bin"
+          consumer_bin="$PWD/example/native/linux-cmake-runtime/build/runtime_compile"
+          cp "$consumer_bin" "$smoke_root/install/bin/runtime_compile"
+          cp "$consumer_bin" "$smoke_root/payload/bin/runtime_compile"
+          chmod +x "$smoke_root/install/bin/runtime_compile" "$smoke_root/payload/bin/runtime_compile"
+          printf '2.7.0\n' > "$smoke_root/install/version.txt"
+          printf '2.7.1\n' > "$smoke_root/payload/version.txt"
+          (cd "$smoke_root/payload" && zip -qr "$smoke_root/update.zip" .)
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$smoke_root/update.zip" \
+            --artifact-kind zip \
+            --platform linux \
+            --package-id com.example.native-runtime-smoke \
+            --app-name NativeRuntimeSmoke \
+            --ready-file "$ready_file" \
+            --port 43892 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43892/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$smoke_root"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43892/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43892/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$smoke_root/install/bin/runtime_compile" \
+            --smoke \
+            --verify-protected-root \
+            --app-archive-url "$archive_url" \
+            --public-key-hex "$public_key" \
+            --package-id com.example.native-runtime-smoke \
+            --smoke-root "$smoke_root/runtime" \
+            --install-root "$smoke_root/install" \
+            --executable-relative-path bin/runtime_compile \
+            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl"
+          for attempt in $(seq 1 120); do
+            if [ "$(tr -d '\r\n' < "$smoke_root/install/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi
+            sleep 0.25
+          done
+          test "$(tr -d '\r\n' < "$smoke_root/install/version.txt")" = "2.7.1"
+          test ! -e "$smoke_root/runtime/staging"
+          grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"
+          grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl"
+          test -s "$smoke_root/runtime/runtime-diagnostics.log"
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop
       - name: Install dependencies

@@ -35,10 +35,12 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     src/runtime/artifact_stager_linux.cc
     src/runtime/runtime_configuration.cc
     src/runtime/sha256_openssl.cc
+    src/runtime/update_client_linux.cc
     src/runtime/update_transport_curl.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
     ${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
@@ -135,7 +137,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       test/runtime/contract_conformance_test.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/archive_fixture_tests.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/contract_fixture_tests.cc
-      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics_fixture_tests.cc)
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics_fixture_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core_fixture_tests.cc)
     target_compile_features(desktop_updater_runtime_contract_test
       PRIVATE cxx_std_14)
     target_include_directories(desktop_updater_runtime_contract_test PRIVATE

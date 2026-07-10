@@ -704,7 +704,7 @@ Task 6 candidate evidence on 2026-07-10:
 - Create: `tool/native_runtime_smoke_server.dart`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 
-- [ ] **Step 7.1: Build external sample apps**
+- [x] **Step 7.1: Build external sample apps**
 
 Each sample:
 
@@ -716,7 +716,7 @@ Each sample:
 - invokes the helper;
 - records diagnostics and final installed version.
 
-- [ ] **Step 7.2: Add safe smoke fixtures**
+- [x] **Step 7.2: Add safe smoke fixtures**
 
 Use disposable app bundles/directories under temporary roots. Linux smoke must
 also run a negative `/usr/bin`-style target case and prove no filesystem
@@ -743,19 +743,58 @@ macOS sample uses the repository-tag/local SwiftPM product. Windows sample
 uses the local NuGet package and bundled native DLL. Linux sample uses a CMake
 installed prefix.
 
-- [ ] **Step 7.5: Run smoke cleanup**
+- [x] **Step 7.5: Run smoke cleanup**
 
 Delete disposable staging, backups, mounted images, temporary package roots,
 test servers, and spawned helper processes. Do not touch system install roots
 or user browser profiles.
 
-- [ ] **Step 7.6: Commit runtime consumers**
+- [x] **Step 7.6: Commit runtime consumers**
 
 ```sh
 git add example/native tool/native_runtime_smoke_server.dart \
   .github/workflows/desktop-updater-ci.yml
 git commit -m "test: add native runtime update smokes"
 ```
+
+Task 7 candidate evidence on 2026-07-10:
+
+- the runtime smoke contract failed first because the stateful client
+  entrypoints, signed loopback server, installed NuGet boundary, target-host
+  lanes, protected-root check, and cleanup contract were absent;
+- Swift now exposes the complete asynchronous check, descriptor binding,
+  Ed25519 verification, support-policy status, download, integrity, staging,
+  and helper handoff flow; the SwiftPM suite passed 23 tests and the external
+  SwiftPM sample compiled from its configurable package path;
+- Windows now exposes the three stateful operations through the versioned C
+  ABI and .NET wrapper, packages both native DLLs, and preserves callback,
+  header-list, client-handle, result-string, and disposal ownership; both
+  `net8.0` and `netstandard2.0` builds passed and platform-independent .NET
+  client tests passed;
+- Linux now exposes a movable source-ABI `UpdateClient` backed by libcurl,
+  OpenSSL, the shared C++14 selection/trust core, safe ZIP staging, explicit
+  install-root validation, diagnostics, and helper handoff; the external
+  sample and shared fixture runner compiled with `-Wall -Wextra -Werror` and
+  passed locally;
+- the bounded Dart server signs descriptors with a deterministic smoke-only
+  Ed25519 key, binds only to `127.0.0.1`, supports resumable HTTP Range
+  responses, rejects oversized artifacts, exposes authenticated graceful
+  shutdown, and deletes its private serving root; health, range, shutdown, and
+  cleanup were verified locally;
+- the macOS ZIP sample completed a real disposable 2.7.0-to-2.7.1
+  whole-bundle replacement locally, including signed descriptor verification,
+  download, safe ZIP staging, explicit debug-only unsigned app trust opt-in,
+  helper move/cleanup events, final version evidence, and zero leftover smoke
+  roots or processes;
+- normal CI lanes now run packaged macOS ZIP, Windows ZIP, and Linux ZIP
+  replacement smokes, including zero-test detection and Linux `/usr/bin`
+  no-mutation evidence; signed/notarized DMG, PKG Installer.app, and signed
+  Inno lanes are explicit `workflow_dispatch` secret gates;
+- the focused Dart contracts passed 15 tests, the full Flutter suite passed
+  529 tests with 3 explicit opt-in E2E skips, formatting checked 208 files
+  with no changes, and analyze completed without errors;
+- Steps 7.3 and 7.4 remain unchecked until the final target-host CI pass and
+  credential-gated trust lanes provide literal evidence.
 
 ## Task 8: Preview Documentation And Publication Gate
 

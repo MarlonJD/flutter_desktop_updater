@@ -2,12 +2,14 @@
   <ItemGroup>
     <DesktopUpdaterNativeRuntime
       Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_native.dll" />
+    <DesktopUpdaterNativeRuntime
+      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_runtime.dll" />
   </ItemGroup>
 
   <Target Name="CopyDesktopUpdaterNativeRuntime" AfterTargets="Build">
     <Error
-      Condition="!Exists('@(DesktopUpdaterNativeRuntime)')"
-      Text="DesktopUpdater.Native package is missing its win-x64 native DLL." />
+      Condition="!Exists('%(DesktopUpdaterNativeRuntime.Identity)')"
+      Text="DesktopUpdater.Native package is missing %(DesktopUpdaterNativeRuntime.Identity)." />
     <Copy
       SourceFiles="@(DesktopUpdaterNativeRuntime)"
       DestinationFolder="$(OutDir)"

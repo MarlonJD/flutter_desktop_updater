@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,10 +64,41 @@ struct RuntimeConfigurationValidation {
 struct RuntimeResult {
   RuntimeOutcome outcome;
   std::string message;
+  std::string release_version;
+  std::string artifact_kind;
+  std::string staged_path;
+  std::string support_policy_status;
 };
 
 RuntimeConfigurationValidation ValidateRuntimeConfiguration(
     const RuntimeConfiguration& configuration);
+
+class UpdateClient {
+ public:
+  explicit UpdateClient(RuntimeConfiguration configuration);
+  ~UpdateClient();
+  UpdateClient(UpdateClient&&) noexcept;
+  UpdateClient& operator=(UpdateClient&&) noexcept;
+
+  UpdateClient(const UpdateClient&) = delete;
+  UpdateClient& operator=(const UpdateClient&) = delete;
+
+  RuntimeResult CheckForUpdate();
+  RuntimeResult DownloadVerifyAndStage(
+      const std::string& download_directory,
+      const std::string& staging_directory,
+      const std::string& executable_relative_path);
+  RuntimeResult InstallAndRelaunch(
+      const std::string& install_root,
+      const std::string& executable_relative_path,
+      const std::vector<std::string>& removed_files,
+      const std::string& diagnostics_log_path);
+  std::vector<std::string> RedactedDiagnostics() const;
+
+ private:
+  class Impl;
+  std::unique_ptr<Impl> impl_;
+};
 
 }  // namespace runtime
 }  // namespace desktop_updater

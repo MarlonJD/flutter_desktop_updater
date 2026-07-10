@@ -111,12 +111,48 @@ typedef struct desktop_updater_runtime_result_v1 {
   desktop_updater_runtime_outcome_v1 outcome;
   desktop_updater_runtime_client_v1* client;
   const char* message_utf8;
+  const char* release_version_utf8;
+  const char* artifact_kind_utf8;
+  const char* staged_path_utf8;
+  const char* support_policy_status_utf8;
 } desktop_updater_runtime_result_v1;
+
+typedef struct desktop_updater_runtime_stage_request_v1 {
+  uint32_t abi_version;
+  size_t struct_size;
+  const char* download_directory_utf8;
+  const char* staging_directory_utf8;
+} desktop_updater_runtime_stage_request_v1;
+
+typedef struct desktop_updater_runtime_install_request_v1 {
+  uint32_t abi_version;
+  size_t struct_size;
+  const char* diagnostics_log_path_utf8;
+  const char* const* removed_files_utf8;
+  size_t removed_file_count;
+} desktop_updater_runtime_install_request_v1;
 
 DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1
     DESKTOP_UPDATER_RUNTIME_CALL
     desktop_updater_runtime_client_create_v1(
         const desktop_updater_runtime_configuration_v1* configuration);
+
+DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1
+    DESKTOP_UPDATER_RUNTIME_CALL
+    desktop_updater_runtime_client_check_for_update_v1(
+        desktop_updater_runtime_client_v1* client);
+
+DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1
+    DESKTOP_UPDATER_RUNTIME_CALL
+    desktop_updater_runtime_client_download_verify_and_stage_v1(
+        desktop_updater_runtime_client_v1* client,
+        const desktop_updater_runtime_stage_request_v1* request);
+
+DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1
+    DESKTOP_UPDATER_RUNTIME_CALL
+    desktop_updater_runtime_client_install_and_relaunch_v1(
+        desktop_updater_runtime_client_v1* client,
+        const desktop_updater_runtime_install_request_v1* request);
 
 DESKTOP_UPDATER_RUNTIME_EXPORT void DESKTOP_UPDATER_RUNTIME_CALL
 desktop_updater_runtime_client_free_v1(

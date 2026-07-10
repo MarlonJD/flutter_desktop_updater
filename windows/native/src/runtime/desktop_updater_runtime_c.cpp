@@ -1,11 +1,21 @@
 #include "desktop_updater_runtime_c.h"
 
+#include <windows.h>
+
 #include <cstring>
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "artifact_stager_windows.h"
+#include "diagnostics.h"
+#include "sha256_bcrypt.h"
+#include "update_client_core.h"
+#include "update_transport_winhttp.h"
 
 struct desktop_updater_runtime_client_v1 {
   std::string app_archive_url;
@@ -27,6 +37,11 @@ struct desktop_updater_runtime_client_v1 {
   int64_t maximum_archive_entries;
   int64_t maximum_uncompressed_bytes;
   int64_t maximum_single_entry_bytes;
+  std::unique_ptr<desktop_updater::runtime::internal::WinHttpUpdateTransport>
+      transport;
+  desktop_updater::runtime::internal::ClientCheckResult check;
+  desktop_updater::runtime::internal::DiagnosticsRecorder diagnostics;
+  std::string staged_path;
 };
 
 namespace {
@@ -36,6 +51,20 @@ const char* CopyMessage(const std::string& message) {
   std::memcpy(bytes.get(), message.data(), message.size());
   bytes[message.size()] = '\0';
   return bytes.release();
+}
+
+std::wstring Utf8ToWide(const std::string& value) {
+  if (value.empty()) return std::wstring();
+  const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                       value.c_str(), -1, nullptr, 0);
+  if (size <= 0) throw std::invalid_argument("Invalid UTF-8 runtime path.");
+  std::wstring result(static_cast<std::size_t>(size), L'\0');
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.c_str(), -1,
+                          &result[0], size) <= 0) {
+    throw std::invalid_argument("Invalid UTF-8 runtime path.");
+  }
+  result.pop_back();
+  return result;
 }
 
 std::string RequiredString(const char* value, const char* name) {
@@ -53,9 +82,76 @@ desktop_updater_runtime_result_v1 EmptyResult() {
   return result;
 }
 
-desktop_updater_runtime_result_v1 Failure(const std::string& message) {
+desktop_updater_runtime_outcome_v1 Outcome(const std::string& value) {
+  if (value == "noUpdate") return DESKTOP_UPDATER_RUNTIME_NO_UPDATE;
+  if (value == "updateAvailable") {
+    return DESKTOP_UPDATER_RUNTIME_UPDATE_AVAILABLE;
+  }
+  if (value == "freshInstallRequired") {
+    return DESKTOP_UPDATER_RUNTIME_FRESH_INSTALL_REQUIRED;
+  }
+  if (value == "unsupportedMinimumUpdater") {
+    return DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_UPDATER;
+  }
+  if (value == "unsupportedMinimumOS") {
+    return DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_OS;
+  }
+  if (value == "rolloutIneligible") {
+    return DESKTOP_UPDATER_RUNTIME_ROLLOUT_INELIGIBLE;
+  }
+  if (value == "unsupportedArtifactKind") {
+    return DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_ARTIFACT_KIND;
+  }
+  if (value == "signatureFailure") {
+    return DESKTOP_UPDATER_RUNTIME_SIGNATURE_FAILURE;
+  }
+  if (value == "packageIdentityMismatch") {
+    return DESKTOP_UPDATER_RUNTIME_PACKAGE_IDENTITY_MISMATCH;
+  }
+  if (value == "downloadFailure") {
+    return DESKTOP_UPDATER_RUNTIME_DOWNLOAD_FAILURE;
+  }
+  if (value == "artifactIntegrityFailure") {
+    return DESKTOP_UPDATER_RUNTIME_ARTIFACT_INTEGRITY_FAILURE;
+  }
+  if (value == "unsafeArchive") return DESKTOP_UPDATER_RUNTIME_UNSAFE_ARCHIVE;
+  if (value == "stagingFailure") {
+    return DESKTOP_UPDATER_RUNTIME_STAGING_FAILURE;
+  }
+  if (value == "installHandoffFailure") {
+    return DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE;
+  }
+  return DESKTOP_UPDATER_RUNTIME_INVALID_DESCRIPTOR;
+}
+
+desktop_updater_runtime_result_v1 Failure(
+    const std::string& message,
+    desktop_updater_runtime_outcome_v1 outcome =
+        DESKTOP_UPDATER_RUNTIME_INVALID_DESCRIPTOR) {
   desktop_updater_runtime_result_v1 result = EmptyResult();
+  result.outcome = outcome;
   result.message_utf8 = CopyMessage(message);
+  return result;
+}
+
+desktop_updater_runtime_result_v1 ClientResult(
+    const desktop_updater_runtime_client_v1& client,
+    const std::string& outcome,
+    const std::string& message) {
+  desktop_updater_runtime_result_v1 result = EmptyResult();
+  result.ok = 1;
+  result.outcome = Outcome(outcome);
+  result.message_utf8 = CopyMessage(message);
+  if (client.check.has_descriptor) {
+    result.release_version_utf8 = CopyMessage(client.check.descriptor.version);
+    result.artifact_kind_utf8 =
+        CopyMessage(client.check.descriptor.artifact.kind);
+  }
+  if (!client.staged_path.empty()) {
+    result.staged_path_utf8 = CopyMessage(client.staged_path);
+  }
+  result.support_policy_status_utf8 =
+      CopyMessage(client.check.support_policy_status);
   return result;
 }
 
@@ -68,6 +164,84 @@ void ValidateLimits(
       configuration.maximum_single_entry_bytes <= 0) {
     throw std::invalid_argument(
         "Runtime timeouts and safety limits must be greater than zero.");
+  }
+}
+
+std::map<std::string, std::string> RequestHeaders(
+    desktop_updater_runtime_client_v1* client,
+    const std::string& url) {
+  desktop_updater_runtime_header_list_v1 list =
+      client->request_headers_provider(client->application_context,
+                                       url.c_str());
+  struct ReleaseHeaders {
+    desktop_updater_runtime_header_list_v1* list;
+    ~ReleaseHeaders() {
+      if (list->release != nullptr) {
+        list->release(list->release_context, list->entries,
+                      list->entry_count);
+      }
+    }
+  } release{&list};
+  if (list.abi_version != DESKTOP_UPDATER_RUNTIME_ABI_VERSION ||
+      list.struct_size < sizeof(list) ||
+      (list.entry_count > 0 && list.entries == nullptr)) {
+    throw std::invalid_argument("Runtime header callback returned invalid data.");
+  }
+  std::map<std::string, std::string> result;
+  for (std::size_t index = 0; index < list.entry_count; ++index) {
+    result.emplace(RequiredString(list.entries[index].name_utf8, "header name"),
+                   RequiredString(list.entries[index].value_utf8,
+                                  "header value"));
+  }
+  return result;
+}
+
+desktop_updater::runtime::internal::ClientConfiguration CoreConfiguration(
+    desktop_updater_runtime_client_v1* client) {
+  desktop_updater::runtime::internal::ClientConfiguration result;
+  result.app_archive_url = client->app_archive_url;
+  result.expected_package_id = client->expected_package_id;
+  result.current_version = client->current_version;
+  result.has_current_build_number = client->has_current_build_number;
+  result.current_build_number = client->current_build_number;
+  result.current_updater_version = client->current_updater_version;
+  result.platform = client->platform;
+  result.channel = client->channel;
+  result.installation_identity = client->installation_identity;
+  result.require_descriptor_signature = client->require_descriptor_signature;
+  result.pinned_public_keys_by_id = std::map<std::string,
+      std::vector<std::uint8_t>>(client->pinned_public_keys.begin(),
+                                client->pinned_public_keys.end());
+  result.minimum_os_resolver = [client](const std::string& platform,
+                                        const std::string& minimum_os) {
+    return client->minimum_os_resolver(client->application_context,
+                                       platform.c_str(),
+                                       minimum_os.c_str()) != 0;
+  };
+  return result;
+}
+
+std::string ArtifactFileName(const std::string& url) {
+  const std::size_t query = url.find_first_of("?#");
+  const std::string path = url.substr(0, query);
+  const std::size_t slash = path.find_last_of('/');
+  const std::string name = path.substr(slash == std::string::npos ? 0
+                                                                 : slash + 1);
+  if (name.empty() || name == "." || name == ".." ||
+      name.find('\\') != std::string::npos) {
+    throw std::invalid_argument("Artifact URL has no safe file name.");
+  }
+  return name;
+}
+
+template <typename Request>
+void ValidateRequest(const Request* request, const char* name) {
+  if (request == nullptr) {
+    throw std::invalid_argument(std::string(name) + " is required.");
+  }
+  if (request->abi_version != DESKTOP_UPDATER_RUNTIME_ABI_VERSION ||
+      request->struct_size < sizeof(*request)) {
+    throw std::invalid_argument(std::string(name) + " has an invalid ABI.");
   }
 }
 
@@ -151,6 +325,17 @@ desktop_updater_runtime_client_create_v1(
         configuration->maximum_uncompressed_bytes;
     client->maximum_single_entry_bytes =
         configuration->maximum_single_entry_bytes;
+    desktop_updater::runtime::internal::TransportOptions transport_options;
+    transport_options.timeout_milliseconds = static_cast<std::int64_t>(
+        client->download_timeout_milliseconds);
+    transport_options.maximum_metadata_bytes = client->maximum_metadata_bytes;
+    transport_options.request_headers_provider =
+        [raw_client = client.get()](const std::string& url) {
+          return RequestHeaders(raw_client, url);
+        };
+    client->transport.reset(
+        new desktop_updater::runtime::internal::WinHttpUpdateTransport(
+            std::move(transport_options)));
 
     desktop_updater_runtime_result_v1 result = EmptyResult();
     result.ok = 1;
@@ -172,6 +357,163 @@ desktop_updater_runtime_client_create_v1(
   }
 }
 
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_check_for_update_v1(
+    desktop_updater_runtime_client_v1* client) {
+  try {
+    if (client == nullptr || client->transport == nullptr) {
+      return Failure("Runtime client is required.");
+    }
+    client->diagnostics.Record(
+        {"", "check", "info", "Checking for a native update.", ""});
+    client->check = desktop_updater::runtime::internal::CheckForUpdateCore(
+        CoreConfiguration(client), client->transport.get(),
+        desktop_updater::runtime::internal::BCryptSha256);
+    client->diagnostics.Record(
+        {"", client->check.outcome == "updateAvailable" ? "descriptor"
+                                                         : "check",
+         client->check.outcome == "updateAvailable" ? "info" : "warning",
+         client->check.message, ""});
+    return ClientResult(*client, client->check.outcome,
+                        client->check.message);
+  } catch (const std::exception& error) {
+    return Failure(error.what());
+  } catch (...) {
+    return Failure("Unknown native runtime check failure.");
+  }
+}
+
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_download_verify_and_stage_v1(
+    desktop_updater_runtime_client_v1* client,
+    const desktop_updater_runtime_stage_request_v1* request) {
+  bool transport_active = false;
+  try {
+    if (client == nullptr || client->transport == nullptr) {
+      return Failure("Runtime client is required.");
+    }
+    ValidateRequest(request, "Runtime stage request");
+    if (client->check.outcome != "updateAvailable" ||
+        !client->check.has_descriptor) {
+      return ClientResult(*client, client->check.outcome,
+                          "No verified update is ready to download.");
+    }
+    const std::string download_directory = RequiredString(
+        request->download_directory_utf8, "download_directory");
+    const std::string staging_directory = RequiredString(
+        request->staging_directory_utf8, "staging_directory");
+    std::filesystem::create_directories(
+        std::filesystem::u8path(download_directory));
+    const std::string artifact_path =
+        download_directory + "/" +
+        ArtifactFileName(client->check.descriptor.artifact.url);
+    desktop_updater::runtime::internal::ArtifactDownloadRequest download;
+    download.url = client->check.descriptor.artifact.url;
+    download.destination_path = artifact_path;
+    download.expected_length = client->check.descriptor.artifact.length;
+    download.expected_sha256 = client->check.descriptor.artifact.sha256;
+    client->diagnostics.Record(
+        {"", "download", "info", "Downloading verified native artifact.",
+         ""});
+    transport_active = true;
+    client->transport->DownloadArtifact(download);
+    transport_active = false;
+    client->diagnostics.Record(
+        {"", "verify", "info",
+         "Artifact length and SHA-256 are verified.", ""});
+    desktop_updater::runtime::internal::ArchiveLimits limits;
+    limits.maximum_archive_entries = client->maximum_archive_entries;
+    limits.maximum_uncompressed_bytes = client->maximum_uncompressed_bytes;
+    limits.maximum_single_entry_bytes = client->maximum_single_entry_bytes;
+    if (client->check.descriptor.artifact.kind == "zip") {
+      desktop_updater::runtime::internal::StageWindowsZip(
+          artifact_path, staging_directory, client->check.descriptor,
+          client->expected_package_id, limits);
+    } else if (client->check.descriptor.artifact.kind == "innoInstaller") {
+      desktop_updater::runtime::internal::StageWindowsInnoInstaller(
+          Utf8ToWide(artifact_path), staging_directory,
+          client->check.descriptor, client->expected_package_id);
+    } else {
+      return ClientResult(*client, "unsupportedArtifactKind",
+                          "Artifact kind is not supported on Windows.");
+    }
+    client->staged_path = staging_directory;
+    client->diagnostics.Record(
+        {"", "stage", "info", "Verified native artifact is staged.", ""});
+    return ClientResult(*client, "updateAvailable",
+                        "Verified native artifact is staged.");
+  } catch (const std::exception& error) {
+    const std::string message = error.what();
+    const bool integrity = message.find("length") != std::string::npos ||
+                           message.find("SHA-256") != std::string::npos;
+    const bool unsafe = message.find("ZIP") != std::string::npos ||
+                        message.find("Archive") != std::string::npos ||
+                        message.find("archive") != std::string::npos ||
+                        message.find("path") != std::string::npos ||
+                        message.find("traversal") != std::string::npos;
+    if (transport_active) {
+      return ClientResult(
+          *client,
+          integrity ? "artifactIntegrityFailure" : "downloadFailure",
+          message);
+    }
+    return ClientResult(*client, unsafe ? "unsafeArchive" : "stagingFailure",
+                        message);
+  } catch (...) {
+    return Failure("Unknown native runtime staging failure.",
+                   DESKTOP_UPDATER_RUNTIME_STAGING_FAILURE);
+  }
+}
+
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_install_and_relaunch_v1(
+    desktop_updater_runtime_client_v1* client,
+    const desktop_updater_runtime_install_request_v1* request) {
+  try {
+    if (client == nullptr) return Failure("Runtime client is required.");
+    ValidateRequest(request, "Runtime install request");
+    if (client->staged_path.empty()) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "No staged update is ready for helper handoff.");
+    }
+    if (request->removed_file_count > 0 &&
+        request->removed_files_utf8 == nullptr) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "Removed file entries are required.");
+    }
+    std::vector<std::wstring> removed_files;
+    removed_files.reserve(request->removed_file_count);
+    for (std::size_t index = 0; index < request->removed_file_count; ++index) {
+      removed_files.push_back(Utf8ToWide(RequiredString(
+          request->removed_files_utf8[index], "removed file")));
+    }
+    const std::wstring diagnostics =
+        request->diagnostics_log_path_utf8 == nullptr
+            ? std::wstring()
+            : Utf8ToWide(request->diagnostics_log_path_utf8);
+    client->diagnostics.Record(
+        {"", "install", "info",
+         "Handing staged update to the Windows helper.", ""});
+    const auto handoff =
+        desktop_updater::runtime::internal::HandoffWindowsInstall(
+            Utf8ToWide(client->staged_path), diagnostics, removed_files);
+    if (!handoff.ok) {
+      return ClientResult(*client, "installHandoffFailure",
+                          handoff.error_message);
+    }
+    return ClientResult(*client, "updateAvailable",
+                        "Windows helper handoff scheduled.");
+  } catch (const std::exception& error) {
+    return client == nullptr
+               ? Failure(error.what(),
+                         DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE)
+               : ClientResult(*client, "installHandoffFailure", error.what());
+  } catch (...) {
+    return Failure("Unknown native runtime helper handoff failure.",
+                   DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE);
+  }
+}
+
 extern "C" void DESKTOP_UPDATER_RUNTIME_CALL
 desktop_updater_runtime_client_free_v1(
     desktop_updater_runtime_client_v1* client) {
@@ -185,7 +527,15 @@ desktop_updater_runtime_result_free_v1(
     return;
   }
   delete[] result->message_utf8;
+  delete[] result->release_version_utf8;
+  delete[] result->artifact_kind_utf8;
+  delete[] result->staged_path_utf8;
+  delete[] result->support_policy_status_utf8;
   result->message_utf8 = nullptr;
+  result->release_version_utf8 = nullptr;
+  result->artifact_kind_utf8 = nullptr;
+  result->staged_path_utf8 = nullptr;
+  result->support_policy_status_utf8 = nullptr;
   result->client = nullptr;
   result->ok = 0;
 }

@@ -82,12 +82,14 @@ void main() {
       contains("<TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>"),
     );
     expect(project, contains(r'Include="$(NativeDllPath)"'));
+    expect(project, contains(r'Include="$(RuntimeDllPath)"'));
     expect(project, contains('PackagePath="runtimes/win-x64/native"'));
     expect(
       project,
       contains("buildTransitive/DesktopUpdater.Native.targets"),
     );
     expect(targets, contains("CopyDesktopUpdaterNativeRuntime"));
+    expect(targets, contains("desktop_updater_runtime.dll"));
     expect(
       consumerProject,
       contains('PackageReference Include="DesktopUpdater.Native"'),
@@ -121,7 +123,7 @@ void main() {
     expect(
       workflow,
       contains(
-        r'$packageSource = (Resolve-Path windows/native/artifacts).Path',
+        r"$packageSource = (Resolve-Path windows/native/artifacts).Path",
       ),
     );
     expect(

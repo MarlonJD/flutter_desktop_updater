@@ -23,6 +23,18 @@ public sealed class DesktopUpdaterClientTests
             CreateConfiguration(maximumMetadataBytes: 0));
     }
 
+    [Fact]
+    public void RuntimeClientExposesTypedThreeStageFlow()
+    {
+        Assert.NotNull(typeof(DesktopUpdaterClient).GetMethod("CheckForUpdate"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterClient).GetMethod("DownloadVerifyAndStage"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterClient).GetMethod("InstallAndRelaunch"));
+        Assert.NotNull(
+            typeof(DesktopUpdaterRuntimeResult).GetProperty("SupportPolicyStatus"));
+    }
+
     private static DesktopUpdaterConfiguration CreateConfiguration(
         long maximumMetadataBytes =
             DesktopUpdaterConfiguration.DefaultMaximumMetadataBytes)

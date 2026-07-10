@@ -57,6 +57,8 @@ Future<void> main(List<String> args) async {
         await smoke.pkgInstallVerify();
       case "all":
         await smoke.all();
+      case "cleanup":
+        await smoke.cleanupSmokeOwnedArtifacts();
       default:
         stderr.writeln("Unknown macOS production smoke command: $command");
         _usage();
@@ -79,6 +81,7 @@ Usage:
   dart run tool/macos_production_smoke.dart pkg-installer
   dart run tool/macos_production_smoke.dart pkg-install-verify
   dart run tool/macos_production_smoke.dart all --cleanup
+  dart run tool/macos_production_smoke.dart cleanup
 
 Required environment:
   DESKTOP_UPDATER_DEV_ID_APP

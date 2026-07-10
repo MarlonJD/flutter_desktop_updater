@@ -31,6 +31,7 @@ public struct MacArtifactStager {
         descriptor: ReleaseDescriptor,
         expectedPackageId: String,
         expectedTeamIdentifier: String,
+        allowUnsignedUpdates: Bool = false,
         limits: RuntimeArchiveLimits = RuntimeArchiveLimits()
     ) throws -> URL {
         try validateDescriptorIdentity(
@@ -52,7 +53,8 @@ public struct MacArtifactStager {
             try validateApp(
                 app,
                 expectedPackageId: expectedPackageId,
-                expectedTeamIdentifier: expectedTeamIdentifier
+                expectedTeamIdentifier: expectedTeamIdentifier,
+                allowUnsignedUpdates: allowUnsignedUpdates
             )
             try writeManifest(descriptor, to: stagingRoot)
             return app
@@ -67,7 +69,8 @@ public struct MacArtifactStager {
         stagingRoot: URL,
         descriptor: ReleaseDescriptor,
         expectedPackageId: String,
-        expectedTeamIdentifier: String
+        expectedTeamIdentifier: String,
+        allowUnsignedUpdates: Bool = false
     ) throws -> URL {
         try validateDescriptorIdentity(
             descriptor,
@@ -75,7 +78,9 @@ public struct MacArtifactStager {
             artifactKind: "dmg"
         )
         let metadata = try dictionary(descriptor.install.rawJSON["macosDmg"])
-        if (metadata["verifyPrimarySignature"] as? Bool) != false {
+        if (metadata["verifyPrimarySignature"] as? Bool) != false,
+           !allowUnsignedUpdates
+        {
             try run("/usr/bin/codesign", ["--verify", "--verbose=4", dmg.path])
         }
         let plist = try run(
@@ -93,7 +98,8 @@ public struct MacArtifactStager {
             try validateApp(
                 destination,
                 expectedPackageId: expectedPackageId,
-                expectedTeamIdentifier: expectedTeamIdentifier
+                expectedTeamIdentifier: expectedTeamIdentifier,
+                allowUnsignedUpdates: allowUnsignedUpdates
             )
             try writeManifest(descriptor, to: stagingRoot)
             try run("/usr/bin/hdiutil", ["detach", mount.path])
@@ -170,7 +176,8 @@ public struct MacArtifactStager {
     private func validateApp(
         _ app: URL,
         expectedPackageId: String,
-        expectedTeamIdentifier: String
+        expectedTeamIdentifier: String,
+        allowUnsignedUpdates: Bool
     ) throws {
         let values = try app.resourceValues(
             forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
@@ -182,6 +189,9 @@ public struct MacArtifactStager {
                 .packageIdentityMismatch,
                 message: "Staged app bundle identity is invalid."
             )
+        }
+        if allowUnsignedUpdates {
+            return
         }
         try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
         try run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path])
