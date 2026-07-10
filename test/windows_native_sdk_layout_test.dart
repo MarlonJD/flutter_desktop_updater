@@ -126,6 +126,7 @@ void main() {
     final workflow = File(
       ".github/workflows/desktop-updater-ci.yml",
     ).readAsStringSync();
+    final exampleCmake = readRequiredFile("example/windows/CMakeLists.txt");
 
     expect(
       workflow,
@@ -141,6 +142,7 @@ void main() {
       ),
     );
     expect(workflow, contains("No tests were found"));
+    expect(exampleCmake, contains("enable_testing()"));
     expect(
       workflow,
       contains(

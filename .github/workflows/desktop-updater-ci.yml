@@ -310,6 +310,15 @@ jobs:
       - name: Install example dependencies
         working-directory: example
         run: flutter pub get
+      - name: Configure ad hoc CI signing
+        working-directory: example
+        run: |
+          sed -i '' \
+            -e 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "-";/g' \
+            -e 's/"CODE_SIGN_IDENTITY\[sdk=macosx\*\]" = "Apple Development";/"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";/g' \
+            -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+            -e '/DEVELOPMENT_TEAM = /d' \
+            macos/Runner.xcodeproj/project.pbxproj
       - name: Build macOS example
         working-directory: example
         run: flutter build macos --debug

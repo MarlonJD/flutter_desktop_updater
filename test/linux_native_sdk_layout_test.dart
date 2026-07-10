@@ -96,6 +96,7 @@ void main() {
     final workflow = File(
       ".github/workflows/desktop-updater-ci.yml",
     ).readAsStringSync();
+    final exampleCmake = readRequiredFile("example/linux/CMakeLists.txt");
 
     expect(
       workflow,
@@ -111,6 +112,7 @@ void main() {
       ),
     );
     expect(workflow, contains("Linux native CTest registered zero tests"));
+    expect(exampleCmake, contains("enable_testing()"));
     expect(workflow, isNot(contains("desktop_updater_native.so")));
   });
 }
