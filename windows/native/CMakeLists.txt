@@ -63,6 +63,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     src/runtime/desktop_updater_runtime_c.cpp
     src/runtime/sha256_bcrypt.cpp
     src/runtime/update_transport_winhttp.cpp
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
@@ -184,7 +185,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     add_executable(desktop_updater_runtime_contract_test
       test/runtime/contract_conformance_test.cpp
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/archive_fixture_tests.cc
-      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/contract_fixture_tests.cc)
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/contract_fixture_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics_fixture_tests.cc)
     target_compile_features(desktop_updater_runtime_contract_test
       PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_contract_test PRIVATE

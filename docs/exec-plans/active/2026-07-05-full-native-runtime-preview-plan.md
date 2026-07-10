@@ -645,33 +645,54 @@ Task 5 candidate evidence on 2026-07-10:
 - Create: native diagnostics/recovery implementations
 - Test: shared redaction, helper-event, cleanup, and rollback fixtures
 
-- [ ] **Step 6.1: Read shared diagnostics fixtures**
+- [x] **Step 6.1: Read shared diagnostics fixtures**
 
 Swift and C++ tests consume the same redaction cases and helper event list as
 Dart.
 
-- [ ] **Step 6.2: Bound reports and clean sensitive data**
+- [x] **Step 6.2: Bound reports and clean sensitive data**
 
 Match current size/count bounds. Remove authorization headers, tokens,
 passwords, signatures, query secrets, and private key material.
 
-- [ ] **Step 6.3: Preserve helper recovery events**
+- [x] **Step 6.3: Preserve helper recovery events**
 
 Verify backup, move/install, rollback, cleanup, and relaunch events in success
 and failure paths.
 
-- [ ] **Step 6.4: Keep lifecycle ownership explicit**
+- [x] **Step 6.4: Keep lifecycle ownership explicit**
 
 Native runtime diagnostics describe native checks/download/staging/helper
 handoff. Flutter lifecycle diagnostics remain Dart-owned and are not copied
 into native helper packages.
 
-- [ ] **Step 6.5: Commit diagnostics parity**
+- [x] **Step 6.5: Commit diagnostics parity**
 
 ```sh
 git add macos/desktop_updater windows/native linux/native
 git commit -m "feat: align native runtime diagnostics"
 ```
+
+Task 6 candidate evidence on 2026-07-10:
+
+- the diagnostics contract test failed first because native redaction,
+  retention bounds, fixture consumers, and recovery summaries were absent;
+- Swift and shared C++ now reproduce every Dart-generated diagnostic log line
+  byte-for-byte, retain only the newest 80 entries, count omissions, and redact
+  authorization, token, password, signature, credential, public/private key,
+  and secret assignments while preserving safe values;
+- both runtimes consume the canonical helper event list and distinguish
+  successful move/cleanup/relaunch from move failure plus successful or failed
+  rollback without emitting Dart-owned Flutter lifecycle diagnostics;
+- each macOS, Windows, and Linux helper source contains every canonical helper
+  event; Linux target tests now inspect actual success and rollback JSONL event
+  sequences, with target-host execution deferred to the final CI pass;
+- the SwiftPM suite passed 21 tests; the portable C++14 fixture runner compiled
+  with `-Wall -Wextra -Werror` and passed; the focused Dart diagnostics and
+  compatibility suite passed 13 tests;
+- the full Flutter suite passed, `flutter analyze --no-fatal-infos` completed
+  without errors, formatting checked 206 files with no changes, and the
+  external macOS SwiftPM runtime sample compiled and ran successfully.
 
 ## Task 7: External Runtime Consumers And End-To-End Smoke
 

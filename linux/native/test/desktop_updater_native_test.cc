@@ -149,6 +149,8 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   WriteFile(staging_root / "new.txt", "new data");
   WriteFile(outside, "outside data");
   InstallRequest request = RequestFor(install_root, staging_root);
+  const fs::path diagnostics = temporary.path() / "failure.jsonl";
+  request.diagnostics_log_path = diagnostics.string();
   std::string script;
   const auto build = internal::BuildInstallScriptForTesting(
       request, executable.string(), 2147483647, &script);
@@ -164,6 +166,44 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   EXPECT_TRUE(fs::exists(install_root / "old.txt"));
   EXPECT_FALSE(fs::exists(install_root / "new.txt"));
   EXPECT_EQ(ReadFile(outside), "outside data");
+  const std::string events = ReadFile(diagnostics);
+  EXPECT_NE(events.find("\"event\":\"backup success\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"move success\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"rollback start\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"rollback success\""), std::string::npos);
+}
+
+TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
+  TemporaryDirectory temporary;
+  const fs::path install_root = temporary.path() / "app";
+  const fs::path staging_root = temporary.path() / "staging";
+  const fs::path executable = install_root / "bin/example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(staging_root / "bin/example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  const fs::path diagnostics = temporary.path() / "success.jsonl";
+  request.diagnostics_log_path = diagnostics.string();
+  std::string script;
+  const auto build = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+  ASSERT_TRUE(build.ok) << build.error;
+  const fs::path script_path = temporary.path() / "success.sh";
+  WriteFile(script_path, script, 0755);
+
+  ASSERT_EQ(setenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH", "1", 1), 0);
+  const int exit_code =
+      std::system(("/bin/bash " + script_path.string()).c_str());
+  ASSERT_EQ(unsetenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"), 0);
+
+  EXPECT_EQ(exit_code, 0);
+  EXPECT_EQ(ReadFile(executable), "new");
+  EXPECT_FALSE(fs::exists(staging_root));
+  const std::string events = ReadFile(diagnostics);
+  EXPECT_NE(events.find("\"event\":\"backup success\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"move success\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"cleanup start\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"cleanup success\""), std::string::npos);
+  EXPECT_EQ(events.find("\"event\":\"rollback start\""), std::string::npos);
 }
 
 TEST(LinuxNativeInstall, StagingCleanupCannotDeleteInstallRoot) {
