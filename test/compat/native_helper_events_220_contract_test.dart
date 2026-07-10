@@ -19,7 +19,7 @@ void main() {
       File(
         "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
       ),
-      File("windows/desktop_updater_plugin.cpp"),
+      File("windows/native/src/desktop_updater_native.cpp"),
       File("linux/desktop_updater_plugin.cc"),
     ].map((file) => file.readAsStringSync()).join("\n");
 

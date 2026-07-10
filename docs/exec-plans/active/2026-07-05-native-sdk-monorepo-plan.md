@@ -850,13 +850,17 @@ convention. Every entrypoint catches C++ exceptions and returns an owned error
 through `desktop_updater_result_free_v1`. The free function clears the pointer
 and status fields so calling it again on the same result object is safe.
 
-- [ ] **Step 4.1: Write ABI layout and failure tests**
+- [x] **Step 4.1: Write ABI layout and failure tests**
 
 Test null requests, wrong ABI versions, undersized structs, invalid UTF-16,
 non-empty removed-file arrays, thrown internal exceptions, and repeated
 freeing rules.
 
-- [ ] **Step 4.2: Build static and shared targets from common objects**
+RED verified locally on 2026-07-10: five focused Windows native SDK layout,
+ABI, adapter, .NET, and CI tests failed because the standalone package and
+consumers did not exist.
+
+- [x] **Step 4.2: Build static and shared targets from common objects**
 
 `windows/native/CMakeLists.txt` must define:
 
@@ -871,7 +875,7 @@ add_library(desktop_updater::native ALIAS desktop_updater_native)
 
 Define `DESKTOP_UPDATER_NATIVE_BUILDING_DLL` only for the shared target.
 
-- [ ] **Step 4.3: Link Flutter through the correct directory**
+- [x] **Step 4.3: Link Flutter through the correct directory**
 
 Modify `windows/CMakeLists.txt`:
 
@@ -883,14 +887,14 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native_static)
 Do not use the nonexistent `native/desktop_updater` path. Keep
 `DesktopUpdaterPluginCApi` and the existing Flutter plugin DLL name.
 
-- [ ] **Step 4.4: Extract helper behavior**
+- [x] **Step 4.4: Extract helper behavior**
 
 Move only Flutter-free helper logic. Preserve UAC, protected-root detection,
 writeability checks, PowerShell encoding, Authenticode/Inno handling, backup,
 rollback, cleanup, relaunch, and stable JSONL events. MethodChannel parsing
 stays in the Flutter adapter.
 
-- [ ] **Step 4.5: Add complete .NET marshalling**
+- [x] **Step 4.5: Add complete .NET marshalling**
 
 The public .NET method accepts:
 
@@ -914,13 +918,13 @@ allocation in `finally`, and declare P/Invoke with:
 
 Do not ship a wrapper that always sends `removed_file_count == 0`.
 
-- [ ] **Step 4.6: Add native DLL integration tests**
+- [x] **Step 4.6: Add native DLL integration tests**
 
 The .NET test output must receive the actual DLL. At least one test calls the
 C ABI with an invalid request and verifies the native error. Merely
 constructing `DesktopUpdaterException` is not sufficient.
 
-- [ ] **Step 4.7: Make native tests explicit and offline-safe for Flutter**
+- [x] **Step 4.7: Make native tests explicit and offline-safe for Flutter**
 
 Use:
 
@@ -957,7 +961,22 @@ flutter test integration_test -d windows
 
 After CTest, assert its output does not contain `No tests were found`.
 
-- [ ] **Step 4.9: Commit Windows extraction**
+Candidate-only evidence on 2026-07-10:
+
+- focused Windows SDK, helper, compatibility, and CI contract suite: PASS,
+  27 tests;
+- portable C ABI translation unit: compiled with local clang, with unmangled
+  `desktop_updater_schedule_install_and_relaunch_v1` and
+  `desktop_updater_result_free_v1` symbols;
+- .NET wrapper and test projects: build PASS with 0 warnings and 0 errors;
+- `dart format --set-exit-if-changed .`: PASS, 187 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
+- `flutter test --no-pub`: PASS, 476 tests with 3 external E2E skips;
+- Windows CMake, DLL, CTest, real P/Invoke, Flutter build, and integration:
+  `not run locally` on the macOS host; CI commands are present and evidence is
+  pending the final verification pass, so Step 4.8 remains unchecked.
+
+- [x] **Step 4.9: Commit Windows extraction**
 
 ```sh
 git add windows test/native_helper_script_test.dart

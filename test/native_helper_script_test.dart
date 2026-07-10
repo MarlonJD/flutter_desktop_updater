@@ -81,8 +81,8 @@ void main() {
     ).readAsStringSync();
     final linuxSource =
         File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    final windowsSource =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     expect(macosSource, contains("diagnosticsLogPath"));
     expect(macosSource, contains("DIAGNOSTICS_LOG="));
@@ -94,7 +94,7 @@ void main() {
     expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
     expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
 
-    expect(windowsSource, contains("diagnosticsLogPath"));
+    expect(windowsSource, contains("diagnostics_log_path"));
     expect(windowsSource, contains(r"$diagnosticsLog = "));
     expect(
       windowsSource,
@@ -114,8 +114,8 @@ void main() {
     ).readAsStringSync();
     final linuxSource =
         File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    final windowsSource =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     for (final source in <String>[macosSource, linuxSource, windowsSource]) {
       expect(source, contains("backup failure"));
@@ -183,8 +183,8 @@ void main() {
   });
 
   test("Windows helper prunes target before whole directory overlay", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
     const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
     const copySnippet =
         r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
@@ -205,8 +205,8 @@ void main() {
   });
 
   test("Windows helper preserves Inno uninstall artifacts during prune", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
     const predicateSnippet = "function Test-InstallerOwnedWindowsFile";
     const preserveCondition =
         r"$_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)";
@@ -232,8 +232,8 @@ void main() {
   });
 
   test("Windows helper retries staging cleanup after successful copy", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
     const cleanupFunction = "function Remove-StagingDirectoryWithRetry";
     const retryEvent = "Write-DiagnosticsEvent 'cleanup retry'";
     const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $staging";
@@ -257,8 +257,8 @@ void main() {
   });
 
   test("Windows helper updates uninstall DisplayVersion after overlay", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
     const copySnippet =
         r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
     const registrySnippet = r"Update-UninstallDisplayVersion -Version";
@@ -277,8 +277,8 @@ void main() {
   });
 
   test("Windows helper executes staged Inno installer from manifest", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     const manifestSnippet =
         r"$manifest = Join-Path $staging '.desktop_updater_release_manifest.json'";
@@ -346,8 +346,8 @@ void main() {
 
   test("Windows helper verifies Authenticode thumbprints for Inno installers",
       () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     expect(source, contains("function Test-AuthenticodePolicy"));
     expect(source, contains(r"Get-AuthenticodeSignature -FilePath $installer"));
@@ -359,8 +359,8 @@ void main() {
 
   test("Windows helper requests UAC with verified script for protected targets",
       () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     expect(source, contains("#include <shellapi.h>"));
     expect(source, contains("IsProcessElevated"));
@@ -387,15 +387,16 @@ void main() {
   });
 
   test("Windows helper treats Program Files roots as protected installs", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
 
     expect(source, contains("IsKnownProtectedInstallDirectory"));
     expect(source, contains("ProtectedInstallRootPaths"));
     expect(
       source,
-      contains("IsKnownProtectedInstallDirectory(target_directory"),
+      contains("IsKnownProtectedInstallDirectory("),
     );
+    expect(source, contains("target_directory.wstring()"));
     expect(source, contains("const bool target_is_protected"));
     expect(
       source,

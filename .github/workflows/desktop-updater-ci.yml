@@ -42,6 +42,22 @@ jobs:
         run: flutter config --enable-windows-desktop
       - name: Install dependencies
         run: flutter pub get
+      - name: Configure standalone Windows native SDK tests
+        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+      - name: Build standalone Windows native SDK tests
+        run: cmake --build windows/native/build --config Debug
+      - name: Run standalone Windows native SDK tests
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir windows/native/build -C Debug --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Standalone Windows native CTest registered zero tests."
+          }
+      - name: Run .NET native DLL consumer tests
+        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
       - name: Build example
         working-directory: example
         run: flutter build windows --debug
@@ -50,7 +66,15 @@ jobs:
         run: cmake --build build/windows/x64 --config Debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Debug --output-on-failure
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir build/windows/x64 -C Debug --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Flutter Windows Debug CTest registered zero tests."
+          }
       - name: Run integration tests
         working-directory: example
         run: flutter test integration_test -d windows
@@ -86,7 +110,15 @@ jobs:
         run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Release --output-on-failure
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir build/windows/x64 -C Release --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Flutter Windows Release CTest registered zero tests."
+          }
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
