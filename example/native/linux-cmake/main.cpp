@@ -1,6 +1,10 @@
 #include "desktop_updater_native.h"
+#include "desktop_updater_version.h"
 
 int main() {
+  if (DESKTOP_UPDATER_NATIVE_VERSION_STRING[0] == '\0') {
+    return 1;
+  }
   const desktop_updater::native::InstallRequest request = {
       desktop_updater::native::LinuxInstallOperation::kInstall,
       "/tmp/desktop_updater_consumer_staging",

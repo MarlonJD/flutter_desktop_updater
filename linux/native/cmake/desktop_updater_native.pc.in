@@ -4,6 +4,6 @@ includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
 Name: desktop_updater_native
 Description: Flutter-free Linux desktop updater install helper
-Version: 1
+Version: 2.7.0
 Libs: -L${libdir} -ldesktop_updater_native
 Cflags: -I${includedir}

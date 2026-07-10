@@ -24,6 +24,76 @@ dart run desktop_updater:release publish --platform windows \
 Those values are passed to `flutter build` so the app can read them through
 `String.fromEnvironment`, `bool.fromEnvironment`, or `int.fromEnvironment`.
 
+## Flutter And Native Project Inputs
+
+Flutter remains the default project adapter. Existing commands without
+`--project-type` continue to run `flutter build` and package the complete
+platform bundle.
+
+For a native macOS application, select one explicit Xcode container and scheme:
+
+```sh
+dart run desktop_updater release publish \
+  --platform macos \
+  --project-type xcode \
+  --xcode-workspace Example.xcworkspace \
+  --xcode-scheme Example
+```
+
+Use `--xcode-project` instead of `--xcode-workspace` for an `.xcodeproj`, never
+both. The adapter builds Release for `platform=macOS` in deterministic derived
+data, reads Xcode build settings, and packages the whole resolved `.app`.
+`--xcode-derived-data` can replace the default path when a controlled build
+pipeline owns that directory.
+
+For a Windows or Linux CMake application, provide the application install
+target, complete release metadata, and the executable path relative to the
+installed tree:
+
+```sh
+dart run desktop_updater release publish \
+  --platform linux \
+  --project-type cmake \
+  --cmake-source . \
+  --cmake-build-directory out/release \
+  --cmake-build-target installable_app \
+  --executable-relative-path bin/example \
+  --app-name Example \
+  --package-id com.example.app \
+  --version 2.7.0
+```
+
+The adapter configures and builds the target, then runs `cmake --install` into
+an updater-owned staging prefix. It packages that complete install tree, not a
+single executable. To reuse an already installed CMake tree, pass it through
+`--artifact-root` with `--project-type cmake`; the tree and its executable must
+already exist.
+
+For any complete prebuilt application tree, `--project-type manual` requires
+`--artifact-root`, `--app-name`, `--package-id`, and `--version`. Windows and
+Linux manual inputs must be directories, and macOS inputs must be complete
+bundles. Low-level `desktop-updater package` keeps its existing `--input` flag;
+it does not accept an invented `--app-path` alias.
+
+## Standalone CLI
+
+The unified Dart entrypoint dispatches the same parsers and implementations as
+the legacy package executables:
+
+```sh
+dart run desktop_updater --version
+dart run desktop_updater release publish --help
+dart run desktop_updater package --help
+dart run desktop_updater verify --help
+dart run desktop_updater app-archive --help
+```
+
+Native-host CI also compiles macOS arm64/x64, Windows x64, and Linux x64
+executables and emits SHA-256 checksums. CI uploads are `candidate-only`.
+Production binaries must pass the repository's approved signing and release
+workflow before they are described as standalone release assets. See
+[Native helper SDKs and standalone CLI](native-sdk.md).
+
 ## EL10 Working Scenario
 
 Think of your update host as one shelf on the internet.

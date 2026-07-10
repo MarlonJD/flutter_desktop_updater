@@ -17,14 +17,19 @@ void main() {
     expect(source, contains("--diagnostics-log <path>"));
   });
 
-  test("default CI skips the macOS runner", () {
+  test("default CI runs secretless helper lanes but gates production smoke",
+      () {
     final workflow =
         File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
 
     expect(workflow, isNot(contains("\n  macos:\n")));
     expect(workflow, isNot(contains("name: macOS\n")));
-    expect(workflow, isNot(contains("flutter build macos --debug")));
-    expect(workflow, isNot(contains("flutter test integration_test -d macos")));
+    expect(workflow, contains("macos-native:"));
+    expect(workflow, contains("macos-flutter:"));
+    expect(workflow, contains("--enable-swift-package-manager"));
+    expect(workflow, contains("--no-enable-swift-package-manager"));
+    expect(workflow, contains("flutter build macos --debug"));
+    expect(workflow, contains("flutter test integration_test -d macos"));
     expect(workflow, isNot(contains("macos-update-smoke-debug-diagnostics")));
 
     expect(workflow, contains("macos-notarized:"));

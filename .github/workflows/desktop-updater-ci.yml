@@ -16,6 +16,8 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
+      - name: Check synchronized native SDK versions
+        run: dart run tool/version_check.dart
       - name: Check formatting
         run: dart format --set-exit-if-changed .
       - name: Analyze
@@ -170,6 +172,20 @@ jobs:
                 throw "NuGet package is missing $entry"
               }
             }
+            $nuspec = $archive.GetEntry("DesktopUpdater.Native.nuspec")
+            if ($null -eq $nuspec) {
+              throw "NuGet package is missing DesktopUpdater.Native.nuspec"
+            }
+            $reader = [System.IO.StreamReader]::new($nuspec.Open())
+            try {
+              $nuspecText = $reader.ReadToEnd()
+            } finally {
+              $reader.Dispose()
+            }
+            $escapedVersion = [regex]::Escape($env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION)
+            if ($nuspecText -notmatch "<version>$escapedVersion</version>") {
+              throw "NuGet package version does not match pubspec.yaml"
+            }
           } finally {
             $archive.Dispose()
           }
@@ -259,11 +275,47 @@ jobs:
 
   macos-native:
     name: macOS Native Consumer
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Run DesktopUpdaterKit SwiftPM tests
+        run: swift test --package-path .
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
+
+  macos-flutter:
+    name: macOS Flutter (${{ matrix.integration }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        integration: [swiftpm, cocoapods]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+      - name: Enable SwiftPM integration
+        if: matrix.integration == 'swiftpm'
+        run: flutter config --enable-swift-package-manager
+      - name: Enable CocoaPods fallback integration
+        if: matrix.integration == 'cocoapods'
+        run: flutter config --no-enable-swift-package-manager
+      - name: Clean CocoaPods fallback build
+        if: matrix.integration == 'cocoapods'
+        working-directory: example
+        run: flutter clean
+      - name: Install example dependencies
+        working-directory: example
+        run: flutter pub get
+      - name: Build macOS example
+        working-directory: example
+        run: flutter build macos --debug
+      - name: Run macOS integration tests
+        working-directory: example
+        run: flutter test integration_test -d macos
 
   macos-notarized:
     name: macOS Notarized Publish
@@ -354,6 +406,11 @@ jobs:
           fi
       - name: Install Linux native SDK
         run: cmake --install linux/native/build --prefix linux/native/install
+      - name: Verify installed Linux pkg-config version
+        run: |
+          expected="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
+          actual="$(PKG_CONFIG_PATH="$PWD/linux/native/install/lib/pkgconfig" pkg-config --modversion desktop_updater_native)"
+          test "$actual" = "$expected"
       - name: Configure installed Linux CMake consumer
         run: cmake -S example/native/linux-cmake -B example/native/linux-cmake/build -DCMAKE_PREFIX_PATH="$PWD/linux/native/install"
       - name: Build installed Linux CMake consumer

@@ -9,4 +9,8 @@ let request = MacInstallRequest(
 )
 
 precondition(!request.allowUnsignedUpdates)
-print("DesktopUpdaterKit consumer compiled: \(request.bundlePath)")
+precondition(!DesktopUpdaterVersion.string.isEmpty)
+print(
+    "DesktopUpdaterKit \(DesktopUpdaterVersion.string) consumer compiled: "
+        + request.bundlePath
+)

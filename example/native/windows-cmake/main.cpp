@@ -3,6 +3,9 @@
 #include "desktop_updater_native_c.h"
 
 int main() {
+  if (std::strcmp(DESKTOP_UPDATER_NATIVE_VERSION_STRING, "") == 0) {
+    return 1;
+  }
   desktop_updater_install_request_v1 request = {};
   request.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION + 1;
   request.struct_size = sizeof(request);

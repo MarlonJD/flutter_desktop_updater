@@ -13,6 +13,7 @@ void main() {
     expect(manifest, contains('package: "flutter_desktop_updater"'));
     expect(source, contains("import DesktopUpdaterKit"));
     expect(source, contains("MacInstallRequest("));
+    expect(source, contains("DesktopUpdaterVersion.string"));
     expect("$manifest\n$source", isNot(contains("Flutter")));
   });
 
@@ -37,7 +38,15 @@ void main() {
       );
       expect(
         consumerCmake,
-        contains("find_package(desktop_updater_native CONFIG REQUIRED)"),
+        contains("find_package(desktop_updater_native "),
+      );
+      expect(
+        consumerCmake,
+        contains(" EXACT CONFIG REQUIRED)"),
+      );
+      expect(
+        nativeCmake,
+        contains("desktop_updater_nativeConfigVersion.cmake"),
       );
       expect(
         consumerCmake,
@@ -46,6 +55,10 @@ void main() {
         ),
       );
       expect(consumerSource, contains("return 0"));
+      expect(
+        consumerSource,
+        contains("DESKTOP_UPDATER_NATIVE_VERSION_STRING"),
+      );
     }
   });
 

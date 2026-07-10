@@ -16,6 +16,12 @@ const harnessCommands = [
     ["analyze", "--no-fatal-infos", "--no-pub"],
   ),
   HarnessCommand(
+    "Version check",
+    "dart run tool/version_check.dart",
+    "dart",
+    ["run", "tool/version_check.dart"],
+  ),
+  HarnessCommand(
     "Focused harness test",
     "flutter test --no-pub test/harness_engineering_docs_test.dart",
     "flutter",

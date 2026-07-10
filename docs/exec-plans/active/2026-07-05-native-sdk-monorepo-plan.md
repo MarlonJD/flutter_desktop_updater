@@ -1445,7 +1445,7 @@ literal evidence labels.
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 - Test: `test/native_sdk_docs_test.dart`
 
-- [ ] **Step 10.1: Generate checked version constants**
+- [x] **Step 10.1: Generate checked version constants**
 
 Read root `pubspec.yaml` and generate/check:
 
@@ -1457,7 +1457,7 @@ Read root `pubspec.yaml` and generate/check:
 
 The sync tool never changes `pubspec.yaml`, changelog, or Git tags.
 
-- [ ] **Step 10.2: Document package surfaces honestly**
+- [x] **Step 10.2: Document package surfaces honestly**
 
 Document:
 
@@ -1470,13 +1470,13 @@ CLI: dart run entrypoints and signed standalone release assets
 Full native runtime: preview child plan, unavailable until its gates pass
 ```
 
-- [ ] **Step 10.3: Add release asset and consumer checks**
+- [x] **Step 10.3: Add release asset and consumer checks**
 
 CI must validate package contents, versions, checksums, consumer builds, C ABI
 version, and target-host native tests. A package job cannot pass from source
 unit tests alone.
 
-- [ ] **Step 10.4: Run the complete Flutter ladder**
+- [x] **Step 10.4: Run the complete Flutter ladder**
 
 ```sh
 dart format --set-exit-if-changed .
@@ -1503,13 +1503,53 @@ Linux installed CMake consumer: verified in Linux CI
 Standalone CLI matrix: candidate-only until signed release workflow passes
 ```
 
-- [ ] **Step 10.6: Add full release smoke without weakening current lanes**
+Current evidence on 2026-07-10:
+
+- macOS SwiftPM helper tests: verified locally, 6 tests;
+- macOS external SwiftPM consumer: verified locally and reported version 2.7.0;
+- macOS Flutter SwiftPM build/integration: verified locally, build plus 2
+  integration tests;
+- macOS Flutter CocoaPods fallback: blocked locally because `pod` is not
+  installed; the new target-host CI matrix is pending;
+- Windows static helper, shared C ABI DLL, installed CMake consumer, and local
+  NuGet consumer: not run on a Windows host for this commit; CI-pending;
+- Linux protected-root tests, Flutter helper, pkg-config version, and installed
+  CMake consumer: not run on a Linux host for this commit; CI-pending;
+- standalone CLI: macOS arm64 candidate verified locally in Stage 9; macOS x64,
+  Windows x64, and Linux x64 candidates are CI-pending; all remain
+  `candidate-only` without the production signing workflow.
+
+- [x] **Step 10.6: Add full release smoke without weakening current lanes**
 
 Keep current Windows/Linux publish and update smoke commands. Keep macOS
 Developer ID/notary smoke separately gated by explicit secrets and approved
 workflow dispatch.
 
-- [ ] **Step 10.7: Commit release documentation and gates**
+The existing Windows/Linux publish and update smoke steps remain in the
+workflow. The macOS notarized publish job remains separately gated by
+`workflow_dispatch`, an explicit repository variable, and Apple credentials.
+
+Local Stage 10 verification on 2026-07-10:
+
+- version sync RED listed 7 unsynchronized surfaces and then 2 exact CMake
+  consumer lookups; `sync_versions.dart` updated them and is now idempotent;
+- `dart run tool/version_check.dart`: PASS at canonical version 2.7.0;
+- focused native SDK/docs/consumer/platform/harness suite: PASS, 32 tests;
+- `dart format --set-exit-if-changed .`: PASS, 199 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 375 existing info-only
+  findings;
+- `flutter test --no-pub`: PASS, 506 tests with 3 expected external E2E
+  skips;
+- pre-commit `dart pub publish --dry-run`: included the standalone CLI,
+  version tools, and local helper sources; only the dirty-worktree warning and
+  existing version hint remained;
+- .NET wrapper Release build: PASS for `net8.0` and `netstandard2.0`, 0 warnings
+  and 0 errors;
+- local CMake configure/install was not run because `cmake` is unavailable on
+  this host; Windows/Linux package version files and consumers remain
+  target-host CI gates.
+
+- [x] **Step 10.7: Commit release documentation and gates**
 
 ```sh
 git add tool docs README.md test/native_sdk_docs_test.dart \
@@ -1537,7 +1577,7 @@ or `not run`. They must not be rewritten as passing evidence.
 
 ## Rebase Status
 
-As of 2026-07-10:
+At the 2026-07-10 rebase starting point:
 
 - the child plan file and index entry already exist;
 - the target `windows/native`, `linux/native`, root `Package.swift`,

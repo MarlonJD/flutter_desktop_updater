@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(desktop_updater_native LANGUAGES CXX)
+project(desktop_updater_native VERSION 2.7.0 LANGUAGES CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
@@ -18,6 +18,7 @@ set_target_properties(desktop_updater_native PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 install(TARGETS desktop_updater_native
   EXPORT desktop_updater_nativeTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -31,6 +32,10 @@ configure_file(
   cmake/desktop_updater_nativeConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
   @ONLY)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
 configure_file(
   cmake/desktop_updater_native.pc.in
   ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_native.pc
@@ -39,6 +44,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_native.pc
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
 
 if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)

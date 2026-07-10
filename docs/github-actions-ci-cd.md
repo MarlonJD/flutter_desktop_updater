@@ -15,9 +15,52 @@ It runs on push, pull request, and manual `workflow_dispatch`.
 
 The package CI covers:
 
-- Dart formatting, analysis, tests, CLI entrypoints, and `dart pub publish --dry-run`;
+- synchronized Dart/Swift/C++/CMake/NuGet versions, Dart formatting, analysis,
+  tests, CLI entrypoints, and `dart pub publish --dry-run`;
+- macOS SwiftPM helper tests, an external Flutter-free Swift consumer, and
+  separate Flutter SwiftPM and CocoaPods fallback build/integration lanes;
 - Windows debug and release builds, native tests, integration tests, and update smoke tests;
-- Linux debug and release builds, native tests, integration tests, and update smoke tests under `xvfb`.
+- Windows installed CMake and local NuGet consumers against the real shared
+  DLL, including C ABI `removedFiles` coverage;
+- Linux protected-root tests, installed CMake/pkg-config consumer checks,
+  integration tests, and update smoke tests under `xvfb`.
+
+### Standalone CLI candidate matrix
+
+Native-host jobs compile and checksum these exact executable candidates:
+
+```text
+desktop-updater-macos-arm64
+desktop-updater-macos-x64
+desktop-updater-windows-x64.exe
+desktop-updater-linux-x64
+```
+
+Each uploaded artifact includes its executable and `SHA256SUMS`. These outputs
+are explicitly `candidate-only`: the matrix proves compilation, command
+startup, architecture, and checksum generation, but does not substitute for
+the approved production signing workflow. macOS and Windows public assets must
+pass their repository signing/notarization policy after their final bytes are
+built.
+
+### Native SDK Target-Host Gates
+
+Package contents are not accepted from source unit tests alone. The target-host
+jobs must install or pack each helper, consume it from outside the source
+target, and run the relevant native tests:
+
+- macOS runs root `DesktopUpdaterKit` SwiftPM tests, an external SwiftPM
+  executable, and both Flutter integration modes;
+- Windows installs the CMake export, loads the shared C ABI DLL through the
+  external CMake and .NET consumers, validates the NuGet package version and
+  contents, and rejects a zero-test CTest run;
+- Linux installs the CMake export and pkg-config metadata, checks the canonical
+  version, runs the external consumer, proves protected roots fail closed, and
+  rejects a zero-test CTest run.
+
+Evidence must stay literal: unavailable credentials or hosts are `blocked` or
+`not run`; unsigned executables are `candidate-only`; only completed required
+target-host and publisher-trust gates can be called `production-ready`.
 
 Windows and Linux update smoke tests pass an explicit helper diagnostics log
 path to the example app. The workflow uploads that log only when the job has

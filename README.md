@@ -60,6 +60,24 @@ With only `updates.baseUrl`, publish creates an upload-ready package under
 With an upload provider configured, it uploads versioned files first, validates
 them, uploads `app-archive.json` last, then validates hosted update selection.
 
+## Native Helper SDKs And Standalone CLI
+
+The pub.dev Flutter package remains the full update runtime. This repository
+also ships Flutter-free install/relaunch helper SDKs for native host apps:
+
+- `DesktopUpdaterKit` through SwiftPM on macOS;
+- `desktop_updater::native` through installed CMake packages on Windows and
+  Linux;
+- `DesktopUpdater.Native` as a locally verified Windows NuGet package surface;
+- a compiled `desktop-updater` CLI candidate matrix for macOS, Windows, and
+  Linux.
+
+These helpers do not perform native update discovery, download, rollout,
+descriptor verification, or staging. Standalone CI executables are
+`candidate-only` until the applicable production signing and release gates
+pass. See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for exact
+APIs, install commands, package status, and evidence labels.
+
 ## Additional Release Files
 
 Use `additionalFiles` when PDFs, language packs, manuals, or other app-owned
@@ -299,6 +317,8 @@ and the local Apple-trust smoke harness, see
 - [Publishing desktop updates](docs/publishing.md): setup, YAML config,
   additional release files, manual upload, providers, update policy modes,
   validation, CI, and platform-specific release work.
+- [Native helper SDKs and standalone CLI](docs/native-sdk.md): SwiftPM, CMake,
+  C ABI, NuGet, version synchronization, CLI candidates, and release gates.
 - [Windows and Linux production release options](docs/windows-linux-production-release.md):
   signing choices, native package channels, and country or provider
   restrictions.
@@ -328,6 +348,13 @@ Most apps should start with `release publish`. Use low-level commands only when
 your pipeline needs to own each step:
 
 ```sh
+dart run desktop_updater --help
+dart run desktop_updater release publish --help
+dart run desktop_updater package --help
+dart run desktop_updater verify --help
+dart run desktop_updater app-archive --help
+
+# Legacy package entrypoints remain supported.
 dart run desktop_updater:package --help
 dart run desktop_updater:app_archive --help
 dart run desktop_updater:verify --help

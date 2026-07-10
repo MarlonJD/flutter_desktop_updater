@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 project(desktop_updater_linux_consumer LANGUAGES CXX)
 
-find_package(desktop_updater_native CONFIG REQUIRED)
+find_package(desktop_updater_native 2.7.0 EXACT CONFIG REQUIRED)
 
 add_executable(consumer main.cpp)
 target_compile_features(consumer PRIVATE cxx_std_14)
