@@ -30,34 +30,6 @@ bool ReadOptionalString(FlValue* args,
   return true;
 }
 
-std::vector<desktop_updater::native::InstallProvenanceEntry>
-ReadProvenanceEntries(FlValue* args) {
-  std::vector<desktop_updater::native::InstallProvenanceEntry> result;
-  FlValue* value = fl_value_lookup_string(args, "stageProvenanceEntries");
-  if (value == nullptr || fl_value_get_type(value) != FL_VALUE_TYPE_LIST) {
-    return result;
-  }
-  for (size_t index = 0; index < fl_value_get_length(value); ++index) {
-    FlValue* item = fl_value_get_list_value(value, index);
-    if (item == nullptr || fl_value_get_type(item) != FL_VALUE_TYPE_MAP) {
-      continue;
-    }
-    auto string_value = [item](const char* key) {
-      FlValue* field = fl_value_lookup_string(item, key);
-      return field != nullptr && fl_value_get_type(field) == FL_VALUE_TYPE_STRING
-          ? std::string(fl_value_get_string(field)) : std::string();
-    };
-    FlValue* length = fl_value_lookup_string(item, "length");
-    result.push_back({string_value("path"), string_value("kind"),
-                      length != nullptr &&
-                              fl_value_get_type(length) == FL_VALUE_TYPE_INT
-                          ? fl_value_get_int(length)
-                          : 0,
-                      string_value("sha256"), string_value("target")});
-  }
-  return result;
-}
-
 desktop_updater::native::InstallRequest RestartRequest() {
   desktop_updater::native::InstallRequest request;
   request.operation = desktop_updater::native::LinuxInstallOperation::kRestart;
@@ -135,7 +107,6 @@ static void desktop_updater_plugin_handle_method_call(
         std::string executable_relative_path;
         std::string package_id;
         std::string provenance_sha256;
-        std::string provenance_nonce;
         std::string argument_error;
         const bool context_is_valid =
             ReadOptionalString(args, "diagnosticsLogPath",
@@ -147,9 +118,7 @@ static void desktop_updater_plugin_handle_method_call(
             ReadOptionalString(args, "packageId", &package_id,
                                &argument_error) &&
             ReadOptionalString(args, "stageProvenanceSha256",
-                               &provenance_sha256, &argument_error) &&
-            ReadOptionalString(args, "stageProvenanceNonce",
-                               &provenance_nonce, &argument_error);
+                               &provenance_sha256, &argument_error);
         if (!context_is_valid) {
           response = FL_METHOD_RESPONSE(fl_method_error_response_new(
               "InvalidArguments", argument_error.c_str(), nullptr));
@@ -164,8 +133,6 @@ static void desktop_updater_plugin_handle_method_call(
           request.removed_files = removed_files;
           request.diagnostics_log_path = diagnostics_log_path;
           request.expected_provenance_sha256 = provenance_sha256;
-          request.provenance_nonce = provenance_nonce;
-          request.provenance_entries = ReadProvenanceEntries(args);
           const auto result =
               desktop_updater::native::ScheduleInstallAndRelaunch(request);
           if (!result.ok) {

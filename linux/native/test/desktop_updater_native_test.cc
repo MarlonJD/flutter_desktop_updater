@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -23,7 +24,11 @@ namespace fs = std::filesystem;
 class TemporaryDirectory {
  public:
   TemporaryDirectory() {
+#if defined(__APPLE__)
+    char path[] = "/private/tmp/desktop_updater_native_test_XXXXXX";
+#else
     char path[] = "/tmp/desktop_updater_native_test_XXXXXX";
+#endif
     char* created = mkdtemp(path);
     if (created == nullptr) {
       throw std::runtime_error("Unable to create native test directory");
@@ -70,17 +75,50 @@ std::string Sha256File(const fs::path& path) {
   return digest;
 }
 
+std::string JsonQuote(const std::string& value) {
+  std::string quoted = "\"";
+  for (const char byte : value) {
+    if (byte == '\\' || byte == '"') {
+      quoted += '\\';
+    }
+    quoted += byte;
+  }
+  quoted += '"';
+  return quoted;
+}
+
+std::string CanonicalMarker(
+    const std::vector<InstallProvenanceEntry>& entries) {
+  std::string encoded_entries = "[";
+  for (std::size_t index = 0; index < entries.size(); ++index) {
+    const InstallProvenanceEntry& entry = entries[index];
+    if (index != 0) encoded_entries += ',';
+    encoded_entries += "{\"kind\":" + JsonQuote(entry.kind) +
+        ",\"length\":" + std::to_string(entry.length) +
+        ",\"path\":" + JsonQuote(entry.path);
+    if (entry.kind == "file") {
+      encoded_entries += ",\"sha256\":" + JsonQuote(entry.sha256);
+    } else if (entry.kind == "symlink") {
+      encoded_entries += ",\"target\":" + JsonQuote(entry.target);
+    }
+    encoded_entries += '}';
+  }
+  encoded_entries += ']';
+  return "{\"artifactSha256\":\"" + std::string(64, 'a') +
+      "\",\"descriptorSha256\":\"" + std::string(64, 'b') +
+      "\",\"entries\":" + encoded_entries +
+      ",\"nonce\":\"123e4567-e89b-42d3-a456-426614174000\""
+      ",\"packageId\":\"com.example.app\",\"schemaVersion\":1}";
+}
+
 InstallRequest RequestFor(const fs::path& install_root,
                           const fs::path& staging_root) {
-  WriteFile(staging_root / ".desktop_updater_stage_provenance.json", "marker");
   InstallRequest request;
   request.operation = LinuxInstallOperation::kInstall;
   request.staging_path = staging_root.string();
   request.install_root = install_root.string();
   request.executable_relative_path = "bin/example";
   request.package_id = "com.example.app";
-  request.expected_provenance_sha256 =
-      "ed5b8120601641c516d02ed9dc643a59648524248d5e2af877da39ea253c723e";
   request.provenance_nonce = "123e4567-e89b-42d3-a456-426614174000";
   for (const fs::directory_entry& entry :
        fs::recursive_directory_iterator(staging_root)) {
@@ -94,6 +132,16 @@ InstallRequest RequestFor(const fs::path& install_root,
            Sha256File(entry.path()), ""});
     }
   }
+  std::sort(request.provenance_entries.begin(),
+            request.provenance_entries.end(),
+            [](const InstallProvenanceEntry& left,
+               const InstallProvenanceEntry& right) {
+              return left.path < right.path;
+            });
+  const fs::path marker =
+      staging_root / ".desktop_updater_stage_provenance.json";
+  WriteFile(marker, CanonicalMarker(request.provenance_entries));
+  request.expected_provenance_sha256 = Sha256File(marker);
   return request;
 }
 
@@ -101,15 +149,12 @@ TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
   for (const char* root : {"/", "/bin", "/sbin", "/usr", "/usr/bin",
                            "/usr/sbin", "/usr/local", "/usr/local/bin",
                            "/opt", "/etc", "/var", "/home"}) {
-    InstallRequest request = {
-        LinuxInstallOperation::kInstall,
-        "/tmp/staging",
-        root,
-        "bin/example",
-        "com.example.app",
-        {},
-        "",
-    };
+    InstallRequest request;
+    request.operation = LinuxInstallOperation::kInstall;
+    request.staging_path = "/tmp/staging";
+    request.install_root = root;
+    request.executable_relative_path = "bin/example";
+    request.package_id = "com.example.app";
     EXPECT_FALSE(ValidateInstallRequest(request).ok) << root;
   }
 }
@@ -164,6 +209,41 @@ TEST(LinuxNativeInstall, GeneratedScriptBoundsDestructiveCommands) {
   EXPECT_NE(script.find("rm -rf \"$staging\""), std::string::npos);
   EXPECT_EQ(script.find("rm -rf /usr"), std::string::npos);
   EXPECT_EQ(script.find("rm -rf /opt"), std::string::npos);
+}
+
+TEST(LinuxNativeInstall, DerivesHelperInventoryAndNonceFromMarker) {
+  TemporaryDirectory temporary;
+  const fs::path install_root = temporary.path() / "app";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "bin/example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(staging_root / "bin/example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  const std::string marker_file_sha256 =
+      request.provenance_entries.back().sha256;
+  const std::string caller_file_sha256(64, '0');
+  request.provenance_nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  request.provenance_entries = {
+      {"bin/example", "file", 3, caller_file_sha256, ""}};
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  ASSERT_TRUE(result.ok) << result.error;
+  EXPECT_NE(script.find(marker_file_sha256), std::string::npos);
+  EXPECT_EQ(script.find(caller_file_sha256), std::string::npos);
+  EXPECT_NE(script.find("123e4567-e89b-42d3-a456-426614174000"),
+            std::string::npos);
+  EXPECT_EQ(script.find("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+            std::string::npos);
+  EXPECT_NE(script.find("bound_provenance_marker="), std::string::npos);
+  EXPECT_NE(script.find("bound_marker_sha256="), std::string::npos);
+  EXPECT_NE(script.find(
+                "[ \"$bound_marker_sha256\" = "
+                "\"$expected_provenance_sha256\" ]"),
+            std::string::npos);
 }
 
 TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {

@@ -436,6 +436,24 @@ void WriteExclusive(const std::string& path, const std::string& bytes) {
 #endif
 }
 
+struct CanonicalMarker {
+  StageProvenanceMarker marker;
+  std::string bytes;
+};
+
+CanonicalMarker ReadCanonicalMarker(const std::string& stage_root) {
+  const std::string root = CanonicalDirectory(stage_root, "Stage root");
+  const std::string bytes = ReadFile(Join(root, kStageProvenanceFileName));
+  const JsonValue parsed = ParseJson(bytes);
+  StageProvenanceMarker marker = DecodeMarker(parsed);
+  if (EncodeCanonicalJson(EncodeMarker(marker)) != bytes ||
+      BaseName(root) != std::string(kOwnedStagePrefix) + marker.nonce) {
+    throw std::runtime_error(
+        "Stage provenance marker is not canonical or nonce-bound.");
+  }
+  return {std::move(marker), bytes};
+}
+
 }  // namespace
 
 std::string StageBytesToHex(const std::vector<std::uint8_t>& bytes) {
@@ -503,17 +521,17 @@ StageProvenanceState WriteStageProvenance(
 StageProvenanceState ReadStageProvenance(
     const std::string& stage_root,
     const StageSha256Function& sha256) {
-  const std::string root = CanonicalDirectory(stage_root, "Stage root");
-  const std::string bytes = ReadFile(Join(root, kStageProvenanceFileName));
+  const CanonicalMarker canonical = ReadCanonicalMarker(stage_root);
   StageProvenanceState state;
-  const JsonValue parsed = ParseJson(bytes);
-  state.marker = DecodeMarker(parsed);
-  if (EncodeCanonicalJson(EncodeMarker(state.marker)) != bytes ||
-      BaseName(root) != std::string(kOwnedStagePrefix) + state.marker.nonce) {
-    throw std::runtime_error("Stage provenance marker is not canonical or nonce-bound.");
-  }
-  state.marker_sha256 = StageBytesToHex(sha256(bytes));
+  state.marker = canonical.marker;
+  state.marker_sha256 = StageBytesToHex(sha256(canonical.bytes));
   return state;
+}
+
+StageProvenanceBinding ReadStageProvenanceBinding(
+    const std::string& stage_root) {
+  const CanonicalMarker canonical = ReadCanonicalMarker(stage_root);
+  return {canonical.marker, canonical.bytes};
 }
 
 StageProvenanceMarker VerifyStageProvenance(

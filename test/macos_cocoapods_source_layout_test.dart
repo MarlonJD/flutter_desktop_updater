@@ -25,6 +25,18 @@ void main() {
     expect(podspec, contains("s.swift_version = '5.0'"));
   });
 
+  test("CocoaPods fallback excludes SwiftPM runtime sources", () {
+    final podspec = File("macos/desktop_updater.podspec").readAsStringSync();
+
+    expect(
+      podspec,
+      contains(
+        "s.exclude_files = File.join('desktop_updater', 'Sources', "
+        "'DesktopUpdaterKit', 'Runtime', '**', '*.swift')",
+      ),
+    );
+  });
+
   test("shared helper sources remain Flutter-free", () {
     final helperSources = Directory(
       "macos/desktop_updater/Sources/DesktopUpdaterKit",

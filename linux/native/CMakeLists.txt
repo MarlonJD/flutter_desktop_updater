@@ -7,14 +7,20 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
 
+set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
 add_library(desktop_updater_native STATIC
-  src/desktop_updater_native.cc)
+  src/desktop_updater_native.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc)
 add_library(desktop_updater::native ALIAS desktop_updater_native)
 target_compile_features(desktop_updater_native PUBLIC cxx_std_14)
 target_include_directories(desktop_updater_native
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
 set_target_properties(desktop_updater_native PROPERTIES
   EXPORT_NAME native
   POSITION_INDEPENDENT_CODE ON)
@@ -24,8 +30,6 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   find_package(CURL REQUIRED)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   find_package(Threads REQUIRED)
-  set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
   set(DESKTOP_UPDATER_MINIZ_DIR
@@ -39,9 +43,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     src/runtime/update_client_linux.cc
     src/runtime/update_transport_curl.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics.cc
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle.cc

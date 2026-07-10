@@ -66,6 +66,61 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertTrue(script.contains("cleanup_owned_stage \"$STAGE_ROOT\""))
     }
 
+    func testProvenancePathsAndTargetsAreShellQuotedAsData() {
+        let paths = [
+            "payload/$(touch command-substitution)",
+            "payload/`touch backtick-substitution`",
+            "payload/it's-data",
+            "payload/line\nbreak",
+        ]
+        let targets = [
+            "targets/$(touch target-command-substitution)",
+            "targets/`touch target-backtick-substitution`",
+            "targets/it's-data",
+            "targets/line\nbreak",
+        ]
+        let entries = paths.map {
+            StageProvenanceEntry(
+                path: $0,
+                kind: "directory",
+                length: 0,
+                sha256: nil,
+                target: nil
+            )
+        } + zip(paths, targets).map {
+            StageProvenanceEntry(
+                path: "links/\($0.0)",
+                kind: "symlink",
+                length: 0,
+                sha256: nil,
+                target: $0.1
+            )
+        }
+
+        let script = MacInstallHelper().makeHelperScript(
+            for: request(
+                allowUnsignedUpdates: false,
+                provenanceEntries: entries
+            )
+        )
+
+        for path in entries.map(\.path) {
+            XCTAssertTrue(
+                script.contains(
+                    "candidate=\"$STAGE_ROOT/\"\(shellQuote(path))"
+                ),
+                "unquoted inventory path: \(path)"
+            )
+            XCTAssertFalse(script.contains("candidate=\"$STAGE_ROOT/\(path)\""))
+        }
+        for target in targets {
+            XCTAssertTrue(
+                script.contains("= \(shellQuote(target)) ]"),
+                "unquoted symlink target: \(target)"
+            )
+        }
+    }
+
     func testTopLevelStagingSymlinkIsRejectedBeforeScheduling() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DesktopUpdaterKitTests-\(UUID().uuidString)")
@@ -132,7 +187,10 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertEqual(event.timestamp, first.timestamp)
     }
 
-    private func request(allowUnsignedUpdates: Bool) -> MacInstallRequest {
+    private func request(
+        allowUnsignedUpdates: Bool,
+        provenanceEntries: [StageProvenanceEntry] = []
+    ) -> MacInstallRequest {
         return MacInstallRequest(
             stagingPath: "/tmp/Example.app",
             allowUnsignedUpdates: allowUnsignedUpdates,
@@ -143,8 +201,13 @@ final class MacInstallHelperTests: XCTestCase {
             expectedProvenanceSHA256: String(repeating: "1", count: 64),
             artifactKind: "pkgInstaller",
             expectedArtifactSHA256: String(repeating: "2", count: 64),
-            expectedPackageIDs: ["com.example.app.pkg"]
+            expectedPackageIDs: ["com.example.app.pkg"],
+            provenanceEntries: provenanceEntries
         )
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

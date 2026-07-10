@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "desktop_updater_native_internal.h"
+#include "stage_provenance.h"
 
 namespace desktop_updater {
 namespace native {
@@ -196,7 +197,38 @@ bool ResolveExistingPath(const std::string& path, std::string* resolved) {
   return true;
 }
 
-InstallResult ValidateNormalizedRequest(const InstallRequest& request) {
+InstallResult BindProvenanceToMarker(InstallRequest* request,
+                                     std::string* canonical_marker) {
+  if (request->operation == LinuxInstallOperation::kRestart) {
+    return {true, ""};
+  }
+  try {
+    const runtime::internal::StageProvenanceBinding binding =
+        runtime::internal::ReadStageProvenanceBinding(request->staging_path);
+    const runtime::internal::StageProvenanceMarker& marker = binding.marker;
+    if (marker.package_id != request->package_id) {
+      return {false, "Linux stage provenance package identity changed."};
+    }
+    if (canonical_marker != nullptr) {
+      *canonical_marker = binding.canonical_json;
+    }
+    request->provenance_nonce = marker.nonce;
+    request->provenance_entries.clear();
+    request->provenance_entries.reserve(marker.entries.size());
+    for (const runtime::internal::StageProvenanceEntry& entry : marker.entries) {
+      request->provenance_entries.push_back(
+          {entry.path, entry.kind, entry.length, entry.sha256, entry.target});
+    }
+  } catch (const std::exception& error) {
+    return {false,
+            std::string("Linux stage provenance marker is invalid: ") +
+                error.what()};
+  }
+  return {true, ""};
+}
+
+InstallResult ValidateNormalizedRequest(const InstallRequest& request,
+                                        bool validate_provenance = true) {
   if (!IsCanonicalAbsolutePath(request.install_root)) {
     return {false, "Linux install root must be an absolute canonical path."};
   }
@@ -252,22 +284,25 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request) {
   if (PathsOverlap(canonical_staging_path, request.install_root)) {
     return {false, "Staging path must not overlap install root."};
   }
-  if (!IsLowercaseSHA256(request.expected_provenance_sha256) ||
-      !IsLowercaseUuidNonce(request.provenance_nonce) ||
-      BaseName(canonical_staging_path) !=
-          "desktop_updater_stage_" + request.provenance_nonce ||
-      request.provenance_entries.empty()) {
-    return {false, "Linux install requires immutable owned stage provenance."};
-  }
-  for (const InstallProvenanceEntry& entry : request.provenance_entries) {
-    if (!IsCanonicalRelativePath(entry.path) ||
-        (entry.kind != "file" && entry.kind != "directory" &&
-         entry.kind != "symlink") ||
-        (entry.kind == "file" &&
-         (!IsLowercaseSHA256(entry.sha256) || entry.length < 0)) ||
-        (entry.kind == "symlink" &&
-         !IsCanonicalRelativePath(entry.target))) {
-      return {false, "Linux stage provenance entry is invalid."};
+  if (validate_provenance) {
+    if (!IsLowercaseSHA256(request.expected_provenance_sha256) ||
+        !IsLowercaseUuidNonce(request.provenance_nonce) ||
+        BaseName(canonical_staging_path) !=
+            "desktop_updater_stage_" + request.provenance_nonce ||
+        request.provenance_entries.empty()) {
+      return {false,
+              "Linux install requires immutable owned stage provenance."};
+    }
+    for (const InstallProvenanceEntry& entry : request.provenance_entries) {
+      if (!IsCanonicalRelativePath(entry.path) ||
+          (entry.kind != "file" && entry.kind != "directory" &&
+           entry.kind != "symlink") ||
+          (entry.kind == "file" &&
+           (!IsLowercaseSHA256(entry.sha256) || entry.length < 0)) ||
+          (entry.kind == "symlink" &&
+           !IsCanonicalRelativePath(entry.target))) {
+        return {false, "Linux stage provenance entry is invalid."};
+      }
     }
   }
 
@@ -375,7 +410,14 @@ std::string CurrentExecutablePath() {
 }  // namespace
 
 InstallResult ValidateInstallRequest(const InstallRequest& request) {
-  return ValidateNormalizedRequest(request);
+  InstallRequest normalized = request;
+  const InstallResult request_validation =
+      ValidateNormalizedRequest(normalized, false);
+  if (!request_validation.ok) {
+    return request_validation;
+  }
+  const InstallResult binding = BindProvenanceToMarker(&normalized, nullptr);
+  return binding.ok ? ValidateNormalizedRequest(normalized) : binding;
 }
 
 namespace internal {
@@ -408,6 +450,17 @@ InstallResult BuildInstallScriptForTesting(
     }
   }
 
+  const InstallResult request_validation =
+      ValidateNormalizedRequest(normalized, false);
+  if (!request_validation.ok) {
+    return request_validation;
+  }
+  std::string bound_provenance_marker;
+  const InstallResult binding =
+      BindProvenanceToMarker(&normalized, &bound_provenance_marker);
+  if (!binding.ok) {
+    return binding;
+  }
   const InstallResult validation = ValidateNormalizedRequest(normalized);
   if (!validation.ok) {
     return validation;
@@ -474,6 +527,7 @@ InstallResult BuildInstallScriptForTesting(
                                                       "expected_provenance_sha256=" +
       ShellQuote(normalized.expected_provenance_sha256) + "\n"
       "provenance_nonce=" + ShellQuote(normalized.provenance_nonce) + "\n"
+      "bound_provenance_marker=" + ShellQuote(bound_provenance_marker) + "\n"
       "expected_provenance_entry_count=" +
       std::to_string(normalized.provenance_entries.size()) + "\n"
                                                       "removed=(''" +
@@ -516,6 +570,8 @@ InstallResult BuildInstallScriptForTesting(
         "  [ -n \"$expected_provenance_sha256\" ] && [ -f \"$marker\" ] && [ ! -L \"$marker\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
         "  actual_marker_sha256=\"$(sha256sum -- \"$marker\" | awk '{print $1}')\"\n"
         "  [ \"$actual_marker_sha256\" = \"$expected_provenance_sha256\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
+        "  bound_marker_sha256=\"$(printf '%s' \"$bound_provenance_marker\" | sha256sum | awk '{print $1}')\"\n"
+        "  [ \"$bound_marker_sha256\" = \"$expected_provenance_sha256\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
         "  [ \"$(basename \"$staging\")\" = \"desktop_updater_stage_$provenance_nonce\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n" +
         provenance_checks +
         "  actual_entry_count=\"$(find \"$staging\" -mindepth 1 ! -path \"$marker\" -printf . | wc -c | tr -d ' ')\"\n"

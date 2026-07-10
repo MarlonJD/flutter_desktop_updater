@@ -743,6 +743,30 @@ Task 4 local evidence (2026-07-10):
   from `UpdateStageResult` through the existing install handoff. They do not
   add or prove Task 5 install-root, executable-relative-path, package-identity,
   PID, or bundle-target context; Task 5 remains separate.
+- Fix wave RED/GREEN: the CocoaPods layout regression first failed because the
+  broad helper glob still compiled `DesktopUpdaterKit/Runtime`, then passed 3
+  tests after adding only the Runtime exclusion while retaining macOS 10.14
+  and `DesktopUpdaterKit`.
+- Fix wave RED/GREEN: the Linux native regression first proved a caller could
+  provide a different nonce/inventory, then proved the intermediate helper
+  lacked a digest gate for the parsed marker bytes. The final portable
+  C++14/17 `-Werror` command compiled shared JSON/provenance and the Linux
+  helper and passed 5 focused native tests. The plugin no longer reads caller
+  nonce/inventory; helper checks are derived from a canonical marker whose
+  embedded bytes and live bytes must both match the lifecycle digest.
+- Fix wave RED/GREEN: the focused Swift test failed 8 assertions for `$()`
+  command substitution, backticks, single quotes, and newlines in inventory
+  paths, then passed after all staged paths were POSIX-quoted into a data-only
+  variable and filesystem commands used only `"$candidate"`. Symlink targets
+  remain POSIX-quoted data.
+- Fix wave final verification: the required provenance/cleanup/helper/podspec
+  Flutter command passed 37 tests; the focused controller/platform/client
+  command passed 49 tests; full `swift test` passed 50 tests; and
+  `git diff --check` passed.
+- Fix wave target-host limits: Linux CMake/CTest, Flutter/GTK plugin compilation,
+  and scheduled helper execution; Windows CMake/CTest/UAC execution; CocoaPods
+  lint plus an actual macOS 10.14 build; CI; signing/notarization; and release
+  smoke were not run locally.
 
 - [x] **Step 7: Commit**
 

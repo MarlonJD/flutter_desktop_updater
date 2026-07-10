@@ -18,6 +18,7 @@ A new Flutter plugin project.
     File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', '**', '*.swift'),
     File.join('desktop_updater', 'Sources', 'desktop_updater', '**', '*.swift')
   ]
+  s.exclude_files = File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'Runtime', '**', '*.swift')
 
   # If your plugin requires a privacy manifest, for example if it collects user
   # data, update the PrivacyInfo.xcprivacy file to describe your plugin's

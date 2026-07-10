@@ -38,6 +38,11 @@ struct StageProvenanceState {
   std::string marker_sha256;
 };
 
+struct StageProvenanceBinding {
+  StageProvenanceMarker marker;
+  std::string canonical_json;
+};
+
 struct OwnedStage {
   std::string path;
   std::string parent_path;
@@ -57,6 +62,9 @@ StageProvenanceState WriteStageProvenance(
 StageProvenanceState ReadStageProvenance(
     const std::string& stage_root,
     const StageSha256Function& sha256);
+
+StageProvenanceBinding ReadStageProvenanceBinding(
+    const std::string& stage_root);
 
 StageProvenanceMarker VerifyStageProvenance(
     const std::string& stage_root,

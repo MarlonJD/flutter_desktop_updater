@@ -314,14 +314,15 @@ public struct MacInstallHelper {
         _ entries: [StageProvenanceEntry]
     ) -> String {
         entries.map { entry in
-            let candidate = "\"$STAGE_ROOT/\(entry.path)\""
+            let candidate = "  candidate=\"$STAGE_ROOT/\"" +
+                shellQuote(entry.path) + "\n"
             switch entry.kind {
             case "directory":
-                return "  [ -d \(candidate) ] && [ ! -L \(candidate) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+                return candidate + "  [ -d \"$candidate\" ] && [ ! -L \"$candidate\" ] || { log_event \"stage provenance validation failure\"; return 1; }"
             case "symlink":
-                return "  [ -L \(candidate) ] && [ \"$(/usr/bin/readlink \(candidate))\" = \(shellQuote(entry.target ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+                return candidate + "  [ -L \"$candidate\" ] && [ \"$(/usr/bin/readlink \"$candidate\")\" = \(shellQuote(entry.target ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
             default:
-                return "  [ -f \(candidate) ] && [ ! -L \(candidate) ] && [ \"$(/usr/bin/stat -f %z \(candidate))\" = \(entry.length) ] && [ \"$(/usr/bin/shasum -a 256 \(candidate) | /usr/bin/awk '{print $1}')\" = \(shellQuote(entry.sha256 ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+                return candidate + "  [ -f \"$candidate\" ] && [ ! -L \"$candidate\" ] && [ \"$(/usr/bin/stat -f %z \"$candidate\")\" = \(entry.length) ] && [ \"$(/usr/bin/shasum -a 256 \"$candidate\" | /usr/bin/awk '{print $1}')\" = \(shellQuote(entry.sha256 ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
             }
         }.joined(separator: "\n")
     }
