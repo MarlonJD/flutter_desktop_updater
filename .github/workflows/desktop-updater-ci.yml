@@ -108,7 +108,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Configure standalone Windows native SDK tests
-        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
         run: cmake --build windows/native/build --config Debug
       - name: Run standalone Windows native SDK tests
@@ -397,9 +397,9 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libgtk-3-dev ninja-build pkg-config xvfb
+          sudo apt-get install -y clang cmake libgtk-3-dev libssl-dev ninja-build pkg-config xvfb
       - name: Configure standalone Linux native tests
-        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
       - name: Run standalone Linux native tests

@@ -20,17 +20,34 @@ set_target_properties(desktop_updater_native PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+  enable_language(C)
+  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+  set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
+  set(DESKTOP_UPDATER_MONOCYPHER_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
   add_library(desktop_updater_runtime STATIC
-    src/runtime/runtime_configuration.cc)
+    src/runtime/runtime_configuration.cc
+    src/runtime/sha256_openssl.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
   add_library(desktop_updater::runtime ALIAS desktop_updater_runtime)
   target_compile_features(desktop_updater_runtime PUBLIC cxx_std_14)
   target_include_directories(desktop_updater_runtime
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>)
+      $<INSTALL_INTERFACE:include>
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional)
   set_target_properties(desktop_updater_runtime PROPERTIES
     EXPORT_NAME runtime
     POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(desktop_updater_runtime PUBLIC OpenSSL::Crypto)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -50,6 +67,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     FILE desktop_updater_nativeTargets.cmake
     NAMESPACE desktop_updater::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
+  set(DESKTOP_UPDATER_NATIVE_RUNTIME_BUILT
+    ${DESKTOP_UPDATER_NATIVE_RUNTIME})
   configure_file(
     cmake/desktop_updater_nativeConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
@@ -97,4 +116,20 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(desktop_updater_native_test)
+
+  if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+    add_executable(desktop_updater_runtime_contract_test
+      test/runtime/contract_conformance_test.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/contract_fixture_tests.cc)
+    target_compile_features(desktop_updater_runtime_contract_test
+      PRIVATE cxx_std_14)
+    target_include_directories(desktop_updater_runtime_contract_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    target_link_libraries(desktop_updater_runtime_contract_test
+      PRIVATE desktop_updater_runtime OpenSSL::Crypto)
+    add_test(NAME desktop_updater_runtime_contract
+      COMMAND desktop_updater_runtime_contract_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-contract)
+  endif()
 endif()
