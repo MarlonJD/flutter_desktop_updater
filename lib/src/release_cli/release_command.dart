@@ -40,6 +40,7 @@ Future<int> runReleaseCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
+          environment: environment,
         );
       case "sign":
         return await runSignCommand(

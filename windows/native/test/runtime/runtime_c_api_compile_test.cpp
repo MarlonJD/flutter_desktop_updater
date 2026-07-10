@@ -64,6 +64,7 @@ int main() {
   configuration.platform_utf8 = "windows";
   configuration.channel_utf8 = "stable";
   configuration.require_descriptor_signature = 1;
+  configuration.require_index_signature = 1;
   configuration.pinned_public_keys = &pinned_key;
   configuration.pinned_public_key_count = 1;
   configuration.minimum_os_resolver = MinimumOSResolver;

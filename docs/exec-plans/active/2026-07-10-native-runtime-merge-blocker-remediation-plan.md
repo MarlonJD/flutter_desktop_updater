@@ -390,7 +390,7 @@ git commit -m "fix: align native runtime contracts"
 - Produces native outcome `signatureFailure` when strict index verification
   is absent or invalid.
 
-- [ ] **Step 1: Write failing Dart index-signature tests**
+- [x] **Step 1: Write failing Dart index-signature tests**
 
 Cover valid signature, unknown key, missing signature in strict mode, and
 single-field tampering of fresh-install URL, mandatory, rollout, support
@@ -405,14 +405,14 @@ await expectLater(
 );
 ~~~
 
-- [ ] **Step 2: Implement normalized index canonical bytes**
+- [x] **Step 2: Implement normalized index canonical bytes**
 
 Parse through `ReleaseIndex.fromJson`, serialize the typed model, blank
 `signature.value`, recursively sort JSON keys, and encode UTF-8. Reject blank
 key IDs, unsupported algorithms, malformed base64, unknown keys, and signatures
 with the wrong length.
 
-- [ ] **Step 3: Sign app-archive.json immediately before publication**
+- [x] **Step 3: Sign app-archive.json immediately before publication**
 
 Extend the signing implementation to accept a parsed app archive and the same
 Ed25519 key material used for descriptors. The publisher builds the final
@@ -422,7 +422,7 @@ the signature, validates it, and publishes the signed archive last.
 `release validate --require-signature` verifies both the archive and selected
 descriptor. Keep descriptor signing unchanged.
 
-- [ ] **Step 4: Remove the native fresh-install short circuit**
+- [x] **Step 4: Remove the native fresh-install short circuit**
 
 In Swift and C++, always perform this order:
 
@@ -442,7 +442,7 @@ return freshInstallRequired without downloading the artifact
 No branch may select an unauthenticated index item or return
 `freshInstallRequired` before descriptor verification.
 
-- [ ] **Step 5: Preserve Dart compatibility explicitly**
+- [x] **Step 5: Preserve Dart compatibility explicitly**
 
 Keep `requireIndexSignature` false by default for the released Dart
 `UpdateClient`. When an index signature and verifier are configured, verify it
@@ -450,7 +450,7 @@ even in compatibility mode. When true, reject a missing or invalid index
 signature before selection. New repository publisher output is signed; native
 preview clients default to strict index and descriptor signatures.
 
-- [ ] **Step 6: Run trust tests**
+- [x] **Step 6: Run trust tests**
 
 Run:
 
@@ -463,7 +463,30 @@ Expected: PASS; tampering any index policy field produces
 `signatureFailure` before selection or descriptor download, and a valid
 fresh-install outcome verifies its descriptor before returning.
 
-- [ ] **Step 7: Commit the trust-boundary fix**
+Task 2 evidence:
+
+- RED verified locally: the new Dart suite failed on the missing index
+  verifier, canonical bytes, and strict client options; Swift failed on the
+  missing strict configuration/canonical index API; the portable C++ runner
+  failed to compile on the missing index verification contract.
+- GREEN verified locally: the exact five-file Flutter trust command passed 39
+  tests; the full Flutter suite passed 549 tests with 3 environment-gated
+  skips; Swift passed 32 tests; the portable common C++ trust runner and the
+  Windows C API syntax check exited 0.
+- Publisher verified locally: the focused publisher/signing suites passed 19
+  tests, including strict final descriptor verification with the configured
+  archive-signing key before upload, final archive signing after hooks, and
+  rejection of an upload provider that cannot guarantee app-archive-last
+  ordering.
+- Analysis and formatting verified locally: repository-wide Dart formatting
+  reported 211 files unchanged, and `flutter analyze --no-fatal-infos`
+  exited 0 with 378 pre-existing info-level diagnostics only.
+- Managed Windows wrapper verified locally: `dotnet build` completed for
+  `net8.0` and `netstandard2.0` with only NU1900 vulnerability-feed warnings.
+- Linux and Windows target-host CMake/CTest: not run locally on macOS.
+- CI: not run for this task; no CI result is claimed.
+
+- [x] **Step 7: Commit the trust-boundary fix**
 
 ~~~sh
 git add lib tool fixtures macos/desktop_updater native_runtime windows/native linux/native test

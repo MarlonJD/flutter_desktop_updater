@@ -88,6 +88,11 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
   } catch (const JsonError& error) {
     return Failure("invalidDescriptor", error.what());
   }
+  if ((configuration.require_index_signature || index.has_signature) &&
+      !VerifyIndexSignature(index, configuration.pinned_public_keys_by_id)) {
+    return Failure("signatureFailure",
+                   "App archive Ed25519 signature is invalid.");
+  }
 
   DesktopVersion current_version;
   try {
@@ -167,17 +172,6 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
     result.message = "Descriptor Ed25519 signature is invalid.";
     return result;
   }
-  if (selected->has_fresh_install) {
-    result.outcome = "freshInstallRequired";
-    result.message = "Selected release requires a fresh install.";
-    return result;
-  }
-  if (!SupportedArtifact(configuration.platform,
-                         result.descriptor.artifact.kind)) {
-    result.outcome = "unsupportedArtifactKind";
-    result.message = "Artifact kind is not supported on this platform.";
-    return result;
-  }
   try {
     const std::string policy = DescriptorPolicyOutcome(
         result.descriptor,
@@ -191,6 +185,17 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
   } catch (const JsonError& error) {
     result.outcome = "invalidDescriptor";
     result.message = error.what();
+    return result;
+  }
+  if (selected->has_fresh_install) {
+    result.outcome = "freshInstallRequired";
+    result.message = "Selected release requires a fresh install.";
+    return result;
+  }
+  if (!SupportedArtifact(configuration.platform,
+                         result.descriptor.artifact.kind)) {
+    result.outcome = "unsupportedArtifactKind";
+    result.message = "Artifact kind is not supported on this platform.";
     return result;
   }
 

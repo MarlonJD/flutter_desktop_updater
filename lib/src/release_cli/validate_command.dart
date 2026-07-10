@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
@@ -36,11 +37,23 @@ Future<int> runValidateCommand(
 
   final manifestFile = File(_required(results, "manifest"));
   final fromVersion = results["from-version"] as String?;
+  final requireSignature = results["require-signature"] as bool;
+  final publicKeys = _releasePublicKeys(
+    results: results,
+    environment: environment ?? Platform.environment,
+  );
   await ReleaseValidator(
-    artifactVerifier: _artifactVerifier(
-      results: results,
-      environment: environment ?? Platform.environment,
-    ),
+    artifactVerifier: requireSignature
+        ? ArtifactVerifier(
+            policy: ArtifactVerificationPolicy.requireEd25519Signature(
+              publicKeys: publicKeys!,
+            ),
+          )
+        : const ArtifactVerifier(),
+    requireIndexSignature: requireSignature,
+    indexSignatureVerifier: publicKeys == null
+        ? null
+        : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
   ).validate(
     manifestFile: manifestFile,
     fromVersion: fromVersion,
@@ -49,12 +62,12 @@ Future<int> runValidateCommand(
   return 0;
 }
 
-ArtifactVerifier _artifactVerifier({
+Map<String, String>? _releasePublicKeys({
   required ArgResults results,
   required Map<String, String> environment,
 }) {
   if (!(results["require-signature"] as bool)) {
-    return const ArtifactVerifier();
+    return null;
   }
 
   final envName = _required(results, "public-keys-env");
@@ -62,17 +75,15 @@ ArtifactVerifier _artifactVerifier({
   if (value == null || value.trim().isEmpty) {
     throw FormatException("Missing environment variable $envName.");
   }
-  return ArtifactVerifier(
-    policy: ArtifactVerificationPolicy.requireEd25519Signature(
-      publicKeys: decodeReleasePublicKeysJson(value),
-    ),
-  );
+  return decodeReleasePublicKeysJson(value);
 }
 
 class ReleaseValidator {
   ReleaseValidator({
     http.Client? client,
     this.artifactVerifier = const ArtifactVerifier(),
+    this.requireIndexSignature = false,
+    this.indexSignatureVerifier,
     MacOSDistributionVerifier? macosVerifier,
     bool? isMacOSHost,
   })  : client = client ?? http.Client(),
@@ -81,6 +92,8 @@ class ReleaseValidator {
 
   final http.Client client;
   final ArtifactVerifier artifactVerifier;
+  final bool requireIndexSignature;
+  final Ed25519ReleaseIndexSignatureVerifier? indexSignatureVerifier;
   final MacOSDistributionVerifier macosVerifier;
   final bool isMacOSHost;
 
@@ -94,7 +107,19 @@ class ReleaseValidator {
     final index = ReleaseIndex.fromJson(
       jsonDecode(appArchiveResponse.body) as Map<String, dynamic>,
     );
+    final shouldVerifyIndex = requireIndexSignature ||
+        (index.signature != null && indexSignatureVerifier != null);
+    if (shouldVerifyIndex &&
+        (indexSignatureVerifier == null ||
+            !await indexSignatureVerifier!.verify(index))) {
+      throw StateError(
+        "app-archive.json signature verification failed.",
+      );
+    }
     output.writeln("Hosted app archive: OK");
+    if (shouldVerifyIndex) {
+      output.writeln("Hosted app archive signature: OK");
+    }
     _warnLongCacheControl(appArchiveResponse, output);
 
     final currentVersion = _currentVersionForValidation(

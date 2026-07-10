@@ -85,6 +85,7 @@ ClientConfiguration FixtureConfiguration(const std::string& index_url) {
   configuration.platform = "macos";
   configuration.channel = "stable";
   configuration.installation_identity = "fixture-device";
+  configuration.require_index_signature = false;
   configuration.require_descriptor_signature = false;
   configuration.minimum_os_resolver = [](const std::string&,
                                          const std::string&) { return true; };

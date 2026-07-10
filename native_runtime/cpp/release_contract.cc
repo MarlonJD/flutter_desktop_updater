@@ -583,6 +583,7 @@ ReleaseIndexItem ParseReleaseIndexItem(const JsonValue& json) {
     if (!HasScheme(result.fresh_install.download_url)) {
       throw JsonError("Fresh install URL not absolute.");
     }
+    result.fresh_install.has_message = fresh->find("message") != nullptr;
     result.fresh_install.message = OptionalString(*fresh, "message");
   }
   result.raw = json;
@@ -605,6 +606,12 @@ ReleaseIndex ParseReleaseIndex(const std::string& json) {
     result.support_policy.enforced_after =
         RequiredString(*policy, "enforcedAfter");
     ParseInstant(result.support_policy.enforced_after);
+  }
+  if (const JsonValue* signature = root.find("signature")) {
+    result.has_signature = true;
+    result.signature.algorithm = signature->at("algorithm").string();
+    result.signature.public_key_id = signature->at("publicKeyId").string();
+    result.signature.value = OptionalString(*signature, "value");
   }
   result.raw = root;
   return result;
@@ -775,6 +782,84 @@ std::string CanonicalSignatureBytes(const ReleaseDescriptor& descriptor) {
   }
   canonical.emplace("generatedAt", JsonValue(descriptor.generated_at));
   return EncodeCanonicalJson(JsonValue(std::move(canonical)));
+}
+
+std::string CanonicalIndexSignatureBytes(const ReleaseIndex& index) {
+  JsonValue::Object canonical;
+  canonical.emplace("schemaVersion", JsonValue(index.schema_version));
+  canonical.emplace("appName", JsonValue(index.app_name));
+  if (index.has_support_policy) {
+    JsonValue::Object support;
+    support.emplace(
+        "minimumSupportedVersion",
+        JsonValue(index.support_policy.minimum_supported_version.raw));
+    support.emplace(
+        "enforcedAfter",
+        JsonValue(FormatInstant(ParseInstant(
+            index.support_policy.enforced_after))));
+    canonical.emplace("supportPolicy", JsonValue(std::move(support)));
+  }
+  JsonValue::Array items;
+  for (const ReleaseIndexItem& item : index.items) {
+    JsonValue::Object normalized;
+    normalized.emplace("version", JsonValue(item.version));
+    if (item.has_build_number) {
+      normalized.emplace("buildNumber", JsonValue(item.build_number));
+    }
+    normalized.emplace("platform", JsonValue(item.platform));
+    normalized.emplace("channel", JsonValue(item.channel));
+    normalized.emplace("mandatory", JsonValue(item.mandatory));
+    if (item.has_fresh_install) {
+      JsonValue::Object fresh;
+      fresh.emplace("downloadUrl",
+                    JsonValue(item.fresh_install.download_url));
+      if (item.fresh_install.has_message) {
+        fresh.emplace("message", JsonValue(item.fresh_install.message));
+      }
+      normalized.emplace("freshInstall", JsonValue(std::move(fresh)));
+    }
+    normalized.emplace("release", JsonValue(item.release));
+    if (item.has_rollout) {
+      JsonValue::Object rollout;
+      rollout.emplace("percentage", JsonValue(item.rollout.percentage));
+      rollout.emplace("salt", JsonValue(item.rollout.salt));
+      normalized.emplace("rollout", JsonValue(std::move(rollout)));
+    }
+    items.emplace_back(JsonValue(std::move(normalized)));
+  }
+  canonical.emplace("items", JsonValue(std::move(items)));
+  if (index.has_signature) {
+    JsonValue::Object signature;
+    signature.emplace("algorithm", JsonValue(index.signature.algorithm));
+    signature.emplace("publicKeyId",
+                      JsonValue(index.signature.public_key_id));
+    signature.emplace("value", JsonValue(std::string()));
+    canonical.emplace("signature", JsonValue(std::move(signature)));
+  }
+  return EncodeCanonicalJson(JsonValue(std::move(canonical)));
+}
+
+bool VerifyIndexSignature(
+    const ReleaseIndex& index,
+    const std::map<std::string, std::vector<std::uint8_t>>& pinned_keys) {
+  if (!index.has_signature || index.signature.algorithm != "ed25519" ||
+      Trim(index.signature.public_key_id).empty()) {
+    return false;
+  }
+  const auto key = pinned_keys.find(index.signature.public_key_id);
+  if (key == pinned_keys.end() || key->second.size() != 32) return false;
+  std::vector<std::uint8_t> signature;
+  try {
+    signature = DecodeBase64(index.signature.value);
+  } catch (const JsonError&) {
+    return false;
+  }
+  if (signature.size() != 64) return false;
+  const std::string message = CanonicalIndexSignatureBytes(index);
+  return crypto_ed25519_check(
+             signature.data(), key->second.data(),
+             reinterpret_cast<const std::uint8_t*>(message.data()),
+             message.size()) == 0;
 }
 
 bool VerifyDescriptorSignature(

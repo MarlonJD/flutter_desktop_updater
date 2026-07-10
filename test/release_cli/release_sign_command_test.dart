@@ -3,6 +3,8 @@ import "dart:io";
 
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -94,6 +96,49 @@ void main() {
     }
   });
 
+  test("release sign signs the final app archive with the descriptor key",
+      () async {
+    final fixture = await _createReleaseFile();
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "sign",
+          "--release",
+          fixture.releaseFile.path,
+          "--app-archive",
+          fixture.appArchiveFile.path,
+          "--public-key-id",
+          _publicKeyId,
+          "--private-key-env",
+          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+        environment: {
+          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY": fixture.privateKey,
+        },
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("Signed app archive:"));
+      final index = ReleaseIndex.fromJson(
+        jsonDecode(await fixture.appArchiveFile.readAsString())
+            as Map<String, dynamic>,
+      );
+      expect(index.signature?.publicKeyId, _publicKeyId);
+      expect(
+        await Ed25519ReleaseIndexSignatureVerifier({
+          _publicKeyId: fixture.publicKey,
+        }).verify(index),
+        isTrue,
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("release sign requires env or external file key source", () async {
     final fixture = await _createReleaseFile();
     try {
@@ -169,9 +214,27 @@ Future<_ReleaseSignFixture> _createReleaseFile() async {
   await releaseFile.writeAsString(
     "${const JsonEncoder.withIndent("  ").convert(_descriptorJson())}\n",
   );
+  final appArchiveFile = File(path.join(root.path, "app-archive.json"));
+  await appArchiveFile.writeAsString(
+    "${const JsonEncoder.withIndent("  ").convert({
+          "schemaVersion": 3,
+          "appName": "Example",
+          "items": [
+            {
+              "version": "2.0.0",
+              "buildNumber": 200,
+              "platform": "macos",
+              "channel": "stable",
+              "mandatory": true,
+              "release": "https://cdn.example.com/release.json",
+            },
+          ],
+        })}\n",
+  );
   return _ReleaseSignFixture(
     root: root,
     releaseFile: releaseFile,
+    appArchiveFile: appArchiveFile,
     privateKey: base64Encode(_privateSeed),
     publicKey: base64Encode(publicKey.bytes),
   );
@@ -202,12 +265,14 @@ class _ReleaseSignFixture {
   const _ReleaseSignFixture({
     required this.root,
     required this.releaseFile,
+    required this.appArchiveFile,
     required this.privateKey,
     required this.publicKey,
   });
 
   final Directory root;
   final File releaseFile;
+  final File appArchiveFile;
   final String privateKey;
   final String publicKey;
 

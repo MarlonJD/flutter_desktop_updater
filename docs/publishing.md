@@ -684,7 +684,8 @@ Not uploaded yet.
 ```
 
 Upload the contents of `dist/desktop_updater` to `updates.baseUrl` without
-changing relative paths.
+changing relative paths. For signed metadata, upload versioned release files
+and artifacts first, then publish `app-archive.json` last.
 
 6. Validate after manual upload:
 
@@ -705,8 +706,8 @@ Without `--from-version`, validation uses the previous hosted release for the
 same platform and channel when available, or synthetic `0.0.0` for a first
 release.
 
-To require a signed hosted `release.json`, pin public keys in an environment
-variable and pass it to validation:
+To require signed hosted `app-archive.json` and `release.json` metadata, pin
+public keys in an environment variable and pass it to validation:
 
 ```sh
 export DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS='{"stable-2026":"base64-raw-ed25519-public-key"}'
@@ -724,20 +725,22 @@ For production, start from the minimum setup and add:
 - HTTPS for `app-archive.json`, `release.json`, and zip artifacts.
 - Short cache TTLs for `app-archive.json`.
 - Long, immutable cache TTLs for versioned `release.json` and zip files.
-- Signed `release.json` descriptors with public keys pinned by the app or
-  release validation environment.
+- Signed `app-archive.json` indexes and `release.json` descriptors with public
+  keys pinned by the app or release validation environment.
 - S3-compatible storage, SFTP, or a custom upload command in CI.
 - Platform publisher-trust gates before packaging.
 - A release approval step before publishing `app-archive.json`.
 - `release validate --require-signature` after every production upload.
 
-### Signing release.json
+### Signing release metadata
 
-Sign each generated descriptor after packaging and before uploading it:
+Sign the final app archive and each generated descriptor after packaging and
+before uploading them:
 
 ```sh
 dart run desktop_updater:release sign \
   --release dist/desktop_updater/releases/2.2.0/linux/release.json \
+  --app-archive dist/desktop_updater/app-archive.json \
   --public-key-id stable-2026 \
   --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
 ```
@@ -749,6 +752,7 @@ and point to it explicitly:
 ```sh
 dart run desktop_updater:release sign \
   --release dist/desktop_updater/releases/2.2.0/linux/release.json \
+  --app-archive dist/desktop_updater/app-archive.json \
   --public-key-id stable-2026 \
   --private-key-file /secure/path/desktop-updater-release.key
 ```
@@ -756,11 +760,25 @@ dart run desktop_updater:release sign \
 Private signing keys are never read from `desktop_updater.yaml`. Keep them in
 CI secret storage, a dedicated key file, or another app-owned secret manager.
 
+The publisher can sign the final app archive itself after `postPackage` hooks
+using the same key material as the descriptor signing step:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform linux \
+  --public-key-id stable-2026 \
+  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
+```
+
+Ordered upload providers publish versioned descriptor and artifact files first,
+then publish the authenticated app archive last. Signed publishing rejects the
+single-shot custom-command provider because it cannot prove that ordering.
+
 ### Trust Split
 
-Signed `release.json` is the package-owned, platform-independent trust layer. It
-protects update metadata across macOS, Windows, and Linux: which artifact URL is
-selected, which length is expected, and which SHA-256 digest must match.
+Signed `app-archive.json` authenticates release selection, rollout, mandatory,
+support, and fresh-install policy. Signed `release.json` authenticates the
+selected artifact URL, length, SHA-256 digest, and install metadata.
 
 Platform trust remains app-owned. For Windows, use Authenticode or a trusted
 installer/channel when your distribution requires it. For macOS, sign and
@@ -930,7 +948,7 @@ hooks:
 Use `prePackage` for gates that must happen before the zip is created, such as
 Windows Authenticode signing or macOS notarization when you own that outside the
 built-in `macos.notarize` flow. Use `postPackage` for metadata gates such as
-signing generated `release.json`.
+signing generated `release.json` and `app-archive.json` with the same key.
 
 `release publish` runs matching hooks for the requested platform. Each hook gets
 the normal process environment plus these variables:

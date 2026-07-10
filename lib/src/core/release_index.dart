@@ -1,6 +1,8 @@
 import "dart:convert";
 
 import "package:crypto/crypto.dart" as crypto;
+import "package:desktop_updater/src/core/release_descriptor.dart"
+    show ReleaseSignature, sortJsonValue;
 import "package:desktop_updater/src/version_info.dart";
 
 /// Parsed `app-archive.json` index for zip-first update discovery.
@@ -11,6 +13,7 @@ class ReleaseIndex {
     required this.appName,
     required this.items,
     this.supportPolicy,
+    this.signature,
   });
 
   /// Parses and validates a schema-v3 app archive index from JSON.
@@ -26,6 +29,11 @@ class ReleaseIndex {
       schemaVersion: schemaVersion,
       appName: json["appName"] as String? ?? "",
       supportPolicy: _parseReleaseSupportPolicy(json["supportPolicy"]),
+      signature: json["signature"] == null
+          ? null
+          : ReleaseSignature.fromJson(
+              json["signature"] as Map<String, dynamic>,
+            ),
       items: (json["items"] as List<dynamic>? ?? const [])
           .map(
             (item) => ReleaseIndexItem.fromJson(
@@ -48,6 +56,9 @@ class ReleaseIndex {
   /// Optional app-wide support deadline policy.
   final ReleaseSupportPolicy? supportPolicy;
 
+  /// Optional detached signature authenticating archive discovery policy.
+  final ReleaseSignature? signature;
+
   /// Converts this app archive to JSON.
   Map<String, dynamic> toJson() {
     return {
@@ -55,7 +66,23 @@ class ReleaseIndex {
       "appName": appName,
       if (supportPolicy != null) "supportPolicy": supportPolicy!.toJson(),
       "items": items.map((item) => item.toJson()).toList(),
+      if (signature != null) "signature": signature!.toJson(),
     };
+  }
+
+  /// Returns normalized, recursively sorted JSON for signature operations.
+  Map<String, dynamic> toCanonicalSignatureJson() {
+    final json = toJson();
+    final existingSignature = signature;
+    if (existingSignature != null) {
+      json["signature"] = existingSignature.copyWith(value: "").toJson();
+    }
+    return sortJsonValue(json) as Map<String, dynamic>;
+  }
+
+  /// Encodes the normalized signature payload as UTF-8 JSON bytes.
+  List<int> canonicalSignatureBytes() {
+    return utf8.encode(jsonEncode(toCanonicalSignatureJson()));
   }
 }
 
@@ -169,7 +196,7 @@ class ReleaseSupportPolicy {
     }
 
     return ReleaseSupportPolicy(
-      minimumSupportedVersion: minimumSupportedVersion,
+      minimumSupportedVersion: minimumSupportedVersion.trim(),
       enforcedAfter: DateTime.parse(enforcedAfterValue).toUtc(),
     );
   }

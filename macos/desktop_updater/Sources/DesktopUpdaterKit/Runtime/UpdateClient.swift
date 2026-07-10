@@ -73,6 +73,24 @@ public final class UpdateClient {
         } catch {
             return mappedFailure(error, fallback: .invalidDescriptor)
         }
+        if configuration.requireIndexSignature || index.signature != nil {
+            do {
+                guard try ArtifactVerifier.verifyIndexSignature(
+                    index,
+                    pinnedPublicKeysById: configuration.pinnedPublicKeysById
+                ) else {
+                    return failure(
+                        .signatureFailure,
+                        "App archive Ed25519 signature is invalid."
+                    )
+                }
+            } catch {
+                return failure(
+                    .signatureFailure,
+                    "App archive Ed25519 signature is invalid."
+                )
+            }
+        }
         do {
             let currentVersion = try DesktopVersion(
                 configuration.currentVersion,
@@ -165,6 +183,22 @@ public final class UpdateClient {
                     )
                 }
             }
+            let policy = try UpdatePolicy.descriptorOutcome(
+                descriptor: descriptor,
+                currentUpdaterVersion: DesktopVersion(
+                    configuration.currentUpdaterVersion
+                ),
+                platform: configuration.platform,
+                minimumOSSupported: configuration.minimumOSResolver
+            ) ?? .updateAvailable
+            guard policy == .updateAvailable else {
+                return failure(
+                    policy,
+                    "Selected descriptor is not installable on this host.",
+                    selectedItem: selected,
+                    descriptor: descriptor
+                )
+            }
             if selected.freshInstall != nil {
                 record(.policy, .warning, "Selected release requires a fresh install.")
                 return RuntimeUpdateCheck(
@@ -178,22 +212,6 @@ public final class UpdateClient {
                 return failure(
                     .unsupportedArtifactKind,
                     "Artifact kind is not supported on this platform.",
-                    selectedItem: selected,
-                    descriptor: descriptor
-                )
-            }
-            let policy = try UpdatePolicy.descriptorOutcome(
-                descriptor: descriptor,
-                currentUpdaterVersion: DesktopVersion(
-                    configuration.currentUpdaterVersion
-                ),
-                platform: configuration.platform,
-                minimumOSSupported: configuration.minimumOSResolver
-            ) ?? .updateAvailable
-            guard policy == .updateAvailable else {
-                return failure(
-                    policy,
-                    "Selected descriptor is not installable on this host.",
                     selectedItem: selected,
                     descriptor: descriptor
                 )

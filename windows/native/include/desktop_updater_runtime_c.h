@@ -88,6 +88,7 @@ typedef struct desktop_updater_runtime_configuration_v1 {
   const char* platform_utf8;
   const char* channel_utf8;
   const char* installation_identity_utf8;
+  int32_t require_index_signature;
   int32_t require_descriptor_signature;
   const desktop_updater_runtime_pinned_key_v1* pinned_public_keys;
   size_t pinned_public_key_count;

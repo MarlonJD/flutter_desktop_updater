@@ -6,6 +6,7 @@ public struct ReleaseIndex {
     public let appName: String
     public let items: [ReleaseIndexItem]
     public let supportPolicy: ReleaseSupportPolicy?
+    public let signature: ReleaseSignature?
 
     public init(jsonData: Data) throws {
         let json = try runtimeDictionary(
@@ -25,6 +26,51 @@ public struct ReleaseIndex {
         supportPolicy = try json["supportPolicy"].map {
             try ReleaseSupportPolicy(json: runtimeDictionary($0))
         }
+        signature = try json["signature"].map {
+            let value = try runtimeDictionary($0)
+            guard let algorithm = value["algorithm"] as? String,
+                  let publicKeyId = value["publicKeyId"] as? String,
+                  let signatureValue = value["value"] as? String
+            else {
+                throw RuntimeError.outcome(
+                    .invalidDescriptor,
+                    message: "Invalid app archive signature envelope."
+                )
+            }
+            return ReleaseSignature(
+                algorithm: algorithm,
+                publicKeyId: publicKeyId,
+                value: signatureValue
+            )
+        }
+    }
+
+    public func canonicalSignatureBytes() throws -> Data {
+        var canonical: [String: Any] = [
+            "schemaVersion": schemaVersion,
+            "appName": appName,
+            "items": items.map(\.canonicalJSON),
+        ]
+        if let supportPolicy {
+            canonical["supportPolicy"] = [
+                "minimumSupportedVersion":
+                    supportPolicy.minimumSupportedVersion.rawValue,
+                "enforcedAfter": RuntimeISO8601.string(
+                    supportPolicy.enforcedAfter
+                ),
+            ]
+        }
+        if let signature {
+            canonical["signature"] = [
+                "algorithm": signature.algorithm,
+                "publicKeyId": signature.publicKeyId,
+                "value": "",
+            ]
+        }
+        return try JSONSerialization.data(
+            withJSONObject: canonical,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
     }
 }
 
@@ -37,6 +83,35 @@ public struct ReleaseIndexItem {
     public let release: URL
     public let freshInstall: ReleaseFreshInstall?
     public let rollout: ReleaseRollout?
+
+    var canonicalJSON: [String: Any] {
+        var result: [String: Any] = [
+            "version": version,
+            "platform": platform,
+            "channel": channel,
+            "mandatory": mandatory,
+            "release": release.absoluteString,
+        ]
+        if let buildNumber {
+            result["buildNumber"] = buildNumber
+        }
+        if let freshInstall {
+            var fresh: [String: Any] = [
+                "downloadUrl": freshInstall.downloadURL.absoluteString
+            ]
+            if let message = freshInstall.message {
+                fresh["message"] = message
+            }
+            result["freshInstall"] = fresh
+        }
+        if let rollout {
+            result["rollout"] = [
+                "percentage": rollout.percentage,
+                "salt": rollout.salt,
+            ]
+        }
+        return result
+    }
 
     public init(json: [String: Any]) throws {
         version = try runtimeTrimmedString(json, "version")

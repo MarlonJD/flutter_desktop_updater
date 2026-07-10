@@ -4,6 +4,7 @@ import "dart:io";
 import "package:args/args.dart";
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:path/path.dart" as path;
 
 /// Builds the argument parser for `desktop_updater:release sign`.
@@ -11,6 +12,10 @@ ArgParser buildSignParser() {
   return ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
     ..addOption("release", help: "Path to the release.json file to sign.")
+    ..addOption(
+      "app-archive",
+      help: "Path to the final app-archive.json file to sign.",
+    )
     ..addOption("public-key-id", help: "Pinned public key id to write.")
     ..addOption(
       "private-key-env",
@@ -37,10 +42,14 @@ Future<int> runSignCommand(
     return 0;
   }
 
-  final releaseFile = _resolveFile(
-    projectRoot: projectRoot,
-    value: _required(results, "release"),
-  );
+  final releaseValue = results["release"] as String?;
+  final appArchiveValue = results["app-archive"] as String?;
+  if ((releaseValue == null || releaseValue.trim().isEmpty) &&
+      (appArchiveValue == null || appArchiveValue.trim().isEmpty)) {
+    throw const FormatException(
+      "Provide --release, --app-archive, or both.",
+    );
+  }
   final publicKeyId = _required(results, "public-key-id");
   final privateKey = await _readPrivateKey(
     results: results,
@@ -48,16 +57,37 @@ Future<int> runSignCommand(
     environment: environment ?? Platform.environment,
   );
 
-  await ReleaseDescriptorSigner().sign(
-    releaseFile: releaseFile,
-    publicKeyId: publicKeyId,
-    privateKeyBase64: privateKey,
-  );
-
+  if (releaseValue != null && releaseValue.trim().isNotEmpty) {
+    final releaseFile = _resolveFile(
+      projectRoot: projectRoot,
+      value: releaseValue,
+    );
+    await ReleaseDescriptorSigner().sign(
+      releaseFile: releaseFile,
+      publicKeyId: publicKeyId,
+      privateKeyBase64: privateKey,
+    );
+    output
+      ..writeln("Signed release descriptor:")
+      ..writeln(releaseFile.path)
+      ..writeln();
+  }
+  if (appArchiveValue != null && appArchiveValue.trim().isNotEmpty) {
+    final appArchiveFile = _resolveFile(
+      projectRoot: projectRoot,
+      value: appArchiveValue,
+    );
+    await ReleaseIndexSigner().sign(
+      appArchiveFile: appArchiveFile,
+      publicKeyId: publicKeyId,
+      privateKeyBase64: privateKey,
+    );
+    output
+      ..writeln("Signed app archive:")
+      ..writeln(appArchiveFile.path)
+      ..writeln();
+  }
   output
-    ..writeln("Signed release descriptor:")
-    ..writeln(releaseFile.path)
-    ..writeln()
     ..writeln("Public key id:")
     ..writeln(publicKeyId);
   return 0;
@@ -107,16 +137,87 @@ class ReleaseDescriptorSigner {
       "${const JsonEncoder.withIndent("  ").convert(signedJson)}\n",
     );
   }
+}
 
-  List<int> _decodePrivateSeed(String value) {
-    final seed = base64Decode(value.trim());
-    if (seed.length != 32) {
-      throw const FormatException(
-        "Ed25519 private key must be 32 raw bytes encoded as base64.",
-      );
+/// Signs normalized app archive indexes with Ed25519 metadata.
+class ReleaseIndexSigner {
+  /// Creates an index signer.
+  ReleaseIndexSigner({Ed25519? algorithm})
+      : _algorithm = algorithm ?? Ed25519();
+
+  final Ed25519 _algorithm;
+
+  /// Signs the parsed final app archive and writes its signature envelope.
+  Future<void> sign({
+    required File appArchiveFile,
+    required String publicKeyId,
+    required String privateKeyBase64,
+  }) async {
+    final json = jsonDecode(await appArchiveFile.readAsString());
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException("app-archive.json must be a JSON object.");
     }
-    return seed;
+    final signedIndex = await signIndex(
+      index: ReleaseIndex.fromJson({
+        ...json,
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": publicKeyId,
+          "value": "",
+        },
+      }),
+      publicKeyId: publicKeyId,
+      privateKeyBase64: privateKeyBase64,
+    );
+    await appArchiveFile.writeAsString(
+      "${const JsonEncoder.withIndent("  ").convert(signedIndex.toJson())}\n",
+    );
   }
+
+  /// Returns [index] with a signature produced from its canonical bytes.
+  Future<ReleaseIndex> signIndex({
+    required ReleaseIndex index,
+    required String publicKeyId,
+    required String privateKeyBase64,
+  }) async {
+    final normalizedPublicKeyId = publicKeyId.trim();
+    if (normalizedPublicKeyId.isEmpty) {
+      throw const FormatException("Ed25519 public key id must not be blank.");
+    }
+    final unsigned = ReleaseIndex.fromJson({
+      ...index.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": normalizedPublicKeyId,
+        "value": "",
+      },
+    });
+    final keyPair = await _algorithm.newKeyPairFromSeed(
+      _decodePrivateSeed(privateKeyBase64),
+    );
+    final signature = await _algorithm.sign(
+      unsigned.canonicalSignatureBytes(),
+      keyPair: keyPair,
+    );
+    return ReleaseIndex.fromJson({
+      ...unsigned.toJson(),
+      "signature": ReleaseSignature(
+        algorithm: "ed25519",
+        publicKeyId: normalizedPublicKeyId,
+        value: base64Encode(signature.bytes),
+      ).toJson(),
+    });
+  }
+}
+
+List<int> _decodePrivateSeed(String value) {
+  final seed = base64Decode(value.trim());
+  if (seed.length != 32) {
+    throw const FormatException(
+      "Ed25519 private key must be 32 raw bytes encoded as base64.",
+    );
+  }
+  return seed;
 }
 
 Future<String> _readPrivateKey({

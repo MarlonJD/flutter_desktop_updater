@@ -119,6 +119,7 @@ internal::ClientConfiguration CoreConfiguration(
   result.platform = configuration.platform;
   result.channel = configuration.channel;
   result.installation_identity = configuration.installation_identity;
+  result.require_index_signature = configuration.require_index_signature;
   result.require_descriptor_signature =
       configuration.require_descriptor_signature;
   result.pinned_public_keys_by_id = configuration.pinned_public_keys_by_id;

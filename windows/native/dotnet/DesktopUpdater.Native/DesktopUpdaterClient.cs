@@ -74,7 +74,8 @@ public sealed class DesktopUpdaterConfiguration
         long maximumMetadataBytes = DefaultMaximumMetadataBytes,
         long maximumArchiveEntries = DefaultMaximumArchiveEntries,
         long maximumUncompressedBytes = DefaultMaximumUncompressedBytes,
-        long maximumSingleEntryBytes = DefaultMaximumSingleEntryBytes)
+        long maximumSingleEntryBytes = DefaultMaximumSingleEntryBytes,
+        bool requireIndexSignature = true)
     {
         if (appArchiveUrl is null)
         {
@@ -107,7 +108,8 @@ public sealed class DesktopUpdaterConfiguration
                 nameof(currentBuildNumber),
                 "currentBuildNumber must not be negative.");
         }
-        if (requireDescriptorSignature && pinnedPublicKeysById.Count == 0)
+        if ((requireIndexSignature || requireDescriptorSignature) &&
+            pinnedPublicKeysById.Count == 0)
         {
             throw new ArgumentException(
                 "At least one pinned public key is required.",
@@ -148,6 +150,7 @@ public sealed class DesktopUpdaterConfiguration
         Platform = platform;
         Channel = channel;
         InstallationIdentity = installationIdentity;
+        RequireIndexSignature = requireIndexSignature;
         RequireDescriptorSignature = requireDescriptorSignature;
         PinnedPublicKeysById = pinnedPublicKeysById.ToDictionary(
             entry => entry.Key,
@@ -177,6 +180,8 @@ public sealed class DesktopUpdaterConfiguration
     public string Channel { get; }
     /// <summary>Stable application-owned rollout identity.</summary>
     public string? InstallationIdentity { get; }
+    /// <summary>Whether app archive signatures are mandatory.</summary>
+    public bool RequireIndexSignature { get; }
     /// <summary>Whether descriptor signatures are mandatory.</summary>
     public bool RequireDescriptorSignature { get; }
     /// <summary>Ed25519 public keys indexed by pinned key ID.</summary>
@@ -333,6 +338,7 @@ public sealed class DesktopUpdaterClient : IDisposable
                 InstallationIdentityUtf8 = configuration.InstallationIdentity is null
                     ? IntPtr.Zero
                     : AllocateUtf8(configuration.InstallationIdentity, allocations),
+                RequireIndexSignature = configuration.RequireIndexSignature ? 1 : 0,
                 RequireDescriptorSignature = configuration.RequireDescriptorSignature ? 1 : 0,
                 PinnedPublicKeys = keyArray,
                 PinnedPublicKeyCount = (nuint)nativeKeys.Length,
@@ -725,6 +731,7 @@ public sealed class DesktopUpdaterClient : IDisposable
         public IntPtr PlatformUtf8;
         public IntPtr ChannelUtf8;
         public IntPtr InstallationIdentityUtf8;
+        public int RequireIndexSignature;
         public int RequireDescriptorSignature;
         public IntPtr PinnedPublicKeys;
         public nuint PinnedPublicKeyCount;

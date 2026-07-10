@@ -3,6 +3,7 @@ import "dart:io";
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
+import "package:path/path.dart" as path;
 
 ArgParser buildPublishParser() {
   return ArgParser()
@@ -12,6 +13,18 @@ ArgParser buildPublishParser() {
     ..addOption("config")
     ..addOption("output")
     ..addOption("channel")
+    ..addOption(
+      "public-key-id",
+      help: "Pinned Ed25519 key id for the final app archive signature.",
+    )
+    ..addOption(
+      "private-key-env",
+      help: "Environment variable containing the base64 Ed25519 private seed.",
+    )
+    ..addOption(
+      "private-key-file",
+      help: "External file containing the base64 Ed25519 private seed.",
+    )
     ..addOption("version")
     ..addOption("build-number")
     ..addOption("package-id")
@@ -71,6 +84,7 @@ Future<int> runPublishCommand(
   ArgResults results, {
   required Directory projectRoot,
   required StringSink output,
+  Map<String, String>? environment,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildPublishParser().usage);
@@ -131,13 +145,59 @@ Future<int> runPublishCommand(
   final publisher = ReleasePublisher(
     skipBuild: results["skip-build-for-test"] as bool,
   );
+  final signing = await _releaseSigningOptions(
+    results,
+    projectRoot: projectRoot,
+    environment: environment ?? Platform.environment,
+  );
   await publisher.publish(
     projectRoot: projectRoot,
     platform: platform,
     overrides: overrides,
+    signing: signing,
     output: output,
   );
   return 0;
+}
+
+Future<ReleaseSigningOptions?> _releaseSigningOptions(
+  ArgResults results, {
+  required Directory projectRoot,
+  required Map<String, String> environment,
+}) async {
+  final publicKeyId = results["public-key-id"] as String?;
+  final envName = results["private-key-env"] as String?;
+  final fileValue = results["private-key-file"] as String?;
+  final hasKeyId = publicKeyId != null && publicKeyId.trim().isNotEmpty;
+  final hasEnv = envName != null && envName.trim().isNotEmpty;
+  final hasFile = fileValue != null && fileValue.trim().isNotEmpty;
+  if (!hasKeyId && !hasEnv && !hasFile) {
+    return null;
+  }
+  if (!hasKeyId || hasEnv == hasFile) {
+    throw const FormatException(
+      "Publishing signatures require --public-key-id and exactly one of "
+      "--private-key-env or --private-key-file.",
+    );
+  }
+  late final String privateKey;
+  if (hasEnv) {
+    final value = environment[envName.trim()];
+    if (value == null || value.trim().isEmpty) {
+      throw FormatException("Missing environment variable ${envName.trim()}.");
+    }
+    privateKey = value;
+  } else {
+    final value = fileValue!.trim();
+    final file = File(
+      path.isAbsolute(value) ? value : path.join(projectRoot.path, value),
+    );
+    privateKey = await file.readAsString();
+  }
+  return ReleaseSigningOptions(
+    publicKeyId: publicKeyId.trim(),
+    privateKeyBase64: privateKey,
+  );
 }
 
 int? _optionalInt(ArgResults results, String name) {

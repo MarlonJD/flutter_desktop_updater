@@ -1,7 +1,11 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:cryptography_plus/cryptography_plus.dart";
+import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
@@ -20,6 +24,7 @@ import "package:desktop_updater/src/release_cli/project_metadata_resolver.dart";
 import "package:desktop_updater/src/release_cli/publish_layout.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
+import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:desktop_updater/src/release_cli/upload/custom_command_upload_provider.dart";
 import "package:desktop_updater/src/release_cli/upload/ftp_upload_provider.dart";
 import "package:desktop_updater/src/release_cli/upload/manual_upload_provider.dart";
@@ -42,6 +47,21 @@ typedef ReleaseHookCommandRunner = Future<ProcessResult> Function(
   String command, {
   required Map<String, String> environment,
 });
+
+/// Ephemeral key material used to sign the final app archive after hooks.
+class ReleaseSigningOptions {
+  /// Creates ephemeral signing options for one publication.
+  const ReleaseSigningOptions({
+    required this.publicKeyId,
+    required this.privateKeyBase64,
+  });
+
+  /// Pinned key identifier written to the signature envelope.
+  final String publicKeyId;
+
+  /// Base64-encoded raw 32-byte Ed25519 private seed.
+  final String privateKeyBase64;
+}
 
 class ReleasePublisher {
   const ReleasePublisher({
@@ -74,6 +94,7 @@ class ReleasePublisher {
     required Directory projectRoot,
     required String platform,
     required ReleasePublishOverrides overrides,
+    ReleaseSigningOptions? signing,
     required StringSink output,
   }) async {
     final config = await ReleasePublishConfig.load(
@@ -352,11 +373,77 @@ class ReleasePublisher {
       output: output,
     );
 
+    var publicationValidator = ReleaseValidator();
+    if (signing != null) {
+      final publicKeyId = signing.publicKeyId.trim();
+      final keyPair = await Ed25519().newKeyPairFromSeed(
+        base64Decode(signing.privateKeyBase64.trim()),
+      );
+      final publicKey = await keyPair.extractPublicKey();
+      final publicKeys = {
+        publicKeyId: base64Encode(publicKey.bytes),
+      };
+      final strictArtifactVerifier = ArtifactVerifier(
+        policy: ArtifactVerificationPolicy.requireEd25519Signature(
+          publicKeys: publicKeys,
+        ),
+      );
+      final descriptor = ReleaseDescriptor.fromJson(
+        jsonDecode(await layout.releaseFile.readAsString())
+            as Map<String, dynamic>,
+      );
+      try {
+        if (descriptor.signature?.publicKeyId != publicKeyId) {
+          throw StateError(
+            "Final release.json signature verification failed.",
+          );
+        }
+        await strictArtifactVerifier.verifyDescriptor(descriptor);
+      } on Object {
+        throw StateError(
+          "Final release.json signature verification failed.",
+        );
+      }
+
+      await ReleaseIndexSigner().sign(
+        appArchiveFile: layout.appArchiveFile,
+        publicKeyId: publicKeyId,
+        privateKeyBase64: signing.privateKeyBase64,
+      );
+      final signedIndex = ReleaseIndex.fromJson(
+        jsonDecode(await layout.appArchiveFile.readAsString())
+            as Map<String, dynamic>,
+      );
+      final indexSignatureVerifier = Ed25519ReleaseIndexSignatureVerifier(
+        publicKeys,
+      );
+      final valid = await indexSignatureVerifier.verify(signedIndex);
+      if (!valid) {
+        throw StateError(
+          "Final app-archive.json signature verification failed.",
+        );
+      }
+      publicationValidator = ReleaseValidator(
+        artifactVerifier: strictArtifactVerifier,
+        requireIndexSignature: true,
+        indexSignatureVerifier: indexSignatureVerifier,
+      );
+      output.writeln("Signed final app-archive.json.");
+    }
+
+    if (signing != null && config.uploadProvider is CustomCommandUploadConfig) {
+      throw const FormatException(
+        "Signed publishing requires an upload provider that publishes "
+        "app-archive.json last.",
+      );
+    }
+
     await _uploadAndValidate(
       provider: _providerFor(config.uploadProvider),
       config: config.uploadProvider,
       localRoot: config.outputDirectory,
       manifest: manifest,
+      validator: publicationValidator,
       output: output,
     );
 
@@ -974,6 +1061,7 @@ Future<void> _uploadAndValidate({
   required UploadConfig config,
   required Directory localRoot,
   required PublishManifest manifest,
+  required ReleaseValidator validator,
   required StringSink output,
 }) async {
   if (config is ManualUploadConfig) {
@@ -986,7 +1074,6 @@ Future<void> _uploadAndValidate({
     return;
   }
 
-  final validator = ReleaseValidator();
   if (provider is OrderedUploadProvider) {
     output.writeln("Uploading versioned files...");
     await provider.uploadVersionedFiles(

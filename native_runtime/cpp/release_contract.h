@@ -40,6 +40,7 @@ struct ReleaseRollout {
 
 struct ReleaseFreshInstall {
   std::string download_url;
+  bool has_message = false;
   std::string message;
 };
 
@@ -63,12 +64,20 @@ struct ReleaseIndexItem {
   JsonValue raw;
 };
 
+struct ReleaseSignature {
+  std::string algorithm;
+  std::string public_key_id;
+  std::string value;
+};
+
 struct ReleaseIndex {
   std::int64_t schema_version = 0;
   std::string app_name;
   std::vector<ReleaseIndexItem> items;
   bool has_support_policy = false;
   ReleaseSupportPolicy support_policy;
+  bool has_signature = false;
+  ReleaseSignature signature;
   JsonValue raw;
 };
 
@@ -78,12 +87,6 @@ struct ReleaseArtifact {
   std::string sha256;
   std::int64_t length = 0;
   JsonValue raw;
-};
-
-struct ReleaseSignature {
-  std::string algorithm;
-  std::string public_key_id;
-  std::string value;
 };
 
 struct ReleaseDescriptor {
@@ -118,6 +121,10 @@ const ReleaseIndexItem* SelectReleaseIndexItem(
     const Sha256Function& sha256);
 
 std::string CanonicalSignatureBytes(const ReleaseDescriptor& descriptor);
+std::string CanonicalIndexSignatureBytes(const ReleaseIndex& index);
+bool VerifyIndexSignature(
+    const ReleaseIndex& index,
+    const std::map<std::string, std::vector<std::uint8_t>>& pinned_keys);
 bool VerifyDescriptorSignature(
     const ReleaseDescriptor& descriptor,
     const std::map<std::string, std::vector<std::uint8_t>>& pinned_keys);

@@ -27,6 +27,7 @@ struct desktop_updater_runtime_client_v1 {
   std::string platform;
   std::string channel;
   std::string installation_identity;
+  bool require_index_signature;
   bool require_descriptor_signature;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> pinned_public_keys;
   desktop_updater_runtime_minimum_os_resolver_v1 minimum_os_resolver;
@@ -224,6 +225,7 @@ desktop_updater::runtime::internal::ClientConfiguration CoreConfiguration(
   result.platform = client->platform;
   result.channel = client->channel;
   result.installation_identity = client->installation_identity;
+  result.require_index_signature = client->require_index_signature;
   result.require_descriptor_signature = client->require_descriptor_signature;
   result.pinned_public_keys_by_id = std::map<std::string,
       std::vector<std::uint8_t>>(client->pinned_public_keys.begin(),
@@ -284,7 +286,8 @@ desktop_updater_runtime_client_create_v1(
         configuration->current_build_number < 0) {
       return Failure("current_build_number must not be negative.");
     }
-    if (configuration->require_descriptor_signature != 0 &&
+    if ((configuration->require_index_signature != 0 ||
+         configuration->require_descriptor_signature != 0) &&
         configuration->pinned_public_key_count == 0) {
       return Failure("At least one pinned public key is required.");
     }
@@ -314,6 +317,8 @@ desktop_updater_runtime_client_create_v1(
     if (configuration->installation_identity_utf8 != nullptr) {
       client->installation_identity = configuration->installation_identity_utf8;
     }
+    client->require_index_signature =
+        configuration->require_index_signature != 0;
     client->require_descriptor_signature =
         configuration->require_descriptor_signature != 0;
     for (size_t index = 0; index < configuration->pinned_public_key_count;

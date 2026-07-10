@@ -119,6 +119,7 @@ final class NativeContractConformanceTests: XCTestCase {
                     currentBuildNumber: 260,
                     currentUpdaterVersion: "2.7.0",
                     platform: "macos",
+                    requireIndexSignature: false,
                     pinnedPublicKeysById: [
                         try string(valid, "publicKeyId"): publicKey,
                     ]

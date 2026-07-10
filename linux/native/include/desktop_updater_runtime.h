@@ -45,6 +45,7 @@ struct RuntimeConfiguration {
   std::string platform;
   std::string channel = "stable";
   std::string installation_identity;
+  bool require_index_signature = true;
   bool require_descriptor_signature = true;
   std::map<std::string, std::vector<std::uint8_t>> pinned_public_keys_by_id;
   MinimumOSResolver minimum_os_resolver;

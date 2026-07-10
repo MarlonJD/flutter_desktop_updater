@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/core/staging_directory_cleanup.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
@@ -50,6 +51,8 @@ class UpdateClient {
     MinimumOSSupportChecker? isMinimumOSSupported,
     DesktopUpdaterTelemetry? telemetry,
     this.installationIdentity,
+    this.requireIndexSignature = false,
+    this.indexSignatureVerifier,
   })  : platform = platform ?? Platform.operatingSystem,
         _currentUpdaterVersion = currentUpdaterVersion ??
             DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
@@ -81,6 +84,12 @@ class UpdateClient {
 
   /// Stable app-owned identity used for deterministic staged rollouts.
   final String? installationIdentity;
+
+  /// Whether a valid app archive signature is required before selection.
+  final bool requireIndexSignature;
+
+  /// Optional verifier used for signed app archives.
+  final Ed25519ReleaseIndexSignatureVerifier? indexSignatureVerifier;
   final UpdateTransport _transport;
   final ArtifactVerifier _verifier;
   final SafeZipExtractor _extractor;
@@ -102,6 +111,15 @@ class UpdateClient {
       final index = ReleaseIndex.fromJson(
         jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>,
       );
+      final shouldVerifyIndex = requireIndexSignature ||
+          (index.signature != null && indexSignatureVerifier != null);
+      if (shouldVerifyIndex &&
+          (indexSignatureVerifier == null ||
+              !await indexSignatureVerifier!.verify(index))) {
+        throw const FormatException(
+          "app-archive.json signature verification failed.",
+        );
+      }
 
       final item = selectReleaseIndexItem(
         index: index,

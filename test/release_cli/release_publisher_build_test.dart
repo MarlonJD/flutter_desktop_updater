@@ -1,7 +1,11 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
@@ -11,6 +15,7 @@ import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
+import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
@@ -504,6 +509,220 @@ macos:
       await root.delete(recursive: true);
     }
   });
+
+  test("publisher signs the final app archive after post-package hooks",
+      () async {
+    final root = await _createWindowsFixture();
+    await _configureDescriptorSigningHook(root);
+    final packager = _RecordingPackager(<String>[]);
+    final seed = List<int>.generate(32, (index) => index);
+    final keyPair = await Ed25519().newKeyPairFromSeed(seed);
+    final publicKey = await keyPair.extractPublicKey();
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: packager,
+        runHookCommand: _descriptorSigningHook(
+          seed: seed,
+          publicKeyId: "stable-2026",
+        ),
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+        ),
+        output: StringBuffer(),
+      );
+
+      final archiveFile = File(
+        path.join(root.path, "dist", "desktop_updater", "app-archive.json"),
+      );
+      final index = ReleaseIndex.fromJson(
+        jsonDecode(await archiveFile.readAsString()) as Map<String, dynamic>,
+      );
+      expect(index.signature?.publicKeyId, "stable-2026");
+      expect(
+        await Ed25519ReleaseIndexSignatureVerifier({
+          "stable-2026": base64Encode(publicKey.bytes),
+        }).verify(index),
+        isTrue,
+      );
+      final descriptor = ReleaseDescriptor.fromJson(
+        jsonDecode(
+          await File(
+            path.join(
+              root.path,
+              "dist",
+              "desktop_updater",
+              "releases",
+              "2.1.0",
+              "windows",
+              "release.json",
+            ),
+          ).readAsString(),
+        ) as Map<String, dynamic>,
+      );
+      expect(
+        await Ed25519ReleaseSignatureVerifier({
+          "stable-2026": base64Encode(publicKey.bytes),
+        }).verify(descriptor),
+        isTrue,
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed publisher rejects an unsigned descriptor before upload",
+      () async {
+    final root = await _createWindowsFixture();
+    final output = StringBuffer();
+    final seed = List<int>.generate(32, (index) => index);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+      );
+
+      await expectLater(
+        publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+          ),
+          output: output,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("Final release.json signature verification failed"),
+          ),
+        ),
+      );
+      expect(output.toString(), isNot(contains("Manual publish package")));
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed publisher rejects a differently keyed descriptor before upload",
+      () async {
+    final root = await _createWindowsFixture();
+    await _configureDescriptorSigningHook(root);
+    final output = StringBuffer();
+    final seed = List<int>.generate(32, (index) => index);
+    final differentSeed = List<int>.generate(32, (index) => index + 32);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        runHookCommand: _descriptorSigningHook(
+          seed: differentSeed,
+          publicKeyId: "stable-2026",
+        ),
+      );
+
+      await expectLater(
+        publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+          ),
+          output: output,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("Final release.json signature verification failed"),
+          ),
+        ),
+      );
+      expect(output.toString(), isNot(contains("Manual publish package")));
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed publisher rejects upload providers without index-last ordering",
+      () async {
+    final root = await _createWindowsFixture();
+    await _configureDescriptorSigningHook(root, customCommand: true);
+    final seed = List<int>.generate(32, (index) => index);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        runHookCommand: _descriptorSigningHook(
+          seed: seed,
+          publicKeyId: "stable-2026",
+        ),
+      );
+
+      await expectLater(
+        publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+          ),
+          output: StringBuffer(),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("app-archive.json last"),
+          ),
+        ),
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+}
+
+Future<void> _configureDescriptorSigningHook(
+  Directory root, {
+  bool customCommand = false,
+}) {
+  return File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+hooks:
+  postPackage:
+    - command: ./tool/sign_release_json.sh
+      platforms: [windows]
+${customCommand ? "customCommand:\n  command: exit 0" : ""}
+""");
+}
+
+ReleaseHookCommandRunner _descriptorSigningHook({
+  required List<int> seed,
+  required String publicKeyId,
+}) {
+  return (_, {required environment}) async {
+    await ReleaseDescriptorSigner().sign(
+      releaseFile: File(environment["DESKTOP_UPDATER_RELEASE_FILE"]!),
+      publicKeyId: publicKeyId,
+      privateKeyBase64: base64Encode(seed),
+    );
+    return ProcessResult(0, 0, "", "");
+  };
 }
 
 Future<Directory> _createWindowsFixture() async {
@@ -626,7 +845,9 @@ class _RecordingPackager implements ReleasePackager {
       minimumUpdaterVersion: request.minimumUpdaterVersion,
       generatedAt: DateTime.utc(2026, 6, 12),
     );
-    await release.writeAsString("{}");
+    await release.writeAsString(
+      const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+    );
     return ReleasePackageResult(
       artifact: artifact,
       releaseFile: release,
