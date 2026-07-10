@@ -1257,7 +1257,7 @@ publish behavior unchanged.
 - Test: `test/release_cli/project_adapter_test.dart`
 - Test: `test/release_cli/release_publisher_build_test.dart`
 
-- [ ] **Step 8.1: Add explicit project-type options**
+- [x] **Step 8.1: Add explicit project-type options**
 
 Supported values:
 
@@ -1272,13 +1272,13 @@ manual
 `xcode` requires a project/workspace and scheme. `cmake` requires a configured
 install target or an already installed bundle root.
 
-- [ ] **Step 8.2: Build Xcode into a deterministic output**
+- [x] **Step 8.2: Build Xcode into a deterministic output**
 
 Use an explicit project/workspace, scheme, Release configuration, macOS
 destination, and derived-data path. Resolve the `.app` from build settings and
 return the whole bundle.
 
-- [ ] **Step 8.3: Build CMake through install staging**
+- [x] **Step 8.3: Build CMake through install staging**
 
 Run configure/build and:
 
@@ -1289,13 +1289,13 @@ cmake --install <build-dir> --prefix <temporary-install-root>
 Return the application-owned install tree, not `MyApp.exe` or a single Linux
 executable. Require `executableRelativePath` for helper relaunch.
 
-- [ ] **Step 8.4: Test ambiguity and Flutter default**
+- [x] **Step 8.4: Test ambiguity and Flutter default**
 
 Existing unqualified Flutter publish commands must select `flutter`.
 Directories containing both Xcode and CMake markers require explicit
 `--project-type`.
 
-- [ ] **Step 8.5: Run CLI tests**
+- [x] **Step 8.5: Run CLI tests**
 
 ```sh
 flutter test --no-pub \
@@ -1306,7 +1306,19 @@ flutter test --no-pub \
   test/release_cli/publish_manifest_test.dart
 ```
 
-- [ ] **Step 8.6: Commit build adapters**
+Verified locally on 2026-07-10: PASS, 54 tests. The implementation was driven
+from failing tests for the missing adapters, unsupported CMake publishing, and
+multi-target Xcode build-setting selection. The full Flutter suite also passed
+with 493 tests and 3 expected external E2E skips. `flutter analyze
+--no-fatal-infos` completed with 377 existing info-only findings, and
+`dart pub publish --dry-run` included both native adapter sources; before the
+commit it reported only the dirty-worktree warning and the existing version
+hint. Actual Windows/Linux CMake host builds and a real Xcode application build
+were not run in this stage; the adapter process and filesystem contracts are
+verified locally with deterministic fakes and remain candidate-only for target
+host verification.
+
+- [x] **Step 8.6: Commit build adapters**
 
 ```sh
 git add lib/src/release_cli test/release_cli

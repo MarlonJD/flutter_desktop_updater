@@ -16,6 +16,19 @@ ArgParser buildPublishParser() {
     ..addOption("build-number")
     ..addOption("package-id")
     ..addOption("app-name")
+    ..addOption(
+      "project-type",
+      allowed: ["flutter", "xcode", "cmake", "manual"],
+    )
+    ..addOption("artifact-root")
+    ..addOption("executable-relative-path")
+    ..addOption("xcode-project")
+    ..addOption("xcode-workspace")
+    ..addOption("xcode-scheme")
+    ..addOption("xcode-derived-data")
+    ..addOption("cmake-source")
+    ..addOption("cmake-build-directory")
+    ..addOption("cmake-build-target")
     ..addMultiOption(
       "dart-define",
       splitCommas: false,
@@ -92,6 +105,16 @@ Future<int> runPublishCommand(
     buildNumber: _optionalInt(results, "build-number"),
     packageId: results["package-id"] as String?,
     appName: results["app-name"] as String?,
+    projectType: results["project-type"] as String?,
+    artifactRoot: results["artifact-root"] as String?,
+    executableRelativePath: results["executable-relative-path"] as String?,
+    xcodeProject: results["xcode-project"] as String?,
+    xcodeWorkspace: results["xcode-workspace"] as String?,
+    xcodeScheme: results["xcode-scheme"] as String?,
+    xcodeDerivedDataPath: results["xcode-derived-data"] as String?,
+    cmakeSourceDirectory: results["cmake-source"] as String?,
+    cmakeBuildDirectory: results["cmake-build-directory"] as String?,
+    cmakeBuildTarget: results["cmake-build-target"] as String?,
     dartDefines: List<String>.unmodifiable(
       results["dart-define"] as List<String>,
     ),

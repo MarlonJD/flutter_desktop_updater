@@ -171,6 +171,56 @@ updates:
     },
   );
 
+  test("CMake publish accepts a complete installed tree without Flutter",
+      () async {
+    final root = await Directory.systemTemp.createTemp("cmake_publish_");
+    final installed = Directory(path.join(root.path, "installed"));
+    await File(path.join(installed.path, "bin", "example"))
+        .create(recursive: true);
+    await File(path.join(root.path, "CMakeLists.txt")).writeAsString("");
+    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com/
+""");
+    final packager = _RecordingPackager(<String>[]);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: packager,
+        runProcess: (executable, arguments) {
+          fail("A preinstalled CMake tree must not start a process.");
+        },
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) {
+          fail("CMake publishing must not start Flutter.");
+        },
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "linux",
+        overrides: ReleasePublishOverrides(
+          projectType: "cmake",
+          artifactRoot: installed.path,
+          appName: "Example",
+          packageId: "com.example.app",
+          version: "2.4.0",
+          executableRelativePath: "bin/example",
+        ),
+        output: StringBuffer(),
+      );
+
+      expect(packager.requests, hasLength(1));
+      expect(packager.requests.single.input.path, installed.path);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   for (final platform in ["linux", "macos"]) {
     test("$platform publish build does not force shell resolution", () async {
       final root = await _createFixture(platform);

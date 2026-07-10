@@ -1,8 +1,12 @@
 import "dart:io";
 
+import "package:desktop_updater/src/release_cli/cmake_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/flutter_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/manual_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/project_adapter.dart";
+import "package:desktop_updater/src/release_cli/publish_command.dart";
+import "package:desktop_updater/src/release_cli/release_publish_config.dart";
+import "package:desktop_updater/src/release_cli/xcode_project_adapter.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
@@ -278,6 +282,273 @@ version: 1.0.0
       );
     });
   });
+
+  test("publish parser exposes explicit native project inputs", () {
+    final parser = buildPublishParser();
+    final results = parser.parse(const [
+      "--project-type",
+      "xcode",
+      "--xcode-workspace",
+      "Example.xcworkspace",
+      "--xcode-scheme",
+      "Example",
+      "--cmake-source",
+      "native",
+      "--cmake-build-directory",
+      "out/build",
+      "--cmake-build-target",
+      "example",
+      "--artifact-root",
+      "out/install",
+      "--executable-relative-path",
+      "bin/example",
+    ]);
+
+    expect(results["project-type"], "xcode");
+    expect(results["xcode-workspace"], "Example.xcworkspace");
+    expect(results["xcode-scheme"], "Example");
+    expect(results["cmake-source"], "native");
+    expect(results["cmake-build-directory"], "out/build");
+    expect(results["cmake-build-target"], "example");
+    expect(results["artifact-root"], "out/install");
+    expect(results["executable-relative-path"], "bin/example");
+  });
+
+  group("xcode project adapter", () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp("xcode_adapter_");
+    });
+
+    tearDown(() async {
+      await root.delete(recursive: true);
+    });
+
+    test("builds Release for macOS and resolves the whole app bundle",
+        () async {
+      await Directory(path.join(root.path, "Example.xcodeproj")).create();
+      final bundle = Directory(
+        path.join(root.path, "xcode-products", "Example.app"),
+      );
+      await bundle.create(recursive: true);
+      final calls = <_ProcessCall>[];
+      final adapter = XcodeProjectAdapter(
+        projectPath: "Example.xcodeproj",
+        scheme: "Example",
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+        runProcess: (executable, arguments) async {
+          calls.add(_ProcessCall(executable, arguments));
+          if (arguments.contains("-showBuildSettings")) {
+            return ProcessResult(
+              1,
+              0,
+              """
+Build settings for action build and target Example:
+    TARGET_BUILD_DIR = ${bundle.parent.path}
+    WRAPPER_NAME = Example.app
+    PRODUCT_BUNDLE_IDENTIFIER = com.example.app
+    MARKETING_VERSION = 3.2.1
+    CURRENT_PROJECT_VERSION = 42
+Build settings for action build and target HelperLibrary:
+    TARGET_BUILD_DIR = ${path.join(root.path, "helper-products")}
+    FULL_PRODUCT_NAME = libHelperLibrary.a
+""",
+              "",
+            );
+          }
+          return ProcessResult(1, 0, "xcode build output", "");
+        },
+      );
+
+      final result = await adapter.build(
+        ProjectBuildRequest(
+          projectRoot: root,
+          platform: "macos",
+          releaseMode: true,
+        ),
+      );
+
+      expect(calls, hasLength(2));
+      expect(calls.first.executable, "xcodebuild");
+      expect(
+        calls.first.arguments,
+        containsAllInOrder([
+          "-project",
+          path.join(root.path, "Example.xcodeproj"),
+          "-scheme",
+          "Example",
+          "-configuration",
+          "Release",
+          "-destination",
+          "platform=macOS",
+          "-derivedDataPath",
+        ]),
+      );
+      expect(calls.first.arguments.last, "build");
+      expect(calls.last.arguments, contains("-showBuildSettings"));
+      expect(result.artifactRoot.path, bundle.path);
+      expect(result.appName, "Example.app");
+      expect(result.packageId, "com.example.app");
+      expect(result.version, "3.2.1");
+      expect(result.buildNumber, 42);
+    });
+
+    test("requires exactly one project container and a scheme", () {
+      expect(
+        () => XcodeProjectAdapter(
+          projectPath: "Example.xcodeproj",
+          workspacePath: "Example.xcworkspace",
+          scheme: "",
+          overrides: const ReleasePublishOverrides(),
+          output: StringBuffer(),
+        ).build(
+          ProjectBuildRequest(
+            projectRoot: root,
+            platform: "macos",
+            releaseMode: true,
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
+
+  group("cmake project adapter", () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp("cmake_adapter_");
+      await File(path.join(root.path, "CMakeLists.txt")).writeAsString("");
+    });
+
+    tearDown(() async {
+      await root.delete(recursive: true);
+    });
+
+    test("configures, builds, installs, and returns the install tree",
+        () async {
+      final calls = <_ProcessCall>[];
+      final adapter = CMakeProjectAdapter(
+        buildTarget: "example",
+        executableRelativePath: "bin/example",
+        overrides: const ReleasePublishOverrides(
+          appName: "Example",
+          packageId: "com.example.app",
+          version: "2.4.0",
+          buildNumber: 24,
+        ),
+        output: StringBuffer(),
+        runProcess: (executable, arguments) async {
+          calls.add(_ProcessCall(executable, arguments));
+          final prefixIndex = arguments.indexOf("--prefix");
+          if (prefixIndex >= 0) {
+            final installRoot = Directory(arguments[prefixIndex + 1]);
+            await File(path.join(installRoot.path, "bin", "example"))
+                .create(recursive: true);
+          }
+          return ProcessResult(1, 0, "cmake output", "");
+        },
+      );
+
+      final result = await adapter.build(
+        ProjectBuildRequest(
+          projectRoot: root,
+          platform: "linux",
+          releaseMode: true,
+        ),
+      );
+
+      expect(calls, hasLength(3));
+      expect(calls[0].arguments, containsAllInOrder(["-S", root.path, "-B"]));
+      expect(
+        calls[1].arguments,
+        containsAllInOrder([
+          "--build",
+          anything,
+          "--config",
+          "Release",
+          "--target",
+          "example",
+        ]),
+      );
+      expect(
+        calls[2].arguments,
+        containsAllInOrder([
+          "--install",
+          anything,
+          "--config",
+          "Release",
+          "--prefix",
+        ]),
+      );
+      expect(result.artifactRoot, isA<Directory>());
+      expect(
+        result.artifactRoot.path,
+        endsWith(path.join("cmake-install", "linux")),
+      );
+      expect(result.executableRelativePath, "bin/example");
+      expect(result.appName, "Example");
+      expect(result.buildNumber, 24);
+    });
+
+    test("accepts an already installed tree without starting CMake", () async {
+      final installed = Directory(path.join(root.path, "installed"));
+      await File(path.join(installed.path, "bin", "example"))
+          .create(recursive: true);
+      final adapter = CMakeProjectAdapter(
+        installedArtifactRoot: installed.path,
+        executableRelativePath: "bin/example",
+        overrides: const ReleasePublishOverrides(
+          appName: "Example",
+          packageId: "com.example.app",
+          version: "2.4.0",
+        ),
+        output: StringBuffer(),
+        runProcess: (executable, arguments) {
+          fail("An installed CMake tree must not start a process.");
+        },
+      );
+
+      final result = await adapter.build(
+        ProjectBuildRequest(
+          projectRoot: root,
+          platform: "windows",
+          releaseMode: true,
+        ),
+      );
+
+      expect(result.artifactRoot.path, installed.path);
+    });
+
+    test("requires a build target or installed root and executable path", () {
+      expect(
+        () => CMakeProjectAdapter(
+          overrides: const ReleasePublishOverrides(
+            appName: "Example",
+            packageId: "com.example.app",
+            version: "2.4.0",
+          ),
+          output: StringBuffer(),
+        ).build(
+          ProjectBuildRequest(
+            projectRoot: root,
+            platform: "linux",
+            releaseMode: true,
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
+}
+
+final class _ProcessCall {
+  const _ProcessCall(this.executable, this.arguments);
+
+  final String executable;
+  final List<String> arguments;
 }
 
 final class _MarkerAdapter implements ProjectAdapter {

@@ -6,6 +6,7 @@ import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
+import "package:desktop_updater/src/release_cli/cmake_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/flutter_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
@@ -26,6 +27,7 @@ import "package:desktop_updater/src/release_cli/upload/s3_upload_provider.dart";
 import "package:desktop_updater/src/release_cli/upload/sftp_upload_provider.dart";
 import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
+import "package:desktop_updater/src/release_cli/xcode_project_adapter.dart";
 import "package:path/path.dart" as path;
 
 export "package:desktop_updater/src/release_cli/project_adapter.dart"
@@ -62,7 +64,7 @@ class ReleasePublisher {
   final PkgPackager pkgPackager;
   final ProjectMetadataResolver metadataResolver;
 
-  /// Future native adapters available for explicit and marker selection.
+  /// Optional native adapter overrides available for selection.
   final List<ProjectAdapter> projectAdapters;
   final ProcessRunner runProcess;
   final ReleaseHookCommandRunner runHookCommand;
@@ -90,8 +92,36 @@ class ReleasePublisher {
       metadataResolver: metadataResolver,
       startBuildProcess: _startBuildProcess,
     );
+    final xcodeAdapter = XcodeProjectAdapter(
+      projectPath: overrides.xcodeProject,
+      workspacePath: overrides.xcodeWorkspace,
+      scheme: overrides.xcodeScheme,
+      derivedDataPath: overrides.xcodeDerivedDataPath,
+      overrides: overrides,
+      output: output,
+      skipBuild: skipBuild,
+      runProcess: runProcess,
+    );
+    final cmakeAdapter = CMakeProjectAdapter(
+      sourceDirectory: overrides.cmakeSourceDirectory,
+      buildDirectory: overrides.cmakeBuildDirectory,
+      buildTarget: overrides.cmakeBuildTarget,
+      installedArtifactRoot: overrides.artifactRoot,
+      executableRelativePath: overrides.executableRelativePath,
+      overrides: overrides,
+      output: output,
+      skipBuild: skipBuild,
+      runProcess: runProcess,
+    );
     final adapter = DefaultProjectAdapterSelector(
-      adapters: [flutterAdapter, ...projectAdapters],
+      adapters: [
+        flutterAdapter,
+        if (!projectAdapters.any((adapter) => adapter.type == "xcode"))
+          xcodeAdapter,
+        if (!projectAdapters.any((adapter) => adapter.type == "cmake"))
+          cmakeAdapter,
+        ...projectAdapters,
+      ],
     ).select(
       ProjectAdapterSelectionRequest(
         projectRoot: projectRoot,
