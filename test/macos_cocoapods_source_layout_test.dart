@@ -7,34 +7,44 @@ void main() {
     final podspec = File("macos/desktop_updater.podspec").readAsStringSync();
 
     expect(podspec, contains("s.source_files = ["));
+    for (final file in <String>[
+      "DesktopUpdaterVersion.swift",
+      "Diagnostics.swift",
+      "MacInstallHelper.swift",
+      "MacInstallRequest.swift",
+    ]) {
+      expect(
+        podspec,
+        contains(
+          "File.join('desktop_updater', 'Sources', "
+          "'DesktopUpdaterKit', '$file')",
+        ),
+      );
+    }
     expect(
       podspec,
       contains(
         "File.join('desktop_updater', 'Sources', "
-        "'DesktopUpdaterKit', '**', '*.swift')",
+        "'desktop_updater', 'DesktopUpdaterPlugin.swift')",
       ),
     );
-    expect(
-      podspec,
-      contains(
-        "File.join('desktop_updater', 'Sources', "
-        "'desktop_updater', '**', '*.swift')",
-      ),
-    );
+    expect(podspec, isNot(contains("'**', '*.swift'")));
     expect(podspec, contains("s.platform = :osx, '10.14'"));
     expect(podspec, contains("s.swift_version = '5.0'"));
   });
 
-  test("CocoaPods fallback excludes SwiftPM runtime sources", () {
+  test("CocoaPods helper source set owns its provenance dependencies", () {
     final podspec = File("macos/desktop_updater.podspec").readAsStringSync();
+    final requestSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift",
+    ).readAsStringSync();
 
-    expect(
-      podspec,
-      contains(
-        "s.exclude_files = File.join('desktop_updater', 'Sources', "
-        "'DesktopUpdaterKit', 'Runtime', '**', '*.swift')",
-      ),
-    );
+    expect(podspec, isNot(contains("'Runtime'")));
+    expect(requestSource, contains("public struct StageProvenanceEntry"));
+    expect(requestSource, contains("public struct StageProvenanceState"));
+    expect(requestSource, contains("public enum StageProvenance"));
+    expect(requestSource, contains("import CommonCrypto"));
+    expect(requestSource, isNot(contains("import CryptoKit")));
   });
 
   test("shared helper sources remain Flutter-free", () {

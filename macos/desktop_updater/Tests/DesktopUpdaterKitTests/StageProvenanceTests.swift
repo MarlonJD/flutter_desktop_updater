@@ -4,6 +4,19 @@ import XCTest
 @testable import DesktopUpdaterKit
 
 final class StageProvenanceTests: XCTestCase {
+    func testCanonicalJSONSHA256MatchesKnownVector() throws {
+        XCTAssertEqual(
+            try StageProvenance.canonicalJSONSHA256(["value": "abc"]),
+            "afef793fc69ce78450c4c66b8d52dd7c7779bfa4871c521469741f22d5dde564"
+        )
+        XCTAssertEqual(
+            try StageProvenance.canonicalJSONSHA256([
+                "url": "https://example.com/a/b",
+            ]),
+            "90fb5387e7b2517918a690fc0e0a236aeb837fea4787ac9e9c82924b8a3706f9"
+        )
+    }
+
     func testOwnedStagePreservesParentAndUsesExclusiveNonceChild() throws {
         let parent = temporaryDirectory("owned-stage")
         try FileManager.default.createDirectory(

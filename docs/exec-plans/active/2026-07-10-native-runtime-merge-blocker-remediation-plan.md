@@ -767,6 +767,25 @@ Task 4 local evidence (2026-07-10):
   and scheduled helper execution; Windows CMake/CTest/UAC execution; CocoaPods
   lint plus an actual macOS 10.14 build; CI; signing/notarization; and release
   smoke were not run locally.
+- Re-review RED/GREEN: the exact Task 8 five-file source-set typecheck at
+  `x86_64-apple-macosx10.14` first failed on undefined `StageProvenance*`
+  symbols, then exposed the 10.15-only slash-canonicalization and NSWorkspace
+  APIs. The final exact command exited 0 with the repository FlutterMacOS
+  framework path and no diagnostics.
+- Re-review resolution: the podspec now names exactly
+  `DesktopUpdaterVersion.swift`, `Diagnostics.swift`, `MacInstallHelper.swift`,
+  `MacInstallRequest.swift`, and `DesktopUpdaterPlugin.swift`; it contains no
+  Runtime source or broad glob. Public provenance API and verification live in
+  the already-allowed request source and use incremental CommonCrypto SHA-256;
+  hostile paths remain data-only in the helper. SwiftPM keeps the
+  `DesktopUpdaterKit` product/import and macOS 10.15 floor.
+- Re-review verification: the focused Flutter provenance/helper/layout command
+  passed 40 tests, full plugin `swift test` passed 51 tests, the root SwiftPM
+  product build passed, three portable C++14 `-Werror` compilations and 5 Linux
+  native tests passed, and `git diff --check` passed.
+- Re-review target-host limits: CocoaPods lint and macOS 10.14 runtime execution,
+  Linux/Windows target-host helpers, CI, signing/notarization, credentials, and
+  release smoke were not run. Task 8 checkboxes remain open.
 
 - [x] **Step 7: Commit**
 

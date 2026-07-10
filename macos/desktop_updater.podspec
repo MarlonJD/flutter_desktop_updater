@@ -15,10 +15,12 @@ A new Flutter plugin project.
 
   s.source           = { :path => '.' }
   s.source_files = [
-    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', '**', '*.swift'),
-    File.join('desktop_updater', 'Sources', 'desktop_updater', '**', '*.swift')
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'DesktopUpdaterVersion.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'Diagnostics.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallHelper.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallRequest.swift'),
+    File.join('desktop_updater', 'Sources', 'desktop_updater', 'DesktopUpdaterPlugin.swift')
   ]
-  s.exclude_files = File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'Runtime', '**', '*.swift')
 
   # If your plugin requires a privacy manifest, for example if it collects user
   # data, update the PrivacyInfo.xcprivacy file to describe your plugin's

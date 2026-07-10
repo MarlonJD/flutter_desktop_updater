@@ -248,18 +248,25 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 try? fileManager.removeItem(at: backupURL)
             }
 
-            let configuration = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.openApplication(
-                at: destinationURL,
-                configuration: configuration
-            ) { _, error in
+            if #available(macOS 10.15, *) {
+                let configuration = NSWorkspace.OpenConfiguration()
+                NSWorkspace.shared.openApplication(
+                    at: destinationURL,
+                    configuration: configuration
+                ) { _, error in
+                    self.completeCopiedAppLaunch(error: error, result: result)
+                }
+            } else {
+                let launched = NSWorkspace.shared.launchApplication(
+                    destinationURL.path
+                )
                 DispatchQueue.main.async {
-                    if let error {
+                    if !launched {
                         result(
                             FlutterError(
                                 code: "LaunchFailed",
                                 message: "Unable to launch the copied app.",
-                                details: error.localizedDescription
+                                details: destinationURL.path
                             )
                         )
                         return
@@ -276,6 +283,26 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                     details: error.localizedDescription
                 )
             )
+        }
+    }
+
+    private func completeCopiedAppLaunch(
+        error: Error?,
+        result: @escaping FlutterResult
+    ) {
+        DispatchQueue.main.async {
+            if let error {
+                result(
+                    FlutterError(
+                        code: "LaunchFailed",
+                        message: "Unable to launch the copied app.",
+                        details: error.localizedDescription
+                    )
+                )
+                return
+            }
+            result(nil)
+            NSApplication.shared.terminate(nil)
         }
     }
 
