@@ -12,12 +12,12 @@ verification, and record recurring cleanup work in `tech-debt-tracker.md`.
 - [2026-07-08 - macOS DMG and PKG production integration](active/2026-07-08-macos-dmg-pkg-production-integration-plan.md)
 - [2026-07-08 - Windows full Inno integration](active/2026-07-08-windows-full-inno-integration-plan.md)
 - [2026-07-07 - Windows Inno direct update compatibility](active/2026-07-07-windows-inno-direct-update-compat-plan.md)
-- [2026-07-05 - Native SDK monorepo](active/2026-07-05-native-sdk-monorepo-plan.md)
 - [2026-07-05 - Full native runtime preview](active/2026-07-05-full-native-runtime-preview-plan.md)
 
 ## Completed
 
 - [2026-07-01 - Agent harness engineering](completed/2026-07-01-agent-harness-engineering-plan.md)
+- [2026-07-05 - Native SDK monorepo](completed/2026-07-05-native-sdk-monorepo-plan.md)
 - [Completed plans directory](completed/README.md)
 
 ## Maintenance

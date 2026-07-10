@@ -947,7 +947,7 @@ that exact version. Otherwise use `FetchContent` with `URL_HASH` set to the
 digest above. This branch is reachable only when native tests are explicitly
 enabled.
 
-- [ ] **Step 4.8: Run the Windows matrix**
+- [x] **Step 4.8: Run the Windows matrix**
 
 ```powershell
 flutter build windows --debug
@@ -961,20 +961,19 @@ flutter test integration_test -d windows
 
 After CTest, assert its output does not contain `No tests were found`.
 
-Candidate-only evidence on 2026-07-10:
+Target-host evidence on 2026-07-10:
 
-- focused Windows SDK, helper, compatibility, and CI contract suite: PASS,
-  27 tests;
-- portable C ABI translation unit: compiled with local clang, with unmangled
-  `desktop_updater_schedule_install_and_relaunch_v1` and
-  `desktop_updater_result_free_v1` symbols;
-- .NET wrapper and test projects: build PASS with 0 warnings and 0 errors;
-- `dart format --set-exit-if-changed .`: PASS, 187 files unchanged;
-- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
-- `flutter test --no-pub`: PASS, 476 tests with 3 external E2E skips;
-- Windows CMake, DLL, CTest, real P/Invoke, Flutter build, and integration:
-  `not run locally` on the macOS host; CI commands are present and evidence is
-  pending the final verification pass, so Step 4.8 remains unchecked.
+- Desktop Updater CI pull-request run
+  [29075525834](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075525834)
+  passed at `15d2e9de6f9a2d1e61cd25a35b1cbaa34286c8a4`;
+- the Windows job configured, built, discovered, and ran the standalone native
+  CTest suite; installed and ran the exported CMake consumer; loaded the shared
+  DLL from .NET; packed and consumed the local NuGet package; and passed Flutter
+  debug/release builds, native tests, integrations, publish smokes, ZIP update
+  smokes, and the Inno smoke;
+- the matching push run
+  [29075523530](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075523530)
+  also passed at the same commit.
 
 - [x] **Step 4.9: Commit Windows extraction**
 
@@ -1052,7 +1051,7 @@ Add CMake install/export rules and a pkg-config template for source builds.
 Do not add a generic `.so` GitHub Release asset in this plan. Document that
 prebuilt Linux binaries require a later compiler/glibc/architecture matrix.
 
-- [ ] **Step 5.5: Run the Linux matrix**
+- [x] **Step 5.5: Run the Linux matrix**
 
 ```sh
 flutter build linux --debug
@@ -1065,26 +1064,18 @@ xvfb-run -a flutter test integration_test -d linux
 
 Assert CTest discovers at least one test.
 
-Candidate-only evidence on 2026-07-10:
+Target-host evidence on 2026-07-10:
 
-- the Stage 5 contract suite failed first with all 5 expected missing-layout,
-  extraction, safety-test, and CI assertions before implementation;
-- focused Linux SDK layout, helper, and compatibility suite: PASS, 25 tests;
-- Flutter-free native helper: compiled locally as C++14 with
-  `-Wall -Wextra -Werror`;
-- direct native seam smoke: PASS for protected-root rejection, bounded script
-  generation, failed-install rollback, and preservation of a file outside the
-  verified bundle;
-- `dart format --set-exit-if-changed .`: PASS, 188 files unchanged;
-- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
-- `flutter test --no-pub`: PASS, 481 tests with 3 external E2E skips;
-- `dart pub publish --dry-run`: the package contains the Linux native CMake,
-  headers, sources, tests, and pkg-config template; pre-commit validation
-  reported only the expected dirty-tree warning and version hint;
-- Linux source package CMake/GTest and Flutter integration matrix:
-  `not run locally` on the macOS host because CMake and Linux host libraries
-  are unavailable; CI commands are present and evidence is pending the final
-  verification pass, so Step 5.5 remains unchecked.
+- Desktop Updater CI pull-request run
+  [29075525834](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075525834)
+  passed at `15d2e9de6f9a2d1e61cd25a35b1cbaa34286c8a4`;
+- the Linux job configured, built, discovered, and ran the standalone native
+  CTest suite; installed and ran the exported CMake consumer; verified
+  pkg-config metadata; and passed Flutter debug/release builds, native tests,
+  integrations, publish smokes, protected-root coverage, and ZIP update smokes;
+- the matching push run
+  [29075523530](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075523530)
+  also passed at the same commit.
 
 - [x] **Step 5.6: Commit Linux extraction**
 
@@ -1152,32 +1143,22 @@ Assert:
 - Linux source archive contains install/export/pkg-config files;
 - no package documentation claims full native runtime APIs yet.
 
-- [ ] **Step 6.5: Run consumer CI**
+- [x] **Step 6.5: Run consumer CI**
 
 Run each consumer on its target host. Package jobs fail when the consumer
 compile, link, load, or execution step fails.
 
-Candidate-only evidence on 2026-07-10:
+Target-host evidence on 2026-07-10:
 
-- the Stage 6 consumer/package contract suite failed first with all 5 expected
-  missing-consumer, install-config, NuGet-layout, and CI assertions;
-- focused native SDK, consumer/package, and harness suite: PASS, 26 tests;
-- external local-path SwiftPM consumer: build and execution PASS on macOS;
-- `DesktopUpdater.Native`: both `net8.0` and `netstandard2.0` build PASS with
-  0 warnings and 0 errors;
-- local NuGet pack: PASS, with both wrapper TFMs, the win-x64 native slot, and
-  build-transitive targets present; the local package consumer restored,
-  built, and copied the native slot into its output;
-- `dart format --set-exit-if-changed .`: PASS, 189 files unchanged;
-- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
-- `flutter test --no-pub`: PASS, 486 tests with 3 external E2E skips;
-- `dart pub publish --dry-run`: package contents include all helper sources,
-  installed-package metadata, and consumer samples; pre-commit validation
-  reported only the expected dirty-tree warning and version hint;
-- real Windows DLL pack/load/failure execution and installed Windows/Linux
-  CMake consumer execution are `not run locally` on the macOS host; CI commands
-  are present and evidence is pending the final verification pass, so Step 6.5
-  remains unchecked.
+- Desktop Updater CI pull-request run
+  [29075525834](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075525834)
+  passed all packaged consumers at
+  `15d2e9de6f9a2d1e61cd25a35b1cbaa34286c8a4`;
+- the macOS native consumer built and ran from the repository SwiftPM product;
+  Windows installed and ran the exported CMake consumer and hermetic local-only
+  NuGet consumer; Linux installed and ran the exported CMake consumer;
+- package-version, package-content, DLL-load, and non-zero CTest discovery
+  assertions passed on their target hosts.
 
 - [x] **Step 6.6: Commit package gates**
 
@@ -1486,7 +1467,7 @@ dart pub publish --dry-run
 dart run tool/version_check.dart
 ```
 
-- [ ] **Step 10.5: Run target-host helper and consumer matrices**
+- [x] **Step 10.5: Run target-host helper and consumer matrices**
 
 Required evidence:
 
@@ -1503,21 +1484,25 @@ Linux installed CMake consumer: verified in Linux CI
 Standalone CLI matrix: candidate-only until signed release workflow passes
 ```
 
-Current evidence on 2026-07-10:
+Final target-host evidence on 2026-07-10:
 
-- macOS SwiftPM helper tests: verified locally, 6 tests;
-- macOS external SwiftPM consumer: verified locally and reported version 2.7.0;
-- macOS Flutter SwiftPM build/integration: verified locally, build plus 2
-  integration tests;
-- macOS Flutter CocoaPods fallback: blocked locally because `pod` is not
-  installed; the new target-host CI matrix is pending;
-- Windows static helper, shared C ABI DLL, installed CMake consumer, and local
-  NuGet consumer: not run on a Windows host for this commit; CI-pending;
-- Linux protected-root tests, Flutter helper, pkg-config version, and installed
-  CMake consumer: not run on a Linux host for this commit; CI-pending;
-- standalone CLI: macOS arm64 candidate verified locally in Stage 9; macOS x64,
-  Windows x64, and Linux x64 candidates are CI-pending; all remain
-  `candidate-only` without the production signing workflow.
+- pull-request run
+  [29075525834](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075525834)
+  and push run
+  [29075523530](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075523530)
+  both passed at `15d2e9de6f9a2d1e61cd25a35b1cbaa34286c8a4`;
+- macOS SwiftPM helper and external consumer tests passed; Flutter SwiftPM and
+  CocoaPods fallback builds and integrations passed;
+- Windows static helper, shared C ABI DLL, installed CMake consumer, .NET native
+  consumer, hermetic NuGet consumer, debug/release Flutter lanes, ZIP/Inno
+  smokes, and publish smokes passed;
+- Linux protected-root tests, helper tests, pkg-config check, installed CMake
+  consumer, debug/release Flutter lanes, ZIP smokes, and publish smokes passed;
+- macOS arm64/x64, Windows x64, and Linux x64 standalone CLI candidates built
+  with checksums. They remain `candidate-only` because production signing and
+  notarization are outside this CI gate;
+- the macOS notarized publish job remained separately secret-gated and was
+  skipped as designed; this does not weaken the helper/package release gate.
 
 - [x] **Step 10.6: Add full release smoke without weakening current lanes**
 
@@ -1574,6 +1559,15 @@ The master plan is complete only when:
 
 Missing credentials or unavailable target hosts must be recorded as `blocked`
 or `not run`. They must not be rewritten as passing evidence.
+
+Final release gate evidence on 2026-07-10: verified in CI at
+`15d2e9de6f9a2d1e61cd25a35b1cbaa34286c8a4` by pull-request run
+[29075525834](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075525834)
+and push run
+[29075523530](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/29075523530).
+All required helper, package-consumer, CTest-discovery, Flutter compatibility,
+publish-smoke, and candidate-build lanes passed. The child runtime plan remains
+separately gated and starts only after this master gate.
 
 ## Rebase Status
 
