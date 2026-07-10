@@ -822,64 +822,6 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
   return {true, ""};
 }
 
-bool ValidateTreeHasNoReparsePoints(const fs::path& root,
-                                    std::wstring* error) {
-  const DWORD flags =
-      FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS;
-  HANDLE root_handle = CreateFileW(
-      root.wstring().c_str(), FILE_READ_ATTRIBUTES,
-      FILE_SHARE_READ, nullptr,
-      OPEN_EXISTING, flags, nullptr);
-  if (root_handle == INVALID_HANDLE_VALUE) {
-    if (error != nullptr) *error = L"Unable to open tree root safely.";
-    return false;
-  }
-  BY_HANDLE_FILE_INFORMATION root_information = {};
-  const bool root_ok =
-      GetFileInformationByHandle(root_handle, &root_information) != FALSE &&
-      (root_information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
-  CloseHandle(root_handle);
-  if (!root_ok) {
-    if (error != nullptr) *error = L"Tree root is a reparse point.";
-    return false;
-  }
-
-  WIN32_FIND_DATAW entry = {};
-  const fs::path pattern = root / L"*";
-  HANDLE iterator = FindFirstFileW(pattern.wstring().c_str(), &entry);
-  if (iterator == INVALID_HANDLE_VALUE) {
-    if (GetLastError() == ERROR_FILE_NOT_FOUND) return true;
-    if (error != nullptr) *error = L"Unable to enumerate tree safely.";
-    return false;
-  }
-  bool ok = true;
-  do {
-    const std::wstring name(entry.cFileName);
-    if (name == L"." || name == L"..") continue;
-    const fs::path child = root / name;
-    HANDLE child_handle = CreateFileW(
-        child.wstring().c_str(), FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ, nullptr,
-        OPEN_EXISTING, flags, nullptr);
-    BY_HANDLE_FILE_INFORMATION information = {};
-    ok = child_handle != INVALID_HANDLE_VALUE &&
-         GetFileInformationByHandle(child_handle, &information) != FALSE &&
-         (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
-    if (child_handle != INVALID_HANDLE_VALUE) CloseHandle(child_handle);
-    if (!ok) break;
-    if ((information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-      ok = ValidateTreeHasNoReparsePoints(child, error);
-    }
-  } while (ok && FindNextFileW(iterator, &entry) != FALSE);
-  const DWORD final_error = GetLastError();
-  FindClose(iterator);
-  if (ok && final_error != ERROR_NO_MORE_FILES) ok = false;
-  if (!ok && error != nullptr && error->empty()) {
-    *error = L"Tree contains an unreadable entry or reparse point.";
-  }
-  return ok;
-}
-
 }  // namespace
 
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
@@ -905,16 +847,6 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       return target;
     }
     target_directory = target_proof.canonical_root;
-  }
-
-  std::wstring reparse_error;
-  if (!ValidateTreeHasNoReparsePoints(target_directory, &reparse_error)) {
-    return {false, "Windows install target contains an unsafe reparse point."};
-  }
-  if (!request.staging_path.empty() &&
-      !ValidateTreeHasNoReparsePoints(fs::path(request.staging_path),
-                                      &reparse_error)) {
-    return {false, "Windows staging tree contains an unsafe reparse point."};
   }
 
   PowerShellLaunchMode launch_mode = PowerShellLaunchMode::kNormal;
@@ -988,68 +920,12 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "Write-DiagnosticsEvent 'parent process exited'\n"
       << "$targetRoot = [IO.Path]::GetFullPath($target).TrimEnd('\\')\n"
       << "$targetRootWithSlash = $targetRoot + '\\'\n"
-      << "$targetParent = [IO.Path]::GetDirectoryName($targetRoot)\n"
-      << "$targetName = [IO.Path]::GetFileName($targetRoot)\n"
-      << "$journal = Join-Path $targetParent ('.' + $targetName + '.desktop_updater_transaction.json')\n"
       << "$stagingRoot = ''\n"
       << "$stagingRootWithSlash = ''\n"
       << "if (-not [string]::IsNullOrWhiteSpace($staging)) {\n"
       << "  $stagingRoot = [IO.Path]::GetFullPath($staging).TrimEnd('\\')\n"
       << "  $stagingRootWithSlash = $stagingRoot + '\\'\n"
       << "}\n"
-      << "function Test-NoReparseTree([string]$Path) {\n"
-      << "  $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction Stop\n"
-      << "  if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Tree root is a reparse point.' }\n"
-      << "  foreach ($treeItem in Get-ChildItem -LiteralPath $Path -Force -Recurse -ErrorAction Stop) {\n"
-      << "    if (($treeItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Tree contains a reparse point.' }\n"
-      << "  }\n"
-      << "}\n"
-      << "function Remove-JournalOwnedPath($Transaction, [string]$Path) {\n"
-      << "  $allowed = @([string]$Transaction.target, [string]$Transaction.prepared, [string]$Transaction.backup)\n"
-      << "  if (-not ($allowed -contains $Path)) { throw 'Refusing to remove path absent from transaction journal.' }\n"
-      << "  if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop }\n"
-      << "}\n"
-      << "function Test-ActivatedPackageIdentity([string]$Root, [string]$PackageId) {\n"
-      << "  try {\n"
-      << "    $identityPath = Join-Path $Root '.desktop_updater_install_identity.json'\n"
-      << "    $identityItem = Get-Item -LiteralPath $identityPath -Force -ErrorAction Stop\n"
-      << "    if (($identityItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $identityItem.PSIsContainer) { return $false }\n"
-      << "    $identity = Get-Content -LiteralPath $identityPath -Raw -ErrorAction Stop | ConvertFrom-Json\n"
-      << "    return $identity.schemaVersion -eq 1 -and ([string]$identity.packageId).Equals($PackageId, [StringComparison]::Ordinal)\n"
-      << "  } catch { return $false }\n"
-      << "}\n"
-      << "function Recover-PendingInstall {\n"
-      << "  if (-not (Test-Path -LiteralPath $journal)) { return }\n"
-      << "  Write-DiagnosticsEvent 'recovery detected'\n"
-      << "  $transactionItem = Get-Item -LiteralPath $journal -Force -ErrorAction Stop\n"
-      << "  if (($transactionItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $transactionItem.PSIsContainer) { throw 'Transaction journal is unsafe.' }\n"
-      << "  $transaction = Get-Content -LiteralPath $journal -Raw -ErrorAction Stop | ConvertFrom-Json\n"
-      << "  if ($transaction.schemaVersion -ne 1 -or -not ([string]$transaction.target).Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase) -or -not ([string]$transaction.packageId).Equals($expectedPackageId, [StringComparison]::Ordinal)) { throw 'Transaction journal identity is invalid.' }\n"
-      << "  $expectedPrepared = Join-Path $targetParent ('.' + $targetName + '.prepared-' + [string]$transaction.nonce)\n"
-      << "  $expectedBackup = Join-Path $targetParent ('.' + $targetName + '.backup-' + [string]$transaction.nonce)\n"
-      << "  if (-not ([string]$transaction.prepared).Equals($expectedPrepared, [StringComparison]::OrdinalIgnoreCase) -or -not ([string]$transaction.backup).Equals($expectedBackup, [StringComparison]::OrdinalIgnoreCase)) { throw 'Transaction journal paths are invalid.' }\n"
-      << "  $owner = Get-Process -Id ([int]$transaction.ownerPid) -ErrorAction SilentlyContinue\n"
-      << "  if ($null -ne $owner -and ([string]$owner.StartTime.ToUniversalTime().Ticks).Equals([string]$transaction.ownerProcessStart, [StringComparison]::Ordinal)) { throw 'Install transaction has a live owner.' }\n"
-      << "  $targetExists = Test-Path -LiteralPath $targetRoot\n"
-      << "  $backupExists = Test-Path -LiteralPath ([string]$transaction.backup)\n"
-      << "  switch ([string]$transaction.state) {\n"
-      << "    'prepared' { if ($backupExists -or -not $targetExists) { throw 'Prepared transaction paths are inconsistent.' }; Remove-JournalOwnedPath $transaction ([string]$transaction.prepared) }\n"
-      << "    'backupCreated' {\n"
-      << "      if ($targetExists -and -not $backupExists) { Remove-JournalOwnedPath $transaction ([string]$transaction.prepared) }\n"
-      << "      elseif (-not $targetExists -and $backupExists) { Move-Item -LiteralPath ([string]$transaction.backup) -Destination $targetRoot; Remove-JournalOwnedPath $transaction ([string]$transaction.prepared); Write-DiagnosticsEvent 'recovery restored backup' }\n"
-      << "      else { throw 'Backup-created transaction paths are inconsistent.' }\n"
-      << "    }\n"
-      << "    'targetActivated' {\n"
-      << "      if ($targetExists -and $backupExists -and (Test-ActivatedPackageIdentity $targetRoot $expectedPackageId)) { Remove-JournalOwnedPath $transaction ([string]$transaction.backup); Remove-JournalOwnedPath $transaction ([string]$transaction.prepared); Write-DiagnosticsEvent 'recovery completed activation' }\n"
-      << "      elseif ($backupExists) { if ($targetExists) { Remove-JournalOwnedPath $transaction $targetRoot }; Move-Item -LiteralPath ([string]$transaction.backup) -Destination $targetRoot; Remove-JournalOwnedPath $transaction ([string]$transaction.prepared); Write-DiagnosticsEvent 'recovery restored backup' }\n"
-      << "      else { throw 'Target-activated transaction cannot be verified or restored.' }\n"
-      << "    }\n"
-      << "    'completed' { if (-not $targetExists -or -not (Test-ActivatedPackageIdentity $targetRoot $expectedPackageId)) { throw 'Completed target is invalid.' }; Remove-JournalOwnedPath $transaction ([string]$transaction.backup); Remove-JournalOwnedPath $transaction ([string]$transaction.prepared); Write-DiagnosticsEvent 'recovery completed activation' }\n"
-      << "    default { throw 'Transaction state is invalid.' }\n"
-      << "  }\n"
-      << "  Remove-Item -LiteralPath $journal -Force -ErrorAction Stop\n"
-      << "}\n"
-      << "Recover-PendingInstall\n"
       << "function Get-NormalizedDirectory([string]$value) {\n"
       << "  if ([string]::IsNullOrWhiteSpace($value)) { return '' }\n"
       << "  try { return [IO.Path]::GetFullPath($value.Trim('\"')).TrimEnd('\\') } catch { return '' }\n"
@@ -1217,7 +1093,6 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "}\n"
       << "if (-not [string]::IsNullOrWhiteSpace($staging)) {\n"
       << "  Test-StageProvenance\n"
-      << "  Test-NoReparseTree $stagingRoot\n"
       << "  $manifest = Join-Path $staging '.desktop_updater_release_manifest.json'\n"
       << "  if (Test-Path -LiteralPath $manifest) {\n"
       << "    try {\n"
@@ -1233,74 +1108,87 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "    }\n"
       << "  }\n"
       << "}\n"
+      << "$backup = Join-Path ([IO.Path]::GetTempPath()) ('desktop_updater_backup_' + $pidToWait)\n"
+      << "if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force }\n"
+      << "$backupReady = $false\n"
+      << "try {\n"
+      << "Write-DiagnosticsEvent 'backup start'\n"
+      << "try {\n"
+      << "  Copy-Item -LiteralPath $target -Destination $backup -Recurse -Force\n"
+      << "  $backupReady = $true\n"
+      << "  Write-DiagnosticsEvent 'backup success'\n"
+      << "} catch {\n"
+      << "  Write-DiagnosticsEvent 'backup failure'\n"
+      << "  throw\n"
+      << "}\n"
+      << "foreach ($relative in $removed) {\n"
+      << "  if ([string]::IsNullOrWhiteSpace($relative)) { continue }\n"
+      << "  $candidate = [IO.Path]::GetFullPath((Join-Path $target $relative))\n"
+      << "  if (-not $candidate.StartsWith($targetRootWithSlash, [StringComparison]::OrdinalIgnoreCase)) {\n"
+      << "    throw \"Removed file escapes app root: $relative\"\n"
+      << "  }\n"
+      << "  if (Test-Path -LiteralPath $candidate) {\n"
+      << "    Remove-Item -LiteralPath $candidate -Recurse -Force\n"
+      << "  }\n"
+      << "}\n"
       << "if (-not [string]::IsNullOrWhiteSpace($staging)) {\n"
       << "  Write-DiagnosticsEvent 'staging path validation'\n"
-      << "  Test-NoReparseTree $targetRoot\n"
-      << "  Test-NoReparseTree $stagingRoot\n"
-      << "  $transactionNonce = [string]$provenance.nonce\n"
-      << "  $prepared = Join-Path $targetParent ('.' + $targetName + '.prepared-' + $transactionNonce)\n"
-      << "  $backup = Join-Path $targetParent ('.' + $targetName + '.backup-' + $transactionNonce)\n"
-      << "  if ((Test-Path -LiteralPath $prepared) -or (Test-Path -LiteralPath $backup)) { throw 'Transaction sibling already exists.' }\n"
-      << "  New-Item -ItemType Directory -Path $prepared -ErrorAction Stop | Out-Null\n"
-      << "  Get-ChildItem -LiteralPath $stagingRoot -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $prepared -Recurse -Force -ErrorAction Stop }\n"
-      << "  Get-ChildItem -LiteralPath $targetRoot -Force | Where-Object { -not $_.PSIsContainer -and (Test-InstallerOwnedWindowsFile $_.Name) } | ForEach-Object {\n"
-      << "    if (-not (Test-Path -LiteralPath (Join-Path $prepared $_.Name))) { Copy-Item -LiteralPath $_.FullName -Destination $prepared -Force -ErrorAction Stop; Write-DiagnosticsEvent ('preserve installer file ' + $_.Name) }\n"
+      << "  $deadline = (Get-Date).AddSeconds(90)\n"
+      << "  while ($true) {\n"
+      << "    try {\n"
+      << "      Write-DiagnosticsEvent 'move start'\n"
+      << "      Get-ChildItem -LiteralPath $target -Force | ForEach-Object {\n"
+      << "        if ($_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)) {\n"
+      << "          Remove-Item -LiteralPath $_.FullName -Recurse -Force\n"
+      << "        } else {\n"
+      << "          Write-DiagnosticsEvent ('preserve installer file ' + $_.Name)\n"
+      << "        }\n"
+      << "      }\n"
+      << "      Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {\n"
+      << "        Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force\n"
+      << "      }\n"
+      << "      $manifest = Join-Path $staging '.desktop_updater_release_manifest.json'\n"
+      << "      if (Test-Path -LiteralPath $manifest) {\n"
+      << "        try {\n"
+      << "          $descriptor = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json\n"
+      << "          if ($null -ne $descriptor.version) {\n"
+      << "            Update-UninstallDisplayVersion -Version ([string]$descriptor.version)\n"
+      << "          }\n"
+      << "        } catch {\n"
+      << "        }\n"
+      << "      }\n"
+      << "      $targetManifest = Join-Path $target '.desktop_updater_release_manifest.json'\n"
+      << "      Remove-Item -LiteralPath $targetManifest -Force -ErrorAction SilentlyContinue\n"
+      << "      $targetProvenance = Join-Path $target '.desktop_updater_stage_provenance.json'\n"
+      << "      Remove-Item -LiteralPath $targetProvenance -Force -ErrorAction SilentlyContinue\n"
+      << "      $targetArtifact = Join-Path $target '.desktop_updater_artifact.zip'\n"
+      << "      Remove-Item -LiteralPath $targetArtifact -Force -ErrorAction SilentlyContinue\n"
+      << "      Write-DiagnosticsEvent 'move success'\n"
+      << "      break\n"
+      << "    } catch {\n"
+      << "      if ((Get-Date) -gt $deadline) {\n"
+      << "        Write-DiagnosticsEvent 'move failure'\n"
+      << "        throw\n"
+      << "      }\n"
+      << "      Start-Sleep -Seconds 1\n"
+      << "    }\n"
       << "  }\n"
-      << "  foreach ($relative in $removed) {\n"
-      << "    if ([string]::IsNullOrWhiteSpace($relative)) { continue }\n"
-      << "    $candidate = [IO.Path]::GetFullPath((Join-Path $prepared $relative))\n"
-      << "    $preparedWithSlash = $prepared.TrimEnd('\\') + '\\'\n"
-      << "    if (-not $candidate.StartsWith($preparedWithSlash, [StringComparison]::OrdinalIgnoreCase)) { throw \"Removed file escapes prepared root: $relative\" }\n"
-      << "    if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction Stop }\n"
-      << "  }\n"
-      << "  Remove-Item -LiteralPath (Join-Path $prepared '.desktop_updater_stage_provenance.json') -Force -ErrorAction SilentlyContinue\n"
-      << "  Remove-Item -LiteralPath (Join-Path $prepared '.desktop_updater_release_manifest.json') -Force -ErrorAction SilentlyContinue\n"
-      << "  Remove-Item -LiteralPath (Join-Path $prepared '.desktop_updater_artifact.zip') -Force -ErrorAction SilentlyContinue\n"
-      << "  Test-NoReparseTree $prepared\n"
-      << "  $ownerStart = [string](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks\n"
-      << "  function Write-TransactionJournal([string]$State) {\n"
-      << "    $transaction = [ordered]@{schemaVersion=1; ownerPid=$PID; ownerProcessStart=$ownerStart; nonce=$transactionNonce; packageId=$expectedPackageId; target=$targetRoot; prepared=$prepared; backup=$backup; stageProvenanceSha256=$expected_provenance_sha256; state=$State}\n"
-      << "    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($transaction | ConvertTo-Json -Compress))\n"
-      << "    $stream = [IO.File]::Open($journal, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)\n"
-      << "    try { $stream.SetLength(0); $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }\n"
-      << "    Write-DiagnosticsEvent 'transaction journal persisted'\n"
-      << "    if ($env:DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE -eq $State) { [Environment]::Exit(99) }\n"
-      << "  }\n"
-      << "  try {\n"
-      << "    $lockStream = [IO.File]::Open($journal, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)\n"
-      << "    $lockStream.Flush($true); $lockStream.Dispose()\n"
-      << "  } catch { Remove-Item -LiteralPath $prepared -Recurse -Force -ErrorAction SilentlyContinue; throw 'Install transaction lock is already owned.' }\n"
-      << "  Write-DiagnosticsEvent 'transaction lock acquired'\n"
-      << "  Write-TransactionJournal 'prepared'\n"
-      << "  try {\n"
-      << "    Write-DiagnosticsEvent 'backup start'\n"
-      << "    Write-TransactionJournal 'backupCreated'\n"
-      << "    [IO.Directory]::Move($targetRoot, $backup)\n"
-      << "    Write-DiagnosticsEvent 'backup success'\n"
-      << "    Write-DiagnosticsEvent 'move start'\n"
-      << "    Write-TransactionJournal 'targetActivated'\n"
-      << "    [IO.Directory]::Move($prepared, $targetRoot)\n"
-      << "    if (-not (Test-ActivatedPackageIdentity $targetRoot $expectedPackageId)) { throw 'Activated target package identity is invalid.' }\n"
-      << "    Write-DiagnosticsEvent 'move success'\n"
-      << "    Write-TransactionJournal 'completed'\n"
-      << "    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction Stop\n"
-      << "    $manifest = Join-Path $stagingRoot '.desktop_updater_release_manifest.json'\n"
-      << "    if (Test-Path -LiteralPath $manifest) { try { $descriptor = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json; if ($null -ne $descriptor.version) { Update-UninstallDisplayVersion -Version ([string]$descriptor.version) } } catch {} }\n"
-      << "    Remove-StagingDirectoryWithRetry -Path $stagingRoot\n"
-      << "    Remove-Item -LiteralPath $journal -Force -ErrorAction Stop\n"
-      << "  } catch {\n"
-      << "    if (-not (Test-Path -LiteralPath $backup)) { Write-DiagnosticsEvent 'backup failure' } else { Write-DiagnosticsEvent 'move failure' }\n"
+      << "  Remove-StagingDirectoryWithRetry -Path $staging\n"
+      << "}\n"
+      << "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "} catch {\n"
+      << "  if ($backupReady -and (Test-Path -LiteralPath $backup)) {\n"
       << "    Write-DiagnosticsEvent 'rollback start'\n"
       << "    try {\n"
-      << "      $current = [ordered]@{target=$targetRoot; prepared=$prepared; backup=$backup}\n"
-      << "      if (Test-Path -LiteralPath $targetRoot) { Remove-JournalOwnedPath $current $targetRoot }\n"
-      << "      if (Test-Path -LiteralPath $backup) { [IO.Directory]::Move($backup, $targetRoot) }\n"
-      << "      if (Test-Path -LiteralPath $prepared) { Remove-JournalOwnedPath $current $prepared }\n"
-      << "      Remove-Item -LiteralPath $journal -Force -ErrorAction SilentlyContinue\n"
+      << "      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue\n"
+      << "      Copy-Item -LiteralPath $backup -Destination $target -Recurse -Force -ErrorAction Stop\n"
+      << "      Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue\n"
       << "      Write-DiagnosticsEvent 'rollback success'\n"
-      << "    } catch { Write-DiagnosticsEvent 'rollback failure' }\n"
-      << "    throw\n"
+      << "    } catch {\n"
+      << "      Write-DiagnosticsEvent 'rollback failure'\n"
+      << "    }\n"
       << "  }\n"
+      << "  throw\n"
       << "}\n"
       << "if ($skipRelaunch -ne '1') {\n"
       << "  Write-DiagnosticsEvent 'relaunch attempt'\n"

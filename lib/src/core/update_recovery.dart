@@ -1,9 +1,4 @@
 /// Marker persisted by an app-owned store before native install handoff.
-///
-/// This app-facing marker verifies the expected version after relaunch. Native
-/// helpers separately recover their per-target durable transaction journal
-/// before accepting another handoff; canonical journal paths are intentionally
-/// not exposed here or copied into diagnostics.
 class UpdateInstallRecoveryMarker {
   /// Creates a pending install recovery marker.
   const UpdateInstallRecoveryMarker({

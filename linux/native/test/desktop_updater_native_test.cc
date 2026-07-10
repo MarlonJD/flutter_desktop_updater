@@ -81,10 +81,6 @@ int RunHelperScript(const fs::path& script_path,
       "  shift 2\n"
       "  exec /usr/bin/stat -f %z \"$@\"\n"
       "fi\n"
-      "if [ \"$1\" = '-c' ] && [ \"$2\" = '%d' ]; then\n"
-      "  shift 2\n"
-      "  exec /usr/bin/stat -f %d \"$@\"\n"
-      "fi\n"
       "exec /usr/bin/stat \"$@\"\n",
       0755);
   WriteFile(
@@ -219,29 +215,6 @@ TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
     request.package_id = "com.example.app";
     EXPECT_FALSE(ValidateInstallRequest(request).ok) << root;
   }
-}
-
-TEST(LinuxNativeInstall, RejectsSameDeviceBindMountsFromEscapedMountInfo) {
-  const std::string target = "/opt/Example App";
-  const std::string stage = "/var/lib/desktop-updater/stage";
-  const std::string mount_info =
-      "31 22 8:1 /source /opt/Example\\040App/assets rw - ext4 /dev/sda rw\n";
-
-  const InstallResult result = internal::RejectNestedMountsForTesting(
-      target, stage, mount_info);
-
-  EXPECT_FALSE(result.ok);
-  EXPECT_NE(result.error.find("mount"), std::string::npos);
-  EXPECT_EQ(internal::DecodeMountInfoPath("/a\\040b\\011c\\134d"),
-            "/a b\tc\\d");
-}
-
-TEST(LinuxNativeInstall, MountInfoUsesComponentBoundaries) {
-  const InstallResult result = internal::RejectNestedMountsForTesting(
-      "/opt/Example", "/var/stage",
-      "31 22 8:1 /source /opt/Example-lookalike rw - ext4 /dev/sda rw\n");
-
-  EXPECT_TRUE(result.ok) << result.error;
 }
 
 TEST(LinuxNativeInstall, LegacyFallbackAcceptsSelfContainedFlutterBundle) {
@@ -410,7 +383,8 @@ TEST(LinuxNativeInstall, GeneratedScriptBoundsDestructiveCommands) {
   ASSERT_TRUE(result.ok) << result.error;
   EXPECT_NE(script.find("resolved_target=\"$(cd \"$target\" && pwd -P)\""),
             std::string::npos);
-  EXPECT_EQ(script.find("rm -rf \"$target\""), std::string::npos);
+  EXPECT_NE(script.find("rm -rf \"$target\""), std::string::npos);
+  EXPECT_NE(script.find("rm -rf \"$staging\""), std::string::npos);
   EXPECT_EQ(script.find("rm -rf /usr"), std::string::npos);
   EXPECT_EQ(script.find("rm -rf /opt"), std::string::npos);
 }
@@ -523,84 +497,6 @@ TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
   EXPECT_NE(events.find("\"event\":\"cleanup start\""), std::string::npos);
   EXPECT_NE(events.find("\"event\":\"cleanup success\""), std::string::npos);
   EXPECT_EQ(events.find("\"event\":\"rollback start\""), std::string::npos);
-}
-
-TEST(LinuxNativeInstall, EveryPersistedInterruptionRecoversDeterministically) {
-  for (const char* state : {"prepared", "backupCreated", "targetActivated",
-                            "completed"}) {
-    TemporaryDirectory temporary;
-    const fs::path install_root = temporary.path() / "app";
-    const fs::path staging_parent = temporary.path() / "stages";
-    const fs::path staging_root = staging_parent /
-        "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-    const fs::path executable = install_root / "example";
-    const fs::path outside = temporary.path() / "outside.txt";
-    WriteFile(executable, "old", 0755);
-    WriteFile(install_root / "removed.txt", "old removed");
-    WriteFile(staging_root / "example", "new", 0755);
-    WriteFile(
-        staging_root / ".desktop_updater_install_identity.json",
-        "{\"packageId\":\"com.example.app\",\"schemaVersion\":1}");
-    WriteFile(staging_parent / "sentinel.txt", "caller-owned");
-    WriteFile(outside, "outside");
-    InstallRequest request = RequestFor(install_root, staging_root);
-    request.removed_files = {"removed.txt"};
-    std::string script;
-    const auto build = internal::BuildInstallScriptForTesting(
-        request, executable.string(), 2147483647, &script);
-    ASSERT_TRUE(build.ok) << build.error;
-    const fs::path script_path = temporary.path() / "interrupt.sh";
-    WriteFile(script_path, script, 0755);
-
-    ASSERT_EQ(setenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH", "1", 1), 0);
-    ASSERT_EQ(setenv("DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE", state, 1),
-              0);
-    EXPECT_NE(RunHelperScript(script_path, temporary.path()), 0) << state;
-    ASSERT_EQ(unsetenv("DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE"), 0);
-    EXPECT_EQ(RunHelperScript(script_path, temporary.path()), 0) << state;
-    ASSERT_EQ(unsetenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"), 0);
-
-    EXPECT_EQ(ReadFile(executable), "new") << state;
-    EXPECT_FALSE(fs::exists(install_root / "removed.txt")) << state;
-    EXPECT_EQ(ReadFile(staging_parent / "sentinel.txt"), "caller-owned")
-        << state;
-    EXPECT_EQ(ReadFile(outside), "outside") << state;
-    EXPECT_FALSE(fs::exists(staging_root)) << state;
-    EXPECT_FALSE(fs::exists(
-        install_root.parent_path() /
-        ".app.desktop_updater_transaction.json")) << state;
-  }
-}
-
-TEST(LinuxNativeInstall, MissingStageAfterBackupIntentRestoresTargetFirst) {
-  TemporaryDirectory temporary;
-  const fs::path install_root = temporary.path() / "app";
-  const fs::path staging_parent = temporary.path() / "stages";
-  const fs::path staging_root = staging_parent /
-      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "example";
-  WriteFile(executable, "old", 0755);
-  WriteFile(staging_root / "example", "new", 0755);
-  WriteFile(staging_parent / "sentinel.txt", "caller-owned");
-  InstallRequest request = RequestFor(install_root, staging_root);
-  std::string script;
-  const auto build = internal::BuildInstallScriptForTesting(
-      request, executable.string(), 2147483647, &script);
-  ASSERT_TRUE(build.ok) << build.error;
-  const fs::path script_path = temporary.path() / "missing-stage.sh";
-  WriteFile(script_path, script, 0755);
-
-  ASSERT_EQ(setenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH", "1", 1), 0);
-  ASSERT_EQ(setenv("DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE",
-                   "targetActivated", 1), 0);
-  EXPECT_NE(RunHelperScript(script_path, temporary.path()), 0);
-  ASSERT_EQ(unsetenv("DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE"), 0);
-  fs::remove_all(staging_root);
-  EXPECT_NE(RunHelperScript(script_path, temporary.path()), 0);
-  ASSERT_EQ(unsetenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"), 0);
-
-  EXPECT_EQ(ReadFile(executable), "old");
-  EXPECT_EQ(ReadFile(staging_parent / "sentinel.txt"), "caller-owned");
 }
 
 TEST(LinuxNativeInstall, StagingCleanupCannotDeleteInstallRoot) {

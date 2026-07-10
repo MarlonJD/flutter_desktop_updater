@@ -11,7 +11,6 @@ set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
   ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
 add_library(desktop_updater_native STATIC
   src/desktop_updater_native.cc
-  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_transaction.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc)
 add_library(desktop_updater::native ALIAS desktop_updater_native)
@@ -137,18 +136,6 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(desktop_updater_native_test)
-
-  add_executable(desktop_updater_install_transaction_test
-    test/runtime/install_transaction_test.cc
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_transaction_tests.cc)
-  target_compile_features(desktop_updater_install_transaction_test
-    PRIVATE cxx_std_14)
-  target_include_directories(desktop_updater_install_transaction_test PRIVATE
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
-  target_link_libraries(desktop_updater_install_transaction_test
-    PRIVATE desktop_updater_native)
-  add_test(NAME desktop_updater_install_transaction
-    COMMAND desktop_updater_install_transaction_test)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

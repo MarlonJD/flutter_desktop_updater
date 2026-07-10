@@ -148,73 +148,12 @@ public struct MacInstallHelper {
           printf '{"timestamp":"%s","event":"%s"}\\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" >> "$DIAGNOSTICS_LOG" 2>/dev/null || true
         }
 
-        journal_value() {
-          /usr/bin/plutil -extract "$1" raw -o - "$JOURNAL" 2>/dev/null
-        }
-
-        recover_pending_install() {
-          [ -f "$JOURNAL" ] || return 0
-          [ ! -L "$JOURNAL" ] || return 1
-          log_event "recovery detected"
-          RECOVERY_TARGET="$(journal_value target)" || return 1
-          RECOVERY_PREPARED="$(journal_value prepared)" || return 1
-          RECOVERY_BACKUP="$(journal_value backup)" || return 1
-          RECOVERY_NONCE="$(journal_value nonce)" || return 1
-          RECOVERY_PACKAGE_ID="$(journal_value packageId)" || return 1
-          RECOVERY_STATE="$(journal_value state)" || return 1
-          RECOVERY_OWNER_PID="$(journal_value ownerPid)" || return 1
-          RECOVERY_OWNER_START="$(journal_value ownerProcessStart)" || return 1
-          [ "$RECOVERY_TARGET" = "$BUNDLE" ] || return 1
-          /usr/bin/printf '%s\n' "$EXPECTED_PACKAGE_IDS" | /usr/bin/grep -F -x -q "$RECOVERY_PACKAGE_ID" || return 1
-          case "$RECOVERY_PREPARED" in "$TARGET_PARENT/.$TARGET_NAME.prepared-$RECOVERY_NONCE") ;; *) return 1 ;; esac
-          case "$RECOVERY_BACKUP" in "$TARGET_PARENT/.$TARGET_NAME.backup-$RECOVERY_NONCE") ;; *) return 1 ;; esac
-          if /bin/kill -0 "$RECOVERY_OWNER_PID" 2>/dev/null; then
-            LIVE_START="$(/bin/ps -p "$RECOVERY_OWNER_PID" -o lstart= 2>/dev/null | /usr/bin/xargs)"
-            [ "$LIVE_START" != "$RECOVERY_OWNER_START" ] || return 1
-          fi
-          case "$RECOVERY_STATE" in
-            prepared)
-              [ -e "$RECOVERY_BACKUP" ] && return 1
-              [ ! -e "$RECOVERY_PREPARED" ] || /bin/rm -rf "$RECOVERY_PREPARED"
-              ;;
-            backupCreated|targetActivated)
-              if [ ! -e "$BUNDLE" ] && [ -e "$RECOVERY_BACKUP" ]; then
-                /bin/mv "$RECOVERY_BACKUP" "$BUNDLE"
-              elif [ -e "$BUNDLE" ] && [ -e "$RECOVERY_BACKUP" ]; then
-                [ ! -e "$RECOVERY_PREPARED" ] || /bin/rm -rf "$RECOVERY_PREPARED"
-                /bin/mv "$BUNDLE" "$RECOVERY_PREPARED"
-                /bin/mv "$RECOVERY_BACKUP" "$BUNDLE"
-              elif [ -e "$BUNDLE" ] && [ ! -e "$RECOVERY_BACKUP" ] && [ "$RECOVERY_STATE" = "backupCreated" ]; then
-                :
-              else
-                return 1
-              fi
-              [ ! -e "$RECOVERY_PREPARED" ] || /bin/rm -rf "$RECOVERY_PREPARED"
-              log_event "recovery restored backup"
-              ;;
-            completed)
-              [ -d "$BUNDLE" ] || return 1
-              [ ! -e "$RECOVERY_BACKUP" ] || /bin/rm -rf "$RECOVERY_BACKUP"
-              [ ! -e "$RECOVERY_PREPARED" ] || /bin/rm -rf "$RECOVERY_PREPARED"
-              log_event "recovery completed activation"
-              ;;
-            *) return 1 ;;
-          esac
-          /bin/rm -f "$JOURNAL"
-          /usr/bin/sync
-        }
-
         log_event "helper scheduled"
         log_event "waiting for parent process"
         while kill -0 "$PID" 2>/dev/null; do
           sleep 0.5
         done
         log_event "parent process exited"
-
-        TARGET_PARENT="$(dirname "$BUNDLE")"
-        TARGET_NAME="$(basename "$BUNDLE")"
-        JOURNAL="$TARGET_PARENT/.$TARGET_NAME.desktop_updater_transaction.json"
-        recover_pending_install || { log_event "recovery failure"; exit 1; }
 
         verify_stage_provenance() {
           log_event "stage provenance validation"
@@ -344,28 +283,11 @@ public struct MacInstallHelper {
             echo "Skipping macOS signing gates because allowUnsignedMacOSUpdates or the debug smoke bypass is enabled." >&2
           fi
 
-          PREPARED="$TARGET_PARENT/.$TARGET_NAME.prepared-$STAGE_NONCE"
-          BACKUP="$TARGET_PARENT/.$TARGET_NAME.backup-$STAGE_NONCE"
-          OWNER_START="$(/bin/ps -p $$ -o lstart= 2>/dev/null | /usr/bin/xargs)"
-          persist_journal() {
-            STATE="$1"
-            JOURNAL_TMP="$JOURNAL.tmp.$$"
-            /usr/bin/printf '{"schemaVersion":1,"ownerPid":%s,"ownerProcessStart":"%s","nonce":"%s","packageId":"%s","target":"%s","prepared":"%s","backup":"%s","stageProvenanceSha256":"%s","state":"%s"}' "$$" "$OWNER_START" "$STAGE_NONCE" "$EXPECTED_BUNDLE_ID" "$BUNDLE" "$PREPARED" "$BACKUP" "$expected_provenance_sha256" "$STATE" > "$JOURNAL_TMP"
-            /usr/bin/sync
-            /bin/mv -f "$JOURNAL_TMP" "$JOURNAL"
-            /usr/bin/sync
-            log_event "transaction journal persisted"
-            [ "${DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE:-}" != "$STATE" ] || exit 99
-          }
-
-          [ ! -e "$PREPARED" ] && [ ! -e "$BACKUP" ] || exit 1
-          /usr/bin/ditto "$STAGING" "$PREPARED"
-          ( set -C; : > "$JOURNAL" ) 2>/dev/null || { log_event "transaction lock failure"; /bin/rm -rf "$PREPARED"; exit 1; }
-          log_event "transaction lock acquired"
-          persist_journal prepared
+          TARGET_PARENT="$(dirname "$BUNDLE")"
+          TARGET_NAME="$(basename "$BUNDLE")"
+          BACKUP="$TARGET_PARENT/.$TARGET_NAME.desktop_updater_backup.$$"
 
           log_event "backup start"
-          persist_journal backupCreated
           if /bin/mv "$BUNDLE" "$BACKUP"; then
             log_event "backup success"
           else
@@ -373,10 +295,8 @@ public struct MacInstallHelper {
             exit 1
           fi
           log_event "move start"
-          persist_journal targetActivated
-          if /bin/mv "$PREPARED" "$BUNDLE"; then
+          if /bin/mv "$STAGING" "$BUNDLE"; then
             log_event "move success"
-            persist_journal completed
             log_event "cleanup start"
             if /bin/rm -rf "$BACKUP" && cleanup_owned_stage "$STAGE_ROOT"; then
               log_event "cleanup success"
@@ -386,15 +306,13 @@ public struct MacInstallHelper {
           else
             log_event "move failure"
             log_event "rollback start"
-            if [ ! -e "$BUNDLE" ] && /bin/mv "$BACKUP" "$BUNDLE"; then
+            if /bin/rm -rf "$BUNDLE" && /bin/mv "$BACKUP" "$BUNDLE"; then
               log_event "rollback success"
             else
               log_event "rollback failure"
             fi
             exit 1
           fi
-          /bin/rm -f "$JOURNAL"
-          /usr/bin/sync
         fi
 
         if [ "$SKIP_RELAUNCH" != "1" ]; then

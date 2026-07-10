@@ -2,7 +2,6 @@
 
 #include <limits.h>
 #include <libgen.h>
-#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -182,142 +181,6 @@ bool IsTemporaryInstallRoot(const std::string& root) {
 bool PathsOverlap(const std::string& first, const std::string& second) {
   return first == second || IsStrictDescendant(first, second) ||
          IsStrictDescendant(second, first);
-}
-
-std::string DecodeMountInfoPathImpl(const std::string& encoded) {
-  std::string decoded;
-  decoded.reserve(encoded.size());
-  for (std::size_t index = 0; index < encoded.size(); ++index) {
-    if (encoded[index] == '\\' && index + 3 < encoded.size() &&
-        encoded[index + 1] >= '0' && encoded[index + 1] <= '7' &&
-        encoded[index + 2] >= '0' && encoded[index + 2] <= '7' &&
-        encoded[index + 3] >= '0' && encoded[index + 3] <= '7') {
-      const int value = (encoded[index + 1] - '0') * 64 +
-                        (encoded[index + 2] - '0') * 8 +
-                        (encoded[index + 3] - '0');
-      decoded.push_back(static_cast<char>(value));
-      index += 3;
-    } else {
-      decoded.push_back(encoded[index]);
-    }
-  }
-  return decoded;
-}
-
-bool IsSameOrDescendant(const std::string& path, const std::string& root) {
-  return path == root || IsStrictDescendant(path, root);
-}
-
-InstallResult RejectMountInfoEntries(const std::string& target,
-                                     const std::string& stage,
-                                     const std::string& mount_info) {
-  std::istringstream lines(mount_info);
-  std::string line;
-  while (std::getline(lines, line)) {
-    std::istringstream fields(line);
-    std::string mount_id;
-    std::string parent_id;
-    std::string device;
-    std::string root;
-    std::string encoded_mount_point;
-    if (!(fields >> mount_id >> parent_id >> device >> root >>
-          encoded_mount_point)) {
-      return {false, "Linux mountinfo is malformed."};
-    }
-    const std::string mount_point =
-        DecodeMountInfoPathImpl(encoded_mount_point);
-    if (IsSameOrDescendant(mount_point, target) ||
-        IsSameOrDescendant(mount_point, stage)) {
-      return {false,
-              "Linux install target or staging tree contains a mount or bind "
-              "mount boundary."};
-    }
-  }
-  return {true, ""};
-}
-
-InstallResult TraverseSameDeviceAt(int directory_fd, dev_t root_device) {
-  const int iterator_fd = dup(directory_fd);
-  if (iterator_fd < 0) {
-    return {false, "Linux directory traversal could not duplicate a handle."};
-  }
-  DIR* directory = fdopendir(iterator_fd);
-  if (directory == nullptr) {
-    close(iterator_fd);
-    return {false, "Linux directory traversal could not open a handle."};
-  }
-  InstallResult result = {true, ""};
-  errno = 0;
-  while (dirent* entry = readdir(directory)) {
-    const std::string name(entry->d_name);
-    if (name == "." || name == "..") continue;
-    struct stat metadata = {};
-    if (fstatat(directory_fd, name.c_str(), &metadata,
-                AT_SYMLINK_NOFOLLOW) != 0) {
-      result = {false, "Linux tree entry changed during safe traversal."};
-      break;
-    }
-    if (metadata.st_dev != root_device) {
-      result = {false,
-                "Linux install target or staging tree crosses a filesystem "
-                "device boundary."};
-      break;
-    }
-    if (!S_ISDIR(metadata.st_mode)) continue;
-    const int child = openat(directory_fd, name.c_str(),
-                             O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (child < 0) {
-      result = {false, "Linux directory changed during safe traversal."};
-      break;
-    }
-    result = TraverseSameDeviceAt(child, root_device);
-    close(child);
-    if (!result.ok) break;
-  }
-  if (errno != 0 && result.ok) {
-    result = {false, "Linux directory traversal failed."};
-  }
-  closedir(directory);
-  return result;
-}
-
-InstallResult ValidateSameDeviceTree(const std::string& root) {
-  const int root_fd =
-      open(root.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  if (root_fd < 0) {
-    return {false, "Linux tree root could not be opened without following links."};
-  }
-  struct stat metadata = {};
-  InstallResult result = {true, ""};
-  if (fstat(root_fd, &metadata) != 0 || !S_ISDIR(metadata.st_mode)) {
-    result = {false, "Linux tree root metadata is unavailable."};
-  } else {
-    result = TraverseSameDeviceAt(root_fd, metadata.st_dev);
-  }
-  close(root_fd);
-  return result;
-}
-
-InstallResult RejectNestedMounts(const std::string& target,
-                                 const std::string& stage) {
-  InstallResult result = ValidateSameDeviceTree(target);
-  if (!result.ok) return result;
-  result = ValidateSameDeviceTree(stage);
-  if (!result.ok) return result;
-#if defined(__linux__)
-  std::ifstream input("/proc/self/mountinfo", std::ios::binary);
-  if (!input.is_open()) {
-    return {false, "Linux mountinfo is unavailable; refusing install."};
-  }
-  const std::string mount_info((std::istreambuf_iterator<char>(input)),
-                               std::istreambuf_iterator<char>());
-  if ((!input.good() && !input.eof()) || mount_info.empty()) {
-    return {false, "Linux mountinfo is unreadable; refusing install."};
-  }
-  return RejectMountInfoEntries(target, stage, mount_info);
-#else
-  return {true, ""};
-#endif
 }
 
 bool IsLowercaseSHA256(const std::string& value) {
@@ -594,11 +457,6 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request,
   if (PathsOverlap(canonical_staging_path, request.install_root)) {
     return {false, "Staging path must not overlap install root."};
   }
-  const InstallResult mount_safety =
-      RejectNestedMounts(request.install_root, canonical_staging_path);
-  if (!mount_safety.ok) {
-    return mount_safety;
-  }
   if (validate_provenance) {
     if (!IsLowercaseSHA256(request.expected_provenance_sha256) ||
         !IsLowercaseUuidNonce(request.provenance_nonce) ||
@@ -737,50 +595,6 @@ InstallResult ValidateInstallRequest(const InstallRequest& request) {
 
 namespace internal {
 
-std::string DecodeMountInfoPath(const std::string& encoded) {
-  return DecodeMountInfoPathImpl(encoded);
-}
-
-InstallResult RejectNestedMountsForTesting(
-    const std::string& target,
-    const std::string& stage,
-    const std::string& mount_info) {
-  return RejectMountInfoEntries(target, stage, mount_info);
-}
-
-bool RemoveTreeAtForRecovery(int parent_fd,
-                             const std::string& name,
-                             dev_t root_device) {
-  struct stat metadata = {};
-  if (fstatat(parent_fd, name.c_str(), &metadata, AT_SYMLINK_NOFOLLOW) != 0 ||
-      metadata.st_dev != root_device) {
-    return false;
-  }
-  if (!S_ISDIR(metadata.st_mode)) {
-    return unlinkat(parent_fd, name.c_str(), 0) == 0;
-  }
-  const int child = openat(parent_fd, name.c_str(),
-                           O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  if (child < 0) return false;
-  const int iterator_fd = dup(child);
-  DIR* directory = iterator_fd < 0 ? nullptr : fdopendir(iterator_fd);
-  bool ok = directory != nullptr;
-  while (ok) {
-    errno = 0;
-    dirent* entry = readdir(directory);
-    if (entry == nullptr) {
-      if (errno != 0) ok = false;
-      break;
-    }
-    const std::string child_name(entry->d_name);
-    if (child_name == "." || child_name == "..") continue;
-    ok = RemoveTreeAtForRecovery(child, child_name, root_device);
-  }
-  if (directory != nullptr) closedir(directory);
-  close(child);
-  return ok && unlinkat(parent_fd, name.c_str(), AT_REMOVEDIR) == 0;
-}
-
 InstallResult BuildInstallScriptForTesting(
     const InstallRequest& request,
     const std::string& running_executable,
@@ -904,12 +718,8 @@ InstallResult BuildInstallScriptForTesting(
       "log_event \"waiting for parent process\"\n"
       "while kill -0 \"$pid_to_wait\" 2>/dev/null; do sleep 0.5; done\n"
       "log_event \"parent process exited\"\n"
-      "if [ -d \"$target\" ]; then\n"
-      "  resolved_target=\"$(cd \"$target\" && pwd -P)\"\n"
-      "  if [ \"$resolved_target\" != \"$target\" ]; then exit 1; fi\n"
-      "else\n"
-      "  resolved_target=\"$target\"\n"
-      "fi\n";
+      "resolved_target=\"$(cd \"$target\" && pwd -P)\"\n"
+      "if [ \"$resolved_target\" != \"$target\" ]; then exit 1; fi\n";
 
   if (normalized.operation == LinuxInstallOperation::kRestart) {
     generated +=
@@ -922,7 +732,7 @@ InstallResult BuildInstallScriptForTesting(
   } else {
     generated +=
         "target_root=\"$resolved_target\"\n"
-        "if [ -d \"$staging\" ]; then staging_root=\"$(cd \"$staging\" && pwd -P)\"; else staging_root=\"$staging\"; fi\n"
+        "staging_root=\"$(cd \"$staging\" && pwd -P)\"\n"
         "case \"$staging_root\" in\n"
         "  \"$target_root\"|\"$target_root\"/*) exit 1 ;;\n"
         "esac\n"
@@ -943,136 +753,84 @@ InstallResult BuildInstallScriptForTesting(
         "  [ \"$actual_entry_count\" = \"$expected_provenance_entry_count\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
         "  log_event \"stage provenance validation success\"\n"
         "}\n"
-        "target_parent=\"$(dirname \"$target\")\"\n"
-        "target_name=\"$(basename \"$target\")\"\n"
-        "prepared=\"$target_parent/.$target_name.prepared-$provenance_nonce\"\n"
-        "backup=\"$target_parent/.$target_name.backup-$provenance_nonce\"\n"
-        "journal=\"$target_parent/.$target_name.desktop_updater_transaction.json\"\n"
-        "owner_start=\"$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || printf unknown):$(awk '{print $22}' /proc/$$/stat 2>/dev/null || printf unknown)\"\n"
-        "durable_sync() { sync \"$1\" 2>/dev/null || sync; }\n"
-        "reject_mount_boundaries() {\n"
-        "  checked_root=\"$1\"\n"
-        "  [ -d \"$checked_root\" ] && [ ! -L \"$checked_root\" ] || return 1\n"
-        "  checked_device=\"$(stat -c %d -- \"$checked_root\")\"\n"
-        "  while IFS= read -r directory; do [ \"$(stat -c %d -- \"$directory\")\" = \"$checked_device\" ] || return 1; done < <(find \"$checked_root\" -xdev -type d -print)\n"
-        "  if [ -r /proc/self/mountinfo ]; then\n"
-        "    while IFS=' ' read -r mount_id mount_parent mount_device mount_source mount_point mount_rest; do\n"
-        "      decoded_mount=\"$(printf '%b' \"$mount_point\")\"\n"
-        "      case \"$decoded_mount\" in \"$checked_root\"|\"$checked_root\"/*) return 1 ;; esac\n"
-        "    done < /proc/self/mountinfo\n"
-        "  fi\n"
-        "}\n"
-        "journal_string() { sed -n 's/.*\"'\"$1\"'\":\"\\([^\"]*\\)\".*/\\1/p' \"$journal\"; }\n"
-        "journal_number() { sed -n 's/.*\"'\"$1\"'\":\\([0-9][0-9]*\\).*/\\1/p' \"$journal\"; }\n"
-        "recover_pending_install() {\n"
-        "  [ -f \"$journal\" ] || return 0\n"
-        "  [ ! -L \"$journal\" ] || return 1\n"
-        "  log_event \"recovery detected\"\n"
-        "  old_target=\"$(journal_string target)\"\n"
-        "  old_package=\"$(journal_string packageId)\"\n"
-        "  old_nonce=\"$(journal_string nonce)\"\n"
-        "  old_prepared=\"$(journal_string prepared)\"\n"
-        "  old_backup=\"$(journal_string backup)\"\n"
-        "  old_state=\"$(journal_string state)\"\n"
-        "  old_owner=\"$(journal_number ownerPid)\"\n"
-        "  old_start=\"$(journal_string ownerProcessStart)\"\n"
-        "  [ \"$old_target\" = \"$target\" ] && [ \"$old_package\" = " +
-        ShellQuote(normalized.package_id) + " ] || return 1\n"
-        "  [ \"$old_prepared\" = \"$target_parent/.$target_name.prepared-$old_nonce\" ] || return 1\n"
-        "  [ \"$old_backup\" = \"$target_parent/.$target_name.backup-$old_nonce\" ] || return 1\n"
-        "  if [ -n \"$old_owner\" ] && kill -0 \"$old_owner\" 2>/dev/null; then\n"
-        "    live_start=\"$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || printf unknown):$(awk '{print $22}' \"/proc/$old_owner/stat\" 2>/dev/null || true)\"\n"
-        "    [ \"$live_start\" != \"$old_start\" ] || return 1\n"
-        "  fi\n"
-        "  case \"$old_state\" in\n"
-        "    prepared)\n"
-        "      [ ! -e \"$old_backup\" ] && [ -e \"$target\" ] || return 1\n"
-        "      [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\"\n"
-        "      ;;\n"
-        "    backupCreated)\n"
-        "      if [ -e \"$target\" ] && [ ! -e \"$old_backup\" ]; then [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\";\n"
-        "      elif [ ! -e \"$target\" ] && [ -e \"$old_backup\" ]; then mv \"$old_backup\" \"$target\"; [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\"; log_event \"recovery restored backup\";\n"
-        "      else return 1; fi\n"
-        "      ;;\n"
-        "    targetActivated)\n"
-        "      identity=\"$target/.desktop_updater_install_identity.json\"\n"
-        "      if [ -e \"$target\" ] && [ -e \"$old_backup\" ] && [ -f \"$identity\" ] && [ ! -L \"$identity\" ] && grep -F -x -q " +
-        ShellQuote("{\"packageId\":\"" + JsonEscape(normalized.package_id) +
-                   "\",\"schemaVersion\":1}") +
-        " \"$identity\"; then rm -rf \"$old_backup\"; [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\"; log_event \"recovery completed activation\";\n"
-        "      elif [ -e \"$old_backup\" ]; then [ ! -e \"$target\" ] || mv \"$target\" \"$old_prepared\"; mv \"$old_backup\" \"$target\"; [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\"; log_event \"recovery restored backup\";\n"
-        "      else return 1; fi\n"
-        "      ;;\n"
-        "    completed)\n"
-        "      [ -e \"$target\" ] || return 1\n"
-        "      [ ! -e \"$old_backup\" ] || rm -rf \"$old_backup\"\n"
-        "      [ ! -e \"$old_prepared\" ] || rm -rf \"$old_prepared\"\n"
-        "      log_event \"recovery completed activation\"\n"
-        "      ;;\n"
-        "    *) return 1 ;;\n"
-        "  esac\n"
-        "  rm -f \"$journal\"\n"
-        "  durable_sync \"$target_parent\"\n"
-        "}\n"
-        "persist_journal() {\n"
-        "  state=\"$1\"\n"
-        "  journal_tmp=\"$journal.tmp.$$\"\n"
-        "  printf '{\"schemaVersion\":1,\"ownerPid\":%s,\"ownerProcessStart\":\"%s\",\"nonce\":\"%s\",\"packageId\":\"%s\",\"target\":\"%s\",\"prepared\":\"%s\",\"backup\":\"%s\",\"stageProvenanceSha256\":\"%s\",\"state\":\"%s\"}' \"$$\" \"$owner_start\" \"$provenance_nonce\" " + ShellQuote(normalized.package_id) + " \"$target\" \"$prepared\" \"$backup\" \"$expected_provenance_sha256\" \"$state\" > \"$journal_tmp\"\n"
-        "  durable_sync \"$journal_tmp\"\n"
-        "  mv -f \"$journal_tmp\" \"$journal\"\n"
-        "  durable_sync \"$target_parent\"\n"
-        "  log_event \"transaction journal persisted\"\n"
-        "  [ \"${DESKTOP_UPDATER_TEST_INTERRUPT_AFTER_STATE:-}\" != \"$state\" ] || exit 99\n"
-        "}\n"
-        "rollback_transaction() {\n"
+        "verify_stage_provenance || exit 1\n"
+        "backup=\"$(mktemp -d /tmp/desktop_updater_backup_XXXXXX)\"\n"
+        "rollback() {\n"
+        "  [ -d \"$backup\" ] || return 0\n"
         "  log_event \"rollback start\"\n"
         "  set +e\n"
-        "  [ ! -e \"$target\" ] || mv \"$target\" \"$prepared\"\n"
-        "  mv \"$backup\" \"$target\"\n"
+        "  rm -rf \"$target\"\n"
+        "  mkdir -p \"$(dirname \"$target\")\"\n"
+        "  cp -a \"$backup/.\" \"$target/\"\n"
         "  rollback_status=$?\n"
-        "  [ ! -e \"$prepared\" ] || rm -rf \"$prepared\"\n"
-        "  rm -f \"$journal\"\n"
-        "  durable_sync \"$target_parent\"\n"
         "  set -e\n"
-        "  if [ \"$rollback_status\" -eq 0 ]; then log_event \"rollback success\"; else log_event \"rollback failure\"; fi\n"
+        "  if [ \"$rollback_status\" -eq 0 ]; then\n"
+        "    log_event \"rollback success\"\n"
+        "  else\n"
+        "    log_event \"rollback failure\"\n"
+        "  fi\n"
         "  return \"$rollback_status\"\n"
         "}\n"
-        "recover_pending_install || { log_event \"recovery failure\"; exit 1; }\n"
-        "resolved_target=\"$(cd \"$target\" && pwd -P)\"\n"
-        "[ \"$resolved_target\" = \"$target\" ] || exit 1\n"
-        "log_event \"staging path validation\"\n"
-        "verify_stage_provenance || exit 1\n"
-        "reject_mount_boundaries \"$target\" || { log_event \"mount boundary rejection\"; exit 1; }\n"
-        "reject_mount_boundaries \"$staging\" || { log_event \"mount boundary rejection\"; exit 1; }\n"
-        "[ ! -e \"$prepared\" ] && [ ! -e \"$backup\" ] || exit 1\n"
-        "mkdir \"$prepared\"\n"
-        "cp -a \"$staging/.\" \"$prepared/\"\n"
-        "rm -f \"$prepared/.desktop_updater_stage_provenance.json\" \"$prepared/.desktop_updater_release_manifest.json\" \"$prepared/.desktop_updater_artifact.zip\"\n"
-        "reject_mount_boundaries \"$prepared\" || { log_event \"mount boundary rejection\"; rm -rf \"$prepared\"; exit 1; }\n"
-        "( set -o noclobber; : > \"$journal\" ) 2>/dev/null || { log_event \"transaction lock failure\"; rm -rf \"$prepared\"; exit 1; }\n"
-        "log_event \"transaction lock acquired\"\n"
-        "persist_journal prepared\n"
+        "rollback_and_exit() {\n"
+        "  rollback || true\n"
+        "  rm -rf \"$backup\"\n"
+        "  exit 1\n"
+        "}\n"
+        "trap 'rollback_and_exit' ERR\n"
         "log_event \"backup start\"\n"
-        "persist_journal backupCreated\n"
-        "if mv \"$target\" \"$backup\"; then log_event \"backup success\"; else log_event \"backup failure\"; rm -f \"$journal\"; rm -rf \"$prepared\"; exit 1; fi\n"
-        "durable_sync \"$target_parent\"\n"
-        "log_event \"move start\"\n"
-        "persist_journal targetActivated\n"
-        "if mv \"$prepared\" \"$target\"; then log_event \"move success\"; else log_event \"move failure\"; rollback_transaction || true; exit 1; fi\n"
-        "durable_sync \"$target_parent\"\n"
-        "if [ -e \"$exe\" ] && [ ! -x \"$exe\" ]; then\n"
-        "  log_event \"permission restore start\"\n"
-        "  if chmod +x \"$exe\"; then log_event \"permission restore success\"; else log_event \"permission restore failure\"; rollback_transaction || true; exit 1; fi\n"
-        "elif [ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]; then\n"
-        "  log_event \"permission restore failure\"\n"
-        "  rollback_transaction || true\n"
+        "if cp -a \"$target/.\" \"$backup/\"; then\n"
+        "  log_event \"backup success\"\n"
+        "else\n"
+        "  log_event \"backup failure\"\n"
+        "  rm -rf \"$backup\"\n"
         "  exit 1\n"
         "fi\n"
-        "persist_journal completed\n"
-        "log_event \"cleanup start\"\n"
-        "if rm -rf \"$backup\" && verify_stage_provenance && rm -rf \"$staging\"; then log_event \"cleanup success\"; else log_event \"cleanup failure\"; fi\n"
-        "rm -f \"$journal\"\n"
-        "durable_sync \"$target_parent\"\n"
+        "for relative in \"${removed[@]}\"; do\n"
+        "  [ -z \"$relative\" ] && continue\n"
+        "  candidate=\"$(realpath -m \"$target/$relative\")\"\n"
+        "  case \"$candidate\" in\n"
+        "    \"$target_root\"/*) [ -e \"$candidate\" ] && rm -rf \"$candidate\" ;;\n"
+        "    *) echo \"Removed file escapes app root: $relative\" >&2; rollback_and_exit ;;\n"
+        "  esac\n"
+        "done\n"
+        "if [ -n \"$staging\" ]; then\n"
+        "  log_event \"staging path validation\"\n"
+        "  if [ ! -d \"$staging\" ]; then\n"
+        "    log_event \"staging path validation failure\"\n"
+        "    rm -rf \"$backup\"\n"
+        "    exit 1\n"
+        "  fi\n"
+        "  log_event \"move start\"\n"
+        "  if find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a \"$staging/.\" \"$target/\"; then\n"
+        "    rm -f \"$target/.desktop_updater_stage_provenance.json\" "
+        "\"$target/.desktop_updater_release_manifest.json\" "
+        "\"$target/.desktop_updater_artifact.zip\"\n"
+        "    log_event \"move success\"\n"
+        "  else\n"
+        "    log_event \"move failure\"\n"
+        "    rollback_and_exit\n"
+        "  fi\n"
+        "  if [ -e \"$exe\" ] && [ ! -x \"$exe\" ]; then\n"
+        "    log_event \"permission restore start\"\n"
+        "    if chmod +x \"$exe\"; then\n"
+        "      log_event \"permission restore success\"\n"
+        "    else\n"
+        "      log_event \"permission restore failure\"\n"
+        "      rollback_and_exit\n"
+        "    fi\n"
+        "  elif [ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]; then\n"
+        "    log_event \"permission restore failure\"\n"
+        "    rollback_and_exit\n"
+        "  fi\n"
+        "  log_event \"cleanup start\"\n"
+        "  if verify_stage_provenance && rm -rf \"$staging\"; then\n"
+        "    log_event \"cleanup success\"\n"
+        "  else\n"
+        "    log_event \"cleanup failure\"\n"
+        "  fi\n"
+        "fi\n"
+        "rm -rf \"$backup\"\n"
+        "trap - ERR\n"
         "if [ \"$skip_relaunch\" != \"1\" ]; then\n"
         "  log_event \"relaunch attempt\"\n"
         "  cd \"$target\"\n"

@@ -1068,7 +1068,7 @@ Task 5 Windows metadata follow-up evidence on 2026-07-10:
 - Produces `RecoverPendingInstall(target, packageId)` before a new handoff.
 - Rejects nested filesystems and reparse points before backup.
 
-- [x] **Step 1: Write no-mutation boundary tests**
+- [ ] **Step 1: Write no-mutation boundary tests**
 
 Add target-host tests for:
 
@@ -1084,7 +1084,7 @@ missing staging after backup and removed-file processing
 Each rejection asserts target, outside data, and staging parent remain
 byte-for-byte unchanged.
 
-- [x] **Step 2: Implement Linux mount detection**
+- [ ] **Step 2: Implement Linux mount detection**
 
 Before mutation, recursively compare `st_dev` to the root device and parse
 `/proc/self/mountinfo` to catch same-device bind mounts. Reject any mountpoint
@@ -1093,21 +1093,21 @@ whose canonical path equals or descends from target or stage.
 Use fd-relative traversal with `openat`, `O_NOFOLLOW`, `fstatat`, and
 `unlinkat`; do not pass an unvalidated absolute child to `rm -rf`.
 
-- [x] **Step 3: Implement Windows reparse-safe traversal**
+- [ ] **Step 3: Implement Windows reparse-safe traversal**
 
 Use wide Win32 paths and handles opened with
 `FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS`. Reject any
 reparse point under target, prepared tree, or stage before PowerShell starts.
 The PowerShell script rechecks the same invariant immediately before mutation.
 
-- [x] **Step 4: Acquire a cross-process target lock**
+- [ ] **Step 4: Acquire a cross-process target lock**
 
 Create the journal/lock file exclusively in the target parent. Record PID,
 nonce, package ID, and canonical target. A live owner causes
 `installHandoffFailure`. A dead owner triggers recovery before a new lock is
 granted.
 
-- [x] **Step 5: Replace copy/prune with the journaled transaction**
+- [ ] **Step 5: Replace copy/prune with the journaled transaction**
 
 Prepare a complete sibling tree first. Persist and fsync each journal state,
 then execute:
@@ -1123,7 +1123,7 @@ On recovery, `backupCreated` restores backup; `targetActivated` verifies the
 new target and either completes or restores backup. Cleanup never removes a
 path absent from the journal.
 
-- [x] **Step 6: Integrate recovery with diagnostics**
+- [ ] **Step 6: Integrate recovery with diagnostics**
 
 Emit existing event names plus:
 
@@ -1137,64 +1137,18 @@ recovery completed activation
 
 Redact canonical user paths using the existing diagnostics policy.
 
-- [x] **Step 7: Run safety suites**
+- [ ] **Step 7: Run safety suites**
 
 Run target-host native tests and update smokes. Expected: every injected
 interruption reaches a deterministic restored or completed state, no test
 crosses a mount/reparse boundary, and test discovery is nonzero.
 
-- [x] **Step 8: Commit**
+- [ ] **Step 8: Commit**
 
 ~~~sh
 git add native_runtime macos linux windows lib/src/core docs/diagnostics-and-recovery.md test
 git commit -m "fix: make native installs recoverable"
 ~~~
-
-Task 6 local evidence on 2026-07-10:
-
-- RED: the focused Flutter source/contract suite failed on the missing shared
-  transaction API, missing Linux fd-relative and mountinfo primitives, missing
-  Windows wide-handle and PowerShell reparse checks, missing Swift transaction
-  source, and undocumented recovery events. The portable shared C++ unit failed
-  to compile because `install_transaction.h` did not exist. The focused Swift
-  test failed because `InstallTransactionJournal` and the four exact states did
-  not exist.
-- RED during recovery widening: the real Linux helper interruption suite first
-  failed after `targetActivated` because recovery attempted to canonicalize the
-  temporarily absent target before reading the journal. The missing-stage case
-  then failed because staging was canonicalized before backup restoration.
-  Both failures occurred before the recovery ordering was corrected.
-- GREEN verified locally: the shared injectable C++14 transaction test compiled
-  with `-Wall -Wextra -Werror` and covered live-owner exclusion with PID-start
-  identity, dead-owner recovery, all persisted interruption states, invalid
-  activation rollback, missing prepared state, and forged-journal deletion
-  bounds. The focused Task 6 Flutter/helper/recovery suite passed 31 tests.
-- GREEN verified locally: the portable Linux C++17 helper suite compiled with
-  `-Wall -Wextra -Werror` and passed 16 tests, including escaped mountinfo bind
-  rejection, component-boundary lookalikes, real generated-script rollback,
-  successful activation, every persisted interruption state, missing staging
-  after backup intent, outside-file preservation, caller-owned staging-parent
-  preservation, and bounded cleanup.
-- GREEN verified locally: macOS SwiftPM passed 53 tests, including the new
-  transaction state and deletion-bound tests. The exact unchanged five-file
-  CocoaPods fallback source set typechecked at `x86_64-apple-macosx10.14` with
-  Swift 5 and the FlutterMacOS framework. `InstallTransaction.swift` remains
-  SwiftPM-only and the native runtime floor remains macOS 10.15.
-- GREEN verified locally: the portable Windows C ABI passed 10 tests; the
-  append-only runtime C header and the shared Windows transaction consumer
-  passed C++14 `-Werror` checks. Windows uses wide handles opened with
-  `FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS`, and the generated
-  PowerShell repeats target, stage, and prepared-tree reparse checks before
-  mutation.
-- GREEN verified locally: the final full `flutter test --no-pub` run passed
-  581 tests with 3 explicit environment-gated skips and 0 failures. Repository
-  formatting checked 214 files unchanged. Flutter analysis exited 0 with the
-  repository's existing info-only diagnostics.
-- `not run`: Windows target-host CMake/CTest, junction/UAC/PowerShell/ZIP/Inno
-  execution, and live Windows lock/recovery smokes; Linux privileged real bind
-  mount and different-device target-host injection; CI; credentials; signing;
-  notarization; and release smoke were not run on this macOS host. Their tests
-  and source contracts remain registered for target-host execution.
 
 ---
 
