@@ -114,12 +114,36 @@ jobs:
       - name: Run standalone Windows native SDK tests
         shell: pwsh
         run: |
-          $output = & ctest --test-dir windows/native/build -C Debug --output-on-failure 2>&1
-          $exitCode = $LASTEXITCODE
-          $output | ForEach-Object { Write-Host $_ }
-          if ($exitCode -ne 0) { exit $exitCode }
-          if (($output -join "`n") -match "No tests were found") {
-            throw "Standalone Windows native CTest registered zero tests."
+          $serverOut = Join-Path $env:RUNNER_TEMP "native-transport-server.out"
+          $serverErr = Join-Path $env:RUNNER_TEMP "native-transport-server.err"
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_transport_fixture_server.dart", "--port", "43891"
+          ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43891/health" | Out-Null
+                $ready = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 250
+              }
+            }
+            if (-not $ready) {
+              Get-Content $serverOut, $serverErr -ErrorAction SilentlyContinue
+              throw "Native transport fixture server did not start."
+            }
+            $env:DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL = "http://127.0.0.1:43891"
+            $output = & ctest --test-dir windows/native/build -C Debug --output-on-failure 2>&1
+            $exitCode = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host $_ }
+            if ($exitCode -ne 0) { exit $exitCode }
+            if (($output -join "`n") -match "No tests were found") {
+              throw "Standalone Windows native CTest registered zero tests."
+            }
+          } finally {
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
           }
       - name: Install Windows native SDK
         run: cmake --install windows/native/build --config Debug --prefix windows/native/install
@@ -397,13 +421,29 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libgtk-3-dev libssl-dev ninja-build pkg-config xvfb
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev libgtk-3-dev libssl-dev ninja-build pkg-config xvfb
       - name: Configure standalone Linux native tests
         run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
       - name: Run standalone Linux native tests
         run: |
+          dart run tool/native_transport_fixture_server.dart --port 43891 >"$RUNNER_TEMP/native-transport-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:43891/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/native-transport-server.log"
+            exit 1
+          fi
+          export DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL=http://127.0.0.1:43891
           set +e
           output="$(ctest --test-dir linux/native/build --output-on-failure 2>&1)"
           status=$?

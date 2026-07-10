@@ -1,5 +1,6 @@
 include(CMakeFindDependencyMacro)
 if("@DESKTOP_UPDATER_NATIVE_RUNTIME_BUILT@" STREQUAL "ON")
+  find_dependency(CURL REQUIRED)
   find_dependency(OpenSSL REQUIRED COMPONENTS Crypto)
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/desktop_updater_nativeTargets.cmake")

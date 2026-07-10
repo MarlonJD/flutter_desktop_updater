@@ -21,6 +21,7 @@ set_target_properties(desktop_updater_native PROPERTIES
 
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
+  find_package(CURL REQUIRED)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
@@ -29,6 +30,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   add_library(desktop_updater_runtime STATIC
     src/runtime/runtime_configuration.cc
     src/runtime/sha256_openssl.cc
+    src/runtime/update_transport_curl.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
@@ -47,7 +49,8 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   set_target_properties(desktop_updater_runtime PROPERTIES
     EXPORT_NAME runtime
     POSITION_INDEPENDENT_CODE ON)
-  target_link_libraries(desktop_updater_runtime PUBLIC OpenSSL::Crypto)
+  target_link_libraries(desktop_updater_runtime
+    PUBLIC CURL::libcurl OpenSSL::Crypto)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -131,5 +134,18 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     add_test(NAME desktop_updater_runtime_contract
       COMMAND desktop_updater_runtime_contract_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-contract)
+
+    add_executable(desktop_updater_runtime_transport_test
+      test/runtime/transport_fixture_test.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/transport_fixture_tests.cc)
+    target_compile_features(desktop_updater_runtime_transport_test
+      PRIVATE cxx_std_14)
+    target_include_directories(desktop_updater_runtime_transport_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    target_link_libraries(desktop_updater_runtime_transport_test
+      PRIVATE desktop_updater_runtime CURL::libcurl OpenSSL::Crypto)
+    add_test(NAME desktop_updater_runtime_transport
+      COMMAND desktop_updater_runtime_transport_test)
   endif()
 endif()

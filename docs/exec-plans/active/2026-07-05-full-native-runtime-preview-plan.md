@@ -471,12 +471,12 @@ Task 3 candidate evidence on 2026-07-10:
 - Create: transport fixture server/tooling
 - Test: platform retry/resume/header/progress tests
 
-- [ ] **Step 4.1: Match supported URL policy**
+- [x] **Step 4.1: Match supported URL policy**
 
 Accept absolute `https`, `http`, and `file` URLs. Reject missing schemes,
 hostless HTTP URLs, and unsupported schemes before network access.
 
-- [ ] **Step 4.2: Add request headers and timeout**
+- [x] **Step 4.2: Add request headers and timeout**
 
 Call the app-owned header provider for index, descriptor, release notes when
 used, and artifact requests. Redact header values from diagnostics.
@@ -486,7 +486,7 @@ redirect downgrades. Limit redirects to five. Re-evaluate app-owned headers for
 the redirected URL and do not forward authorization across hosts unless the
 provider explicitly returns it for the new host.
 
-- [ ] **Step 4.3: Match retry and partial-file cleanup**
+- [x] **Step 4.3: Match retry and partial-file cleanup**
 
 Test:
 
@@ -499,7 +499,7 @@ Test:
 - server ignoring range and returning full `200`;
 - progress totals.
 
-- [ ] **Step 4.4: Prevent unbounded downloads**
+- [x] **Step 4.4: Prevent unbounded downloads**
 
 Stop when received bytes exceed descriptor length. After completion, verify
 exact length and SHA-256 before staging. Reject index/descriptor bodies above
@@ -510,12 +510,31 @@ exact length and SHA-256 before staging. Reject index/descriptor bodies above
 Use a local fixture HTTP server; do not call public internet services from the
 test suite.
 
-- [ ] **Step 4.6: Commit transports**
+- [x] **Step 4.6: Commit transports**
 
 ```sh
 git add macos/desktop_updater windows/native linux/native tool test
 git commit -m "feat: add native update transports"
 ```
+
+Task 4 candidate evidence on 2026-07-10:
+
+- the transport contract test failed first on all three absent platform
+  implementations and then passed 3 tests;
+- Swift URLProtocol fixture tests passed authorization headers, HTTPS downgrade
+  rejection, matching `Content-Range` resume, exact length/SHA-256, and `.part`
+  finalization; the full SwiftPM suite passed 14 tests without warnings;
+- the Dart loopback fixture server exercises redirect, bounded metadata,
+  retryable 503 responses, range resume, progress, terminal integrity failure,
+  and partial cleanup;
+- the Linux C++14/libcurl transport and loopback fixture test compiled with
+  `-Wall -Wextra -Werror` and passed locally; TLS peer/host verification remains
+  enabled and automatic redirects remain disabled;
+- the Windows WinHTTP transport disables automatic redirects, re-evaluates
+  app-owned headers, validates range resume and integrity, and is registered in
+  target-host CTest with the same loopback fixture suite;
+- Windows target-host execution is CI-pending, so Step 4.5 remains unchecked
+  until the final verification pass.
 
 ## Task 5: Safe Staging And Artifact Matrix
 
