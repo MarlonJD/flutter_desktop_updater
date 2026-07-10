@@ -68,6 +68,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle.cc
     ${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
@@ -174,6 +175,18 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   gtest_discover_tests(desktop_updater_native_test)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+    add_executable(desktop_updater_runtime_lifecycle_test
+      test/runtime/client_lifecycle_test.cpp
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
+    target_compile_features(desktop_updater_runtime_lifecycle_test
+      PRIVATE cxx_std_17)
+    target_include_directories(desktop_updater_runtime_lifecycle_test PRIVATE
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    add_test(NAME desktop_updater_runtime_lifecycle
+      COMMAND desktop_updater_runtime_lifecycle_test)
+
     add_executable(desktop_updater_runtime_api_compile_test
       test/runtime/runtime_c_api_compile_test.cpp)
     target_compile_features(desktop_updater_runtime_api_compile_test

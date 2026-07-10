@@ -5,7 +5,6 @@
 #include <shellapi.h>
 
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -207,12 +206,52 @@ std::string PowerShellArray(const std::vector<std::wstring>& values) {
 
 bool WriteUtf8PowerShellScript(const fs::path& script_path,
                                const std::string& script_contents) {
-  std::ofstream file(script_path, std::ios::binary | std::ios::trunc);
-  if (!file.is_open()) {
+  HANDLE file = CreateFileW(script_path.wstring().c_str(), GENERIC_WRITE, 0,
+                            nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
+                            nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
     return false;
   }
-  file << script_contents;
-  return file.good();
+  std::size_t offset = 0;
+  bool ok = true;
+  while (offset < script_contents.size()) {
+    const std::size_t pending = script_contents.size() - offset;
+    const DWORD remaining = static_cast<DWORD>(
+        pending > static_cast<std::size_t>(MAXDWORD) ? MAXDWORD : pending);
+    DWORD written = 0;
+    if (!::WriteFile(file, script_contents.data() + offset, remaining,
+                     &written, nullptr) || written == 0) {
+      ok = false;
+      break;
+    }
+    offset += written;
+  }
+  if (!CloseHandle(file)) {
+    ok = false;
+  }
+  if (!ok) {
+    DeleteFileW(script_path.wstring().c_str());
+  }
+  return ok;
+}
+
+std::wstring CreateUuidNonce() {
+  unsigned char bytes[16] = {};
+  if (BCryptGenRandom(nullptr, bytes, sizeof(bytes),
+                      BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0) {
+    return L"";
+  }
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0f) | 0x40);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3f) | 0x80);
+  std::wostringstream nonce;
+  nonce << std::hex << std::setfill(L'0');
+  for (std::size_t index = 0; index < sizeof(bytes); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      nonce << L'-';
+    }
+    nonce << std::setw(2) << static_cast<unsigned int>(bytes[index]);
+  }
+  return nonce.str();
 }
 
 bool StartDetachedPowerShell(const fs::path& script_path) {
@@ -421,9 +460,13 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     }
   }
 
-  const fs::path script_path =
-      fs::temp_directory_path() /
-      (L"desktop_updater_" + std::to_wstring(GetCurrentProcessId()) + L".ps1");
+  const std::wstring nonce = CreateUuidNonce();
+  if (nonce.empty()) {
+    return {false, "Unable to generate update helper nonce."};
+  }
+  const fs::path script_path = fs::temp_directory_path() /
+      (L"desktop_updater_" + std::to_wstring(GetCurrentProcessId()) + L"_" +
+       nonce + L".ps1");
   std::ostringstream script;
   script
       << "$ErrorActionPreference = 'Stop'\n"

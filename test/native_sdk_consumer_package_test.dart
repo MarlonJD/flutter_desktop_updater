@@ -62,6 +62,32 @@ void main() {
     }
   });
 
+  test("installed Linux runtime consumer resolves exported thread dependency",
+      () {
+    final nativeCmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final config = readRequiredFile(
+      "linux/native/cmake/desktop_updater_nativeConfig.cmake.in",
+    );
+    final consumerCmake = readRequiredFile(
+      "example/native/linux-cmake-runtime/CMakeLists.txt",
+    );
+
+    expect(nativeCmake,
+        contains("PRIVATE desktop_updater_native Threads::Threads"));
+    expect(
+      config,
+      contains("find_dependency(Threads REQUIRED)"),
+    );
+    expect(consumerCmake, contains("find_package(desktop_updater_native "));
+    expect(
+      consumerCmake,
+      contains(
+        "target_link_libraries(runtime_compile\n"
+        "  PRIVATE desktop_updater::runtime desktop_updater::native)",
+      ),
+    );
+  });
+
   test("NuGet package carries both wrappers and the win-x64 DLL", () {
     final project = readRequiredFile(
       "windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj",

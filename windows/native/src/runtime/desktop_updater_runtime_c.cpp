@@ -6,12 +6,14 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "artifact_stager_windows.h"
+#include "client_lifecycle.h"
 #include "diagnostics.h"
 #include "sha256_bcrypt.h"
 #include "update_client_core.h"
@@ -40,9 +42,9 @@ struct desktop_updater_runtime_client_v1 {
   int64_t maximum_single_entry_bytes;
   std::unique_ptr<desktop_updater::runtime::internal::WinHttpUpdateTransport>
       transport;
-  desktop_updater::runtime::internal::ClientCheckResult check;
   desktop_updater::runtime::internal::DiagnosticsRecorder diagnostics;
-  std::string staged_path;
+  std::mutex diagnostics_mutex;
+  desktop_updater::runtime::internal::ClientLifecycleState lifecycle;
 };
 
 namespace {
@@ -140,16 +142,19 @@ desktop_updater_runtime_result_v1 ClientResult(
     const std::string& outcome,
     const std::string& message) {
   desktop_updater_runtime_result_v1 result = EmptyResult();
+  const desktop_updater::runtime::internal::LifecycleSnapshot snapshot =
+      client.lifecycle.Snapshot();
   result.ok = 1;
   result.outcome = Outcome(outcome);
   result.message_utf8 = CopyMessage(message);
-  if (client.check.has_descriptor) {
-    result.release_version_utf8 = CopyMessage(client.check.descriptor.version);
+  if (snapshot.check.has_descriptor) {
+    result.release_version_utf8 =
+        CopyMessage(snapshot.check.descriptor.version);
     result.artifact_kind_utf8 =
-        CopyMessage(client.check.descriptor.artifact.kind);
+        CopyMessage(snapshot.check.descriptor.artifact.kind);
   }
-  if (client.check.has_selected_item) {
-    const auto& selected = client.check.selected_item;
+  if (snapshot.check.has_selected_item) {
+    const auto& selected = snapshot.check.selected_item;
     result.mandatory = selected.mandatory ? 1 : 0;
     result.has_selected_build_number = selected.has_build_number ? 1 : 0;
     result.selected_build_number = selected.build_number;
@@ -164,12 +169,19 @@ desktop_updater_runtime_result_v1 ClientResult(
       }
     }
   }
-  if (!client.staged_path.empty()) {
-    result.staged_path_utf8 = CopyMessage(client.staged_path);
+  if (!snapshot.staged_path.empty()) {
+    result.staged_path_utf8 = CopyMessage(snapshot.staged_path);
   }
   result.support_policy_status_utf8 =
-      CopyMessage(client.check.support_policy_status);
+      CopyMessage(snapshot.check.support_policy_status);
   return result;
+}
+
+void RecordDiagnostic(
+    desktop_updater_runtime_client_v1* client,
+    desktop_updater::runtime::internal::DiagnosticEntry entry) {
+  std::lock_guard<std::mutex> lock(client->diagnostics_mutex);
+  client->diagnostics.Record(std::move(entry));
 }
 
 void ValidateLimits(
@@ -385,18 +397,27 @@ desktop_updater_runtime_client_check_for_update_v1(
     if (client == nullptr || client->transport == nullptr) {
       return Failure("Runtime client is required.");
     }
-    client->diagnostics.Record(
-        {"", "check", "info", "Checking for a native update.", ""});
-    client->check = desktop_updater::runtime::internal::CheckForUpdateCore(
+    const auto lease = client->lifecycle.BeginCheck();
+    if (lease.status == desktop_updater::runtime::internal::
+                            ClientLifecycleStatus::kInstallInProgress) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "An install helper handoff is already in progress.");
+    }
+    RecordDiagnostic(
+        client, {"", "check", "info", "Checking for a native update.", ""});
+    auto check = desktop_updater::runtime::internal::CheckForUpdateCore(
         CoreConfiguration(client), client->transport.get(),
         desktop_updater::runtime::internal::BCryptSha256);
-    client->diagnostics.Record(
-        {"", client->check.outcome == "updateAvailable" ? "descriptor"
-                                                         : "check",
-         client->check.outcome == "updateAvailable" ? "info" : "warning",
-         client->check.message, ""});
-    return ClientResult(*client, client->check.outcome,
-                        client->check.message);
+    if (!client->lifecycle.PublishCheck(lease, check)) {
+      return ClientResult(*client, "invalidDescriptor",
+                          "Update check was invalidated before completion.");
+    }
+    RecordDiagnostic(
+        client,
+        {"", check.outcome == "updateAvailable" ? "descriptor" : "check",
+         check.outcome == "updateAvailable" ? "info" : "warning",
+         check.message, ""});
+    return ClientResult(*client, check.outcome, check.message);
   } catch (const std::exception& error) {
     return Failure(error.what());
   } catch (...) {
@@ -413,10 +434,21 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
     if (client == nullptr || client->transport == nullptr) {
       return Failure("Runtime client is required.");
     }
+    const auto lease = client->lifecycle.BeginStage();
     ValidateRequest(request, "Runtime stage request");
-    if (client->check.outcome != "updateAvailable" ||
-        !client->check.has_descriptor) {
-      return ClientResult(*client, client->check.outcome,
+    if (lease.status == desktop_updater::runtime::internal::
+                            ClientLifecycleStatus::kInstallInProgress) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "An install helper handoff is already in progress.");
+    }
+    if (lease.status != desktop_updater::runtime::internal::
+                            ClientLifecycleStatus::kAllowed) {
+      return ClientResult(*client, "invalidDescriptor",
+                          "No client-bound update check is ready to stage.");
+    }
+    const auto check = lease.check;
+    if (check.outcome != "updateAvailable" || !check.has_descriptor) {
+      return ClientResult(*client, check.outcome,
                           "No verified update is ready to download.");
     }
     const std::string download_directory = RequiredString(
@@ -427,39 +459,45 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
         std::filesystem::u8path(download_directory));
     const std::string artifact_path =
         download_directory + "/" +
-        ArtifactFileName(client->check.descriptor.artifact.url);
+        ArtifactFileName(check.descriptor.artifact.url);
     desktop_updater::runtime::internal::ArtifactDownloadRequest download;
-    download.url = client->check.descriptor.artifact.url;
+    download.url = check.descriptor.artifact.url;
     download.destination_path = artifact_path;
-    download.expected_length = client->check.descriptor.artifact.length;
-    download.expected_sha256 = client->check.descriptor.artifact.sha256;
-    client->diagnostics.Record(
+    download.expected_length = check.descriptor.artifact.length;
+    download.expected_sha256 = check.descriptor.artifact.sha256;
+    RecordDiagnostic(
+        client,
         {"", "download", "info", "Downloading verified native artifact.",
          ""});
     transport_active = true;
     client->transport->DownloadArtifact(download);
     transport_active = false;
-    client->diagnostics.Record(
+    RecordDiagnostic(
+        client,
         {"", "verify", "info",
          "Artifact length and SHA-256 are verified.", ""});
     desktop_updater::runtime::internal::ArchiveLimits limits;
     limits.maximum_archive_entries = client->maximum_archive_entries;
     limits.maximum_uncompressed_bytes = client->maximum_uncompressed_bytes;
     limits.maximum_single_entry_bytes = client->maximum_single_entry_bytes;
-    if (client->check.descriptor.artifact.kind == "zip") {
+    if (check.descriptor.artifact.kind == "zip") {
       desktop_updater::runtime::internal::StageWindowsZip(
-          artifact_path, staging_directory, client->check.descriptor,
+          artifact_path, staging_directory, check.descriptor,
           client->expected_package_id, limits);
-    } else if (client->check.descriptor.artifact.kind == "innoInstaller") {
+    } else if (check.descriptor.artifact.kind == "innoInstaller") {
       desktop_updater::runtime::internal::StageWindowsInnoInstaller(
-          Utf8ToWide(artifact_path), staging_directory,
-          client->check.descriptor, client->expected_package_id);
+          Utf8ToWide(artifact_path), staging_directory, check.descriptor,
+          client->expected_package_id);
     } else {
       return ClientResult(*client, "unsupportedArtifactKind",
                           "Artifact kind is not supported on Windows.");
     }
-    client->staged_path = staging_directory;
-    client->diagnostics.Record(
+    if (!client->lifecycle.PublishStage(lease, staging_directory)) {
+      return ClientResult(*client, "invalidDescriptor",
+                          "A newer staging attempt invalidated this update.");
+    }
+    RecordDiagnostic(
+        client,
         {"", "stage", "info", "Verified native artifact is staged.", ""});
     return ClientResult(*client, "updateAvailable",
                         "Verified native artifact is staged.");
@@ -493,10 +531,6 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
   try {
     if (client == nullptr) return Failure("Runtime client is required.");
     ValidateRequest(request, "Runtime install request");
-    if (client->staged_path.empty()) {
-      return ClientResult(*client, "installHandoffFailure",
-                          "No staged update is ready for helper handoff.");
-    }
     if (request->removed_file_count > 0 &&
         request->removed_files_utf8 == nullptr) {
       return ClientResult(*client, "installHandoffFailure",
@@ -512,15 +546,28 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
         request->diagnostics_log_path_utf8 == nullptr
             ? std::wstring()
             : Utf8ToWide(request->diagnostics_log_path_utf8);
-    client->diagnostics.Record(
-        {"", "install", "info",
-         "Handing staged update to the Windows helper.", ""});
-    const auto handoff =
-        desktop_updater::runtime::internal::HandoffWindowsInstall(
-            Utf8ToWide(client->staged_path), diagnostics, removed_files);
-    if (!handoff.ok) {
+    const auto install_handoff = client->lifecycle.BeginInstall();
+    if (install_handoff.status != desktop_updater::runtime::internal::
+                                      ClientLifecycleStatus::kAllowed) {
       return ClientResult(*client, "installHandoffFailure",
-                          handoff.error_message);
+                          "No staged update is ready for helper handoff.");
+    }
+    desktop_updater::runtime::internal::SchedulingRollbackGuard rollback(
+        &client->lifecycle, install_handoff);
+    RecordDiagnostic(client,
+                     {"", "install", "info",
+                      "Handing staged update to the Windows helper.", ""});
+    const auto scheduler_result =
+        desktop_updater::runtime::internal::HandoffWindowsInstall(
+            Utf8ToWide(install_handoff.staged_path), diagnostics,
+            removed_files);
+    if (!scheduler_result.ok) {
+      return ClientResult(*client, "installHandoffFailure",
+                          scheduler_result.error_message);
+    }
+    if (!rollback.Confirm()) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "Windows helper handoff confirmation failed.");
     }
     return ClientResult(*client, "updateAvailable",
                         "Windows helper handoff scheduled.");

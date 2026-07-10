@@ -6,19 +6,25 @@ public struct RuntimeUpdateCheck {
     public let descriptor: ReleaseDescriptor?
     public let supportPolicyStatus: SupportPolicyStatus
     public let message: String
+    let clientID: UUID
+    let generation: UInt64
 
-    public init(
+    init(
         outcome: RuntimeOutcome,
         selectedItem: ReleaseIndexItem? = nil,
         descriptor: ReleaseDescriptor? = nil,
         supportPolicyStatus: SupportPolicyStatus = .supported,
-        message: String = ""
+        message: String = "",
+        clientID: UUID,
+        generation: UInt64
     ) {
         self.outcome = outcome
         self.selectedItem = selectedItem
         self.descriptor = descriptor
         self.supportPolicyStatus = supportPolicyStatus
         self.message = message
+        self.clientID = clientID
+        self.generation = generation
     }
 }
 
@@ -26,15 +32,233 @@ public struct RuntimeStagedUpdate {
     public let descriptor: ReleaseDescriptor
     public let stagedPath: URL
     public let artifactPath: URL
+    let clientID: UUID
+    let generation: UInt64
 
-    public init(
+    init(
         descriptor: ReleaseDescriptor,
         stagedPath: URL,
-        artifactPath: URL
+        artifactPath: URL,
+        clientID: UUID,
+        generation: UInt64
     ) {
         self.descriptor = descriptor
         self.stagedPath = stagedPath
         self.artifactPath = artifactPath
+        self.clientID = clientID
+        self.generation = generation
+    }
+}
+
+private struct RuntimeCheckLease {
+    let generation: UInt64
+    let installInProgress: Bool
+}
+
+private struct RuntimeStageLease {
+    let generation: UInt64
+    let attempt: UInt64
+}
+
+private struct RuntimeInstallHandoff {
+    let token: UInt64
+    let generation: UInt64
+    let stageAttempt: UInt64
+    let staged: RuntimeStagedUpdate
+}
+
+private final class UpdateClientLifecycleState {
+    let clientID = UUID()
+
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+    private var stageAttempt: UInt64 = 0
+    private var activeStagedUpdate: RuntimeStagedUpdate?
+    private var activeStagedAttempt: UInt64 = 0
+    private var installInProgress = false
+    private var nextHandoffToken: UInt64 = 0
+    private var activeHandoffToken: UInt64 = 0
+    private var schedulingConfirmed = false
+
+    func beginCheck() -> RuntimeCheckLease {
+        withLock {
+            incrementNonzero(&generation)
+            incrementNonzero(&stageAttempt)
+            activeStagedUpdate = nil
+            activeStagedAttempt = 0
+            guard !installInProgress else {
+                return RuntimeCheckLease(
+                    generation: generation,
+                    installInProgress: true
+                )
+            }
+            return RuntimeCheckLease(
+                generation: generation,
+                installInProgress: false
+            )
+        }
+    }
+
+    func beginStage(
+        _ check: RuntimeUpdateCheck
+    ) -> Result<RuntimeStageLease, RuntimeError> {
+        withLock {
+            incrementNonzero(&stageAttempt)
+            activeStagedUpdate = nil
+            activeStagedAttempt = 0
+            guard !installInProgress else {
+                return .failure(.outcome(
+                    .installHandoffFailure,
+                    message: "An install helper handoff is already in progress."
+                ))
+            }
+            guard check.clientID == clientID,
+                  check.generation == generation
+            else {
+                return .failure(.outcome(
+                    .invalidDescriptor,
+                    message: "Update check does not belong to this client generation."
+                ))
+            }
+            return .success(RuntimeStageLease(
+                generation: generation,
+                attempt: stageAttempt
+            ))
+        }
+    }
+
+    func stageIsCurrent(_ lease: RuntimeStageLease) -> Bool {
+        withLock {
+            !installInProgress &&
+                lease.generation == generation &&
+                lease.attempt == stageAttempt
+        }
+    }
+
+    func publishStage(
+        _ staged: RuntimeStagedUpdate,
+        lease: RuntimeStageLease
+    ) -> Bool {
+        withLock {
+            guard !installInProgress,
+                  staged.clientID == clientID,
+                  staged.generation == generation,
+                  lease.generation == generation,
+                  lease.attempt == stageAttempt
+            else { return false }
+            activeStagedUpdate = staged
+            activeStagedAttempt = lease.attempt
+            return true
+        }
+    }
+
+    func beginInstall(
+        _ staged: RuntimeStagedUpdate
+    ) -> Result<RuntimeInstallHandoff, RuntimeError> {
+        withLock {
+            guard !installInProgress,
+                  let active = activeStagedUpdate,
+                  staged.clientID == clientID,
+                  staged.generation == generation,
+                  active.clientID == staged.clientID,
+                  active.generation == staged.generation,
+                  active.stagedPath == staged.stagedPath,
+                  active.artifactPath == staged.artifactPath,
+                  activeStagedAttempt == stageAttempt
+            else {
+                return .failure(.outcome(
+                    .installHandoffFailure,
+                    message: "No client-bound staged update is ready for helper handoff."
+                ))
+            }
+            incrementNonzero(&nextHandoffToken)
+            installInProgress = true
+            activeHandoffToken = nextHandoffToken
+            schedulingConfirmed = false
+            activeStagedUpdate = nil
+            let handoff = RuntimeInstallHandoff(
+                token: activeHandoffToken,
+                generation: generation,
+                stageAttempt: stageAttempt,
+                staged: active
+            )
+            activeStagedAttempt = 0
+            return .success(handoff)
+        }
+    }
+
+    func rollback(_ handoff: RuntimeInstallHandoff) -> Bool {
+        withLock {
+            guard installInProgress,
+                  !schedulingConfirmed,
+                  handoff.token == activeHandoffToken
+            else { return false }
+            let canRestore = handoff.generation == generation &&
+                handoff.stageAttempt == stageAttempt
+            installInProgress = false
+            activeHandoffToken = 0
+            if canRestore {
+                activeStagedUpdate = handoff.staged
+                activeStagedAttempt = handoff.stageAttempt
+            }
+            return canRestore
+        }
+    }
+
+    func confirm(_ handoff: RuntimeInstallHandoff) -> Bool {
+        withLock {
+            guard installInProgress,
+                  !schedulingConfirmed,
+                  handoff.token == activeHandoffToken
+            else { return false }
+            schedulingConfirmed = true
+            return true
+        }
+    }
+
+    private func incrementNonzero(_ value: inout UInt64) {
+        value &+= 1
+        if value == 0 {
+            value &+= 1
+        }
+    }
+
+    private func withLock<Value>(_ body: () -> Value) -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+private final class RuntimeSchedulingRollbackGuard {
+    private let state: UpdateClientLifecycleState
+    private let handoff: RuntimeInstallHandoff
+    private var active = true
+
+    init(
+        state: UpdateClientLifecycleState,
+        handoff: RuntimeInstallHandoff
+    ) {
+        self.state = state
+        self.handoff = handoff
+    }
+
+    deinit {
+        if active {
+            _ = state.rollback(handoff)
+        }
+    }
+
+    func confirm() -> Bool {
+        guard active, state.confirm(handoff) else { return false }
+        active = false
+        return true
+    }
+
+    func rollback() {
+        guard active else { return }
+        _ = state.rollback(handoff)
+        active = false
     }
 }
 
@@ -45,6 +269,14 @@ public final class UpdateClient {
 
     private let transport: RuntimeUpdateTransport
     private let stager: MacArtifactStager
+    private let lifecycle = UpdateClientLifecycleState()
+    private let diagnosticsLock = NSLock()
+    private let installScheduler: (
+        RuntimeStagedUpdate,
+        String?,
+        String,
+        Bool
+    ) throws -> Void
 
     public init(
         configuration: RuntimeConfiguration,
@@ -54,9 +286,43 @@ public final class UpdateClient {
         self.configuration = configuration
         self.transport = transport
         self.stager = stager
+        installScheduler = { staged, diagnosticsLogPath, bundlePath, allowUnsigned in
+            try stager.installAndRelaunch(
+                stagedPath: staged.stagedPath,
+                diagnosticsLogPath: diagnosticsLogPath,
+                bundlePath: bundlePath,
+                allowUnsignedUpdates: allowUnsigned
+            )
+        }
+    }
+
+    init(
+        configuration: RuntimeConfiguration,
+        transport: RuntimeUpdateTransport,
+        stager: MacArtifactStager,
+        installScheduler: @escaping (
+            RuntimeStagedUpdate,
+            String?,
+            String,
+            Bool
+        ) throws -> Void
+    ) {
+        self.configuration = configuration
+        self.transport = transport
+        self.stager = stager
+        self.installScheduler = installScheduler
     }
 
     public func checkForUpdate() async -> RuntimeUpdateCheck {
+        let checkLease = lifecycle.beginCheck()
+        let checkGeneration = checkLease.generation
+        guard !checkLease.installInProgress else {
+            return failure(
+                .installHandoffFailure,
+                "An install helper handoff is already in progress.",
+                generation: checkGeneration
+            )
+        }
         record(.check, .info, "Checking for a native update.")
         let indexData: Data
         do {
@@ -65,13 +331,21 @@ public final class UpdateClient {
                 configuration: configuration
             )
         } catch {
-            return mappedFailure(error, fallback: .downloadFailure)
+            return mappedFailure(
+                error,
+                fallback: .downloadFailure,
+                generation: checkGeneration
+            )
         }
         let index: ReleaseIndex
         do {
             index = try ReleaseIndex(jsonData: indexData)
         } catch {
-            return mappedFailure(error, fallback: .invalidDescriptor)
+            return mappedFailure(
+                error,
+                fallback: .invalidDescriptor,
+                generation: checkGeneration
+            )
         }
         if configuration.requireIndexSignature || index.signature != nil {
             do {
@@ -81,13 +355,15 @@ public final class UpdateClient {
                 ) else {
                     return failure(
                         .signatureFailure,
-                        "App archive Ed25519 signature is invalid."
+                        "App archive Ed25519 signature is invalid.",
+                        generation: checkGeneration
                     )
                 }
             } catch {
                 return failure(
                     .signatureFailure,
-                    "App archive Ed25519 signature is invalid."
+                    "App archive Ed25519 signature is invalid.",
+                    generation: checkGeneration
                 )
             }
         }
@@ -120,7 +396,9 @@ public final class UpdateClient {
                 record(.check, .info, "No newer native release is available.")
                 return RuntimeUpdateCheck(
                     outcome: .noUpdate,
-                    supportPolicyStatus: supportPolicyStatus
+                    supportPolicyStatus: supportPolicyStatus,
+                    clientID: lifecycle.clientID,
+                    generation: checkGeneration
                 )
             }
             guard let selected = try selectReleaseIndexItem(
@@ -133,7 +411,9 @@ public final class UpdateClient {
                 record(.policy, .info, "Installation is outside the rollout cohort.")
                 return RuntimeUpdateCheck(
                     outcome: .rolloutIneligible,
-                    supportPolicyStatus: supportPolicyStatus
+                    supportPolicyStatus: supportPolicyStatus,
+                    clientID: lifecycle.clientID,
+                    generation: checkGeneration
                 )
             }
             let descriptorData: Data
@@ -143,19 +423,28 @@ public final class UpdateClient {
                     configuration: configuration
                 )
             } catch {
-                return mappedFailure(error, fallback: .downloadFailure)
+                return mappedFailure(
+                    error,
+                    fallback: .downloadFailure,
+                    generation: checkGeneration
+                )
             }
             let descriptor: ReleaseDescriptor
             do {
                 descriptor = try ReleaseDescriptor(jsonData: descriptorData)
             } catch {
-                return mappedFailure(error, fallback: .invalidDescriptor)
+                return mappedFailure(
+                    error,
+                    fallback: .invalidDescriptor,
+                    generation: checkGeneration
+                )
             }
             guard descriptor.packageId == configuration.expectedPackageId else {
                 return failure(
                     .packageIdentityMismatch,
                     "Descriptor package identity does not match.",
-                    selectedItem: selected
+                    selectedItem: selected,
+                    generation: checkGeneration
                 )
             }
             guard descriptor.version == selected.version,
@@ -166,7 +455,8 @@ public final class UpdateClient {
                 return failure(
                     .invalidDescriptor,
                     "Descriptor does not match its selected index item.",
-                    selectedItem: selected
+                    selectedItem: selected,
+                    generation: checkGeneration
                 )
             }
             if configuration.requireDescriptorSignature ||
@@ -179,7 +469,8 @@ public final class UpdateClient {
                     return failure(
                         .signatureFailure,
                         "Descriptor Ed25519 signature is invalid.",
-                        selectedItem: selected
+                        selectedItem: selected,
+                        generation: checkGeneration
                     )
                 }
             }
@@ -196,7 +487,8 @@ public final class UpdateClient {
                     policy,
                     "Selected descriptor is not installable on this host.",
                     selectedItem: selected,
-                    descriptor: descriptor
+                    descriptor: descriptor,
+                    generation: checkGeneration
                 )
             }
             if selected.freshInstall != nil {
@@ -205,7 +497,9 @@ public final class UpdateClient {
                     outcome: .freshInstallRequired,
                     selectedItem: selected,
                     descriptor: descriptor,
-                    supportPolicyStatus: supportPolicyStatus
+                    supportPolicyStatus: supportPolicyStatus,
+                    clientID: lifecycle.clientID,
+                    generation: checkGeneration
                 )
             }
             guard supportedArtifactKinds().contains(descriptor.artifact.kind) else {
@@ -213,7 +507,8 @@ public final class UpdateClient {
                     .unsupportedArtifactKind,
                     "Artifact kind is not supported on this platform.",
                     selectedItem: selected,
-                    descriptor: descriptor
+                    descriptor: descriptor,
+                    generation: checkGeneration
                 )
             }
             record(.descriptor, .info, "Verified selected native release descriptor.")
@@ -221,10 +516,16 @@ public final class UpdateClient {
                 outcome: .updateAvailable,
                 selectedItem: selected,
                 descriptor: descriptor,
-                supportPolicyStatus: supportPolicyStatus
+                supportPolicyStatus: supportPolicyStatus,
+                clientID: lifecycle.clientID,
+                generation: checkGeneration
             )
         } catch {
-            return mappedFailure(error, fallback: .invalidDescriptor)
+            return mappedFailure(
+                error,
+                fallback: .invalidDescriptor,
+                generation: checkGeneration
+            )
         }
     }
 
@@ -236,6 +537,13 @@ public final class UpdateClient {
         allowUnsignedUpdates: Bool = false,
         progress: (@Sendable (Int64, Int64?) -> Void)? = nil
     ) async -> Result<RuntimeStagedUpdate, RuntimeError> {
+        let stageLease: RuntimeStageLease
+        switch lifecycle.beginStage(check) {
+        case let .success(lease):
+            stageLease = lease
+        case let .failure(error):
+            return .failure(error)
+        }
         guard check.outcome == .updateAvailable,
               let descriptor = check.descriptor
         else {
@@ -268,6 +576,12 @@ public final class UpdateClient {
                 configuration: configuration,
                 progress: progress
             )
+            guard lifecycle.stageIsCurrent(stageLease) else {
+                throw RuntimeError.outcome(
+                    .invalidDescriptor,
+                    message: "Update check became stale while downloading."
+                )
+            }
             record(.verify, .info, "Artifact length and SHA-256 are verified.")
             let stagedPath: URL
             switch descriptor.artifact.kind {
@@ -304,11 +618,20 @@ public final class UpdateClient {
                 )
             }
             record(.stage, .info, "Verified native artifact is staged.")
-            return .success(RuntimeStagedUpdate(
+            let staged = RuntimeStagedUpdate(
                 descriptor: descriptor,
                 stagedPath: stagedPath,
-                artifactPath: artifactPath
-            ))
+                artifactPath: artifactPath,
+                clientID: lifecycle.clientID,
+                generation: stageLease.generation
+            )
+            guard lifecycle.publishStage(staged, lease: stageLease) else {
+                throw RuntimeError.outcome(
+                    .invalidDescriptor,
+                    message: "A newer staging attempt invalidated this update."
+                )
+            }
+            return .success(staged)
         } catch let runtimeError as RuntimeError {
             record(.stage, .error, "Native artifact staging failed.", runtimeError)
             return .failure(runtimeError)
@@ -328,15 +651,34 @@ public final class UpdateClient {
         bundlePath: String,
         allowUnsignedUpdates: Bool = false
     ) throws {
+        let handoff: RuntimeInstallHandoff
+        switch lifecycle.beginInstall(staged) {
+        case let .success(value):
+            handoff = value
+        case let .failure(error):
+            record(.install, .error, "macOS helper handoff failed.", error)
+            throw error
+        }
+        let rollbackGuard = RuntimeSchedulingRollbackGuard(
+            state: lifecycle,
+            handoff: handoff
+        )
         do {
             record(.install, .info, "Handing staged update to the macOS helper.")
-            try stager.installAndRelaunch(
-                stagedPath: staged.stagedPath,
-                diagnosticsLogPath: diagnosticsLogPath,
-                bundlePath: bundlePath,
-                allowUnsignedUpdates: allowUnsignedUpdates
+            try installScheduler(
+                handoff.staged,
+                diagnosticsLogPath,
+                bundlePath,
+                allowUnsignedUpdates
             )
+            guard rollbackGuard.confirm() else {
+                throw RuntimeError.outcome(
+                    .installHandoffFailure,
+                    message: "macOS helper handoff confirmation failed."
+                )
+            }
         } catch {
+            rollbackGuard.rollback()
             record(.install, .error, "macOS helper handoff failed.", error)
             throw RuntimeError.outcome(
                 .installHandoffFailure,
@@ -357,22 +699,28 @@ public final class UpdateClient {
 
     private func mappedFailure(
         _ error: Error,
-        fallback: RuntimeOutcome
+        fallback: RuntimeOutcome,
+        generation: UInt64
     ) -> RuntimeUpdateCheck {
         if case let RuntimeError.outcome(outcome, message) = error {
-            return failure(outcome, message)
+            return failure(outcome, message, generation: generation)
         }
         if case let RuntimeError.invalidConfiguration(message) = error {
-            return failure(.invalidDescriptor, message)
+            return failure(.invalidDescriptor, message, generation: generation)
         }
-        return failure(fallback, String(describing: error))
+        return failure(
+            fallback,
+            String(describing: error),
+            generation: generation
+        )
     }
 
     private func failure(
         _ outcome: RuntimeOutcome,
         _ message: String,
         selectedItem: ReleaseIndexItem? = nil,
-        descriptor: ReleaseDescriptor? = nil
+        descriptor: ReleaseDescriptor? = nil,
+        generation: UInt64
     ) -> RuntimeUpdateCheck {
         record(.check, .error, message)
         return RuntimeUpdateCheck(
@@ -380,7 +728,9 @@ public final class UpdateClient {
             selectedItem: selectedItem,
             descriptor: descriptor,
             supportPolicyStatus: supportPolicyStatus,
-            message: message
+            message: message,
+            clientID: lifecycle.clientID,
+            generation: generation
         )
     }
 
@@ -390,13 +740,17 @@ public final class UpdateClient {
         _ message: String,
         _ error: Error? = nil
     ) {
-        diagnostics.record(RuntimeDiagnosticEntry(
-            timestamp: RuntimeClientTimestamp.string(),
-            stage: stage,
-            level: level,
-            message: message,
-            errorDescription: error.map(String.init(describing:))
-        ))
+        diagnosticsLock.lock()
+        diagnostics.record(
+            RuntimeDiagnosticEntry(
+                timestamp: RuntimeClientTimestamp.string(),
+                stage: stage,
+                level: level,
+                message: message,
+                errorDescription: error.map(String.init(describing:))
+            )
+        )
+        diagnosticsLock.unlock()
     }
 }
 

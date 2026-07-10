@@ -61,6 +61,23 @@ final class MacInstallHelperTests: XCTestCase {
         }
     }
 
+    func testHelperScriptCollisionFailsWithoutReplacingExistingFile() throws {
+        let nonce = UUID()
+        let script = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "desktop_updater_\(nonce.uuidString).command"
+            )
+        let sentinel = Data("existing helper".utf8)
+        try sentinel.write(to: script, options: .withoutOverwriting)
+        defer { try? FileManager.default.removeItem(at: script) }
+
+        XCTAssertThrowsError(try MacInstallHelper().writeHelperScript(
+            for: request(allowUnsignedUpdates: true),
+            nonce: nonce
+        ))
+        XCTAssertEqual(try Data(contentsOf: script), sentinel)
+    }
+
     func testCanonicalHelperEventsMatchTheDartFixture() throws {
         let fixture: HelperEventsFixture = try decodeFixture(
             "helper-events.json"

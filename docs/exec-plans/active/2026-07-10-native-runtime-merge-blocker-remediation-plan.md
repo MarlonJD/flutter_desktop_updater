@@ -504,8 +504,14 @@ git commit -m "fix: authenticate native release indexes"
 - Modify: `windows/native/src/runtime/desktop_updater_runtime_c.cpp`
 - Modify: `windows/native/test/runtime/runtime_c_api_compile_test.cpp`
 - Modify: `windows/native/dotnet/DesktopUpdater.Native.Tests/`
+- Modify: `windows/native/CMakeLists.txt`
 - Modify: `linux/native/src/runtime/update_client_linux.cc`
 - Modify: `linux/native/test/runtime/`
+- Modify: `linux/native/CMakeLists.txt`
+- Create: `native_runtime/cpp/client_lifecycle.h`
+- Create: `native_runtime/cpp/client_lifecycle.cc`
+- Create: `native_runtime/cpp/client_lifecycle_tests.h`
+- Create: `native_runtime/cpp/client_lifecycle_tests.cc`
 
 **Interfaces:**
 
@@ -515,7 +521,7 @@ git commit -m "fix: authenticate native release indexes"
   `selection_generation`, `staged_generation`, and `install_in_progress`.
 - A successful handoff consumes staged state before scheduling the helper.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Add tests for a forged Swift check, a check from another client, a stage from
 another generation, stage B failing after stage A, two install calls, and a new
@@ -530,14 +536,14 @@ second install -> installHandoffFailure
 new check after install starts -> installHandoffFailure
 ~~~
 
-- [ ] **Step 2: Make Swift values externally readable but not constructible**
+- [x] **Step 2: Make Swift values externally readable but not constructible**
 
 Remove public initializers from `RuntimeUpdateCheck` and
 `RuntimeStagedUpdate`. Add internal client ID and generation fields. Increment
 the generation at the start of every check and invalidate active stage state
 before any new check or stage attempt.
 
-- [ ] **Step 3: Consume staged state atomically**
+- [x] **Step 3: Consume staged state atomically**
 
 Before helper scheduling:
 
@@ -553,7 +559,7 @@ keep state consumed after successful scheduling
 
 Apply the same sequence to Windows and Linux stateful clients.
 
-- [ ] **Step 4: Make helper script names nonce-based**
+- [x] **Step 4: Make helper script names nonce-based**
 
 Replace PID-only helper paths with a UUID nonce:
 
@@ -565,7 +571,7 @@ desktop_updater_<nonce>.command
 
 Create scripts exclusively and fail if a path already exists.
 
-- [ ] **Step 5: Run lifecycle suites**
+- [x] **Step 5: Run lifecycle suites**
 
 Run:
 
@@ -578,7 +584,52 @@ flutter test --no-pub test/native_runtime_api_contract_test.dart
 Expected: Swift and Dart PASS locally; Windows target-host test is required in
 CI.
 
-- [ ] **Step 6: Commit**
+Task 3 evidence:
+
+- RED verified locally: `swift test` failed to compile the lifecycle tests on
+  the missing Swift client ID, generation, and injected scheduler state;
+  `flutter test --no-pub test/native_runtime_api_contract_test.dart` failed
+  four contract cases on the missing Swift/Windows/Linux generation state and
+  nonce-exclusive helper creation.
+- Review RED verified locally: the barrier-controlled Swift lifecycle run
+  observed two helper scheduler calls, let slow stage A publish after later
+  stage B failed, and let slow A replace a later successful B. The first
+  portable native lifecycle compile failed on the intentionally missing
+  `client_lifecycle.h` isolation contract.
+- GREEN verified locally: focused Swift lifecycle tests passed 17 tests and
+  full `swift test` passed 44 tests, including concurrent install, both
+  overlapping-stage orderings, failed-check invalidation, scheduler-failure
+  restore, confirmed one-shot scheduling, and exclusive helper collision
+  coverage. Four focused Flutter native contract suites passed 15 tests; the
+  API contract suite contributed 6 tests.
+- Portable native checks verified locally: the shared behavioral lifecycle
+  runner compiled with warnings-as-errors and executed successfully as both a
+  C++14 Linux test source and C++17 Windows test source. Clang syntax checks
+  exited 0 for the Linux helper, Linux runtime client, Linux runtime artifact
+  test, and Windows public runtime C API compile test. The .NET 8 test project
+  built with 0 errors and one NU1900 vulnerability-feed warning.
+- Re-review 2 RED verified locally: both Swift gated scheduler tests restored
+  the consumed stage after a rejected check or stage attempt, and the shared
+  C++14 lifecycle runner failed independently with the same stale-restore
+  outcome for each attempt. Portable Dart contracts also failed on Windows
+  stage validation preceding `BeginStage`, invalidated checks returning the
+  wrong outcome, and the installed Linux runtime config omitting Threads.
+- Re-review 2 GREEN verified locally: focused Swift lifecycle tests passed 19
+  tests and full `swift test` passed 46 tests. Shared lifecycle runners compiled
+  with warnings-as-errors and executed successfully in C++14 and C++17. Six
+  native Dart contract suites passed 27 tests, including Windows adapter
+  ordering/outcome and installed Linux runtime consumer/config coverage. Four
+  portable native syntax checks exited 0, and the .NET 8 test project built
+  with 0 errors and one NU1900 vulnerability-feed warning.
+- An actual installed external-consumer CMake configure was not run because
+  `cmake` is not installed on this macOS host (`command not found`). The
+  generated-config and consumer boundary received passing portable source
+  coverage; no target-host configure pass is claimed.
+- Windows and Linux target-host CMake/CTest: not run locally on macOS. .NET
+  target-host test execution: not run locally on macOS.
+- CI: not run for this task; no CI result is claimed.
+
+- [x] **Step 6: Commit**
 
 ~~~sh
 git add macos/desktop_updater windows/native linux/native test

@@ -4,16 +4,19 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "artifact_stager_linux.h"
+#include "client_lifecycle.h"
 #include "diagnostics.h"
 #include "sha256_openssl.h"
 #include "update_client_core.h"
@@ -149,35 +152,54 @@ class UpdateClient::Impl {
   }
 
   RuntimeResult CheckForUpdate() {
+    const internal::CheckLease lease = lifecycle_.BeginCheck();
+    if (lease.status == internal::ClientLifecycleStatus::kInstallInProgress) {
+      return Result("installHandoffFailure",
+                    "An install helper handoff is already in progress.");
+    }
     Record("check", "info", "Checking for a native update.");
-    check_ = internal::CheckForUpdateCore(
+    internal::ClientCheckResult check = internal::CheckForUpdateCore(
         CoreConfiguration(configuration_), &transport_,
         internal::OpenSSLSha256);
-    Record(check_.outcome == "updateAvailable" ? "descriptor" : "check",
-           check_.outcome == "updateAvailable" ? "info" : "warning",
-           check_.message);
-    return Result(check_.outcome, check_.message);
+    if (!lifecycle_.PublishCheck(lease, check)) {
+      return Result("invalidDescriptor",
+                    "Update check was invalidated before completion.");
+    }
+    Record(check.outcome == "updateAvailable" ? "descriptor" : "check",
+           check.outcome == "updateAvailable" ? "info" : "warning",
+           check.message);
+    return Result(check.outcome, check.message);
   }
 
   RuntimeResult DownloadVerifyAndStage(
       const std::string& download_directory,
       const std::string& staging_directory,
       const std::string& executable_relative_path) {
-    if (check_.outcome != "updateAvailable" || !check_.has_descriptor) {
-      return Result(check_.outcome,
+    const internal::StageLease lease = lifecycle_.BeginStage();
+    if (lease.status == internal::ClientLifecycleStatus::kInstallInProgress) {
+      return Result("installHandoffFailure",
+                    "An install helper handoff is already in progress.");
+    }
+    if (lease.status != internal::ClientLifecycleStatus::kAllowed) {
+      return Result("invalidDescriptor",
+                    "No client-bound update check is ready to stage.");
+    }
+    const internal::ClientCheckResult check = lease.check;
+    if (check.outcome != "updateAvailable" || !check.has_descriptor) {
+      return Result(check.outcome,
                     "No verified update is ready to download.");
     }
     std::string artifact_path;
     try {
       EnsureDirectory(download_directory);
       artifact_path = download_directory + "/" +
-                      ArtifactFileName(check_.descriptor.artifact.url);
+                      ArtifactFileName(check.descriptor.artifact.url);
       Record("download", "info", "Downloading verified native artifact.");
       internal::ArtifactDownloadRequest request;
-      request.url = check_.descriptor.artifact.url;
+      request.url = check.descriptor.artifact.url;
       request.destination_path = artifact_path;
-      request.expected_length = check_.descriptor.artifact.length;
-      request.expected_sha256 = check_.descriptor.artifact.sha256;
+      request.expected_length = check.descriptor.artifact.length;
+      request.expected_sha256 = check.descriptor.artifact.sha256;
       transport_.DownloadArtifact(request);
       Record("verify", "info",
              "Artifact length and SHA-256 are verified.");
@@ -200,8 +222,11 @@ class UpdateClient::Impl {
           configuration_.maximum_single_entry_bytes;
       internal::StageLinuxZip(
           artifact_path, staging_directory, executable_relative_path,
-          check_.descriptor, configuration_.expected_package_id, limits);
-      staged_path_ = staging_directory;
+          check.descriptor, configuration_.expected_package_id, limits);
+      if (!lifecycle_.PublishStage(lease, staging_directory)) {
+        return Result("invalidDescriptor",
+                      "A newer staging attempt invalidated this update.");
+      }
       Record("stage", "info", "Verified native artifact is staged.");
       return Result("updateAvailable", "Verified native artifact is staged.");
     } catch (const std::exception& error) {
@@ -223,7 +248,8 @@ class UpdateClient::Impl {
       const std::string& executable_relative_path,
       const std::vector<std::string>& removed_files,
       const std::string& diagnostics_log_path) {
-    if (staged_path_.empty() || !check_.has_descriptor) {
+    const internal::LifecycleSnapshot snapshot = lifecycle_.Snapshot();
+    if (snapshot.staged_path.empty() || !snapshot.check.has_descriptor) {
       return Result("installHandoffFailure",
                     "No staged update is ready for helper handoff.");
     }
@@ -231,25 +257,47 @@ class UpdateClient::Impl {
            "Handing staged update to the Linux helper.");
     const native::InstallResult validation =
         internal::ValidateLinuxInstallHandoff(
-            staged_path_, install_root, executable_relative_path,
+            snapshot.staged_path, install_root, executable_relative_path,
             configuration_.expected_package_id, removed_files,
             diagnostics_log_path);
     if (!validation.ok) {
       Record("install", "error", validation.error);
       return Result("installHandoffFailure", validation.error);
     }
-    const native::InstallResult handoff = internal::HandoffLinuxInstall(
-        staged_path_, install_root, executable_relative_path,
-        configuration_.expected_package_id, removed_files,
-        diagnostics_log_path);
-    if (!handoff.ok) {
-      Record("install", "error", handoff.error);
-      return Result("installHandoffFailure", handoff.error);
+    const internal::InstallHandoff install_handoff =
+        lifecycle_.BeginInstall(snapshot);
+    if (install_handoff.status != internal::ClientLifecycleStatus::kAllowed) {
+      return Result("installHandoffFailure",
+                    "No staged update is ready for helper handoff.");
+    }
+    internal::SchedulingRollbackGuard rollback(&lifecycle_, install_handoff);
+    native::InstallResult scheduler_result{false, std::string()};
+    try {
+      scheduler_result = internal::HandoffLinuxInstall(
+          install_handoff.staged_path, install_root, executable_relative_path,
+          configuration_.expected_package_id, removed_files,
+          diagnostics_log_path);
+    } catch (const std::exception& error) {
+      Record("install", "error", error.what());
+      return Result("installHandoffFailure", error.what());
+    } catch (...) {
+      Record("install", "error", "Unknown Linux helper scheduling failure.");
+      return Result("installHandoffFailure",
+                    "Unknown Linux helper scheduling failure.");
+    }
+    if (!scheduler_result.ok) {
+      Record("install", "error", scheduler_result.error);
+      return Result("installHandoffFailure", scheduler_result.error);
+    }
+    if (!rollback.Confirm()) {
+      return Result("installHandoffFailure",
+                    "Linux helper handoff confirmation failed.");
     }
     return Result("updateAvailable", "Linux helper handoff scheduled.");
   }
 
   std::vector<std::string> RedactedDiagnostics() const {
+    std::lock_guard<std::mutex> lock(diagnostics_mutex_);
     return diagnostics_.RedactedLogLines();
   }
 
@@ -257,14 +305,15 @@ class UpdateClient::Impl {
   RuntimeResult Result(const std::string& outcome,
                        const std::string& message) const {
     RuntimeResult result;
+    const internal::LifecycleSnapshot snapshot = lifecycle_.Snapshot();
     result.outcome = Outcome(outcome);
     result.message = message;
-    if (check_.has_descriptor) {
-      result.release_version = check_.descriptor.version;
-      result.artifact_kind = check_.descriptor.artifact.kind;
+    if (snapshot.check.has_descriptor) {
+      result.release_version = snapshot.check.descriptor.version;
+      result.artifact_kind = snapshot.check.descriptor.artifact.kind;
     }
-    if (check_.has_selected_item) {
-      const auto& selected = check_.selected_item;
+    if (snapshot.check.has_selected_item) {
+      const auto& selected = snapshot.check.selected_item;
       result.mandatory = selected.mandatory;
       result.has_selected_build_number = selected.has_build_number;
       result.selected_build_number = selected.build_number;
@@ -275,23 +324,24 @@ class UpdateClient::Impl {
         result.fresh_install_message = selected.fresh_install.message;
       }
     }
-    result.staged_path = staged_path_;
-    result.support_policy_status = check_.support_policy_status;
+    result.staged_path = snapshot.staged_path;
+    result.support_policy_status = snapshot.check.support_policy_status;
     return result;
   }
 
   void Record(const std::string& stage,
               const std::string& level,
               const std::string& message) {
+    std::lock_guard<std::mutex> lock(diagnostics_mutex_);
     diagnostics_.Record(
         {Timestamp(), stage, level, message, std::string()});
   }
 
   RuntimeConfiguration configuration_;
   internal::CurlUpdateTransport transport_;
-  internal::ClientCheckResult check_;
+  mutable std::mutex diagnostics_mutex_;
   internal::DiagnosticsRecorder diagnostics_;
-  std::string staged_path_;
+  internal::ClientLifecycleState lifecycle_;
 };
 
 UpdateClient::UpdateClient(RuntimeConfiguration configuration)

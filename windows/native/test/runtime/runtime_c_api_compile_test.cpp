@@ -83,8 +83,18 @@ int main() {
     desktop_updater_runtime_result_free_v1(&result);
     return 1;
   }
-  desktop_updater_runtime_client_free_v1(result.client);
+  desktop_updater_runtime_client_v1* client = result.client;
   result.client = nullptr;
+  desktop_updater_runtime_result_free_v1(&result);
+  result = desktop_updater_runtime_client_install_and_relaunch_v1(
+      client, &install_request);
+  if (result.outcome != DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE) {
+    desktop_updater_runtime_result_free_v1(&result);
+    desktop_updater_runtime_client_free_v1(client);
+    return 1;
+  }
+  desktop_updater_runtime_result_free_v1(&result);
+  desktop_updater_runtime_client_free_v1(client);
   result.message_utf8 = OwnedString("fresh install required");
   result.release_version_utf8 = OwnedString("2.7.0");
   result.artifact_kind_utf8 = OwnedString("innoInstaller");

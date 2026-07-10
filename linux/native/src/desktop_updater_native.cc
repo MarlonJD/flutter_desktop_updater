@@ -2,13 +2,16 @@
 
 #include <limits.h>
 #include <libgen.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <cstdint>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -247,13 +250,64 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request) {
   return {true, ""};
 }
 
+std::string CreateUuidNonce() {
+  unsigned char bytes[16] = {};
+  const int random = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+  if (random < 0) {
+    return "";
+  }
+  std::size_t offset = 0;
+  while (offset < sizeof(bytes)) {
+    const ssize_t count = read(random, bytes + offset, sizeof(bytes) - offset);
+    if (count < 0 && errno == EINTR) {
+      continue;
+    }
+    if (count <= 0) {
+      close(random);
+      return "";
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  close(random);
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0f) | 0x40);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3f) | 0x80);
+  std::ostringstream nonce;
+  nonce << std::hex << std::setfill('0');
+  for (std::size_t index = 0; index < sizeof(bytes); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      nonce << '-';
+    }
+    nonce << std::setw(2) << static_cast<unsigned int>(bytes[index]);
+  }
+  return nonce.str();
+}
+
 bool WriteFile(const std::string& path, const std::string& contents) {
-  std::ofstream file(path, std::ios::binary | std::ios::trunc);
-  if (!file.is_open()) {
+  const int file = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0700);
+  if (file < 0) {
     return false;
   }
-  file << contents;
-  return file.good();
+  std::size_t offset = 0;
+  bool ok = true;
+  while (offset < contents.size()) {
+    const ssize_t count = write(
+        file, contents.data() + offset, contents.size() - offset);
+    if (count < 0 && errno == EINTR) {
+      continue;
+    }
+    if (count <= 0) {
+      ok = false;
+      break;
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  if (close(file) != 0) {
+    ok = false;
+  }
+  if (!ok) {
+    unlink(path.c_str());
+  }
+  return ok;
 }
 
 bool StartDetachedScript(const std::string& script_path) {
@@ -485,8 +539,12 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     return build;
   }
 
-  const std::string script_path =
-      "/tmp/desktop_updater_" + std::to_string(process_identifier) + ".sh";
+  const std::string nonce = CreateUuidNonce();
+  if (nonce.empty()) {
+    return {false, "Unable to generate update helper nonce."};
+  }
+  const std::string script_path = "/tmp/desktop_updater_" +
+      std::to_string(process_identifier) + "_" + nonce + ".sh";
   if (!WriteFile(script_path, script)) {
     return {false, "Unable to write update helper script."};
   }

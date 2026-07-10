@@ -58,6 +58,18 @@ void main() {
     expect(api, contains("guard maximumMetadataBytes > 0"));
     expect(client, contains("public final class UpdateClient"));
     expect(client, contains("supportPolicyStatus"));
+    expect(client, contains("let clientID: UUID"));
+    expect(client, contains("let generation: UInt64"));
+    expect(client, contains("private var installInProgress = false"));
+    expect(client, contains("activeStagedUpdate = nil"));
+    expect(
+      client,
+      isNot(contains("public init(\n        outcome: RuntimeOutcome")),
+    );
+    expect(
+      client,
+      isNot(contains("public init(\n        descriptor: ReleaseDescriptor")),
+    );
     expect(sample, contains("try RuntimeConfiguration("));
     expect(sample, contains("RuntimeOutcome.noUpdate"));
     expect(manifest, contains("DESKTOP_UPDATER_PACKAGE_PATH"));
@@ -75,6 +87,9 @@ void main() {
     );
     final source = readRequiredFile(
       "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
+    );
+    final lifecycle = readRequiredFile(
+      "native_runtime/cpp/client_lifecycle.h",
     );
     final cmake = readRequiredFile("windows/native/CMakeLists.txt");
     final dotnet = readRequiredFile(
@@ -104,6 +119,14 @@ void main() {
     );
     expect(header, contains('extern "C"'));
     expect(source, contains("catch (...)"));
+    expect(source, contains("ClientLifecycleState lifecycle"));
+    expect(source, contains("SchedulingRollbackGuard rollback"));
+    expect(lifecycle, contains("std::mutex mutex_"));
+    expect(lifecycle, contains("selection_generation_"));
+    expect(lifecycle, contains("check_generation_"));
+    expect(lifecycle, contains("stage_attempt_"));
+    expect(lifecycle, contains("staged_generation_"));
+    expect(lifecycle, contains("install_in_progress_"));
     expect(cmake, contains("option(DESKTOP_UPDATER_NATIVE_RUNTIME"));
     expect(cmake, contains("desktop_updater_runtime_c.cpp"));
     expect(dotnet, contains("public sealed class DesktopUpdaterConfiguration"));
@@ -116,9 +139,52 @@ void main() {
     expect(sample, isNot(contains("DllImport")));
   });
 
+  test("Windows stage attempts invalidate before request validation", () {
+    final source = readRequiredFile(
+      "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
+    );
+    final stageEntry = source.indexOf(
+      "desktop_updater_runtime_client_download_verify_and_stage_v1(",
+    );
+    final beginStage = source.indexOf(
+      "client->lifecycle.BeginStage()",
+      stageEntry,
+    );
+    final validateStageRequest = source.indexOf(
+      'ValidateRequest(request, "Runtime stage request")',
+      stageEntry,
+    );
+    expect(beginStage, greaterThan(stageEntry));
+    expect(validateStageRequest, greaterThan(beginStage));
+  });
+
+  test("Windows invalidated checks return invalidDescriptor", () {
+    final source = readRequiredFile(
+      "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
+    );
+    final stageEntry = source.indexOf(
+      "desktop_updater_runtime_client_download_verify_and_stage_v1(",
+    );
+    final publishCheck = source.indexOf(
+      "if (!client->lifecycle.PublishCheck(lease, check))",
+    );
+    final invalidatedCheckOutcome = source.indexOf(
+      'ClientResult(*client, "invalidDescriptor"',
+      publishCheck,
+    );
+    expect(invalidatedCheckOutcome, greaterThan(publishCheck));
+    expect(invalidatedCheckOutcome, lessThan(stageEntry));
+  });
+
   test("Linux runtime API remains a source-only C++ contract", () {
     final header = readRequiredFile(
       "linux/native/include/desktop_updater_runtime.h",
+    );
+    final client = readRequiredFile(
+      "linux/native/src/runtime/update_client_linux.cc",
+    );
+    final lifecycle = readRequiredFile(
+      "native_runtime/cpp/client_lifecycle.h",
     );
     final source = readRequiredFile(
       "example/native/linux-cmake-runtime/main.cpp",
@@ -133,12 +199,65 @@ void main() {
     expect(header, contains("std::function"));
     expect(header, contains("class UpdateClient"));
     expect(header, contains("support_policy_status"));
+    expect(client, contains("ClientLifecycleState lifecycle_"));
+    expect(client, contains("SchedulingRollbackGuard rollback"));
+    expect(lifecycle, contains("selection_generation_"));
+    expect(lifecycle, contains("check_generation_"));
+    expect(lifecycle, contains("stage_attempt_"));
+    expect(lifecycle, contains("staged_generation_"));
+    expect(lifecycle, contains("install_in_progress_"));
     expect(header, isNot(contains("extern \"C\"")));
     expect(source, contains("desktop_updater_runtime.h"));
     expect(source, contains("RuntimeOutcome::kNoUpdate"));
     expect(source, isNot(contains("Flutter")));
     expect(cmake, contains("find_package(desktop_updater_native"));
     expect(cmake, contains("desktop_updater::native"));
+  });
+
+  test("native helper scripts use nonce names and exclusive creation", () {
+    final macos = readRequiredFile(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    );
+    final windows = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final linux = readRequiredFile(
+      "linux/native/src/desktop_updater_native.cc",
+    );
+
+    expect(macos, contains(r"desktop_updater_\(nonce.uuidString).command"));
+    expect(macos, contains(".withoutOverwriting"));
+    expect(windows, contains("CREATE_NEW"));
+    expect(windows, contains("desktop_updater_"));
+    expect(windows, contains("CreateUuidNonce"));
+    expect(linux, contains("O_CREAT | O_EXCL"));
+    expect(linux, contains("CreateUuidNonce"));
+  });
+
+  test("native lifecycle races have registered behavioral tests", () {
+    final tests = readRequiredFile(
+      "native_runtime/cpp/client_lifecycle_tests.cc",
+    );
+    final windowsCmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final linuxCmake = readRequiredFile("linux/native/CMakeLists.txt");
+
+    for (final behavior in <String>[
+      "ConcurrentInstallIsOneShot",
+      "LatestStageAttemptOwnsPublication",
+      "FailedCheckInvalidatesPreviousStage",
+      "SchedulerFailureRestoresMatchingHandoff",
+      "SchedulerReturnedFailureRestoresMatchingHandoff",
+      "RejectedCheckDuringSchedulingPreventsRollbackRestore",
+      "RejectedStageDuringSchedulingPreventsRollbackRestore",
+      "ConfirmedSchedulingNeverRestores",
+    ]) {
+      expect(tests, contains(behavior));
+    }
+    for (final cmake in <String>[windowsCmake, linuxCmake]) {
+      expect(cmake, contains("desktop_updater_runtime_lifecycle_test"));
+      expect(cmake, contains("desktop_updater_runtime_lifecycle"));
+      expect(cmake, contains("client_lifecycle_tests.cc"));
+    }
   });
 }
 

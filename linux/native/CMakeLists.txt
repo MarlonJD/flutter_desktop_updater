@@ -23,6 +23,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
   find_package(CURL REQUIRED)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+  find_package(Threads REQUIRED)
   set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
@@ -42,6 +43,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle.cc
     ${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
@@ -62,7 +64,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     POSITION_INDEPENDENT_CODE ON)
   target_link_libraries(desktop_updater_runtime
     PUBLIC CURL::libcurl OpenSSL::Crypto
-    PRIVATE desktop_updater_native)
+    PRIVATE desktop_updater_native Threads::Threads)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -133,6 +135,20 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   gtest_discover_tests(desktop_updater_native_test)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+    add_executable(desktop_updater_runtime_lifecycle_test
+      test/runtime/client_lifecycle_test.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
+    target_compile_features(desktop_updater_runtime_lifecycle_test
+      PRIVATE cxx_std_14)
+    target_include_directories(desktop_updater_runtime_lifecycle_test PRIVATE
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    target_link_libraries(desktop_updater_runtime_lifecycle_test
+      PRIVATE Threads::Threads)
+    add_test(NAME desktop_updater_runtime_lifecycle
+      COMMAND desktop_updater_runtime_lifecycle_test)
+
     add_executable(desktop_updater_runtime_contract_test
       test/runtime/contract_conformance_test.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/archive_fixture_tests.cc

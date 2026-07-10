@@ -45,16 +45,31 @@ public struct MacInstallHelper {
         }
     }
 
-    func writeHelperScript(for request: MacInstallRequest) throws -> URL {
-        let helperName = "desktop_updater_\(UUID().uuidString).sh"
+    func writeHelperScript(
+        for request: MacInstallRequest,
+        nonce: UUID = UUID()
+    ) throws -> URL {
+        let helperName = "desktop_updater_\(nonce.uuidString).command"
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(helperName)
         let script = makeHelperScript(for: request)
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: scriptURL.path
-        )
+        var created = false
+        do {
+            try Data(script.utf8).write(
+                to: scriptURL,
+                options: .withoutOverwriting
+            )
+            created = true
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: scriptURL.path
+            )
+        } catch {
+            if created {
+                try? FileManager.default.removeItem(at: scriptURL)
+            }
+            throw error
+        }
         return scriptURL
     }
 
