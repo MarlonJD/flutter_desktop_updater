@@ -3,9 +3,12 @@
 #include <windows.h>
 
 #include <cstdlib>
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -14,24 +17,26 @@
 
 namespace {
 
-std::string ReadFile(const std::string& path) {
+std::string ReadFile(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) throw std::runtime_error("Fixture file is missing.");
   return std::string(std::istreambuf_iterator<char>(input),
                      std::istreambuf_iterator<char>());
 }
 
-std::string TemporaryPath(const std::string& suffix) {
-  const char* root = std::getenv("TEMP");
-  return std::string(root == nullptr ? "." : root) +
-         "/desktop_updater_windows_stager_" +
-         std::to_string(GetCurrentProcessId()) + suffix;
+std::filesystem::path TemporaryPath(const std::string& suffix) {
+  return std::filesystem::temp_directory_path() /
+         ("desktop_updater_windows_stager_" +
+          std::to_string(GetCurrentProcessId()) + suffix);
 }
 
-void WriteZip(const std::string& path) {
+void WriteZip(const std::filesystem::path& path) {
   mz_zip_archive archive{};
   const std::string payload = "fixture";
-  if (!mz_zip_writer_init_file(&archive, path.c_str(), 0) ||
+  std::unique_ptr<FILE, decltype(&std::fclose)> archive_file(
+      _wfopen(path.c_str(), L"w+b"), &std::fclose);
+  if (!archive_file ||
+      !mz_zip_writer_init_cfile(&archive, archive_file.get(), 0) ||
       !mz_zip_writer_add_mem(&archive, "Example.exe", payload.data(),
                              payload.size(), MZ_DEFAULT_COMPRESSION)) {
     mz_zip_writer_end(&archive);
@@ -54,28 +59,39 @@ int main(int argument_count, char** arguments) {
   using desktop_updater::runtime::internal::StageWindowsInnoInstaller;
   using desktop_updater::runtime::internal::StageWindowsZip;
 
-  const std::string archive = TemporaryPath(".zip");
-  const std::string installer = TemporaryPath(".exe");
-  const std::string staging_parent = TemporaryPath("_staging_parent");
+  const std::filesystem::path archive = TemporaryPath(".zip");
+  const std::filesystem::path installer = TemporaryPath(".exe");
+  const std::filesystem::path test_root = TemporaryPath("_unicode");
+  const std::filesystem::path unicode_root =
+      test_root /
+      std::filesystem::u8path(u8"güncelleme-日本");
+  const std::string staging_parent = unicode_root.u8string();
   std::string destination;
   try {
     RemoveStagingDirectory(archive);
     RemoveStagingDirectory(installer);
-    RemoveStagingDirectory(staging_parent);
-    CreateDirectoryA(staging_parent.c_str(), nullptr);
-    std::ofstream(staging_parent + "/sentinel.txt") << "caller-owned";
+    RemoveStagingDirectory(test_root);
+    std::filesystem::create_directories(unicode_root);
+    std::ofstream(unicode_root / L"sentinel.txt") << "caller-owned";
     WriteZip(archive);
     const auto zip_descriptor = ParseReleaseDescriptor(ReadFile(
-        std::string(arguments[1]) +
-        "/release-contract/release-windows-zip.json"));
+        std::filesystem::u8path(arguments[1]) /
+        "release-contract/release-windows-zip.json"));
     const auto staged = StageWindowsZip(
-        archive, staging_parent, zip_descriptor,
+        archive.u8string(), staging_parent, zip_descriptor,
         "com.example.native-contract", ArchiveLimits{});
     destination = staged.stage_path;
+    const std::filesystem::path staged_path =
+        std::filesystem::u8path(destination);
     const std::string manifest = ReadFile(
-        destination + "/.desktop_updater_release_manifest.json");
-    if (manifest.find("com.example.native-contract") == std::string::npos) {
-      throw std::runtime_error("Windows release manifest is not identity-bound.");
+        staged_path / L".desktop_updater_release_manifest.json");
+    if (manifest.find("com.example.native-contract") == std::string::npos ||
+        ReadFile(staged_path / L"Example.exe") != "fixture" ||
+        !std::filesystem::exists(
+            staged_path / L".desktop_updater_stage_provenance.json") ||
+        staged.provenance.marker.entries.empty()) {
+      throw std::runtime_error(
+          "Windows Unicode stage extraction or provenance differs.");
     }
 
     RemoveStagingDirectory(destination);
@@ -83,24 +99,24 @@ int main(int argument_count, char** arguments) {
     dummy << "unsigned fixture";
     dummy.close();
     const auto inno_descriptor = ParseReleaseDescriptor(ReadFile(
-        std::string(arguments[1]) +
-        "/release-contract/release-windows-inno.json"));
+        std::filesystem::u8path(arguments[1]) /
+        "release-contract/release-windows-inno.json"));
     bool rejected = false;
     try {
       StageWindowsInnoInstaller(
-          std::wstring(installer.begin(), installer.end()), staging_parent,
+          installer.wstring(), staging_parent,
           inno_descriptor, "com.example.native-contract");
     } catch (const std::exception&) {
       rejected = true;
     }
     if (!rejected ||
-        GetFileAttributesA(destination.c_str()) != INVALID_FILE_ATTRIBUTES ||
-        ReadFile(staging_parent + "/sentinel.txt") != "caller-owned") {
+        std::filesystem::exists(std::filesystem::u8path(destination)) ||
+        ReadFile(unicode_root / L"sentinel.txt") != "caller-owned") {
       throw std::runtime_error("Unsigned Inno fixture did not fail closed.");
     }
   } catch (const std::exception& error) {
     try {
-      RemoveStagingDirectory(staging_parent);
+      RemoveStagingDirectory(test_root);
       RemoveStagingDirectory(installer);
       RemoveStagingDirectory(archive);
     } catch (...) {
@@ -108,7 +124,7 @@ int main(int argument_count, char** arguments) {
     std::cerr << error.what() << std::endl;
     return 1;
   }
-  RemoveStagingDirectory(staging_parent);
+  RemoveStagingDirectory(test_root);
   RemoveStagingDirectory(installer);
   RemoveStagingDirectory(archive);
   return 0;

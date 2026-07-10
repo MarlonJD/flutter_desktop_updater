@@ -1194,14 +1194,14 @@ Task 6 blocker evidence (2026-07-11):
 - Produces
   `std::string ResolveRedirectURL(const std::string& source, const std::string& location)`.
 
-- [ ] **Step 1: Add a non-ASCII Windows path smoke**
+- [x] **Step 1: Add a non-ASCII Windows path smoke**
 
 Use a temporary child named `güncelleme-日本`. Download, resume, hash, extract,
 write provenance, cleanup, and finalize an artifact under that path.
 
 Expected before implementation: FAIL in at least one narrow filesystem API.
 
-- [ ] **Step 2: Replace ANSI and narrow filesystem APIs**
+- [x] **Step 2: Replace ANSI and narrow filesystem APIs**
 
 Replace `_mkdir`, Win32 A APIs, narrow fstreams, `std::remove`, and
 `std::rename` on Windows. Convert UTF-8 exactly once at the ABI boundary and
@@ -1209,7 +1209,7 @@ carry native paths through every filesystem operation. Use a miniz extraction
 callback that writes to already opened wide-path file handles instead of
 `mz_zip_reader_extract_to_file` with a narrow path.
 
-- [ ] **Step 3: Add relative redirect fixtures**
+- [x] **Step 3: Add relative redirect fixtures**
 
 Serve all of:
 
@@ -1221,7 +1221,7 @@ HTTPS source to HTTP absolute target
 redirect loop longer than five
 ~~~
 
-- [ ] **Step 4: Resolve before enforcing redirect policy**
+- [x] **Step 4: Resolve before enforcing redirect policy**
 
 Resolve `Location` against the current URL with WinHTTP URL APIs. Validate the
 resolved absolute URL, then reject HTTPS downgrade. Pass the resolved URL to the
@@ -1240,12 +1240,39 @@ dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Nat
 Expected: PASS for Unicode path, relative redirects, downgrade rejection,
 resume, and cleanup.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~sh
 git add native_runtime windows/native tool/native_transport_fixture_server.dart test/native_runtime_transport_contract_test.dart
 git commit -m "fix: harden Windows runtime transport paths"
 ~~~
+
+Task 7 evidence on 2026-07-11:
+
+- RED was recorded before production changes with
+  `flutter test --no-pub test/native_runtime_transport_contract_test.dart`:
+  the Windows transport contract failed at
+  `test/native_runtime_transport_contract_test.dart:51` with
+  `Expected: contains 'WinHttpCombineUrl'`; the run ended
+  `+2 -1: Some tests failed.` The contract was then corrected to the actual
+  WinHTTP `WinHttpCrackUrl`/`WinHttpCreateUrl` API pair before GREEN.
+- Verified locally on macOS: the focused transport/source and live fixture
+  server suite passed 4 tests; portable C++17 syntax checks passed for the
+  shared artifact stager, provenance implementation, and transport fixture;
+  a compiled portable archive-stager smoke passed the extraction, limit,
+  cleanup, traversal, and duplicate-conflict cases;
+  `flutter analyze --no-fatal-infos` completed with 395 existing info-level
+  diagnostics and no fatal diagnostics; `dart format --set-exit-if-changed .`
+  formatted 213 files with 0 changes; full Flutter passed 577 tests with 3
+  explicit environment-gated skips and 0 failures; the banned Windows
+  ANSI/narrow API scan and `git diff --check` passed.
+- Windows Debug CMake build, CTest (including the non-ASCII path and redirect
+  fixture tests), and .NET tests: not run on macOS. Step 5 and the final
+  acceptance checkbox remain open until target-host evidence exists.
+- Task 6 remains blocked and reverted. This task changes path encoding,
+  archive I/O, and redirect handling only; it does not restore the rejected
+  helper transaction candidate.
+- Commit: `fix: harden Windows runtime transport paths` (this changeset).
 
 ---
 

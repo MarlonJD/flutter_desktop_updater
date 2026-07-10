@@ -23,7 +23,7 @@ namespace runtime {
 namespace internal {
 namespace {
 
-void WriteReleaseManifest(const std::string& destination_path,
+void WriteReleaseManifest(const std::filesystem::path& destination_path,
                           const ReleaseDescriptor& descriptor,
                           const std::string& expected_package_id) {
   if (expected_package_id.empty() ||
@@ -31,9 +31,9 @@ void WriteReleaseManifest(const std::string& destination_path,
       descriptor.platform != "windows") {
     throw std::invalid_argument("expected_package_id does not match release.");
   }
-  std::ofstream manifest(
-      destination_path + "/.desktop_updater_release_manifest.json",
-      std::ios::binary);
+  std::ofstream manifest(destination_path /
+                             L".desktop_updater_release_manifest.json",
+                         std::ios::binary);
   manifest << EncodeCanonicalJson(descriptor.raw) << "\n";
   if (!manifest) throw std::runtime_error("Unable to write release manifest.");
 }
@@ -169,14 +169,17 @@ WindowsStagedArtifact StageWindowsZip(
       descriptor.platform != "windows" || descriptor.artifact.kind != "zip") {
     throw std::invalid_argument("expected_package_id does not match release.");
   }
+  const std::filesystem::path archive =
+      std::filesystem::u8path(archive_path);
   const OwnedStage stage = CreateOwnedStage(destination_parent);
+  const std::filesystem::path stage_path =
+      std::filesystem::u8path(stage.path);
   try {
-    StageZipArchive(archive_path, stage.path, limits);
+    StageZipArchive(archive, stage_path, limits);
     std::filesystem::copy_file(
-        std::filesystem::u8path(archive_path),
-        std::filesystem::u8path(stage.path) / L".desktop_updater_artifact.zip",
+        archive, stage_path / L".desktop_updater_artifact.zip",
         std::filesystem::copy_options::overwrite_existing);
-    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
+    WriteReleaseManifest(stage_path, descriptor, expected_package_id);
     const StageProvenanceState provenance = WriteStageProvenance(
         stage, expected_package_id,
         StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),
@@ -206,17 +209,19 @@ WindowsStagedArtifact StageWindowsInnoInstaller(
   const JsonValue& policy =
       descriptor.install.at("inno").at("authenticode");
   const OwnedStage stage = CreateOwnedStage(destination_parent);
+  const std::filesystem::path stage_path =
+      std::filesystem::u8path(stage.path);
   try {
     if (policy.at("required").boolean()) {
       VerifyAuthenticode(installer_path, AuthenticodeThumbprints(descriptor));
     }
     const std::filesystem::path source(installer_path);
     const std::filesystem::path destination =
-        std::filesystem::u8path(stage.path) / L"installer.exe";
+        stage_path / L"installer.exe";
     std::filesystem::copy_file(
         source, destination,
         std::filesystem::copy_options::overwrite_existing);
-    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
+    WriteReleaseManifest(stage_path, descriptor, expected_package_id);
     const StageProvenanceState provenance = WriteStageProvenance(
         stage, expected_package_id,
         StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),

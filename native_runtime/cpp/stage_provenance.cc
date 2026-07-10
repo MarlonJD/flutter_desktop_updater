@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -15,7 +16,6 @@
 
 #if defined(_WIN32)
 #include <bcrypt.h>
-#include <direct.h>
 #include <windows.h>
 #else
 #include <dirent.h>
@@ -31,6 +31,25 @@ namespace desktop_updater {
 namespace runtime {
 namespace internal {
 namespace {
+
+#if defined(_WIN32)
+std::string WideToUtf8(const std::wstring& value) {
+  if (value.empty()) return {};
+  const int length = WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS, value.data(),
+      static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+  if (length <= 0) {
+    throw std::runtime_error("Invalid UTF-16 staged path.");
+  }
+  std::string result(static_cast<std::size_t>(length), '\0');
+  if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(),
+                          static_cast<int>(value.size()), result.data(), length,
+                          nullptr, nullptr) != length) {
+    throw std::runtime_error("Unable to encode staged path.");
+  }
+  return result;
+}
+#endif
 
 bool ValidSha256(const std::string& value) {
   return value.size() == 64 &&
@@ -104,20 +123,21 @@ std::string Join(const std::string& root, const std::string& relative) {
 
 std::string CanonicalDirectory(const std::string& path, const char* field) {
 #if defined(_WIN32)
-  const DWORD attributes = GetFileAttributesA(path.c_str());
+  const std::filesystem::path native = std::filesystem::u8path(path);
+  const DWORD attributes = GetFileAttributesW(native.c_str());
   if (attributes == INVALID_FILE_ATTRIBUTES ||
       (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
       (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
     throw std::runtime_error(std::string(field) +
                              " must be a real non-reparse directory.");
   }
-  char buffer[MAX_PATH];
-  const DWORD count = GetFullPathNameA(path.c_str(), MAX_PATH, buffer, nullptr);
-  if (count == 0 || count >= MAX_PATH) {
+  std::error_code error;
+  std::filesystem::path absolute =
+      std::filesystem::absolute(native, error).lexically_normal();
+  if (error || absolute.empty()) {
     throw std::runtime_error(std::string("Unable to canonicalize ") + field + ".");
   }
-  std::string result(buffer, count);
-  std::replace(result.begin(), result.end(), '\\', '/');
+  std::string result = absolute.generic_u8string();
   while (result.size() > 3 && result.back() == '/') result.pop_back();
   return result;
 #else
@@ -184,32 +204,46 @@ bool Utf8Less(const std::string& left, const std::string& right) {
 }
 
 std::string ReadFile(const std::string& path) {
+#if defined(_WIN32)
+  std::ifstream input(std::filesystem::u8path(path), std::ios::binary);
+#else
   std::ifstream input(path, std::ios::binary);
+#endif
   if (!input) throw std::runtime_error("Unable to read staged file.");
   return std::string(std::istreambuf_iterator<char>(input),
                      std::istreambuf_iterator<char>());
 }
 
-void RemoveTree(const std::string& path) {
 #if defined(_WIN32)
-  const DWORD attributes = GetFileAttributesA(path.c_str());
+void RemoveTreePath(const std::filesystem::path& path) {
+  const DWORD attributes = GetFileAttributesW(path.c_str());
   if (attributes == INVALID_FILE_ATTRIBUTES) return;
   if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
       (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-    if (!DeleteFileA(path.c_str())) throw std::runtime_error("Cleanup failed.");
+    const bool removed = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+                             ? RemoveDirectoryW(path.c_str()) != 0
+                             : DeleteFileW(path.c_str()) != 0;
+    if (!removed) throw std::runtime_error("Cleanup failed.");
     return;
   }
-  WIN32_FIND_DATAA entry{};
-  HANDLE search = FindFirstFileA((path + "/*").c_str(), &entry);
+  WIN32_FIND_DATAW entry{};
+  const std::filesystem::path pattern = path / L"*";
+  HANDLE search = FindFirstFileW(pattern.c_str(), &entry);
   if (search != INVALID_HANDLE_VALUE) {
     do {
-      const std::string name = entry.cFileName;
-      if (name != "." && name != "..") RemoveTree(Join(path, name));
-    } while (FindNextFileA(search, &entry));
+      const std::wstring name = entry.cFileName;
+      if (name != L"." && name != L"..") RemoveTreePath(path / name);
+    } while (FindNextFileW(search, &entry));
     FindClose(search);
   }
-  if (!RemoveDirectoryA(path.c_str())) throw std::runtime_error("Cleanup failed.");
+  if (!RemoveDirectoryW(path.c_str())) throw std::runtime_error("Cleanup failed.");
+}
+
+void RemoveTree(const std::string& path) {
+  RemoveTreePath(std::filesystem::u8path(path));
+}
 #else
+void RemoveTree(const std::string& path) {
   struct stat status {};
   if (lstat(path.c_str(), &status) != 0) return;
   if (!S_ISDIR(status.st_mode) || S_ISLNK(status.st_mode)) {
@@ -224,8 +258,8 @@ void RemoveTree(const std::string& path) {
   }
   closedir(directory);
   if (rmdir(path.c_str()) != 0) throw std::runtime_error("Cleanup failed.");
-#endif
 }
+#endif
 
 void AddInventory(const std::string& root,
                   const std::string& relative,
@@ -233,14 +267,17 @@ void AddInventory(const std::string& root,
                   std::vector<StageProvenanceEntry>* entries) {
   const std::string absolute = relative.empty() ? root : Join(root, relative);
 #if defined(_WIN32)
-  WIN32_FIND_DATAA found{};
-  HANDLE search = FindFirstFileA((absolute + "/*").c_str(), &found);
+  WIN32_FIND_DATAW found{};
+  const std::filesystem::path native_absolute =
+      std::filesystem::u8path(absolute);
+  const std::filesystem::path pattern = native_absolute / L"*";
+  HANDLE search = FindFirstFileW(pattern.c_str(), &found);
   if (search == INVALID_HANDLE_VALUE) {
     if (GetLastError() == ERROR_FILE_NOT_FOUND) return;
     throw std::runtime_error("Unable to enumerate staged directory.");
   }
   do {
-    const std::string name = found.cFileName;
+    const std::string name = WideToUtf8(found.cFileName);
     if (name == "." || name == "..") continue;
     const std::string child = relative.empty() ? name : relative + "/" + name;
     if (child == kStageProvenanceFileName) continue;
@@ -256,7 +293,7 @@ void AddInventory(const std::string& root,
       entries->push_back({child, "file", static_cast<std::int64_t>(bytes.size()),
                           StageBytesToHex(sha256(bytes)), ""});
     }
-  } while (FindNextFileA(search, &found));
+  } while (FindNextFileW(search, &found));
   FindClose(search);
 #else
   DIR* directory = opendir(absolute.c_str());
@@ -403,7 +440,8 @@ bool EqualEntries(const std::vector<StageProvenanceEntry>& first,
 
 void WriteExclusive(const std::string& path, const std::string& bytes) {
 #if defined(_WIN32)
-  HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+  const std::filesystem::path native = std::filesystem::u8path(path);
+  HANDLE file = CreateFileW(native.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                             FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     throw std::runtime_error("Stage provenance marker already exists.");
@@ -414,7 +452,7 @@ void WriteExclusive(const std::string& path, const std::string& bytes) {
                   written == bytes.size();
   CloseHandle(file);
   if (!ok) {
-    DeleteFileA(path.c_str());
+    DeleteFileW(native.c_str());
     throw std::runtime_error("Unable to write stage provenance marker.");
   }
 #else
@@ -481,7 +519,7 @@ OwnedStage CreateOwnedStage(const std::string& parent_path,
     throw std::runtime_error("Owned staging child escapes canonical parent.");
   }
 #if defined(_WIN32)
-  if (_mkdir(child.c_str()) != 0) {
+  if (!CreateDirectoryW(std::filesystem::u8path(child).c_str(), nullptr)) {
 #else
   if (mkdir(child.c_str(), 0700) != 0) {
 #endif

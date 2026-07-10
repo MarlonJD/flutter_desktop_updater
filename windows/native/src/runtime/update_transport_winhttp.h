@@ -7,6 +7,9 @@ namespace desktop_updater {
 namespace runtime {
 namespace internal {
 
+std::string ResolveRedirectURL(const std::string& source,
+                               const std::string& location);
+
 class WinHttpUpdateTransport final : public UpdateTransport {
  public:
   explicit WinHttpUpdateTransport(TransportOptions options);

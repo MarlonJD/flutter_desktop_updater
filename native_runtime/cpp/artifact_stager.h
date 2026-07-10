@@ -2,6 +2,7 @@
 #define DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace desktop_updater {
@@ -17,10 +18,14 @@ struct ArchiveLimits {
 void StageZipArchive(const std::string& archive_path,
                      const std::string& destination_path,
                      const ArchiveLimits& limits);
+void StageZipArchive(const std::filesystem::path& archive_path,
+                     const std::filesystem::path& destination_path,
+                     const ArchiveLimits& limits);
 
 std::string NormalizeSafeArchivePath(const std::string& input);
 
 void RemoveStagingDirectory(const std::string& path);
+void RemoveStagingDirectory(const std::filesystem::path& path);
 
 }  // namespace internal
 }  // namespace runtime

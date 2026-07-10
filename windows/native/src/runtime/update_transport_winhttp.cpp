@@ -7,7 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <memory>
@@ -87,12 +87,12 @@ std::string FilePathFromURL(const std::string& url) {
   return url.substr(prefix.size());
 }
 
-std::int64_t FileSize(const std::string& path) {
+std::int64_t FileSize(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary | std::ios::ate);
   return input ? static_cast<std::int64_t>(input.tellg()) : 0;
 }
 
-std::string HashFile(const std::string& path) {
+std::string HashFile(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) throw std::runtime_error("Downloaded artifact is missing.");
   BCRYPT_ALG_HANDLE algorithm = nullptr;
@@ -145,8 +145,10 @@ std::wstring QueryHeader(HINTERNET request, DWORD query) {
 }
 
 struct ParsedURL {
+  INTERNET_SCHEME scheme = INTERNET_SCHEME_UNKNOWN;
   std::wstring host;
   std::wstring path;
+  std::wstring extra;
   INTERNET_PORT port = 0;
   bool secure = false;
 };
@@ -156,22 +158,93 @@ ParsedURL ParseHTTPURL(const std::string& url) {
   URL_COMPONENTS components{};
   components.dwStructSize = sizeof(components);
   components.dwHostNameLength = static_cast<DWORD>(-1);
+  components.dwUserNameLength = static_cast<DWORD>(-1);
+  components.dwPasswordLength = static_cast<DWORD>(-1);
   components.dwUrlPathLength = static_cast<DWORD>(-1);
   components.dwExtraInfoLength = static_cast<DWORD>(-1);
   if (!WinHttpCrackUrl(wide.c_str(), 0, 0, &components) ||
-      components.dwHostNameLength == 0) {
+      components.dwHostNameLength == 0 ||
+      (components.nScheme != INTERNET_SCHEME_HTTP &&
+       components.nScheme != INTERNET_SCHEME_HTTPS) ||
+      components.dwUserNameLength != 0 ||
+      components.dwPasswordLength != 0) {
     throw std::runtime_error("HTTP update URL must include a host.");
   }
   ParsedURL result;
+  result.scheme = components.nScheme;
   result.host.assign(components.lpszHostName, components.dwHostNameLength);
   result.path.assign(components.lpszUrlPath, components.dwUrlPathLength);
   if (components.dwExtraInfoLength > 0) {
-    result.path.append(components.lpszExtraInfo, components.dwExtraInfoLength);
+    result.extra.assign(components.lpszExtraInfo,
+                        components.dwExtraInfoLength);
   }
   if (result.path.empty()) result.path = L"/";
   result.port = components.nPort;
   result.secure = components.nScheme == INTERNET_SCHEME_HTTPS;
   return result;
+}
+
+std::wstring NormalizeURLPath(const std::wstring& input) {
+  const bool trailing =
+      !input.empty() &&
+      (input.back() == L'/' ||
+       (input.size() >= 2 &&
+        input.compare(input.size() - 2, 2, L"/.") == 0) ||
+       (input.size() >= 3 &&
+        input.compare(input.size() - 3, 3, L"/..") == 0));
+  std::vector<std::wstring> segments;
+  std::size_t start = 0;
+  while (start <= input.size()) {
+    const std::size_t slash = input.find(L'/', start);
+    const std::wstring segment = input.substr(start, slash - start);
+    if (segment == L"..") {
+      if (!segments.empty()) segments.pop_back();
+    } else if (!segment.empty() && segment != L".") {
+      segments.push_back(segment);
+    }
+    if (slash == std::wstring::npos) break;
+    start = slash + 1;
+  }
+  std::wstring result = L"/";
+  for (std::size_t index = 0; index < segments.size(); ++index) {
+    if (index > 0) result.push_back(L'/');
+    result += segments[index];
+  }
+  if (trailing && result.back() != L'/') result.push_back(L'/');
+  return result;
+}
+
+std::string CreateHTTPURL(const ParsedURL& parsed) {
+  URL_COMPONENTS components{};
+  components.dwStructSize = sizeof(components);
+  components.nScheme = parsed.scheme;
+  components.lpszHostName = const_cast<wchar_t*>(parsed.host.data());
+  components.dwHostNameLength = static_cast<DWORD>(parsed.host.size());
+  components.nPort = parsed.port;
+  components.lpszUrlPath = const_cast<wchar_t*>(parsed.path.data());
+  components.dwUrlPathLength = static_cast<DWORD>(parsed.path.size());
+  if (!parsed.extra.empty()) {
+    components.lpszExtraInfo = const_cast<wchar_t*>(parsed.extra.data());
+    components.dwExtraInfoLength = static_cast<DWORD>(parsed.extra.size());
+  }
+  DWORD length = 0;
+  if (WinHttpCreateUrl(&components, 0, nullptr, &length) ||
+      GetLastError() != ERROR_INSUFFICIENT_BUFFER || length == 0) {
+    throw std::runtime_error("Unable to resolve redirect URL.");
+  }
+  std::wstring output(static_cast<std::size_t>(length), L'\0');
+  if (!WinHttpCreateUrl(&components, 0, output.data(), &length)) {
+    throw std::runtime_error("Unable to resolve redirect URL.");
+  }
+  while (!output.empty() && output.back() == L'\0') output.pop_back();
+  return WideToUtf8(output);
+}
+
+bool HasAbsoluteScheme(const std::wstring& location) {
+  const std::size_t colon = location.find(L':');
+  const std::size_t delimiter = location.find_first_of(L"/?#");
+  return colon != std::wstring::npos && colon > 0 &&
+         (delimiter == std::wstring::npos || colon < delimiter);
 }
 
 struct Response {
@@ -188,6 +261,7 @@ Response Perform(const std::string& url,
                  std::int64_t maximum_bytes,
                  const DownloadProgress& progress) {
   const ParsedURL parsed = ParseHTTPURL(url);
+  const std::wstring request_target = parsed.path + parsed.extra;
   InternetHandle session(WinHttpOpen(
       L"desktop_updater/2.7", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
@@ -200,7 +274,7 @@ Response Perform(const std::string& url,
       WinHttpConnect(session.get(), parsed.host.c_str(), parsed.port, 0));
   if (!connection) throw std::runtime_error("WinHTTP connection failed.");
   InternetHandle request(WinHttpOpenRequest(
-      connection.get(), L"GET", parsed.path.c_str(), nullptr,
+      connection.get(), L"GET", request_target.c_str(), nullptr,
       WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
       parsed.secure ? WINHTTP_FLAG_SECURE : 0));
   if (!request) throw std::runtime_error("WinHTTP request creation failed.");
@@ -282,14 +356,7 @@ bool RetryableStatus(DWORD status) {
   return status == 408 || status == 429 || status >= 500;
 }
 
-void ValidateRedirect(const std::string& source, const std::string& target) {
-  if (target.empty()) throw std::runtime_error("Redirect is missing Location.");
-  if (Scheme(source) == "https" && Scheme(target) != "https") {
-    throw std::runtime_error("HTTPS redirect downgrade is forbidden.");
-  }
-}
-
-std::vector<std::uint8_t> ReadBoundedFile(const std::string& path,
+std::vector<std::uint8_t> ReadBoundedFile(const std::filesystem::path& path,
                                           std::int64_t maximum) {
   std::ifstream input(path, std::ios::binary);
   if (!input) throw std::runtime_error("file URL could not be opened.");
@@ -308,6 +375,53 @@ std::vector<std::uint8_t> ReadBoundedFile(const std::string& path,
 
 }  // namespace
 
+std::string ResolveRedirectURL(const std::string& source,
+                               const std::string& location) {
+  if (location.empty()) {
+    throw std::runtime_error("Redirect is missing Location.");
+  }
+  const std::wstring wide_location = Utf8ToWide(location);
+  const std::string source_scheme = Scheme(source);
+  if (source_scheme != "http" && source_scheme != "https") {
+    throw std::runtime_error("Redirect source must use HTTP or HTTPS.");
+  }
+  ParsedURL resolved;
+  if (HasAbsoluteScheme(wide_location)) {
+    resolved = ParseHTTPURL(location);
+  } else if (wide_location.rfind(L"//", 0) == 0) {
+    resolved = ParseHTTPURL(source_scheme + ":" + location);
+  } else {
+    resolved = ParseHTTPURL(source);
+    const std::size_t extra = wide_location.find_first_of(L"?#");
+    const std::wstring location_path = wide_location.substr(0, extra);
+    resolved.extra = extra == std::wstring::npos
+                         ? std::wstring()
+                         : wide_location.substr(extra);
+    if (!location_path.empty()) {
+      if (location_path.front() == L'/') {
+        resolved.path = NormalizeURLPath(location_path);
+      } else {
+        const std::size_t slash = resolved.path.find_last_of(L'/');
+        const std::wstring base =
+            slash == std::wstring::npos
+                ? L"/"
+                : resolved.path.substr(0, slash + 1);
+        resolved.path = NormalizeURLPath(base + location_path);
+      }
+    }
+  }
+  const std::string resolved_url = CreateHTTPURL(resolved);
+  const std::string resolved_scheme = Scheme(resolved_url);
+  if (resolved_scheme != "http" && resolved_scheme != "https") {
+    throw std::runtime_error("Redirect URL must use HTTP or HTTPS.");
+  }
+  ParseHTTPURL(resolved_url);
+  if (source_scheme == "https" && resolved_scheme != "https") {
+    throw std::runtime_error("HTTPS redirect downgrade is forbidden.");
+  }
+  return resolved_url;
+}
+
 WinHttpUpdateTransport::WinHttpUpdateTransport(TransportOptions options)
     : options_(std::move(options)) {
   if (options_.maximum_redirects < 0 ||
@@ -320,7 +434,7 @@ WinHttpUpdateTransport::WinHttpUpdateTransport(TransportOptions options)
 std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
     const std::string& initial_url) {
   if (Scheme(initial_url) == "file") {
-    return ReadBoundedFile(FilePathFromURL(initial_url),
+    return ReadBoundedFile(std::filesystem::u8path(FilePathFromURL(initial_url)),
                            options_.maximum_metadata_bytes);
   }
   std::string url = initial_url;
@@ -330,8 +444,7 @@ std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
         Response response = Perform(
             url, options_, 0, nullptr, options_.maximum_metadata_bytes, {});
         if (RedirectStatus(response.status)) {
-          ValidateRedirect(url, response.location);
-          url = response.location;
+          url = ResolveRedirectURL(url, response.location);
           break;
         }
         if (response.status >= 200 && response.status < 300) return response.body;
@@ -349,15 +462,20 @@ std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
 
 void WinHttpUpdateTransport::DownloadArtifact(
     const ArtifactDownloadRequest& download) {
-  const std::string partial = download.destination_path + ".part";
+  const std::filesystem::path destination =
+      std::filesystem::u8path(download.destination_path);
+  std::filesystem::path partial = destination;
+  partial += L".part";
   try {
     if (Scheme(download.url) == "file") {
       const std::vector<std::uint8_t> bytes = ReadBoundedFile(
-          FilePathFromURL(download.url), download.expected_length);
+          std::filesystem::u8path(FilePathFromURL(download.url)),
+          download.expected_length);
       std::ofstream output(partial, std::ios::binary | std::ios::trunc);
       output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     } else {
       std::string url = download.url;
+      bool completed = false;
       for (int redirects = 0; redirects <= options_.maximum_redirects;
            ++redirects) {
         bool redirected = false;
@@ -365,7 +483,7 @@ void WinHttpUpdateTransport::DownloadArtifact(
           try {
             const std::int64_t resume = FileSize(partial);
             if (resume > download.expected_length) {
-              std::remove(partial.c_str());
+              std::filesystem::remove(partial);
               continue;
             }
             std::ofstream output(
@@ -377,13 +495,12 @@ void WinHttpUpdateTransport::DownloadArtifact(
                 download.expected_length - resume, download.progress);
             output.close();
             if (RedirectStatus(response.status)) {
-              ValidateRedirect(url, response.location);
-              url = response.location;
+              url = ResolveRedirectURL(url, response.location);
               redirected = true;
               break;
             }
             if (resume > 0 && response.status == 200) {
-              std::remove(partial.c_str());
+              std::filesystem::remove(partial);
               --attempt;
               continue;
             }
@@ -397,7 +514,7 @@ void WinHttpUpdateTransport::DownloadArtifact(
             }
             if (response.status >= 200 && response.status < 300) {
               redirected = false;
-              redirects = options_.maximum_redirects + 1;
+              completed = true;
               break;
             }
             if (!RetryableStatus(response.status)) {
@@ -410,6 +527,9 @@ void WinHttpUpdateTransport::DownloadArtifact(
         }
         if (!redirected) break;
       }
+      if (!completed) {
+        throw std::runtime_error("Update redirect limit exceeded.");
+      }
     }
     if (FileSize(partial) != download.expected_length) {
       throw std::runtime_error("Artifact length verification failed.");
@@ -417,12 +537,16 @@ void WinHttpUpdateTransport::DownloadArtifact(
     if (HashFile(partial) != Lower(download.expected_sha256)) {
       throw std::runtime_error("Artifact SHA-256 verification failed.");
     }
-    std::remove(download.destination_path.c_str());
-    if (std::rename(partial.c_str(), download.destination_path.c_str()) != 0) {
+    std::error_code error;
+    std::filesystem::remove(destination, error);
+    error.clear();
+    std::filesystem::rename(partial, destination, error);
+    if (error) {
       throw std::runtime_error("Unable to finalize artifact download.");
     }
   } catch (...) {
-    std::remove(partial.c_str());
+    std::error_code ignored;
+    std::filesystem::remove(partial, ignored);
     throw;
   }
 }

@@ -6,13 +6,15 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <memory>
 #include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #if defined(_WIN32)
-#include <direct.h>
 #include <windows.h>
 #else
 #include <dirent.h>
@@ -28,75 +30,88 @@ namespace runtime {
 namespace internal {
 namespace {
 
-void MakeDirectory(const std::string& path) {
-  if (path.empty()) return;
-#if defined(_WIN32)
-  const int result = _mkdir(path.c_str());
-#else
-  const int result = mkdir(path.c_str(), 0755);
-#endif
-  if (result != 0 && errno != EEXIST) {
+void MakeParents(const std::filesystem::path& path, bool include_last) {
+  const std::filesystem::path directory =
+      include_last ? path : path.parent_path();
+  if (directory.empty()) return;
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
+  if (error || !std::filesystem::is_directory(directory)) {
     throw std::runtime_error("Unable to create staging directory.");
   }
 }
 
-void MakeParents(const std::string& path, bool include_last) {
-  std::size_t start = 0;
-  while (true) {
-    const std::size_t separator = path.find('/', start);
-    if (separator == std::string::npos) break;
-    if (separator > 0) MakeDirectory(path.substr(0, separator));
-    start = separator + 1;
-  }
-  if (include_last) MakeDirectory(path);
-}
-
-void RemoveTree(const std::string& path) {
+void RemoveTree(const std::filesystem::path& path) {
 #if defined(_WIN32)
-  const DWORD attributes = GetFileAttributesA(path.c_str());
+  const DWORD attributes = GetFileAttributesW(path.c_str());
   if (attributes == INVALID_FILE_ATTRIBUTES) return;
   if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
       (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-    if (!DeleteFileA(path.c_str())) {
+    const bool removed = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+                             ? RemoveDirectoryW(path.c_str()) != 0
+                             : DeleteFileW(path.c_str()) != 0;
+    if (!removed) {
       throw std::runtime_error("Unable to clean partial staging entry.");
     }
     return;
   }
-  WIN32_FIND_DATAA entry{};
-  const std::string pattern = path + "/*";
-  HANDLE search = FindFirstFileA(pattern.c_str(), &entry);
+  WIN32_FIND_DATAW entry{};
+  const std::filesystem::path pattern = path / L"*";
+  HANDLE search = FindFirstFileW(pattern.c_str(), &entry);
   if (search != INVALID_HANDLE_VALUE) {
     do {
-      const std::string name = entry.cFileName;
-      if (name != "." && name != "..") RemoveTree(path + "/" + name);
-    } while (FindNextFileA(search, &entry));
+      const std::wstring name = entry.cFileName;
+      if (name != L"." && name != L"..") RemoveTree(path / name);
+    } while (FindNextFileW(search, &entry));
     FindClose(search);
   }
-  if (!RemoveDirectoryA(path.c_str())) {
+  if (!RemoveDirectoryW(path.c_str())) {
     throw std::runtime_error("Unable to clean partial staging directory.");
   }
 #else
   struct stat status {};
-  if (lstat(path.c_str(), &status) != 0) return;
+  const std::string native = path.string();
+  if (lstat(native.c_str(), &status) != 0) return;
   if (!S_ISDIR(status.st_mode) || S_ISLNK(status.st_mode)) {
-    if (unlink(path.c_str()) != 0) {
+    if (unlink(native.c_str()) != 0) {
       throw std::runtime_error("Unable to clean partial staging entry.");
     }
     return;
   }
-  DIR* directory = opendir(path.c_str());
+  DIR* directory = opendir(native.c_str());
   if (directory == nullptr) {
     throw std::runtime_error("Unable to inspect partial staging directory.");
   }
   while (dirent* entry = readdir(directory)) {
     const std::string name = entry->d_name;
-    if (name != "." && name != "..") RemoveTree(path + "/" + name);
+    if (name != "." && name != "..") RemoveTree(path / name);
   }
   closedir(directory);
-  if (rmdir(path.c_str()) != 0) {
+  if (rmdir(native.c_str()) != 0) {
     throw std::runtime_error("Unable to clean partial staging directory.");
   }
 #endif
+}
+
+struct ExtractionSink {
+  std::ofstream* output;
+  mz_uint64 next_offset = 0;
+};
+
+size_t WriteExtractedBytes(void* opaque,
+                           mz_uint64 offset,
+                           const void* bytes,
+                           size_t length) {
+  auto* sink = static_cast<ExtractionSink*>(opaque);
+  if (sink == nullptr || sink->output == nullptr ||
+      offset != sink->next_offset) {
+    return 0;
+  }
+  sink->output->write(static_cast<const char*>(bytes),
+                      static_cast<std::streamsize>(length));
+  if (!*sink->output) return 0;
+  sink->next_offset += static_cast<mz_uint64>(length);
+  return length;
 }
 
 bool IsDrivePrefixed(const std::string& path) {
@@ -186,11 +201,22 @@ std::string NormalizeSafeArchivePath(const std::string& input) {
 }
 
 void RemoveStagingDirectory(const std::string& path) {
+  RemoveStagingDirectory(std::filesystem::u8path(path));
+}
+
+void RemoveStagingDirectory(const std::filesystem::path& path) {
   RemoveTree(path);
 }
 
 void StageZipArchive(const std::string& archive_path,
                      const std::string& destination_path,
+                     const ArchiveLimits& limits) {
+  StageZipArchive(std::filesystem::u8path(archive_path),
+                  std::filesystem::u8path(destination_path), limits);
+}
+
+void StageZipArchive(const std::filesystem::path& archive_path,
+                     const std::filesystem::path& destination_path,
                      const ArchiveLimits& limits) {
   if (limits.maximum_archive_entries <= 0 ||
       limits.maximum_uncompressed_bytes <= 0 ||
@@ -198,7 +224,16 @@ void StageZipArchive(const std::string& archive_path,
     throw std::invalid_argument("Archive limits must be positive.");
   }
   mz_zip_archive archive{};
-  if (!mz_zip_reader_init_file(&archive, archive_path.c_str(), 0)) {
+#if defined(_WIN32)
+  std::unique_ptr<FILE, decltype(&std::fclose)> archive_file(
+      _wfopen(archive_path.c_str(), L"rb"), &std::fclose);
+  const bool initialized = archive_file &&
+      mz_zip_reader_init_cfile(&archive, archive_file.get(), 0, 0);
+#else
+  const bool initialized =
+      mz_zip_reader_init_file(&archive, archive_path.c_str(), 0) != 0;
+#endif
+  if (!initialized) {
     throw std::runtime_error("Unable to open ZIP archive.");
   }
   try {
@@ -248,16 +283,23 @@ void StageZipArchive(const std::string& archive_path,
 
     MakeParents(destination_path, true);
     for (const Entry& entry : staged) {
-      const std::string output = destination_path + "/" + entry.path;
+      const std::filesystem::path output =
+          destination_path / std::filesystem::u8path(entry.path);
       MakeParents(output, entry.directory);
-      if (!entry.directory &&
-          !mz_zip_reader_extract_to_file(
-              &archive, entry.index, output.c_str(), 0)) {
-        throw std::runtime_error("ZIP extraction failed.");
+      if (!entry.directory) {
+        std::ofstream extracted(output, std::ios::binary | std::ios::trunc);
+        ExtractionSink sink{&extracted};
+        if (!extracted || !mz_zip_reader_extract_to_callback(
+                              &archive, entry.index, WriteExtractedBytes,
+                              &sink, 0)) {
+          throw std::runtime_error("ZIP extraction failed.");
+        }
+        extracted.close();
+        if (!extracted) throw std::runtime_error("ZIP extraction failed.");
       }
 #if !defined(_WIN32)
       if (!entry.directory && (entry.mode & 0777) != 0) {
-        chmod(output.c_str(), entry.mode & 0777);
+        chmod(output.string().c_str(), entry.mode & 0777);
       }
 #endif
     }

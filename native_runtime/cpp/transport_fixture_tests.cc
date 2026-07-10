@@ -1,6 +1,6 @@
 #include "transport_fixture_tests.h"
 
-#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -27,7 +27,7 @@ std::string Hex(const std::vector<std::uint8_t>& bytes) {
   return output.str();
 }
 
-std::string ReadFile(const std::string& path) {
+std::string ReadFile(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   return std::string(std::istreambuf_iterator<char>(input),
                      std::istreambuf_iterator<char>());
@@ -57,11 +57,13 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   Expect(oversized, "Oversized metadata was accepted.");
 
   const std::string artifact = "native transport artifact\n";
-  const std::string destination =
-      temporary_directory + "/desktop-updater-transport-artifact.bin";
-  const std::string partial = destination + ".part";
-  std::remove(destination.c_str());
-  std::remove(partial.c_str());
+  const std::filesystem::path destination =
+      std::filesystem::u8path(temporary_directory) /
+      "desktop-updater-transport-artifact.bin";
+  std::filesystem::path partial = destination;
+  partial += ".part";
+  std::filesystem::remove(destination);
+  std::filesystem::remove(partial);
   {
     std::ofstream output(partial, std::ios::binary);
     output.write(artifact.data(), 7);
@@ -69,7 +71,7 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   std::int64_t final_progress = 0;
   ArtifactDownloadRequest request;
   request.url = base_url + "/artifact";
-  request.destination_path = destination;
+  request.destination_path = destination.u8string();
   request.expected_length = static_cast<std::int64_t>(artifact.size());
   request.expected_sha256 = Hex(sha256(artifact));
   request.progress = [&final_progress](std::int64_t received, std::int64_t) {
@@ -81,7 +83,7 @@ void RunTransportFixtureTests(UpdateTransport* transport,
          "Artifact progress total differs.");
   Expect(ReadFile(partial).empty(), ".part file remains after success.");
 
-  request.destination_path = destination + ".bad";
+  request.destination_path = destination.u8string() + ".bad";
   request.expected_sha256 = std::string(64, '0');
   bool integrity_failed = false;
   try {
@@ -92,8 +94,8 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   Expect(integrity_failed, "Bad artifact SHA-256 was accepted.");
   Expect(ReadFile(request.destination_path + ".part").empty(),
          ".part file remains after terminal failure.");
-  std::remove(destination.c_str());
-  std::remove(request.destination_path.c_str());
+  std::filesystem::remove(destination);
+  std::filesystem::remove(std::filesystem::u8path(request.destination_path));
 }
 
 }  // namespace internal

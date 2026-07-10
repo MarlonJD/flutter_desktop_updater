@@ -35,6 +35,40 @@ Future<void> main(List<String> arguments) async {
           HttpHeaders.locationHeader,
           "http://${server.address.address}:${server.port}/metadata",
         );
+      case "/redirect/root":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(HttpHeaders.locationHeader, "/metadata");
+      case "/redirect/parent/child":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "../metadata",
+        );
+      case "/redirect/metadata":
+        if (request.headers.value(HttpHeaders.authorizationHeader) !=
+            "Bearer fixture") {
+          request.response.statusCode = HttpStatus.unauthorized;
+        } else {
+          request.response.write("metadata");
+        }
+      case "/redirect/scheme-relative":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "//${server.address.address}:${server.port}/metadata",
+        );
+      case "/redirect/downgrade":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "http://${server.address.address}:${server.port}/metadata",
+        );
+      case "/redirect/loop":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "/redirect/loop",
+        );
       case "/retry":
         retryCount += 1;
         if (retryCount < 3) {
