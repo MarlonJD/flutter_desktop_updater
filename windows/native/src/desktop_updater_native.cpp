@@ -5,6 +5,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <climits>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -12,11 +13,15 @@
 #include <string>
 #include <vector>
 
+#include "json_value.h"
+
 namespace fs = std::filesystem;
 
 namespace desktop_updater {
 namespace native {
 namespace {
+
+constexpr std::size_t kMaximumInstalledIdentityMarkerBytes = 64 * 1024;
 
 enum class PowerShellLaunchMode {
   kNormal,
@@ -387,6 +392,13 @@ std::wstring NormalizedDirectoryPath(const fs::path& path) {
   return value;
 }
 
+bool PathEquals(const fs::path& first, const fs::path& second) {
+  const std::wstring first_value = NormalizedDirectoryPath(first);
+  const std::wstring second_value = NormalizedDirectoryPath(second);
+  return !first_value.empty() && !second_value.empty() &&
+         _wcsicmp(first_value.c_str(), second_value.c_str()) == 0;
+}
+
 bool IsSameOrChildPath(const fs::path& root, const fs::path& candidate) {
   const std::wstring root_value = NormalizedDirectoryPath(root);
   const std::wstring candidate_value = NormalizedDirectoryPath(candidate);
@@ -420,6 +432,87 @@ std::vector<std::wstring> ProtectedInstallRootPaths() {
     }
   }
   return roots;
+}
+
+void AddEnvironmentRoot(const wchar_t* name,
+                        std::vector<std::wstring>* roots) {
+  const std::wstring value = EnvironmentVariableValue(name);
+  if (!value.empty()) {
+    roots->push_back(value);
+  }
+}
+
+std::wstring WindowsDirectoryPath() {
+  std::vector<wchar_t> buffer(32768);
+  const UINT length =
+      GetWindowsDirectoryW(buffer.data(), static_cast<UINT>(buffer.size()));
+  return length == 0 || length >= buffer.size()
+             ? std::wstring()
+             : std::wstring(buffer.data(), length);
+}
+
+std::wstring SystemDirectoryPath() {
+  std::vector<wchar_t> buffer(32768);
+  const UINT length =
+      GetSystemDirectoryW(buffer.data(), static_cast<UINT>(buffer.size()));
+  return length == 0 || length >= buffer.size()
+             ? std::wstring()
+             : std::wstring(buffer.data(), length);
+}
+
+std::wstring TemporaryDirectoryPath() {
+  std::vector<wchar_t> buffer(32768);
+  const DWORD length =
+      GetTempPathW(static_cast<DWORD>(buffer.size()), buffer.data());
+  return length == 0 || length >= buffer.size()
+             ? std::wstring()
+             : std::wstring(buffer.data(), length);
+}
+
+struct UnsafeInstallRootPolicy {
+  std::vector<std::wstring> exact_roots;
+  std::vector<std::wstring> tree_roots;
+};
+
+UnsafeInstallRootPolicy UnsafeInstallRootPaths() {
+  UnsafeInstallRootPolicy policy;
+  for (const std::wstring& program_files : ProtectedInstallRootPaths()) {
+    policy.exact_roots.push_back(program_files);
+  }
+  AddEnvironmentRoot(L"ProgramData", &policy.tree_roots);
+  AddEnvironmentRoot(L"ALLUSERSPROFILE", &policy.tree_roots);
+  AddEnvironmentRoot(L"PUBLIC", &policy.tree_roots);
+
+  const std::wstring user_profile = EnvironmentVariableValue(L"USERPROFILE");
+  if (!user_profile.empty()) {
+    policy.exact_roots.push_back(user_profile);
+    const fs::path users_root = fs::path(user_profile).parent_path();
+    if (!users_root.empty()) {
+      policy.exact_roots.push_back(users_root.wstring());
+    }
+    policy.exact_roots.push_back((fs::path(user_profile) / L"bin").wstring());
+    policy.exact_roots.push_back(
+        (fs::path(user_profile) / L".local" / L"bin").wstring());
+    policy.exact_roots.push_back(
+        (fs::path(user_profile) / L"Desktop").wstring());
+    policy.exact_roots.push_back(
+        (fs::path(user_profile) / L"Downloads").wstring());
+  }
+  const std::wstring windows = WindowsDirectoryPath();
+  if (!windows.empty()) {
+    policy.tree_roots.push_back(windows);
+  }
+  const std::wstring system = SystemDirectoryPath();
+  if (!system.empty()) {
+    policy.tree_roots.push_back(system);
+  }
+  const std::wstring temporary = TemporaryDirectoryPath();
+  if (!temporary.empty()) {
+    policy.tree_roots.push_back(temporary);
+  }
+  AddEnvironmentRoot(L"TEMP", &policy.tree_roots);
+  AddEnvironmentRoot(L"TMP", &policy.tree_roots);
+  return policy;
 }
 
 bool CanWriteDirectory(const fs::path& directory) {
@@ -502,31 +595,27 @@ bool HasMatchingUninstallRecord(const std::wstring& canonical_target,
   return false;
 }
 
-std::string JsonEscape(const std::wstring& value) {
-  const std::string utf8 = WideToUtf8(value);
-  std::string escaped;
-  for (const char byte : utf8) {
-    if (byte == '\\' || byte == '"') {
-      escaped.push_back('\\');
-    }
-    escaped.push_back(byte);
-  }
-  return escaped;
-}
-
 bool HasMatchingInstallIdentityMarker(
     const fs::path& canonical_target,
     const std::wstring& expected_package_id) {
   const fs::path marker =
       canonical_target / L".desktop_updater_install_identity.json";
+  const DWORD attributes = GetFileAttributesW(marker.wstring().c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES ||
+      (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return false;
+  }
+  std::error_code size_error;
+  const std::uintmax_t marker_size = fs::file_size(marker, size_error);
+  if (size_error || marker_size > kMaximumInstalledIdentityMarkerBytes) {
+    return false;
+  }
   std::ifstream input(marker, std::ios::binary);
   const std::string contents((std::istreambuf_iterator<char>(input)),
                              std::istreambuf_iterator<char>());
-  return input.good() || input.eof()
-      ? contents == "{\"packageId\":\"" +
-                        JsonEscape(expected_package_id) +
-                        "\",\"schemaVersion\":1}"
-      : false;
+  return (input.good() || input.eof()) &&
+         InstalledIdentityMarkerMatchesJson(contents, expected_package_id);
 }
 
 bool IsCanonicalRelativeExecutable(const fs::path& path) {
@@ -544,9 +633,37 @@ bool IsCanonicalRelativeExecutable(const fs::path& path) {
   return true;
 }
 
+bool PathContainsReparsePointImpl(const fs::path& staging_path) {
+  fs::path current = staging_path.root_path();
+  const DWORD root_attributes = GetFileAttributesW(current.c_str());
+  if (root_attributes != INVALID_FILE_ATTRIBUTES &&
+      (root_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return true;
+  }
+  for (const fs::path& component : staging_path.relative_path()) {
+    current /= component;
+    const DWORD attributes = GetFileAttributesW(current.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES &&
+        (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 InstallResult ValidateStagingRoot(const InstallRequest& request) {
   if (request.staging_path.empty()) {
     return {true, ""};
+  }
+  const fs::path staging_path(request.staging_path);
+  if (!staging_path.is_absolute() ||
+      _wcsicmp(staging_path.wstring().c_str(),
+               staging_path.lexically_normal().wstring().c_str()) != 0) {
+    return {false, "Staged update root must be absolute and canonical."};
+  }
+  if (PathContainsReparsePointImpl(staging_path)) {
+    return {false,
+            "Staged update path components must not be reparse points."};
   }
   const DWORD stage_attributes =
       GetFileAttributesW(request.staging_path.c_str());
@@ -581,12 +698,26 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
                request.install_root.c_str()) != 0) {
     return {false, "Windows install root must already be canonical."};
   }
+  const UnsafeInstallRootPolicy unsafe_roots = UnsafeInstallRootPaths();
+  if (IsUnsafeWindowsInstallRoot(canonical_root.wstring(),
+                                 unsafe_roots.exact_roots,
+                                 unsafe_roots.tree_roots)) {
+    return {false, "Windows install root is a protected shared/system root."};
+  }
   const fs::path canonical_executable =
       fs::canonical(canonical_root / relative, error);
   if (error ||
       _wcsicmp(canonical_executable.wstring().c_str(),
                running_executable.wstring().c_str()) != 0) {
     return {false, "Windows install target does not match the running app."};
+  }
+  const bool protected_target = IsKnownProtectedInstallDirectory(
+      canonical_root.wstring(), ProtectedInstallRootPaths());
+  if (!protected_target &&
+      !PathEquals(canonical_root, canonical_executable.parent_path())) {
+    return {false,
+            "Windows ZIP installed identity cannot authorize an ancestor of "
+            "the running executable; use its exact parent as install root."};
   }
   if (!request.staging_path.empty()) {
     const fs::path canonical_stage = fs::canonical(request.staging_path, error);
@@ -595,8 +726,6 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
       return {false, "Windows staging path must not overlap install target."};
     }
   }
-  const bool protected_target = IsKnownProtectedInstallDirectory(
-      canonical_root.wstring(), ProtectedInstallRootPaths());
   const bool identity_matches =
       protected_target
           ? HasMatchingUninstallRecord(canonical_root.wstring(),
@@ -1033,6 +1162,66 @@ bool RegistryRecordMatchesInstallTarget(
              NormalizedDirectoryPath(fs::path(canonical_target)).c_str()) ==
              0 &&
          package_id == expected_package_id;
+}
+
+bool IsUnsafeWindowsInstallRoot(
+    const std::wstring& canonical_root,
+    const std::vector<std::wstring>& exact_roots,
+    const std::vector<std::wstring>& tree_roots) {
+  const fs::path candidate(canonical_root);
+  if (canonical_root.empty() ||
+      PathEquals(candidate, candidate.root_path())) {
+    return true;
+  }
+  for (const std::wstring& root : exact_roots) {
+    if (!root.empty() && PathEquals(candidate, fs::path(root))) {
+      return true;
+    }
+  }
+  for (const std::wstring& root : tree_roots) {
+    if (!root.empty() && IsSameOrChildPath(fs::path(root), candidate)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool InstalledIdentityMarkerMatchesJson(
+    const std::string& contents,
+    const std::wstring& expected_package_id) {
+  if (contents.size() > kMaximumInstalledIdentityMarkerBytes ||
+      expected_package_id.empty()) {
+    return false;
+  }
+  try {
+    const runtime::internal::JsonValue identity =
+        runtime::internal::ParseJson(contents);
+    if (identity.type() != runtime::internal::JsonValue::Type::kObject ||
+        identity.object().size() != 2 ||
+        identity.at("schemaVersion").integer() != 1) {
+      return false;
+    }
+    const std::wstring& wide = expected_package_id;
+    if (wide.size() > static_cast<std::size_t>(INT_MAX)) {
+      return false;
+    }
+    const int utf8_size = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, wide.data(),
+        static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+    if (utf8_size <= 0) {
+      return false;
+    }
+    std::string expected_utf8(static_cast<std::size_t>(utf8_size), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8, WC_ERR_INVALID_CHARS, wide.data(),
+            static_cast<int>(wide.size()), &expected_utf8[0], utf8_size,
+            nullptr, nullptr) != utf8_size) {
+      return false;
+    }
+    return identity.at("packageId").string() == expected_utf8;
+  } catch (const std::exception&) {
+    return false;
+  }
 }
 
 bool IsKnownProtectedInstallDirectory(

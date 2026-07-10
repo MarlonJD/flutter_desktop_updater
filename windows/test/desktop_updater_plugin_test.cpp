@@ -100,6 +100,65 @@ TEST(DesktopUpdaterPlugin, ProgramFilesTargetRequiresMatchingInstalledIdentity) 
       L"C:\\Program Files\\Example", L"com.example.app"));
 }
 
+TEST(DesktopUpdaterPlugin, UnsafeInstallRootsUseComponentBoundaries) {
+  const std::vector<std::wstring> exact_roots = {
+      L"C:\\Program Files", L"C:\\Users", L"C:\\Users\\alex",
+      L"C:\\Users\\alex\\bin", L"C:\\Users\\alex\\.local\\bin",
+      L"C:\\Users\\alex\\Desktop", L"C:\\Users\\alex\\Downloads"};
+  const std::vector<std::wstring> tree_roots = {
+      L"C:\\ProgramData", L"C:\\Users\\Public", L"C:\\Windows",
+      L"C:\\Windows\\System32", L"C:\\Temp"};
+
+  EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\", exact_roots, tree_roots));
+  for (const std::wstring& root : exact_roots) {
+    EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+        root, exact_roots, tree_roots)) << root;
+  }
+  EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Windows\\SystemApps\\Example", exact_roots, tree_roots));
+  EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Temp\\Example", exact_roots, tree_roots));
+  EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\ProgramData\\Example", exact_roots, tree_roots));
+  EXPECT_TRUE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Users\\Public\\Example", exact_roots, tree_roots));
+
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Program Files\\Example", exact_roots, tree_roots));
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Users\\alex\\AppData\\Local\\Programs\\Example",
+      exact_roots, tree_roots));
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Windows Backup\\Example", exact_roots, tree_roots));
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Temp Backup\\Example", exact_roots, tree_roots));
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\ProgramData Backup\\Example", exact_roots, tree_roots));
+  EXPECT_FALSE(native::IsUnsafeWindowsInstallRoot(
+      L"C:\\Users\\Publicity\\Example", exact_roots, tree_roots));
+}
+
+TEST(DesktopUpdaterPlugin, InstalledIdentityJsonDecodesPublisherEscapes) {
+  std::wstring package_id = L"quote\" slash\\ controls\b\f\n\r\t";
+  package_id.push_back(static_cast<wchar_t>(0));
+  package_id.push_back(static_cast<wchar_t>(1));
+  package_id += L" unicode \u263a";
+  const std::string marker =
+      "{\"schemaVersion\":1,\"packageId\":"
+      "\"quote\\\" slash\\\\ controls\\b\\f\\n\\r\\t\\u0000\\u0001 "
+      "unicode \\u263a\"}";
+
+  EXPECT_TRUE(native::InstalledIdentityMarkerMatchesJson(marker, package_id));
+  EXPECT_FALSE(native::InstalledIdentityMarkerMatchesJson(
+      marker, L"com.example.other"));
+  EXPECT_FALSE(native::InstalledIdentityMarkerMatchesJson(
+      "{\"packageId\":\"com.example\",\"schemaVersion\":1,\"extra\":1}",
+      L"com.example"));
+  EXPECT_FALSE(native::InstalledIdentityMarkerMatchesJson(
+      std::string(70 * 1024, ' '), L"com.example"));
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

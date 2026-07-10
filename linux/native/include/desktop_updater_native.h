@@ -15,7 +15,7 @@ enum class LinuxInstallOperation {
 
 enum class InstallTargetProofSource {
   kRunningExecutableContext,
-  kSelfContainedFlutterBundle,
+  kLegacySelfContainedBundle,
   kInstalledIdentityMarker,
 };
 

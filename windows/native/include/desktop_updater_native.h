@@ -54,6 +54,15 @@ bool RegistryRecordMatchesInstallTarget(
     const std::wstring& canonical_target,
     const std::wstring& expected_package_id);
 
+bool IsUnsafeWindowsInstallRoot(
+    const std::wstring& canonical_root,
+    const std::vector<std::wstring>& exact_roots,
+    const std::vector<std::wstring>& tree_roots);
+
+bool InstalledIdentityMarkerMatchesJson(
+    const std::string& contents,
+    const std::wstring& expected_package_id);
+
 }  // namespace native
 }  // namespace desktop_updater
 

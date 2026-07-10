@@ -96,7 +96,7 @@ void main() {
 
     final registryProof = windows.substring(
       windows.indexOf("bool HasMatchingUninstallRecord("),
-      windows.indexOf("std::string JsonEscape("),
+      windows.indexOf("bool HasMatchingInstallIdentityMarker("),
     );
     expect(registryProof, contains("HKEY_LOCAL_MACHINE"));
     expect(registryProof, contains("KEY_WOW64_64KEY"));
@@ -115,6 +115,73 @@ void main() {
     expect(stageReparseCheck, lessThan(windowsScript));
 
     expect(windowsProof, lessThan(windowsScript));
+
+    final reparseWalkStart = windows.indexOf(
+      "bool PathContainsReparsePointImpl(",
+    );
+    final reparseWalkEnd =
+        windows.indexOf("InstallResult ValidateStagingRoot(");
+    expect(reparseWalkStart, isNonNegative);
+    expect(reparseWalkEnd, greaterThan(reparseWalkStart));
+    if (reparseWalkStart < 0 || reparseWalkEnd <= reparseWalkStart) {
+      return;
+    }
+    final reparseWalk = windows.substring(reparseWalkStart, reparseWalkEnd);
+    expect(reparseWalk, contains("const DWORD root_attributes"));
+    expect(reparseWalk, contains("staging_path.relative_path()"));
+    expect(reparseWalk, contains("for (const fs::path& component"));
+    expect(reparseWalk, contains("GetFileAttributesW(current.c_str())"));
+    expect(reparseWalk, contains("FILE_ATTRIBUTE_REPARSE_POINT"));
+    expect(
+      windows.indexOf("PathContainsReparsePointImpl(staging_path)"),
+      lessThan(windowsProof),
+    );
+
+    for (final category in <String>[
+      "GetWindowsDirectoryW",
+      "GetSystemDirectoryW",
+      'L"ProgramData"',
+      'L"ALLUSERSPROFILE"',
+      'L"PUBLIC"',
+      'L"USERPROFILE"',
+      'L"Desktop"',
+      'L"Downloads"',
+      'L".local"',
+      'L"bin"',
+      "GetTempPathW",
+    ]) {
+      expect(windows, contains(category), reason: category);
+    }
+    for (final sharedTree in <String>[
+      'AddEnvironmentRoot(L"ProgramData", &policy.tree_roots)',
+      'AddEnvironmentRoot(L"ALLUSERSPROFILE", &policy.tree_roots)',
+      'AddEnvironmentRoot(L"PUBLIC", &policy.tree_roots)',
+    ]) {
+      expect(windows, contains(sharedTree), reason: sharedTree);
+    }
+    expect(
+      windows,
+      contains("fs::path(user_profile).parent_path()"),
+    );
+    final unsafeRootCheck = windows.indexOf(
+      "IsUnsafeWindowsInstallRoot(canonical_root.wstring(),",
+    );
+    final markerProof = windows.indexOf(
+      "HasMatchingInstallIdentityMarker(canonical_root,",
+    );
+    expect(unsafeRootCheck, isNonNegative);
+    expect(unsafeRootCheck, lessThan(markerProof));
+    expect(
+      windows,
+      contains(
+        "PathEquals(canonical_root, canonical_executable.parent_path())",
+      ),
+    );
+
+    expect(windows, contains("ParseJson(contents)"));
+    expect(windows, contains("kMaximumInstalledIdentityMarkerBytes"));
+    expect(windows, contains("identity.object().size() != 2"));
+    expect(windows, isNot(contains("std::string JsonEscape(")));
   });
 
   test("macOS public install request cannot select another PID or bundle", () {

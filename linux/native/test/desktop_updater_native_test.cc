@@ -175,7 +175,7 @@ InstallRequest RequestFor(const fs::path& install_root,
   request.operation = LinuxInstallOperation::kInstall;
   request.staging_path = staging_root.string();
   request.install_root = install_root.string();
-  request.executable_relative_path = "bin/example";
+  request.executable_relative_path = "example";
   request.package_id = "com.example.app";
   request.provenance_nonce = "123e4567-e89b-42d3-a456-426614174000";
   for (const fs::directory_entry& entry :
@@ -273,9 +273,9 @@ TEST(LinuxNativeInstall, ExplicitContextRejectsTemporaryRootWithoutScript) {
   const fs::path install_root = temporary.path() / "Example";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   WriteFile(executable, "old", 0755);
-  WriteFile(staging_root / "bin/example", "new", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
   InstallRequest request = RequestFor(install_root, staging_root);
   std::string script;
 
@@ -295,7 +295,7 @@ TEST(LinuxNativeInstall, ExplicitContextRejectsBroadAncestorWithoutScript) {
   const fs::path executable = install_root / "Example/bin/example";
   WriteFile(executable, "old", 0755);
   WriteFile(staging_root / "Example/bin/example", "new", 0755);
-  InstallRequest request = RequestFor(install_root, staging_root, false);
+  InstallRequest request = RequestFor(install_root, staging_root);
   request.executable_relative_path = "Example/bin/example";
   std::string script;
 
@@ -371,9 +371,9 @@ TEST(LinuxNativeInstall, GeneratedScriptBoundsDestructiveCommands) {
   const fs::path install_root = temporary.path() / "app";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   WriteFile(executable, "old", 0755);
-  WriteFile(staging_root / "bin/example", "new", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
   InstallRequest request = RequestFor(install_root, staging_root);
   std::string script;
 
@@ -394,16 +394,16 @@ TEST(LinuxNativeInstall, DerivesHelperInventoryAndNonceFromMarker) {
   const fs::path install_root = temporary.path() / "app";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   WriteFile(executable, "old", 0755);
-  WriteFile(staging_root / "bin/example", "new", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
   InstallRequest request = RequestFor(install_root, staging_root);
   const std::string marker_file_sha256 =
       request.provenance_entries.back().sha256;
   const std::string caller_file_sha256(64, '0');
   request.provenance_nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   request.provenance_entries = {
-      {"bin/example", "file", 3, caller_file_sha256, ""}};
+      {"example", "file", 3, caller_file_sha256, ""}};
   std::string script;
 
   const InstallResult result = internal::BuildInstallScriptForTesting(
@@ -429,11 +429,11 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   const fs::path install_root = temporary.path() / "app";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   const fs::path outside = temporary.path() / "outside.txt";
   WriteFile(executable, "old executable", 0755);
   WriteFile(install_root / "old.txt", "old data");
-  WriteFile(staging_root / "bin/example", "new executable");
+  WriteFile(staging_root / "example", "new executable");
   WriteFile(staging_root / "new.txt", "new data");
   WriteFile(outside, "outside data");
   InstallRequest request = RequestFor(install_root, staging_root);
@@ -471,9 +471,9 @@ TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
   const fs::path install_root = temporary.path() / "app";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   WriteFile(executable, "old", 0755);
-  WriteFile(staging_root / "bin/example", "new", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
   InstallRequest request = RequestFor(install_root, staging_root);
   const fs::path diagnostics = temporary.path() / "success.jsonl";
   request.diagnostics_log_path = diagnostics.string();
@@ -502,7 +502,7 @@ TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
 TEST(LinuxNativeInstall, StagingCleanupCannotDeleteInstallRoot) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
-  const fs::path executable = install_root / "bin/example";
+  const fs::path executable = install_root / "example";
   WriteFile(executable, "old", 0755);
   InstallRequest request = RequestFor(install_root, install_root);
   std::string script;

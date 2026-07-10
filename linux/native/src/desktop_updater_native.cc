@@ -334,6 +334,12 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
     return {false,
             "Linux staged inventory does not contain the running executable."};
   }
+  if (!legacy_fallback &&
+      ParentDirectory(canonical_requested_executable) != canonical_root) {
+    return {false,
+            "Linux installed identity cannot authorize an ancestor of the "
+            "running executable; use its exact parent as install root."};
+  }
   if (legacy_fallback &&
       (!IsRealDirectory(JoinPath(request.install_root,
                                  "data/flutter_assets")) ||
@@ -355,7 +361,7 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
     *proof = {canonical_root, request.executable_relative_path,
               request.package_id,
               legacy_fallback
-                  ? InstallTargetProofSource::kSelfContainedFlutterBundle
+                  ? InstallTargetProofSource::kLegacySelfContainedBundle
                   : InstallTargetProofSource::kInstalledIdentityMarker};
   }
   return {true, ""};

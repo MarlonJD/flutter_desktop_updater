@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
@@ -128,8 +129,7 @@ void main() {
     }
   });
 
-  test("removes stale staging directories before creating a new Windows stage",
-      () async {
+  test("preserves an unmarked stale staging-prefix directory", () async {
     final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
     UpdateServer? server;
     try {
@@ -148,6 +148,58 @@ void main() {
         platform: "windows",
       );
 
+      final client = UpdateClient(
+        appArchiveUrl: server.uri.resolve("app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "1.0.0",
+          buildNumber: "100",
+        ),
+        platform: "windows",
+        stagingParent: tempDir,
+      );
+      final check = await client.checkForUpdate();
+
+      final staged = await client.downloadVerifyAndStage(
+        descriptor: check!.descriptor,
+      );
+
+      expect(staleStage.existsSync(), isTrue);
+      expect(Directory(staged.stagingPath).existsSync(), isTrue);
+    } finally {
+      await server?.close();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("removes a stale marker-bound stage before creating a Windows stage",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
+    UpdateServer? server;
+    try {
+      const nonce = "123e4567-e89b-42d3-a456-426614174000";
+      final staleStage = await createOwnedStagingDirectory(
+        parent: tempDir,
+        nonce: nonce,
+      );
+      await File(path.join(staleStage.path, "old.exe")).writeAsString("old");
+      await writeStagedUpdateProvenance(
+        stageRoot: staleStage,
+        nonce: nonce,
+        packageId: "com.example.app",
+        descriptorSha256: "a".padRight(64, "a"),
+        artifactSha256: "b".padRight(64, "b"),
+      );
+      await _setDirectoryLastModified(
+        staleStage,
+        DateTime.now().subtract(const Duration(days: 8)),
+      );
+
+      server = await UpdateServer.bind(tempDir);
+      await buildReleaseFixture(
+        root: tempDir,
+        baseUri: server.uri,
+        platform: "windows",
+      );
       final client = UpdateClient(
         appArchiveUrl: server.uri.resolve("app-archive.json"),
         currentVersion: DesktopVersionInfo.fromParts(

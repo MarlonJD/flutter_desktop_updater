@@ -10,12 +10,21 @@ void main() {
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
 
-    final symlinkCheck = source.indexOf(r'if [ -L "$STAGING" ]; then');
-    final directoryCheck = source.indexOf(r'if [ ! -d "$STAGING" ]; then');
+    final appValidation = source.indexOf(r'case "$STAGING" in');
+    final symlinkCheck = source.indexOf(
+      r'if [ -L "$STAGING" ]; then',
+      appValidation,
+    );
+    final directoryCheck = source.indexOf(
+      r'if [ ! -d "$STAGING" ]; then',
+      appValidation,
+    );
     final manifestCheck = source.indexOf(
-      r'MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"',
+      r'MANIFEST="$STAGE_ROOT/.desktop_updater_release_manifest.json"',
+      appValidation,
     );
 
+    expect(appValidation, isNonNegative);
     expect(symlinkCheck, isNonNegative);
     expect(directoryCheck, isNonNegative);
     expect(manifestCheck, isNonNegative);

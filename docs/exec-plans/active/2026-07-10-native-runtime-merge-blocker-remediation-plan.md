@@ -971,9 +971,48 @@ Task 5 post-commit review remediation evidence on 2026-07-10:
 - Wider observation: optional full Flutter widening reached 572 passes, 3
   skips, and 3 failures from pre-existing `4993cda` contract mismatches (an
   unmarked stale-stage cleanup expectation, the existing
-  `kSelfContainedFlutterBundle` header name, and macOS helper source ordering).
+  Flutter-specific legacy proof enum name, and macOS helper source ordering).
   No unrelated compatibility behavior was changed to hide them. Target-host,
   CI, credential, signing, notarization, and release lanes remain not run.
+
+Task 5 final re-review closure evidence on 2026-07-10:
+
+- RED: focused source contracts rejected the Flutter-specific public Linux
+  proof enum, missing Windows ancestor-component reparse walking, missing
+  unsafe-root classification, and the unbounded literal Windows identity
+  comparison. Portable Linux execution also proved that a matching plaintext
+  marker could authorize an arbitrary writable ancestor. Follow-up RED then
+  required Windows ProgramData, ALLUSERSPROFILE, and Public to be rejected as
+  trees, the users container and user `.local/bin` to be exact rejects, and the
+  staging root/share itself to participate in the reparse walk.
+- Resolution: the Linux proof enum is now `kLegacySelfContainedBundle`.
+  Explicit Linux installs and non-Program-Files Windows ZIP installs require
+  the install root to be the exact parent of the running executable; nested
+  Program Files apps remain supported only through matching HKLM 64/32-bit
+  uninstall proof. Windows rejects drive roots, Windows/system/temp trees,
+  ProgramData/shared profile trees, exact user/profile/bin/.local/bin/Desktop/
+  Downloads roots, and component-safe shared-root matches before marker proof.
+  The staging walk checks the path root/share and every relative component for
+  reparse points before proof or helper creation. Installed identity parsing is
+  bounded to 64 KiB and uses the shared strict JSON parser, including escaped
+  control characters, Unicode, schema/type, duplicate-key, and exact-key
+  validation.
+- The stale cleanup tests now distinguish unmarked prefix directories, which
+  are preserved, from valid marker-bound owned stages, which are deleted. The
+  macOS source-order assertion uses the current stage-root manifest path, and
+  the Linux header contract asserts the platform-neutral enum.
+- GREEN: the exact Task 5 Flutter command passed 70 tests; publisher tests
+  passed 7; supplemental native contracts passed 38; the focused stale/source
+  bundle passed 38; portable Linux behavior passed 12; portable Windows C ABI
+  passed 10; and the Windows runtime C++14 header consumer compiled with
+  `-Werror`. The macOS package passed 51 Swift tests and the exact five-file
+  macOS 10.14 CocoaPods source set typechecked. The full Flutter suite passed
+  576 tests with 3 explicit environment-gated skips and 0 failures. Formatting
+  checked 213 files unchanged at final handoff; analysis exited 0 with existing
+  info-only diagnostics.
+- Windows target-host CMake/CTest, registry/junction/UAC/PowerShell/ZIP/Inno
+  execution, Linux target-host CMake/CTest, CI, credentials, signing,
+  notarization, and release smoke remain literally not run on this macOS host.
 
 ---
 

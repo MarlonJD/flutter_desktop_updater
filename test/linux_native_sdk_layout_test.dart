@@ -21,6 +21,7 @@ void main() {
     expect(header, contains("std::string diagnostics_log_path"));
     expect(header, contains("ValidateInstallRequest"));
     expect(header, contains("ScheduleInstallAndRelaunch"));
+    expect(header, contains("kLegacySelfContainedBundle"));
     expect(header, isNot(contains("Flutter")));
     expect(header, isNot(contains("Gtk")));
     expect(version, contains("DESKTOP_UPDATER_NATIVE_API_VERSION 1u"));

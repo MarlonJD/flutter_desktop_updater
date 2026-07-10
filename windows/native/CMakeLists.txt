@@ -7,9 +7,12 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
 
+set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
 )
 
 add_library(desktop_updater_native_objects OBJECT ${NATIVE_SOURCES})
@@ -19,6 +22,7 @@ target_include_directories(desktop_updater_native_objects
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
 )
 set_target_properties(desktop_updater_native_objects PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
@@ -50,8 +54,6 @@ set_target_properties(desktop_updater_native PROPERTIES
 
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
-  set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
   set(DESKTOP_UPDATER_MINIZ_DIR
@@ -64,7 +66,6 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     src/runtime/sha256_bcrypt.cpp
     src/runtime/update_transport_winhttp.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics.cc
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
