@@ -120,6 +120,18 @@ void main() {
     expect(workflow, contains("dotnet pack"));
     expect(
       workflow,
+      contains(
+        r'$packageSource = (Resolve-Path windows/native/artifacts).Path',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'--source "$packageSource" --source "https://api.nuget.org/v3/index.json"',
+      ),
+    );
+    expect(
+      workflow,
       contains("dotnet run --project example/native/windows-dotnet"),
     );
     expect(
