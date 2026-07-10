@@ -45,11 +45,14 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             let allowUnsignedMacOSUpdates =
                 arguments["allowUnsignedMacOSUpdates"] as? Bool ?? false
             let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
+            let stageProvenanceSHA256 =
+                arguments["stageProvenanceSha256"] as? String
             scheduleInstallAndRelaunch(
                 stagingPath: stagingPath,
                 removedFiles: removedFiles,
                 allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
+                stageProvenanceSHA256: stageProvenanceSHA256,
                 result: result
             )
         case "getExecutablePath":
@@ -80,15 +83,61 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         removedFiles _: [String],
         allowUnsignedMacOSUpdates: Bool = false,
         diagnosticsLogPath: String? = nil,
+        stageProvenanceSHA256: String? = nil,
         result: @escaping FlutterResult
     ) {
         do {
+            var stageRoot: URL?
+            var provenance: StageProvenanceState?
+            var artifactKind: String?
+            var expectedPackageIDs: [String] = []
+            if let stagingPath {
+                guard let expectedProvenanceSHA256 = stageProvenanceSHA256,
+                      !expectedProvenanceSHA256.isEmpty
+                else {
+                    throw NSError(
+                        domain: "desktop_updater.stage_provenance",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            "Verified stage provenance SHA-256 is required."]
+                    )
+                }
+                let stagedURL = URL(fileURLWithPath: stagingPath)
+                let root = stagedURL.pathExtension.lowercased() == "app"
+                    ? stagedURL.deletingLastPathComponent()
+                    : stagedURL
+                let state = try StageProvenance.read(stageRoot: root)
+                _ = try StageProvenance.verify(
+                    stageRoot: root,
+                    expectedMarkerSHA256: expectedProvenanceSHA256
+                )
+                let manifestURL = root.appendingPathComponent(
+                    ".desktop_updater_release_manifest.json"
+                )
+                let manifest = try JSONSerialization.jsonObject(
+                    with: Data(contentsOf: manifestURL)
+                ) as? [String: Any]
+                artifactKind = (manifest?["artifact"] as? [String: Any])?["kind"]
+                    as? String
+                expectedPackageIDs = ((manifest?["install"]
+                    as? [String: Any])?["macosPkg"] as? [String: Any])?[
+                        "expectedPackageIds"
+                    ] as? [String] ?? []
+                stageRoot = root
+                provenance = state
+            }
             let request = MacInstallRequest(
                 stagingPath: stagingPath,
                 allowUnsignedUpdates: allowUnsignedMacOSUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
                 currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
-                bundlePath: Bundle.main.bundlePath
+                bundlePath: Bundle.main.bundlePath,
+                stageRoot: stageRoot?.path,
+                expectedProvenanceSHA256: stageProvenanceSHA256,
+                artifactKind: artifactKind,
+                expectedArtifactSHA256: provenance?.marker.artifactSha256,
+                expectedPackageIDs: expectedPackageIDs,
+                provenanceEntries: provenance?.marker.entries ?? []
             )
             try MacInstallHelper().scheduleInstallAndRelaunch(request)
 

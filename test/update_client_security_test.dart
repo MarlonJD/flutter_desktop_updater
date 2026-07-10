@@ -3,6 +3,7 @@ import "dart:io";
 
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/release_manifest.dart"
@@ -316,6 +317,13 @@ void main() {
     );
     expect(
         File(path.join(staged.stagingPath, "setup.exe")).existsSync(), isFalse);
+    expect(staged.stageProvenanceSha256, matches(RegExp(r"^[0-9a-f]{64}$")));
+    final provenance = await verifyStagedUpdateProvenance(
+      stageRoot: Directory(staged.stagingPath),
+      expectedMarkerSha256: staged.stageProvenanceSha256,
+    );
+    expect(provenance.packageId, descriptor.packageId);
+    expect(provenance.artifactSha256, descriptor.artifact.sha256);
   });
 
   test("stages macOS DMG artifacts as verified app bundles", () async {

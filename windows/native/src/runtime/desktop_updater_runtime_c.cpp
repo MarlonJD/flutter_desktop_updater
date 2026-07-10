@@ -16,6 +16,7 @@
 #include "client_lifecycle.h"
 #include "diagnostics.h"
 #include "sha256_bcrypt.h"
+#include "stage_provenance.h"
 #include "update_client_core.h"
 #include "update_transport_winhttp.h"
 
@@ -76,6 +77,25 @@ std::string RequiredString(const char* value, const char* name) {
   }
   return value;
 }
+
+class OwnedDownloadStageGuard {
+ public:
+  explicit OwnedDownloadStageGuard(std::string path)
+      : path_(std::move(path)) {}
+
+  ~OwnedDownloadStageGuard() {
+    try {
+      desktop_updater::runtime::internal::RemoveStagingDirectory(path_);
+    } catch (...) {
+      // The exclusive download child is best-effort temporary storage.
+    }
+  }
+
+  const std::string& path() const { return path_; }
+
+ private:
+  std::string path_;
+};
 
 desktop_updater_runtime_result_v1 EmptyResult() {
   desktop_updater_runtime_result_v1 result{};
@@ -457,8 +477,14 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
         request->staging_directory_utf8, "staging_directory");
     std::filesystem::create_directories(
         std::filesystem::u8path(download_directory));
+    std::filesystem::create_directories(
+        std::filesystem::u8path(staging_directory));
+    const desktop_updater::runtime::internal::OwnedStage owned_download =
+        desktop_updater::runtime::internal::CreateOwnedStage(
+            download_directory);
+    const OwnedDownloadStageGuard download_stage(owned_download.path);
     const std::string artifact_path =
-        download_directory + "/" +
+        download_stage.path() + "/" +
         ArtifactFileName(check.descriptor.artifact.url);
     desktop_updater::runtime::internal::ArtifactDownloadRequest download;
     download.url = check.descriptor.artifact.url;
@@ -480,19 +506,21 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
     limits.maximum_archive_entries = client->maximum_archive_entries;
     limits.maximum_uncompressed_bytes = client->maximum_uncompressed_bytes;
     limits.maximum_single_entry_bytes = client->maximum_single_entry_bytes;
+    desktop_updater::runtime::internal::WindowsStagedArtifact staged;
     if (check.descriptor.artifact.kind == "zip") {
-      desktop_updater::runtime::internal::StageWindowsZip(
+      staged = desktop_updater::runtime::internal::StageWindowsZip(
           artifact_path, staging_directory, check.descriptor,
           client->expected_package_id, limits);
     } else if (check.descriptor.artifact.kind == "innoInstaller") {
-      desktop_updater::runtime::internal::StageWindowsInnoInstaller(
+      staged = desktop_updater::runtime::internal::StageWindowsInnoInstaller(
           Utf8ToWide(artifact_path), staging_directory, check.descriptor,
           client->expected_package_id);
     } else {
       return ClientResult(*client, "unsupportedArtifactKind",
                           "Artifact kind is not supported on Windows.");
     }
-    if (!client->lifecycle.PublishStage(lease, staging_directory)) {
+    if (!client->lifecycle.PublishStage(
+            lease, staged.stage_path, staged.provenance.marker_sha256)) {
       return ClientResult(*client, "invalidDescriptor",
                           "A newer staging attempt invalidated this update.");
     }
@@ -546,7 +574,17 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
         request->diagnostics_log_path_utf8 == nullptr
             ? std::wstring()
             : Utf8ToWide(request->diagnostics_log_path_utf8);
-    const auto install_handoff = client->lifecycle.BeginInstall();
+    const auto snapshot = client->lifecycle.Snapshot();
+    if (snapshot.staged_path.empty() ||
+        snapshot.stage_provenance_sha256.empty() ||
+        !snapshot.check.has_descriptor) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "No provenance-bound staged update is ready.");
+    }
+    desktop_updater::runtime::internal::VerifyStageProvenance(
+        snapshot.staged_path, snapshot.stage_provenance_sha256,
+        desktop_updater::runtime::internal::BCryptSha256);
+    const auto install_handoff = client->lifecycle.BeginInstall(snapshot);
     if (install_handoff.status != desktop_updater::runtime::internal::
                                       ClientLifecycleStatus::kAllowed) {
       return ClientResult(*client, "installHandoffFailure",
@@ -560,7 +598,8 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
     const auto scheduler_result =
         desktop_updater::runtime::internal::HandoffWindowsInstall(
             Utf8ToWide(install_handoff.staged_path), diagnostics,
-            removed_files);
+            removed_files, install_handoff.stage_provenance_sha256,
+            snapshot.check.descriptor);
     if (!scheduler_result.ok) {
       return ClientResult(*client, "installHandoffFailure",
                           scheduler_result.error_message);

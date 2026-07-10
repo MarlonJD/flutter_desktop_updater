@@ -373,6 +373,76 @@ void main() {
     expect(source, contains("inno authenticode failure"));
   });
 
+  test("helpers verify immutable stage provenance before target mutation", () {
+    final macosSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
+    final linuxSource = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
+    final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+
+    for (final source in <String>[macosSource, linuxSource, windowsSource]) {
+      expect(source, contains("expected_provenance_sha256"));
+      expect(source, contains("stage provenance validation failure"));
+      final verification = source.indexOf("stage provenance validation");
+      final backup = source.indexOf("backup start");
+      expect(verification, isNonNegative);
+      expect(backup, isNonNegative);
+      expect(verification, lessThan(backup));
+    }
+  });
+
+  test("installer helpers reverify platform trust at installer open", () {
+    final macosSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
+    final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+
+    final macProvenance = macosSource.indexOf("stage provenance validation");
+    final pkgutil = macosSource.indexOf("pkgutil --check-signature");
+    final spctl = macosSource.indexOf("spctl --assess --type install");
+    final stapler = macosSource.indexOf("stapler validate \"\$PKG\"");
+    final packageIds = macosSource.indexOf("EXPECTED_PACKAGE_IDS");
+    final open = macosSource.indexOf('/usr/bin/open "\$PKG"');
+    expect(macProvenance, lessThan(pkgutil));
+    expect(pkgutil, lessThan(open));
+    expect(spctl, lessThan(open));
+    expect(stapler, lessThan(open));
+    expect(packageIds, lessThan(open));
+
+    expect(windowsSource, contains(r"$expectedArtifactSha256 = "));
+    expect(windowsSource, contains(r"$allowedSignerThumbprints = @("));
+    expect(windowsSource, contains("Get-FileHash -Algorithm SHA256"));
+    final windowsProvenance = windowsSource.indexOf(
+      r'<< "  Test-StageProvenance\n"',
+    );
+    final authenticode = windowsSource.indexOf(
+      r'<< "  Test-AuthenticodePolicy -installer $installer\n"',
+    );
+    final installerStart = windowsSource.indexOf("inno installer start");
+    final innoInvocation = windowsSource.indexOf(
+      r'<< "        Invoke-InnoInstallerUpdate $descriptor\n"',
+    );
+    expect(windowsProvenance, lessThan(innoInvocation));
+    expect(authenticode, lessThan(installerStart));
+  });
+
+  test("macOS helper cleanup never recursively deletes a manifest parent", () {
+    final source = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
+
+    expect(
+      source,
+      isNot(contains(r'/bin/rm -rf "$(dirname "$MANIFEST")"')),
+    );
+    expect(source, isNot(contains('/bin/rm -rf "/Applications"')));
+    expect(source, contains(r'cleanup_owned_stage "$STAGE_ROOT"'));
+  });
+
   test("Windows helper requests UAC with verified script for protected targets",
       () {
     final source = File("windows/native/src/desktop_updater_native.cpp")

@@ -246,7 +246,6 @@ void StageZipArchive(const std::string& archive_path,
       staged.push_back(Entry{index, path, directory, mode});
     }
 
-    RemoveTree(destination_path);
     MakeParents(destination_path, true);
     for (const Entry& entry : staged) {
       const std::string output = destination_path + "/" + entry.path;

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "desktop_updater_native_c.h"
+#include "sha256_bcrypt.h"
 
 namespace desktop_updater {
 namespace runtime {
@@ -157,22 +158,33 @@ std::vector<std::string> AuthenticodeThumbprints(
 
 }  // namespace
 
-void StageWindowsZip(const std::string& archive_path,
-                     const std::string& destination_path,
-                     const ReleaseDescriptor& descriptor,
-                     const std::string& expected_package_id,
-                     const ArchiveLimits& limits) {
+WindowsStagedArtifact StageWindowsZip(
+    const std::string& archive_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id,
+    const ArchiveLimits& limits) {
   if (expected_package_id.empty() ||
       descriptor.package_id != expected_package_id ||
       descriptor.platform != "windows" || descriptor.artifact.kind != "zip") {
     throw std::invalid_argument("expected_package_id does not match release.");
   }
+  const OwnedStage stage = CreateOwnedStage(destination_parent);
   try {
-    StageZipArchive(archive_path, destination_path, limits);
-    WriteReleaseManifest(destination_path, descriptor, expected_package_id);
+    StageZipArchive(archive_path, stage.path, limits);
+    std::filesystem::copy_file(
+        std::filesystem::u8path(archive_path),
+        std::filesystem::u8path(stage.path) / L".desktop_updater_artifact.zip",
+        std::filesystem::copy_options::overwrite_existing);
+    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
+    const StageProvenanceState provenance = WriteStageProvenance(
+        stage, expected_package_id,
+        StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),
+        descriptor.artifact.sha256, BCryptSha256);
+    return {stage.path, provenance};
   } catch (...) {
     try {
-      RemoveStagingDirectory(destination_path);
+      RemoveStagingDirectory(stage.path);
     } catch (...) {
       // Preserve the staging failure that triggered cleanup.
     }
@@ -180,10 +192,11 @@ void StageWindowsZip(const std::string& archive_path,
   }
 }
 
-void StageWindowsInnoInstaller(const std::wstring& installer_path,
-                              const std::string& destination_path,
-                              const ReleaseDescriptor& descriptor,
-                              const std::string& expected_package_id) {
+WindowsStagedArtifact StageWindowsInnoInstaller(
+    const std::wstring& installer_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id) {
   if (expected_package_id.empty() ||
       descriptor.package_id != expected_package_id ||
       descriptor.platform != "windows" ||
@@ -192,21 +205,26 @@ void StageWindowsInnoInstaller(const std::wstring& installer_path,
   }
   const JsonValue& policy =
       descriptor.install.at("inno").at("authenticode");
+  const OwnedStage stage = CreateOwnedStage(destination_parent);
   try {
     if (policy.at("required").boolean()) {
       VerifyAuthenticode(installer_path, AuthenticodeThumbprints(descriptor));
     }
-    std::filesystem::create_directories(destination_path);
     const std::filesystem::path source(installer_path);
     const std::filesystem::path destination =
-        std::filesystem::u8path(destination_path) / L"installer.exe";
+        std::filesystem::u8path(stage.path) / L"installer.exe";
     std::filesystem::copy_file(
         source, destination,
         std::filesystem::copy_options::overwrite_existing);
-    WriteReleaseManifest(destination_path, descriptor, expected_package_id);
+    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
+    const StageProvenanceState provenance = WriteStageProvenance(
+        stage, expected_package_id,
+        StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),
+        descriptor.artifact.sha256, BCryptSha256);
+    return {stage.path, provenance};
   } catch (...) {
     try {
-      RemoveStagingDirectory(destination_path);
+      RemoveStagingDirectory(stage.path);
     } catch (...) {
       // Preserve the staging failure that triggered cleanup.
     }
@@ -217,7 +235,9 @@ void StageWindowsInnoInstaller(const std::wstring& installer_path,
 WindowsInstallHandoffResult HandoffWindowsInstall(
     const std::wstring& staging_path,
     const std::wstring& diagnostics_log_path,
-    const std::vector<std::wstring>& removed_files) {
+    const std::vector<std::wstring>& removed_files,
+    const std::string& expected_provenance_sha256,
+    const ReleaseDescriptor& descriptor) {
   static_assert(sizeof(wchar_t) == sizeof(std::uint16_t),
                 "Windows helper ABI requires UTF-16 wchar_t.");
   std::vector<const std::uint16_t*> removed_file_pointers;
@@ -239,6 +259,26 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
                               ? nullptr
                               : removed_file_pointers.data();
   request.removed_file_count = removed_file_pointers.size();
+  const std::wstring expected_provenance(
+      expected_provenance_sha256.begin(), expected_provenance_sha256.end());
+  const std::wstring expected_artifact(descriptor.artifact.sha256.begin(),
+                                       descriptor.artifact.sha256.end());
+  std::vector<std::wstring> thumbprints;
+  for (const std::string& thumbprint : AuthenticodeThumbprints(descriptor)) {
+    thumbprints.emplace_back(thumbprint.begin(), thumbprint.end());
+  }
+  std::vector<const std::uint16_t*> thumbprint_pointers;
+  for (const std::wstring& thumbprint : thumbprints) {
+    thumbprint_pointers.push_back(
+        reinterpret_cast<const std::uint16_t*>(thumbprint.c_str()));
+  }
+  request.expected_provenance_sha256 =
+      reinterpret_cast<const std::uint16_t*>(expected_provenance.c_str());
+  request.expected_artifact_sha256 =
+      reinterpret_cast<const std::uint16_t*>(expected_artifact.c_str());
+  request.allowed_signer_thumbprints = thumbprint_pointers.empty()
+      ? nullptr : thumbprint_pointers.data();
+  request.allowed_signer_thumbprint_count = thumbprint_pointers.size();
   desktop_updater_result_v1 result =
       desktop_updater_schedule_install_and_relaunch_v1(&request);
   WindowsInstallHandoffResult handoff{

@@ -95,6 +95,11 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
     String? installRoot,
     String? executableRelativePath,
     String? packageId,
+    String? stageProvenanceSha256,
+    String? stageProvenanceNonce,
+    List<Map<String, Object?>> stageProvenanceEntries = const [],
+    String? expectedArtifactSha256,
+    List<String> allowedSignerThumbprints = const [],
   }) {
     final platform = this;
     if (platform is MethodChannelDesktopUpdater) {
@@ -106,6 +111,11 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
         installRoot: installRoot,
         executableRelativePath: executableRelativePath,
         packageId: packageId,
+        stageProvenanceSha256: stageProvenanceSha256,
+        stageProvenanceNonce: stageProvenanceNonce,
+        stageProvenanceEntries: stageProvenanceEntries,
+        expectedArtifactSha256: expectedArtifactSha256,
+        allowedSignerThumbprints: allowedSignerThumbprints,
       );
     }
     return installUpdate(

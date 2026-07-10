@@ -31,6 +31,10 @@ typedef struct desktop_updater_install_request_v1 {
   const uint16_t* diagnostics_log_path;
   const uint16_t* const* removed_files;
   size_t removed_file_count;
+  const uint16_t* expected_provenance_sha256;
+  const uint16_t* expected_artifact_sha256;
+  const uint16_t* const* allowed_signer_thumbprints;
+  size_t allowed_signer_thumbprint_count;
 } desktop_updater_install_request_v1;
 
 typedef struct desktop_updater_result_v1 {

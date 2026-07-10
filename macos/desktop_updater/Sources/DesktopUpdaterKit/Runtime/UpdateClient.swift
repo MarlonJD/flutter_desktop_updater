@@ -31,6 +31,9 @@ public struct RuntimeUpdateCheck {
 public struct RuntimeStagedUpdate {
     public let descriptor: ReleaseDescriptor
     public let stagedPath: URL
+    public let stageRoot: URL
+    public let stageProvenanceSHA256: String
+    public let provenanceEntries: [StageProvenanceEntry]
     public let artifactPath: URL
     let clientID: UUID
     let generation: UInt64
@@ -38,12 +41,18 @@ public struct RuntimeStagedUpdate {
     init(
         descriptor: ReleaseDescriptor,
         stagedPath: URL,
+        stageRoot: URL,
+        stageProvenanceSHA256: String,
+        provenanceEntries: [StageProvenanceEntry],
         artifactPath: URL,
         clientID: UUID,
         generation: UInt64
     ) {
         self.descriptor = descriptor
         self.stagedPath = stagedPath
+        self.stageRoot = stageRoot
+        self.stageProvenanceSHA256 = stageProvenanceSHA256
+        self.provenanceEntries = provenanceEntries
         self.artifactPath = artifactPath
         self.clientID = clientID
         self.generation = generation
@@ -163,6 +172,8 @@ private final class UpdateClientLifecycleState {
                   active.clientID == staged.clientID,
                   active.generation == staged.generation,
                   active.stagedPath == staged.stagedPath,
+                  active.stageRoot == staged.stageRoot,
+                  active.stageProvenanceSHA256 == staged.stageProvenanceSHA256,
                   active.artifactPath == staged.artifactPath,
                   activeStagedAttempt == stageAttempt
             else {
@@ -288,7 +299,7 @@ public final class UpdateClient {
         self.stager = stager
         installScheduler = { staged, diagnosticsLogPath, bundlePath, allowUnsigned in
             try stager.installAndRelaunch(
-                stagedPath: staged.stagedPath,
+                staged: staged,
                 diagnosticsLogPath: diagnosticsLogPath,
                 bundlePath: bundlePath,
                 allowUnsignedUpdates: allowUnsigned
@@ -559,12 +570,16 @@ public final class UpdateClient {
                 message: "Artifact URL does not contain a safe file name."
             ))
         }
-        let artifactPath = downloadDirectory.appendingPathComponent(artifactName)
         do {
             try FileManager.default.createDirectory(
                 at: downloadDirectory,
                 withIntermediateDirectories: true
             )
+            let downloadStage = try StageProvenance.createOwnedStage(
+                parent: downloadDirectory
+            )
+            defer { try? FileManager.default.removeItem(at: downloadStage) }
+            let artifactPath = downloadStage.appendingPathComponent(artifactName)
             record(.download, .info, "Downloading verified native artifact.")
             try await transport.downloadArtifact(
                 RuntimeArtifactDownload(
@@ -583,10 +598,10 @@ public final class UpdateClient {
                 )
             }
             record(.verify, .info, "Artifact length and SHA-256 are verified.")
-            let stagedPath: URL
+            let stagedArtifact: RuntimeStagedArtifact
             switch descriptor.artifact.kind {
             case "zip":
-                stagedPath = try stager.stageZip(
+                stagedArtifact = try stager.stageZip(
                     archive: artifactPath,
                     stagingRoot: stagingRoot,
                     descriptor: descriptor,
@@ -596,7 +611,7 @@ public final class UpdateClient {
                     limits: RuntimeArchiveLimits(configuration: configuration)
                 )
             case "dmg":
-                stagedPath = try stager.stageDMG(
+                stagedArtifact = try stager.stageDMG(
                     dmg: artifactPath,
                     stagingRoot: stagingRoot,
                     descriptor: descriptor,
@@ -605,7 +620,7 @@ public final class UpdateClient {
                     allowUnsignedUpdates: allowUnsignedUpdates
                 )
             case "pkgInstaller":
-                stagedPath = try stager.stagePKG(
+                stagedArtifact = try stager.stagePKG(
                     pkg: artifactPath,
                     stagingRoot: stagingRoot,
                     descriptor: descriptor,
@@ -617,11 +632,26 @@ public final class UpdateClient {
                     message: "Artifact kind is not supported on macOS."
                 )
             }
+            let retainedArtifactPath: URL
+            switch descriptor.artifact.kind {
+            case "zip":
+                retainedArtifactPath = stagedArtifact.stageRoot
+                    .appendingPathComponent(".desktop_updater_artifact.zip")
+            case "pkgInstaller":
+                retainedArtifactPath = stagedArtifact.stageRoot
+                    .appendingPathComponent("installer.pkg")
+            default:
+                retainedArtifactPath = stagedArtifact.stagedPath
+            }
             record(.stage, .info, "Verified native artifact is staged.")
             let staged = RuntimeStagedUpdate(
                 descriptor: descriptor,
-                stagedPath: stagedPath,
-                artifactPath: artifactPath,
+                stagedPath: stagedArtifact.stagedPath,
+                stageRoot: stagedArtifact.stageRoot,
+                stageProvenanceSHA256:
+                    stagedArtifact.provenance.markerSHA256,
+                provenanceEntries: stagedArtifact.provenance.marker.entries,
+                artifactPath: retainedArtifactPath,
                 clientID: lifecycle.clientID,
                 generation: stageLease.generation
             )
@@ -651,6 +681,19 @@ public final class UpdateClient {
         bundlePath: String,
         allowUnsignedUpdates: Bool = false
     ) throws {
+        do {
+            _ = try StageProvenance.verify(
+                stageRoot: staged.stageRoot,
+                expectedMarkerSHA256: staged.stageProvenanceSHA256
+            )
+        } catch {
+            let failure = RuntimeError.outcome(
+                .installHandoffFailure,
+                message: "Stage provenance validation failed: \(error)"
+            )
+            record(.install, .error, "macOS helper handoff failed.", failure)
+            throw failure
+        }
         let handoff: RuntimeInstallHandoff
         switch lifecycle.beginInstall(staged) {
         case let .success(value):

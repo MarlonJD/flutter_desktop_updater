@@ -97,6 +97,25 @@ void EnsureDirectory(const std::string& path) {
   }
 }
 
+class OwnedDownloadStageGuard {
+ public:
+  explicit OwnedDownloadStageGuard(std::string path)
+      : path_(std::move(path)) {}
+
+  ~OwnedDownloadStageGuard() {
+    try {
+      internal::RemoveStagingDirectory(path_);
+    } catch (...) {
+      // The exclusive download child is best-effort temporary storage.
+    }
+  }
+
+  const std::string& path() const { return path_; }
+
+ private:
+  std::string path_;
+};
+
 std::string ArtifactFileName(const std::string& url) {
   const std::size_t query = url.find_first_of("?#");
   const std::string path = url.substr(0, query);
@@ -190,9 +209,13 @@ class UpdateClient::Impl {
                     "No verified update is ready to download.");
     }
     std::string artifact_path;
+    std::unique_ptr<OwnedDownloadStageGuard> download_stage;
     try {
       EnsureDirectory(download_directory);
-      artifact_path = download_directory + "/" +
+      const internal::OwnedStage owned_download =
+          internal::CreateOwnedStage(download_directory);
+      download_stage.reset(new OwnedDownloadStageGuard(owned_download.path));
+      artifact_path = download_stage->path() + "/" +
                       ArtifactFileName(check.descriptor.artifact.url);
       Record("download", "info", "Downloading verified native artifact.");
       internal::ArtifactDownloadRequest request;
@@ -220,10 +243,12 @@ class UpdateClient::Impl {
           configuration_.maximum_uncompressed_bytes;
       limits.maximum_single_entry_bytes =
           configuration_.maximum_single_entry_bytes;
-      internal::StageLinuxZip(
+      EnsureDirectory(staging_directory);
+      const internal::LinuxStagedArtifact staged = internal::StageLinuxZip(
           artifact_path, staging_directory, executable_relative_path,
           check.descriptor, configuration_.expected_package_id, limits);
-      if (!lifecycle_.PublishStage(lease, staging_directory)) {
+      if (!lifecycle_.PublishStage(
+              lease, staged.stage_path, staged.provenance.marker_sha256)) {
         return Result("invalidDescriptor",
                       "A newer staging attempt invalidated this update.");
       }
@@ -259,7 +284,7 @@ class UpdateClient::Impl {
         internal::ValidateLinuxInstallHandoff(
             snapshot.staged_path, install_root, executable_relative_path,
             configuration_.expected_package_id, removed_files,
-            diagnostics_log_path);
+            diagnostics_log_path, snapshot.stage_provenance_sha256);
     if (!validation.ok) {
       Record("install", "error", validation.error);
       return Result("installHandoffFailure", validation.error);
@@ -276,7 +301,8 @@ class UpdateClient::Impl {
       scheduler_result = internal::HandoffLinuxInstall(
           install_handoff.staged_path, install_root, executable_relative_path,
           configuration_.expected_package_id, removed_files,
-          diagnostics_log_path);
+          diagnostics_log_path,
+          install_handoff.stage_provenance_sha256);
     } catch (const std::exception& error) {
       Record("install", "error", error.what());
       return Result("installHandoffFailure", error.what());

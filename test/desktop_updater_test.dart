@@ -75,6 +75,11 @@ class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
     String? installRoot,
     String? executableRelativePath,
     String? packageId,
+    String? stageProvenanceSha256,
+    String? stageProvenanceNonce,
+    List<Map<String, Object?>> stageProvenanceEntries = const [],
+    String? expectedArtifactSha256,
+    List<String> allowedSignerThumbprints = const [],
   }) async {
     lastPackageId = packageId;
   }

@@ -36,11 +36,13 @@ struct InstallHandoff {
   std::uint64_t generation = 0;
   std::uint64_t stage_attempt = 0;
   std::string staged_path;
+  std::string stage_provenance_sha256;
 };
 
 struct LifecycleSnapshot {
   ClientCheckResult check;
   std::string staged_path;
+  std::string stage_provenance_sha256;
   std::uint64_t selection_generation = 0;
   std::uint64_t check_generation = 0;
   std::uint64_t stage_attempt = 0;
@@ -54,7 +56,9 @@ class ClientLifecycleState {
   CheckLease BeginCheck();
   bool PublishCheck(const CheckLease& lease, ClientCheckResult check);
   StageLease BeginStage();
-  bool PublishStage(const StageLease& lease, std::string staged_path);
+  bool PublishStage(const StageLease& lease,
+                    std::string staged_path,
+                    std::string stage_provenance_sha256 = std::string());
   InstallHandoff BeginInstall();
   InstallHandoff BeginInstall(const LifecycleSnapshot& expected);
   bool RollbackInstall(const InstallHandoff& handoff);
@@ -69,6 +73,7 @@ class ClientLifecycleState {
   mutable std::mutex mutex_;
   ClientCheckResult check_;
   std::string staged_path_;
+  std::string stage_provenance_sha256_;
   std::uint64_t selection_generation_ = 0;
   std::uint64_t check_generation_ = 0;
   std::uint64_t stage_attempt_ = 0;

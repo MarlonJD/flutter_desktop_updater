@@ -11,6 +11,9 @@ struct InstallRequest {
   std::wstring staging_path;
   std::vector<std::wstring> removed_files;
   std::wstring diagnostics_log_path;
+  std::wstring expected_provenance_sha256;
+  std::wstring expected_artifact_sha256;
+  std::vector<std::wstring> allowed_signer_thumbprints;
   bool request_elevation_if_needed = true;
 };
 

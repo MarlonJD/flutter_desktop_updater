@@ -660,14 +660,14 @@ git commit -m "fix: make native install handoff one shot"
 - Helper receives the expected provenance SHA-256 from verified client state,
   not from caller input.
 
-- [ ] **Step 1: Write failing parent-preservation tests**
+- [x] **Step 1: Write failing parent-preservation tests**
 
 For every stager, place sentinel files beside the requested stage child. Assert
 that successful staging, validation failure, and cleanup preserve the parent and
 sentinels. Add a macOS helper test proving `/Applications` or any manifest
 parent is never passed to recursive deletion.
 
-- [ ] **Step 2: Write failing tamper tests**
+- [x] **Step 2: Write failing tamper tests**
 
 After staging and before helper execution, change:
 
@@ -682,7 +682,7 @@ one symbolic-link target
 
 Expected: helper rejects before backup, deletion, elevation, or installer open.
 
-- [ ] **Step 3: Implement exclusive owned stage creation**
+- [x] **Step 3: Implement exclusive owned stage creation**
 
 Create a nonce child under the caller parent. Reject parent/root overlap,
 symlink parents, reparse parents, existing child names, and paths outside the
@@ -691,13 +691,13 @@ the requested nonce.
 
 Delete `RemoveTree(destination_path)` behavior for caller values.
 
-- [ ] **Step 4: Generate and verify provenance inventory**
+- [x] **Step 4: Generate and verify provenance inventory**
 
 Hash every regular file, record symlink targets without following them, sort
 entries, write the canonical marker, and store its SHA-256 in the client stage
 state. At helper time, verify marker digest and the complete inventory again.
 
-- [ ] **Step 5: Reverify platform trust at the last responsible moment**
+- [x] **Step 5: Reverify platform trust at the last responsible moment**
 
 Windows elevated Inno handoff rechecks artifact SHA-256, Authenticode status,
 and allowed thumbprints from immutable script constants. macOS PKG handoff
@@ -705,7 +705,7 @@ reruns `pkgutil --check-signature`, `spctl --assess --type install`,
 `xcrun stapler validate`, and package-ID checks. Linux verifies the full
 inventory before target mutation.
 
-- [ ] **Step 6: Run staging and tamper suites**
+- [x] **Step 6: Run staging and tamper suites**
 
 Run:
 
@@ -717,7 +717,34 @@ swift test
 Expected: PASS and every tamper case records a validation failure before
 `backup start`.
 
-- [ ] **Step 7: Commit**
+Task 4 local evidence (2026-07-10):
+
+- RED: the focused provenance/helper suite first failed because
+  `staged_update_provenance.dart` and its API did not exist; the cleanup suite
+  also proved that forged-prefix and protected stage paths were deleted, and
+  Swift tests failed because `StageProvenance` was absent.
+- GREEN: the exact focused Flutter command passed 34 tests. It covers ZIP,
+  release-manifest, Inno, PKG, inventory-entry, and symlink-target mutation;
+  helper source-order assertions require provenance validation before
+  `backup start`, target mutation, elevation, or installer open.
+- GREEN: `swift test` passed 47 tests, including owned-parent preservation,
+  file/symlink tamper rejection, and PKG trust ordering before backup/open.
+- GREEN: the focused controller/platform/client regression command passed 49
+  tests. `flutter analyze --no-fatal-infos` exited 0 with 391 info-only lints
+  and no warning or error diagnostics. Portable C++14 `-Werror` syntax checks
+  for shared provenance/lifecycle and Linux stager/client/helper sources, plus
+  a Swift frontend parse of the plugin/runtime/helper sources, exited 0.
+- Windows and Linux target-host CMake/CTest and target-host helper tamper
+  execution were not run locally on macOS. The local claim is limited to
+  portable provenance rejection tests and generated-helper ordering checks;
+  no target-host execution or CI result is claimed.
+- The additive Flutter method-channel fields carry only the verified stage
+  digest, nonce, immutable inventory, artifact digest, and signer allowlist
+  from `UpdateStageResult` through the existing install handoff. They do not
+  add or prove Task 5 install-root, executable-relative-path, package-identity,
+  PID, or bundle-target context; Task 5 remains separate.
+
+- [x] **Step 7: Commit**
 
 ~~~sh
 git add lib/src/core native_runtime macos/desktop_updater windows/native linux/native test

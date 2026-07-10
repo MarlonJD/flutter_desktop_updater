@@ -1,9 +1,10 @@
 import "dart:io";
 
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:path/path.dart" as path;
 
-/// Prefix used for temporary staging directories created by the updater.
-const String desktopUpdaterStagingPrefix = "desktop_updater_stage_";
+export "package:desktop_updater/src/core/staged_update_provenance.dart"
+    show desktopUpdaterStagingPrefix;
 
 /// Default age after which abandoned staging directories can be removed.
 const Duration defaultStaleStagingAge = Duration(days: 7);
@@ -44,9 +45,17 @@ Future<StagingDirectoryCleanupReport>
   }
 
   final cutoff = (now ?? DateTime.now()).subtract(staleAge);
-  final normalizedPreservedPaths = preservedPaths
-      .map((value) => path.normalize(path.absolute(value)))
-      .toSet();
+  final normalizedPreservedPaths = <String>{};
+  for (final value in preservedPaths) {
+    final entity = Directory(value);
+    try {
+      normalizedPreservedPaths.add(
+        path.normalize(await entity.resolveSymbolicLinks()),
+      );
+    } on FileSystemException {
+      normalizedPreservedPaths.add(path.normalize(path.absolute(value)));
+    }
+  }
   var scanned = 0;
   var deleted = 0;
   final failedPaths = <String>[];
@@ -60,7 +69,12 @@ Future<StagingDirectoryCleanupReport>
       continue;
     }
 
-    final normalizedPath = path.normalize(path.absolute(entity.path));
+    String normalizedPath;
+    try {
+      normalizedPath = path.normalize(await entity.resolveSymbolicLinks());
+    } on FileSystemException {
+      continue;
+    }
     if (normalizedPreservedPaths.contains(normalizedPath)) {
       continue;
     }
@@ -70,8 +84,24 @@ Future<StagingDirectoryCleanupReport>
       if (!modified.isBefore(cutoff)) {
         continue;
       }
-      await entity.delete(recursive: true);
+      final basename = path.basename(normalizedPath);
+      if (!basename.startsWith(desktopUpdaterStagingPrefix)) {
+        continue;
+      }
+      final nonce = basename.substring(desktopUpdaterStagingPrefix.length);
+      final state = await readStagedUpdateProvenance(stageRoot: entity);
+      if (state.provenance.nonce != nonce) {
+        continue;
+      }
+      await deleteOwnedStagingDirectory(
+        parent: parent,
+        stageRoot: entity,
+        nonce: nonce,
+      );
       deleted += 1;
+    } on FormatException {
+      // Unmarked or malformed prefix directories are caller-owned.
+      continue;
     } on FileSystemException {
       failedPaths.add(entity.path);
     }

@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <cstdlib>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -58,17 +59,42 @@ std::string ReadFile(const fs::path& path) {
                      std::istreambuf_iterator<char>());
 }
 
+std::string Sha256File(const fs::path& path) {
+  const std::string command = "sha256sum -- " + path.string();
+  FILE* process = popen(command.c_str(), "r");
+  if (process == nullptr) throw std::runtime_error("Unable to hash fixture.");
+  char digest[65] = {};
+  const bool ok = fscanf(process, "%64s", digest) == 1;
+  const int status = pclose(process);
+  if (!ok || status != 0) throw std::runtime_error("Unable to hash fixture.");
+  return digest;
+}
+
 InstallRequest RequestFor(const fs::path& install_root,
                           const fs::path& staging_root) {
-  return {
-      LinuxInstallOperation::kInstall,
-      staging_root.string(),
-      install_root.string(),
-      "bin/example",
-      "com.example.app",
-      {},
-      "",
-  };
+  WriteFile(staging_root / ".desktop_updater_stage_provenance.json", "marker");
+  InstallRequest request;
+  request.operation = LinuxInstallOperation::kInstall;
+  request.staging_path = staging_root.string();
+  request.install_root = install_root.string();
+  request.executable_relative_path = "bin/example";
+  request.package_id = "com.example.app";
+  request.expected_provenance_sha256 =
+      "ed5b8120601641c516d02ed9dc643a59648524248d5e2af877da39ea253c723e";
+  request.provenance_nonce = "123e4567-e89b-42d3-a456-426614174000";
+  for (const fs::directory_entry& entry :
+       fs::recursive_directory_iterator(staging_root)) {
+    const std::string relative = fs::relative(entry.path(), staging_root).string();
+    if (relative == ".desktop_updater_stage_provenance.json") continue;
+    if (entry.is_directory()) {
+      request.provenance_entries.push_back({relative, "directory", 0, "", ""});
+    } else if (entry.is_regular_file()) {
+      request.provenance_entries.push_back(
+          {relative, "file", static_cast<std::int64_t>(entry.file_size()),
+           Sha256File(entry.path()), ""});
+    }
+  }
+  return request;
 }
 
 TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
@@ -91,7 +117,8 @@ TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
 TEST(LinuxNativeInstall, RejectsNonCanonicalAndSymlinkEscapes) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
-  const fs::path staging_root = temporary.path() / "staging";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
   const fs::path outside = temporary.path() / "outside.txt";
   WriteFile(install_root / "bin/example", "old", 0755);
   WriteFile(staging_root / "bin/example", "new", 0755);
@@ -119,7 +146,8 @@ TEST(LinuxNativeInstall, RejectsNonCanonicalAndSymlinkEscapes) {
 TEST(LinuxNativeInstall, GeneratedScriptBoundsDestructiveCommands) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
-  const fs::path staging_root = temporary.path() / "staging";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
   const fs::path executable = install_root / "bin/example";
   WriteFile(executable, "old", 0755);
   WriteFile(staging_root / "bin/example", "new", 0755);
@@ -141,7 +169,8 @@ TEST(LinuxNativeInstall, GeneratedScriptBoundsDestructiveCommands) {
 TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
-  const fs::path staging_root = temporary.path() / "staging";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
   const fs::path executable = install_root / "bin/example";
   const fs::path outside = temporary.path() / "outside.txt";
   WriteFile(executable, "old executable", 0755);
@@ -176,7 +205,8 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
 TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
-  const fs::path staging_root = temporary.path() / "staging";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
   const fs::path executable = install_root / "bin/example";
   WriteFile(executable, "old", 0755);
   WriteFile(staging_root / "bin/example", "new", 0755);

@@ -56,17 +56,22 @@ int main(int argument_count, char** arguments) {
 
   const std::string archive = TemporaryPath(".zip");
   const std::string installer = TemporaryPath(".exe");
-  const std::string destination = TemporaryPath("_staging");
+  const std::string staging_parent = TemporaryPath("_staging_parent");
+  std::string destination;
   try {
     RemoveStagingDirectory(archive);
     RemoveStagingDirectory(installer);
-    RemoveStagingDirectory(destination);
+    RemoveStagingDirectory(staging_parent);
+    CreateDirectoryA(staging_parent.c_str(), nullptr);
+    std::ofstream(staging_parent + "/sentinel.txt") << "caller-owned";
     WriteZip(archive);
     const auto zip_descriptor = ParseReleaseDescriptor(ReadFile(
         std::string(arguments[1]) +
         "/release-contract/release-windows-zip.json"));
-    StageWindowsZip(archive, destination, zip_descriptor,
-                    "com.example.native-contract", ArchiveLimits{});
+    const auto staged = StageWindowsZip(
+        archive, staging_parent, zip_descriptor,
+        "com.example.native-contract", ArchiveLimits{});
+    destination = staged.stage_path;
     const std::string manifest = ReadFile(
         destination + "/.desktop_updater_release_manifest.json");
     if (manifest.find("com.example.native-contract") == std::string::npos) {
@@ -83,18 +88,19 @@ int main(int argument_count, char** arguments) {
     bool rejected = false;
     try {
       StageWindowsInnoInstaller(
-          std::wstring(installer.begin(), installer.end()), destination,
+          std::wstring(installer.begin(), installer.end()), staging_parent,
           inno_descriptor, "com.example.native-contract");
     } catch (const std::exception&) {
       rejected = true;
     }
     if (!rejected ||
-        GetFileAttributesA(destination.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        GetFileAttributesA(destination.c_str()) != INVALID_FILE_ATTRIBUTES ||
+        ReadFile(staging_parent + "/sentinel.txt") != "caller-owned") {
       throw std::runtime_error("Unsigned Inno fixture did not fail closed.");
     }
   } catch (const std::exception& error) {
     try {
-      RemoveStagingDirectory(destination);
+      RemoveStagingDirectory(staging_parent);
       RemoveStagingDirectory(installer);
       RemoveStagingDirectory(archive);
     } catch (...) {
@@ -102,7 +108,7 @@ int main(int argument_count, char** arguments) {
     std::cerr << error.what() << std::endl;
     return 1;
   }
-  RemoveStagingDirectory(destination);
+  RemoveStagingDirectory(staging_parent);
   RemoveStagingDirectory(installer);
   RemoveStagingDirectory(archive);
   return 0;

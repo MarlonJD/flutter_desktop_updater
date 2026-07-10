@@ -8,6 +8,7 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/staging_directory_cleanup.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
@@ -169,9 +170,11 @@ class UpdateClient {
 
     final stagingParent = _stagingParent ?? Directory.systemTemp;
     await cleanupStaleDesktopUpdaterStagingDirectories(parent: stagingParent);
-    final stagingRoot = await stagingParent.createTemp(
-      desktopUpdaterStagingPrefix,
-    );
+    final stagingRoot =
+        await createOwnedStagingDirectory(parent: stagingParent);
+    final stagingNonce = path
+        .basename(stagingRoot.path)
+        .substring(desktopUpdaterStagingPrefix.length);
     final artifactFile = File(
       path.join(
         stagingRoot.path,
@@ -179,7 +182,7 @@ class UpdateClient {
           "dmg" => "artifact.dmg",
           "pkgInstaller" => "artifact.pkg",
           "innoInstaller" => "artifact.exe",
-          _ => "artifact.zip",
+          _ => ".desktop_updater_artifact.zip",
         },
       ),
     );
@@ -220,9 +223,11 @@ class UpdateClient {
         ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
+          nonce: stagingNonce,
         );
       }
 
@@ -249,9 +254,11 @@ class UpdateClient {
         ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagedApp.path,
+          nonce: stagingNonce,
         );
       }
 
@@ -273,9 +280,11 @@ class UpdateClient {
         ).writeAsString(
           const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
+          nonce: stagingNonce,
         );
       }
 
@@ -311,9 +320,11 @@ class UpdateClient {
         );
       }
 
-      return UpdateStageResult(
+      return await _finalizeStage(
         descriptor: descriptor,
+        stagingRoot: stagingRoot,
         stagingPath: stagedPath,
+        nonce: stagingNonce,
       );
     } catch (_) {
       if (await stagingRoot.exists()) {
@@ -321,6 +332,27 @@ class UpdateClient {
       }
       rethrow;
     }
+  }
+
+  Future<UpdateStageResult> _finalizeStage({
+    required ReleaseDescriptor descriptor,
+    required Directory stagingRoot,
+    required String stagingPath,
+    required String nonce,
+  }) async {
+    final state = await writeStagedUpdateProvenance(
+      stageRoot: stagingRoot,
+      nonce: nonce,
+      packageId: descriptor.packageId,
+      descriptorSha256: canonicalJsonSha256(descriptor.toJson()),
+      artifactSha256: descriptor.artifact.sha256,
+    );
+    return UpdateStageResult(
+      descriptor: descriptor,
+      stagingPath: stagingPath,
+      stageProvenanceSha256: state.markerSha256,
+      stageProvenance: state.provenance,
+    );
   }
 
   bool _descriptorPolicyAllowsUpdate(ReleaseDescriptor descriptor) {
@@ -426,6 +458,8 @@ class UpdateStageResult {
   const UpdateStageResult({
     required this.descriptor,
     required this.stagingPath,
+    required this.stageProvenanceSha256,
+    required this.stageProvenance,
   });
 
   /// Descriptor that was downloaded and staged.
@@ -433,4 +467,10 @@ class UpdateStageResult {
 
   /// Platform-specific path handed to the native install helper.
   final String stagingPath;
+
+  /// Digest retained by the verified client and required by install helpers.
+  final String stageProvenanceSha256;
+
+  /// Immutable inventory retained with the verified stage state.
+  final StagedUpdateProvenance stageProvenance;
 }

@@ -1,5 +1,11 @@
 import Foundation
 
+public struct RuntimeStagedArtifact {
+    public let stagedPath: URL
+    public let stageRoot: URL
+    public let provenance: StageProvenanceState
+}
+
 public struct RuntimeArchiveLimits {
     public let maximumArchiveEntries: Int64
     public let maximumUncompressedBytes: Int64
@@ -33,21 +39,21 @@ public struct MacArtifactStager {
         expectedTeamIdentifier: String,
         allowUnsignedUpdates: Bool = false,
         limits: RuntimeArchiveLimits = RuntimeArchiveLimits()
-    ) throws -> URL {
+    ) throws -> RuntimeStagedArtifact {
         try validateDescriptorIdentity(
             descriptor,
             expectedPackageId: expectedPackageId,
             artifactKind: "zip"
         )
         try preflightZip(archive, limits: limits)
+        let ownedStage = try ownedStage(in: stagingRoot)
         do {
-            try prepareEmptyDirectory(stagingRoot)
             try run("/usr/bin/ditto", [
                 "-x", "-k", "--sequesterRsrc", "--rsrc",
-                archive.path, stagingRoot.path,
+                archive.path, ownedStage.path,
             ])
             let app = try exactTopLevelApp(
-                in: stagingRoot,
+                in: ownedStage,
                 named: descriptor.appName
             )
             try validateApp(
@@ -56,10 +62,20 @@ public struct MacArtifactStager {
                 expectedTeamIdentifier: expectedTeamIdentifier,
                 allowUnsignedUpdates: allowUnsignedUpdates
             )
-            try writeManifest(descriptor, to: stagingRoot)
-            return app
+            try FileManager.default.copyItem(
+                at: archive,
+                to: ownedStage.appendingPathComponent(
+                    ".desktop_updater_artifact.zip"
+                )
+            )
+            try writeManifest(descriptor, to: ownedStage)
+            return try finalize(
+                stagedPath: app,
+                stageRoot: ownedStage,
+                descriptor: descriptor
+            )
         } catch {
-            try? FileManager.default.removeItem(at: stagingRoot)
+            try? FileManager.default.removeItem(at: ownedStage)
             throw error
         }
     }
@@ -71,7 +87,7 @@ public struct MacArtifactStager {
         expectedPackageId: String,
         expectedTeamIdentifier: String,
         allowUnsignedUpdates: Bool = false
-    ) throws -> URL {
+    ) throws -> RuntimeStagedArtifact {
         try validateDescriptorIdentity(
             descriptor,
             expectedPackageId: expectedPackageId,
@@ -89,11 +105,11 @@ public struct MacArtifactStager {
             capturesOutput: true
         )
         let mount = try mountPoint(from: plist)
+        let ownedStage = try ownedStage(in: stagingRoot)
         do {
-            try prepareEmptyDirectory(stagingRoot)
             let appName = try string(metadata, "appBundleName")
             let source = try exactTopLevelApp(in: mount, named: appName)
-            let destination = stagingRoot.appendingPathComponent(appName)
+            let destination = ownedStage.appendingPathComponent(appName)
             try run("/usr/bin/ditto", [source.path, destination.path])
             try validateApp(
                 destination,
@@ -101,12 +117,16 @@ public struct MacArtifactStager {
                 expectedTeamIdentifier: expectedTeamIdentifier,
                 allowUnsignedUpdates: allowUnsignedUpdates
             )
-            try writeManifest(descriptor, to: stagingRoot)
+            try writeManifest(descriptor, to: ownedStage)
             try run("/usr/bin/hdiutil", ["detach", mount.path])
-            return destination
+            return try finalize(
+                stagedPath: destination,
+                stageRoot: ownedStage,
+                descriptor: descriptor
+            )
         } catch {
             _ = try? run("/usr/bin/hdiutil", ["detach", mount.path])
-            try? FileManager.default.removeItem(at: stagingRoot)
+            try? FileManager.default.removeItem(at: ownedStage)
             throw error
         }
     }
@@ -116,7 +136,7 @@ public struct MacArtifactStager {
         stagingRoot: URL,
         descriptor: ReleaseDescriptor,
         expectedPackageId: String
-    ) throws -> URL {
+    ) throws -> RuntimeStagedArtifact {
         try validateDescriptorIdentity(
             descriptor,
             expectedPackageId: expectedPackageId,
@@ -131,9 +151,9 @@ public struct MacArtifactStager {
         )
         try run("/usr/sbin/spctl", ["--assess", "--type", "install", pkg.path])
         try run("/usr/bin/xcrun", ["stapler", "validate", pkg.path])
+        let ownedStage = try ownedStage(in: stagingRoot)
         do {
-            try prepareEmptyDirectory(stagingRoot)
-            let expanded = stagingRoot.appendingPathComponent("expanded-pkg")
+            let expanded = ownedStage.appendingPathComponent("expanded-pkg")
             defer { try? FileManager.default.removeItem(at: expanded) }
             try run(
                 "/usr/sbin/pkgutil",
@@ -146,29 +166,39 @@ public struct MacArtifactStager {
                     message: "PKG expectedPackageIds do not match PackageInfo."
                 )
             }
-            let installer = stagingRoot.appendingPathComponent("installer.pkg")
+            let installer = ownedStage.appendingPathComponent("installer.pkg")
             try FileManager.default.copyItem(at: pkg, to: installer)
-            try writeManifest(descriptor, to: stagingRoot)
-            return stagingRoot
+            try writeManifest(descriptor, to: ownedStage)
+            return try finalize(
+                stagedPath: ownedStage,
+                stageRoot: ownedStage,
+                descriptor: descriptor
+            )
         } catch {
-            try? FileManager.default.removeItem(at: stagingRoot)
+            try? FileManager.default.removeItem(at: ownedStage)
             throw error
         }
     }
 
     public func installAndRelaunch(
-        stagedPath: URL,
+        staged: RuntimeStagedUpdate,
         diagnosticsLogPath: String?,
         bundlePath: String,
         allowUnsignedUpdates: Bool = false
     ) throws {
         try MacInstallHelper().scheduleInstallAndRelaunch(
             MacInstallRequest(
-                stagingPath: stagedPath.path,
+                stagingPath: staged.stagedPath.path,
                 allowUnsignedUpdates: allowUnsignedUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
                 currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
-                bundlePath: bundlePath
+                bundlePath: bundlePath,
+                stageRoot: staged.stageRoot.path,
+                expectedProvenanceSHA256: staged.stageProvenanceSHA256,
+                artifactKind: staged.descriptor.artifact.kind,
+                expectedArtifactSHA256: staged.descriptor.artifact.sha256,
+                expectedPackageIDs: expectedPackageIDs(staged.descriptor),
+                provenanceEntries: staged.provenanceEntries
             )
         )
     }
@@ -310,12 +340,49 @@ public struct MacArtifactStager {
         }
     }
 
-    private func prepareEmptyDirectory(_ directory: URL) throws {
-        try? FileManager.default.removeItem(at: directory)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
+    private func ownedStage(in parent: URL) throws -> URL {
+        if !FileManager.default.fileExists(atPath: parent.path) {
+            try FileManager.default.createDirectory(
+                at: parent,
+                withIntermediateDirectories: true
+            )
+        }
+        return try StageProvenance.createOwnedStage(parent: parent)
+    }
+
+    private func finalize(
+        stagedPath: URL,
+        stageRoot: URL,
+        descriptor: ReleaseDescriptor
+    ) throws -> RuntimeStagedArtifact {
+        let nonce = String(
+            stageRoot.lastPathComponent.dropFirst(updaterOwnedStagePrefix.count)
         )
+        let state = try StageProvenance.write(
+            stageRoot: stageRoot,
+            nonce: nonce,
+            packageID: descriptor.packageId,
+            descriptorSHA256: try StageProvenance.canonicalJSONSHA256(
+                descriptor.rawJSON
+            ),
+            artifactSHA256: descriptor.artifact.sha256
+        )
+        return RuntimeStagedArtifact(
+            stagedPath: stagedPath,
+            stageRoot: stageRoot,
+            provenance: state
+        )
+    }
+
+    private func expectedPackageIDs(
+        _ descriptor: ReleaseDescriptor
+    ) -> [String] {
+        guard descriptor.artifact.kind == "pkgInstaller",
+              let metadata = descriptor.install.rawJSON["macosPkg"]
+                  as? [String: Any],
+              let values = metadata["expectedPackageIds"] as? [String]
+        else { return [] }
+        return values
     }
 
     private func writeManifest(

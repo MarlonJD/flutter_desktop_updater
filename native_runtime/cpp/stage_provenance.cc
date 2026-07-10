@@ -1,0 +1,556 @@
+#include "stage_provenance.h"
+
+#include <algorithm>
+#include <cerrno>
+#include <cctype>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <iterator>
+#include <map>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <utility>
+
+#if defined(_WIN32)
+#include <bcrypt.h>
+#include <direct.h>
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
+#include "json_value.h"
+
+namespace desktop_updater {
+namespace runtime {
+namespace internal {
+namespace {
+
+bool ValidSha256(const std::string& value) {
+  return value.size() == 64 &&
+         std::all_of(value.begin(), value.end(), [](unsigned char byte) {
+           return std::isdigit(byte) || (byte >= 'a' && byte <= 'f');
+         });
+}
+
+bool ValidNonce(const std::string& value) {
+  if (value.size() != 36 || value[8] != '-' || value[13] != '-' ||
+      value[18] != '-' || value[23] != '-' || value[14] != '4' ||
+      std::string("89ab").find(value[19]) == std::string::npos) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) continue;
+    const char byte = value[index];
+    if (!std::isdigit(static_cast<unsigned char>(byte)) &&
+        (byte < 'a' || byte > 'f')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void ValidateRelative(const std::string& value, const char* field) {
+  if (value.empty() || value.front() == '/' || value.back() == '/' ||
+      value.find('\\') != std::string::npos ||
+      (value.size() >= 2 &&
+       std::isalpha(static_cast<unsigned char>(value[0])) &&
+       value[1] == ':')) {
+    throw std::runtime_error(std::string("Invalid ") + field + ".");
+  }
+  std::size_t start = 0;
+  while (start <= value.size()) {
+    const std::size_t slash = value.find('/', start);
+    const std::string segment = value.substr(start, slash - start);
+    if (segment.empty() || segment == "." || segment == "..") {
+      throw std::runtime_error(std::string("Invalid ") + field + ".");
+    }
+    if (slash == std::string::npos) break;
+    start = slash + 1;
+  }
+}
+
+std::string ParentPath(const std::string& path) {
+  const std::size_t slash = path.find_last_of('/');
+#if defined(_WIN32)
+  const std::size_t backslash = path.find_last_of('\\');
+  const std::size_t separator =
+      slash == std::string::npos ? backslash
+      : backslash == std::string::npos ? slash
+      : std::max(slash, backslash);
+#else
+  const std::size_t separator = slash;
+#endif
+  if (separator == std::string::npos) return std::string();
+  if (separator == 0) return "/";
+  return path.substr(0, separator);
+}
+
+std::string BaseName(const std::string& path) {
+  const std::string parent = ParentPath(path);
+  return parent.empty() ? path : path.substr(parent == "/" ? 1 : parent.size() + 1);
+}
+
+std::string Join(const std::string& root, const std::string& relative) {
+  return root.empty() || root.back() == '/' ? root + relative
+                                            : root + "/" + relative;
+}
+
+std::string CanonicalDirectory(const std::string& path, const char* field) {
+#if defined(_WIN32)
+  const DWORD attributes = GetFileAttributesA(path.c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES ||
+      (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    throw std::runtime_error(std::string(field) +
+                             " must be a real non-reparse directory.");
+  }
+  char buffer[MAX_PATH];
+  const DWORD count = GetFullPathNameA(path.c_str(), MAX_PATH, buffer, nullptr);
+  if (count == 0 || count >= MAX_PATH) {
+    throw std::runtime_error(std::string("Unable to canonicalize ") + field + ".");
+  }
+  std::string result(buffer, count);
+  std::replace(result.begin(), result.end(), '\\', '/');
+  while (result.size() > 3 && result.back() == '/') result.pop_back();
+  return result;
+#else
+  struct stat status {};
+  if (lstat(path.c_str(), &status) != 0 || !S_ISDIR(status.st_mode) ||
+      S_ISLNK(status.st_mode)) {
+    throw std::runtime_error(std::string(field) +
+                             " must be a real directory.");
+  }
+  char buffer[PATH_MAX];
+  if (realpath(path.c_str(), buffer) == nullptr) {
+    throw std::runtime_error(std::string("Unable to canonicalize ") + field + ".");
+  }
+  return buffer;
+#endif
+}
+
+std::string RandomNonce() {
+  unsigned char bytes[16]{};
+#if defined(_WIN32)
+  if (BCryptGenRandom(nullptr, bytes, sizeof(bytes),
+                      BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0) {
+    throw std::runtime_error("Unable to generate stage nonce.");
+  }
+#else
+  const int random = open("/dev/urandom", O_RDONLY
+#if defined(O_CLOEXEC)
+                          | O_CLOEXEC
+#endif
+  );
+  if (random < 0) throw std::runtime_error("Unable to generate stage nonce.");
+  std::size_t offset = 0;
+  while (offset < sizeof(bytes)) {
+    const ssize_t count = read(random, bytes + offset, sizeof(bytes) - offset);
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) {
+      close(random);
+      throw std::runtime_error("Unable to generate stage nonce.");
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  close(random);
+#endif
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0f) | 0x40);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3f) | 0x80);
+  std::ostringstream output;
+  output << std::hex;
+  for (std::size_t index = 0; index < sizeof(bytes); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) output << '-';
+    output.width(2);
+    output.fill('0');
+    output << static_cast<unsigned int>(bytes[index]);
+  }
+  return output.str();
+}
+
+bool Utf8Less(const std::string& left, const std::string& right) {
+  return std::lexicographical_compare(
+      left.begin(), left.end(), right.begin(), right.end(),
+      [](char first, char second) {
+        return static_cast<unsigned char>(first) <
+               static_cast<unsigned char>(second);
+      });
+}
+
+std::string ReadFile(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) throw std::runtime_error("Unable to read staged file.");
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
+
+void RemoveTree(const std::string& path) {
+#if defined(_WIN32)
+  const DWORD attributes = GetFileAttributesA(path.c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES) return;
+  if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    if (!DeleteFileA(path.c_str())) throw std::runtime_error("Cleanup failed.");
+    return;
+  }
+  WIN32_FIND_DATAA entry{};
+  HANDLE search = FindFirstFileA((path + "/*").c_str(), &entry);
+  if (search != INVALID_HANDLE_VALUE) {
+    do {
+      const std::string name = entry.cFileName;
+      if (name != "." && name != "..") RemoveTree(Join(path, name));
+    } while (FindNextFileA(search, &entry));
+    FindClose(search);
+  }
+  if (!RemoveDirectoryA(path.c_str())) throw std::runtime_error("Cleanup failed.");
+#else
+  struct stat status {};
+  if (lstat(path.c_str(), &status) != 0) return;
+  if (!S_ISDIR(status.st_mode) || S_ISLNK(status.st_mode)) {
+    if (unlink(path.c_str()) != 0) throw std::runtime_error("Cleanup failed.");
+    return;
+  }
+  DIR* directory = opendir(path.c_str());
+  if (directory == nullptr) throw std::runtime_error("Cleanup failed.");
+  while (dirent* entry = readdir(directory)) {
+    const std::string name = entry->d_name;
+    if (name != "." && name != "..") RemoveTree(Join(path, name));
+  }
+  closedir(directory);
+  if (rmdir(path.c_str()) != 0) throw std::runtime_error("Cleanup failed.");
+#endif
+}
+
+void AddInventory(const std::string& root,
+                  const std::string& relative,
+                  const StageSha256Function& sha256,
+                  std::vector<StageProvenanceEntry>* entries) {
+  const std::string absolute = relative.empty() ? root : Join(root, relative);
+#if defined(_WIN32)
+  WIN32_FIND_DATAA found{};
+  HANDLE search = FindFirstFileA((absolute + "/*").c_str(), &found);
+  if (search == INVALID_HANDLE_VALUE) {
+    if (GetLastError() == ERROR_FILE_NOT_FOUND) return;
+    throw std::runtime_error("Unable to enumerate staged directory.");
+  }
+  do {
+    const std::string name = found.cFileName;
+    if (name == "." || name == "..") continue;
+    const std::string child = relative.empty() ? name : relative + "/" + name;
+    if (child == kStageProvenanceFileName) continue;
+    if ((found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      FindClose(search);
+      throw std::runtime_error("Staged reparse points are unsafe.");
+    }
+    if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+      entries->push_back({child, "directory", 0, "", ""});
+      AddInventory(root, child, sha256, entries);
+    } else {
+      const std::string bytes = ReadFile(Join(root, child));
+      entries->push_back({child, "file", static_cast<std::int64_t>(bytes.size()),
+                          StageBytesToHex(sha256(bytes)), ""});
+    }
+  } while (FindNextFileA(search, &found));
+  FindClose(search);
+#else
+  DIR* directory = opendir(absolute.c_str());
+  if (directory == nullptr) throw std::runtime_error("Unable to enumerate staged directory.");
+  while (dirent* found = readdir(directory)) {
+    const std::string name = found->d_name;
+    if (name == "." || name == "..") continue;
+    const std::string child = relative.empty() ? name : relative + "/" + name;
+    if (child == kStageProvenanceFileName) continue;
+    const std::string child_path = Join(root, child);
+    struct stat status {};
+    if (lstat(child_path.c_str(), &status) != 0) {
+      closedir(directory);
+      throw std::runtime_error("Unable to inspect staged entry.");
+    }
+    if (S_ISDIR(status.st_mode)) {
+      entries->push_back({child, "directory", 0, "", ""});
+      AddInventory(root, child, sha256, entries);
+    } else if (S_ISREG(status.st_mode)) {
+      const std::string bytes = ReadFile(child_path);
+      entries->push_back({child, "file", static_cast<std::int64_t>(bytes.size()),
+                          StageBytesToHex(sha256(bytes)), ""});
+    } else if (S_ISLNK(status.st_mode)) {
+      std::vector<char> target(static_cast<std::size_t>(status.st_size) + 2);
+      const ssize_t length = readlink(child_path.c_str(), target.data(),
+                                      target.size() - 1);
+      if (length < 0) {
+        closedir(directory);
+        throw std::runtime_error("Unable to read staged symlink.");
+      }
+      const std::string value(target.data(), static_cast<std::size_t>(length));
+      ValidateRelative(value, "symlink target");
+      entries->push_back({child, "symlink", 0, "", value});
+    } else {
+      closedir(directory);
+      throw std::runtime_error("Unsupported staged filesystem entry.");
+    }
+  }
+  closedir(directory);
+#endif
+}
+
+std::vector<StageProvenanceEntry> Inventory(
+    const std::string& stage_root,
+    const StageSha256Function& sha256) {
+  if (!sha256) throw std::invalid_argument("Stage SHA-256 is required.");
+  std::vector<StageProvenanceEntry> entries;
+  AddInventory(stage_root, "", sha256, &entries);
+  std::sort(entries.begin(), entries.end(),
+            [](const StageProvenanceEntry& first,
+               const StageProvenanceEntry& second) {
+              return Utf8Less(first.path, second.path);
+            });
+  return entries;
+}
+
+JsonValue EncodeMarker(const StageProvenanceMarker& marker) {
+  JsonValue::Array entries;
+  for (const StageProvenanceEntry& entry : marker.entries) {
+    JsonValue::Object value;
+    value.emplace("path", JsonValue(entry.path));
+    value.emplace("kind", JsonValue(entry.kind));
+    value.emplace("length", JsonValue(entry.length));
+    if (entry.kind == "file") value.emplace("sha256", JsonValue(entry.sha256));
+    if (entry.kind == "symlink") value.emplace("target", JsonValue(entry.target));
+    entries.emplace_back(JsonValue(std::move(value)));
+  }
+  JsonValue::Object root;
+  root.emplace("schemaVersion", JsonValue(static_cast<std::int64_t>(1)));
+  root.emplace("nonce", JsonValue(marker.nonce));
+  root.emplace("packageId", JsonValue(marker.package_id));
+  root.emplace("descriptorSha256", JsonValue(marker.descriptor_sha256));
+  root.emplace("artifactSha256", JsonValue(marker.artifact_sha256));
+  root.emplace("entries", JsonValue(std::move(entries)));
+  return JsonValue(std::move(root));
+}
+
+StageProvenanceMarker DecodeMarker(const JsonValue& root) {
+  if (root.at("schemaVersion").integer() != 1) {
+    throw std::runtime_error("Unsupported stage provenance schema.");
+  }
+  StageProvenanceMarker marker;
+  marker.nonce = root.at("nonce").string();
+  marker.package_id = root.at("packageId").string();
+  marker.descriptor_sha256 = root.at("descriptorSha256").string();
+  marker.artifact_sha256 = root.at("artifactSha256").string();
+  if (!ValidNonce(marker.nonce) || marker.package_id.empty() ||
+      !ValidSha256(marker.descriptor_sha256) ||
+      !ValidSha256(marker.artifact_sha256)) {
+    throw std::runtime_error("Stage provenance identity is invalid.");
+  }
+  std::set<std::string> paths;
+  std::string previous;
+  for (const JsonValue& value : root.at("entries").array()) {
+    StageProvenanceEntry entry;
+    entry.path = value.at("path").string();
+    entry.kind = value.at("kind").string();
+    entry.length = value.at("length").integer();
+    ValidateRelative(entry.path, "provenance path");
+    if (!paths.insert(entry.path).second ||
+        (!previous.empty() && !Utf8Less(previous, entry.path))) {
+      throw std::runtime_error("Stage provenance entries are not unique and sorted.");
+    }
+    previous = entry.path;
+    if (entry.kind == "file") {
+      entry.sha256 = value.at("sha256").string();
+      if (entry.length < 0 || !ValidSha256(entry.sha256) ||
+          value.find("target") != nullptr) {
+        throw std::runtime_error("Stage provenance file entry is invalid.");
+      }
+    } else if (entry.kind == "directory") {
+      if (entry.length != 0 || value.find("sha256") != nullptr ||
+          value.find("target") != nullptr) {
+        throw std::runtime_error("Stage provenance directory entry is invalid.");
+      }
+    } else if (entry.kind == "symlink") {
+      entry.target = value.at("target").string();
+      ValidateRelative(entry.target, "symlink target");
+      if (entry.length != 0 || value.find("sha256") != nullptr) {
+        throw std::runtime_error("Stage provenance symlink entry is invalid.");
+      }
+    } else {
+      throw std::runtime_error("Unsupported stage provenance entry.");
+    }
+    marker.entries.push_back(std::move(entry));
+  }
+  return marker;
+}
+
+bool EqualEntries(const std::vector<StageProvenanceEntry>& first,
+                  const std::vector<StageProvenanceEntry>& second) {
+  if (first.size() != second.size()) return false;
+  for (std::size_t index = 0; index < first.size(); ++index) {
+    const auto& left = first[index];
+    const auto& right = second[index];
+    if (left.path != right.path || left.kind != right.kind ||
+        left.length != right.length || left.sha256 != right.sha256 ||
+        left.target != right.target) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void WriteExclusive(const std::string& path, const std::string& bytes) {
+#if defined(_WIN32)
+  HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                            FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    throw std::runtime_error("Stage provenance marker already exists.");
+  }
+  DWORD written = 0;
+  const bool ok = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
+                            &written, nullptr) != 0 &&
+                  written == bytes.size();
+  CloseHandle(file);
+  if (!ok) {
+    DeleteFileA(path.c_str());
+    throw std::runtime_error("Unable to write stage provenance marker.");
+  }
+#else
+  const int file = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (file < 0) throw std::runtime_error("Stage provenance marker already exists.");
+  std::size_t offset = 0;
+  bool ok = true;
+  while (offset < bytes.size()) {
+    const ssize_t count = write(file, bytes.data() + offset, bytes.size() - offset);
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) { ok = false; break; }
+    offset += static_cast<std::size_t>(count);
+  }
+  if (close(file) != 0) ok = false;
+  if (!ok) {
+    unlink(path.c_str());
+    throw std::runtime_error("Unable to write stage provenance marker.");
+  }
+#endif
+}
+
+}  // namespace
+
+std::string StageBytesToHex(const std::vector<std::uint8_t>& bytes) {
+  static const char* digits = "0123456789abcdef";
+  std::string output;
+  output.reserve(bytes.size() * 2);
+  for (std::uint8_t byte : bytes) {
+    output.push_back(digits[byte >> 4]);
+    output.push_back(digits[byte & 0x0f]);
+  }
+  return output;
+}
+
+OwnedStage CreateOwnedStage(const std::string& parent_path,
+                            const std::string& requested_nonce) {
+  const std::string parent = CanonicalDirectory(parent_path, "Staging parent");
+  if (ParentPath(parent) == parent || parent == "/") {
+    throw std::runtime_error("Filesystem roots cannot be staging parents.");
+  }
+  const std::string nonce = requested_nonce.empty() ? RandomNonce()
+                                                     : requested_nonce;
+  if (!ValidNonce(nonce)) throw std::runtime_error("Stage nonce is invalid.");
+  const std::string child = Join(parent, std::string(kOwnedStagePrefix) + nonce);
+  if (ParentPath(child) != parent) {
+    throw std::runtime_error("Owned staging child escapes canonical parent.");
+  }
+#if defined(_WIN32)
+  if (_mkdir(child.c_str()) != 0) {
+#else
+  if (mkdir(child.c_str(), 0700) != 0) {
+#endif
+    throw std::runtime_error("Unable to exclusively create owned stage.");
+  }
+  try {
+    if (CanonicalDirectory(child, "Owned stage") != child) {
+      throw std::runtime_error("Owned stage escapes canonical parent.");
+    }
+  } catch (...) {
+    try { RemoveTree(child); } catch (...) {}
+    throw;
+  }
+  return {child, parent, nonce};
+}
+
+StageProvenanceState WriteStageProvenance(
+    const OwnedStage& stage,
+    const std::string& package_id,
+    const std::string& descriptor_sha256,
+    const std::string& artifact_sha256,
+    const StageSha256Function& sha256) {
+  if (!ValidNonce(stage.nonce) || BaseName(stage.path) !=
+      std::string(kOwnedStagePrefix) + stage.nonce || package_id.empty() ||
+      !ValidSha256(descriptor_sha256) || !ValidSha256(artifact_sha256)) {
+    throw std::runtime_error("Stage provenance metadata is invalid.");
+  }
+  StageProvenanceState state;
+  state.marker = {stage.nonce, package_id, descriptor_sha256, artifact_sha256,
+                  Inventory(stage.path, sha256)};
+  const std::string bytes = EncodeCanonicalJson(EncodeMarker(state.marker));
+  WriteExclusive(Join(stage.path, kStageProvenanceFileName), bytes);
+  state.marker_sha256 = StageBytesToHex(sha256(bytes));
+  return state;
+}
+
+StageProvenanceState ReadStageProvenance(
+    const std::string& stage_root,
+    const StageSha256Function& sha256) {
+  const std::string root = CanonicalDirectory(stage_root, "Stage root");
+  const std::string bytes = ReadFile(Join(root, kStageProvenanceFileName));
+  StageProvenanceState state;
+  const JsonValue parsed = ParseJson(bytes);
+  state.marker = DecodeMarker(parsed);
+  if (EncodeCanonicalJson(EncodeMarker(state.marker)) != bytes ||
+      BaseName(root) != std::string(kOwnedStagePrefix) + state.marker.nonce) {
+    throw std::runtime_error("Stage provenance marker is not canonical or nonce-bound.");
+  }
+  state.marker_sha256 = StageBytesToHex(sha256(bytes));
+  return state;
+}
+
+StageProvenanceMarker VerifyStageProvenance(
+    const std::string& stage_root,
+    const std::string& expected_marker_sha256,
+    const StageSha256Function& sha256) {
+  if (!ValidSha256(expected_marker_sha256)) {
+    throw std::runtime_error("Expected stage provenance SHA-256 is invalid.");
+  }
+  const StageProvenanceState state = ReadStageProvenance(stage_root, sha256);
+  if (state.marker_sha256 != expected_marker_sha256) {
+    throw std::runtime_error("Stage provenance marker digest changed.");
+  }
+  if (!EqualEntries(state.marker.entries, Inventory(stage_root, sha256))) {
+    throw std::runtime_error("Staged update inventory changed.");
+  }
+  return state.marker;
+}
+
+void RemoveOwnedStage(const std::string& parent_path,
+                      const std::string& stage_root,
+                      const std::string& nonce,
+                      const StageSha256Function& sha256) {
+  const std::string parent = CanonicalDirectory(parent_path, "Staging parent");
+  const std::string root = CanonicalDirectory(stage_root, "Stage root");
+  if (ParentPath(root) != parent || !ValidNonce(nonce) ||
+      BaseName(root) != std::string(kOwnedStagePrefix) + nonce) {
+    throw std::runtime_error("Owned stage cleanup path is invalid.");
+  }
+  const StageProvenanceMarker marker = VerifyStageProvenance(
+      root, ReadStageProvenance(root, sha256).marker_sha256, sha256);
+  if (marker.nonce != nonce) {
+    throw std::runtime_error("Owned stage cleanup nonce changed.");
+  }
+  RemoveTree(root);
+}
+
+}  // namespace internal
+}  // namespace runtime
+}  // namespace desktop_updater

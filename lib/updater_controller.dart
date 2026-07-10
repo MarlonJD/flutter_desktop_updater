@@ -5,6 +5,7 @@ import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_notes.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
@@ -261,6 +262,8 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   UpdateClient? _client;
   String? _stagingPath;
+  StagedUpdateProvenance? _stageProvenance;
+  String? _stageProvenanceSha256;
   String? _currentAppVersion;
   UpdateCleanupReport? _lastCleanupReport;
 
@@ -411,6 +414,8 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeFreshInstall = null;
         _activeSupportPolicy = null;
         _stagingPath = null;
+        _stageProvenance = null;
+        _stageProvenanceSha256 = null;
         _skipUpdate = false;
         _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
@@ -443,6 +448,8 @@ class DesktopUpdaterController extends ChangeNotifier {
         _activeFreshInstall = null;
         _activeSupportPolicy = null;
         _stagingPath = null;
+        _stageProvenance = null;
+        _stageProvenanceSha256 = null;
         _skipUpdate = true;
         _clearReleaseNotesCache();
         _diagnosticsRecorder.record(
@@ -461,6 +468,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       _activeFreshInstall = freshInstall;
       _activeSupportPolicy = activeSupportPolicy;
       _stagingPath = null;
+      _stageProvenance = null;
+      _stageProvenanceSha256 = null;
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.descriptor,
         level: UpdateDiagnosticLevel.info,
@@ -595,6 +604,8 @@ class DesktopUpdaterController extends ChangeNotifier {
     };
 
     _stagingPath = null;
+    _stageProvenance = null;
+    _stageProvenanceSha256 = null;
     _diagnosticsRecorder.record(
       stage: UpdateDiagnosticStage.download,
       level: UpdateDiagnosticLevel.info,
@@ -630,6 +641,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
 
       _stagingPath = result.stagingPath;
+      _stageProvenance = result.stageProvenance;
+      _stageProvenanceSha256 = result.stageProvenanceSha256;
       _diagnosticsRecorder
         ..record(
           stage: UpdateDiagnosticStage.verify,
@@ -677,7 +690,12 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Hands the staged update to the native installer or restart helper.
   Future<void> restartApp() async {
     final stagingPath = _stagingPath;
-    if (stagingPath == null || stagingPath.isEmpty) {
+    final provenance = _stageProvenance;
+    final provenanceSha256 = _stageProvenanceSha256;
+    if (stagingPath == null ||
+        stagingPath.isEmpty ||
+        provenance == null ||
+        provenanceSha256 == null) {
       throw StateError("No downloaded update is ready to install.");
     }
 
@@ -707,6 +725,15 @@ class DesktopUpdaterController extends ChangeNotifier {
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
         diagnosticsLogPath: diagnosticsLogPath,
         packageId: _activeDescriptor?.packageId,
+        stageProvenanceSha256: provenanceSha256,
+        stageProvenanceNonce: provenance.nonce,
+        stageProvenanceEntries: provenance.entries
+            .map((entry) => Map<String, Object?>.from(entry.toJson()))
+            .toList(growable: false),
+        expectedArtifactSha256: provenance.artifactSha256,
+        allowedSignerThumbprints:
+            _activeDescriptor?.install.inno?.authenticode.sha256Thumbprints ??
+                const [],
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,

@@ -82,7 +82,10 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
     *error = "Unsupported desktop_updater native ABI version.";
     return false;
   }
-  if (request->struct_size < sizeof(desktop_updater_install_request_v1)) {
+  constexpr size_t kLegacyInstallRequestSize =
+      offsetof(desktop_updater_install_request_v1,
+               expected_provenance_sha256);
+  if (request->struct_size < kLegacyInstallRequestSize) {
     *error = "desktop_updater install request struct is undersized.";
     return false;
   }
@@ -92,6 +95,34 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
                  "diagnostics_log_path", &parsed->diagnostics_log_path,
                  error)) {
     return false;
+  }
+  const bool has_provenance_fields =
+      request->struct_size >= sizeof(desktop_updater_install_request_v1);
+  if (has_provenance_fields &&
+      (!ReadUtf16(request->expected_provenance_sha256, true,
+                 "expected_provenance_sha256",
+                 &parsed->expected_provenance_sha256, error) ||
+      !ReadUtf16(request->expected_artifact_sha256, true,
+                 "expected_artifact_sha256",
+                 &parsed->expected_artifact_sha256, error))) {
+    return false;
+  }
+  if (has_provenance_fields &&
+      request->allowed_signer_thumbprint_count > 0 &&
+      request->allowed_signer_thumbprints == nullptr) {
+    *error = "allowed_signer_thumbprints must not be null when its count is non-zero.";
+    return false;
+  }
+  parsed->allowed_signer_thumbprints.clear();
+  for (size_t index = 0;
+       has_provenance_fields &&
+       index < request->allowed_signer_thumbprint_count; ++index) {
+    std::wstring thumbprint;
+    if (!ReadUtf16(request->allowed_signer_thumbprints[index], false,
+                   "allowed_signer_thumbprints item", &thumbprint, error)) {
+      return false;
+    }
+    parsed->allowed_signer_thumbprints.push_back(std::move(thumbprint));
   }
   if (request->removed_file_count > 0 && request->removed_files == nullptr) {
     *error = "removed_files must not be null when removed_file_count is non-zero.";

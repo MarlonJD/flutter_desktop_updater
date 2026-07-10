@@ -145,6 +145,30 @@ std::wstring DiagnosticsLogPathFromArguments(
   return value == nullptr ? L"" : Utf8ToWide(*value);
 }
 
+std::wstring StringFromArguments(const flutter::EncodableMap& arguments,
+                                 const char* key) {
+  const auto iterator = arguments.find(flutter::EncodableValue(key));
+  if (iterator == arguments.end()) return L"";
+  const auto* value = std::get_if<std::string>(&iterator->second);
+  return value == nullptr ? L"" : Utf8ToWide(*value);
+}
+
+std::vector<std::wstring> StringListFromArguments(
+    const flutter::EncodableMap& arguments,
+    const char* key) {
+  std::vector<std::wstring> result;
+  const auto iterator = arguments.find(flutter::EncodableValue(key));
+  if (iterator == arguments.end()) return result;
+  const auto* values = std::get_if<flutter::EncodableList>(&iterator->second);
+  if (values == nullptr) return result;
+  for (const auto& value : *values) {
+    if (const auto* text = std::get_if<std::string>(&value)) {
+      result.push_back(Utf8ToWide(*text));
+    }
+  }
+  return result;
+}
+
 bool ScheduleNativeInstall(
     const desktop_updater::native::InstallRequest& request,
     std::string* error) {
@@ -246,6 +270,12 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     request.staging_path = Utf8ToWide(*staging_path);
     request.removed_files = RemovedFilesFromArguments(*arguments);
     request.diagnostics_log_path = DiagnosticsLogPathFromArguments(*arguments);
+    request.expected_provenance_sha256 = StringFromArguments(
+        *arguments, "stageProvenanceSha256");
+    request.expected_artifact_sha256 = StringFromArguments(
+        *arguments, "expectedArtifactSha256");
+    request.allowed_signer_thumbprints = StringListFromArguments(
+        *arguments, "allowedSignerThumbprints");
     request.request_elevation_if_needed = true;
     std::string error;
     if (!ScheduleNativeInstall(request, &error)) {

@@ -46,6 +46,11 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     String? installRoot,
     String? executableRelativePath,
     String? packageId,
+    String? stageProvenanceSha256,
+    String? stageProvenanceNonce,
+    List<Map<String, Object?>> stageProvenanceEntries = const [],
+    String? expectedArtifactSha256,
+    List<String> allowedSignerThumbprints = const [],
   }) async {
     await _invokeInstallUpdate(
       stagingPath: stagingPath,
@@ -55,6 +60,11 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
       installRoot: installRoot,
       executableRelativePath: executableRelativePath,
       packageId: packageId,
+      stageProvenanceSha256: stageProvenanceSha256,
+      stageProvenanceNonce: stageProvenanceNonce,
+      stageProvenanceEntries: stageProvenanceEntries,
+      expectedArtifactSha256: expectedArtifactSha256,
+      allowedSignerThumbprints: allowedSignerThumbprints,
     );
   }
 
@@ -66,6 +76,11 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     String? installRoot,
     String? executableRelativePath,
     String? packageId,
+    String? stageProvenanceSha256,
+    String? stageProvenanceNonce,
+    List<Map<String, Object?>> stageProvenanceEntries = const [],
+    String? expectedArtifactSha256,
+    List<String> allowedSignerThumbprints = const [],
   }) async {
     final arguments = <String, Object?>{
       "stagingPath": stagingPath,
@@ -83,6 +98,21 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     }
     if (packageId != null && packageId.isNotEmpty) {
       arguments["packageId"] = packageId;
+    }
+    if (stageProvenanceSha256 != null && stageProvenanceSha256.isNotEmpty) {
+      arguments["stageProvenanceSha256"] = stageProvenanceSha256;
+    }
+    if (stageProvenanceNonce != null && stageProvenanceNonce.isNotEmpty) {
+      arguments["stageProvenanceNonce"] = stageProvenanceNonce;
+    }
+    if (stageProvenanceEntries.isNotEmpty) {
+      arguments["stageProvenanceEntries"] = stageProvenanceEntries;
+    }
+    if (expectedArtifactSha256 != null && expectedArtifactSha256.isNotEmpty) {
+      arguments["expectedArtifactSha256"] = expectedArtifactSha256;
+    }
+    if (allowedSignerThumbprints.isNotEmpty) {
+      arguments["allowedSignerThumbprints"] = allowedSignerThumbprints;
     }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }

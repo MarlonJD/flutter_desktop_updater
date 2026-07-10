@@ -5,6 +5,14 @@ public struct MacInstallHelper {
 
     public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws {
         try validateStagingPath(request.stagingPath)
+        if let root = request.stageRoot,
+           let expected = request.expectedProvenanceSHA256
+        {
+            _ = try StageProvenance.verify(
+                stageRoot: URL(fileURLWithPath: root),
+                expectedMarkerSHA256: expected
+            )
+        }
         let scriptURL = try writeHelperScript(for: request)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -80,6 +88,20 @@ public struct MacInstallHelper {
         #else
             let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"\(allowUnsignedValue)\""
         #endif
+        let stageRoot = request.stageRoot ?? {
+            guard let staging = request.stagingPath else { return "" }
+            let url = URL(fileURLWithPath: staging)
+            return url.pathExtension.lowercased() == "app"
+                ? url.deletingLastPathComponent().path
+                : url.path
+        }()
+        let provenanceChecks = inventoryValidationCommands(
+            request.provenanceEntries
+        )
+        let expectedPackageIDs = shellArray(request.expectedPackageIDs)
+        let stageNonce = URL(fileURLWithPath: stageRoot)
+            .lastPathComponent
+            .replacingOccurrences(of: updaterOwnedStagePrefix, with: "")
 
         return """
         #!/bin/sh
@@ -87,6 +109,14 @@ public struct MacInstallHelper {
 
         PID="\(request.currentProcessIdentifier)"
         STAGING=\(shellQuote(request.stagingPath ?? ""))
+        STAGE_ROOT=\(shellQuote(stageRoot))
+        STAGE_NONCE=\(shellQuote(stageNonce))
+        expected_provenance_sha256=\(shellQuote(request.expectedProvenanceSHA256 ?? ""))
+        ARTIFACT_KIND=\(shellQuote(request.artifactKind ?? ""))
+        PKG_LAUNCH_MODE='installerApp' # verified descriptor launchMode
+        EXPECTED_ARTIFACT_SHA256=\(shellQuote(request.expectedArtifactSHA256 ?? ""))
+        EXPECTED_PACKAGE_IDS=\(expectedPackageIDs)
+        EXPECTED_PROVENANCE_ENTRY_COUNT='\(request.provenanceEntries.count)'
         BUNDLE=\(shellQuote(request.bundlePath))
         DIAGNOSTICS_LOG=\(shellQuote(request.diagnosticsLogPath ?? ""))
         SKIP_RELAUNCH="${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}"
@@ -104,18 +134,74 @@ public struct MacInstallHelper {
         done
         log_event "parent process exited"
 
+        verify_stage_provenance() {
+          log_event "stage provenance validation"
+          MARKER="$STAGE_ROOT/\(stageProvenanceFileName)"
+          if [ -z "$expected_provenance_sha256" ] || [ ! -f "$MARKER" ] || [ -L "$MARKER" ]; then
+            log_event "stage provenance validation failure"
+            return 1
+          fi
+          ACTUAL_PROVENANCE_SHA256="$(/usr/bin/shasum -a 256 "$MARKER" | /usr/bin/awk '{print $1}')"
+          if [ "$ACTUAL_PROVENANCE_SHA256" != "$expected_provenance_sha256" ]; then
+            log_event "stage provenance validation failure"
+            return 1
+          fi
+        \(provenanceChecks)
+          ACTUAL_PROVENANCE_ENTRY_COUNT="$(/usr/bin/find "$STAGE_ROOT" -mindepth 1 ! -path "$MARKER" -exec /usr/bin/printf x \\; | /usr/bin/wc -c | /usr/bin/tr -d ' ')"
+          if [ "$ACTUAL_PROVENANCE_ENTRY_COUNT" != "$EXPECTED_PROVENANCE_ENTRY_COUNT" ]; then
+            log_event "stage provenance validation failure"
+            return 1
+          fi
+          log_event "stage provenance validation success"
+        }
+
+        cleanup_owned_stage() {
+          OWNED_STAGE="$1"
+          OWNED_NAME="$(/usr/bin/basename "$OWNED_STAGE")"
+          case "$OWNED_NAME" in
+            "\(updaterOwnedStagePrefix)$STAGE_NONCE") ;;
+            *) return 1 ;;
+          esac
+          [ -n "$STAGE_NONCE" ] || return 1
+          [ -f "$OWNED_STAGE/\(stageProvenanceFileName)" ] || return 1
+          /usr/bin/grep -q "\\\"nonce\\\":\\\"$STAGE_NONCE\\\"" "$OWNED_STAGE/\(stageProvenanceFileName)" || return 1
+          /bin/rm -rf "$OWNED_STAGE"
+        }
+
         if [ -n "$STAGING" ]; then
           log_event "staging path validation"
-          MANIFEST="$STAGING/.desktop_updater_release_manifest.json"
-          if [ -f "$MANIFEST" ] && \
-             /usr/bin/grep -q '"strategy"[[:space:]]*:[[:space:]]*"pkgInstaller"' "$MANIFEST" && \
-             /usr/bin/grep -q '"launchMode"[[:space:]]*:[[:space:]]*"installerApp"' "$MANIFEST"; then
+          if ! verify_stage_provenance; then
+            echo "Staged update provenance validation failed." >&2
+            exit 1
+          fi
+          MANIFEST="$STAGE_ROOT/.desktop_updater_release_manifest.json"
+          if [ "$ARTIFACT_KIND" = "pkgInstaller" ] && [ "$PKG_LAUNCH_MODE" = "installerApp" ]; then
             log_event "pkg manifest loaded"
             PKG="$STAGING/installer.pkg"
             if [ ! -f "$PKG" ]; then
               echo "Staged macOS PKG installer is missing." >&2
               exit 1
             fi
+            ACTUAL_ARTIFACT_SHA256="$(/usr/bin/shasum -a 256 "$PKG" | /usr/bin/awk '{print $1}')"
+            if [ -z "$EXPECTED_ARTIFACT_SHA256" ] || [ "$ACTUAL_ARTIFACT_SHA256" != "$EXPECTED_ARTIFACT_SHA256" ]; then
+              log_event "stage provenance validation failure"
+              exit 1
+            fi
+            /usr/sbin/pkgutil --check-signature "$PKG"
+            /usr/sbin/spctl --assess --type install "$PKG"
+            /usr/bin/xcrun stapler validate "$PKG"
+            PKG_WORK="$(/usr/bin/mktemp -d -t desktop_updater_pkg)"
+            EXPANDED_PKG="$PKG_WORK/expanded"
+            /usr/sbin/pkgutil --expand-full "$PKG" "$EXPANDED_PKG"
+            /usr/bin/printf '%s\n' "$EXPECTED_PACKAGE_IDS" | while IFS= read -r EXPECTED_PACKAGE_ID; do
+              [ -n "$EXPECTED_PACKAGE_ID" ] || continue
+              if ! /usr/bin/grep -R -q "identifier=\\\"$EXPECTED_PACKAGE_ID\\\"" "$EXPANDED_PKG"; then
+                /bin/rm -rf "$PKG_WORK"
+                echo "Staged macOS PKG package identity mismatch." >&2
+                exit 1
+              fi
+            done
+            /bin/rm -rf "$PKG_WORK"
             log_event "pkg installer open"
             if /usr/bin/open "$PKG"; then
               log_event "pkg installer opened"
@@ -142,7 +228,7 @@ public struct MacInstallHelper {
             exit 1
           fi
 
-          MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"
+          MANIFEST="$STAGE_ROOT/.desktop_updater_release_manifest.json"
           if [ ! -f "$MANIFEST" ]; then
             echo "Staged update manifest is missing." >&2
             exit 1
@@ -191,7 +277,7 @@ public struct MacInstallHelper {
           if /bin/mv "$STAGING" "$BUNDLE"; then
             log_event "move success"
             log_event "cleanup start"
-            if /bin/rm -rf "$BACKUP" && /bin/rm -rf "$(dirname "$MANIFEST")"; then
+            if /bin/rm -rf "$BACKUP" && cleanup_owned_stage "$STAGE_ROOT"; then
               log_event "cleanup success"
             else
               log_event "cleanup failure"
@@ -218,6 +304,26 @@ public struct MacInstallHelper {
 
     private func shellQuote(_ value: String) -> String {
         return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func shellArray(_ values: [String]) -> String {
+        shellQuote(values.joined(separator: "\n"))
+    }
+
+    private func inventoryValidationCommands(
+        _ entries: [StageProvenanceEntry]
+    ) -> String {
+        entries.map { entry in
+            let candidate = "\"$STAGE_ROOT/\(entry.path)\""
+            switch entry.kind {
+            case "directory":
+                return "  [ -d \(candidate) ] && [ ! -L \(candidate) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+            case "symlink":
+                return "  [ -L \(candidate) ] && [ \"$(/usr/bin/readlink \(candidate))\" = \(shellQuote(entry.target ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+            default:
+                return "  [ -f \(candidate) ] && [ ! -L \(candidate) ] && [ \"$(/usr/bin/stat -f %z \(candidate))\" = \(entry.length) ] && [ \"$(/usr/bin/shasum -a 256 \(candidate) | /usr/bin/awk '{print $1}')\" = \(shellQuote(entry.sha256 ?? "")) ] || { log_event \"stage provenance validation failure\"; return 1; }"
+            }
+        }.joined(separator: "\n")
     }
 }
 

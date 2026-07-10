@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -138,6 +139,29 @@ bool PathsOverlap(const std::string& first, const std::string& second) {
          IsStrictDescendant(second, first);
 }
 
+bool IsLowercaseSHA256(const std::string& value) {
+  if (value.size() != 64) return false;
+  for (unsigned char byte : value) {
+    if (!std::isdigit(byte) && (byte < 'a' || byte > 'f')) return false;
+  }
+  return true;
+}
+
+bool IsLowercaseUuidNonce(const std::string& value) {
+  if (value.size() != 36 || value[8] != '-' || value[13] != '-' ||
+      value[18] != '-' || value[23] != '-' || value[14] != '4' ||
+      std::string("89ab").find(value[19]) == std::string::npos) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) continue;
+    const char byte = value[index];
+    if (!std::isdigit(static_cast<unsigned char>(byte)) &&
+        (byte < 'a' || byte > 'f')) return false;
+  }
+  return true;
+}
+
 bool HasSymlinkComponent(const std::string& path) {
   if (!IsCanonicalAbsolutePath(path)) {
     return true;
@@ -227,6 +251,24 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request) {
   }
   if (PathsOverlap(canonical_staging_path, request.install_root)) {
     return {false, "Staging path must not overlap install root."};
+  }
+  if (!IsLowercaseSHA256(request.expected_provenance_sha256) ||
+      !IsLowercaseUuidNonce(request.provenance_nonce) ||
+      BaseName(canonical_staging_path) !=
+          "desktop_updater_stage_" + request.provenance_nonce ||
+      request.provenance_entries.empty()) {
+    return {false, "Linux install requires immutable owned stage provenance."};
+  }
+  for (const InstallProvenanceEntry& entry : request.provenance_entries) {
+    if (!IsCanonicalRelativePath(entry.path) ||
+        (entry.kind != "file" && entry.kind != "directory" &&
+         entry.kind != "symlink") ||
+        (entry.kind == "file" &&
+         (!IsLowercaseSHA256(entry.sha256) || entry.length < 0)) ||
+        (entry.kind == "symlink" &&
+         !IsCanonicalRelativePath(entry.target))) {
+      return {false, "Linux stage provenance entry is invalid."};
+    }
   }
 
   for (const auto& relative : request.removed_files) {
@@ -395,6 +437,27 @@ InstallResult BuildInstallScriptForTesting(
             "directory."};
   }
 
+  std::string provenance_checks;
+  for (const InstallProvenanceEntry& entry : normalized.provenance_entries) {
+    provenance_checks += "  candidate=\"$staging/\"" + ShellQuote(entry.path) + "\n";
+    if (entry.kind == "directory") {
+      provenance_checks +=
+          "  [ -d \"$candidate\" ] && [ ! -L \"$candidate\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n";
+    } else if (entry.kind == "symlink") {
+      provenance_checks +=
+          "  [ -L \"$candidate\" ] && [ \"$(readlink -- \"$candidate\")\" = " +
+          ShellQuote(entry.target) +
+          " ] || { log_event \"stage provenance validation failure\"; return 1; }\n";
+    } else {
+      provenance_checks +=
+          "  [ -f \"$candidate\" ] && [ ! -L \"$candidate\" ] && [ \"$(stat -c %s -- \"$candidate\")\" = " +
+          ShellQuote(std::to_string(entry.length)) +
+          " ] && [ \"$(sha256sum -- \"$candidate\" | awk '{print $1}')\" = " +
+          ShellQuote(entry.sha256) +
+          " ] || { log_event \"stage provenance validation failure\"; return 1; }\n";
+    }
+  }
+
   std::string generated =
       "#!/bin/bash\n"
       "set -euo pipefail\n"
@@ -408,6 +471,11 @@ InstallResult BuildInstallScriptForTesting(
       ShellQuote(executable_path) + "\n"
                                     "diagnostics_log=" +
       ShellQuote(normalized.diagnostics_log_path) + "\n"
+                                                      "expected_provenance_sha256=" +
+      ShellQuote(normalized.expected_provenance_sha256) + "\n"
+      "provenance_nonce=" + ShellQuote(normalized.provenance_nonce) + "\n"
+      "expected_provenance_entry_count=" +
+      std::to_string(normalized.provenance_entries.size()) + "\n"
                                                       "removed=(''" +
       ShellArray(normalized.removed_files) +
       ")\n"
@@ -442,6 +510,19 @@ InstallResult BuildInstallScriptForTesting(
         "case \"$target_root\" in\n"
         "  \"$staging_root\"/*) exit 1 ;;\n"
         "esac\n"
+        "verify_stage_provenance() {\n"
+        "  log_event \"stage provenance validation\"\n"
+        "  marker=\"$staging/.desktop_updater_stage_provenance.json\"\n"
+        "  [ -n \"$expected_provenance_sha256\" ] && [ -f \"$marker\" ] && [ ! -L \"$marker\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
+        "  actual_marker_sha256=\"$(sha256sum -- \"$marker\" | awk '{print $1}')\"\n"
+        "  [ \"$actual_marker_sha256\" = \"$expected_provenance_sha256\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
+        "  [ \"$(basename \"$staging\")\" = \"desktop_updater_stage_$provenance_nonce\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n" +
+        provenance_checks +
+        "  actual_entry_count=\"$(find \"$staging\" -mindepth 1 ! -path \"$marker\" -printf . | wc -c | tr -d ' ')\"\n"
+        "  [ \"$actual_entry_count\" = \"$expected_provenance_entry_count\" ] || { log_event \"stage provenance validation failure\"; return 1; }\n"
+        "  log_event \"stage provenance validation success\"\n"
+        "}\n"
+        "verify_stage_provenance || exit 1\n"
         "backup=\"$(mktemp -d /tmp/desktop_updater_backup_XXXXXX)\"\n"
         "rollback() {\n"
         "  [ -d \"$backup\" ] || return 0\n"
@@ -490,6 +571,9 @@ InstallResult BuildInstallScriptForTesting(
         "  fi\n"
         "  log_event \"move start\"\n"
         "  if find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a \"$staging/.\" \"$target/\"; then\n"
+        "    rm -f \"$target/.desktop_updater_stage_provenance.json\" "
+        "\"$target/.desktop_updater_release_manifest.json\" "
+        "\"$target/.desktop_updater_artifact.zip\"\n"
         "    log_event \"move success\"\n"
         "  else\n"
         "    log_event \"move failure\"\n"
@@ -508,7 +592,7 @@ InstallResult BuildInstallScriptForTesting(
         "    rollback_and_exit\n"
         "  fi\n"
         "  log_event \"cleanup start\"\n"
-        "  if rm -rf \"$staging\"; then\n"
+        "  if verify_stage_provenance && rm -rf \"$staging\"; then\n"
         "    log_event \"cleanup success\"\n"
         "  else\n"
         "    log_event \"cleanup failure\"\n"

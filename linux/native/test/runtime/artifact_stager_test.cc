@@ -94,20 +94,25 @@ int main(int argument_count, char** arguments) {
 
   const std::string archive = TemporaryPath(".zip");
   const std::string source = TemporaryPath("_source");
-  const std::string destination = TemporaryPath("_staging");
+  const std::string staging_parent = TemporaryPath("_staging_parent");
+  std::string destination;
   const std::string install_root = TemporaryPath("_install");
   try {
     RemoveStagingDirectory(archive);
     RemoveStagingDirectory(source);
-    RemoveStagingDirectory(destination);
+    RemoveStagingDirectory(staging_parent);
     RemoveStagingDirectory(install_root);
     mkdir(install_root.c_str(), 0755);
+    mkdir(staging_parent.c_str(), 0755);
+    std::ofstream(staging_parent + "/sentinel.txt") << "caller-owned";
     WriteExecutableZip(archive, source);
     const auto descriptor = ParseReleaseDescriptor(ReadFile(
         std::string(arguments[1]) +
         "/release-contract/release-linux-zip.json"));
-    StageLinuxZip(archive, destination, "Example", descriptor,
-                  "com.example.native-contract", ArchiveLimits{});
+    const auto staged = StageLinuxZip(
+        archive, staging_parent, "Example", descriptor,
+        "com.example.native-contract", ArchiveLimits{});
+    destination = staged.stage_path;
 
     struct stat executable {};
     if (stat((destination + "/Example").c_str(), &executable) != 0 ||
@@ -122,14 +127,16 @@ int main(int argument_count, char** arguments) {
     const auto valid_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(
             destination, install_root, "Example",
-            "com.example.native-contract", {}, "");
+            "com.example.native-contract", {}, "",
+            staged.provenance.marker_sha256);
     if (!valid_handoff.ok) {
       throw std::runtime_error("Validated Linux install handoff was rejected.");
     }
     const auto protected_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(
             destination, "/usr/bin", "Example",
-            "com.example.native-contract", {}, "");
+            "com.example.native-contract", {}, "",
+            staged.provenance.marker_sha256);
     if (protected_handoff.ok) {
       throw std::runtime_error("Protected Linux install root was accepted.");
     }
@@ -137,18 +144,19 @@ int main(int argument_count, char** arguments) {
     RemoveStagingDirectory(destination);
     bool rejected = false;
     try {
-      StageLinuxZip(archive, destination, "Example", descriptor,
+      StageLinuxZip(archive, staging_parent, "Example", descriptor,
                     "com.example.wrong", ArchiveLimits{});
     } catch (const std::exception&) {
       rejected = true;
     }
     struct stat status {};
-    if (!rejected || lstat(destination.c_str(), &status) == 0) {
+    if (!rejected || lstat(destination.c_str(), &status) == 0 ||
+        ReadFile(staging_parent + "/sentinel.txt") != "caller-owned") {
       throw std::runtime_error("Linux package mismatch did not fail closed.");
     }
   } catch (const std::exception& error) {
     try {
-      RemoveStagingDirectory(destination);
+      RemoveStagingDirectory(staging_parent);
       RemoveStagingDirectory(install_root);
       RemoveStagingDirectory(source);
       RemoveStagingDirectory(archive);
@@ -157,7 +165,7 @@ int main(int argument_count, char** arguments) {
     std::cerr << error.what() << std::endl;
     return 1;
   }
-  RemoveStagingDirectory(destination);
+  RemoveStagingDirectory(staging_parent);
   RemoveStagingDirectory(install_root);
   RemoveStagingDirectory(source);
   RemoveStagingDirectory(archive);

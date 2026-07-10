@@ -39,6 +39,33 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertTrue(script.contains("open -n \"$BUNDLE\""))
     }
 
+    func testProvenanceAndPkgTrustPrecedeMutationOrInstallerOpen() {
+        let script = MacInstallHelper().makeHelperScript(
+            for: request(allowUnsignedUpdates: false)
+        )
+
+        let provenance = try! XCTUnwrap(
+            script.range(of: "stage provenance validation")?.lowerBound
+        )
+        let pkgutil = try! XCTUnwrap(
+            script.range(of: "pkgutil --check-signature")?.lowerBound
+        )
+        let open = try! XCTUnwrap(
+            script.range(of: "/usr/bin/open \"$PKG\"")?.lowerBound
+        )
+        let backup = try! XCTUnwrap(
+            script.range(of: "backup start")?.lowerBound
+        )
+        XCTAssertLessThan(provenance, pkgutil)
+        XCTAssertLessThan(pkgutil, open)
+        XCTAssertLessThan(provenance, backup)
+        XCTAssertTrue(script.contains("spctl --assess --type install"))
+        XCTAssertTrue(script.contains("stapler validate \"$PKG\""))
+        XCTAssertTrue(script.contains("EXPECTED_PACKAGE_IDS"))
+        XCTAssertFalse(script.contains("rm -rf \"$(dirname \"$MANIFEST\")\""))
+        XCTAssertTrue(script.contains("cleanup_owned_stage \"$STAGE_ROOT\""))
+    }
+
     func testTopLevelStagingSymlinkIsRejectedBeforeScheduling() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DesktopUpdaterKitTests-\(UUID().uuidString)")
@@ -111,7 +138,12 @@ final class MacInstallHelperTests: XCTestCase {
             allowUnsignedUpdates: allowUnsignedUpdates,
             diagnosticsLogPath: "/tmp/desktop_updater.jsonl",
             currentProcessIdentifier: 42,
-            bundlePath: "/Applications/Example.app"
+            bundlePath: "/Applications/Example.app",
+            stageRoot: "/tmp/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000",
+            expectedProvenanceSHA256: String(repeating: "1", count: 64),
+            artifactKind: "pkgInstaller",
+            expectedArtifactSHA256: String(repeating: "2", count: 64),
+            expectedPackageIDs: ["com.example.app.pkg"]
         )
     }
 }
