@@ -106,6 +106,87 @@ void main() {
     }
   });
 
+  test("Windows and Linux file packages carry exactly one identity marker",
+      () async {
+    for (final platform in <String>["windows", "linux"]) {
+      final tempDir = await Directory.systemTemp.createTemp("packager_");
+      try {
+        final input = File(path.join(tempDir.path, "Example.bin"));
+        await input.writeAsString("binary");
+        final result = await const ZipReleasePackager().package(
+          ReleasePackageRequest(
+            input: input,
+            outputDirectory: Directory(path.join(tempDir.path, "out")),
+            packageId: "com.example.app",
+            appName: "Example",
+            version: "2.0.0",
+            platform: platform,
+            channel: "stable",
+            artifactUrl: Uri.parse("https://cdn.example.com/Example.zip"),
+            installStrategy: "wholeDirectoryReplace",
+          ),
+        );
+
+        final archive = ZipDecoder().decodeBytes(
+          await result.artifact.readAsBytes(),
+        );
+        expect(
+          archive.files
+              .where(
+                (entry) =>
+                    entry.name == ".desktop_updater_install_identity.json",
+              )
+              .length,
+          1,
+          reason: platform,
+        );
+        expect(
+          archive.files.map((entry) => entry.name),
+          contains("Example.bin"),
+          reason: platform,
+        );
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test("packager rejects a pre-existing reserved identity marker", () async {
+    final tempDir = await Directory.systemTemp.createTemp("packager_");
+    try {
+      final input = Directory(path.join(tempDir.path, "input"));
+      await input.create();
+      await File(
+        path.join(input.path, ".desktop_updater_install_identity.json"),
+      ).writeAsString('{"packageId":"forged","schemaVersion":1}');
+
+      await expectLater(
+        const ZipReleasePackager().package(
+          ReleasePackageRequest(
+            input: input,
+            outputDirectory: Directory(path.join(tempDir.path, "out")),
+            packageId: "com.example.app",
+            appName: "Example",
+            version: "2.0.0",
+            platform: "windows",
+            channel: "stable",
+            artifactUrl: Uri.parse("https://cdn.example.com/Example.zip"),
+            installStrategy: "wholeDirectoryReplace",
+          ),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("reserved installed identity marker"),
+          ),
+        ),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("macOS zip artifact filename strips .app but descriptor keeps it",
       () async {
     final tempDir = await Directory.systemTemp.createTemp("packager_");

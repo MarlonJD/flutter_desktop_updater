@@ -61,6 +61,14 @@ class ZipReleasePackager implements ReleasePackager {
     ReleasePackageRequest request,
     File artifact,
   ) async {
+    final addsInstalledIdentity =
+        request.platform == "windows" || request.platform == "linux";
+    if (addsInstalledIdentity) {
+      await _rejectReservedInstalledIdentityMarker(
+        request.input,
+        caseInsensitive: request.platform == "windows",
+      );
+    }
     if (await artifact.exists()) {
       await artifact.delete();
     }
@@ -76,46 +84,78 @@ class ZipReleasePackager implements ReleasePackager {
 
     final encoder = ZipFileEncoder();
     final input = request.input;
-    if (input is Directory) {
-      if (request.platform == "windows") {
-        final marker = File("${artifact.path}.install_identity.tmp");
-        try {
-          await marker.writeAsString(
-            jsonEncode(<String, Object?>{
-              "packageId": request.packageId,
-              "schemaVersion": 1,
-            }),
-            flush: true,
-          );
-          encoder.create(artifact.path);
+    if (input is! Directory && input is! File) {
+      throw FileSystemException("Package input does not exist", input.path);
+    }
+    if (addsInstalledIdentity) {
+      final marker = File("${artifact.path}.install_identity.tmp");
+      try {
+        await marker.writeAsString(
+          jsonEncode(<String, Object?>{
+            "packageId": request.packageId,
+            "schemaVersion": 1,
+          }),
+          flush: true,
+        );
+        encoder.create(artifact.path);
+        if (input is Directory) {
           await encoder.addDirectory(
             input,
             includeDirName: false,
             followLinks: false,
           );
-          await encoder.addFile(
-            marker,
-            ".desktop_updater_install_identity.json",
-          );
-          await encoder.close();
-        } finally {
-          if (await marker.exists()) {
-            await marker.delete();
-          }
+        } else {
+          await encoder.addFile(input as File);
         }
-      } else {
-        await encoder.zipDirectory(
-          input,
-          filename: artifact.path,
-          followLinks: false,
-        );
+        await encoder.addFile(marker, _installedIdentityMarkerName);
+        await encoder.close();
+      } finally {
+        if (await marker.exists()) {
+          await marker.delete();
+        }
       }
-    } else if (input is File) {
-      encoder.create(artifact.path);
-      await encoder.addFile(input);
-      await encoder.close();
+    } else if (input is Directory) {
+      await encoder.zipDirectory(
+        input,
+        filename: artifact.path,
+        followLinks: false,
+      );
     } else {
-      throw FileSystemException("Package input does not exist", input.path);
+      encoder.create(artifact.path);
+      await encoder.addFile(input as File);
+      await encoder.close();
+    }
+  }
+}
+
+const String _installedIdentityMarkerName =
+    ".desktop_updater_install_identity.json";
+
+Future<void> _rejectReservedInstalledIdentityMarker(
+  FileSystemEntity input, {
+  required bool caseInsensitive,
+}) async {
+  bool isReserved(String candidate) => caseInsensitive
+      ? candidate.toLowerCase() == _installedIdentityMarkerName.toLowerCase()
+      : candidate == _installedIdentityMarkerName;
+
+  if (isReserved(path.basename(input.path))) {
+    throw StateError(
+      "Package input contains the reserved installed identity marker.",
+    );
+  }
+  if (input is Directory) {
+    await for (final entity in input.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (isReserved(path.basename(entity.path))) {
+        throw StateError(
+          "Package input contains the reserved installed identity marker.",
+        );
+      } else {
+        continue;
+      }
     }
   }
 }

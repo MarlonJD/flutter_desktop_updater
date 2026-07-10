@@ -28,6 +28,58 @@ typedef MinimumOSSupportChecker = bool Function({
   required String minimumOS,
 });
 
+final Map<String, RetainedVerifiedStage> _verifiedStages =
+    <String, RetainedVerifiedStage>{};
+
+/// Immutable verified stage state retained independently of its marker.
+class RetainedVerifiedStage {
+  /// Creates retained proof for one verified stage.
+  const RetainedVerifiedStage({
+    required this.stageRoot,
+    required this.stagingPath,
+    required this.state,
+  });
+
+  /// Canonical owned stage root containing the provenance marker.
+  final String stageRoot;
+
+  /// Canonical platform-specific path handed to the native helper.
+  final String stagingPath;
+
+  /// Verified marker digest and immutable provenance inventory.
+  final StagedUpdateProvenanceState state;
+}
+
+/// Returns independently retained proof for an exact verified stage path.
+Future<RetainedVerifiedStage?> retainedVerifiedStageFor(
+  String stagingPath,
+) async {
+  final type = await FileSystemEntity.type(stagingPath, followLinks: false);
+  if (type != FileSystemEntityType.directory) {
+    return null;
+  }
+  final canonical =
+      path.normalize(await Directory(stagingPath).resolveSymbolicLinks());
+  return _verifiedStages[canonical];
+}
+
+Future<void> _retainVerifiedStage({
+  required Directory stageRoot,
+  required String stagingPath,
+  required StagedUpdateProvenanceState state,
+}) async {
+  final canonicalRoot = path.normalize(await stageRoot.resolveSymbolicLinks());
+  final canonicalStagingPath =
+      path.normalize(await Directory(stagingPath).resolveSymbolicLinks());
+  final retained = RetainedVerifiedStage(
+    stageRoot: canonicalRoot,
+    stagingPath: canonicalStagingPath,
+    state: state,
+  );
+  _verifiedStages[canonicalRoot] = retained;
+  _verifiedStages[canonicalStagingPath] = retained;
+}
+
 /// Low-level zip-first update client used by the controller and direct APIs.
 ///
 /// The client reads an `app-archive.json`, selects the newest eligible release,
@@ -346,6 +398,11 @@ class UpdateClient {
       packageId: descriptor.packageId,
       descriptorSha256: canonicalJsonSha256(descriptor.toJson()),
       artifactSha256: descriptor.artifact.sha256,
+    );
+    await _retainVerifiedStage(
+      stageRoot: stagingRoot,
+      stagingPath: stagingPath,
+      state: state,
     );
     return UpdateStageResult(
       descriptor: descriptor,

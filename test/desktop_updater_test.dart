@@ -4,7 +4,10 @@ import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
+import "package:desktop_updater/src/package/release_packager.dart";
+import "package:desktop_updater/src/package/zip_release_packager.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -126,44 +129,93 @@ void main() {
       () async {
     const nonce = "123e4567-e89b-42d3-a456-426614174000";
     final parent = await Directory.systemTemp.createTemp("updater_compat_");
-    final stage = await createOwnedStagingDirectory(
+    final forgedStage = await createOwnedStagingDirectory(
       parent: parent,
       nonce: nonce,
     );
     try {
-      await File(path.join(stage.path, "example")).writeAsString("payload");
+      await File(path.join(forgedStage.path, "example"))
+          .writeAsString("payload");
       await writeStagedUpdateProvenance(
-        stageRoot: stage,
+        stageRoot: forgedStage,
         nonce: nonce,
-        packageId: "com.example.provenance",
+        packageId: "com.example.forged",
         descriptorSha256: "a".padRight(64, "a"),
         artifactSha256: "b".padRight(64, "b"),
       );
       late MethodCall capturedCall;
+      var methodCallCount = 0;
       const channel = MethodChannel("desktop_updater");
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
+        methodCallCount += 1;
         capturedCall = call;
         return null;
       });
       DesktopUpdaterPlatform.instance = MethodChannelDesktopUpdater();
 
-      await DesktopUpdater().installUpdate(stagingPath: stage.path);
+      await expectLater(
+        DesktopUpdater().installUpdate(stagingPath: forgedStage.path),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("retained verified stage provenance"),
+          ),
+        ),
+      );
+      expect(methodCallCount, 0);
+      await forgedStage.delete(recursive: true);
+
+      final input = Directory(path.join(parent.path, "input"));
+      await input.create();
+      await File(path.join(input.path, "example")).writeAsString("payload");
+      final output = Directory(path.join(parent.path, "output"));
+      final artifact = File(
+        path.join(output.path, "Example-2.0.0-linux.zip"),
+      );
+      final packaged = await const ZipReleasePackager().package(
+        ReleasePackageRequest(
+          input: input,
+          outputDirectory: output,
+          packageId: "com.example.provenance",
+          appName: "Example",
+          version: "2.0.0",
+          platform: "linux",
+          channel: "stable",
+          artifactUrl: artifact.uri,
+          installStrategy: "wholeDirectoryReplace",
+        ),
+      );
+      final client = UpdateClient(
+        appArchiveUrl: Uri.parse("https://updates.example/app-archive.json"),
+        currentVersion: DesktopVersionInfo.parse("1.0.0"),
+        platform: "linux",
+        stagingParent: parent,
+      );
+      final staged = await client.downloadVerifyAndStage(
+        descriptor: packaged.descriptor,
+      );
+
+      await DesktopUpdater().installUpdate(stagingPath: staged.stagingPath);
 
       expect(
-          capturedCall.arguments,
-          containsPair(
-            "packageId",
-            "com.example.provenance",
-          ));
+        capturedCall.arguments,
+        containsPair(
+          "packageId",
+          "com.example.provenance",
+        ),
+      );
       expect(
-          capturedCall.arguments,
-          containsPair(
-            "stageProvenanceNonce",
-            nonce,
-          ));
+        capturedCall.arguments,
+        containsPair(
+          "stageProvenanceNonce",
+          staged.stageProvenance.nonce,
+        ),
+      );
       expect(capturedCall.arguments, contains("stageProvenanceSha256"));
       expect(capturedCall.arguments, contains("stageProvenanceEntries"));
+      expect(methodCallCount, 1);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
     } finally {

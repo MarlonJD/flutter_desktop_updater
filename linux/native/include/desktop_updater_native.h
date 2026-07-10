@@ -16,6 +16,7 @@ enum class LinuxInstallOperation {
 enum class InstallTargetProofSource {
   kRunningExecutableContext,
   kSelfContainedFlutterBundle,
+  kInstalledIdentityMarker,
 };
 
 struct InstallTargetProof {

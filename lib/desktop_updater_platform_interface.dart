@@ -2,8 +2,9 @@ import "dart:io";
 
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/src/core/update_client.dart"
+    show retainedVerifiedStageFor;
 import "package:desktop_updater/src/macos_install_location.dart";
-import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 /// Platform interface implemented by macOS, Windows, and Linux helpers.
@@ -122,12 +123,22 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
           resolvedProvenanceEntries.isEmpty ||
           resolvedArtifactSha256 == null ||
           resolvedArtifactSha256.isEmpty) {
-        final stageRoot = await _verifiedStageRoot(stagingPath);
-        final state = await readStagedUpdateProvenance(stageRoot: stageRoot);
+        final retained = await retainedVerifiedStageFor(stagingPath);
+        if (retained == null) {
+          throw StateError(
+            "Legacy installs require retained verified stage provenance "
+            "from UpdateClient staging.",
+          );
+        }
+        final stageRoot = Directory(retained.stageRoot);
+        final state = retained.state;
         final provenance = await verifyStagedUpdateProvenance(
           stageRoot: stageRoot,
           expectedMarkerSha256: state.markerSha256,
         );
+        if (provenance.canonicalJson != state.provenance.canonicalJson) {
+          throw StateError("Retained verified stage provenance changed.");
+        }
         if (resolvedPackageId != null &&
             resolvedPackageId.isNotEmpty &&
             resolvedPackageId != provenance.packageId) {
@@ -165,22 +176,4 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
       diagnosticsLogPath: diagnosticsLogPath,
     );
   }
-}
-
-Future<Directory> _verifiedStageRoot(String stagingPath) async {
-  final candidate = Directory(stagingPath);
-  if (await File(
-    path.join(candidate.path, stagedUpdateProvenanceFileName),
-  ).exists()) {
-    return candidate;
-  }
-  final parent = candidate.parent;
-  if (await File(
-    path.join(parent.path, stagedUpdateProvenanceFileName),
-  ).exists()) {
-    return parent;
-  }
-  throw const FormatException(
-    "Stage provenance marker is missing from the staged update root.",
-  );
 }

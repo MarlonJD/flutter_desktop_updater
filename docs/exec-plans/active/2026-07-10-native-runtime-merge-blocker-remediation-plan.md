@@ -946,6 +946,35 @@ Task 5 evidence on 2026-07-10:
   Windows registry/UAC/Inno execution, CI, CocoaPods lint, macOS 10.14 runtime
   execution, signing/notarization, credentials, and release smoke were not run.
 
+Task 5 post-commit review remediation evidence on 2026-07-10:
+
+- RED: the task-supplied focused Flutter regressions failed on forged legacy
+  stage acceptance, missing file-input identity markers, reserved marker
+  acceptance, and missing native proof checks. The portable Linux suite built
+  against `4993cda` reported failures for both explicit temporary roots and
+  broad ancestor roots because each still produced a helper script. Native
+  CMake RED was blocked because `cmake` is unavailable on this host.
+- Resolution: legacy default-channel installs now require independently
+  retained verified stage state populated only by successful `UpdateClient`
+  finalization; explicit Linux installs require a matching root-level installed
+  identity and reject temporary descendants; Windows Program Files proof uses
+  only HKLM 64/32-bit uninstall views; Windows rejects a stage-root reparse
+  point before proof or helper creation; ZIP directory/file packaging emits one
+  reserved identity marker and rejects pre-existing collisions; and Linux real
+  rollback asserts restored executable bytes and mode.
+- GREEN: the exact Task 5 Flutter command passed 70 tests, publisher tests
+  passed 7, supplemental native API/helper/consumer contracts passed 38, the
+  portable Linux helper passed 12, and the portable Windows C ABI passed 10.
+  The macOS plugin package passed 51 Swift tests and the exact five-file macOS
+  10.14 CocoaPods source set typechecked. Formatting and analysis passed at the
+  final handoff.
+- Wider observation: optional full Flutter widening reached 572 passes, 3
+  skips, and 3 failures from pre-existing `4993cda` contract mismatches (an
+  unmarked stale-stage cleanup expectation, the existing
+  `kSelfContainedFlutterBundle` header name, and macOS helper source ordering).
+  No unrelated compatibility behavior was changed to hide them. Target-host,
+  CI, credential, signing, notarization, and release lanes remain not run.
+
 ---
 
 ### Task 6: Add Mount/Reparse Safety, Target Locks, and Durable Recovery

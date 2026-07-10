@@ -11,7 +11,9 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -29,6 +31,9 @@ const std::unordered_set<std::string> kProtectedInstallRoots = {
     "/usr/bin",   "/usr/sbin",  "/usr/local", "/usr/local/bin",
     "/opt",       "/etc",       "/var",       "/home",
 };
+
+constexpr const char* kInstalledIdentityMarkerName =
+    ".desktop_updater_install_identity.json";
 
 std::string ShellQuote(const std::string& value) {
   std::string quoted = "'";
@@ -247,6 +252,57 @@ bool IsRealFile(const std::string& path) {
          !S_ISLNK(value.st_mode);
 }
 
+std::string JsonEscape(const std::string& value) {
+  std::ostringstream escaped;
+  escaped << std::hex << std::setfill('0');
+  for (const unsigned char byte : value) {
+    switch (byte) {
+      case '\b':
+        escaped << "\\b";
+        break;
+      case '\f':
+        escaped << "\\f";
+        break;
+      case '\n':
+        escaped << "\\n";
+        break;
+      case '\r':
+        escaped << "\\r";
+        break;
+      case '\t':
+        escaped << "\\t";
+        break;
+      case '\\':
+      case '"':
+        escaped << '\\' << static_cast<char>(byte);
+        break;
+      default:
+        if (byte < 0x20) {
+          escaped << "\\u00" << std::setw(2)
+                  << static_cast<unsigned int>(byte);
+        } else {
+          escaped << static_cast<char>(byte);
+        }
+    }
+  }
+  return escaped.str();
+}
+
+bool HasMatchingInstallIdentityMarker(const std::string& install_root,
+                                      const std::string& package_id) {
+  const std::string marker_path =
+      JoinPath(install_root, kInstalledIdentityMarkerName);
+  if (!IsRealFile(marker_path)) {
+    return false;
+  }
+  std::ifstream input(marker_path, std::ios::binary);
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  return (input.good() || input.eof()) &&
+         contents == "{\"packageId\":\"" + JsonEscape(package_id) +
+                         "\",\"schemaVersion\":1}";
+}
+
 bool ProvenanceContainsExecutable(const InstallRequest& request) {
   for (const InstallProvenanceEntry& entry : request.provenance_entries) {
     if (entry.path == request.executable_relative_path &&
@@ -288,12 +344,19 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
             "pass explicit installRoot and executableRelativePath or use a "
             "fresh installer."};
   }
+  if (!legacy_fallback &&
+      !HasMatchingInstallIdentityMarker(request.install_root,
+                                        request.package_id)) {
+    return {false,
+            "Linux explicit install root requires a matching root-level "
+            "installed identity marker; use a fresh installer."};
+  }
   if (proof != nullptr) {
     *proof = {canonical_root, request.executable_relative_path,
               request.package_id,
               legacy_fallback
                   ? InstallTargetProofSource::kSelfContainedFlutterBundle
-                  : InstallTargetProofSource::kRunningExecutableContext};
+                  : InstallTargetProofSource::kInstalledIdentityMarker};
   }
   return {true, ""};
 }
@@ -335,6 +398,9 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request,
   }
   if (IsProtectedInstallRoot(request.install_root)) {
     return {false, "Linux install root is a protected shared/system root."};
+  }
+  if (IsTemporaryInstallRoot(request.install_root)) {
+    return {false, "Linux install root must not be in a temporary tree."};
   }
   if (HasSymlinkComponent(request.install_root)) {
     return {false, "Linux install root must not contain symbolic links."};

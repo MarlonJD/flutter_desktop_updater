@@ -461,22 +461,13 @@ bool ReadRegistryString(HKEY key,
 
 bool HasMatchingUninstallRecord(const std::wstring& canonical_target,
                                 const std::wstring& expected_package_id) {
-  struct RegistryRoot {
-    HKEY hive;
-    const wchar_t* path;
-  };
-  const RegistryRoot roots[] = {
-      {HKEY_CURRENT_USER,
-       L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
-      {HKEY_LOCAL_MACHINE,
-       L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
-      {HKEY_LOCAL_MACHINE,
-       L"Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
-  };
-  for (const RegistryRoot& root : roots) {
+  constexpr const wchar_t* kUninstallPath =
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+  const REGSAM views[] = {KEY_WOW64_64KEY, KEY_WOW64_32KEY};
+  for (const REGSAM view : views) {
     HKEY uninstall = nullptr;
-    if (RegOpenKeyExW(root.hive, root.path, 0, KEY_READ, &uninstall) !=
-        ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kUninstallPath, 0,
+                      KEY_READ | view, &uninstall) != ERROR_SUCCESS) {
       continue;
     }
     DWORD index = 0;
@@ -553,6 +544,22 @@ bool IsCanonicalRelativeExecutable(const fs::path& path) {
   return true;
 }
 
+InstallResult ValidateStagingRoot(const InstallRequest& request) {
+  if (request.staging_path.empty()) {
+    return {true, ""};
+  }
+  const DWORD stage_attributes =
+      GetFileAttributesW(request.staging_path.c_str());
+  if (stage_attributes == INVALID_FILE_ATTRIBUTES ||
+      (stage_attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+    return {false, "Staged update directory does not exist."};
+  }
+  if ((stage_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return {false, "Staged update root must not be a reparse point."};
+  }
+  return {true, ""};
+}
+
 InstallResult ProveInstallTarget(const InstallRequest& request,
                                  const fs::path& running_executable,
                                  InstallTargetProof* proof) {
@@ -627,9 +634,9 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     return {false, "Unable to canonicalize executable path."};
   }
   fs::path target_directory = executable.parent_path();
-  if (!request.staging_path.empty() &&
-      !fs::is_directory(fs::path(request.staging_path))) {
-    return {false, "Staged update directory does not exist."};
+  const InstallResult staging_root = ValidateStagingRoot(request);
+  if (!staging_root.ok) {
+    return staging_root;
   }
   InstallTargetProof target_proof;
   if (!request.staging_path.empty()) {

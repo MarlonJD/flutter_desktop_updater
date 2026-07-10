@@ -23,17 +23,23 @@ namespace fs = std::filesystem;
 
 class TemporaryDirectory {
  public:
-  TemporaryDirectory() {
+  explicit TemporaryDirectory(bool system_temp = false) {
+    char* created = nullptr;
+    if (system_temp) {
 #if defined(__APPLE__)
-    char path[] = "/private/tmp/desktop_updater_native_test_XXXXXX";
+      char path[] = "/private/tmp/desktop_updater_native_test_XXXXXX";
 #else
-    char path[] = "/tmp/desktop_updater_native_test_XXXXXX";
+      char path[] = "/tmp/desktop_updater_native_test_XXXXXX";
 #endif
-    char* created = mkdtemp(path);
+      created = mkdtemp(path);
+    } else {
+      char path[] = "desktop_updater_native_test_XXXXXX";
+      created = mkdtemp(path);
+    }
     if (created == nullptr) {
       throw std::runtime_error("Unable to create native test directory");
     }
-    path_ = created;
+    path_ = fs::canonical(created);
   }
 
   ~TemporaryDirectory() {
@@ -158,7 +164,13 @@ std::string CanonicalMarker(
 }
 
 InstallRequest RequestFor(const fs::path& install_root,
-                          const fs::path& staging_root) {
+                          const fs::path& staging_root,
+                          bool write_installed_identity = true) {
+  if (write_installed_identity) {
+    WriteFile(
+        install_root / ".desktop_updater_install_identity.json",
+        "{\"packageId\":\"com.example.app\",\"schemaVersion\":1}");
+  }
   InstallRequest request;
   request.operation = LinuxInstallOperation::kInstall;
   request.staging_path = staging_root.string();
@@ -218,7 +230,7 @@ TEST(LinuxNativeInstall, LegacyFallbackAcceptsSelfContainedFlutterBundle) {
   WriteFile(install_root / "data/flutter_assets/AssetManifest.bin", "assets");
   WriteFile(install_root / "lib/libflutter_linux_gtk.so", "flutter");
   WriteFile(staging_root / "example", "new", 0755);
-  InstallRequest request = RequestFor(install_root, staging_root);
+  InstallRequest request = RequestFor(install_root, staging_root, false);
   request.install_root.clear();
   request.executable_relative_path.clear();
   std::string script;
@@ -233,7 +245,7 @@ TEST(LinuxNativeInstall, LegacyFallbackAcceptsSelfContainedFlutterBundle) {
 }
 
 TEST(LinuxNativeInstall, LegacyFallbackRejectsTemporaryRootWithoutScript) {
-  TemporaryDirectory temporary;
+  TemporaryDirectory temporary(true);
   const fs::path install_root = temporary.path() / "Example";
   const fs::path staging_root = temporary.path() /
       "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
@@ -253,6 +265,45 @@ TEST(LinuxNativeInstall, LegacyFallbackRejectsTemporaryRootWithoutScript) {
   EXPECT_FALSE(result.ok);
   EXPECT_NE(result.error.find("self-contained Flutter bundle"),
             std::string::npos);
+  EXPECT_TRUE(script.empty());
+}
+
+TEST(LinuxNativeInstall, ExplicitContextRejectsTemporaryRootWithoutScript) {
+  TemporaryDirectory temporary(true);
+  const fs::path install_root = temporary.path() / "Example";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "bin/example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(staging_root / "bin/example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("temporary"), std::string::npos);
+  EXPECT_TRUE(script.empty());
+}
+
+TEST(LinuxNativeInstall, ExplicitContextRejectsBroadAncestorWithoutScript) {
+  TemporaryDirectory temporary;
+  const fs::path install_root = temporary.path() / "apps";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "Example/bin/example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(staging_root / "Example/bin/example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root, false);
+  request.executable_relative_path = "Example/bin/example";
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("installed identity"), std::string::npos);
   EXPECT_TRUE(script.empty());
 }
 
@@ -402,6 +453,10 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   EXPECT_NE(exit_code, 0);
   EXPECT_TRUE(fs::exists(install_root / "old.txt"));
   EXPECT_FALSE(fs::exists(install_root / "new.txt"));
+  EXPECT_EQ(ReadFile(executable), "old executable");
+  struct stat restored_executable = {};
+  ASSERT_EQ(stat(executable.c_str(), &restored_executable), 0);
+  EXPECT_NE(restored_executable.st_mode & S_IXUSR, 0);
   EXPECT_EQ(ReadFile(outside), "outside data");
   const std::string events = ReadFile(diagnostics);
   EXPECT_NE(events.find("\"event\":\"backup success\""), std::string::npos);

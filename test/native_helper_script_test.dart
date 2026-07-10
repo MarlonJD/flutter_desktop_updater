@@ -81,6 +81,11 @@ void main() {
     expect(linux, contains("data/flutter_assets"));
     expect(linux, contains("lib/libflutter_linux_gtk.so"));
     expect(linux, contains("IsStrictDescendant(root, temp)"));
+    expect(linux, contains(".desktop_updater_install_identity.json"));
+    expect(
+      linux,
+      contains("IsTemporaryInstallRoot(request.install_root)"),
+    );
     expect(linux, contains("InstallTargetProof"));
     expect(windows, contains("InstallTargetProof"));
     expect(windows, contains(".desktop_updater_install_identity.json"));
@@ -89,10 +94,26 @@ void main() {
     expect(windowsRuntimeHeader, contains("executable_relative_path_utf8"));
     expect(windowsRuntimeHeader, contains("expected_package_id_utf8"));
 
+    final registryProof = windows.substring(
+      windows.indexOf("bool HasMatchingUninstallRecord("),
+      windows.indexOf("std::string JsonEscape("),
+    );
+    expect(registryProof, contains("HKEY_LOCAL_MACHINE"));
+    expect(registryProof, contains("KEY_WOW64_64KEY"));
+    expect(registryProof, contains("KEY_WOW64_32KEY"));
+    expect(registryProof, isNot(contains("HKEY_CURRENT_USER")));
+
+    final stageReparseCheck = windows.indexOf(
+      "GetFileAttributesW(request.staging_path.c_str())",
+    );
     final windowsProof = windows.indexOf("ProveInstallTarget(");
     final windowsScript = windows.indexOf("const fs::path script_path");
+    expect(stageReparseCheck, isNonNegative);
     expect(windowsProof, isNonNegative);
     expect(windowsScript, isNonNegative);
+    expect(stageReparseCheck, lessThan(windowsProof));
+    expect(stageReparseCheck, lessThan(windowsScript));
+
     expect(windowsProof, lessThan(windowsScript));
   });
 
