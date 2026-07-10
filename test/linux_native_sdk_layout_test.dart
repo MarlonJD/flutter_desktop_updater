@@ -67,6 +67,33 @@ void main() {
     expect(readme, contains("compiler, glibc, architecture"));
   });
 
+  test("Linux native runtime and shared tests require C++17", () {
+    final nativeCmake = readRequiredFile("linux/native/CMakeLists.txt");
+    const targets = <String>[
+      "desktop_updater_native",
+      "desktop_updater_runtime",
+      "desktop_updater_native_test",
+      "desktop_updater_runtime_lifecycle_test",
+      "desktop_updater_runtime_contract_test",
+      "desktop_updater_runtime_artifact_test",
+      "desktop_updater_runtime_transport_test",
+    ];
+
+    expect(nativeCmake, isNot(contains("cxx_std_14")));
+    for (final target in targets) {
+      final compileFeaturePattern = [
+        r"target_compile_features\(",
+        target,
+        r"\s+(?:PUBLIC|PRIVATE)\s+cxx_std_17\)",
+      ].join();
+      expect(
+        nativeCmake,
+        matches(RegExp(compileFeaturePattern)),
+        reason: "$target must compile shared std::filesystem headers as C++17",
+      );
+    }
+  });
+
   test("Linux helper safety behavior lives in native source", () {
     final plugin = File("linux/desktop_updater_plugin.cc").readAsStringSync();
     final source = readRequiredFile(

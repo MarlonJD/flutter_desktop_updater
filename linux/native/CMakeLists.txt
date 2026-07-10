@@ -14,7 +14,7 @@ add_library(desktop_updater_native STATIC
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc)
 add_library(desktop_updater::native ALIAS desktop_updater_native)
-target_compile_features(desktop_updater_native PUBLIC cxx_std_14)
+target_compile_features(desktop_updater_native PUBLIC cxx_std_17)
 target_include_directories(desktop_updater_native
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -51,7 +51,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
   add_library(desktop_updater::runtime ALIAS desktop_updater_runtime)
-  target_compile_features(desktop_updater_runtime PUBLIC cxx_std_14)
+  target_compile_features(desktop_updater_runtime PUBLIC cxx_std_17)
   target_include_directories(desktop_updater_runtime
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -144,7 +144,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/client_lifecycle_tests.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
     target_compile_features(desktop_updater_runtime_lifecycle_test
-      PRIVATE cxx_std_14)
+      PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_lifecycle_test PRIVATE
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
     target_link_libraries(desktop_updater_runtime_lifecycle_test
@@ -159,7 +159,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics_fixture_tests.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core_fixture_tests.cc)
     target_compile_features(desktop_updater_runtime_contract_test
-      PRIVATE cxx_std_14)
+      PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_contract_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
@@ -173,7 +173,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     add_executable(desktop_updater_runtime_artifact_test
       test/runtime/artifact_stager_test.cc)
     target_compile_features(desktop_updater_runtime_artifact_test
-      PRIVATE cxx_std_14)
+      PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_artifact_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
@@ -188,7 +188,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       test/runtime/transport_fixture_test.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/transport_fixture_tests.cc)
     target_compile_features(desktop_updater_runtime_transport_test
-      PRIVATE cxx_std_14)
+      PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_transport_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})

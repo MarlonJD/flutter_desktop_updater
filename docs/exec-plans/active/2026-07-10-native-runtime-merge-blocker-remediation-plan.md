@@ -1351,6 +1351,43 @@ Task 7 second review follow-up evidence on 2026-07-11:
 - Second follow-up commit for this changeset:
   `fix: finish Windows native path boundary`.
 
+Task 7 final build-contract follow-up evidence on 2026-07-11:
+
+- RED was recorded before the CMake change with
+  `flutter test --no-pub test/linux_native_sdk_layout_test.dart`. The new
+  focused contract failed with
+  `Expected: not contains 'cxx_std_14'` and the run ended
+  `+5 -1: Some tests failed.`
+- GREEN after the minimal CMake change: the focused Linux native SDK contract
+  passed all 6 tests. It now enumerates both Linux production libraries and
+  all five native/runtime test targets and requires a literal C++17 compile
+  feature for each.
+- `desktop_updater_native`, `desktop_updater_runtime`, and the lifecycle,
+  contract, artifact, and transport runtime tests now declare `cxx_std_17`;
+  the existing native test was already C++17. No filesystem type was hidden
+  and no regression test was weakened.
+- Matrix inspection found no repository-root CMake project. Windows native
+  production/test targets already declare C++17. Linux installed-package and
+  Flutter consumer targets retain their C++14 minimum declarations because
+  the exported `PUBLIC cxx_std_17` feature raises the effective compile
+  standard when they link the native target; no consumer source change was
+  required.
+- Direct C++17 syntax checks passed for the Linux native library and the full
+  Linux/shared runtime source set. Portable lifecycle and provenance
+  executables built with `-Wall -Wextra -Werror` and passed. A Linux native
+  CMake configure/build was attempted but unavailable on this macOS host with
+  the literal diagnostic `cmake: command not found`; it is not counted as
+  target-host evidence.
+- Final local verification: the focused Linux SDK suite passed 6 tests; format
+  checked 213 files with 0 changes; analyze exited 0 with 395 pre-existing
+  info-only diagnostics; full Flutter passed 578 tests with 3 explicit
+  environment-gated skips and 0 failures; `git diff --check` passed.
+- Windows Debug CMake, CTest, and .NET were not run on macOS. Task 7 Step 5
+  and the final acceptance checkbox remain open. Task 6 remains
+  blocked/reverted.
+- Build-contract follow-up commit for this changeset:
+  `build: align native runtime with C++17`.
+
 ---
 
 ### Task 8: Separate macOS 10.15 Runtime from the 10.14 CocoaPods Fallback
