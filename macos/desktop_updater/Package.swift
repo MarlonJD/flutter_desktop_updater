@@ -9,6 +9,7 @@ let package = Package(
         .macOS("10.15")
     ],
     products: [
+        .library(name: "DesktopUpdaterKit", targets: ["DesktopUpdaterKit"]),
         .library(name: "desktop-updater", targets: ["desktop_updater"])
     ],
     dependencies: [
@@ -16,8 +17,13 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "DesktopUpdaterKit",
+            path: "Sources/DesktopUpdaterKit"
+        ),
+        .target(
             name: "desktop_updater",
             dependencies: [
+                "DesktopUpdaterKit",
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             resources: [
@@ -35,6 +41,11 @@ let package = Package(
         .testTarget(
             name: "desktop_updaterTests",
             dependencies: ["desktop_updater"]
+        ),
+        .testTarget(
+            name: "DesktopUpdaterKitTests",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "Tests/DesktopUpdaterKitTests"
         )
     ]
 )

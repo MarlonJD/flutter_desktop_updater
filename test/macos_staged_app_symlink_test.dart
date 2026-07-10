@@ -7,7 +7,7 @@ import "package:path/path.dart" as path;
 void main() {
   test("generated macOS helper rechecks staged app before install work", () {
     final source = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
 
     final symlinkCheck = source.indexOf(r'if [ -L "$STAGING" ]; then');

@@ -17,7 +17,7 @@ void main() {
         (legacyFixture["events"] as List<dynamic>).cast<String>();
     final sources = [
       File(
-        "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+        "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
       ),
       File("windows/desktop_updater_plugin.cpp"),
       File("linux/desktop_updater_plugin.cc"),

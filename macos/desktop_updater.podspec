@@ -14,7 +14,10 @@ A new Flutter plugin project.
   s.author           = { 'Your Company' => 'email@example.com' }
 
   s.source           = { :path => '.' }
-  s.source_files = 'desktop_updater/Sources/desktop_updater/**/*'
+  s.source_files = [
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', '**', '*.swift'),
+    File.join('desktop_updater', 'Sources', 'desktop_updater', '**', '*.swift')
+  ]
 
   # If your plugin requires a privacy manifest, for example if it collects user
   # data, update the PrivacyInfo.xcprivacy file to describe your plugin's

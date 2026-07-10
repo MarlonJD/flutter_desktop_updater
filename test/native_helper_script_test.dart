@@ -77,7 +77,7 @@ void main() {
   test("native helpers append diagnostics only when an explicit path is passed",
       () {
     final macosSource = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
     final linuxSource =
         File("linux/desktop_updater_plugin.cc").readAsStringSync();
@@ -110,7 +110,7 @@ void main() {
 
   test("native helpers include failure events for support diagnostics", () {
     final macosSource = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
     final linuxSource =
         File("linux/desktop_updater_plugin.cc").readAsStringSync();
@@ -311,7 +311,7 @@ void main() {
       "macOS helper opens staged PKG installers without silent privilege escalation",
       () {
     final source = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
 
     expect(source, contains("pkgInstaller"));

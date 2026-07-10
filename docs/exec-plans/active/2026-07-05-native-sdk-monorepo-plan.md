@@ -677,14 +677,18 @@ CocoaPods Flutter fallback: macOS 10.14, Swift 5.0
 Shared helper sources must compile at the CocoaPods 10.14 deployment target;
 do not use a 10.15-only API without an availability branch.
 
-- [ ] **Step 3.1: Add root and plugin SwiftPM targets**
+- [x] **Step 3.1: Add root and plugin SwiftPM targets**
 
 Root `Package.swift` exposes `DesktopUpdaterKit` only. The Flutter package
 manifest exposes both `DesktopUpdaterKit` and the existing
 `desktop-updater` adapter product. The adapter target depends on
 `FlutterFramework` and `DesktopUpdaterKit`.
 
-- [ ] **Step 3.2: Preserve the CocoaPods fallback**
+RED verified locally on 2026-07-10: five focused package-layout and adapter
+tests failed because the root helper product, shared Swift sources, plugin
+target dependency, and CocoaPods source layout did not exist.
+
+- [x] **Step 3.2: Preserve the CocoaPods fallback**
 
 The podspec compiles both source directories inside the existing Flutter pod:
 
@@ -707,7 +711,7 @@ Under SwiftPM, helper types come from the `DesktopUpdaterKit` module. Under
 CocoaPods, both source trees compile in the existing `desktop_updater` module,
 so the same types are visible without publishing a native helper pod.
 
-- [ ] **Step 3.3: Extract the complete current helper**
+- [x] **Step 3.3: Extract the complete current helper**
 
 Move shell generation, quoting, bundle identity, Team ID, codesign,
 Gatekeeper, stapler, backup, replacement, rollback, cleanup, relaunch, and
@@ -717,7 +721,7 @@ helper event strings.
 Do not move Dart-owned discovery, rollout, HTTP, descriptor verification, DMG
 staging, or lifecycle diagnostics into this master stage.
 
-- [ ] **Step 3.4: Add Swift API and fixture tests**
+- [x] **Step 3.4: Add Swift API and fixture tests**
 
 Tests must:
 
@@ -729,7 +733,7 @@ Tests must:
 - assert ZIP/DMG staged `.app` identity checks and PKG Installer.app handoff
   remain available through the adapter.
 
-- [ ] **Step 3.5: Run both macOS integration lanes**
+- [x] **Step 3.5: Run both macOS integration lanes**
 
 SwiftPM lane:
 
@@ -753,12 +757,30 @@ Expected: both lanes compile the same helper behavior. Record CocoaPods as
 `blocked` only when CocoaPods itself is unavailable; do not mark it verified
 from source inspection alone.
 
-- [ ] **Step 3.6: Restore the user's Flutter SwiftPM setting**
+Verified locally on 2026-07-10:
+
+- root `swift build`: PASS;
+- root `swift test`: PASS, 6 tests including external-module public API and
+  canonical fixture coverage;
+- focused macOS package, helper, symlink, diagnostics, and compatibility
+  suite: PASS, 27 tests;
+- SwiftPM Flutter host build: PASS;
+- SwiftPM macOS integration suite: PASS, 2 tests;
+- CocoaPods fallback host build: `blocked` because CocoaPods is not installed;
+- `dart format --set-exit-if-changed .`: PASS, 186 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
+- `flutter test --no-pub`: PASS, 471 tests with 3 external E2E skips.
+
+- [x] **Step 3.6: Restore the user's Flutter SwiftPM setting**
 
 Return the global Flutter SwiftPM setting to its value recorded before Step
 3.5.
 
-- [ ] **Step 3.7: Commit macOS extraction**
+Verified locally on 2026-07-10: the recorded value was `true`, and
+`flutter config --list` reported `enable-swift-package-manager: true` after
+the integration lanes.
+
+- [x] **Step 3.7: Commit macOS extraction**
 
 ```sh
 git add Package.swift macos test/macos_swift_package_test.dart \
