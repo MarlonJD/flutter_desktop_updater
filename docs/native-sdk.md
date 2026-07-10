@@ -209,7 +209,7 @@ handoff. Applications still own configuration, pinned keys, package identity,
 minimum-OS policy, request headers, UI, and release approval.
 
 The API is `preview` and `candidate-only`, not `production-ready`. The macOS
-ZIP flow is `verified locally`; Windows and Linux target-host package smokes
-remain pending final CI, and the signed DMG, PKG, and Inno lanes are `not run`
+ZIP flow is `verified locally`, and the macOS, Windows, and Linux ZIP package
+smokes are `verified in CI`. The signed DMG, PKG, and Inno lanes are `not run`
 without explicit credentials. See [Native Runtime Preview API](native-runtime-api.md)
 for compiling examples, packaging boundaries, exact evidence, and trust rules.

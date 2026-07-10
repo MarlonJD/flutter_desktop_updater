@@ -78,9 +78,10 @@ runtime preview for native host apps:
 Helper-only consumers still provide their own discovery, verification, and
 staging. The preview adds the stateful `checkForUpdate`,
 `downloadVerifyAndStage`, and `installAndRelaunch` flow while reusing the same
-helpers and trust rules. It is `candidate-only` and not production-ready:
-Windows/Linux target-host smokes remain pending final CI, and signed DMG, PKG,
-and Inno smokes are `not run` without explicit credentials.
+helpers and trust rules. The normal macOS, Windows, and Linux ZIP package
+smokes are `verified in CI`. The preview remains `candidate-only` and not
+production-ready because signed DMG, PKG, and Inno smokes are `not run` without
+explicit credentials.
 
 See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for package
 integration and [Native Runtime Preview API](docs/native-runtime-api.md) for

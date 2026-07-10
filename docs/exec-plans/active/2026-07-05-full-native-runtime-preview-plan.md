@@ -422,7 +422,7 @@ descriptor.packageId == expectedPackageId
 Match Dart results for minimum updater, minimum OS, rollout, support-policy,
 and fresh-install cases. Fresh-install never downloads the update artifact.
 
-- [ ] **Step 3.7: Run cross-language conformance**
+- [x] **Step 3.7: Run cross-language conformance**
 
 ```sh
 swift test
@@ -459,9 +459,9 @@ Task 3 candidate evidence on 2026-07-10:
 - Windows uses a BCrypt SHA-256 provider and Linux uses OpenSSL EVP SHA-256;
   Monocypher and contract sources compile only when
   `DESKTOP_UPDATER_NATIVE_RUNTIME=ON`;
-- Windows and Linux CMake/CTest lanes are wired with runtime conformance enabled
-  and zero-test guards, but target-host execution is CI-pending, so Step 3.7
-  remains unchecked until the final verification pass.
+- commit `6be760e` passed the Swift, Windows CMake/CTest, and Linux CMake/CTest
+  conformance lanes on their target hosts, including the zero-test guards, so
+  Step 3.7 is complete.
 
 ## Task 4: Native Transport And Download Semantics
 
@@ -505,7 +505,7 @@ Stop when received bytes exceed descriptor length. After completion, verify
 exact length and SHA-256 before staging. Reject index/descriptor bodies above
 `maximumMetadataBytes`.
 
-- [ ] **Step 4.5: Run platform transport tests**
+- [x] **Step 4.5: Run platform transport tests**
 
 Use a local fixture HTTP server; do not call public internet services from the
 test suite.
@@ -533,8 +533,8 @@ Task 4 candidate evidence on 2026-07-10:
 - the Windows WinHTTP transport disables automatic redirects, re-evaluates
   app-owned headers, validates range resume and integrity, and is registered in
   target-host CTest with the same loopback fixture suite;
-- Windows target-host execution is CI-pending, so Step 4.5 remains unchecked
-  until the final verification pass.
+- commit `6be760e` passed the local-server transport suites on macOS, Windows,
+  and Linux target hosts, so Step 4.5 is complete.
 
 ## Task 5: Safe Staging And Artifact Matrix
 
@@ -634,9 +634,9 @@ Task 5 candidate evidence on 2026-07-10:
   `dart format --output=none --set-exit-if-changed .`: PASS, 205 files,
   0 changed; `flutter analyze --no-fatal-infos`: PASS with info diagnostics
   and no errors; the external macOS SwiftPM consumer compiled and ran;
-- Windows target-host execution and positive signed DMG/PKG/Inno trust lanes
-  are CI/credential-pending, so Step 5.7 remains unchecked until the final
-  verification pass.
+- Windows target-host artifact execution passed on commit `6be760e`. Positive
+  signed/notarized DMG, PKG, and signed Inno trust lanes are still `not run`
+  without explicit credentials, so Step 5.7 remains unchecked.
 
 ## Task 6: Diagnostics And Recovery Parity
 
@@ -737,7 +737,7 @@ Linux ZIP update
 
 Signed/notarized/publisher-trust lanes use existing explicit secret gates.
 
-- [ ] **Step 7.4: Verify installed package consumption**
+- [x] **Step 7.4: Verify installed package consumption**
 
 macOS sample uses the repository-tag/local SwiftPM product. Windows sample
 uses the local NuGet package and bundled native DLL. Linux sample uses a CMake
@@ -793,8 +793,13 @@ Task 7 candidate evidence on 2026-07-10:
 - the focused Dart contracts passed 15 tests, the full Flutter suite passed
   529 tests with 3 explicit opt-in E2E skips, formatting checked 208 files
   with no changes, and analyze completed without errors;
-- Steps 7.3 and 7.4 remain unchecked until the final target-host CI pass and
-  credential-gated trust lanes provide literal evidence.
+- commit `6be760e` completed the final normal target-host CI pass with 20
+  successful checks, 2 expected credential-gated skips, and no failures or
+  pending checks; packaged SwiftPM, NuGet, and installed CMake consumers plus
+  the macOS, Windows, and Linux ZIP replacement smokes all passed;
+- Step 7.4 is complete. Step 7.3 remains unchecked because the signed/notarized
+  DMG, PKG Installer.app, and signed Inno trust lanes are still `not run`
+  without their explicit credentials.
 
 ## Task 8: Preview Documentation And Publication Gate
 
@@ -847,7 +852,7 @@ Delta artifacts remain descriptor metadata only. Linux prebuilt binary
 distribution remains outside this plan until ABI/glibc/architecture policy is
 approved.
 
-- [ ] **Step 8.5: Run docs and consumer compile tests**
+- [x] **Step 8.5: Run docs and consumer compile tests**
 
 ```sh
 flutter test --no-pub \
@@ -878,13 +883,14 @@ Task 8 candidate evidence on 2026-07-10:
 - discovery metadata, canonical JSON, pinned key IDs, application-owned
   package identity, publisher checks, helper separation, delta metadata, and
   unsupported Linux prebuilt distribution are explicit;
-- evidence remains literal: the macOS ZIP path is `verified locally`, ordinary
-  target-host smokes are `candidate-only` pending final CI, and credential-gated
-  DMG, PKG, and Inno lanes are `not run`; the preview is not
-  `production-ready`;
+- evidence remains literal: the macOS ZIP path is `verified locally` and all
+  three normal ZIP paths plus packaged consumers are `verified in CI`;
+  credential-gated DMG, PKG, and Inno lanes are `not run`, so the preview is
+  not `production-ready`;
 - the focused docs and harness command passed 12 tests locally;
-- Step 8.5 remains unchecked until the final Windows, Linux, and macOS
-  target-host packaged-consumer CI evidence is inspected.
+- commit `6be760e` completed the final normal target-host CI pass with the
+  external SwiftPM, NuGet, and installed CMake samples passing, so Step 8.5 is
+  complete.
 
 ## Final Gate
 
@@ -915,12 +921,12 @@ lanes pass with required publisher trust evidence.
 
 ## Implementation Status
 
-As of 2026-07-10, Tasks 1-6 are complete with local contract evidence. Tasks 7
-and 8 have candidate implementations and pushed local evidence; their target-
-host package/smoke checkboxes remain open until final CI is inspected. Signed
-DMG, PKG, and Inno publisher-trust lanes remain explicit credential-gated
-`not run` evidence. The native runtime is a preview and is not
-`production-ready`.
+As of 2026-07-10, Tasks 1-8 are implemented. Packaged SwiftPM, NuGet, and CMake
+consumers plus the normal macOS, Windows, and Linux ZIP replacement smokes are
+`verified in CI`. Signed/notarized DMG, PKG, and signed Inno publisher-trust
+lanes remain explicit credential-gated `not run` evidence, leaving Steps 5.7
+and 7.3 plus the production-readiness gate open. The native runtime remains a
+preview and is not `production-ready`.
 
 ## Self-Review
 

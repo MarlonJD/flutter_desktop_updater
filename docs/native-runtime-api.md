@@ -6,20 +6,21 @@ Linux applications. Flutter applications continue to use the stable Dart
 usable without linking the runtime transport, contract, crypto, or archive
 code.
 
-The preview is implemented, but it is not production-ready. Normal target-host
-CI and the credential-gated publisher-trust lanes provide separate evidence;
-an unchecked or `not run` lane must not be promoted by inference.
+The preview is implemented and `candidate-only`, but it is not production-ready.
+Normal target-host CI and the credential-gated publisher-trust lanes provide
+separate evidence; an unchecked or `not run` lane must not be promoted by
+inference.
 
 ## Current Evidence
 
 | Platform | Artifact | Evidence | Handoff |
 | --- | --- | --- | --- |
-| macOS | `zip` | `verified locally`; `candidate-only` until final CI | Whole-bundle helper replacement |
+| macOS | `zip` | `verified locally`; `verified in CI` | Whole-bundle helper replacement |
 | macOS | `dmg` | `not run` in the credential-gated lane | Read-only mount, app copy, helper replacement |
 | macOS | `pkgInstaller` | `not run` in the credential-gated lane | Installer.app |
-| Windows | `zip` | `candidate-only`; target-host CI pending | Directory helper replacement |
+| Windows | `zip` | `verified in CI` | Directory helper replacement |
 | Windows | `innoInstaller` | `not run` in the credential-gated lane | Authenticode-verified installer handoff |
-| Linux | `zip` | `candidate-only`; target-host CI pending | Validated install-root replacement |
+| Linux | `zip` | `verified in CI` | Validated install-root replacement |
 
 `verified locally` means the named behavior passed on the local host.
 `verified in CI` is recorded only after the required target-host job passes.
