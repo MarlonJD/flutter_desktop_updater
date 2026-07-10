@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <sys/types.h>
 
 #include "desktop_updater_native.h"
 
@@ -15,6 +16,15 @@ InstallResult BuildInstallScriptForTesting(
     const std::string& running_executable,
     int64_t process_identifier,
     std::string* script);
+
+std::string DecodeMountInfoPath(const std::string& encoded);
+InstallResult RejectNestedMountsForTesting(
+    const std::string& target,
+    const std::string& stage,
+    const std::string& mount_info);
+bool RemoveTreeAtForRecovery(int parent_fd,
+                             const std::string& name,
+                             dev_t root_device);
 
 }  // namespace internal
 }  // namespace native

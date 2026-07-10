@@ -80,9 +80,12 @@ void main() {
     expect(source, contains("kProtectedInstallRoots"));
     expect(source, contains("Removed file path escapes install root"));
     expect(source, contains("Staging path must not overlap install root"));
-    expect(source, contains(r'rm -rf \"$target\"'));
+    expect(source, isNot(contains(r'rm -rf \"$target\"')));
     expect(source, contains(r'rm -rf \"$staging\"'));
-    expect(source, contains(r'cp -a \"$backup/.\" \"$target/\"'));
+    expect(source, contains(r'cp -a \"$staging/.\" \"$prepared/\"'));
+    expect(source, contains(r'mv \"$target\" \"$backup\"'));
+    expect(source, contains(r'mv \"$prepared\" \"$target\"'));
+    expect(source, contains(r'mv \"$backup\" \"$target\"'));
     expect(source, contains(r'chmod +x \"$exe\"'));
     expect(source, contains("rollback success"));
   });

@@ -340,80 +340,79 @@ void main() {
     expect(source, contains("diagnostics_log_path"));
   });
 
-  test("Linux helper prunes target before whole directory overlay", () {
+  test("Linux helper prepares a complete sibling before atomic activation", () {
     final source = File(
       "linux/native/src/desktop_updater_native.cc",
     ).readAsStringSync();
-    const pruneSnippet =
-        r'find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +';
-    const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
+    const prepareSnippet = r'cp -a \"$staging/.\" \"$prepared/\"';
+    const backupSnippet = r'mv \"$target\" \"$backup\"';
+    const activateSnippet = r'mv \"$prepared\" \"$target\"';
 
-    final pruneIndex = source.indexOf(pruneSnippet);
-    final copyIndex = source.indexOf(copySnippet);
+    final prepareIndex = source.indexOf(prepareSnippet);
+    final backupIndex = source.indexOf(backupSnippet);
+    final activateIndex = source.indexOf(activateSnippet);
 
-    expect(pruneIndex, isNonNegative);
-    expect(copyIndex, isNonNegative);
-    expect(pruneIndex, lessThan(copyIndex));
+    expect(prepareIndex, isNonNegative);
+    expect(backupIndex, isNonNegative);
+    expect(activateIndex, isNonNegative);
+    expect(prepareIndex, lessThan(backupIndex));
+    expect(backupIndex, lessThan(activateIndex));
   });
 
   test("Linux helper restores executable permission before commit cleanup", () {
     final source = File(
       "linux/native/src/desktop_updater_native.cc",
     ).readAsStringSync();
-    const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
+    const activationSnippet = r'mv \"$prepared\" \"$target\"';
     const restoreSnippet = r'chmod +x \"$exe\"';
     const existsSnippet = r'[ -e \"$exe\" ] && [ ! -x \"$exe\" ]';
     const missingExecutableSnippet =
         r'[ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]';
     const cleanupSnippet = r'rm -rf \"$backup\"';
-    const trapDisabledSnippet = r'trap - ERR';
+    const completedSnippet = r'persist_journal completed';
     const relaunchSnippet = r'\"$exe\" &';
 
-    final copyIndex = source.indexOf(copySnippet);
+    final activationIndex = source.indexOf(activationSnippet);
     final restoreIndex = source.indexOf(restoreSnippet);
     final existsIndex = source.indexOf(existsSnippet);
     final missingExecutableIndex = source.indexOf(missingExecutableSnippet);
     final restoreSearchStart = restoreIndex < 0 ? 0 : restoreIndex;
     final cleanupIndex = source.indexOf(cleanupSnippet, restoreSearchStart);
-    final trapDisabledIndex =
-        source.indexOf(trapDisabledSnippet, restoreSearchStart);
+    final completedIndex = source.indexOf(completedSnippet, restoreSearchStart);
     final relaunchIndex = source.indexOf(relaunchSnippet, restoreSearchStart);
 
-    expect(copyIndex, isNonNegative);
+    expect(activationIndex, isNonNegative);
     expect(existsIndex, isNonNegative);
     expect(restoreIndex, isNonNegative);
     expect(missingExecutableIndex, isNonNegative);
     expect(cleanupIndex, isNonNegative);
-    expect(trapDisabledIndex, isNonNegative);
+    expect(completedIndex, isNonNegative);
     expect(relaunchIndex, isNonNegative);
-    expect(copyIndex, lessThan(restoreIndex));
+    expect(activationIndex, lessThan(restoreIndex));
     expect(existsIndex, lessThan(restoreIndex));
     expect(restoreIndex, lessThan(missingExecutableIndex));
     expect(restoreIndex, lessThan(cleanupIndex));
-    expect(restoreIndex, lessThan(trapDisabledIndex));
+    expect(restoreIndex, lessThan(completedIndex));
     expect(restoreIndex, lessThan(relaunchIndex));
   });
 
-  test("Windows helper prunes target before whole directory overlay", () {
+  test("Windows helper prepares a sibling before atomic activation", () {
     final source = File("windows/native/src/desktop_updater_native.cpp")
         .readAsStringSync();
-    const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
-    const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
+    const prepareSnippet =
+        r"Copy-Item -LiteralPath $_.FullName -Destination $prepared -Recurse -Force";
+    const backupSnippet = r"[IO.Directory]::Move($targetRoot, $backup)";
+    const activateSnippet = r"[IO.Directory]::Move($prepared, $targetRoot)";
 
-    final pruneIndex = source.indexOf(pruneSnippet);
-    final removeIndex =
-        source.indexOf(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force");
-    final copyIndex = source.indexOf(copySnippet);
+    final prepareIndex = source.indexOf(prepareSnippet);
+    final backupIndex = source.indexOf(backupSnippet);
+    final activateIndex = source.indexOf(activateSnippet);
 
-    expect(pruneIndex, isNonNegative);
-    expect(
-      source,
-      contains(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force"),
-    );
-    expect(removeIndex, isNonNegative);
-    expect(copyIndex, isNonNegative);
-    expect(pruneIndex, lessThan(copyIndex));
+    expect(prepareIndex, isNonNegative);
+    expect(backupIndex, isNonNegative);
+    expect(activateIndex, isNonNegative);
+    expect(prepareIndex, lessThan(backupIndex));
+    expect(backupIndex, lessThan(activateIndex));
   });
 
   test("Windows helper preserves Inno uninstall artifacts during prune", () {
@@ -421,11 +420,11 @@ void main() {
         .readAsStringSync();
     const predicateSnippet = "function Test-InstallerOwnedWindowsFile";
     const preserveCondition =
-        r"$_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)";
+        r"-not $_.PSIsContainer -and (Test-InstallerOwnedWindowsFile $_.Name)";
     const preserveEvent = "preserve installer file";
-    const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
+    const pruneSnippet = r"Get-ChildItem -LiteralPath $targetRoot -Force";
     const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
+        r"Copy-Item -LiteralPath $_.FullName -Destination $prepared -Force";
 
     final predicateIndex = source.indexOf(predicateSnippet);
     final pruneIndex = source.indexOf(pruneSnippet);
@@ -448,7 +447,7 @@ void main() {
         .readAsStringSync();
     const cleanupFunction = "function Remove-StagingDirectoryWithRetry";
     const retryEvent = "Write-DiagnosticsEvent 'cleanup retry'";
-    const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $staging";
+    const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $stagingRoot";
     const moveSuccess = "Write-DiagnosticsEvent 'move success'";
     const relaunchSnippet = r"Start-Process -FilePath $exe";
 
@@ -472,11 +471,11 @@ void main() {
     final source = File("windows/native/src/desktop_updater_native.cpp")
         .readAsStringSync();
     const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
+        r"Copy-Item -LiteralPath $_.FullName -Destination $prepared -Recurse -Force";
     const registrySnippet = r"Update-UninstallDisplayVersion -Version";
 
     final copyIndex = source.indexOf(copySnippet);
-    final registryIndex = source.indexOf(registrySnippet);
+    final registryIndex = source.indexOf(registrySnippet, copyIndex);
     final relaunchIndex = source.indexOf(r"Start-Process -FilePath $exe");
 
     expect(source, contains(r".desktop_updater_release_manifest.json"));

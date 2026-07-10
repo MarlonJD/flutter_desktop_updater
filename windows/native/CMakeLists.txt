@@ -12,6 +12,7 @@ set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_transaction.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
 )
 
@@ -175,6 +176,18 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(desktop_updater_native_test)
+
+  add_executable(desktop_updater_install_transaction_test
+    test/runtime/install_transaction_test.cpp
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_transaction_tests.cc)
+  target_compile_features(desktop_updater_install_transaction_test
+    PRIVATE cxx_std_17)
+  target_include_directories(desktop_updater_install_transaction_test PRIVATE
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+  target_link_libraries(desktop_updater_install_transaction_test
+    PRIVATE desktop_updater_native_static)
+  add_test(NAME desktop_updater_install_transaction
+    COMMAND desktop_updater_install_transaction_test)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

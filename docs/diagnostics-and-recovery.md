@@ -115,6 +115,20 @@ Common helper events include:
 - `cleanup start`, `cleanup success`, `cleanup failure`
 - `relaunch attempt`
 
+Journaled native replacement may also emit:
+
+- `transaction lock acquired`
+- `transaction journal persisted`
+- `recovery detected`
+- `recovery restored backup`
+- `recovery completed activation`
+
+Transaction diagnostics identify the state transition only; canonical paths are redacted
+and are never appended to these event names. The native journal itself
+is stored beside the proven install target as
+`.<target-name>.desktop_updater_transaction.json`; it is not a support log and
+must not be uploaded as diagnostics.
+
 macOS may also emit `package identity checks` before bundle replacement.
 Windows may emit repeated `move start` entries while it waits for locked files
 to become replaceable.
@@ -171,6 +185,15 @@ lose the staged update.
 not by itself decide whether the next app launch succeeded. Add an
 `UpdateRecoveryStore` when you want the next startup to detect unfinished or
 unverified installs.
+
+Native transaction recovery runs before a new install handoff. A live owner of
+the same canonical target rejects the second handoff. A dead owner is recovered
+from one of the exact durable states `prepared`, `backupCreated`,
+`targetActivated`, or `completed`. Recovery either restores the journaled
+backup or completes a verified activation; cleanup is limited to the target,
+prepared tree, and backup paths recorded in that validated journal. This native
+recovery is separate from the app-owned `UpdateRecoveryStore`, which checks the
+expected app version after relaunch.
 
 ```dart
 class AppUpdateRecoveryStore implements UpdateRecoveryStore {
