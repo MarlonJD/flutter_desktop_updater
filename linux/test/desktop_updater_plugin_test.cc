@@ -8,6 +8,7 @@
 
 #include "include/desktop_updater/desktop_updater_plugin.h"
 #include "desktop_updater_plugin_private.h"
+#include "desktop_updater_native.h"
 
 // This demonstrates a simple unit test of the C portion of this plugin's
 // implementation.
@@ -19,6 +20,9 @@
 
 namespace desktop_updater {
 namespace test {
+
+using native::InstallRequest;
+using native::LinuxInstallOperation;
 
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   g_autoptr(FlMethodResponse) response = get_platform_version();
@@ -32,80 +36,115 @@ TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
 }
 
 TEST(DesktopUpdaterPlugin, InstallUpdateRequiresExistingStagingDirectory) {
-  std::string error;
-  EXPECT_FALSE(schedule_install_update(
+  InstallRequest request = {
       LinuxInstallOperation::kInstall,
-      "/tmp/desktop_updater_missing_staging", {}, "", "", "",
-      "com.example.app", &error));
-  EXPECT_THAT(error, testing::HasSubstr("Staged update directory"));
+      "/tmp/desktop_updater_missing_staging",
+      "",
+      "",
+      "com.example.app",
+      {},
+      "",
+  };
+  const auto result = native::ScheduleInstallAndRelaunch(request);
+  EXPECT_FALSE(result.ok);
+  EXPECT_THAT(result.error, testing::HasSubstr("Staged update directory"));
 }
 
 TEST(LinuxInstallTarget, RejectsUsrBinExecutableParent) {
-  const auto result = ValidateLinuxInstallTarget({
+  const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
+      "/tmp/staging",
       "/usr/bin",
       "my-app",
       "com.example.app",
+      {},
+      "",
   });
   EXPECT_FALSE(result.ok);
 }
 
-TEST(LinuxInstallTarget, AcceptsSelfContainedOptBundle) {
-  const auto result = ValidateLinuxInstallTarget({
+TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
+  char install_template[] = "/tmp/desktop_updater_install_XXXXXX";
+  char staging_template[] = "/tmp/desktop_updater_staging_XXXXXX";
+  char* install_root = mkdtemp(install_template);
+  char* staging_root = mkdtemp(staging_template);
+  ASSERT_NE(install_root, nullptr);
+  ASSERT_NE(staging_root, nullptr);
+  const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
-      "/opt/example-app",
+      staging_root,
+      install_root,
       "bin/my-app",
       "com.example.app",
+      {},
+      "",
   });
   EXPECT_TRUE(result.ok) << result.error;
+  rmdir(staging_root);
+  rmdir(install_root);
 }
 
 TEST(LinuxInstallTarget, RejectsEveryProtectedRoot) {
   for (const auto* root : {"/", "/bin", "/sbin", "/usr", "/usr/bin",
                            "/usr/sbin", "/usr/local", "/usr/local/bin",
                            "/opt", "/etc", "/var", "/home"}) {
-    const auto result = ValidateLinuxInstallTarget({
+    const auto result = native::ValidateInstallRequest({
         LinuxInstallOperation::kInstall,
+        "/tmp/staging",
         root,
         "bin/my-app",
         "com.example.app",
+        {},
+        "",
     });
     EXPECT_FALSE(result.ok) << root;
   }
 }
 
 TEST(LinuxInstallTarget, RestartDoesNotRequirePackageIdentity) {
-  const auto result = ValidateLinuxInstallTarget({
+  const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kRestart,
+      "",
       "/opt/example-app",
       "bin/my-app",
+      "",
+      {},
       "",
   });
   EXPECT_TRUE(result.ok) << result.error;
 }
 
 TEST(LinuxInstallTarget, InstallRejectsBlankPackageIdentity) {
-  const auto result = ValidateLinuxInstallTarget({
+  const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
+      "/tmp/staging",
       "/opt/example-app",
       "bin/my-app",
       "   ",
+      {},
+      "",
   });
   EXPECT_FALSE(result.ok);
 }
 
 TEST(LinuxInstallTarget, RejectsNonCanonicalRootAndExecutableTraversal) {
-  EXPECT_FALSE(ValidateLinuxInstallTarget({
+  EXPECT_FALSE(native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
+      "/tmp/staging",
       "/opt/../usr/bin",
       "my-app",
       "com.example.app",
+      {},
+      "",
   }).ok);
-  EXPECT_FALSE(ValidateLinuxInstallTarget({
+  EXPECT_FALSE(native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
+      "/tmp/staging",
       "/opt/example-app",
       "bin/../my-app",
       "com.example.app",
+      {},
+      "",
   }).ok);
 }
 
@@ -116,11 +155,14 @@ TEST(LinuxInstallTarget, RejectsSymlinkedInstallRoot) {
   const std::string link_path = std::string(real_root) + "-link";
   ASSERT_EQ(symlink(real_root, link_path.c_str()), 0);
 
-  const auto result = ValidateLinuxInstallTarget({
+  const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
+      "/tmp/staging",
       link_path,
       "my-app",
       "com.example.app",
+      {},
+      "",
   });
 
   EXPECT_FALSE(result.ok);
@@ -133,11 +175,17 @@ TEST(LinuxInstallTarget, ValidationFailureCreatesNoHelperScript) {
       "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
   unlink(script_path.c_str());
 
-  std::string error;
-  EXPECT_FALSE(schedule_install_update(
+  const auto result = native::ScheduleInstallAndRelaunch({
       LinuxInstallOperation::kInstall,
-      "/tmp", {}, "", "/usr/bin", "my-app", "com.example.app", &error));
-  EXPECT_NE(error.find("protected"), std::string::npos);
+      "/tmp",
+      "/usr/bin",
+      "my-app",
+      "com.example.app",
+      {},
+      "",
+  });
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("protected"), std::string::npos);
   EXPECT_NE(access(script_path.c_str(), F_OK), 0);
 }
 
@@ -146,11 +194,17 @@ TEST(LinuxInstallTarget, RemovedTraversalCreatesNoHelperScript) {
       "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
   unlink(script_path.c_str());
 
-  std::string error;
-  EXPECT_FALSE(schedule_install_update(
+  const auto result = native::ScheduleInstallAndRelaunch({
       LinuxInstallOperation::kInstall,
-      "/tmp", {"../escape"}, "", "", "", "com.example.app", &error));
-  EXPECT_NE(error.find("Removed file path"), std::string::npos);
+      "/tmp",
+      "",
+      "",
+      "com.example.app",
+      {"../escape"},
+      "",
+  });
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("Removed file path"), std::string::npos);
   EXPECT_NE(access(script_path.c_str(), F_OK), 0);
 }
 

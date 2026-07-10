@@ -5,7 +5,9 @@ import "package:flutter_test/flutter_test.dart";
 void main() {
   test("Linux helper uses bash when the generated script uses bash features",
       () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
 
     expect(
       source,
@@ -18,13 +20,16 @@ void main() {
 
   test("Linux helper validates an app-owned install target before scripting",
       () {
-    final header =
-        File("linux/desktop_updater_plugin_private.h").readAsStringSync();
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final header = File(
+      "linux/native/include/desktop_updater_native.h",
+    ).readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
 
     expect(header, contains("enum class LinuxInstallOperation"));
-    expect(header, contains("struct LinuxInstallTarget"));
-    expect(header, contains("ValidateLinuxInstallTarget"));
+    expect(header, contains("struct InstallRequest"));
+    expect(header, contains("ValidateInstallRequest"));
 
     for (final protectedRoot in <String>[
       "/",
@@ -43,9 +48,9 @@ void main() {
       expect(source, contains('"$protectedRoot"'));
     }
 
-    final validationIndex = source.indexOf("ValidateLinuxInstallTarget(");
+    final validationIndex = source.indexOf("ValidateNormalizedRequest(");
     final scriptPathIndex = source.indexOf("const std::string script_path");
-    final writeIndex = source.indexOf("write_file(script_path, script)");
+    final writeIndex = source.indexOf("WriteFile(script_path, script)");
     expect(validationIndex, isNonNegative);
     expect(scriptPathIndex, isNonNegative);
     expect(writeIndex, isNonNegative);
@@ -54,7 +59,9 @@ void main() {
   });
 
   test("Linux install validation bounds staging and removed paths", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
 
     expect(source, contains("Staging path must not overlap install root"));
     expect(source, contains("Removed file path escapes install root"));
@@ -64,7 +71,9 @@ void main() {
   });
 
   test("Linux helper revalidates roots after the parent process exits", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
 
     expect(
         source, contains(r'resolved_target=\"$(cd \"$target\" && pwd -P)\"'));
@@ -79,8 +88,9 @@ void main() {
     final macosSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
-    final linuxSource =
-        File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final linuxSource = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
     final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
         .readAsStringSync();
 
@@ -89,7 +99,7 @@ void main() {
     expect(macosSource, contains("log_event \"helper scheduled\""));
     expect(macosSource, contains(r'[ -n "$DIAGNOSTICS_LOG" ] || return 0'));
 
-    expect(linuxSource, contains("diagnosticsLogPath"));
+    expect(linuxSource, contains("diagnostics_log_path"));
     expect(linuxSource, contains("diagnostics_log="));
     expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
     expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
@@ -112,8 +122,9 @@ void main() {
     final macosSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
-    final linuxSource =
-        File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final linuxSource = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
     final windowsSource = File("windows/native/src/desktop_updater_native.cpp")
         .readAsStringSync();
 
@@ -125,15 +136,18 @@ void main() {
     }
   });
 
-  test("Linux native test header exposes diagnostics log path scheduling", () {
-    final source =
-        File("linux/desktop_updater_plugin_private.h").readAsStringSync();
+  test("Linux native header exposes diagnostics log path scheduling", () {
+    final source = File(
+      "linux/native/include/desktop_updater_native.h",
+    ).readAsStringSync();
 
     expect(source, contains("diagnostics_log_path"));
   });
 
   test("Linux helper prunes target before whole directory overlay", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
     const pruneSnippet =
         r'find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +';
     const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
@@ -147,7 +161,9 @@ void main() {
   });
 
   test("Linux helper restores executable permission before commit cleanup", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+    final source = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
     const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
     const restoreSnippet = r'chmod +x \"$exe\"';
     const existsSnippet = r'[ -e \"$exe\" ] && [ ! -x \"$exe\" ]';

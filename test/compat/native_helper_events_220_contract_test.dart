@@ -20,7 +20,7 @@ void main() {
         "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
       ),
       File("windows/native/src/desktop_updater_native.cpp"),
-      File("linux/desktop_updater_plugin.cc"),
+      File("linux/native/src/desktop_updater_native.cc"),
     ].map((file) => file.readAsStringSync()).join("\n");
 
     expect(fixture["schemaVersion"], 1);

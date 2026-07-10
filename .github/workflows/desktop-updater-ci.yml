@@ -207,6 +207,22 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libgtk-3-dev ninja-build pkg-config xvfb
+      - name: Configure standalone Linux native tests
+        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+      - name: Build standalone Linux native tests
+        run: cmake --build linux/native/build
+      - name: Run standalone Linux native tests
+        run: |
+          set +e
+          output="$(ctest --test-dir linux/native/build --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux native CTest registered zero tests"
+            exit 1
+          fi
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop
       - name: Install dependencies
@@ -219,7 +235,17 @@ jobs:
         run: cmake --build build/linux/x64/debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/linux/x64/debug --output-on-failure
+        run: |
+          set +e
+          output="$(ctest --test-dir build/linux/x64/debug --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux Flutter debug CTest registered zero tests"
+            exit 1
+          fi
       - name: Run integration tests
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
@@ -244,7 +270,17 @@ jobs:
         run: cmake --build build/linux/x64/release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/linux/x64/release --output-on-failure
+        run: |
+          set +e
+          output="$(ctest --test-dir build/linux/x64/release --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux Flutter release CTest registered zero tests"
+            exit 1
+          fi
       - name: Run integration tests release
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux

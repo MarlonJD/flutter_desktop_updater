@@ -1017,13 +1017,13 @@ InstallResult ValidateInstallRequest(const InstallRequest& request);
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
 ```
 
-- [ ] **Step 5.1: Move the validated implementation**
+- [x] **Step 5.1: Move the validated implementation**
 
 Move shell quoting, process/executable lookup, file writing, detached launch,
 request validation, backup, copy, rollback, cleanup, permissions, and relaunch
 into `linux/native`. Do not expose GTK or Flutter types from native headers.
 
-- [ ] **Step 5.2: Link the correct native directory**
+- [x] **Step 5.2: Link the correct native directory**
 
 Modify `linux/CMakeLists.txt`:
 
@@ -1034,7 +1034,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
 
 Do not use `native/desktop_updater`.
 
-- [ ] **Step 5.3: Prove destructive commands are bounded**
+- [x] **Step 5.3: Prove destructive commands are bounded**
 
 Native tests must inspect generated scripts and execute filesystem tests in a
 temporary self-contained bundle. Required assertions:
@@ -1046,7 +1046,7 @@ temporary self-contained bundle. Required assertions:
 - rollback restores only the verified app-owned bundle;
 - staging cleanup cannot delete the install root.
 
-- [ ] **Step 5.4: Keep Linux publication source-first**
+- [x] **Step 5.4: Keep Linux publication source-first**
 
 Add CMake install/export rules and a pkg-config template for source builds.
 Do not add a generic `.so` GitHub Release asset in this plan. Document that
@@ -1065,7 +1065,28 @@ xvfb-run -a flutter test integration_test -d linux
 
 Assert CTest discovers at least one test.
 
-- [ ] **Step 5.6: Commit Linux extraction**
+Candidate-only evidence on 2026-07-10:
+
+- the Stage 5 contract suite failed first with all 5 expected missing-layout,
+  extraction, safety-test, and CI assertions before implementation;
+- focused Linux SDK layout, helper, and compatibility suite: PASS, 25 tests;
+- Flutter-free native helper: compiled locally as C++14 with
+  `-Wall -Wextra -Werror`;
+- direct native seam smoke: PASS for protected-root rejection, bounded script
+  generation, failed-install rollback, and preservation of a file outside the
+  verified bundle;
+- `dart format --set-exit-if-changed .`: PASS, 188 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
+- `flutter test --no-pub`: PASS, 481 tests with 3 external E2E skips;
+- `dart pub publish --dry-run`: the package contains the Linux native CMake,
+  headers, sources, tests, and pkg-config template; pre-commit validation
+  reported only the expected dirty-tree warning and version hint;
+- Linux source package CMake/GTest and Flutter integration matrix:
+  `not run locally` on the macOS host because CMake and Linux host libraries
+  are unavailable; CI commands are present and evidence is pending the final
+  verification pass, so Step 5.5 remains unchecked.
+
+- [x] **Step 5.6: Commit Linux extraction**
 
 ```sh
 git add linux test/native_helper_script_test.dart
