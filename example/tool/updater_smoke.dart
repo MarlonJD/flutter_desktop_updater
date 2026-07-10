@@ -100,6 +100,8 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
       "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
       "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
+      if (Platform.isLinux)
+        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": "com.example.desktop_updater",
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",

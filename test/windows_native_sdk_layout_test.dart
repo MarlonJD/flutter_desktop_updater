@@ -92,6 +92,11 @@ void main() {
     expect(native, contains("StartElevatedPowerShell"));
     expect(native, contains("Remove-StagingDirectoryWithRetry"));
     expect(native, contains("rollback success"));
+    expect(
+      native.indexOf("#include <windows.h>"),
+      lessThan(native.indexOf("#include <bcrypt.h>")),
+      reason: "Windows SDK base types must be declared before bcrypt.h",
+    );
   });
 
   test(".NET wrapper marshals every removed file and calls the real DLL", () {

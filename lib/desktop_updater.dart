@@ -54,12 +54,16 @@ class DesktopUpdater {
 
     /// Optional app-owned native helper diagnostics log path.
     String? diagnosticsLogPath,
+
+    /// Verified package identity required by protected native install targets.
+    String? packageId,
   }) {
     if (stagingPath != null) {
       return installUpdate(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
         diagnosticsLogPath: diagnosticsLogPath,
+        packageId: packageId,
       );
     }
 
@@ -79,12 +83,16 @@ class DesktopUpdater {
 
     /// Optional app-owned native helper diagnostics log path.
     String? diagnosticsLogPath,
+
+    /// Verified package identity required by protected native install targets.
+    String? packageId,
   }) {
-    return DesktopUpdaterPlatform.instance.installUpdate(
+    return DesktopUpdaterPlatform.instance.installUpdateWithContext(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
       allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
       diagnosticsLogPath: diagnosticsLogPath,
+      packageId: packageId,
     );
   }
 

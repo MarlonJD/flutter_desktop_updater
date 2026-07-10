@@ -63,6 +63,23 @@ class MockDesktopUpdaterPlatform
   }
 }
 
+class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
+  String? lastPackageId;
+
+  @override
+  Future<void> installUpdateWithContext({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+    String? installRoot,
+    String? executableRelativePath,
+    String? packageId,
+  }) async {
+    lastPackageId = packageId;
+  }
+}
+
 void main() {
   final initialPlatform = DesktopUpdaterPlatform.instance;
 
@@ -90,6 +107,19 @@ void main() {
     );
 
     expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
+  });
+
+  test("installUpdate forwards verified package identity to method channel",
+      () async {
+    final platform = RecordingMethodChannelDesktopUpdater();
+    DesktopUpdaterPlatform.instance = platform;
+
+    await DesktopUpdater().installUpdate(
+      stagingPath: "/tmp/staged",
+      packageId: "com.example.desktop_updater",
+    );
+
+    expect(platform.lastPackageId, "com.example.desktop_updater");
   });
 
   test("checkMacOSInstallLocation forwards to platform", () async {

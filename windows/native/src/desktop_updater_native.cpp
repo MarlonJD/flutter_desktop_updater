@@ -1,8 +1,8 @@
 #include "desktop_updater_native.h"
 
+#include <windows.h>
 #include <bcrypt.h>
 #include <shellapi.h>
-#include <windows.h>
 
 #include <filesystem>
 #include <fstream>
