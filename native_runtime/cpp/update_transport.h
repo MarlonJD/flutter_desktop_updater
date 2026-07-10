@@ -2,6 +2,7 @@
 #define DESKTOP_UPDATER_RUNTIME_UPDATE_TRANSPORT_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <string>
@@ -27,6 +28,7 @@ struct TransportOptions {
 struct ArtifactDownloadRequest {
   std::string url;
   std::string destination_path;
+  std::filesystem::path destination_filesystem_path;
   std::int64_t expected_length = 0;
   std::string expected_sha256;
   DownloadProgress progress;

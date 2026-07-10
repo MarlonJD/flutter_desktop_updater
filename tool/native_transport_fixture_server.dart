@@ -15,6 +15,7 @@ Future<void> main(List<String> arguments) async {
 
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
   var retryCount = 0;
+  var missingLocationCount = 0;
   stdout.writeln("READY http://${server.address.address}:${server.port}");
   await stdout.flush();
 
@@ -72,6 +73,13 @@ Future<void> main(List<String> arguments) async {
       case "/redirect/empty":
         request.response.statusCode = HttpStatus.found;
         request.response.headers.set(HttpHeaders.locationHeader, "");
+      case "/redirect/missing-location":
+        missingLocationCount += 1;
+        if (missingLocationCount == 1) {
+          request.response.statusCode = HttpStatus.found;
+        } else {
+          writeMetadata(request);
+        }
       case "/redirect/query":
         request.response.statusCode = HttpStatus.found;
         request.response.headers.set(HttpHeaders.locationHeader, "?new=2");

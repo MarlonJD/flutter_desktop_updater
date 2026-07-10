@@ -15,6 +15,7 @@ void ClientLifecycleState::IncrementNonzero(std::uint64_t* value) {
 
 void ClientLifecycleState::ClearStage() {
   staged_path_.clear();
+  staged_filesystem_path_.clear();
   stage_provenance_sha256_.clear();
   staged_generation_ = 0;
   staged_attempt_ = 0;
@@ -79,6 +80,26 @@ bool ClientLifecycleState::PublishStage(const StageLease& lease,
     return false;
   }
   staged_path_ = std::move(staged_path);
+  staged_filesystem_path_.clear();
+  stage_provenance_sha256_ = std::move(stage_provenance_sha256);
+  staged_generation_ = lease.generation;
+  staged_attempt_ = lease.attempt;
+  return true;
+}
+
+bool ClientLifecycleState::PublishFilesystemStage(
+    const StageLease& lease,
+    std::filesystem::path staged_path,
+    std::string stage_provenance_sha256) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (lease.status != ClientLifecycleStatus::kAllowed ||
+      install_in_progress_ || lease.generation != selection_generation_ ||
+      lease.generation != check_generation_ ||
+      lease.attempt != stage_attempt_) {
+    return false;
+  }
+  staged_path_ = staged_path.generic_u8string();
+  staged_filesystem_path_ = std::move(staged_path);
   stage_provenance_sha256_ = std::move(stage_provenance_sha256);
   staged_generation_ = lease.generation;
   staged_attempt_ = lease.attempt;
@@ -94,6 +115,7 @@ InstallHandoff ClientLifecycleState::BeginInstall(
     const LifecycleSnapshot& expected) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (expected.staged_path != staged_path_ ||
+      expected.staged_filesystem_path != staged_filesystem_path_ ||
       expected.stage_provenance_sha256 != stage_provenance_sha256_ ||
       expected.selection_generation != selection_generation_ ||
       expected.check_generation != check_generation_ ||
@@ -127,6 +149,7 @@ InstallHandoff ClientLifecycleState::BeginInstallLocked() {
   handoff.generation = staged_generation_;
   handoff.stage_attempt = staged_attempt_;
   handoff.staged_path = std::move(staged_path_);
+  handoff.staged_filesystem_path = std::move(staged_filesystem_path_);
   handoff.stage_provenance_sha256 =
       std::move(stage_provenance_sha256_);
   ClearStage();
@@ -147,6 +170,7 @@ bool ClientLifecycleState::RollbackInstall(const InstallHandoff& handoff) {
   active_handoff_token_ = 0;
   if (can_restore) {
     staged_path_ = handoff.staged_path;
+    staged_filesystem_path_ = handoff.staged_filesystem_path;
     stage_provenance_sha256_ = handoff.stage_provenance_sha256;
     staged_generation_ = handoff.generation;
     staged_attempt_ = handoff.stage_attempt;
@@ -169,6 +193,7 @@ LifecycleSnapshot ClientLifecycleState::Snapshot() const {
   LifecycleSnapshot snapshot;
   snapshot.check = check_;
   snapshot.staged_path = staged_path_;
+  snapshot.staged_filesystem_path = staged_filesystem_path_;
   snapshot.stage_provenance_sha256 = stage_provenance_sha256_;
   snapshot.selection_generation = selection_generation_;
   snapshot.check_generation = check_generation_;

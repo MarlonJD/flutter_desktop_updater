@@ -489,7 +489,7 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
         std::filesystem::u8path(ArtifactFileName(check.descriptor.artifact.url));
     desktop_updater::runtime::internal::ArtifactDownloadRequest download;
     download.url = check.descriptor.artifact.url;
-    download.destination_path = artifact_path.u8string();
+    download.destination_filesystem_path = artifact_path;
     download.expected_length = check.descriptor.artifact.length;
     download.expected_sha256 = check.descriptor.artifact.sha256;
     RecordDiagnostic(
@@ -520,8 +520,8 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
       return ClientResult(*client, "unsupportedArtifactKind",
                           "Artifact kind is not supported on Windows.");
     }
-    if (!client->lifecycle.PublishStage(
-            lease, staged.stage_path.u8string(),
+    if (!client->lifecycle.PublishFilesystemStage(
+            lease, staged.stage_path,
             staged.provenance.marker_sha256)) {
       return ClientResult(*client, "invalidDescriptor",
                           "A newer staging attempt invalidated this update.");
@@ -602,7 +602,7 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
         has_target_fields ? request->executable_relative_path_utf8 : nullptr,
         "executable relative path");
     const auto snapshot = client->lifecycle.Snapshot();
-    if (snapshot.staged_path.empty() ||
+    if (snapshot.staged_filesystem_path.empty() ||
         snapshot.stage_provenance_sha256.empty() ||
         !snapshot.check.has_descriptor) {
       return ClientResult(*client, "installHandoffFailure",
@@ -614,7 +614,7 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
                           "Install target package identity changed.");
     }
     desktop_updater::runtime::internal::VerifyStageProvenance(
-        snapshot.staged_path, snapshot.stage_provenance_sha256,
+        snapshot.staged_filesystem_path, snapshot.stage_provenance_sha256,
         desktop_updater::runtime::internal::BCryptSha256);
     const auto install_handoff = client->lifecycle.BeginInstall(snapshot);
     if (install_handoff.status != desktop_updater::runtime::internal::
@@ -629,7 +629,8 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
                       "Handing staged update to the Windows helper.", ""});
     const auto scheduler_result =
         desktop_updater::runtime::internal::HandoffWindowsInstall(
-            Utf8ToWide(install_handoff.staged_path), Utf8ToWide(install_root),
+            install_handoff.staged_filesystem_path.wstring(),
+            Utf8ToWide(install_root),
             Utf8ToWide(executable_relative_path),
             Utf8ToWide(expected_package_id), diagnostics,
             removed_files, install_handoff.stage_provenance_sha256,

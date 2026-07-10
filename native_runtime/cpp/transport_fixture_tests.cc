@@ -72,6 +72,7 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   ArtifactDownloadRequest request;
   request.url = base_url + "/artifact";
   request.destination_path = destination.u8string();
+  request.destination_filesystem_path = destination;
   request.expected_length = static_cast<std::int64_t>(artifact.size());
   request.expected_sha256 = Hex(sha256(artifact));
   request.progress = [&final_progress](std::int64_t received, std::int64_t) {
@@ -84,6 +85,8 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   Expect(ReadFile(partial).empty(), ".part file remains after success.");
 
   request.destination_path = destination.u8string() + ".bad";
+  request.destination_filesystem_path =
+      std::filesystem::u8path(request.destination_path);
   request.expected_sha256 = std::string(64, '0');
   bool integrity_failed = false;
   try {

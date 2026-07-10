@@ -21,6 +21,7 @@ std::vector<std::uint8_t> FixtureSha256(const std::string& value) {
 
 int main() {
   using desktop_updater::runtime::internal::CreateOwnedStage;
+  using desktop_updater::runtime::internal::CanonicalStageDirectory;
   using desktop_updater::runtime::internal::FilesystemOwnedStage;
   using desktop_updater::runtime::internal::RemoveOwnedStage;
   using desktop_updater::runtime::internal::VerifyStageProvenance;
@@ -34,6 +35,19 @@ int main() {
   try {
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(parent);
+    const std::filesystem::path canonical_parent =
+        CanonicalStageDirectory(parent, "Canonical parent");
+    const std::filesystem::path trailing_parent = parent / "";
+    if (CanonicalStageDirectory(trailing_parent, "Trailing parent") !=
+        canonical_parent) {
+      throw std::runtime_error(
+          "Canonical directory retained a trailing non-root separator.");
+    }
+    const std::filesystem::path filesystem_root = parent.root_path();
+    if (CanonicalStageDirectory(filesystem_root, "Filesystem root") !=
+        filesystem_root) {
+      throw std::runtime_error("Canonical directory changed root semantics.");
+    }
     std::ofstream(parent / "sentinel.txt") << "caller-owned";
     const FilesystemOwnedStage stage = CreateOwnedStage(parent, nonce);
     std::ofstream(stage.path / std::filesystem::u8path(u8"uygulama-日本.bin"))

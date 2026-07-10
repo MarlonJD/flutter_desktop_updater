@@ -99,7 +99,7 @@ std::string PathToUTF8(const std::filesystem::path& path) {
   return path.generic_u8string();
 }
 
-std::filesystem::path CanonicalDirectory(
+std::filesystem::path CanonicalDirectoryImpl(
     const std::filesystem::path& path,
     const char* field) {
 #if defined(_WIN32)
@@ -115,6 +115,11 @@ std::filesystem::path CanonicalDirectory(
       std::filesystem::absolute(path, error).lexically_normal();
   if (error || absolute.empty()) {
     throw std::runtime_error(std::string("Unable to canonicalize ") + field + ".");
+  }
+  while (absolute != absolute.root_path() && absolute.filename().empty()) {
+    const std::filesystem::path parent = absolute.parent_path();
+    if (parent == absolute) break;
+    absolute = parent;
   }
   return absolute;
 #else
@@ -465,7 +470,7 @@ struct CanonicalMarker {
 
 CanonicalMarker ReadCanonicalMarker(const std::filesystem::path& stage_root) {
   const std::filesystem::path root =
-      CanonicalDirectory(stage_root, "Stage root");
+      CanonicalStageDirectory(stage_root, "Stage root");
   const std::string bytes = ReadFile(root / kStageProvenanceFileName);
   const JsonValue parsed = ParseJson(bytes);
   StageProvenanceMarker marker = DecodeMarker(parsed);
@@ -479,6 +484,12 @@ CanonicalMarker ReadCanonicalMarker(const std::filesystem::path& stage_root) {
 }
 
 }  // namespace
+
+std::filesystem::path CanonicalStageDirectory(
+    const std::filesystem::path& path,
+    const char* field) {
+  return CanonicalDirectoryImpl(path, field);
+}
 
 std::string StageBytesToHex(const std::vector<std::uint8_t>& bytes) {
   static const char* digits = "0123456789abcdef";
@@ -495,7 +506,7 @@ FilesystemOwnedStage CreateOwnedStage(
     const std::filesystem::path& parent_path,
     const std::string& requested_nonce) {
   const std::filesystem::path parent =
-      CanonicalDirectory(parent_path, "Staging parent");
+      CanonicalStageDirectory(parent_path, "Staging parent");
   if (parent == parent.root_path()) {
     throw std::runtime_error("Filesystem roots cannot be staging parents.");
   }
@@ -515,7 +526,7 @@ FilesystemOwnedStage CreateOwnedStage(
     throw std::runtime_error("Unable to exclusively create owned stage.");
   }
   try {
-    if (CanonicalDirectory(child, "Owned stage") != child) {
+    if (CanonicalStageDirectory(child, "Owned stage") != child) {
       throw std::runtime_error("Owned stage escapes canonical parent.");
     }
   } catch (...) {
@@ -585,9 +596,9 @@ void RemoveOwnedStage(const std::filesystem::path& parent_path,
                       const std::string& nonce,
                       const StageSha256Function& sha256) {
   const std::filesystem::path parent =
-      CanonicalDirectory(parent_path, "Staging parent");
+      CanonicalStageDirectory(parent_path, "Staging parent");
   const std::filesystem::path root =
-      CanonicalDirectory(stage_root, "Stage root");
+      CanonicalStageDirectory(stage_root, "Stage root");
   if (root.parent_path() != parent || !ValidNonce(nonce) ||
       PathToUTF8(root.filename()) !=
           std::string(kOwnedStagePrefix) + nonce) {

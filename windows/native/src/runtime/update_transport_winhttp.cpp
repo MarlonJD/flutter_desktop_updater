@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -130,19 +131,32 @@ std::string HashFile(const std::filesystem::path& path) {
   return output.str();
 }
 
-std::wstring QueryHeader(HINTERNET request, DWORD query) {
+std::optional<std::wstring> QueryHeader(HINTERNET request, DWORD query) {
   DWORD bytes = 0;
-  WinHttpQueryHeaders(request, query, WINHTTP_HEADER_NAME_BY_INDEX, nullptr,
-                      &bytes, WINHTTP_NO_HEADER_INDEX);
-  if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes == 0) return {};
+  if (WinHttpQueryHeaders(request, query, WINHTTP_HEADER_NAME_BY_INDEX, nullptr,
+                          &bytes, WINHTTP_NO_HEADER_INDEX)) {
+    return std::wstring();
+  }
+  const DWORD size_error = GetLastError();
+  if (size_error == ERROR_WINHTTP_HEADER_NOT_FOUND) return std::nullopt;
+  if (size_error != ERROR_INSUFFICIENT_BUFFER || bytes == 0) {
+    throw std::runtime_error("WinHTTP response header query failed.");
+  }
   std::wstring value(bytes / sizeof(wchar_t), L'\0');
   if (!WinHttpQueryHeaders(request, query, WINHTTP_HEADER_NAME_BY_INDEX,
                            value.data(), &bytes, WINHTTP_NO_HEADER_INDEX)) {
-    return {};
+    throw std::runtime_error("WinHTTP response header query failed.");
   }
   while (!value.empty() && value.back() == L'\0') value.pop_back();
   return value;
 }
+
+class MissingRedirectLocationError : public std::runtime_error {
+ public:
+  MissingRedirectLocationError()
+      : std::runtime_error(
+            "Redirect response is missing a Location header.") {}
+};
 
 struct ParsedURL {
   std::wstring host;
@@ -180,6 +194,8 @@ struct Response {
   std::string content_range;
   std::vector<std::uint8_t> body;
 };
+
+bool RedirectStatus(DWORD status);
 
 Response Perform(const std::string& url,
                  const TransportOptions& options,
@@ -241,10 +257,18 @@ Response Perform(const std::string& url,
                       WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                       WINHTTP_HEADER_NAME_BY_INDEX, &response.status,
                       &status_bytes, WINHTTP_NO_HEADER_INDEX);
-  response.location = WideToUtf8(QueryHeader(request.get(), WINHTTP_QUERY_LOCATION));
-  response.content_range =
-      WideToUtf8(QueryHeader(request.get(), WINHTTP_QUERY_CONTENT_RANGE));
-  if (response.status >= 300 && response.status < 400) return response;
+  if (RedirectStatus(response.status)) {
+    const std::optional<std::wstring> location =
+        QueryHeader(request.get(), WINHTTP_QUERY_LOCATION);
+    if (!location.has_value()) throw MissingRedirectLocationError();
+    response.location = WideToUtf8(*location);
+    return response;
+  }
+  const std::optional<std::wstring> content_range =
+      QueryHeader(request.get(), WINHTTP_QUERY_CONTENT_RANGE);
+  if (content_range.has_value()) {
+    response.content_range = WideToUtf8(*content_range);
+  }
 
   std::int64_t received = 0;
   while (true) {
@@ -331,6 +355,8 @@ std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
         if (!RetryableStatus(response.status)) {
           throw std::runtime_error("Metadata HTTP status failed.");
         }
+      } catch (const MissingRedirectLocationError&) {
+        throw;
       } catch (...) {
         if (attempt + 1 == options_.maximum_retries) throw;
       }
@@ -343,7 +369,9 @@ std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
 void WinHttpUpdateTransport::DownloadArtifact(
     const ArtifactDownloadRequest& download) {
   const std::filesystem::path destination =
-      std::filesystem::u8path(download.destination_path);
+      download.destination_filesystem_path.empty()
+          ? std::filesystem::u8path(download.destination_path)
+          : download.destination_filesystem_path;
   std::filesystem::path partial = destination;
   partial += L".part";
   try {
@@ -400,6 +428,8 @@ void WinHttpUpdateTransport::DownloadArtifact(
             if (!RetryableStatus(response.status)) {
               throw std::runtime_error("Artifact HTTP status failed.");
             }
+          } catch (const MissingRedirectLocationError&) {
+            throw;
           } catch (...) {
             if (attempt + 1 == options_.maximum_retries) throw;
           }

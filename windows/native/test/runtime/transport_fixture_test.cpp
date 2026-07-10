@@ -78,6 +78,23 @@ int main() {
           "Cross-authority header provider sequencing differs.");
     }
     try {
+      transport.DownloadMetadata(base + "/redirect/missing-location");
+      throw std::runtime_error("Redirect without Location was accepted.");
+    } catch (const std::runtime_error& error) {
+      if (std::string(error.what()) !=
+          "Redirect response is missing a Location header.") {
+        throw;
+      }
+    }
+    try {
+      transport.DownloadMetadata(base + "/redirect/empty");
+      throw std::runtime_error("Empty Location did not remain a redirect.");
+    } catch (const std::runtime_error& error) {
+      if (std::string(error.what()) != "Update redirect limit exceeded.") {
+        throw;
+      }
+    }
+    try {
       ResolveRedirectURL("https://127.0.0.1/source", base + "/metadata");
       throw std::runtime_error("HTTPS redirect downgrade was accepted.");
     } catch (const std::runtime_error& error) {

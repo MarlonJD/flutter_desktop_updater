@@ -1223,9 +1223,9 @@ redirect loop longer than five
 
 - [x] **Step 4: Resolve before enforcing redirect policy**
 
-Resolve `Location` against the current URL with WinHTTP URL APIs. Validate the
-resolved absolute URL, then reject HTTPS downgrade. Pass the resolved URL to the
-headers provider and the next request.
+Resolve `Location` against the current URL with the shared portable RFC 3986
+resolver. Validate the resolved absolute URL, then reject HTTPS downgrade. Pass
+the resolved URL to the WinHTTP adapter, headers provider, and next request.
 
 - [ ] **Step 5: Run Windows target-host tests**
 
@@ -1309,8 +1309,47 @@ Task 7 review follow-up evidence on 2026-07-11:
   scans and `git diff --check` passed.
 - Windows Debug CMake, CTest, and .NET tests: not run on macOS. Step 5 and the
   final acceptance checkbox remain open. Task 6 remains blocked/reverted.
-- Follow-up commit: `fix: complete Windows redirect and path handling`
-  (this changeset).
+- Follow-up commit:
+  `6fa5c16 fix: complete Windows redirect and path handling`.
+
+Task 7 second review follow-up evidence on 2026-07-11:
+
+- RED was recorded before production changes. The portable lifecycle
+  executable failed to compile with missing `PublishFilesystemStage` and
+  `staged_filesystem_path` members; the portable provenance executable failed
+  with missing `CanonicalStageDirectory`; the shared transport fixture syntax
+  check failed with missing `destination_filesystem_path`; and the focused
+  Dart contract ended `+3 -1: Some tests failed.` because
+  `std::optional<std::wstring> QueryHeader` was absent.
+- GREEN: the lifecycle executable passed with a native Unicode path retained
+  through snapshot and install handoff; the provenance executable passed for a
+  Unicode trailing-separator parent and filesystem-root semantics; the shared
+  transport fixture syntax check passed; and the focused source/live fixture
+  suite passed all 4 tests.
+- The Windows C ABI converts the artifact destination once to a filesystem
+  path, passes it through `ArtifactDownloadRequest` without a UTF-8 round trip,
+  and publishes the staged filesystem path into lifecycle state. Provenance
+  verification and helper handoff consume the native snapshot/handoff path;
+  compatibility string state remains available for the unchanged public C ABI
+  result and non-Windows shared callers.
+- WinHTTP header queries now distinguish a missing header from a present empty
+  value. A redirect without `Location` raises the literal non-retryable
+  `Redirect response is missing a Location header.` diagnostic, while an empty
+  `Location` remains a valid empty reference and reaches the redirect limit.
+- Windows canonical directory normalization trims trailing non-root separators
+  before containment equality while retaining filesystem roots. The portable
+  executable covers Unicode, a trailing separator, and root semantics.
+- Windows Debug CMake, CTest, and .NET tests were not run on macOS. Step 5 and
+  the final acceptance checkbox remain open. Task 6 remains blocked/reverted.
+- Verified locally on macOS: both portable lifecycle/provenance executables
+  passed under `-Wall -Wextra -Werror`; shared and Linux syntax checks passed;
+  the focused source/live fixture suite passed 4 tests; format checked 213
+  files with 0 changes; analyze exited 0 with 395 pre-existing info-only
+  diagnostics; full Flutter passed 577 tests with 3 explicit
+  environment-gated skips and 0 failures; touched-source banned API and
+  `git diff --check` scans passed.
+- Second follow-up commit for this changeset:
+  `fix: finish Windows native path boundary`.
 
 ---
 

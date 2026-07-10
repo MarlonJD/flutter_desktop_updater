@@ -56,6 +56,10 @@ struct FilesystemOwnedStage {
   std::string nonce;
 };
 
+std::filesystem::path CanonicalStageDirectory(
+    const std::filesystem::path& path,
+    const char* field);
+
 FilesystemOwnedStage CreateOwnedStage(
     const std::filesystem::path& parent_path,
     const std::string& nonce = std::string());

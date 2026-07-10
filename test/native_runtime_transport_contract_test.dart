@@ -54,6 +54,15 @@ void main() {
     final provenanceHeader = readRequiredFile(
       "native_runtime/cpp/stage_provenance.h",
     );
+    final transportHeader = readRequiredFile(
+      "native_runtime/cpp/update_transport.h",
+    );
+    final lifecycleHeader = readRequiredFile(
+      "native_runtime/cpp/client_lifecycle.h",
+    );
+    final runtimeC = readRequiredFile(
+      "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
+    );
 
     expect(source, contains("WinHttpOpen"));
     expect(source, contains("WINHTTP_OPTION_DISABLE_FEATURE"));
@@ -65,6 +74,11 @@ void main() {
     expect(source, contains("WinHttpCrackUrl"));
     expect(source, contains("HTTPRequestTarget"));
     expect(source, contains("std::filesystem::u8path"));
+    expect(source, contains("std::optional<std::wstring> QueryHeader"));
+    expect(
+      source,
+      contains("Redirect response is missing a Location header."),
+    );
     expect(source, isNot(contains("GetFileAttributesA")));
     expect(source, isNot(contains("DeleteFileA")));
     expect(source, isNot(contains("std::remove")));
@@ -86,6 +100,7 @@ void main() {
     expect(redirectTests, contains("[2001:db8::1]"));
     expect(redirectTests, contains("user@example.com"));
     expect(provenanceHeader, contains("struct FilesystemOwnedStage"));
+    expect(provenanceHeader, contains("CanonicalStageDirectory"));
     expect(
       provenanceHeader,
       contains("const std::filesystem::path& parent_path"),
@@ -99,6 +114,28 @@ void main() {
     expect(transportTest, contains("/redirect/five/0"));
     expect(transportTest, contains("/redirect/six/0"));
     expect(transportTest, contains("/redirect/cross-authority"));
+    expect(transportTest, contains("/redirect/missing-location"));
+    expect(transportTest, contains("/redirect/empty"));
+    expect(
+      transportTest,
+      contains("Redirect response is missing a Location header."),
+    );
+    expect(
+      transportHeader,
+      contains("std::filesystem::path destination_filesystem_path"),
+    );
+    expect(lifecycleHeader, contains("staged_filesystem_path"));
+    expect(
+      runtimeC,
+      contains("download.destination_filesystem_path = artifact_path"),
+    );
+    expect(runtimeC, isNot(contains("artifact_path.u8string()")));
+    expect(runtimeC, contains("snapshot.staged_filesystem_path"));
+    expect(runtimeC, contains("install_handoff.staged_filesystem_path"));
+    expect(
+      runtimeC,
+      isNot(contains("Utf8ToWide(install_handoff.staged_path)")),
+    );
     expect(artifactTest, contains("güncelleme-日本"));
     expect(fixtureServer, contains('"/redirect/root"'));
     expect(fixtureServer, contains('"/redirect/parent/child"'));
@@ -109,6 +146,7 @@ void main() {
     expect(fixtureServer, contains('"/redirect/five/0"'));
     expect(fixtureServer, contains('"/redirect/six/0"'));
     expect(fixtureServer, contains('"/redirect/cross-authority"'));
+    expect(fixtureServer, contains('"/redirect/missing-location"'));
     expect(cmake, contains("Winhttp"));
     expect(cmake, contains("update_transport_winhttp.cpp"));
     expect(cmake, contains("redirect_url.cc"));
@@ -184,6 +222,10 @@ void main() {
       expect(
         await redirectLocation(baseUrl, "/redirect/cross-authority"),
         startsWith("http://localhost:"),
+      );
+      expect(
+        await redirectLocation(baseUrl, "/redirect/missing-location"),
+        isNull,
       );
     } finally {
       process.kill();

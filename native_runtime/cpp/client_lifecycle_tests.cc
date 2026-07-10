@@ -1,6 +1,7 @@
 #include "client_lifecycle_tests.h"
 
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -274,6 +275,26 @@ void ConfirmedSchedulingNeverRestores() {
           "Confirmed scheduling allowed a second install.");
 }
 
+void NativeStagePathSurvivesLifecycle() {
+  ClientLifecycleState state;
+  const CheckLease check = state.BeginCheck();
+  Require(state.PublishCheck(check, AvailableCheck()),
+          "Check result was not published.");
+  const StageLease stage = state.BeginStage();
+  const std::filesystem::path native_path =
+      std::filesystem::temp_directory_path() /
+      std::filesystem::u8path(u8"güncelleme-日本") / "stage";
+  Require(state.PublishFilesystemStage(stage, native_path, std::string(64, '1')),
+          "Native staged path was not published.");
+  const LifecycleSnapshot snapshot = state.Snapshot();
+  Require(snapshot.staged_filesystem_path == native_path,
+          "Snapshot did not retain the native staged path.");
+  const InstallHandoff handoff = state.BeginInstall(snapshot);
+  Require(handoff.status == ClientLifecycleStatus::kAllowed &&
+              handoff.staged_filesystem_path == native_path,
+          "Install handoff did not retain the native staged path.");
+}
+
 }  // namespace
 
 void RunClientLifecycleTests() {
@@ -285,6 +306,7 @@ void RunClientLifecycleTests() {
   RejectedStageDuringSchedulingPreventsRollbackRestore();
   RejectedCheckDuringSchedulingPreventsRollbackRestore();
   ConfirmedSchedulingNeverRestores();
+  NativeStagePathSurvivesLifecycle();
 }
 
 }  // namespace internal
