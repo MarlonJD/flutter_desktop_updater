@@ -193,7 +193,7 @@ jobs:
         shell: pwsh
         run: |
           $packageSource = (Resolve-Path windows/native/artifacts).Path
-          dotnet restore example/native/windows-dotnet/DesktopUpdater.Consumer.csproj --source "$packageSource" --source "https://api.nuget.org/v3/index.json" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          dotnet restore example/native/windows-dotnet/DesktopUpdater.Consumer.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet run --project example/native/windows-dotnet --no-restore "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
       - name: Build example

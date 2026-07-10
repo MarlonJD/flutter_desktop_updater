@@ -126,10 +126,9 @@ void main() {
     );
     expect(
       workflow,
-      contains(
-        r'--source "$packageSource" --source "https://api.nuget.org/v3/index.json"',
-      ),
+      contains(r'--source "$packageSource"'),
     );
+    expect(workflow, isNot(contains("api.nuget.org")));
     expect(
       workflow,
       contains("dotnet run --project example/native/windows-dotnet"),
