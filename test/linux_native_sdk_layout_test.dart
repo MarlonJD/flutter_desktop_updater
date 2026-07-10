@@ -42,6 +42,10 @@ void main() {
     );
     expect(nativeCmake, contains("add_library(desktop_updater_native"));
     expect(nativeCmake, contains("desktop_updater::native ALIAS"));
+    expect(
+      nativeCmake,
+      contains("if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)"),
+    );
     expect(nativeCmake, contains("EXPORT_NAME native"));
     expect(
       nativeCmake,

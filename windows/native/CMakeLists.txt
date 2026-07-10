@@ -46,31 +46,33 @@ set_target_properties(desktop_updater_native PROPERTIES
   WINDOWS_EXPORT_ALL_SYMBOLS ON
   OUTPUT_NAME desktop_updater_native)
 
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
-install(TARGETS desktop_updater_native
-  EXPORT desktop_updater_nativeTargets
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(EXPORT desktop_updater_nativeTargets
-  FILE desktop_updater_nativeTargets.cmake
-  NAMESPACE desktop_updater::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
-configure_file(
-  cmake/desktop_updater_nativeConfig.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
-  @ONLY)
-write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
-  VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion)
-install(FILES
-  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
-  ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
+  install(TARGETS desktop_updater_native
+    EXPORT desktop_updater_nativeTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(EXPORT desktop_updater_nativeTargets
+    FILE desktop_updater_nativeTargets.cmake
+    NAMESPACE desktop_updater::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
+  configure_file(
+    cmake/desktop_updater_nativeConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+    @ONLY)
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/desktop_updater_native)
+endif()
 
 if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   enable_testing()

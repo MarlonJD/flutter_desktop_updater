@@ -30,6 +30,10 @@ void main() {
     expect(cmake, contains("desktop_updater_native_static STATIC"));
     expect(cmake, contains("desktop_updater_native SHARED"));
     expect(cmake, contains("desktop_updater::native ALIAS"));
+    expect(
+      cmake,
+      contains("if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)"),
+    );
     expect(source, contains("catch (...)"));
     expect(source, contains("request->abi_version"));
     expect(source, contains("request->struct_size"));
