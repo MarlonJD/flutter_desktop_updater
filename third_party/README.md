@@ -17,3 +17,14 @@ targets. They are not linked by Flutter helper builds.
 The archive checksum was verified before extraction. Upstream source files are
 unmodified. Runtime tests execute the repository's Dart-generated Ed25519
 fixtures against the vendored implementation.
+
+## miniz 3.1.2
+
+- Source: `https://github.com/richgel999/miniz/releases/download/3.1.2/miniz-3.1.2.zip`
+- SHA-256: `f0446d863f9c19926ad9483c523fdc42e42b8d4a6a431d27e09d49c79a140d9a`
+- License: MIT; retained in `miniz/LICENSE`
+- Sources: single-file `miniz.c` and `miniz.h`, unmodified
+- Build: C99 with archive APIs enabled and zlib-compatible wrapper APIs
+  disabled; Linux enables large-file offsets
+- Linking: statically compiled into Windows and Linux native runtime targets
+- Purpose: bounded ZIP central-directory inspection and extraction

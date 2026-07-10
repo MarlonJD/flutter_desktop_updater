@@ -544,7 +544,7 @@ Task 4 candidate evidence on 2026-07-10:
 - Modify: helper handoff adapters
 - Consume: generated safe-path and release-contract fixtures
 
-- [ ] **Step 5.1: Enforce safe archive paths**
+- [x] **Step 5.1: Enforce safe archive paths**
 
 Reject before write:
 
@@ -563,32 +563,32 @@ Before extraction, enforce `maximumArchiveEntries`,
 addition. Exceeding a limit returns `unsafeArchive` and removes the partial
 staging directory.
 
-- [ ] **Step 5.2: Stage macOS ZIP**
+- [x] **Step 5.2: Stage macOS ZIP**
 
 Extract with `ditto`, locate the exact `.app`, verify bundle identifier, Team
 ID, codesign, Gatekeeper, and stapler policy, then write the staged release
 manifest before calling `MacInstallHelper`.
 
-- [ ] **Step 5.3: Stage macOS DMG**
+- [x] **Step 5.3: Stage macOS DMG**
 
 Verify the DMG primary signature when required, mount read-only/no-browse,
 locate exactly the configured app bundle, copy it out, detach on every path,
 verify the copied app, and hand it to the whole-bundle helper.
 
-- [ ] **Step 5.4: Stage macOS PKG**
+- [x] **Step 5.4: Stage macOS PKG**
 
 Verify package signature, Gatekeeper install assessment, stapler ticket, and
 expanded package IDs. Stage `installer.pkg` plus the release manifest, then
 use the helper's Installer.app handoff.
 
-- [ ] **Step 5.5: Stage Windows ZIP and Inno**
+- [x] **Step 5.5: Stage Windows ZIP and Inno**
 
 ZIP staging rejects unsafe entries and writes the manifest. Inno staging
 verifies Authenticode requirements and allowed signer thumbprints, writes
 `installer.exe` plus the manifest, and passes the complete request to the
 versioned helper C ABI.
 
-- [ ] **Step 5.6: Stage Linux ZIP**
+- [x] **Step 5.6: Stage Linux ZIP**
 
 Stage only a self-contained directory bundle. Verify the staged executable
 relative path and package identity, then pass the explicit validated
@@ -601,12 +601,42 @@ Run all unit tests and target-host platform trust tests. DMG/PKG/Inno tests
 that require signing credentials remain `blocked` until explicit credentials
 and approved workflows are available.
 
-- [ ] **Step 5.8: Commit artifact staging**
+- [x] **Step 5.8: Commit artifact staging**
 
 ```sh
 git add macos/desktop_updater windows/native linux/native
 git commit -m "feat: stage native release artifacts safely"
 ```
+
+Task 5 candidate evidence on 2026-07-10:
+
+- the staging contract test failed first on every absent platform stager and
+  then passed all three runtime-only dependency, artifact matrix, publisher
+  trust, package identity, and helper-manifest checks;
+- miniz 3.1.2 matched the pinned SHA-256 exactly; its unmodified MIT-licensed
+  sources compile only into Windows/Linux runtime targets and are documented
+  in `third_party/README.md`;
+- the shared C++14 archive runner passed the Dart-generated safe-path cases,
+  checked entry/byte limits, duplicate file/directory conflicts, traversal
+  rejection, and partial staging cleanup; the Linux wrapper test additionally
+  passed executable-mode preservation, expected package identity binding, and
+  explicit install-root helper validation including protected-root rejection;
+- the macOS stager preflights ZIP entries and limits before `ditto`, rejects
+  links, local/central-name mismatches, unsafe ZIP64 sizes, and ambiguous app
+  bundles, checks bundle/Team identity plus codesign/Gatekeeper/stapler, mounts
+  DMGs read-only, validates PKG package IDs, and writes the exact helper
+  manifest; the SwiftPM suite passed 17 tests;
+- the Windows runtime uses WinVerifyTrust plus the leaf certificate SHA-256
+  allowlist for required Inno Authenticode policy; Windows ZIP and unsigned
+  Inno fail-closed tests are registered in CTest through runtime test objects,
+  and helper handoff constructs the complete versioned C ABI request;
+- `flutter test --no-pub`: PASS, 523 tests with 3 explicit opt-in E2E skips;
+  `dart format --output=none --set-exit-if-changed .`: PASS, 205 files,
+  0 changed; `flutter analyze --no-fatal-infos`: PASS with info diagnostics
+  and no errors; the external macOS SwiftPM consumer compiled and ran;
+- Windows target-host execution and positive signed DMG/PKG/Inno trust lanes
+  are CI/credential-pending, so Step 5.7 remains unchecked until the final
+  verification pass.
 
 ## Task 6: Diagnostics And Recovery Parity
 

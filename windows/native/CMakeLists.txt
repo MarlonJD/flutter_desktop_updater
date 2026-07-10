@@ -54,14 +54,39 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
-  add_library(desktop_updater_runtime SHARED
+  set(DESKTOP_UPDATER_MINIZ_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/miniz)
+  set_source_files_properties(${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c PROPERTIES
+    COMPILE_DEFINITIONS MINIZ_NO_ZLIB_APIS)
+  set(DESKTOP_UPDATER_RUNTIME_SOURCES
+    src/runtime/artifact_stager_windows.cpp
     src/runtime/desktop_updater_runtime_c.cpp
     src/runtime/sha256_bcrypt.cpp
     src/runtime/update_transport_winhttp.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
+    ${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
+  add_library(desktop_updater_runtime_objects OBJECT
+    ${DESKTOP_UPDATER_RUNTIME_SOURCES})
+  target_compile_features(desktop_updater_runtime_objects PUBLIC cxx_std_17)
+  target_include_directories(desktop_updater_runtime_objects
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MINIZ_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional)
+  target_compile_definitions(desktop_updater_runtime_objects
+    PRIVATE DESKTOP_UPDATER_RUNTIME_BUILDING_DLL)
+  set_target_properties(desktop_updater_runtime_objects PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
+
+  add_library(desktop_updater_runtime SHARED
+    $<TARGET_OBJECTS:desktop_updater_runtime_objects>)
   add_library(desktop_updater::runtime ALIAS desktop_updater_runtime)
   target_compile_features(desktop_updater_runtime PUBLIC cxx_std_17)
   target_include_directories(desktop_updater_runtime
@@ -71,16 +96,18 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MINIZ_DIR}
       ${DESKTOP_UPDATER_MONOCYPHER_DIR}
       ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional)
-  target_compile_definitions(desktop_updater_runtime
-    PRIVATE DESKTOP_UPDATER_RUNTIME_BUILDING_DLL)
   target_compile_definitions(desktop_updater_runtime
     INTERFACE DESKTOP_UPDATER_RUNTIME_USING_DLL)
   set_target_properties(desktop_updater_runtime PROPERTIES
     EXPORT_NAME runtime
     OUTPUT_NAME desktop_updater_runtime)
-  target_link_libraries(desktop_updater_runtime PRIVATE Bcrypt Winhttp)
+  target_link_libraries(desktop_updater_runtime
+    PRIVATE
+      desktop_updater_native_static
+      Bcrypt Crypt32 Winhttp Wintrust)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -156,16 +183,40 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
     add_executable(desktop_updater_runtime_contract_test
       test/runtime/contract_conformance_test.cpp
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/archive_fixture_tests.cc
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/contract_fixture_tests.cc)
     target_compile_features(desktop_updater_runtime_contract_test
       PRIVATE cxx_std_17)
     target_include_directories(desktop_updater_runtime_contract_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
-      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MINIZ_DIR})
     target_link_libraries(desktop_updater_runtime_contract_test
-      PRIVATE desktop_updater_runtime Bcrypt)
+      PRIVATE
+        desktop_updater_native_static
+        Bcrypt Crypt32 Winhttp Wintrust)
+    target_sources(desktop_updater_runtime_contract_test PRIVATE
+      $<TARGET_OBJECTS:desktop_updater_runtime_objects>)
     add_test(NAME desktop_updater_runtime_contract
       COMMAND desktop_updater_runtime_contract_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-contract)
+
+    add_executable(desktop_updater_runtime_artifact_test
+      test/runtime/artifact_stager_test.cpp)
+    target_compile_features(desktop_updater_runtime_artifact_test
+      PRIVATE cxx_std_17)
+    target_include_directories(desktop_updater_runtime_artifact_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MINIZ_DIR})
+    target_link_libraries(desktop_updater_runtime_artifact_test
+      PRIVATE
+        desktop_updater_native_static
+        Bcrypt Crypt32 Winhttp Wintrust)
+    target_sources(desktop_updater_runtime_artifact_test PRIVATE
+      $<TARGET_OBJECTS:desktop_updater_runtime_objects>)
+    add_test(NAME desktop_updater_runtime_artifact
+      COMMAND desktop_updater_runtime_artifact_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-contract)
 
     add_executable(desktop_updater_runtime_transport_test
@@ -177,7 +228,11 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
     target_link_libraries(desktop_updater_runtime_transport_test
-      PRIVATE desktop_updater_runtime Bcrypt Winhttp)
+      PRIVATE
+        desktop_updater_native_static
+        Bcrypt Crypt32 Winhttp Wintrust)
+    target_sources(desktop_updater_runtime_transport_test PRIVATE
+      $<TARGET_OBJECTS:desktop_updater_runtime_objects>)
     add_test(NAME desktop_updater_runtime_transport
       COMMAND desktop_updater_runtime_transport_test)
   endif()
