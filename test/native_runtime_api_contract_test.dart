@@ -3,26 +3,36 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
-  test("preview documentation publishes only not-implemented API contracts",
+  test("preview documentation publishes implemented APIs with literal evidence",
       () {
     final docs = readRequiredFile("docs/native-runtime-api.md");
 
     for (final capability in <String>[
-      "macOS | `zip` | `not implemented`",
-      "macOS | `dmg` | `not implemented`",
-      "macOS | `pkgInstaller` | `not implemented`",
-      "Windows | `zip` | `not implemented`",
-      "Windows | `innoInstaller` | `not implemented`",
-      "Linux | `zip` | `not implemented`",
+      "| macOS | `zip` |",
+      "| macOS | `dmg` |",
+      "| macOS | `pkgInstaller` |",
+      "| Windows | `zip` |",
+      "| Windows | `innoInstaller` |",
+      "| Linux | `zip` |",
     ]) {
       expect(docs, contains(capability));
     }
-    expect(docs, contains("source ABI only"));
+    for (final operation in <String>[
+      "checkForUpdate",
+      "downloadVerifyAndStage",
+      "installAndRelaunch",
+    ]) {
+      expect(docs, contains(operation));
+    }
+    expect(docs, contains("source-first"));
     expect(docs, contains("4 MiB"));
     expect(docs, contains("100,000"));
     expect(docs, contains("8 GiB"));
     expect(docs, contains("4 GiB"));
-    expect(docs, isNot(contains("production-ready")));
+    expect(docs, contains("not production-ready"));
+    expect(docs, contains("candidate-only"));
+    expect(docs, contains("not run"));
+    expect(docs, isNot(contains("`not implemented`")));
   });
 
   test("Swift runtime API exposes validated configuration and typed outcomes",

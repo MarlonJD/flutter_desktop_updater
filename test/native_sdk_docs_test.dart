@@ -27,8 +27,10 @@ void main() {
     expect(source, isNot(contains("writeAsString(pubspec")));
   });
 
-  test("native SDK guide exposes helper packages without claiming runtime", () {
+  test("native SDK guide publishes helper and preview runtime boundaries", () {
     final guide = _read("docs/native-sdk.md");
+    final runtimeApi = _read("docs/native-runtime-api.md");
+    final harness = _read("docs/harness-engineering.md");
     final readme = _read("README.md");
     final publishing = _read("docs/publishing.md");
     final ciGuide = _read("docs/github-actions-ci-cd.md");
@@ -45,11 +47,45 @@ void main() {
       expect(guide, contains(surface));
     }
     expect(guide, contains("helper SDK"));
-    expect(guide, contains("Full native runtime"));
-    expect(guide, contains("unavailable"));
-    expect(guide, contains("candidate-only"));
+    expect(guide, contains("Native Runtime Preview"));
     expect(guide, contains("signed standalone release assets"));
+    for (final operation in [
+      "checkForUpdate",
+      "downloadVerifyAndStage",
+      "installAndRelaunch",
+    ]) {
+      expect("$guide\n$runtimeApi\n$readme", contains(operation));
+    }
+    for (final label in [
+      "preview",
+      "verified locally",
+      "verified in CI",
+      "not run",
+      "blocked",
+      "candidate-only",
+      "production-ready",
+    ]) {
+      expect("$guide\n$runtimeApi\n$harness", contains(label));
+    }
+    for (final boundary in [
+      "discovery metadata",
+      "canonical JSON",
+      "pinned key ID",
+      "expectedPackageId",
+      "publisher checks",
+      "Delta artifacts",
+      "Linux prebuilt binary distribution",
+    ]) {
+      expect(runtimeApi, contains(boundary));
+    }
+    expect(runtimeApi, isNot(contains("`not implemented`")));
+    expect(runtimeApi, contains("not production-ready"));
+    expect(harness, contains("macOS native runtime ZIP smoke"));
+    expect(harness, contains("Windows native runtime ZIP smoke"));
+    expect(harness, contains("Linux native runtime ZIP smoke"));
+    expect(harness, contains("workflow_dispatch"));
     expect(readme, contains("docs/native-sdk.md"));
+    expect(readme, contains("docs/native-runtime-api.md"));
     expect(publishing, contains("--project-type"));
     expect(publishing, contains("--artifact-root"));
     expect(ciGuide, contains("Standalone CLI candidate matrix"));

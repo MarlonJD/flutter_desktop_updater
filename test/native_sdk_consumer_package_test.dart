@@ -149,8 +149,7 @@ void main() {
     );
   });
 
-  test("published helper package stays source-complete and runtime-limited",
-      () {
+  test("published package stays source-complete and preview-bounded", () {
     final pubIgnore = readRequiredFile(".pubignore");
     final ignoredPaths = pubIgnore.split("\n").map((line) => line.trim());
     final workflow = readRequiredFile(
@@ -169,7 +168,9 @@ void main() {
       "Package.swift",
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
       "windows/native/src/desktop_updater_native.cpp",
+      "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
       "linux/native/src/desktop_updater_native.cc",
+      "linux/native/src/runtime/update_client_linux.cc",
       "linux/native/cmake/desktop_updater_nativeConfig.cmake.in",
       "linux/native/cmake/desktop_updater_native.pc.in",
     ]) {
@@ -179,8 +180,11 @@ void main() {
     expect(ignoredPaths, isNot(contains("windows/")));
     expect(ignoredPaths, isNot(contains("linux/")));
     expect(workflow, contains("dart pub publish --dry-run"));
-    expect(publishedDocs, isNot(contains("downloadVerifyAndStage")));
-    expect(publishedDocs, isNot(contains("native checkForUpdate")));
+    expect(publishedDocs, contains("downloadVerifyAndStage"));
+    expect(publishedDocs, contains("checkForUpdate"));
+    expect(publishedDocs, contains("installAndRelaunch"));
+    expect(publishedDocs, contains("candidate-only"));
+    expect(publishedDocs, contains("not production-ready"));
     expect(publishedDocs, isNot(contains("production-ready native runtime")));
   });
 }

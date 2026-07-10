@@ -806,7 +806,7 @@ Task 7 candidate evidence on 2026-07-10:
 - Modify: `README.md`
 - Test: `test/native_sdk_docs_test.dart`
 
-- [ ] **Step 8.1: Replace helper-only examples after implementation**
+- [x] **Step 8.1: Replace helper-only examples after implementation**
 
 Only after Tasks 1-7 pass may docs show:
 
@@ -818,7 +818,7 @@ installAndRelaunch
 
 Examples must compile in the external sample projects.
 
-- [ ] **Step 8.2: Label evidence literally**
+- [x] **Step 8.2: Label evidence literally**
 
 Use:
 
@@ -835,13 +835,13 @@ production-ready
 Do not call the native runtime production-ready while any required capability
 or target-host smoke is blocked/not run.
 
-- [ ] **Step 8.3: Document trust boundaries**
+- [x] **Step 8.3: Document trust boundaries**
 
 Explain that the index is discovery metadata, descriptor signatures use
 canonical JSON and pinned key IDs, package identity is app-owned, and platform
 publisher checks remain mandatory where configured.
 
-- [ ] **Step 8.4: Document unsupported future work**
+- [x] **Step 8.4: Document unsupported future work**
 
 Delta artifacts remain descriptor metadata only. Linux prebuilt binary
 distribution remains outside this plan until ABI/glibc/architecture policy is
@@ -857,12 +857,34 @@ flutter test --no-pub \
 
 Also build every documented external sample on its target host.
 
-- [ ] **Step 8.6: Commit preview documentation**
+- [x] **Step 8.6: Commit preview documentation**
 
 ```sh
 git add README.md docs test/native_sdk_docs_test.dart
 git commit -m "docs: document native runtime preview"
 ```
+
+Task 8 candidate evidence on 2026-07-10:
+
+- the docs contract failed first because the helper guide still called the
+  implemented runtime unavailable and the API matrix still labeled every
+  artifact `not implemented`;
+- the README, helper guide, preview API, and harness now publish the shared
+  `checkForUpdate`, `downloadVerifyAndStage`, and `installAndRelaunch` flow with
+  compiling external Swift, .NET, and C++ sample projects as the authority;
+- packaging boundaries now identify the Flutter-free SwiftPM product, the
+  versioned Windows C ABI and two-DLL NuGet package, and the source-first Linux
+  installed CMake target without promising a Linux binary ABI;
+- discovery metadata, canonical JSON, pinned key IDs, application-owned
+  package identity, publisher checks, helper separation, delta metadata, and
+  unsupported Linux prebuilt distribution are explicit;
+- evidence remains literal: the macOS ZIP path is `verified locally`, ordinary
+  target-host smokes are `candidate-only` pending final CI, and credential-gated
+  DMG, PKG, and Inno lanes are `not run`; the preview is not
+  `production-ready`;
+- the focused docs and harness command passed 12 tests locally;
+- Step 8.5 remains unchecked until the final Windows, Linux, and macOS
+  target-host packaged-consumer CI evidence is inspected.
 
 ## Final Gate
 
@@ -891,12 +913,14 @@ The preview can be published only when all API examples compile from packaged
 consumers. It can be called production-ready only when all six artifact smoke
 lanes pass with required publisher trust evidence.
 
-## Rebase Status
+## Implementation Status
 
-As of 2026-07-10, the child plan file and index entry exist, but native runtime
-implementation has not begun. All tasks above are intentionally unchecked.
-The previous invalid fixture examples and premature runtime usage examples are
-removed by this rebase.
+As of 2026-07-10, Tasks 1-6 are complete with local contract evidence. Tasks 7
+and 8 have candidate implementations and pushed local evidence; their target-
+host package/smoke checkboxes remain open until final CI is inspected. Signed
+DMG, PKG, and Inno publisher-trust lanes remain explicit credential-gated
+`not run` evidence. The native runtime is a preview and is not
+`production-ready`.
 
 ## Self-Review
 

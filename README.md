@@ -60,23 +60,31 @@ With only `updates.baseUrl`, publish creates an upload-ready package under
 With an upload provider configured, it uploads versioned files first, validates
 them, uploads `app-archive.json` last, then validates hosted update selection.
 
-## Native Helper SDKs And Standalone CLI
+## Native Helper SDKs And Runtime Preview
 
 The pub.dev Flutter package remains the full update runtime. This repository
-also ships Flutter-free install/relaunch helper SDKs for native host apps:
+also ships Flutter-free install/relaunch helper SDKs and an opt-in native
+runtime preview for native host apps:
 
-- `DesktopUpdaterKit` through SwiftPM on macOS;
-- `desktop_updater::native` through installed CMake packages on Windows and
-  Linux;
-- `DesktopUpdater.Native` as a locally verified Windows NuGet package surface;
+- `DesktopUpdaterKit` through SwiftPM on macOS, including the Swift preview
+  client;
+- `desktop_updater::native` helper targets on Windows and Linux, plus the
+  opt-in source-built `desktop_updater::runtime` target on Linux;
+- `DesktopUpdater.Native` as the Windows .NET preview wrapper and NuGet package
+  boundary for both native DLLs;
 - a compiled `desktop-updater` CLI candidate matrix for macOS, Windows, and
   Linux.
 
-These helpers do not perform native update discovery, download, rollout,
-descriptor verification, or staging. Standalone CI executables are
-`candidate-only` until the applicable production signing and release gates
-pass. See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for exact
-APIs, install commands, package status, and evidence labels.
+Helper-only consumers still provide their own discovery, verification, and
+staging. The preview adds the stateful `checkForUpdate`,
+`downloadVerifyAndStage`, and `installAndRelaunch` flow while reusing the same
+helpers and trust rules. It is `candidate-only` and not production-ready:
+Windows/Linux target-host smokes remain pending final CI, and signed DMG, PKG,
+and Inno smokes are `not run` without explicit credentials.
+
+See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for package
+integration and [Native Runtime Preview API](docs/native-runtime-api.md) for
+compiling examples, current evidence, typed outcomes, and trust boundaries.
 
 ## Additional Release Files
 
@@ -319,6 +327,9 @@ and the local Apple-trust smoke harness, see
   validation, CI, and platform-specific release work.
 - [Native helper SDKs and standalone CLI](docs/native-sdk.md): SwiftPM, CMake,
   C ABI, NuGet, version synchronization, CLI candidates, and release gates.
+- [Native Runtime Preview API](docs/native-runtime-api.md): non-Flutter
+  discovery, verification, staging, helper handoff, evidence, and trust
+  boundaries.
 - [Windows and Linux production release options](docs/windows-linux-production-release.md):
   signing choices, native package channels, and country or provider
   restrictions.

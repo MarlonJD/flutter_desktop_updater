@@ -55,7 +55,21 @@ The broad platform gates are in GitHub Actions:
   smoke, and update smoke.
 - Linux debug/release builds, native tests, integration tests, release publish
   smoke, and update smoke.
+- The `macOS native runtime ZIP smoke`, `Windows native runtime ZIP smoke`, and
+  `Linux native runtime ZIP smoke` exercise the three-stage preview through
+  external SwiftPM, NuGet, and installed CMake consumers. CTest consumers fail
+  explicitly when zero tests are registered.
+- The macOS DMG/PKG and Windows Inno runtime smokes are separate
+  `workflow_dispatch` gates. They require the configured Developer ID/notary or
+  Authenticode credentials and do not run on ordinary pushes or pull requests.
 - macOS notarized publish smoke only when explicitly dispatched with secrets.
+
+Evidence language is literal. `preview` describes API maturity;
+`verified locally` and `verified in CI` name where a command passed; `not run`
+means the gate was not exercised; `blocked` means a required dependency,
+credential, approval, or host prevented it; and `candidate-only` means release
+trust is incomplete. Use `production-ready` only after every required
+target-host package, artifact, trust, cleanup, and release gate passes.
 
 `test/harness_engineering_docs_test.dart` is the first harness guard. It keeps
 the agent map, this document, and the completed staged implementation record
