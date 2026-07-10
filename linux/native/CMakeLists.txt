@@ -4,6 +4,8 @@ project(desktop_updater_native VERSION 2.7.0 LANGUAGES CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
+option(DESKTOP_UPDATER_NATIVE_RUNTIME
+  "Build the preview non-Flutter update runtime" OFF)
 
 add_library(desktop_updater_native STATIC
   src/desktop_updater_native.cc)
@@ -17,12 +19,31 @@ set_target_properties(desktop_updater_native PROPERTIES
   EXPORT_NAME native
   POSITION_INDEPENDENT_CODE ON)
 
+if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+  add_library(desktop_updater_runtime STATIC
+    src/runtime/runtime_configuration.cc)
+  add_library(desktop_updater::runtime ALIAS desktop_updater_runtime)
+  target_compile_features(desktop_updater_runtime PUBLIC cxx_std_14)
+  target_include_directories(desktop_updater_runtime
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>)
+  set_target_properties(desktop_updater_runtime PROPERTIES
+    EXPORT_NAME runtime
+    POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
   install(TARGETS desktop_updater_native
     EXPORT desktop_updater_nativeTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  if(DESKTOP_UPDATER_NATIVE_RUNTIME)
+    install(TARGETS desktop_updater_runtime
+      EXPORT desktop_updater_nativeTargets
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  endif()
   install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   install(EXPORT desktop_updater_nativeTargets

@@ -1,0 +1,64 @@
+#include "desktop_updater_runtime_c.h"
+
+#include <array>
+#include <cstdint>
+
+namespace {
+
+int32_t DESKTOP_UPDATER_RUNTIME_CALL MinimumOSResolver(
+    void*,
+    const char*,
+    const char*) {
+  return 1;
+}
+
+desktop_updater_runtime_header_list_v1 DESKTOP_UPDATER_RUNTIME_CALL
+HeadersProvider(void*, const char*) {
+  desktop_updater_runtime_header_list_v1 headers{};
+  headers.abi_version = DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
+  headers.struct_size = sizeof(headers);
+  return headers;
+}
+
+}  // namespace
+
+int main() {
+  const std::array<uint8_t, 32> public_key{};
+  const desktop_updater_runtime_pinned_key_v1 pinned_key{
+      "native-contract-stable", public_key.data(), public_key.size()};
+  desktop_updater_runtime_configuration_v1 configuration{};
+  configuration.abi_version = DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
+  configuration.struct_size = sizeof(configuration);
+  configuration.app_archive_url_utf8 =
+      "https://updates.example.test/app-archive.json";
+  configuration.expected_package_id_utf8 = "com.example.native-contract";
+  configuration.current_version_utf8 = "2.7.0";
+  configuration.current_build_number = 270;
+  configuration.has_current_build_number = 1;
+  configuration.current_updater_version_utf8 = "2.7.0";
+  configuration.platform_utf8 = "windows";
+  configuration.channel_utf8 = "stable";
+  configuration.require_descriptor_signature = 1;
+  configuration.pinned_public_keys = &pinned_key;
+  configuration.pinned_public_key_count = 1;
+  configuration.minimum_os_resolver = MinimumOSResolver;
+  configuration.request_headers_provider = HeadersProvider;
+  configuration.download_timeout_milliseconds = 30000;
+  configuration.maximum_metadata_bytes = 4LL * 1024LL * 1024LL;
+  configuration.maximum_archive_entries = 100000;
+  configuration.maximum_uncompressed_bytes =
+      8LL * 1024LL * 1024LL * 1024LL;
+  configuration.maximum_single_entry_bytes = 4LL * 1024LL * 1024LL * 1024LL;
+
+  desktop_updater_runtime_result_v1 result =
+      desktop_updater_runtime_client_create_v1(&configuration);
+  if (result.ok == 0 || result.client == nullptr ||
+      result.outcome != DESKTOP_UPDATER_RUNTIME_NO_UPDATE) {
+    desktop_updater_runtime_result_free_v1(&result);
+    return 1;
+  }
+  desktop_updater_runtime_client_free_v1(result.client);
+  result.client = nullptr;
+  desktop_updater_runtime_result_free_v1(&result);
+  return 0;
+}

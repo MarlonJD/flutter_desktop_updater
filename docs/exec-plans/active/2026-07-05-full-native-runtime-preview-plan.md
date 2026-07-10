@@ -321,35 +321,52 @@ stagingFailure
 installHandoffFailure
 ```
 
-- [ ] **Step 2.1: Write external compile tests**
+- [x] **Step 2.1: Write external compile tests**
 
 Each sample app must construct runtime configuration and inspect typed outcomes
 without importing Flutter or internal C++ headers.
 
-- [ ] **Step 2.2: Version the Windows runtime C ABI**
+- [x] **Step 2.2: Version the Windows runtime C ABI**
 
 Use ABI-version and struct-size fields for request/result types. Return owned
 strings/handles through explicit free functions. Catch all C++ exceptions
 inside the ABI.
 
-- [ ] **Step 2.3: Keep Linux C++ source ABI scoped**
+- [x] **Step 2.3: Keep Linux C++ source ABI scoped**
 
 The Linux preview exposes a C++ API through the source package only. Do not
 claim stable binary ABI or distribute a generic prebuilt `.so`.
 
-- [ ] **Step 2.4: Document support before implementation**
+- [x] **Step 2.4: Document support before implementation**
 
 The document includes the full required capability matrix and labels every
 platform `not implemented`. Later tasks may change one label only after its
 external sample and target-host smoke pass.
 
-- [ ] **Step 2.5: Commit API contracts**
+- [x] **Step 2.5: Commit API contracts**
 
 ```sh
 git add docs/native-runtime-api.md macos/desktop_updater/Sources \
   windows/native/include linux/native/include example/native
 git commit -m "docs: define native runtime api contracts"
 ```
+
+Task 2 evidence on 2026-07-10:
+
+- the API contract test failed first because all four documentation/platform
+  surfaces were absent, then passed with 4 tests;
+- SwiftPM helper tests: PASS, 8 tests; the external macOS runtime sample built
+  and printed the typed `noUpdate` outcome;
+- the Windows runtime C header compiled as C11; its C++ ABI implementation and
+  external compile/run smoke passed with `-Wall -Wextra -Werror`;
+- `DesktopUpdater.Native` built for `net8.0` and `netstandard2.0` with 0
+  warnings and 0 errors; its external runtime sample ran and configuration unit
+  tests passed 2/2;
+- the Linux public C++14 header, configuration validator, and external sample
+  compiled and ran with `-Wall -Wextra -Werror`;
+- the focused Flutter helper/package/runtime contract suite passed 23 tests;
+- every capability remains labeled `not implemented`; Flutter helper builds
+  keep the runtime targets disabled by default.
 
 ## Task 3: Shared Selection, Policy, And Trust Conformance
 
