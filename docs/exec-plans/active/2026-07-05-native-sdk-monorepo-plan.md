@@ -537,12 +537,15 @@ algorithm, or diagnostics policy.
 - Produces one descriptor for every platform/artifact combination in the 2.7
   matrix.
 
-- [ ] **Step 2.1: Write the generator determinism test**
+- [x] **Step 2.1: Write the generator determinism test**
 
 Run the generator twice into separate temporary directories and assert
 byte-for-byte equality for every generated file.
 
-- [ ] **Step 2.2: Generate valid release fixtures**
+RED verified locally on 2026-07-10: the fixture test failed because the
+generator and its production API did not exist.
+
+- [x] **Step 2.2: Generate valid release fixtures**
 
 Every descriptor must include schema version, package identity, app name,
 semantic version, integer build number, platform, channel, artifact kind,
@@ -550,7 +553,7 @@ absolute artifact URL, real SHA-256, real length, install strategy, minimum
 updater version, and generated timestamp. Artifact-specific descriptors also
 include the complete current Inno, DMG, or PKG install metadata.
 
-- [ ] **Step 2.3: Generate trust and selection cases**
+- [x] **Step 2.3: Generate trust and selection cases**
 
 Include positive and negative cases for:
 
@@ -567,7 +570,7 @@ Include positive and negative cases for:
 - support policy before and after its deadline;
 - fresh-install metadata.
 
-- [ ] **Step 2.4: Generate safe-path and diagnostics cases**
+- [x] **Step 2.4: Generate safe-path and diagnostics cases**
 
 Safe-path cases must cover:
 
@@ -582,7 +585,7 @@ Safe-path cases must cover:
 
 Diagnostics fixtures must retain current redaction and helper event strings.
 
-- [ ] **Step 2.5: Run Dart fixture validation**
+- [x] **Step 2.5: Run Dart fixture validation**
 
 ```sh
 dart run tool/generate_native_contract_fixtures.dart --check
@@ -595,7 +598,15 @@ flutter test --no-pub \
 Expected: every JSON file parses through the current Dart models, every
 descriptor validates, canonical bytes match, and generation is deterministic.
 
-- [ ] **Step 2.6: Commit canonical fixtures**
+Verified locally on 2026-07-10:
+
+- `dart run tool/generate_native_contract_fixtures.dart --check`: PASS;
+- focused Stage 2 fixture, diagnostics, and helper suite: PASS, 16 tests;
+- `dart format --set-exit-if-changed .`: PASS, 185 files unchanged;
+- `flutter analyze --no-fatal-infos`: PASS with 377 existing info-only lints;
+- `flutter test --no-pub`: PASS, 468 tests with 3 external E2E skips.
+
+- [x] **Step 2.6: Commit canonical fixtures**
 
 ```sh
 git add tool/generate_native_contract_fixtures.dart \

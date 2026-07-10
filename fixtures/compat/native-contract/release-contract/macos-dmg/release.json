@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example.app",
+  "version": "2.7.0",
+  "buildNumber": 271,
+  "platform": "macos",
+  "channel": "stable",
+  "artifact": {
+    "kind": "dmg",
+    "url": "https://updates.example.test/release-contract/macos-dmg/artifact.dmg",
+    "sha256": "a87449bc85c2043a81ff6d35a9ab3b7e05940291b856459c797fe72c0972b2af",
+    "length": 42
+  },
+  "install": {
+    "strategy": "wholeBundleReplace",
+    "macosDmg": {
+      "appBundleName": "Example.app",
+      "verifyPrimarySignature": true
+    }
+  },
+  "minimumUpdaterVersion": "2.6.0",
+  "minimumOS": {
+    "macos": "13.0"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

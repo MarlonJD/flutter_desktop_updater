@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example.app",
+  "version": "2.7.0",
+  "buildNumber": 272,
+  "platform": "macos",
+  "channel": "stable",
+  "artifact": {
+    "kind": "pkgInstaller",
+    "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+    "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+    "length": 51
+  },
+  "install": {
+    "strategy": "pkgInstaller",
+    "macosPkg": {
+      "launchMode": "installerApp",
+      "expectedPackageIds": [
+        "com.example.native-contract.pkg"
+      ],
+      "relaunchAfterInstall": false
+    }
+  },
+  "minimumUpdaterVersion": "2.6.0",
+  "minimumOS": {
+    "macos": "13.0"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

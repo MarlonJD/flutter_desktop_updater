@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example.app",
+  "version": "2.7.0",
+  "buildNumber": 270,
+  "platform": "macos",
+  "channel": "stable",
+  "artifact": {
+    "kind": "zip",
+    "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+    "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+    "length": 42
+  },
+  "install": {
+    "strategy": "wholeBundleReplace"
+  },
+  "minimumUpdaterVersion": "2.0.0",
+  "minimumOS": {
+    "macos": "13.0"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

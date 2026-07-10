@@ -1,0 +1,398 @@
+{
+  "schemaVersion": 1,
+  "canonicalOrdering": {
+    "input": {
+      "z": 1,
+      "a": {
+        "z": 2,
+        "a": 3
+      },
+      "m": [
+        {
+          "z": 4,
+          "a": 5
+        }
+      ]
+    },
+    "expected": {
+      "a": {
+        "a": 3,
+        "z": 2
+      },
+      "m": [
+        {
+          "a": 5,
+          "z": 4
+        }
+      ],
+      "z": 1
+    }
+  },
+  "signatureBlanking": {
+    "signedDescriptor": {
+      "schemaVersion": 3,
+      "packageId": "com.example.native-contract",
+      "appName": "Example.app",
+      "version": "2.7.0",
+      "buildNumber": 270,
+      "platform": "macos",
+      "channel": "stable",
+      "artifact": {
+        "kind": "zip",
+        "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+        "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+        "length": 42
+      },
+      "install": {
+        "strategy": "wholeBundleReplace"
+      },
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-stable",
+        "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+      },
+      "minimumUpdaterVersion": "2.0.0",
+      "minimumOS": {
+        "macos": "13.0"
+      },
+      "generatedAt": "2026-07-10T00:00:00.000Z"
+    },
+    "canonicalJson": {
+      "appName": "Example.app",
+      "artifact": {
+        "kind": "zip",
+        "length": 42,
+        "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+        "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip"
+      },
+      "buildNumber": 270,
+      "channel": "stable",
+      "generatedAt": "2026-07-10T00:00:00.000Z",
+      "install": {
+        "strategy": "wholeBundleReplace"
+      },
+      "minimumOS": {
+        "macos": "13.0"
+      },
+      "minimumUpdaterVersion": "2.0.0",
+      "packageId": "com.example.native-contract",
+      "platform": "macos",
+      "schemaVersion": 3,
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-stable",
+        "value": ""
+      },
+      "version": "2.7.0"
+    },
+    "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9"
+  },
+  "keySets": {
+    "valid": {
+      "native-contract-stable": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg="
+    },
+    "wrong": {
+      "native-contract-stable": "Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc="
+    },
+    "empty": {}
+  },
+  "cases": [
+    {
+      "name": "valid signature",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": true
+    },
+    {
+      "name": "missing public key id",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "unknown-key",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong pinned key",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "wrong",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong signature bytes",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong package identity",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.other",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong version",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.1",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong build number",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 999,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong platform",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    },
+    {
+      "name": "wrong channel",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "beta",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "keySet": "valid",
+      "expectedValid": false
+    }
+  ]
+}
