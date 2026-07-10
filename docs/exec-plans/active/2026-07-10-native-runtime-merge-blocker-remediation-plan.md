@@ -1150,6 +1150,29 @@ git add native_runtime macos linux windows lib/src/core docs/diagnostics-and-rec
 git commit -m "fix: make native installs recoverable"
 ~~~
 
+Task 6 blocker evidence (2026-07-11):
+
+- BLOCKED: a fresh adversarial review of candidate commit `1f29059` validated
+  multiple P0 defects in the actual script-based helpers: no-backup Windows
+  rollback deletion, journal sibling path injection, path-based mutation after
+  validation, non-serialized dead-owner recovery, and torn Windows journal
+  writes. The strict shared C++ and Swift transaction models were not consumed
+  by the production helpers.
+- BLOCKED architecture decision: satisfying pinned fd/handle-relative mutation
+  and pre-handoff lock ownership requires packaged standalone helper products
+  (including a signed/elevatable Windows executable and a signed macOS helper
+  resource compatible with both SwiftPM and the exact five-file CocoaPods
+  fallback), plus an explicit reservation-to-helper ownership transfer
+  protocol. That product/signing/packaging architecture is not defined by the
+  current repository or this task's file map.
+- The unsafe candidate was removed by `2163243`. Verified locally after the
+  revert: full Flutter passed 576 tests with 3 explicit environment-gated
+  skips and 0 failures; macOS SwiftPM passed 51 tests. The source tree is back
+  at the independently approved Task 5 behavior.
+- Windows/Linux target-host transaction tests, privileged mount/junction
+  injection, helper signing/packaging, CI, signing/notarization, and release
+  smoke: not run. Steps 1-8 remain open and the runtime remains candidate-only.
+
 ---
 
 ### Task 7: Make Windows Paths Unicode-Safe and Resolve Relative Redirects
