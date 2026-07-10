@@ -67,6 +67,7 @@ if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     src/runtime/update_transport_winhttp.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/diagnostics.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/redirect_url.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/update_client_core.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/artifact_stager.cc
@@ -254,5 +255,28 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       $<TARGET_OBJECTS:desktop_updater_runtime_objects>)
     add_test(NAME desktop_updater_runtime_transport
       COMMAND desktop_updater_runtime_transport_test)
+
+    add_executable(desktop_updater_runtime_redirect_url_test
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/redirect_url_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/redirect_url.cc)
+    target_compile_features(desktop_updater_runtime_redirect_url_test
+      PRIVATE cxx_std_17)
+    target_include_directories(desktop_updater_runtime_redirect_url_test PRIVATE
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    add_test(NAME desktop_updater_runtime_redirect_url
+      COMMAND desktop_updater_runtime_redirect_url_test)
+
+    add_executable(desktop_updater_runtime_stage_path_test
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance_path_tests.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
+    target_compile_features(desktop_updater_runtime_stage_path_test
+      PRIVATE cxx_std_17)
+    target_include_directories(desktop_updater_runtime_stage_path_test PRIVATE
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    target_link_libraries(desktop_updater_runtime_stage_path_test
+      PRIVATE Bcrypt)
+    add_test(NAME desktop_updater_runtime_stage_path
+      COMMAND desktop_updater_runtime_stage_path_test)
   endif()
 endif()

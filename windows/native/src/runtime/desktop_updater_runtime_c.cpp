@@ -80,7 +80,7 @@ std::string RequiredString(const char* value, const char* name) {
 
 class OwnedDownloadStageGuard {
  public:
-  explicit OwnedDownloadStageGuard(std::string path)
+  explicit OwnedDownloadStageGuard(std::filesystem::path path)
       : path_(std::move(path)) {}
 
   ~OwnedDownloadStageGuard() {
@@ -91,10 +91,10 @@ class OwnedDownloadStageGuard {
     }
   }
 
-  const std::string& path() const { return path_; }
+  const std::filesystem::path& path() const { return path_; }
 
  private:
-  std::string path_;
+  std::filesystem::path path_;
 };
 
 desktop_updater_runtime_result_v1 EmptyResult() {
@@ -471,24 +471,25 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
       return ClientResult(*client, check.outcome,
                           "No verified update is ready to download.");
     }
-    const std::string download_directory = RequiredString(
-        request->download_directory_utf8, "download_directory");
-    const std::string staging_directory = RequiredString(
-        request->staging_directory_utf8, "staging_directory");
-    std::filesystem::create_directories(
-        std::filesystem::u8path(download_directory));
-    std::filesystem::create_directories(
-        std::filesystem::u8path(staging_directory));
-    const desktop_updater::runtime::internal::OwnedStage owned_download =
+    const std::filesystem::path download_directory = std::filesystem::u8path(
+        RequiredString(request->download_directory_utf8,
+                       "download_directory"));
+    const std::filesystem::path staging_directory = std::filesystem::u8path(
+        RequiredString(request->staging_directory_utf8,
+                       "staging_directory"));
+    std::filesystem::create_directories(download_directory);
+    std::filesystem::create_directories(staging_directory);
+    const desktop_updater::runtime::internal::FilesystemOwnedStage
+        owned_download =
         desktop_updater::runtime::internal::CreateOwnedStage(
             download_directory);
     const OwnedDownloadStageGuard download_stage(owned_download.path);
-    const std::string artifact_path =
-        download_stage.path() + "/" +
-        ArtifactFileName(check.descriptor.artifact.url);
+    const std::filesystem::path artifact_path =
+        download_stage.path() /
+        std::filesystem::u8path(ArtifactFileName(check.descriptor.artifact.url));
     desktop_updater::runtime::internal::ArtifactDownloadRequest download;
     download.url = check.descriptor.artifact.url;
-    download.destination_path = artifact_path;
+    download.destination_path = artifact_path.u8string();
     download.expected_length = check.descriptor.artifact.length;
     download.expected_sha256 = check.descriptor.artifact.sha256;
     RecordDiagnostic(
@@ -513,14 +514,15 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
           client->expected_package_id, limits);
     } else if (check.descriptor.artifact.kind == "innoInstaller") {
       staged = desktop_updater::runtime::internal::StageWindowsInnoInstaller(
-          Utf8ToWide(artifact_path), staging_directory, check.descriptor,
+          artifact_path, staging_directory, check.descriptor,
           client->expected_package_id);
     } else {
       return ClientResult(*client, "unsupportedArtifactKind",
                           "Artifact kind is not supported on Windows.");
     }
     if (!client->lifecycle.PublishStage(
-            lease, staged.stage_path, staged.provenance.marker_sha256)) {
+            lease, staged.stage_path.u8string(),
+            staged.provenance.marker_sha256)) {
       return ClientResult(*client, "invalidDescriptor",
                           "A newer staging attempt invalidated this update.");
     }

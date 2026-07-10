@@ -2,6 +2,7 @@
 #define DESKTOP_UPDATER_RUNTIME_STAGE_PROVENANCE_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
@@ -49,8 +50,25 @@ struct OwnedStage {
   std::string nonce;
 };
 
+struct FilesystemOwnedStage {
+  std::filesystem::path path;
+  std::filesystem::path parent_path;
+  std::string nonce;
+};
+
+FilesystemOwnedStage CreateOwnedStage(
+    const std::filesystem::path& parent_path,
+    const std::string& nonce = std::string());
+
 OwnedStage CreateOwnedStage(const std::string& parent_path,
                             const std::string& nonce = std::string());
+
+StageProvenanceState WriteStageProvenance(
+    const FilesystemOwnedStage& stage,
+    const std::string& package_id,
+    const std::string& descriptor_sha256,
+    const std::string& artifact_sha256,
+    const StageSha256Function& sha256);
 
 StageProvenanceState WriteStageProvenance(
     const OwnedStage& stage,
@@ -63,13 +81,30 @@ StageProvenanceState ReadStageProvenance(
     const std::string& stage_root,
     const StageSha256Function& sha256);
 
+StageProvenanceState ReadStageProvenance(
+    const std::filesystem::path& stage_root,
+    const StageSha256Function& sha256);
+
 StageProvenanceBinding ReadStageProvenanceBinding(
     const std::string& stage_root);
+
+StageProvenanceBinding ReadStageProvenanceBinding(
+    const std::filesystem::path& stage_root);
 
 StageProvenanceMarker VerifyStageProvenance(
     const std::string& stage_root,
     const std::string& expected_marker_sha256,
     const StageSha256Function& sha256);
+
+StageProvenanceMarker VerifyStageProvenance(
+    const std::filesystem::path& stage_root,
+    const std::string& expected_marker_sha256,
+    const StageSha256Function& sha256);
+
+void RemoveOwnedStage(const std::filesystem::path& parent_path,
+                      const std::filesystem::path& stage_root,
+                      const std::string& nonce,
+                      const StageSha256Function& sha256);
 
 void RemoveOwnedStage(const std::string& parent_path,
                       const std::string& stage_root,

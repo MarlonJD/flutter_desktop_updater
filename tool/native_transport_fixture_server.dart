@@ -69,6 +69,53 @@ Future<void> main(List<String> arguments) async {
           HttpHeaders.locationHeader,
           "/redirect/loop",
         );
+      case "/redirect/empty":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(HttpHeaders.locationHeader, "");
+      case "/redirect/query":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(HttpHeaders.locationHeader, "?new=2");
+      case "/redirect/fragment":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(HttpHeaders.locationHeader, "#next");
+      case "/redirect/query-fragment":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "?new=2#next",
+        );
+      case "/redirect/five/0":
+        redirect(request, "/redirect/five/1");
+      case "/redirect/five/1":
+        redirect(request, "/redirect/five/2");
+      case "/redirect/five/2":
+        redirect(request, "/redirect/five/3");
+      case "/redirect/five/3":
+        redirect(request, "/redirect/five/4");
+      case "/redirect/five/4":
+        redirect(request, "/redirect/five/5");
+      case "/redirect/five/5":
+        writeMetadata(request);
+      case "/redirect/six/0":
+        redirect(request, "/redirect/six/1");
+      case "/redirect/six/1":
+        redirect(request, "/redirect/six/2");
+      case "/redirect/six/2":
+        redirect(request, "/redirect/six/3");
+      case "/redirect/six/3":
+        redirect(request, "/redirect/six/4");
+      case "/redirect/six/4":
+        redirect(request, "/redirect/six/5");
+      case "/redirect/six/5":
+        redirect(request, "/redirect/six/6");
+      case "/redirect/six/6":
+        writeMetadata(request);
+      case "/redirect/cross-authority":
+        request.response.statusCode = HttpStatus.found;
+        request.response.headers.set(
+          HttpHeaders.locationHeader,
+          "http://localhost:${server.port}/metadata",
+        );
       case "/retry":
         retryCount += 1;
         if (retryCount < 3) {
@@ -98,5 +145,19 @@ Future<void> main(List<String> arguments) async {
         request.response.statusCode = HttpStatus.notFound;
     }
     await request.response.close();
+  }
+}
+
+void redirect(HttpRequest request, String location) {
+  request.response.statusCode = HttpStatus.found;
+  request.response.headers.set(HttpHeaders.locationHeader, location);
+}
+
+void writeMetadata(HttpRequest request) {
+  if (request.headers.value(HttpHeaders.authorizationHeader) !=
+      "Bearer fixture") {
+    request.response.statusCode = HttpStatus.unauthorized;
+  } else {
+    request.response.write("metadata");
   }
 }

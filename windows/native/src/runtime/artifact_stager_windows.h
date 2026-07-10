@@ -1,6 +1,7 @@
 #ifndef DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_WINDOWS_H_
 #define DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_WINDOWS_H_
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -13,16 +14,27 @@ namespace runtime {
 namespace internal {
 
 struct WindowsStagedArtifact {
-  std::string stage_path;
+  std::filesystem::path stage_path;
   StageProvenanceState provenance;
 };
 
+WindowsStagedArtifact StageWindowsZip(
+    const std::filesystem::path& archive_path,
+    const std::filesystem::path& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id,
+    const ArchiveLimits& limits);
 WindowsStagedArtifact StageWindowsZip(
     const std::string& archive_path,
     const std::string& destination_parent,
     const ReleaseDescriptor& descriptor,
     const std::string& expected_package_id,
     const ArchiveLimits& limits);
+WindowsStagedArtifact StageWindowsInnoInstaller(
+    const std::filesystem::path& installer_path,
+    const std::filesystem::path& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id);
 WindowsStagedArtifact StageWindowsInnoInstaller(
     const std::wstring& installer_path,
     const std::string& destination_parent,

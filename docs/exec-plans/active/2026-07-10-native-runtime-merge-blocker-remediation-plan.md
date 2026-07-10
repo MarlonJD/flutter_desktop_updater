@@ -1274,6 +1274,44 @@ Task 7 evidence on 2026-07-11:
   helper transaction candidate.
 - Commit: `fix: harden Windows runtime transport paths` (this changeset).
 
+Task 7 review follow-up evidence on 2026-07-11:
+
+- Follow-up RED was recorded before the review-fix production changes. The
+  portable resolver test failed to compile with
+  `fatal error: 'redirect_url.h' file not found`; the portable native-path
+  provenance test failed with
+  `no member named 'FilesystemOwnedStage'`; and the focused Dart contract
+  failed because `native_runtime/cpp/redirect_url.h` did not exist, ending
+  `+3 -1: Some tests failed.` A later focused invalid-port test also failed
+  with `Empty explicit port was accepted` before the parser fix.
+- The production RFC 3986 resolver is now a portable shared C++ unit consumed
+  directly by the WinHTTP adapter. Executable tests pass for empty,
+  query-only, fragment-only, query-plus-fragment, root-relative,
+  parent-relative, and scheme-relative references; repeated non-dot slashes;
+  default and explicit ports; IPv6 literals; credential rejection; downgrade
+  rejection; and fragment-free HTTP request targets.
+- Windows staging now uses filesystem-path owned-stage, provenance,
+  verification, and cleanup overloads after the ABI conversion. Inventory
+  enumeration keeps native relative paths and converts names to UTF-8 only
+  for canonical provenance JSON. Compatibility string wrappers remain for
+  shared/Linux callers. The portable native-path executable passed Unicode
+  staging, provenance verification, bounded owned-child cleanup, and caller
+  sentinel preservation; Linux/macOS shared syntax checks passed.
+- The Windows fixture contract now covers exactly five redirects succeeding,
+  a sixth redirect failing, and cross-authority header-provider sequencing.
+  The failed Inno test enumerates the Unicode caller-owned parent and requires
+  that only `sentinel.txt` remains.
+- Verified locally on macOS: focused transport/source and live fixture tests
+  passed 4 tests; both portable C++ executables passed; repository format
+  checked 213 files with 0 changes; analyze completed with 395 existing
+  info-level diagnostics and no fatal diagnostics; full Flutter passed 577
+  tests with 3 explicit environment-gated skips and 0 failures; banned API
+  scans and `git diff --check` passed.
+- Windows Debug CMake, CTest, and .NET tests: not run on macOS. Step 5 and the
+  final acceptance checkbox remain open. Task 6 remains blocked/reverted.
+- Follow-up commit: `fix: complete Windows redirect and path handling`
+  (this changeset).
+
 ---
 
 ### Task 8: Separate macOS 10.15 Runtime from the 10.14 CocoaPods Fallback

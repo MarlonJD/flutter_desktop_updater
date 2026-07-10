@@ -45,6 +45,15 @@ void main() {
       readRequiredFile("native_runtime/cpp/artifact_stager.cc"),
       readRequiredFile("native_runtime/cpp/stage_provenance.cc"),
     ].join("\n");
+    final redirectHeader = readRequiredFile(
+      "native_runtime/cpp/redirect_url.h",
+    );
+    final redirectTests = readRequiredFile(
+      "native_runtime/cpp/redirect_url_tests.cc",
+    );
+    final provenanceHeader = readRequiredFile(
+      "native_runtime/cpp/stage_provenance.h",
+    );
 
     expect(source, contains("WinHttpOpen"));
     expect(source, contains("WINHTTP_OPTION_DISABLE_FEATURE"));
@@ -54,7 +63,7 @@ void main() {
     expect(source, contains("expected_sha256"));
     expect(source, contains(".part"));
     expect(source, contains("WinHttpCrackUrl"));
-    expect(source, contains("WinHttpCreateUrl"));
+    expect(source, contains("HTTPRequestTarget"));
     expect(source, contains("std::filesystem::u8path"));
     expect(source, isNot(contains("GetFileAttributesA")));
     expect(source, isNot(contains("DeleteFileA")));
@@ -68,12 +77,18 @@ void main() {
     expect(pathRuntime, isNot(contains("DeleteFileA")));
     expect(pathRuntime, isNot(contains("_mkdir")));
     expect(pathRuntime, isNot(contains("mz_zip_reader_extract_to_file")));
+    expect(header, contains('#include "redirect_url.h"'));
+    expect(redirectHeader, contains("ResolveRedirectURL"));
+    expect(redirectHeader, contains("HTTPRequestTarget"));
+    expect(redirectTests, contains('ResolveRedirectURL(base, "")'));
+    expect(redirectTests, contains('ResolveRedirectURL(base, "#next")'));
+    expect(redirectTests, contains("/a//metadata"));
+    expect(redirectTests, contains("[2001:db8::1]"));
+    expect(redirectTests, contains("user@example.com"));
+    expect(provenanceHeader, contains("struct FilesystemOwnedStage"));
     expect(
-      header,
-      contains(
-        "std::string ResolveRedirectURL(const std::string& source,\n"
-        "                               const std::string& location);",
-      ),
+      provenanceHeader,
+      contains("const std::filesystem::path& parent_path"),
     );
     expect(transportTest, contains("güncelleme-日本"));
     expect(transportTest, contains("/redirect/root"));
@@ -81,6 +96,9 @@ void main() {
     expect(transportTest, contains("/redirect/scheme-relative"));
     expect(transportTest, contains("HTTPS redirect downgrade is forbidden"));
     expect(transportTest, contains("Update redirect limit exceeded"));
+    expect(transportTest, contains("/redirect/five/0"));
+    expect(transportTest, contains("/redirect/six/0"));
+    expect(transportTest, contains("/redirect/cross-authority"));
     expect(artifactTest, contains("güncelleme-日本"));
     expect(fixtureServer, contains('"/redirect/root"'));
     expect(fixtureServer, contains('"/redirect/parent/child"'));
@@ -88,8 +106,14 @@ void main() {
     expect(fixtureServer, contains('"/redirect/downgrade"'));
     expect(fixtureServer, contains('"/redirect/loop"'));
     expect(fixtureServer, contains('"../metadata"'));
+    expect(fixtureServer, contains('"/redirect/five/0"'));
+    expect(fixtureServer, contains('"/redirect/six/0"'));
+    expect(fixtureServer, contains('"/redirect/cross-authority"'));
     expect(cmake, contains("Winhttp"));
     expect(cmake, contains("update_transport_winhttp.cpp"));
+    expect(cmake, contains("redirect_url.cc"));
+    expect(cmake, contains("desktop_updater_runtime_redirect_url_test"));
+    expect(cmake, contains("desktop_updater_runtime_stage_path_test"));
   });
 
   test("Linux libcurl transport keeps TLS and limits fail closed", () {
@@ -138,6 +162,28 @@ void main() {
       expect(
         await redirectLocation(baseUrl, "/redirect/loop"),
         "/redirect/loop",
+      );
+      expect(await redirectLocation(baseUrl, "/redirect/empty"), "");
+      expect(await redirectLocation(baseUrl, "/redirect/query"), "?new=2");
+      expect(
+        await redirectLocation(baseUrl, "/redirect/fragment"),
+        "#next",
+      );
+      expect(
+        await redirectLocation(baseUrl, "/redirect/query-fragment"),
+        "?new=2#next",
+      );
+      expect(
+        await redirectLocation(baseUrl, "/redirect/five/0"),
+        "/redirect/five/1",
+      );
+      expect(
+        await redirectLocation(baseUrl, "/redirect/six/0"),
+        "/redirect/six/1",
+      );
+      expect(
+        await redirectLocation(baseUrl, "/redirect/cross-authority"),
+        startsWith("http://localhost:"),
       );
     } finally {
       process.kill();

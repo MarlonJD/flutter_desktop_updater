@@ -145,10 +145,7 @@ std::wstring QueryHeader(HINTERNET request, DWORD query) {
 }
 
 struct ParsedURL {
-  INTERNET_SCHEME scheme = INTERNET_SCHEME_UNKNOWN;
   std::wstring host;
-  std::wstring path;
-  std::wstring extra;
   INTERNET_PORT port = 0;
   bool secure = false;
 };
@@ -171,80 +168,10 @@ ParsedURL ParseHTTPURL(const std::string& url) {
     throw std::runtime_error("HTTP update URL must include a host.");
   }
   ParsedURL result;
-  result.scheme = components.nScheme;
   result.host.assign(components.lpszHostName, components.dwHostNameLength);
-  result.path.assign(components.lpszUrlPath, components.dwUrlPathLength);
-  if (components.dwExtraInfoLength > 0) {
-    result.extra.assign(components.lpszExtraInfo,
-                        components.dwExtraInfoLength);
-  }
-  if (result.path.empty()) result.path = L"/";
   result.port = components.nPort;
   result.secure = components.nScheme == INTERNET_SCHEME_HTTPS;
   return result;
-}
-
-std::wstring NormalizeURLPath(const std::wstring& input) {
-  const bool trailing =
-      !input.empty() &&
-      (input.back() == L'/' ||
-       (input.size() >= 2 &&
-        input.compare(input.size() - 2, 2, L"/.") == 0) ||
-       (input.size() >= 3 &&
-        input.compare(input.size() - 3, 3, L"/..") == 0));
-  std::vector<std::wstring> segments;
-  std::size_t start = 0;
-  while (start <= input.size()) {
-    const std::size_t slash = input.find(L'/', start);
-    const std::wstring segment = input.substr(start, slash - start);
-    if (segment == L"..") {
-      if (!segments.empty()) segments.pop_back();
-    } else if (!segment.empty() && segment != L".") {
-      segments.push_back(segment);
-    }
-    if (slash == std::wstring::npos) break;
-    start = slash + 1;
-  }
-  std::wstring result = L"/";
-  for (std::size_t index = 0; index < segments.size(); ++index) {
-    if (index > 0) result.push_back(L'/');
-    result += segments[index];
-  }
-  if (trailing && result.back() != L'/') result.push_back(L'/');
-  return result;
-}
-
-std::string CreateHTTPURL(const ParsedURL& parsed) {
-  URL_COMPONENTS components{};
-  components.dwStructSize = sizeof(components);
-  components.nScheme = parsed.scheme;
-  components.lpszHostName = const_cast<wchar_t*>(parsed.host.data());
-  components.dwHostNameLength = static_cast<DWORD>(parsed.host.size());
-  components.nPort = parsed.port;
-  components.lpszUrlPath = const_cast<wchar_t*>(parsed.path.data());
-  components.dwUrlPathLength = static_cast<DWORD>(parsed.path.size());
-  if (!parsed.extra.empty()) {
-    components.lpszExtraInfo = const_cast<wchar_t*>(parsed.extra.data());
-    components.dwExtraInfoLength = static_cast<DWORD>(parsed.extra.size());
-  }
-  DWORD length = 0;
-  if (WinHttpCreateUrl(&components, 0, nullptr, &length) ||
-      GetLastError() != ERROR_INSUFFICIENT_BUFFER || length == 0) {
-    throw std::runtime_error("Unable to resolve redirect URL.");
-  }
-  std::wstring output(static_cast<std::size_t>(length), L'\0');
-  if (!WinHttpCreateUrl(&components, 0, output.data(), &length)) {
-    throw std::runtime_error("Unable to resolve redirect URL.");
-  }
-  while (!output.empty() && output.back() == L'\0') output.pop_back();
-  return WideToUtf8(output);
-}
-
-bool HasAbsoluteScheme(const std::wstring& location) {
-  const std::size_t colon = location.find(L':');
-  const std::size_t delimiter = location.find_first_of(L"/?#");
-  return colon != std::wstring::npos && colon > 0 &&
-         (delimiter == std::wstring::npos || colon < delimiter);
 }
 
 struct Response {
@@ -261,7 +188,7 @@ Response Perform(const std::string& url,
                  std::int64_t maximum_bytes,
                  const DownloadProgress& progress) {
   const ParsedURL parsed = ParseHTTPURL(url);
-  const std::wstring request_target = parsed.path + parsed.extra;
+  const std::wstring request_target = Utf8ToWide(HTTPRequestTarget(url));
   InternetHandle session(WinHttpOpen(
       L"desktop_updater/2.7", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
@@ -374,53 +301,6 @@ std::vector<std::uint8_t> ReadBoundedFile(const std::filesystem::path& path,
 }
 
 }  // namespace
-
-std::string ResolveRedirectURL(const std::string& source,
-                               const std::string& location) {
-  if (location.empty()) {
-    throw std::runtime_error("Redirect is missing Location.");
-  }
-  const std::wstring wide_location = Utf8ToWide(location);
-  const std::string source_scheme = Scheme(source);
-  if (source_scheme != "http" && source_scheme != "https") {
-    throw std::runtime_error("Redirect source must use HTTP or HTTPS.");
-  }
-  ParsedURL resolved;
-  if (HasAbsoluteScheme(wide_location)) {
-    resolved = ParseHTTPURL(location);
-  } else if (wide_location.rfind(L"//", 0) == 0) {
-    resolved = ParseHTTPURL(source_scheme + ":" + location);
-  } else {
-    resolved = ParseHTTPURL(source);
-    const std::size_t extra = wide_location.find_first_of(L"?#");
-    const std::wstring location_path = wide_location.substr(0, extra);
-    resolved.extra = extra == std::wstring::npos
-                         ? std::wstring()
-                         : wide_location.substr(extra);
-    if (!location_path.empty()) {
-      if (location_path.front() == L'/') {
-        resolved.path = NormalizeURLPath(location_path);
-      } else {
-        const std::size_t slash = resolved.path.find_last_of(L'/');
-        const std::wstring base =
-            slash == std::wstring::npos
-                ? L"/"
-                : resolved.path.substr(0, slash + 1);
-        resolved.path = NormalizeURLPath(base + location_path);
-      }
-    }
-  }
-  const std::string resolved_url = CreateHTTPURL(resolved);
-  const std::string resolved_scheme = Scheme(resolved_url);
-  if (resolved_scheme != "http" && resolved_scheme != "https") {
-    throw std::runtime_error("Redirect URL must use HTTP or HTTPS.");
-  }
-  ParseHTTPURL(resolved_url);
-  if (source_scheme == "https" && resolved_scheme != "https") {
-    throw std::runtime_error("HTTPS redirect downgrade is forbidden.");
-  }
-  return resolved_url;
-}
 
 WinHttpUpdateTransport::WinHttpUpdateTransport(TransportOptions options)
     : options_(std::move(options)) {

@@ -1,14 +1,12 @@
 #ifndef DESKTOP_UPDATER_RUNTIME_UPDATE_TRANSPORT_WINHTTP_H_
 #define DESKTOP_UPDATER_RUNTIME_UPDATE_TRANSPORT_WINHTTP_H_
 
+#include "redirect_url.h"
 #include "update_transport.h"
 
 namespace desktop_updater {
 namespace runtime {
 namespace internal {
-
-std::string ResolveRedirectURL(const std::string& source,
-                               const std::string& location);
 
 class WinHttpUpdateTransport final : public UpdateTransport {
  public:

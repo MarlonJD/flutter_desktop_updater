@@ -159,8 +159,8 @@ std::vector<std::string> AuthenticodeThumbprints(
 }  // namespace
 
 WindowsStagedArtifact StageWindowsZip(
-    const std::string& archive_path,
-    const std::string& destination_parent,
+    const std::filesystem::path& archive_path,
+    const std::filesystem::path& destination_parent,
     const ReleaseDescriptor& descriptor,
     const std::string& expected_package_id,
     const ArchiveLimits& limits) {
@@ -169,17 +169,13 @@ WindowsStagedArtifact StageWindowsZip(
       descriptor.platform != "windows" || descriptor.artifact.kind != "zip") {
     throw std::invalid_argument("expected_package_id does not match release.");
   }
-  const std::filesystem::path archive =
-      std::filesystem::u8path(archive_path);
-  const OwnedStage stage = CreateOwnedStage(destination_parent);
-  const std::filesystem::path stage_path =
-      std::filesystem::u8path(stage.path);
+  const FilesystemOwnedStage stage = CreateOwnedStage(destination_parent);
   try {
-    StageZipArchive(archive, stage_path, limits);
+    StageZipArchive(archive_path, stage.path, limits);
     std::filesystem::copy_file(
-        archive, stage_path / L".desktop_updater_artifact.zip",
+        archive_path, stage.path / L".desktop_updater_artifact.zip",
         std::filesystem::copy_options::overwrite_existing);
-    WriteReleaseManifest(stage_path, descriptor, expected_package_id);
+    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
     const StageProvenanceState provenance = WriteStageProvenance(
         stage, expected_package_id,
         StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),
@@ -196,8 +192,8 @@ WindowsStagedArtifact StageWindowsZip(
 }
 
 WindowsStagedArtifact StageWindowsInnoInstaller(
-    const std::wstring& installer_path,
-    const std::string& destination_parent,
+    const std::filesystem::path& installer_path,
+    const std::filesystem::path& destination_parent,
     const ReleaseDescriptor& descriptor,
     const std::string& expected_package_id) {
   if (expected_package_id.empty() ||
@@ -208,20 +204,17 @@ WindowsStagedArtifact StageWindowsInnoInstaller(
   }
   const JsonValue& policy =
       descriptor.install.at("inno").at("authenticode");
-  const OwnedStage stage = CreateOwnedStage(destination_parent);
-  const std::filesystem::path stage_path =
-      std::filesystem::u8path(stage.path);
+  const FilesystemOwnedStage stage = CreateOwnedStage(destination_parent);
   try {
     if (policy.at("required").boolean()) {
-      VerifyAuthenticode(installer_path, AuthenticodeThumbprints(descriptor));
+      VerifyAuthenticode(installer_path.wstring(),
+                         AuthenticodeThumbprints(descriptor));
     }
-    const std::filesystem::path source(installer_path);
-    const std::filesystem::path destination =
-        stage_path / L"installer.exe";
+    const std::filesystem::path destination = stage.path / L"installer.exe";
     std::filesystem::copy_file(
-        source, destination,
+        installer_path, destination,
         std::filesystem::copy_options::overwrite_existing);
-    WriteReleaseManifest(stage_path, descriptor, expected_package_id);
+    WriteReleaseManifest(stage.path, descriptor, expected_package_id);
     const StageProvenanceState provenance = WriteStageProvenance(
         stage, expected_package_id,
         StageBytesToHex(BCryptSha256(EncodeCanonicalJson(descriptor.raw))),
@@ -235,6 +228,28 @@ WindowsStagedArtifact StageWindowsInnoInstaller(
     }
     throw;
   }
+}
+
+WindowsStagedArtifact StageWindowsZip(
+    const std::string& archive_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id,
+    const ArchiveLimits& limits) {
+  return StageWindowsZip(std::filesystem::u8path(archive_path),
+                         std::filesystem::u8path(destination_parent),
+                         descriptor, expected_package_id, limits);
+}
+
+WindowsStagedArtifact StageWindowsInnoInstaller(
+    const std::wstring& installer_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id) {
+  return StageWindowsInnoInstaller(
+      std::filesystem::path(installer_path),
+      std::filesystem::u8path(destination_parent), descriptor,
+      expected_package_id);
 }
 
 WindowsInstallHandoffResult HandoffWindowsInstall(

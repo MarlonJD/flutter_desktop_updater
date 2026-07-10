@@ -57,6 +57,26 @@ int main() {
       throw std::runtime_error(
           "Resolved redirect URL was not passed to the header provider.");
     }
+    expect_metadata("/redirect/five/0");
+    try {
+      transport.DownloadMetadata(base + "/redirect/six/0");
+      throw std::runtime_error("Six redirects were accepted.");
+    } catch (const std::runtime_error& error) {
+      if (std::string(error.what()) != "Update redirect limit exceeded.") {
+        throw;
+      }
+    }
+    header_urls.clear();
+    expect_metadata("/redirect/cross-authority");
+    const std::string cross_authority_target =
+        std::string(base).replace(base.find("127.0.0.1"), 9, "localhost") +
+        "/metadata";
+    if (header_urls.size() != 2 ||
+        header_urls[0] != base + "/redirect/cross-authority" ||
+        header_urls[1] != cross_authority_target) {
+      throw std::runtime_error(
+          "Cross-authority header provider sequencing differs.");
+    }
     try {
       ResolveRedirectURL("https://127.0.0.1/source", base + "/metadata");
       throw std::runtime_error("HTTPS redirect downgrade was accepted.");

@@ -11,6 +11,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #define MINIZ_NO_ZLIB_APIS
 #include "miniz.h"
@@ -66,7 +67,7 @@ int main(int argument_count, char** arguments) {
       test_root /
       std::filesystem::u8path(u8"güncelleme-日本");
   const std::string staging_parent = unicode_root.u8string();
-  std::string destination;
+  std::filesystem::path destination;
   try {
     RemoveStagingDirectory(archive);
     RemoveStagingDirectory(installer);
@@ -81,8 +82,7 @@ int main(int argument_count, char** arguments) {
         archive.u8string(), staging_parent, zip_descriptor,
         "com.example.native-contract", ArchiveLimits{});
     destination = staged.stage_path;
-    const std::filesystem::path staged_path =
-        std::filesystem::u8path(destination);
+    const std::filesystem::path staged_path = destination;
     const std::string manifest = ReadFile(
         staged_path / L".desktop_updater_release_manifest.json");
     if (manifest.find("com.example.native-contract") == std::string::npos ||
@@ -109,8 +109,12 @@ int main(int argument_count, char** arguments) {
     } catch (const std::exception&) {
       rejected = true;
     }
-    if (!rejected ||
-        std::filesystem::exists(std::filesystem::u8path(destination)) ||
+    std::vector<std::filesystem::path> remaining;
+    for (const auto& entry : std::filesystem::directory_iterator(unicode_root)) {
+      remaining.push_back(entry.path().filename());
+    }
+    if (!rejected || remaining.size() != 1 ||
+        remaining.front() != L"sentinel.txt" ||
         ReadFile(unicode_root / L"sentinel.txt") != "caller-owned") {
       throw std::runtime_error("Unsigned Inno fixture did not fail closed.");
     }
