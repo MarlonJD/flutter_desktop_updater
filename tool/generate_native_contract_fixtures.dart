@@ -134,6 +134,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
   await root.create(recursive: true);
   final specs = <({
     String id,
+    String descriptorName,
     String platform,
     String kind,
     String extension,
@@ -141,6 +142,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
   })>[
     (
       id: "macos-zip",
+      descriptorName: "release-macos-zip.json",
       platform: "macos",
       kind: "zip",
       extension: "zip",
@@ -148,6 +150,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     ),
     (
       id: "macos-dmg",
+      descriptorName: "release-macos-dmg.json",
       platform: "macos",
       kind: "dmg",
       extension: "dmg",
@@ -155,6 +158,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     ),
     (
       id: "macos-pkg-installer",
+      descriptorName: "release-macos-pkg.json",
       platform: "macos",
       kind: "pkgInstaller",
       extension: "pkg",
@@ -162,6 +166,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     ),
     (
       id: "windows-zip",
+      descriptorName: "release-windows-zip.json",
       platform: "windows",
       kind: "zip",
       extension: "zip",
@@ -169,6 +174,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     ),
     (
       id: "windows-inno-installer",
+      descriptorName: "release-windows-inno.json",
       platform: "windows",
       kind: "innoInstaller",
       extension: "exe",
@@ -176,6 +182,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     ),
     (
       id: "linux-zip",
+      descriptorName: "release-linux-zip.json",
       platform: "linux",
       kind: "zip",
       extension: "zip",
@@ -219,7 +226,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
     final descriptorJson = descriptor.toJson();
     descriptors[spec.id] = descriptorJson;
     await _writeJson(
-      File(path.join(caseDirectory.path, "release.json")),
+      File(path.join(root.path, spec.descriptorName)),
       descriptorJson,
     );
     matrixCases.add({
@@ -227,7 +234,7 @@ Future<Map<String, Map<String, dynamic>>> _generateReleaseContract(
       "platform": spec.platform,
       "artifactKind": spec.kind,
       "artifactPath": "${spec.id}/$artifactName",
-      "descriptorPath": "${spec.id}/release.json",
+      "descriptorPath": spec.descriptorName,
     });
   }
 
@@ -337,41 +344,115 @@ Future<void> _generateCanonicalSignatureCases(
       base64Encode(List<int>.filled(64, 0));
   final unknownKey = _cloneMap(signedJson);
   _mapAt(unknownKey, "signature")["publicKeyId"] = "unknown-key";
+  final modifiedArtifactUrl = _cloneMap(signedJson);
+  _mapAt(modifiedArtifactUrl, "artifact")["url"] =
+      "https://updates.example.test/release-contract/macos-zip/tampered.zip";
+  final modifiedArtifactLength = _cloneMap(signedJson);
+  _mapAt(modifiedArtifactLength, "artifact")["length"] = 43;
+  final modifiedArtifactSha256 = _cloneMap(signedJson);
+  _mapAt(modifiedArtifactSha256, "artifact")["sha256"] = "00" * 32;
+  final modifiedInstallStrategy = _cloneMap(signedJson);
+  _mapAt(modifiedInstallStrategy, "install")["strategy"] =
+      "wholeDirectoryReplace";
 
   final cases = <Map<String, dynamic>>[
-    _signatureCase("valid signature", signedJson, "valid", true),
-    _signatureCase("missing public key id", unknownKey, "valid", false),
-    _signatureCase("wrong pinned key", signedJson, "wrong", false),
-    _signatureCase("wrong signature bytes", invalidSignature, "valid", false),
     _signatureCase(
-      "wrong package identity",
+      "valid signature",
+      signedJson,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: true,
+    ),
+    _signatureCase(
+      "modified package id",
       _mutate(signedJson, "packageId", "com.example.other"),
-      "valid",
-      false,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
     ),
     _signatureCase(
-      "wrong version",
+      "modified artifact url",
+      modifiedArtifactUrl,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified artifact length",
+      modifiedArtifactLength,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified artifact sha256",
+      modifiedArtifactSha256,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified install strategy",
+      modifiedInstallStrategy,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified public key id",
+      unknownKey,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified signature bytes",
+      invalidSignature,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified generated time",
+      _mutate(signedJson, "generatedAt", "2026-07-10T00:00:01.000Z"),
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "wrong pinned key",
+      signedJson,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(wrongPublicKey.bytes),
+      expectedValid: false,
+    ),
+    _signatureCase(
+      "modified version",
       _mutate(signedJson, "version", "2.7.1"),
-      "valid",
-      false,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
     ),
     _signatureCase(
-      "wrong build number",
+      "modified build number",
       _mutate(signedJson, "buildNumber", 999),
-      "valid",
-      false,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
     ),
     _signatureCase(
-      "wrong platform",
+      "modified platform",
       _mutate(signedJson, "platform", "windows"),
-      "valid",
-      false,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
     ),
     _signatureCase(
-      "wrong channel",
+      "modified channel",
       _mutate(signedJson, "channel", "beta"),
-      "valid",
-      false,
+      publicKeyId: _publicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      expectedValid: false,
     ),
   ];
 
@@ -389,11 +470,6 @@ Future<void> _generateCanonicalSignatureCases(
         "canonicalUtf8Base64":
             base64Encode(signedDescriptor.canonicalSignatureBytes()),
       },
-      "keySets": {
-        "valid": {_publicKeyId: base64Encode(publicKey.bytes)},
-        "wrong": {_publicKeyId: base64Encode(wrongPublicKey.bytes)},
-        "empty": <String, String>{},
-      },
       "cases": cases,
     },
   );
@@ -401,14 +477,19 @@ Future<void> _generateCanonicalSignatureCases(
 
 Map<String, dynamic> _signatureCase(
   String name,
-  Map<String, dynamic> descriptor,
-  String keySet,
-  bool expectedValid,
-) {
+  Map<String, dynamic> descriptor, {
+  required String publicKeyId,
+  required String publicKeyBase64,
+  required bool expectedValid,
+}) {
+  final parsed = ReleaseDescriptor.fromJson(descriptor);
   return {
     "name": name,
-    "descriptor": descriptor,
-    "keySet": keySet,
+    "descriptor": parsed.toJson(),
+    "canonicalUtf8Base64": base64Encode(parsed.canonicalSignatureBytes()),
+    "publicKeyId": publicKeyId,
+    "publicKeyBase64": publicKeyBase64,
+    "signatureBase64": parsed.signature!.value,
     "expectedValid": expectedValid,
   };
 }
@@ -537,7 +618,37 @@ Future<void> _generateSelectionCases(
       rollout: const ReleaseRollout(percentage: 50, salt: salt),
     ),
   ]);
+  final filteredIndex = _indexJson([
+    _indexItem(
+      version: "3.0.0",
+      buildNumber: 300,
+      platform: "macos",
+    ),
+    _indexItem(
+      version: "2.9.0",
+      buildNumber: 290,
+      platform: "windows",
+    ),
+    _indexItem(
+      version: "2.8.0-beta.2",
+      buildNumber: null,
+      platform: "macos",
+      channel: "beta",
+    ),
+  ]);
   final selectionCases = [
+    _selectionCase(
+      "platform filtering",
+      filteredIndex,
+      currentVersion: "2.7.0",
+      platform: "windows",
+    ),
+    _selectionCase(
+      "channel filtering",
+      filteredIndex,
+      currentVersion: "2.7.0",
+      channel: "beta",
+    ),
     _selectionCase(
       "build-number tiebreaker",
       buildIndex,
@@ -577,6 +688,13 @@ Future<void> _generateSelectionCases(
               DesktopVersionInfo.parse(input.$2),
             ) >=
             0,
+        "expectedOutcome": compareDesktopVersions(
+                  DesktopVersionInfo.parse(input.$1),
+                  DesktopVersionInfo.parse(input.$2),
+                ) >=
+                0
+            ? "updateAvailable"
+            : "unsupportedMinimumUpdater",
       },
   ];
   final minimumOSDescriptor = _cloneMap(baseDescriptor)
@@ -588,6 +706,7 @@ Future<void> _generateSelectionCases(
       "platform": "macos",
       "callbackResult": false,
       "expectedAllowed": false,
+      "expectedOutcome": "unsupportedMinimumOS",
     },
     {
       "name": "matching platform accepted by callback",
@@ -595,6 +714,7 @@ Future<void> _generateSelectionCases(
       "platform": "macos",
       "callbackResult": true,
       "expectedAllowed": true,
+      "expectedOutcome": "updateAvailable",
     },
     {
       "name": "missing platform policy remains allowed",
@@ -602,6 +722,7 @@ Future<void> _generateSelectionCases(
       "platform": "windows",
       "callbackResult": false,
       "expectedAllowed": true,
+      "expectedOutcome": "updateAvailable",
     },
   ];
   final policyJson = {
@@ -625,6 +746,16 @@ Future<void> _generateSelectionCases(
           currentVersion: DesktopVersionInfo.parse(input.$1),
           now: DateTime.parse(input.$2),
         ),
+        "expectedOutcome": !policy.appliesTo(
+          DesktopVersionInfo.parse(input.$1),
+        )
+            ? "updateAvailable"
+            : policy.isEnforced(
+                currentVersion: DesktopVersionInfo.parse(input.$1),
+                now: DateTime.parse(input.$2),
+              )
+                ? "supportPolicyBlocked"
+                : "supportPolicyWarning",
       },
   ];
   final freshInstallInputs = [
@@ -633,6 +764,51 @@ Future<void> _generateSelectionCases(
       "message": "Install the current signed build.",
     },
     {"downloadUrl": "https://updates.example.test/download/latest"},
+  ];
+  final descriptorIndexItem = _indexItem(
+    version: baseDescriptor["version"]! as String,
+    buildNumber: baseDescriptor["buildNumber"]! as int,
+    platform: baseDescriptor["platform"]! as String,
+    channel: baseDescriptor["channel"]! as String,
+  );
+  final descriptorBindingCases = [
+    _descriptorBindingCase(
+      "exact index descriptor binding",
+      descriptorIndexItem,
+      baseDescriptor,
+      expectedOutcome: "match",
+    ),
+    _descriptorBindingCase(
+      "descriptor version mismatch",
+      descriptorIndexItem,
+      _mutate(baseDescriptor, "version", "2.7.1"),
+      expectedOutcome: "invalidDescriptor",
+    ),
+    _descriptorBindingCase(
+      "descriptor build-number mismatch",
+      descriptorIndexItem,
+      _mutate(baseDescriptor, "buildNumber", 999),
+      expectedOutcome: "invalidDescriptor",
+    ),
+    _descriptorBindingCase(
+      "descriptor platform mismatch",
+      descriptorIndexItem,
+      _mutate(baseDescriptor, "platform", "windows"),
+      expectedOutcome: "invalidDescriptor",
+    ),
+    _descriptorBindingCase(
+      "descriptor channel mismatch",
+      descriptorIndexItem,
+      _mutate(baseDescriptor, "channel", "beta"),
+      expectedOutcome: "invalidDescriptor",
+    ),
+    _descriptorBindingCase(
+      "expected package identity mismatch",
+      descriptorIndexItem,
+      baseDescriptor,
+      expectedPackageId: "com.example.other",
+      expectedOutcome: "packageIdentityMismatch",
+    ),
   ];
 
   await _writeJson(
@@ -645,11 +821,14 @@ Future<void> _generateSelectionCases(
       "minimumUpdaterCases": minimumUpdaterCases,
       "minimumOSCases": minimumOSCases,
       "supportPolicyCases": supportPolicyCases,
+      "descriptorBindingCases": descriptorBindingCases,
       "freshInstallCases": [
         for (final input in freshInstallInputs)
           {
             "input": input,
             "expected": ReleaseFreshInstall.fromJson(input).toJson(),
+            "expectedOutcome": "freshInstallRequired",
+            "expectedArtifactDownload": false,
           },
       ],
     },
@@ -659,16 +838,19 @@ Future<void> _generateSelectionCases(
 Map<String, dynamic> _indexItem({
   required String version,
   required int? buildNumber,
+  String platform = "macos",
+  String channel = "stable",
   ReleaseRollout? rollout,
 }) {
   return {
     "version": version,
     if (buildNumber != null) "buildNumber": buildNumber,
-    "platform": "macos",
-    "channel": "stable",
+    "platform": platform,
+    "channel": channel,
     "mandatory": false,
     "release":
-        "https://updates.example.test/releases/$version/macos/release.json",
+        "https://updates.example.test/releases/$version/$platform/$channel/"
+            "release.json",
     if (rollout != null) "rollout": rollout.toJson(),
   };
 }
@@ -682,23 +864,44 @@ Map<String, dynamic> _selectionCase(
   Map<String, dynamic> indexJson, {
   required String currentVersion,
   String? identity,
+  String platform = "macos",
+  String channel = "stable",
 }) {
   final selected = selectReleaseIndexItem(
     index: ReleaseIndex.fromJson(indexJson),
-    platform: "macos",
-    channel: "stable",
+    platform: platform,
+    channel: channel,
     currentVersion: DesktopVersionInfo.parse(currentVersion),
     installationIdentity: identity,
   );
   return {
     "name": name,
     "index": indexJson,
-    "platform": "macos",
-    "channel": "stable",
+    "platform": platform,
+    "channel": channel,
     "currentVersion": currentVersion,
     "identity": identity,
     "selectedVersion": selected?.version,
     "selectedBuildNumber": selected?.buildNumber,
+    "selectedPlatform": selected?.platform,
+    "selectedChannel": selected?.channel,
+    "selectedRelease": selected?.release.toString(),
+  };
+}
+
+Map<String, dynamic> _descriptorBindingCase(
+  String name,
+  Map<String, dynamic> indexItem,
+  Map<String, dynamic> descriptor, {
+  String expectedPackageId = "com.example.native-contract",
+  required String expectedOutcome,
+}) {
+  return {
+    "name": name,
+    "indexItem": indexItem,
+    "descriptor": descriptor,
+    "expectedPackageId": expectedPackageId,
+    "expectedOutcome": expectedOutcome,
   };
 }
 

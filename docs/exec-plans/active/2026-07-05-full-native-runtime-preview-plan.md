@@ -158,7 +158,7 @@ example/native/linux-cmake-runtime/
   and safe-path behavior.
 - Produces: immutable JSON inputs and expected outputs for Swift/C++ tests.
 
-- [ ] **Step 1.1: Remove invalid hand-written fixtures**
+- [x] **Step 1.1: Remove invalid hand-written fixtures**
 
 Delete any fixture that uses:
 
@@ -170,7 +170,7 @@ Delete any fixture that uses:
 - missing `minimumUpdaterVersion`;
 - missing artifact-specific install metadata.
 
-- [ ] **Step 1.2: Generate one valid descriptor per capability**
+- [x] **Step 1.2: Generate one valid descriptor per capability**
 
 Generate:
 
@@ -187,7 +187,7 @@ All URLs use absolute `https://updates.example.test/...` values. Unit tests use
 a fixture transport that maps those exact URLs to local files; production code
 does not reinterpret relative URLs.
 
-- [ ] **Step 1.3: Generate selection and policy expected outputs**
+- [x] **Step 1.3: Generate selection and policy expected outputs**
 
 Cases cover:
 
@@ -201,7 +201,7 @@ Cases cover:
 - exact index/descriptor equality;
 - expected package-ID mismatch.
 
-- [ ] **Step 1.4: Generate canonical signature cases**
+- [x] **Step 1.4: Generate canonical signature cases**
 
 Each case contains:
 
@@ -217,7 +217,7 @@ expected verification result
 Negative cases change one field at a time: package ID, artifact URL, length,
 SHA-256, install strategy, public key ID, signature bytes, and generated time.
 
-- [ ] **Step 1.5: Validate fixtures through Dart**
+- [x] **Step 1.5: Validate fixtures through Dart**
 
 ```sh
 dart run tool/generate_native_contract_fixtures.dart --check
@@ -228,7 +228,7 @@ flutter test --no-pub \
 
 Expected: PASS. These tests are the authority for fixture validity.
 
-- [ ] **Step 1.6: Commit fixture lock**
+- [x] **Step 1.6: Commit fixture lock**
 
 ```sh
 git add tool/generate_native_contract_fixtures.dart \
@@ -237,6 +237,23 @@ git add tool/generate_native_contract_fixtures.dart \
   test/native_runtime_contract_matrix_test.dart
 git commit -m "test: lock native runtime contracts"
 ```
+
+Task 1 evidence on 2026-07-10:
+
+- the new runtime matrix test failed first on missing stable descriptor names,
+  non-self-contained signature cases, and missing platform/channel typed
+  outcomes;
+- six generated capability descriptors now use the exact stable file names and
+  validate through the Dart schema-v3 parser with real artifact hashes and
+  lengths;
+- signature cases carry canonical UTF-8 bytes, pinned key ID, 32-byte public
+  key, 64-byte signature, and the required single-field negative mutations;
+- selection fixtures cover platform, channel, build-number, prerelease,
+  rollout, lifecycle policy, minimum policy, fresh-install, index binding, and
+  package identity outcomes;
+- `dart run tool/generate_native_contract_fixtures.dart --check`: PASS;
+- `flutter test --no-pub test/native_contract_fixture_test.dart
+  test/native_runtime_contract_matrix_test.dart`: PASS, 9 tests.
 
 ## Task 2: Define Runtime APIs And Typed Failures
 

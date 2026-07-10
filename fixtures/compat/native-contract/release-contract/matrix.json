@@ -6,42 +6,42 @@
       "platform": "macos",
       "artifactKind": "zip",
       "artifactPath": "macos-zip/artifact.zip",
-      "descriptorPath": "macos-zip/release.json"
+      "descriptorPath": "release-macos-zip.json"
     },
     {
       "id": "macos-dmg",
       "platform": "macos",
       "artifactKind": "dmg",
       "artifactPath": "macos-dmg/artifact.dmg",
-      "descriptorPath": "macos-dmg/release.json"
+      "descriptorPath": "release-macos-dmg.json"
     },
     {
       "id": "macos-pkg-installer",
       "platform": "macos",
       "artifactKind": "pkgInstaller",
       "artifactPath": "macos-pkg-installer/artifact.pkg",
-      "descriptorPath": "macos-pkg-installer/release.json"
+      "descriptorPath": "release-macos-pkg.json"
     },
     {
       "id": "windows-zip",
       "platform": "windows",
       "artifactKind": "zip",
       "artifactPath": "windows-zip/artifact.zip",
-      "descriptorPath": "windows-zip/release.json"
+      "descriptorPath": "release-windows-zip.json"
     },
     {
       "id": "windows-inno-installer",
       "platform": "windows",
       "artifactKind": "innoInstaller",
       "artifactPath": "windows-inno-installer/artifact.exe",
-      "descriptorPath": "windows-inno-installer/release.json"
+      "descriptorPath": "release-windows-inno.json"
     },
     {
       "id": "linux-zip",
       "platform": "linux",
       "artifactKind": "zip",
       "artifactPath": "linux-zip/artifact.zip",
-      "descriptorPath": "linux-zip/release.json"
+      "descriptorPath": "release-linux-zip.json"
     }
   ]
 }

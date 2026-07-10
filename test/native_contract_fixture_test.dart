@@ -96,14 +96,18 @@ void main() {
       isEmpty,
     );
 
-    final keySets = _map(fixture, "keySets");
     for (final entry in _mapList(fixture, "cases")) {
-      final keys = Map<String, String>.from(
-        _dynamicMap(keySets[entry["keySet"] as String]),
-      );
+      final keys = <String, String>{
+        entry["publicKeyId"] as String: entry["publicKeyBase64"] as String,
+      };
       final candidate = ReleaseDescriptor.fromJson(
         _dynamicMap(entry["descriptor"]),
       );
+      expect(
+        base64Encode(candidate.canonicalSignatureBytes()),
+        entry["canonicalUtf8Base64"],
+      );
+      expect(candidate.signature?.value, entry["signatureBase64"]);
       final actual =
           await Ed25519ReleaseSignatureVerifier(keys).verify(candidate);
       expect(actual, entry["expectedValid"], reason: entry["name"] as String);

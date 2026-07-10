@@ -87,15 +87,6 @@
     },
     "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9"
   },
-  "keySets": {
-    "valid": {
-      "native-contract-stable": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg="
-    },
-    "wrong": {
-      "native-contract-stable": "Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc="
-    },
-    "empty": {}
-  },
   "cases": [
     {
       "name": "valid signature",
@@ -127,11 +118,194 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": true
     },
     {
-      "name": "missing public key id",
+      "name": "modified package id",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.other",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm90aGVyIiwicGxhdGZvcm0iOiJtYWNvcyIsInNjaGVtYVZlcnNpb24iOjMsInNpZ25hdHVyZSI6eyJhbGdvcml0aG0iOiJlZDI1NTE5IiwicHVibGljS2V5SWQiOiJuYXRpdmUtY29udHJhY3Qtc3RhYmxlIiwidmFsdWUiOiIifSwidmVyc2lvbiI6IjIuNy4wIn0=",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified artifact url",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/tampered.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvdGFtcGVyZWQuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified artifact length",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 43
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Mywic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified artifact sha256",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified install strategy",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeDirectoryReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZURpcmVjdG9yeVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified public key id",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -160,7 +334,82 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoidW5rbm93bi1rZXkiLCJ2YWx1ZSI6IiJ9LCJ2ZXJzaW9uIjoiMi43LjAifQ==",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified signature bytes",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "expectedValid": false
+    },
+    {
+      "name": "modified generated time",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKeyId": "native-contract-stable",
+          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:01.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDEuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     },
     {
@@ -193,77 +442,14 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "wrong",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     },
     {
-      "name": "wrong signature bytes",
-      "descriptor": {
-        "schemaVersion": 3,
-        "packageId": "com.example.native-contract",
-        "appName": "Example.app",
-        "version": "2.7.0",
-        "buildNumber": 270,
-        "platform": "macos",
-        "channel": "stable",
-        "artifact": {
-          "kind": "zip",
-          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
-          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
-          "length": 42
-        },
-        "install": {
-          "strategy": "wholeBundleReplace"
-        },
-        "signature": {
-          "algorithm": "ed25519",
-          "publicKeyId": "native-contract-stable",
-          "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
-        },
-        "minimumUpdaterVersion": "2.0.0",
-        "minimumOS": {
-          "macos": "13.0"
-        },
-        "generatedAt": "2026-07-10T00:00:00.000Z"
-      },
-      "keySet": "valid",
-      "expectedValid": false
-    },
-    {
-      "name": "wrong package identity",
-      "descriptor": {
-        "schemaVersion": 3,
-        "packageId": "com.example.other",
-        "appName": "Example.app",
-        "version": "2.7.0",
-        "buildNumber": 270,
-        "platform": "macos",
-        "channel": "stable",
-        "artifact": {
-          "kind": "zip",
-          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
-          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
-          "length": 42
-        },
-        "install": {
-          "strategy": "wholeBundleReplace"
-        },
-        "signature": {
-          "algorithm": "ed25519",
-          "publicKeyId": "native-contract-stable",
-          "value": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg=="
-        },
-        "minimumUpdaterVersion": "2.0.0",
-        "minimumOS": {
-          "macos": "13.0"
-        },
-        "generatedAt": "2026-07-10T00:00:00.000Z"
-      },
-      "keySet": "valid",
-      "expectedValid": false
-    },
-    {
-      "name": "wrong version",
+      "name": "modified version",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -292,11 +478,14 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMSJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     },
     {
-      "name": "wrong build number",
+      "name": "modified build number",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -325,11 +514,14 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjo5OTksImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJzaWduYXR1cmUiOnsiYWxnb3JpdGhtIjoiZWQyNTUxOSIsInB1YmxpY0tleUlkIjoibmF0aXZlLWNvbnRyYWN0LXN0YWJsZSIsInZhbHVlIjoiIn0sInZlcnNpb24iOiIyLjcuMCJ9",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     },
     {
-      "name": "wrong platform",
+      "name": "modified platform",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -358,11 +550,14 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoid2luZG93cyIsInNjaGVtYVZlcnNpb24iOjMsInNpZ25hdHVyZSI6eyJhbGdvcml0aG0iOiJlZDI1NTE5IiwicHVibGljS2V5SWQiOiJuYXRpdmUtY29udHJhY3Qtc3RhYmxlIiwidmFsdWUiOiIifSwidmVyc2lvbiI6IjIuNy4wIn0=",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     },
     {
-      "name": "wrong channel",
+      "name": "modified channel",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -391,7 +586,10 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "keySet": "valid",
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJiZXRhIiwiZ2VuZXJhdGVkQXQiOiIyMDI2LTA3LTEwVDAwOjAwOjAwLjAwMFoiLCJpbnN0YWxsIjp7InN0cmF0ZWd5Ijoid2hvbGVCdW5kbGVSZXBsYWNlIn0sIm1pbmltdW1PUyI6eyJtYWNvcyI6IjEzLjAifSwibWluaW11bVVwZGF0ZXJWZXJzaW9uIjoiMi4wLjAiLCJwYWNrYWdlSWQiOiJjb20uZXhhbXBsZS5uYXRpdmUtY29udHJhY3QiLCJwbGF0Zm9ybSI6Im1hY29zIiwic2NoZW1hVmVyc2lvbiI6Mywic2lnbmF0dXJlIjp7ImFsZ29yaXRobSI6ImVkMjU1MTkiLCJwdWJsaWNLZXlJZCI6Im5hdGl2ZS1jb250cmFjdC1zdGFibGUiLCJ2YWx1ZSI6IiJ9LCJ2ZXJzaW9uIjoiMi43LjAifQ==",
+      "publicKeyId": "native-contract-stable",
+      "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+      "signatureBase64": "F8h0OltN5U8GAmXAXmBLxNQ9YHT3Bi5akyqxeBWgwuCZVzbo2kBXYaFDgHitdan3LQUA9/rKitqB6Sc4WUmrBg==",
       "expectedValid": false
     }
   ]
