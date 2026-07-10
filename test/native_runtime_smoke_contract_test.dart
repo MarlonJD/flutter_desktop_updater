@@ -85,6 +85,18 @@ void main() {
     expect(workflow, contains(r"DesktopUpdater.Native.$"));
     expect(workflow, contains("CMAKE_PREFIX_PATH"));
   });
+
+  test("Windows ZIP smoke waits for helper cleanup before asserting", () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+
+    expect(workflow, contains(r"$cleanupComplete = $false"));
+    expect(
+      workflow,
+      contains(
+        r"$versionReady -and $stagingRemoved -and $cleanupComplete",
+      ),
+    );
+  });
 }
 
 String readFile(String path) {

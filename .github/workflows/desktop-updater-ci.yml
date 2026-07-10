@@ -273,11 +273,18 @@ jobs:
             Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
             $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
             $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
-            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log $diagnosticsPath
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             for ($attempt = 0; $attempt -lt 120; $attempt++) {
               $versionFile = Join-Path $install "version.txt"
-              if ((Test-Path $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")) { break }
+              $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
+              $stagingRemoved = -not (Test-Path -LiteralPath (Join-Path $smokeRoot "runtime/staging"))
+              $cleanupComplete = $false
+              if (Test-Path -LiteralPath $diagnosticsPath) {
+                $cleanupComplete = (Get-Content -Raw $diagnosticsPath) -match '"event":"cleanup success"'
+              }
+              if ($versionReady -and $stagingRemoved -and $cleanupComplete) { break }
               Start-Sleep -Milliseconds 250
             }
             if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") {
@@ -286,7 +293,7 @@ jobs:
             if (Test-Path (Join-Path $smokeRoot "runtime/staging")) {
               throw "Windows ZIP runtime smoke left its staging directory."
             }
-            $diagnostics = Get-Content -Raw (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            $diagnostics = Get-Content -Raw $diagnosticsPath
             if ($diagnostics -notmatch '"event":"move success"' -or $diagnostics -notmatch '"event":"cleanup success"') {
               throw "Windows ZIP runtime smoke diagnostics are incomplete."
             }
