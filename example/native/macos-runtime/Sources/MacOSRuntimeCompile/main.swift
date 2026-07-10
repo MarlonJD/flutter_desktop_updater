@@ -38,7 +38,6 @@ struct MacOSRuntimeSmoke {
             isDirectory: true
         )
         let diagnosticsLog = arguments.value("--diagnostics-log")
-        let bundlePath = arguments.value("--bundle-path")
         let allowUnsigned = arguments.has("--allow-unsigned-updates")
         let configuration = try RuntimeConfiguration(
             appArchiveUrl: try requiredURL(
@@ -75,7 +74,6 @@ struct MacOSRuntimeSmoke {
         try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: diagnosticsLog,
-            bundlePath: bundlePath,
             allowUnsignedUpdates: allowUnsigned
         )
         print(
@@ -97,7 +95,6 @@ private struct Arguments {
                 "--package-id",
                 "--smoke-root",
                 "--diagnostics-log",
-                "--bundle-path",
             ] where optionalValue(option) == nil {
                 throw SmokeFailure("Missing required argument \(option).")
             }

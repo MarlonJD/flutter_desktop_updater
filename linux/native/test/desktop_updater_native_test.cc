@@ -58,6 +58,52 @@ void WriteFile(const fs::path& path,
   ASSERT_EQ(chmod(path.c_str(), mode), 0);
 }
 
+int RunHelperScript(const fs::path& script_path,
+                    const fs::path& fixture_root,
+                    bool fail_permission_restore = false) {
+  const fs::path tools = fixture_root / "tools";
+  bool needs_tools = fail_permission_restore;
+  if (fail_permission_restore) {
+    WriteFile(tools / "chmod", "#!/bin/sh\nexit 1\n", 0755);
+  }
+#if defined(__APPLE__)
+  needs_tools = true;
+  WriteFile(
+      tools / "stat",
+      "#!/bin/sh\n"
+      "if [ \"$1\" = '-c' ] && [ \"$2\" = '%s' ]; then\n"
+      "  shift 2\n"
+      "  exec /usr/bin/stat -f %z \"$@\"\n"
+      "fi\n"
+      "exec /usr/bin/stat \"$@\"\n",
+      0755);
+  WriteFile(
+      tools / "find",
+      "#!/bin/bash\n"
+      "if [ \"$#\" -eq 8 ] && [ \"$7\" = '-printf' ]; then\n"
+      "  exec /usr/bin/find \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" -exec /usr/bin/printf \"$8\" \\;\n"
+      "fi\n"
+      "exec /usr/bin/find \"$@\"\n",
+      0755);
+#endif
+  const char* previous_path = std::getenv("PATH");
+  const std::string saved_path = previous_path == nullptr ? "" : previous_path;
+  if (needs_tools &&
+      setenv("PATH", (tools.string() + ":" + saved_path).c_str(), 1) != 0) {
+    return -1;
+  }
+  const int result =
+      std::system(("/bin/bash " + script_path.string()).c_str());
+  if (needs_tools) {
+    if (previous_path == nullptr) {
+      unsetenv("PATH");
+    } else {
+      setenv("PATH", saved_path.c_str(), 1);
+    }
+  }
+  return result;
+}
+
 std::string ReadFile(const fs::path& path) {
   std::ifstream file(path);
   return std::string(std::istreambuf_iterator<char>(file),
@@ -159,6 +205,87 @@ TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
   }
 }
 
+TEST(LinuxNativeInstall, LegacyFallbackAcceptsSelfContainedFlutterBundle) {
+  char workspace_template[] = "desktop_updater_native_test_XXXXXX";
+  char* workspace = mkdtemp(workspace_template);
+  ASSERT_NE(workspace, nullptr);
+  const fs::path fixture_root = fs::canonical(workspace);
+  const fs::path install_root = fixture_root / "Example";
+  const fs::path staging_root = fixture_root /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(install_root / "data/flutter_assets/AssetManifest.bin", "assets");
+  WriteFile(install_root / "lib/libflutter_linux_gtk.so", "flutter");
+  WriteFile(staging_root / "example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  request.install_root.clear();
+  request.executable_relative_path.clear();
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  std::error_code cleanup_error;
+  fs::remove_all(fixture_root, cleanup_error);
+  ASSERT_TRUE(result.ok) << result.error;
+  EXPECT_FALSE(script.empty());
+}
+
+TEST(LinuxNativeInstall, LegacyFallbackRejectsTemporaryRootWithoutScript) {
+  TemporaryDirectory temporary;
+  const fs::path install_root = temporary.path() / "Example";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(install_root / "data/flutter_assets/AssetManifest.bin", "assets");
+  WriteFile(install_root / "lib/libflutter_linux_gtk.so", "flutter");
+  WriteFile(staging_root / "example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  request.install_root.clear();
+  request.executable_relative_path.clear();
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("self-contained Flutter bundle"),
+            std::string::npos);
+  EXPECT_TRUE(script.empty());
+}
+
+TEST(LinuxNativeInstall, LegacyFallbackRejectsSharedLocalBinWithoutScript) {
+  TemporaryDirectory temporary;
+  const char* previous_home = std::getenv("HOME");
+  const std::string saved_home = previous_home == nullptr ? "" : previous_home;
+  ASSERT_EQ(setenv("HOME", temporary.path().c_str(), 1), 0);
+  const fs::path install_root = temporary.path() / ".local/bin";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const fs::path executable = install_root / "example";
+  WriteFile(executable, "old", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  request.install_root.clear();
+  request.executable_relative_path.clear();
+  std::string script;
+
+  const InstallResult result = internal::BuildInstallScriptForTesting(
+      request, executable.string(), 2147483647, &script);
+
+  if (previous_home == nullptr) {
+    unsetenv("HOME");
+  } else {
+    setenv("HOME", saved_home.c_str(), 1);
+  }
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(result.error.find("self-contained Flutter bundle"),
+            std::string::npos);
+  EXPECT_TRUE(script.empty());
+}
+
 TEST(LinuxNativeInstall, RejectsNonCanonicalAndSymlinkEscapes) {
   TemporaryDirectory temporary;
   const fs::path install_root = temporary.path() / "app";
@@ -255,6 +382,7 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   const fs::path outside = temporary.path() / "outside.txt";
   WriteFile(executable, "old executable", 0755);
   WriteFile(install_root / "old.txt", "old data");
+  WriteFile(staging_root / "bin/example", "new executable");
   WriteFile(staging_root / "new.txt", "new data");
   WriteFile(outside, "outside data");
   InstallRequest request = RequestFor(install_root, staging_root);
@@ -269,7 +397,7 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
 
   ASSERT_EQ(unsetenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"), 0);
   const int exit_code =
-      std::system(("/bin/bash " + script_path.string()).c_str());
+      RunHelperScript(script_path, temporary.path(), true);
 
   EXPECT_NE(exit_code, 0);
   EXPECT_TRUE(fs::exists(install_root / "old.txt"));
@@ -279,7 +407,8 @@ TEST(LinuxNativeInstall, RollbackRestoresOnlyVerifiedBundle) {
   EXPECT_NE(events.find("\"event\":\"backup success\""), std::string::npos);
   EXPECT_NE(events.find("\"event\":\"move success\""), std::string::npos);
   EXPECT_NE(events.find("\"event\":\"rollback start\""), std::string::npos);
-  EXPECT_NE(events.find("\"event\":\"rollback success\""), std::string::npos);
+  EXPECT_NE(events.find("\"event\":\"rollback success\""),
+            std::string::npos);
 }
 
 TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
@@ -301,8 +430,7 @@ TEST(LinuxNativeInstall, SuccessfulInstallRecordsMoveAndCleanupEvents) {
   WriteFile(script_path, script, 0755);
 
   ASSERT_EQ(setenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH", "1", 1), 0);
-  const int exit_code =
-      std::system(("/bin/bash " + script_path.string()).c_str());
+  const int exit_code = RunHelperScript(script_path, temporary.path());
   ASSERT_EQ(unsetenv("DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"), 0);
 
   EXPECT_EQ(exit_code, 0);

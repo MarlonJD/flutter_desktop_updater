@@ -285,7 +285,6 @@ public final class UpdateClient {
     private let installScheduler: (
         RuntimeStagedUpdate,
         String?,
-        String,
         Bool
     ) throws -> Void
 
@@ -297,11 +296,10 @@ public final class UpdateClient {
         self.configuration = configuration
         self.transport = transport
         self.stager = stager
-        installScheduler = { staged, diagnosticsLogPath, bundlePath, allowUnsigned in
+        installScheduler = { staged, diagnosticsLogPath, allowUnsigned in
             try stager.installAndRelaunch(
                 staged: staged,
                 diagnosticsLogPath: diagnosticsLogPath,
-                bundlePath: bundlePath,
                 allowUnsignedUpdates: allowUnsigned
             )
         }
@@ -314,7 +312,6 @@ public final class UpdateClient {
         installScheduler: @escaping (
             RuntimeStagedUpdate,
             String?,
-            String,
             Bool
         ) throws -> Void
     ) {
@@ -678,7 +675,6 @@ public final class UpdateClient {
     public func installAndRelaunch(
         _ staged: RuntimeStagedUpdate,
         diagnosticsLogPath: String?,
-        bundlePath: String,
         allowUnsignedUpdates: Bool = false
     ) throws {
         do {
@@ -711,7 +707,6 @@ public final class UpdateClient {
             try installScheduler(
                 handoff.staged,
                 diagnosticsLogPath,
-                bundlePath,
                 allowUnsignedUpdates
             )
             guard rollbackGuard.confirm() else {

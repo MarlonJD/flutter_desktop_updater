@@ -12,11 +12,17 @@ public static class DesktopUpdaterNative
     /// <param name="stagingPath">The staged bundle directory, or null for restart only.</param>
     /// <param name="removedFiles">App-relative paths to remove before overlay.</param>
     /// <param name="diagnosticsLogPath">Optional JSONL diagnostics destination.</param>
+    /// <param name="installRoot">Canonical current application root.</param>
+    /// <param name="executableRelativePath">Running executable relative to the application root.</param>
+    /// <param name="expectedPackageId">Verified application package identity.</param>
     /// <exception cref="DesktopUpdaterException">The native helper rejected the request.</exception>
     public static void ScheduleInstallAndRelaunch(
         string? stagingPath,
         IReadOnlyList<string> removedFiles,
-        string? diagnosticsLogPath)
+        string? diagnosticsLogPath,
+        string? installRoot = null,
+        string? executableRelativePath = null,
+        string? expectedPackageId = null)
     {
         if (removedFiles is null)
         {
@@ -25,6 +31,9 @@ public static class DesktopUpdaterNative
 
         IntPtr stagingPointer = IntPtr.Zero;
         IntPtr diagnosticsPointer = IntPtr.Zero;
+        IntPtr installRootPointer = IntPtr.Zero;
+        IntPtr executableRelativePathPointer = IntPtr.Zero;
+        IntPtr expectedPackageIdPointer = IntPtr.Zero;
         IntPtr removedPointers = IntPtr.Zero;
         var removedAllocations = new List<IntPtr>(removedFiles.Count);
         NativeResultV1 result = default;
@@ -39,6 +48,20 @@ public static class DesktopUpdaterNative
             if (diagnosticsLogPath is not null)
             {
                 diagnosticsPointer = Marshal.StringToHGlobalUni(diagnosticsLogPath);
+            }
+            if (installRoot is not null)
+            {
+                installRootPointer = Marshal.StringToHGlobalUni(installRoot);
+            }
+            if (executableRelativePath is not null)
+            {
+                executableRelativePathPointer =
+                    Marshal.StringToHGlobalUni(executableRelativePath);
+            }
+            if (expectedPackageId is not null)
+            {
+                expectedPackageIdPointer =
+                    Marshal.StringToHGlobalUni(expectedPackageId);
             }
 
             if (removedFiles.Count > 0)
@@ -71,6 +94,9 @@ public static class DesktopUpdaterNative
                 DiagnosticsLogPath = diagnosticsPointer,
                 RemovedFiles = removedPointers,
                 RemovedFileCount = (nuint)removedFiles.Count,
+                InstallRoot = installRootPointer,
+                ExecutableRelativePath = executableRelativePathPointer,
+                ExpectedPackageId = expectedPackageIdPointer,
             };
 
             result = NativeMethods.ScheduleInstallAndRelaunch(ref request);
@@ -101,6 +127,18 @@ public static class DesktopUpdaterNative
             if (diagnosticsPointer != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(diagnosticsPointer);
+            }
+            if (expectedPackageIdPointer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(expectedPackageIdPointer);
+            }
+            if (executableRelativePathPointer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(executableRelativePathPointer);
+            }
+            if (installRootPointer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(installRootPointer);
             }
             if (stagingPointer != IntPtr.Zero)
             {
@@ -134,6 +172,13 @@ public static class DesktopUpdaterNative
         public IntPtr DiagnosticsLogPath;
         public IntPtr RemovedFiles;
         public nuint RemovedFileCount;
+        public IntPtr ExpectedProvenanceSha256;
+        public IntPtr ExpectedArtifactSha256;
+        public IntPtr AllowedSignerThumbprints;
+        public nuint AllowedSignerThumbprintCount;
+        public IntPtr InstallRoot;
+        public IntPtr ExecutableRelativePath;
+        public IntPtr ExpectedPackageId;
     }
 
     [StructLayout(LayoutKind.Sequential)]

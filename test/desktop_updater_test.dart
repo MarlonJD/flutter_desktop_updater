@@ -3,7 +3,9 @@ import "dart:io";
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
@@ -64,28 +66,21 @@ class MockDesktopUpdaterPlatform
 }
 
 class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
-  String? lastPackageId;
+  bool legacyInstallInvoked = false;
 
   @override
-  Future<void> installUpdateWithContext({
+  Future<void> installUpdate({
     required String stagingPath,
     List<String> removedFiles = const [],
     bool allowUnsignedMacOSUpdates = false,
     String? diagnosticsLogPath,
-    String? installRoot,
-    String? executableRelativePath,
-    String? packageId,
-    String? stageProvenanceSha256,
-    String? stageProvenanceNonce,
-    List<Map<String, Object?>> stageProvenanceEntries = const [],
-    String? expectedArtifactSha256,
-    List<String> allowedSignerThumbprints = const [],
   }) async {
-    lastPackageId = packageId;
+    legacyInstallInvoked = true;
   }
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   final initialPlatform = DesktopUpdaterPlatform.instance;
 
   test("$MethodChannelDesktopUpdater is the default instance", () {
@@ -114,7 +109,7 @@ void main() {
     expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
   });
 
-  test("installUpdate forwards verified package identity to method channel",
+  test("MethodChannel subclass legacy install override remains compatible",
       () async {
     final platform = RecordingMethodChannelDesktopUpdater();
     DesktopUpdaterPlatform.instance = platform;
@@ -124,7 +119,57 @@ void main() {
       packageId: "com.example.desktop_updater",
     );
 
-    expect(platform.lastPackageId, "com.example.desktop_updater");
+    expect(platform.legacyInstallInvoked, isTrue);
+  });
+
+  test("old safe install call loads package identity from stage provenance",
+      () async {
+    const nonce = "123e4567-e89b-42d3-a456-426614174000";
+    final parent = await Directory.systemTemp.createTemp("updater_compat_");
+    final stage = await createOwnedStagingDirectory(
+      parent: parent,
+      nonce: nonce,
+    );
+    try {
+      await File(path.join(stage.path, "example")).writeAsString("payload");
+      await writeStagedUpdateProvenance(
+        stageRoot: stage,
+        nonce: nonce,
+        packageId: "com.example.provenance",
+        descriptorSha256: "a".padRight(64, "a"),
+        artifactSha256: "b".padRight(64, "b"),
+      );
+      late MethodCall capturedCall;
+      const channel = MethodChannel("desktop_updater");
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        capturedCall = call;
+        return null;
+      });
+      DesktopUpdaterPlatform.instance = MethodChannelDesktopUpdater();
+
+      await DesktopUpdater().installUpdate(stagingPath: stage.path);
+
+      expect(
+          capturedCall.arguments,
+          containsPair(
+            "packageId",
+            "com.example.provenance",
+          ));
+      expect(
+          capturedCall.arguments,
+          containsPair(
+            "stageProvenanceNonce",
+            nonce,
+          ));
+      expect(capturedCall.arguments, contains("stageProvenanceSha256"));
+      expect(capturedCall.arguments, contains("stageProvenanceEntries"));
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    } finally {
+      DesktopUpdaterPlatform.instance = initialPlatform;
+      await parent.delete(recursive: true);
+    }
   });
 
   test("checkMacOSInstallLocation forwards to platform", () async {

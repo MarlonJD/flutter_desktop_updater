@@ -6,9 +6,7 @@ final class DesktopUpdaterKitPublicAPITests: XCTestCase {
         let request = MacInstallRequest(
             stagingPath: "/tmp/Example.app",
             allowUnsignedUpdates: false,
-            diagnosticsLogPath: "/tmp/desktop_updater.jsonl",
-            currentProcessIdentifier: 42,
-            bundlePath: "/Applications/Example.app"
+            diagnosticsLogPath: "/tmp/desktop_updater.jsonl"
         )
         let diagnosticsEvent = MacDiagnosticEvent(
             timestamp: "2026-07-10T12:00:00Z",
@@ -18,7 +16,11 @@ final class DesktopUpdaterKitPublicAPITests: XCTestCase {
 
         XCTAssertEqual(request.stagingPath, "/tmp/Example.app")
         XCTAssertFalse(request.allowUnsignedUpdates)
-        XCTAssertEqual(request.currentProcessIdentifier, 42)
+        XCTAssertFalse(
+            Mirror(reflecting: request).children.contains {
+                $0.label == "currentProcessIdentifier" || $0.label == "bundlePath"
+            }
+        )
         XCTAssertEqual(diagnosticsEvent.event, "helper scheduled")
         XCTAssertNotNil(helper)
     }

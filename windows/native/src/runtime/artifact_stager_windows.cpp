@@ -234,6 +234,9 @@ WindowsStagedArtifact StageWindowsInnoInstaller(
 
 WindowsInstallHandoffResult HandoffWindowsInstall(
     const std::wstring& staging_path,
+    const std::wstring& install_root,
+    const std::wstring& executable_relative_path,
+    const std::wstring& expected_package_id,
     const std::wstring& diagnostics_log_path,
     const std::vector<std::wstring>& removed_files,
     const std::string& expected_provenance_sha256,
@@ -251,6 +254,12 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
   request.struct_size = sizeof(request);
   request.staging_path = reinterpret_cast<const std::uint16_t*>(
       staging_path.c_str());
+  request.install_root = reinterpret_cast<const std::uint16_t*>(
+      install_root.c_str());
+  request.executable_relative_path = reinterpret_cast<const std::uint16_t*>(
+      executable_relative_path.c_str());
+  request.expected_package_id = reinterpret_cast<const std::uint16_t*>(
+      expected_package_id.c_str());
   request.diagnostics_log_path = diagnostics_log_path.empty()
                                      ? nullptr
                                      : reinterpret_cast<const std::uint16_t*>(

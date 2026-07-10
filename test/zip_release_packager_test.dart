@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:archive/archive.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/package/zip_release_packager.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -63,6 +64,42 @@ void main() {
       expect(
         await result.releaseFile.readAsString(),
         isNot(contains("buildNumber")),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("Windows zip package carries an installed target identity marker",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("packager_");
+    try {
+      final input = Directory(path.join(tempDir.path, "input"));
+      await input.create();
+      File(path.join(input.path, "Example.exe")).writeAsStringSync("binary");
+      final result = await const ZipReleasePackager().package(
+        ReleasePackageRequest(
+          input: input,
+          outputDirectory: Directory(path.join(tempDir.path, "out")),
+          packageId: "com.example.app",
+          appName: "Example",
+          version: "2.0.0",
+          platform: "windows",
+          channel: "stable",
+          artifactUrl: Uri.parse("https://cdn.example.com/Example.zip"),
+          installStrategy: "wholeDirectoryReplace",
+        ),
+      );
+
+      final archive = ZipDecoder().decodeBytes(
+        await result.artifact.readAsBytes(),
+      );
+      final marker = archive.files.singleWhere(
+        (entry) => entry.name == ".desktop_updater_install_identity.json",
+      );
+      expect(
+        String.fromCharCodes(marker.content as List<int>),
+        '{"packageId":"com.example.app","schemaVersion":1}',
       );
     } finally {
       await tempDir.delete(recursive: true);

@@ -57,6 +57,12 @@ class DesktopUpdater {
 
     /// Verified package identity required by protected native install targets.
     String? packageId,
+
+    /// Canonical app-owned install root for explicit native target proof.
+    String? installRoot,
+
+    /// Running executable path relative to [installRoot].
+    String? executableRelativePath,
   }) {
     if (stagingPath != null) {
       return installUpdate(
@@ -64,6 +70,8 @@ class DesktopUpdater {
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
         diagnosticsLogPath: diagnosticsLogPath,
         packageId: packageId,
+        installRoot: installRoot,
+        executableRelativePath: executableRelativePath,
       );
     }
 
@@ -86,12 +94,20 @@ class DesktopUpdater {
 
     /// Verified package identity required by protected native install targets.
     String? packageId,
+
+    /// Canonical app-owned install root for explicit native target proof.
+    String? installRoot,
+
+    /// Running executable path relative to [installRoot].
+    String? executableRelativePath,
   }) {
     return DesktopUpdaterPlatform.instance.installUpdateWithContext(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
       allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
       diagnosticsLogPath: diagnosticsLogPath,
+      installRoot: installRoot,
+      executableRelativePath: executableRelativePath,
       packageId: packageId,
     );
   }

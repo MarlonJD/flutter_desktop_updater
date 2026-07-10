@@ -29,6 +29,8 @@ void main() {
 
     expect(header, contains("enum class LinuxInstallOperation"));
     expect(header, contains("struct InstallRequest"));
+    expect(header, contains("struct InstallTargetProof"));
+    expect(header, contains("InstallTargetProofSource"));
     expect(header, contains("ValidateInstallRequest"));
 
     for (final protectedRoot in <String>[
@@ -56,6 +58,60 @@ void main() {
     expect(writeIndex, isNonNegative);
     expect(validationIndex, lessThan(scriptPathIndex));
     expect(validationIndex, lessThan(writeIndex));
+  });
+
+  test("native target proof rejects shared roots before helper creation", () {
+    final linux = File(
+      "linux/native/src/desktop_updater_native.cc",
+    ).readAsStringSync();
+    final windows = File(
+      "windows/native/src/desktop_updater_native.cpp",
+    ).readAsStringSync();
+    final windowsRuntimeHeader = File(
+      "windows/native/include/desktop_updater_runtime_c.h",
+    ).readAsStringSync();
+
+    for (final protectedRoot in <String>[
+      '"Desktop"',
+      '"Downloads"',
+      '".local/bin"',
+    ]) {
+      expect(linux, contains(protectedRoot));
+    }
+    expect(linux, contains("data/flutter_assets"));
+    expect(linux, contains("lib/libflutter_linux_gtk.so"));
+    expect(linux, contains("IsStrictDescendant(root, temp)"));
+    expect(linux, contains("InstallTargetProof"));
+    expect(windows, contains("InstallTargetProof"));
+    expect(windows, contains(".desktop_updater_install_identity.json"));
+    expect(windows, contains("DesktopUpdaterPackageId"));
+    expect(windowsRuntimeHeader, contains("install_root_utf8"));
+    expect(windowsRuntimeHeader, contains("executable_relative_path_utf8"));
+    expect(windowsRuntimeHeader, contains("expected_package_id_utf8"));
+
+    final windowsProof = windows.indexOf("ProveInstallTarget(");
+    final windowsScript = windows.indexOf("const fs::path script_path");
+    expect(windowsProof, isNonNegative);
+    expect(windowsScript, isNonNegative);
+    expect(windowsProof, lessThan(windowsScript));
+  });
+
+  test("macOS public install request cannot select another PID or bundle", () {
+    final request = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift",
+    ).readAsStringSync();
+    final helper = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
+
+    final publicRequest = request.substring(
+      request.indexOf("public struct MacInstallRequest"),
+    );
+    expect(publicRequest, isNot(contains("currentProcessIdentifier")));
+    expect(publicRequest, isNot(contains("bundlePath")));
+    expect(helper, contains("ProcessInfo.processInfo.processIdentifier"));
+    expect(helper, contains("Bundle.main.bundleURL"));
+    expect(helper, contains("MacInstallTargetResolver"));
   });
 
   test("Linux install validation bounds staging and removed paths", () {

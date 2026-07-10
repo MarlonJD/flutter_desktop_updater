@@ -393,8 +393,6 @@ public struct MacInstallRequest: Sendable {
     public let stagingPath: String?
     public let allowUnsignedUpdates: Bool
     public let diagnosticsLogPath: String?
-    public let currentProcessIdentifier: Int32
-    public let bundlePath: String
     public let stageRoot: String?
     public let expectedProvenanceSHA256: String?
     public let artifactKind: String?
@@ -406,8 +404,6 @@ public struct MacInstallRequest: Sendable {
         stagingPath: String?,
         allowUnsignedUpdates: Bool,
         diagnosticsLogPath: String?,
-        currentProcessIdentifier: Int32,
-        bundlePath: String,
         stageRoot: String? = nil,
         expectedProvenanceSHA256: String? = nil,
         artifactKind: String? = nil,
@@ -418,8 +414,6 @@ public struct MacInstallRequest: Sendable {
         self.stagingPath = stagingPath
         self.allowUnsignedUpdates = allowUnsignedUpdates
         self.diagnosticsLogPath = diagnosticsLogPath
-        self.currentProcessIdentifier = currentProcessIdentifier
-        self.bundlePath = bundlePath
         self.stageRoot = stageRoot
         self.expectedProvenanceSHA256 = expectedProvenanceSHA256
         self.artifactKind = artifactKind

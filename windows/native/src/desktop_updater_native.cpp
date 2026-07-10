@@ -3,8 +3,10 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -402,6 +404,14 @@ bool IsSameOrChildPath(const fs::path& root, const fs::path& candidate) {
 
 std::vector<std::wstring> ProtectedInstallRootPaths() {
   std::vector<std::wstring> roots;
+  for (const int folder : {CSIDL_PROGRAM_FILES, CSIDL_PROGRAM_FILESX86}) {
+    wchar_t value[MAX_PATH] = {};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, folder, nullptr,
+                                   SHGFP_TYPE_CURRENT, value)) &&
+        value[0] != L'\0') {
+      roots.emplace_back(value);
+    }
+  }
   for (const wchar_t* variable_name :
        {L"ProgramFiles", L"ProgramFiles(x86)", L"ProgramW6432"}) {
     const std::wstring value = EnvironmentVariableValue(variable_name);
@@ -431,6 +441,179 @@ bool CanWriteDirectory(const fs::path& directory) {
   return true;
 }
 
+bool ReadRegistryString(HKEY key,
+                        const wchar_t* value_name,
+                        std::wstring* value) {
+  DWORD size = 0;
+  if (RegGetValueW(key, nullptr, value_name, RRF_RT_REG_SZ, nullptr, nullptr,
+                   &size) != ERROR_SUCCESS ||
+      size < sizeof(wchar_t)) {
+    return false;
+  }
+  std::vector<wchar_t> buffer(size / sizeof(wchar_t));
+  if (RegGetValueW(key, nullptr, value_name, RRF_RT_REG_SZ, nullptr,
+                   buffer.data(), &size) != ERROR_SUCCESS) {
+    return false;
+  }
+  *value = buffer.data();
+  return true;
+}
+
+bool HasMatchingUninstallRecord(const std::wstring& canonical_target,
+                                const std::wstring& expected_package_id) {
+  struct RegistryRoot {
+    HKEY hive;
+    const wchar_t* path;
+  };
+  const RegistryRoot roots[] = {
+      {HKEY_CURRENT_USER,
+       L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
+      {HKEY_LOCAL_MACHINE,
+       L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
+      {HKEY_LOCAL_MACHINE,
+       L"Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"},
+  };
+  for (const RegistryRoot& root : roots) {
+    HKEY uninstall = nullptr;
+    if (RegOpenKeyExW(root.hive, root.path, 0, KEY_READ, &uninstall) !=
+        ERROR_SUCCESS) {
+      continue;
+    }
+    DWORD index = 0;
+    wchar_t key_name[256] = {};
+    DWORD key_name_length = 256;
+    while (RegEnumKeyExW(uninstall, index++, key_name, &key_name_length,
+                         nullptr, nullptr, nullptr, nullptr) ==
+           ERROR_SUCCESS) {
+      HKEY record = nullptr;
+      if (RegOpenKeyExW(uninstall, key_name, 0, KEY_READ, &record) ==
+          ERROR_SUCCESS) {
+        std::wstring install_location;
+        std::wstring package_id;
+        const bool matches =
+            ReadRegistryString(record, L"InstallLocation",
+                               &install_location) &&
+            ReadRegistryString(record, L"DesktopUpdaterPackageId",
+                               &package_id) &&
+            RegistryRecordMatchesInstallTarget(
+                install_location, package_id, canonical_target,
+                expected_package_id);
+        RegCloseKey(record);
+        if (matches) {
+          RegCloseKey(uninstall);
+          return true;
+        }
+      }
+      key_name_length = 256;
+    }
+    RegCloseKey(uninstall);
+  }
+  return false;
+}
+
+std::string JsonEscape(const std::wstring& value) {
+  const std::string utf8 = WideToUtf8(value);
+  std::string escaped;
+  for (const char byte : utf8) {
+    if (byte == '\\' || byte == '"') {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(byte);
+  }
+  return escaped;
+}
+
+bool HasMatchingInstallIdentityMarker(
+    const fs::path& canonical_target,
+    const std::wstring& expected_package_id) {
+  const fs::path marker =
+      canonical_target / L".desktop_updater_install_identity.json";
+  std::ifstream input(marker, std::ios::binary);
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  return input.good() || input.eof()
+      ? contents == "{\"packageId\":\"" +
+                        JsonEscape(expected_package_id) +
+                        "\",\"schemaVersion\":1}"
+      : false;
+}
+
+bool IsCanonicalRelativeExecutable(const fs::path& path) {
+  if (path.empty() || path.is_absolute() || path.has_root_name()) {
+    return false;
+  }
+  if (path.lexically_normal().native() != path.native()) {
+    return false;
+  }
+  for (const fs::path& part : path) {
+    if (part.empty() || part == L"." || part == L"..") {
+      return false;
+    }
+  }
+  return true;
+}
+
+InstallResult ProveInstallTarget(const InstallRequest& request,
+                                 const fs::path& running_executable,
+                                 InstallTargetProof* proof) {
+  if (request.install_root.empty() ||
+      request.executable_relative_path.empty() ||
+      request.expected_package_id.empty()) {
+    return {false,
+            "Windows install target context and package identity are "
+            "required; use a fresh installer for legacy layouts."};
+  }
+  const fs::path relative(request.executable_relative_path);
+  if (!IsCanonicalRelativeExecutable(relative)) {
+    return {false, "Windows executable path must be canonical and relative."};
+  }
+  std::error_code error;
+  const fs::path canonical_root = fs::canonical(request.install_root, error);
+  if (error ||
+      _wcsicmp(canonical_root.wstring().c_str(),
+               request.install_root.c_str()) != 0) {
+    return {false, "Windows install root must already be canonical."};
+  }
+  const fs::path canonical_executable =
+      fs::canonical(canonical_root / relative, error);
+  if (error ||
+      _wcsicmp(canonical_executable.wstring().c_str(),
+               running_executable.wstring().c_str()) != 0) {
+    return {false, "Windows install target does not match the running app."};
+  }
+  if (!request.staging_path.empty()) {
+    const fs::path canonical_stage = fs::canonical(request.staging_path, error);
+    if (error || IsSameOrChildPath(canonical_root, canonical_stage) ||
+        IsSameOrChildPath(canonical_stage, canonical_root)) {
+      return {false, "Windows staging path must not overlap install target."};
+    }
+  }
+  const bool protected_target = IsKnownProtectedInstallDirectory(
+      canonical_root.wstring(), ProtectedInstallRootPaths());
+  const bool identity_matches =
+      protected_target
+          ? HasMatchingUninstallRecord(canonical_root.wstring(),
+                                       request.expected_package_id)
+          : HasMatchingInstallIdentityMarker(canonical_root,
+                                             request.expected_package_id);
+  if (!identity_matches) {
+    return {false,
+            protected_target
+                ? "Windows Program Files target requires a matching uninstall "
+                  "record and package identity."
+                : "Windows ZIP target requires a matching installed identity "
+                  "marker; use a fresh installer."};
+  }
+  if (proof != nullptr) {
+    *proof = {canonical_root.wstring(), relative.wstring(),
+              request.expected_package_id,
+              protected_target
+                  ? InstallTargetProofSource::kRegistryUninstallRecord
+                  : InstallTargetProofSource::kInstalledIdentityMarker};
+  }
+  return {true, ""};
+}
+
 }  // namespace
 
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
@@ -438,11 +621,24 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
   if (executable_path.empty()) {
     return {false, "Unable to resolve executable path."};
   }
-  const fs::path executable(executable_path);
-  const fs::path target_directory = executable.parent_path();
+  std::error_code canonical_error;
+  const fs::path executable = fs::canonical(executable_path, canonical_error);
+  if (canonical_error) {
+    return {false, "Unable to canonicalize executable path."};
+  }
+  fs::path target_directory = executable.parent_path();
   if (!request.staging_path.empty() &&
       !fs::is_directory(fs::path(request.staging_path))) {
     return {false, "Staged update directory does not exist."};
+  }
+  InstallTargetProof target_proof;
+  if (!request.staging_path.empty()) {
+    const InstallResult target =
+        ProveInstallTarget(request, executable, &target_proof);
+    if (!target.ok) {
+      return target;
+    }
+    target_directory = target_proof.canonical_root;
   }
 
   PowerShellLaunchMode launch_mode = PowerShellLaunchMode::kNormal;
@@ -474,11 +670,13 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "$pidToWait = " << GetCurrentProcessId() << "\n"
       << "$staging = " << PowerShellQuote(request.staging_path) << "\n"
       << "$target = " << PowerShellQuote(target_directory.wstring()) << "\n"
-      << "$exe = " << PowerShellQuote(executable_path) << "\n"
+      << "$exe = " << PowerShellQuote(executable.wstring()) << "\n"
       << "$diagnosticsLog = "
       << PowerShellQuote(request.diagnostics_log_path) << "\n"
       << "$expected_provenance_sha256 = "
       << PowerShellQuote(request.expected_provenance_sha256) << "\n"
+      << "$expectedPackageId = "
+      << PowerShellQuote(request.expected_package_id) << "\n"
       << "$expectedArtifactSha256 = "
       << PowerShellQuote(request.expected_artifact_sha256) << "\n"
       << "$allowedSignerThumbprints = @(";
@@ -526,7 +724,6 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "}\n"
       << "function Update-UninstallDisplayVersion([string]$Version) {\n"
       << "  if ([string]::IsNullOrWhiteSpace($Version)) { return }\n"
-      << "  $targetRootLower = $targetRoot.ToLowerInvariant()\n"
       << "  $roots = @(\n"
       << "    'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',\n"
       << "    'Registry::HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',\n"
@@ -539,15 +736,12 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "        $props = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop\n"
       << "        $installLocation = ''\n"
       << "        if ($null -ne $props.InstallLocation) { $installLocation = [string]$props.InstallLocation }\n"
-      << "        $uninstallString = ''\n"
-      << "        if ($null -ne $props.UninstallString) { $uninstallString = [string]$props.UninstallString }\n"
+      << "        $installedPackageId = ''\n"
+      << "        if ($null -ne $props.DesktopUpdaterPackageId) { $installedPackageId = [string]$props.DesktopUpdaterPackageId }\n"
       << "        $installRoot = Get-NormalizedDirectory $installLocation\n"
       << "        $isMatch = $false\n"
       << "        if (-not [string]::IsNullOrWhiteSpace($installRoot)) {\n"
-      << "          $isMatch = $installRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase)\n"
-      << "        }\n"
-      << "        if (-not $isMatch -and -not [string]::IsNullOrWhiteSpace($uninstallString)) {\n"
-      << "          $isMatch = $uninstallString.ToLowerInvariant().Contains($targetRootLower)\n"
+      << "          $isMatch = $installRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase) -and $installedPackageId.Equals($expectedPackageId, [StringComparison]::Ordinal)\n"
       << "        }\n"
       << "        if ($isMatch) {\n"
       << "          Set-ItemProperty -LiteralPath $key.PSPath -Name 'DisplayVersion' -Value $Version -ErrorAction Stop\n"
@@ -627,6 +821,7 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "    if ($markerHash -ne $expected_provenance_sha256.ToLowerInvariant()) { throw 'Stage provenance digest changed.' }\n"
       << "    $script:provenance = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json\n"
       << "    if ($provenance.schemaVersion -ne 1 -or [string]::IsNullOrWhiteSpace([string]$provenance.nonce)) { throw 'Stage provenance is invalid.' }\n"
+      << "    if (-not ([string]$provenance.packageId).Equals($expectedPackageId, [StringComparison]::Ordinal)) { throw 'Stage provenance package identity changed.' }\n"
       << "    $ownedName = [IO.Path]::GetFileName($stagingRoot)\n"
       << "    if ($ownedName -ne ('desktop_updater_stage_' + [string]$provenance.nonce)) { throw 'Stage nonce does not own root.' }\n"
       << "    $entryCount = 0\n"
@@ -694,6 +889,7 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "  if (Test-Path -LiteralPath $manifest) {\n"
       << "    try {\n"
       << "      $descriptor = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json\n"
+      << "      if (-not ([string]$descriptor.packageId).Equals($expectedPackageId, [StringComparison]::Ordinal)) { throw 'Release descriptor package identity changed.' }\n"
       << "      if ($descriptor.install.strategy -eq 'innoInstaller') {\n"
       << "        Write-DiagnosticsEvent 'inno manifest loaded'\n"
       << "        Invoke-InnoInstallerUpdate $descriptor\n"
@@ -814,6 +1010,22 @@ bool IsStrictChildPath(const std::wstring& root,
   return candidate_value.size() > root_with_slash.size() &&
          _wcsnicmp(candidate_value.c_str(), root_with_slash.c_str(),
                    root_with_slash.size()) == 0;
+}
+
+bool RegistryRecordMatchesInstallTarget(
+    const std::wstring& install_location,
+    const std::wstring& package_id,
+    const std::wstring& canonical_target,
+    const std::wstring& expected_package_id) {
+  if (install_location.empty() || package_id.empty() ||
+      expected_package_id.empty()) {
+    return false;
+  }
+  return _wcsicmp(
+             NormalizedDirectoryPath(fs::path(install_location)).c_str(),
+             NormalizedDirectoryPath(fs::path(canonical_target)).c_str()) ==
+             0 &&
+         package_id == expected_package_id;
 }
 
 bool IsKnownProtectedInstallDirectory(

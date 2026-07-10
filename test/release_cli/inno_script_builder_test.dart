@@ -47,6 +47,8 @@ void main() {
     expect(script, contains("PrivilegesRequired=admin"));
     expect(script, contains("ArchitecturesAllowed=x64"));
     expect(script, contains("ArchitecturesInstallIn64BitMode=x64"));
+    expect(script, contains('ValueName: "DesktopUpdaterPackageId"'));
+    expect(script, contains('ValueData: "com.example.app"'));
     expect(
       script,
       contains(

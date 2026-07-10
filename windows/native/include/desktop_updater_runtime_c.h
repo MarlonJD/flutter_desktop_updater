@@ -138,6 +138,9 @@ typedef struct desktop_updater_runtime_install_request_v1 {
   const char* diagnostics_log_path_utf8;
   const char* const* removed_files_utf8;
   size_t removed_file_count;
+  const char* install_root_utf8;
+  const char* executable_relative_path_utf8;
+  const char* expected_package_id_utf8;
 } desktop_updater_runtime_install_request_v1;
 
 DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1

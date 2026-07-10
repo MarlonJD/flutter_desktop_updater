@@ -183,7 +183,6 @@ public struct MacArtifactStager {
     public func installAndRelaunch(
         staged: RuntimeStagedUpdate,
         diagnosticsLogPath: String?,
-        bundlePath: String,
         allowUnsignedUpdates: Bool = false
     ) throws {
         try MacInstallHelper().scheduleInstallAndRelaunch(
@@ -191,8 +190,6 @@ public struct MacArtifactStager {
                 stagingPath: staged.stagedPath.path,
                 allowUnsignedUpdates: allowUnsignedUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
-                currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
-                bundlePath: bundlePath,
                 stageRoot: staged.stageRoot.path,
                 expectedProvenanceSHA256: staged.stageProvenanceSHA256,
                 artifactKind: staged.descriptor.artifact.kind,

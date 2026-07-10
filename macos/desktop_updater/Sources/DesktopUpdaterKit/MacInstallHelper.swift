@@ -1,7 +1,27 @@
 import Foundation
 
+struct MacInstallTarget: Sendable {
+    let processIdentifier: Int32
+    let bundleURL: URL
+}
+
+typealias MacInstallTargetResolver = @Sendable () -> MacInstallTarget
+
 public struct MacInstallHelper {
-    public init() {}
+    private let targetResolver: MacInstallTargetResolver
+
+    public init() {
+        targetResolver = {
+            MacInstallTarget(
+                processIdentifier: ProcessInfo.processInfo.processIdentifier,
+                bundleURL: Bundle.main.bundleURL
+            )
+        }
+    }
+
+    init(targetResolver: @escaping MacInstallTargetResolver) {
+        self.targetResolver = targetResolver
+    }
 
     public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws {
         try validateStagingPath(request.stagingPath)
@@ -82,6 +102,7 @@ public struct MacInstallHelper {
     }
 
     func makeHelperScript(for request: MacInstallRequest) -> String {
+        let installTarget = targetResolver()
         let allowUnsignedValue = request.allowUnsignedUpdates ? "1" : ""
         #if DEBUG
             let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-\(allowUnsignedValue)}\""
@@ -107,7 +128,7 @@ public struct MacInstallHelper {
         #!/bin/sh
         set -eu
 
-        PID="\(request.currentProcessIdentifier)"
+        PID="\(installTarget.processIdentifier)"
         STAGING=\(shellQuote(request.stagingPath ?? ""))
         STAGE_ROOT=\(shellQuote(stageRoot))
         STAGE_NONCE=\(shellQuote(stageNonce))
@@ -117,7 +138,7 @@ public struct MacInstallHelper {
         EXPECTED_ARTIFACT_SHA256=\(shellQuote(request.expectedArtifactSHA256 ?? ""))
         EXPECTED_PACKAGE_IDS=\(expectedPackageIDs)
         EXPECTED_PROVENANCE_ENTRY_COUNT='\(request.provenanceEntries.count)'
-        BUNDLE=\(shellQuote(request.bundlePath))
+        BUNDLE=\(shellQuote(installTarget.bundleURL.path))
         DIAGNOSTICS_LOG=\(shellQuote(request.diagnosticsLogPath ?? ""))
         SKIP_RELAUNCH="${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}"
         \(smokeGateBypassAssignment)

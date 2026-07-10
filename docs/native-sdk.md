@@ -40,15 +40,12 @@ dependency can point at the repository root; the package itself has no Flutter
 dependency.
 
 ```swift
-import Darwin
 import DesktopUpdaterKit
 
 let request = MacInstallRequest(
     stagingPath: stagedApp.path,
     allowUnsignedUpdates: false,
-    diagnosticsLogPath: diagnosticsPath,
-    currentProcessIdentifier: getpid(),
-    bundlePath: Bundle.main.bundlePath
+    diagnosticsLogPath: diagnosticsPath
 )
 try MacInstallHelper().scheduleInstallAndRelaunch(request)
 ```
@@ -56,8 +53,9 @@ try MacInstallHelper().scheduleInstallAndRelaunch(request)
 Pass a complete verified `.app` staging path. Production signing gates remain
 enabled unless `allowUnsignedUpdates` is explicitly enabled for a controlled
 debug/test flow. The helper rechecks the staged bundle identity and publisher
-trust before replacement. `DesktopUpdaterVersion.string` exposes the helper
-package version.
+trust before replacement. It derives the current PID and `Bundle.main` target
+internally, so callers cannot select another process or application bundle.
+`DesktopUpdaterVersion.string` exposes the helper package version.
 
 The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback

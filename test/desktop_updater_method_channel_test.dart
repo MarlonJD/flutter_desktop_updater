@@ -118,6 +118,32 @@ void main() {
     });
   });
 
+  test("installUpdateWithContext forwards complete native target context",
+      () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.installUpdateWithContext(
+      stagingPath: "/tmp/desktop-updater-stage",
+      installRoot: "/opt/example-app",
+      executableRelativePath: "bin/example-app",
+      packageId: "com.example.app",
+    );
+
+    expect(capturedCall.arguments,
+        containsPair("installRoot", "/opt/example-app"));
+    expect(
+      capturedCall.arguments,
+      containsPair("executableRelativePath", "bin/example-app"),
+    );
+    expect(
+        capturedCall.arguments, containsPair("packageId", "com.example.app"));
+  });
+
   test("checkMacOSInstallLocation parses native status", () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {

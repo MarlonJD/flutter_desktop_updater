@@ -35,6 +35,9 @@ typedef struct desktop_updater_install_request_v1 {
   const uint16_t* expected_artifact_sha256;
   const uint16_t* const* allowed_signer_thumbprints;
   size_t allowed_signer_thumbprint_count;
+  const uint16_t* install_root;
+  const uint16_t* executable_relative_path;
+  const uint16_t* expected_package_id;
 } desktop_updater_install_request_v1;
 
 typedef struct desktop_updater_result_v1 {

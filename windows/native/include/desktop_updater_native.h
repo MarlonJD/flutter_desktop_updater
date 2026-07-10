@@ -7,8 +7,23 @@
 namespace desktop_updater {
 namespace native {
 
+enum class InstallTargetProofSource {
+  kRegistryUninstallRecord,
+  kInstalledIdentityMarker,
+};
+
+struct InstallTargetProof {
+  std::wstring canonical_root;
+  std::wstring executable_relative_path;
+  std::wstring package_id;
+  InstallTargetProofSource source;
+};
+
 struct InstallRequest {
   std::wstring staging_path;
+  std::wstring install_root;
+  std::wstring executable_relative_path;
+  std::wstring expected_package_id;
   std::vector<std::wstring> removed_files;
   std::wstring diagnostics_log_path;
   std::wstring expected_provenance_sha256;
@@ -32,6 +47,12 @@ bool IsKnownProtectedInstallDirectory(
     const std::vector<std::wstring>& protected_roots);
 
 bool IsInstallerOwnedWindowsFile(const std::wstring& file_name);
+
+bool RegistryRecordMatchesInstallTarget(
+    const std::wstring& install_location,
+    const std::wstring& package_id,
+    const std::wstring& canonical_target,
+    const std::wstring& expected_package_id);
 
 }  // namespace native
 }  // namespace desktop_updater

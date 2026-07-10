@@ -77,11 +77,39 @@ class ZipReleasePackager implements ReleasePackager {
     final encoder = ZipFileEncoder();
     final input = request.input;
     if (input is Directory) {
-      await encoder.zipDirectory(
-        input,
-        filename: artifact.path,
-        followLinks: false,
-      );
+      if (request.platform == "windows") {
+        final marker = File("${artifact.path}.install_identity.tmp");
+        try {
+          await marker.writeAsString(
+            jsonEncode(<String, Object?>{
+              "packageId": request.packageId,
+              "schemaVersion": 1,
+            }),
+            flush: true,
+          );
+          encoder.create(artifact.path);
+          await encoder.addDirectory(
+            input,
+            includeDirName: false,
+            followLinks: false,
+          );
+          await encoder.addFile(
+            marker,
+            ".desktop_updater_install_identity.json",
+          );
+          await encoder.close();
+        } finally {
+          if (await marker.exists()) {
+            await marker.delete();
+          }
+        }
+      } else {
+        await encoder.zipDirectory(
+          input,
+          filename: artifact.path,
+          followLinks: false,
+        );
+      }
     } else if (input is File) {
       encoder.create(artifact.path);
       await encoder.addFile(input);

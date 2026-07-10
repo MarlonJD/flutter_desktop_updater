@@ -94,7 +94,6 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )) { error in
             XCTAssertEqual((error as? RuntimeError)?.runtimeOutcome,
@@ -114,14 +113,12 @@ final class UpdateClientTests: XCTestCase {
         try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )
 
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )) { error in
             XCTAssertEqual((error as? RuntimeError)?.runtimeOutcome,
@@ -144,7 +141,6 @@ final class UpdateClientTests: XCTestCase {
         try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )
         let requestCount = fixture.transport.requestedURLs.count
@@ -167,13 +163,11 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         ))
         try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )
 
@@ -248,7 +242,6 @@ final class UpdateClientTests: XCTestCase {
         try client.installAndRelaunch(
             later,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         )
         XCTAssertEqual(recorder.invocationCount, 1)
@@ -273,7 +266,6 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         ))
         XCTAssertEqual(recorder.invocationCount, 0)
@@ -303,7 +295,6 @@ final class UpdateClientTests: XCTestCase {
                     try install.client.installAndRelaunch(
                         install.staged,
                         diagnosticsLogPath: nil,
-                        bundlePath: "/Applications/Example.app",
                         allowUnsignedUpdates: true
                     )
                     results.append(nil)
@@ -351,7 +342,6 @@ final class UpdateClientTests: XCTestCase {
                 try install.client.installAndRelaunch(
                     install.staged,
                     diagnosticsLogPath: nil,
-                    bundlePath: "/Applications/Example.app",
                     allowUnsignedUpdates: true
                 )
                 results.append(nil)
@@ -372,7 +362,6 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         ))
         XCTAssertEqual(recorder.invocationCount, 1)
@@ -402,7 +391,6 @@ final class UpdateClientTests: XCTestCase {
                 try install.client.installAndRelaunch(
                     install.staged,
                     diagnosticsLogPath: nil,
-                    bundlePath: "/Applications/Example.app",
                     allowUnsignedUpdates: true
                 )
                 results.append(nil)
@@ -431,7 +419,6 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertThrowsError(try client.installAndRelaunch(
             staged,
             diagnosticsLogPath: nil,
-            bundlePath: "/Applications/Example.app",
             allowUnsignedUpdates: true
         ))
         XCTAssertEqual(recorder.invocationCount, 1)
@@ -966,7 +953,6 @@ private final class InstallRecorder {
     func schedule(
         _: RuntimeStagedUpdate,
         _: String?,
-        _: String,
         _: Bool
     ) throws {
         lock.lock()

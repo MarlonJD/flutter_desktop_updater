@@ -558,7 +558,23 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
     const desktop_updater_runtime_install_request_v1* request) {
   try {
     if (client == nullptr) return Failure("Runtime client is required.");
-    ValidateRequest(request, "Runtime install request");
+    if (request == nullptr) {
+      throw std::invalid_argument("Runtime install request is required.");
+    }
+    constexpr std::size_t kLegacyInstallRequestSize =
+        offsetof(desktop_updater_runtime_install_request_v1,
+                 install_root_utf8);
+    if (request->abi_version != DESKTOP_UPDATER_RUNTIME_ABI_VERSION ||
+        request->struct_size < kLegacyInstallRequestSize) {
+      throw std::invalid_argument(
+          "Runtime install request has an invalid ABI.");
+    }
+    constexpr std::size_t kTargetFieldsSize =
+        offsetof(desktop_updater_runtime_install_request_v1,
+                 expected_package_id_utf8) +
+        sizeof(request->expected_package_id_utf8);
+    const bool has_target_fields =
+        request->struct_size >= kTargetFieldsSize;
     if (request->removed_file_count > 0 &&
         request->removed_files_utf8 == nullptr) {
       return ClientResult(*client, "installHandoffFailure",
@@ -574,12 +590,26 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
         request->diagnostics_log_path_utf8 == nullptr
             ? std::wstring()
             : Utf8ToWide(request->diagnostics_log_path_utf8);
+    const std::string expected_package_id = RequiredString(
+        has_target_fields ? request->expected_package_id_utf8 : nullptr,
+        "expected install package ID");
+    const std::string install_root = RequiredString(
+        has_target_fields ? request->install_root_utf8 : nullptr,
+        "install root");
+    const std::string executable_relative_path = RequiredString(
+        has_target_fields ? request->executable_relative_path_utf8 : nullptr,
+        "executable relative path");
     const auto snapshot = client->lifecycle.Snapshot();
     if (snapshot.staged_path.empty() ||
         snapshot.stage_provenance_sha256.empty() ||
         !snapshot.check.has_descriptor) {
       return ClientResult(*client, "installHandoffFailure",
                           "No provenance-bound staged update is ready.");
+    }
+    if (expected_package_id != client->expected_package_id ||
+        expected_package_id != snapshot.check.descriptor.package_id) {
+      return ClientResult(*client, "packageIdentityMismatch",
+                          "Install target package identity changed.");
     }
     desktop_updater::runtime::internal::VerifyStageProvenance(
         snapshot.staged_path, snapshot.stage_provenance_sha256,
@@ -597,7 +627,9 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
                       "Handing staged update to the Windows helper.", ""});
     const auto scheduler_result =
         desktop_updater::runtime::internal::HandoffWindowsInstall(
-            Utf8ToWide(install_handoff.staged_path), diagnostics,
+            Utf8ToWide(install_handoff.staged_path), Utf8ToWide(install_root),
+            Utf8ToWide(executable_relative_path),
+            Utf8ToWide(expected_package_id), diagnostics,
             removed_files, install_handoff.stage_provenance_sha256,
             snapshot.check.descriptor);
     if (!scheduler_result.ok) {

@@ -88,6 +88,18 @@ TEST(DesktopUpdaterPlugin, ProgramFilesInstallDirectoryIsProtected) {
       L"C:\\Program Files Backup\\egas-manager", protected_roots));
 }
 
+TEST(DesktopUpdaterPlugin, ProgramFilesTargetRequiresMatchingInstalledIdentity) {
+  EXPECT_TRUE(native::RegistryRecordMatchesInstallTarget(
+      L"C:\\Program Files\\Example", L"com.example.app",
+      L"C:\\Program Files\\Example", L"com.example.app"));
+  EXPECT_FALSE(native::RegistryRecordMatchesInstallTarget(
+      L"C:\\Program Files\\Other", L"com.example.app",
+      L"C:\\Program Files\\Example", L"com.example.app"));
+  EXPECT_FALSE(native::RegistryRecordMatchesInstallTarget(
+      L"C:\\Program Files\\Example", L"com.example.other",
+      L"C:\\Program Files\\Example", L"com.example.app"));
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

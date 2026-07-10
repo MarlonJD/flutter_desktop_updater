@@ -36,6 +36,9 @@ struct WindowsInstallHandoffResult {
 
 WindowsInstallHandoffResult HandoffWindowsInstall(
     const std::wstring& staging_path,
+    const std::wstring& install_root,
+    const std::wstring& executable_relative_path,
+    const std::wstring& expected_package_id,
     const std::wstring& diagnostics_log_path,
     const std::vector<std::wstring>& removed_files,
     const std::string& expected_provenance_sha256,

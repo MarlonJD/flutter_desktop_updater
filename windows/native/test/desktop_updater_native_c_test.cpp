@@ -34,8 +34,20 @@ TEST(DesktopUpdaterNativeCAbi, AbiLayoutMatchesDeclaredFieldOrder) {
             offsetof(desktop_updater_install_request_v1, removed_files));
   EXPECT_LT(offsetof(desktop_updater_install_request_v1, removed_files),
             offsetof(desktop_updater_install_request_v1, removed_file_count));
-  EXPECT_LE(offsetof(desktop_updater_install_request_v1, removed_file_count) +
-                sizeof(size_t),
+  EXPECT_LT(
+      offsetof(desktop_updater_install_request_v1,
+               allowed_signer_thumbprint_count),
+      offsetof(desktop_updater_install_request_v1, install_root));
+  EXPECT_LT(offsetof(desktop_updater_install_request_v1, install_root),
+            offsetof(desktop_updater_install_request_v1,
+                     executable_relative_path));
+  EXPECT_LT(offsetof(desktop_updater_install_request_v1,
+                     executable_relative_path),
+            offsetof(desktop_updater_install_request_v1,
+                     expected_package_id));
+  EXPECT_LE(offsetof(desktop_updater_install_request_v1,
+                     expected_package_id) +
+                sizeof(const uint16_t*),
             sizeof(desktop_updater_install_request_v1));
 }
 
@@ -110,6 +122,48 @@ TEST(DesktopUpdaterNativeCAbi, RemovedFilesReachNativeRequest) {
   ASSERT_EQ(captured.size(), 2u);
   EXPECT_EQ(captured[0], L"old.dll");
   EXPECT_EQ(captured[1], L"data/old");
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, LegacySizeDoesNotReadAppendedTargetContext) {
+  auto request = ValidRequest();
+  request.struct_size =
+      offsetof(desktop_updater_install_request_v1, install_root);
+  InstallRequest captured;
+
+  auto result = internal::ScheduleInstallAndRelaunchWith(
+      &request, [&captured](const InstallRequest& parsed) {
+        captured = parsed;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_TRUE(captured.install_root.empty());
+  EXPECT_TRUE(captured.executable_relative_path.empty());
+  EXPECT_TRUE(captured.expected_package_id.empty());
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, TargetProofContextReachesNativeRequest) {
+  auto request = ValidRequest();
+  const uint16_t install_root[] = {'C', ':', '\\', 'A', 'p', 'p', 0};
+  const uint16_t executable[] = {'E', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'e', 'x', 'e', 0};
+  const uint16_t package_id[] = {'c', 'o', 'm', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0};
+  request.install_root = install_root;
+  request.executable_relative_path = executable;
+  request.expected_package_id = package_id;
+  InstallRequest captured;
+
+  auto result = internal::ScheduleInstallAndRelaunchWith(
+      &request, [&captured](const InstallRequest& parsed) {
+        captured = parsed;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_EQ(captured.install_root, L"C:\\App");
+  EXPECT_EQ(captured.executable_relative_path, L"Example.exe");
+  EXPECT_EQ(captured.expected_package_id, L"com.example");
   desktop_updater_result_free_v1(&result);
 }
 

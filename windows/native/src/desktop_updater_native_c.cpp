@@ -97,7 +97,8 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
     return false;
   }
   const bool has_provenance_fields =
-      request->struct_size >= sizeof(desktop_updater_install_request_v1);
+      request->struct_size >=
+      offsetof(desktop_updater_install_request_v1, install_root);
   if (has_provenance_fields &&
       (!ReadUtf16(request->expected_provenance_sha256, true,
                  "expected_provenance_sha256",
@@ -123,6 +124,21 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
       return false;
     }
     parsed->allowed_signer_thumbprints.push_back(std::move(thumbprint));
+  }
+  constexpr size_t kTargetFieldsSize =
+      offsetof(desktop_updater_install_request_v1, expected_package_id) +
+      sizeof(request->expected_package_id);
+  const bool has_target_fields = request->struct_size >= kTargetFieldsSize;
+  if (has_target_fields &&
+      (!ReadUtf16(request->install_root, true, "install_root",
+                  &parsed->install_root, error) ||
+       !ReadUtf16(request->executable_relative_path, true,
+                  "executable_relative_path",
+                  &parsed->executable_relative_path, error) ||
+       !ReadUtf16(request->expected_package_id, true,
+                  "expected_package_id", &parsed->expected_package_id,
+                  error))) {
+    return false;
   }
   if (request->removed_file_count > 0 && request->removed_files == nullptr) {
     *error = "removed_files must not be null when removed_file_count is non-zero.";

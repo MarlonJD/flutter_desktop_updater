@@ -130,8 +130,6 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 stagingPath: stagingPath,
                 allowUnsignedUpdates: allowUnsignedMacOSUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
-                currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
-                bundlePath: Bundle.main.bundlePath,
                 stageRoot: stageRoot?.path,
                 expectedProvenanceSHA256: stageProvenanceSHA256,
                 artifactKind: artifactKind,

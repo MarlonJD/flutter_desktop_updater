@@ -823,7 +823,7 @@ git commit -m "fix: bind helpers to owned staging"
   executable, package ID, and proof source.
 - macOS public request no longer accepts arbitrary PID or bundle path.
 
-- [ ] **Step 1: Write the Flutter compatibility matrix tests**
+- [x] **Step 1: Write the Flutter compatibility matrix tests**
 
 Cover:
 
@@ -847,20 +847,20 @@ shared-bin or arbitrary target is rejected before mutation
 preview macOS caller cannot select another bundle or PID
 ~~~
 
-- [ ] **Step 2: Fix MethodChannel dispatch**
+- [x] **Step 2: Fix MethodChannel dispatch**
 
 Use the context method only for the exact default implementation. A subclass
 that overrides legacy `installUpdate` must receive that override. Add a
 protected virtual context hook only if exact-type dispatch is not expressible
 without mirrors.
 
-- [ ] **Step 3: Resolve missing context from verified provenance**
+- [x] **Step 3: Resolve missing context from verified provenance**
 
 When public Dart callers omit `packageId`, load the provenance marker and use
 its package ID. Pass explicit context to the default MethodChannel. Do not infer
 identity from an unverified release manifest.
 
-- [ ] **Step 4: Add a strict self-contained Flutter bundle classifier**
+- [x] **Step 4: Add a strict self-contained Flutter bundle classifier**
 
 Linux fallback may derive the current executable parent only when all are true:
 
@@ -877,7 +877,7 @@ root and stage do not overlap
 
 Any other legacy layout fails with a migration message and no helper script.
 
-- [ ] **Step 5: Make native preview target context explicit**
+- [x] **Step 5: Make native preview target context explicit**
 
 Before the preview ABI is merged, append explicit install root, executable
 relative path, and expected package identity to Windows install context. Linux
@@ -890,14 +890,14 @@ the verified descriptor. For ZIP installs without a registry record, require an
 installed `.desktop_updater_install_identity.json` marker created by the
 repository publisher/installer.
 
-- [ ] **Step 6: Derive macOS target inside the helper**
+- [x] **Step 6: Derive macOS target inside the helper**
 
 Remove public `currentProcessIdentifier` and `bundlePath` inputs.
 `MacInstallHelper` uses `ProcessInfo.processInfo.processIdentifier` and
 `Bundle.main.bundleURL`. Tests may inject an internal target resolver, but
 external clients cannot choose the target.
 
-- [ ] **Step 7: Run compatibility and helper tests**
+- [x] **Step 7: Run compatibility and helper tests**
 
 Run:
 
@@ -909,12 +909,42 @@ swift test
 Expected: PASS; old safe calls work, unsafe ambiguous roots fail without
 filesystem mutation.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ~~~sh
 git add lib linux windows macos test
 git commit -m "fix: prove native install targets"
 ~~~
+
+Task 5 evidence on 2026-07-10:
+
+- RED evidence was preserved from the implementation session: the focused
+  Flutter run exited 1 on subclass dispatch, omitted package identity, missing
+  native target-proof/shared-root behavior, and public macOS PID/bundle
+  selectors; Swift, ZIP publisher, Inno publisher, and Windows header checks
+  also failed on their corresponding missing interfaces. The recovery audit
+  additionally reproduced failures for stale SwiftPM samples, Linux temporary
+  fallback roots, runtime C ABI prefix sizing, and the `netstandard2.0`
+  `Environment.ProcessPath` build.
+- The exact focused Flutter command passed 70 tests. Focused publisher tests
+  passed 5 tests, and supplemental native API/helper/consumer contracts passed
+  38 tests. `dart format --set-exit-if-changed .` checked 213 files unchanged;
+  `flutter analyze --no-fatal-infos` exited 0 with info-only diagnostics.
+- The full macOS plugin SwiftPM package passed 51 tests; the repository-root
+  SwiftPM package passed 49 tests; both external macOS SwiftPM consumers built;
+  and the exact five-file CocoaPods fallback source set typechecked for macOS
+  10.14. The product remains `DesktopUpdaterKit`, the SwiftPM floor remains
+  macOS 10.15, and no `Runtime/**` source was added to the pod source set.
+- Three portable Linux C++14 `-Werror` translation units compiled, and the
+  portable native helper suite passed all 10 tests on macOS, including actual
+  rollback execution, outside-file preservation, temporary/shared-root
+  rejection, and overlap rejection. The Windows native C ABI suite passed all
+  10 portable tests, including legacy-size and appended target-context cases;
+  the runtime and helper C ABI translation units passed portable syntax checks.
+- The .NET wrapper built `net8.0` and `netstandard2.0` with 0 errors and two
+  NU1900 vulnerability-feed warnings. Linux and Windows target-host helpers,
+  Windows registry/UAC/Inno execution, CI, CocoaPods lint, macOS 10.14 runtime
+  execution, signing/notarization, credentials, and release smoke were not run.
 
 ---
 

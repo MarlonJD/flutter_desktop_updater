@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -434,6 +435,18 @@ public sealed class DesktopUpdaterClient : IDisposable
         var allocations = new List<IntPtr>();
         try
         {
+            using var process = Process.GetCurrentProcess();
+            var executablePath = process.MainModule?.FileName ?? throw new
+                DesktopUpdaterException(
+                    "Unable to resolve the running executable path.");
+            var installRoot = Path.GetDirectoryName(executablePath);
+            var executableRelativePath = Path.GetFileName(executablePath);
+            if (string.IsNullOrWhiteSpace(installRoot) ||
+                string.IsNullOrWhiteSpace(executableRelativePath))
+            {
+                throw new DesktopUpdaterException(
+                    "Unable to derive explicit install target context.");
+            }
             var removedPointers = new IntPtr[removedFiles.Count];
             for (var index = 0; index < removedFiles.Count; index++)
             {
@@ -455,6 +468,13 @@ public sealed class DesktopUpdaterClient : IDisposable
                     : AllocateUtf8(diagnosticsLogPath, allocations),
                 RemovedFilesUtf8 = pointerArray,
                 RemovedFileCount = (nuint)removedPointers.Length,
+                InstallRootUtf8 = AllocateUtf8(installRoot, allocations),
+                ExecutableRelativePathUtf8 = AllocateUtf8(
+                    executableRelativePath,
+                    allocations),
+                ExpectedPackageIdUtf8 = AllocateUtf8(
+                    _configuration.ExpectedPackageId,
+                    allocations),
             };
             var result = NativeMethods.InstallAndRelaunch(_client, ref request);
             return ConsumeResult(ref result);
@@ -784,6 +804,9 @@ public sealed class DesktopUpdaterClient : IDisposable
         public IntPtr DiagnosticsLogPathUtf8;
         public IntPtr RemovedFilesUtf8;
         public nuint RemovedFileCount;
+        public IntPtr InstallRootUtf8;
+        public IntPtr ExecutableRelativePathUtf8;
+        public IntPtr ExpectedPackageIdUtf8;
     }
 
     private sealed class HeaderLease : IDisposable

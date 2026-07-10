@@ -195,8 +195,6 @@ final class MacInstallHelperTests: XCTestCase {
             stagingPath: "/tmp/Example.app",
             allowUnsignedUpdates: allowUnsignedUpdates,
             diagnosticsLogPath: "/tmp/desktop_updater.jsonl",
-            currentProcessIdentifier: 42,
-            bundlePath: "/Applications/Example.app",
             stageRoot: "/tmp/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000",
             expectedProvenanceSHA256: String(repeating: "1", count: 64),
             artifactKind: "pkgInstaller",

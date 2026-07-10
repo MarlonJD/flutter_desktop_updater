@@ -127,12 +127,50 @@ std::string JoinPath(const std::string& root, const std::string& relative) {
   return root == "/" ? root + relative : root + "/" + relative;
 }
 
+std::string EnvironmentPath(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') {
+    return "";
+  }
+  std::string result = value;
+  while (result.size() > 1 && result.back() == '/') {
+    result.pop_back();
+  }
+  return result;
+}
+
 bool IsStrictDescendant(const std::string& path, const std::string& root) {
   if (root == "/") {
     return path.size() > 1 && path.front() == '/';
   }
   return path.size() > root.size() && path.compare(0, root.size(), root) == 0 &&
          path[root.size()] == '/';
+}
+
+bool IsProtectedInstallRoot(const std::string& root) {
+  if (kProtectedInstallRoots.count(root) != 0) {
+    return true;
+  }
+  const std::string home = EnvironmentPath("HOME");
+  if (!home.empty() &&
+      (root == home || root == JoinPath(home, "bin") ||
+       root == JoinPath(home, ".local/bin") ||
+       root == JoinPath(home, "Desktop") ||
+       root == JoinPath(home, "Downloads"))) {
+    return true;
+  }
+  const std::string temp = EnvironmentPath("TMPDIR");
+  return root == "/tmp" || root == "/private/tmp" ||
+         (!temp.empty() && root == temp);
+}
+
+bool IsTemporaryInstallRoot(const std::string& root) {
+  const std::string temp = EnvironmentPath("TMPDIR");
+  return root == "/tmp" || IsStrictDescendant(root, "/tmp") ||
+         root == "/private/tmp" ||
+         IsStrictDescendant(root, "/private/tmp") ||
+         (!temp.empty() &&
+          (root == temp || IsStrictDescendant(root, temp)));
 }
 
 bool PathsOverlap(const std::string& first, const std::string& second) {
@@ -197,6 +235,69 @@ bool ResolveExistingPath(const std::string& path, std::string* resolved) {
   return true;
 }
 
+bool IsRealDirectory(const std::string& path) {
+  struct stat value = {};
+  return lstat(path.c_str(), &value) == 0 && S_ISDIR(value.st_mode) &&
+         !S_ISLNK(value.st_mode);
+}
+
+bool IsRealFile(const std::string& path) {
+  struct stat value = {};
+  return lstat(path.c_str(), &value) == 0 && S_ISREG(value.st_mode) &&
+         !S_ISLNK(value.st_mode);
+}
+
+bool ProvenanceContainsExecutable(const InstallRequest& request) {
+  for (const InstallProvenanceEntry& entry : request.provenance_entries) {
+    if (entry.path == request.executable_relative_path &&
+        entry.kind == "file") {
+      return true;
+    }
+  }
+  return false;
+}
+
+InstallResult ProveInstallTarget(const InstallRequest& request,
+                                 const std::string& running_executable,
+                                 bool legacy_fallback,
+                                 InstallTargetProof* proof) {
+  std::string canonical_root;
+  std::string canonical_requested_executable;
+  const std::string requested_executable =
+      JoinPath(request.install_root, request.executable_relative_path);
+  if (!ResolveExistingPath(request.install_root, &canonical_root) ||
+      canonical_root != request.install_root ||
+      !ResolveExistingPath(requested_executable,
+                           &canonical_requested_executable) ||
+      canonical_requested_executable != running_executable) {
+    return {false, "Linux install target does not match the running app."};
+  }
+  if (!ProvenanceContainsExecutable(request) ||
+      !IsRealFile(JoinPath(request.staging_path,
+                           request.executable_relative_path))) {
+    return {false,
+            "Linux staged inventory does not contain the running executable."};
+  }
+  if (legacy_fallback &&
+      (!IsRealDirectory(JoinPath(request.install_root,
+                                 "data/flutter_assets")) ||
+       !IsRealFile(JoinPath(request.install_root,
+                            "lib/libflutter_linux_gtk.so")))) {
+    return {false,
+            "Legacy Linux installs require a self-contained Flutter bundle; "
+            "pass explicit installRoot and executableRelativePath or use a "
+            "fresh installer."};
+  }
+  if (proof != nullptr) {
+    *proof = {canonical_root, request.executable_relative_path,
+              request.package_id,
+              legacy_fallback
+                  ? InstallTargetProofSource::kSelfContainedFlutterBundle
+                  : InstallTargetProofSource::kRunningExecutableContext};
+  }
+  return {true, ""};
+}
+
 InstallResult BindProvenanceToMarker(InstallRequest* request,
                                      std::string* canonical_marker) {
   if (request->operation == LinuxInstallOperation::kRestart) {
@@ -232,7 +333,7 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request,
   if (!IsCanonicalAbsolutePath(request.install_root)) {
     return {false, "Linux install root must be an absolute canonical path."};
   }
-  if (kProtectedInstallRoots.count(request.install_root) != 0) {
+  if (IsProtectedInstallRoot(request.install_root)) {
     return {false, "Linux install root is a protected shared/system root."};
   }
   if (HasSymlinkComponent(request.install_root)) {
@@ -438,15 +539,24 @@ InstallResult BuildInstallScriptForTesting(
   }
 
   InstallRequest normalized = request;
-  if (normalized.install_root.empty()) {
-    normalized.install_root = ParentDirectory(executable_path);
+  const bool has_install_root = !normalized.install_root.empty();
+  const bool has_executable_path =
+      !normalized.executable_relative_path.empty();
+  if (has_install_root != has_executable_path) {
+    return {false,
+            "Linux install root and executable path must be provided "
+            "together."};
   }
-  if (normalized.executable_relative_path.empty()) {
-    if (IsStrictDescendant(executable_path, normalized.install_root)) {
-      normalized.executable_relative_path =
-          executable_path.substr(normalized.install_root.size() + 1);
-    } else {
-      normalized.executable_relative_path = BaseName(executable_path);
+  const bool legacy_fallback = !has_install_root;
+  if (legacy_fallback) {
+    normalized.install_root = ParentDirectory(executable_path);
+    normalized.executable_relative_path = BaseName(executable_path);
+    if (IsProtectedInstallRoot(normalized.install_root) ||
+        IsTemporaryInstallRoot(normalized.install_root)) {
+      return {false,
+              "Legacy Linux installs require a self-contained Flutter "
+              "bundle; pass explicit installRoot and "
+              "executableRelativePath or use a fresh installer."};
     }
   }
 
@@ -466,20 +576,13 @@ InstallResult BuildInstallScriptForTesting(
     return validation;
   }
 
-  std::string canonical_target;
-  if (!ResolveExistingPath(normalized.install_root, &canonical_target) ||
-      canonical_target != normalized.install_root) {
-    return {false,
-            "Linux install root does not resolve to an existing canonical "
-            "directory."};
-  }
-  const std::string requested_executable =
-      JoinPath(canonical_target, normalized.executable_relative_path);
-  std::string canonical_requested_executable;
-  if (!ResolveExistingPath(requested_executable,
-                           &canonical_requested_executable) ||
-      canonical_requested_executable != executable_path) {
-    return {false, "Linux install executable does not match the running app."};
+  InstallTargetProof target_proof;
+  if (normalized.operation == LinuxInstallOperation::kInstall) {
+    const InstallResult target = ProveInstallTarget(
+        normalized, executable_path, legacy_fallback, &target_proof);
+    if (!target.ok) {
+      return target;
+    }
   }
 
   std::string canonical_staging_path;
@@ -519,7 +622,7 @@ InstallResult BuildInstallScriptForTesting(
                                            "staging=" +
       ShellQuote(canonical_staging_path) + "\n"
                                            "target=" +
-      ShellQuote(canonical_target) + "\n"
+      ShellQuote(normalized.install_root) + "\n"
                                      "exe=" +
       ShellQuote(executable_path) + "\n"
                                     "diagnostics_log=" +

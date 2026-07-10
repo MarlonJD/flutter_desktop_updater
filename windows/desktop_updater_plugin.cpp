@@ -8,6 +8,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include <memory>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -17,6 +18,8 @@
 
 namespace desktop_updater {
 namespace {
+
+namespace fs = std::filesystem;
 
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
@@ -268,6 +271,17 @@ void DesktopUpdaterPlugin::HandleMethodCall(
 
     desktop_updater::native::InstallRequest request;
     request.staging_path = Utf8ToWide(*staging_path);
+    request.install_root = StringFromArguments(*arguments, "installRoot");
+    request.executable_relative_path =
+        StringFromArguments(*arguments, "executableRelativePath");
+    request.expected_package_id = StringFromArguments(*arguments, "packageId");
+    if (request.install_root.empty() &&
+        request.executable_relative_path.empty()) {
+      const fs::path current_executable(CurrentExecutablePath());
+      request.install_root = current_executable.parent_path().wstring();
+      request.executable_relative_path =
+          current_executable.filename().wstring();
+    }
     request.removed_files = RemovedFilesFromArguments(*arguments);
     request.diagnostics_log_path = DiagnosticsLogPathFromArguments(*arguments);
     request.expected_provenance_sha256 = StringFromArguments(

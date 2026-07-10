@@ -28,7 +28,7 @@ add_library(desktop_updater_native_static STATIC
 target_include_directories(desktop_updater_native_static
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(desktop_updater_native_static
-  PUBLIC Bcrypt Shell32)
+  PUBLIC Advapi32 Bcrypt Shell32)
 
 add_library(desktop_updater_native SHARED
   $<TARGET_OBJECTS:desktop_updater_native_objects>)
@@ -42,7 +42,7 @@ target_compile_definitions(desktop_updater_native
 target_compile_definitions(desktop_updater_native
   INTERFACE DESKTOP_UPDATER_NATIVE_USING_DLL)
 target_link_libraries(desktop_updater_native
-  PRIVATE Bcrypt Shell32)
+  PRIVATE Advapi32 Bcrypt Shell32)
 set_target_properties(desktop_updater_native PROPERTIES
   EXPORT_NAME native
   WINDOWS_EXPORT_ALL_SYMBOLS ON

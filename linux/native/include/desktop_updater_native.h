@@ -13,6 +13,18 @@ enum class LinuxInstallOperation {
   kInstall,
 };
 
+enum class InstallTargetProofSource {
+  kRunningExecutableContext,
+  kSelfContainedFlutterBundle,
+};
+
+struct InstallTargetProof {
+  std::string canonical_root;
+  std::string executable_relative_path;
+  std::string package_id;
+  InstallTargetProofSource source;
+};
+
 struct InstallProvenanceEntry {
   std::string path;
   std::string kind;

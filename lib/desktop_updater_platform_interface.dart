@@ -1,5 +1,9 @@
+import "dart:io";
+
 import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
+import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 /// Platform interface implemented by macOS, Windows, and Linux helpers.
@@ -100,21 +104,57 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
     List<Map<String, Object?>> stageProvenanceEntries = const [],
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
-  }) {
+  }) async {
     final platform = this;
-    if (platform is MethodChannelDesktopUpdater) {
-      return platform.installUpdateWithContext(
+    if (platform.runtimeType == MethodChannelDesktopUpdater) {
+      final methodChannel = platform as MethodChannelDesktopUpdater;
+      var resolvedPackageId = packageId;
+      var resolvedProvenanceSha256 = stageProvenanceSha256;
+      var resolvedProvenanceNonce = stageProvenanceNonce;
+      var resolvedProvenanceEntries = stageProvenanceEntries;
+      var resolvedArtifactSha256 = expectedArtifactSha256;
+      if (resolvedPackageId == null ||
+          resolvedPackageId.isEmpty ||
+          resolvedProvenanceSha256 == null ||
+          resolvedProvenanceSha256.isEmpty ||
+          resolvedProvenanceNonce == null ||
+          resolvedProvenanceNonce.isEmpty ||
+          resolvedProvenanceEntries.isEmpty ||
+          resolvedArtifactSha256 == null ||
+          resolvedArtifactSha256.isEmpty) {
+        final stageRoot = await _verifiedStageRoot(stagingPath);
+        final state = await readStagedUpdateProvenance(stageRoot: stageRoot);
+        final provenance = await verifyStagedUpdateProvenance(
+          stageRoot: stageRoot,
+          expectedMarkerSha256: state.markerSha256,
+        );
+        if (resolvedPackageId != null &&
+            resolvedPackageId.isNotEmpty &&
+            resolvedPackageId != provenance.packageId) {
+          throw StateError(
+            "Explicit package identity does not match verified stage provenance.",
+          );
+        }
+        resolvedPackageId = provenance.packageId;
+        resolvedProvenanceSha256 = state.markerSha256;
+        resolvedProvenanceNonce = provenance.nonce;
+        resolvedProvenanceEntries = provenance.entries
+            .map((entry) => Map<String, Object?>.from(entry.toJson()))
+            .toList(growable: false);
+        resolvedArtifactSha256 = provenance.artifactSha256;
+      }
+      return methodChannel.installUpdateWithContext(
         stagingPath: stagingPath,
         removedFiles: removedFiles,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
         diagnosticsLogPath: diagnosticsLogPath,
         installRoot: installRoot,
         executableRelativePath: executableRelativePath,
-        packageId: packageId,
-        stageProvenanceSha256: stageProvenanceSha256,
-        stageProvenanceNonce: stageProvenanceNonce,
-        stageProvenanceEntries: stageProvenanceEntries,
-        expectedArtifactSha256: expectedArtifactSha256,
+        packageId: resolvedPackageId,
+        stageProvenanceSha256: resolvedProvenanceSha256,
+        stageProvenanceNonce: resolvedProvenanceNonce,
+        stageProvenanceEntries: resolvedProvenanceEntries,
+        expectedArtifactSha256: resolvedArtifactSha256,
         allowedSignerThumbprints: allowedSignerThumbprints,
       );
     }
@@ -125,4 +165,22 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
       diagnosticsLogPath: diagnosticsLogPath,
     );
   }
+}
+
+Future<Directory> _verifiedStageRoot(String stagingPath) async {
+  final candidate = Directory(stagingPath);
+  if (await File(
+    path.join(candidate.path, stagedUpdateProvenanceFileName),
+  ).exists()) {
+    return candidate;
+  }
+  final parent = candidate.parent;
+  if (await File(
+    path.join(parent.path, stagedUpdateProvenanceFileName),
+  ).exists()) {
+    return parent;
+  }
+  throw const FormatException(
+    "Stage provenance marker is missing from the staged update root.",
+  );
 }

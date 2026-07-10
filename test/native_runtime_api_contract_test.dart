@@ -72,6 +72,8 @@ void main() {
     );
     expect(sample, contains("try RuntimeConfiguration("));
     expect(sample, contains("RuntimeOutcome.noUpdate"));
+    expect(sample, isNot(contains("bundlePath:")));
+    expect(sample, isNot(contains('value("--bundle-path")')));
     expect(manifest, contains("DESKTOP_UPDATER_PACKAGE_PATH"));
     expect(
       manifest,
@@ -103,6 +105,15 @@ void main() {
     expect(header, contains("desktop_updater_runtime_configuration_v1"));
     expect(header, contains("uint32_t abi_version"));
     expect(header, contains("size_t struct_size"));
+    expect(header, contains("const char* install_root_utf8"));
+    expect(header, contains("const char* executable_relative_path_utf8"));
+    expect(header, contains("const char* expected_package_id_utf8"));
+    expect(
+      source,
+      contains("constexpr std::size_t kLegacyInstallRequestSize"),
+    );
+    expect(source, contains("install_root_utf8);"));
+    expect(source, contains("const bool has_target_fields"));
     expect(header, contains("desktop_updater_runtime_client_free_v1"));
     expect(header, contains("desktop_updater_runtime_result_free_v1"));
     expect(
@@ -134,6 +145,8 @@ void main() {
     expect(dotnet, contains("public sealed class DesktopUpdaterClient"));
     expect(dotnet, contains("SupportPolicyStatus"));
     expect(dotnet, contains("MaximumMetadataBytes"));
+    expect(dotnet, contains("Process.GetCurrentProcess()"));
+    expect(dotnet, isNot(contains("Environment.ProcessPath")));
     expect(sample, contains("new DesktopUpdaterConfiguration("));
     expect(sample, contains("DesktopUpdaterOutcome.NoUpdate"));
     expect(sample, isNot(contains("DllImport")));

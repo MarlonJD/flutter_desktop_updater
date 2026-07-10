@@ -14,6 +14,9 @@ void main() {
     expect(source, contains("import DesktopUpdaterKit"));
     expect(source, contains("MacInstallRequest("));
     expect(source, contains("DesktopUpdaterVersion.string"));
+    expect(source, isNot(contains("currentProcessIdentifier:")));
+    expect(source, isNot(contains("bundlePath:")));
+    expect(source, isNot(contains("request.bundlePath")));
     expect("$manifest\n$source", isNot(contains("Flutter")));
   });
 

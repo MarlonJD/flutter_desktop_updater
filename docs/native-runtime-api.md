@@ -63,8 +63,7 @@ let staged = try await client.downloadVerifyAndStage(
 
 try client.installAndRelaunch(
     staged,
-    diagnosticsLogPath: diagnosticsLogPath,
-    bundlePath: Bundle.main.bundlePath
+    diagnosticsLogPath: diagnosticsLogPath
 )
 ```
 

@@ -70,6 +70,14 @@ class InnoScriptBuilder {
         'Source: "$escapedInput\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs',
       )
       ..writeln()
+      ..writeln("[Registry]")
+      ..writeln(
+        'Root: HKA; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{#SetupSetting(\'AppId\')}_is1"; ValueType: string; ValueName: "DesktopUpdaterPackageId"; ValueData: "${_escapeInnoString(metadata.packageId)}"; Flags: uninsdeletevalue',
+      )
+      ..writeln(
+        'Root: HKA; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{#SetupSetting(\'AppId\')}_is1"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Flags: uninsdeletevalue',
+      )
+      ..writeln()
       ..writeln("[Icons]")
       ..writeln(
         'Name: "{autoprograms}\\$appName"; Filename: "{app}\\$executableName"',
