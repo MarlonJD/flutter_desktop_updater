@@ -1882,9 +1882,10 @@ Draft the corrected PR body for the user; do not post it through a connector.
 Durable native transaction recovery remains `blocked`. The reviewed
 script-helper candidate was reverted because it could not provide safe
 fd/handle-relative mutation, serialized recovery, and crash-safe journal
-ownership. The required packaged standalone-helper architecture is not yet
-defined. The runtime therefore remains `candidate-only`, and PR #65 is not
-merge-ready.
+ownership. The approved packaged standalone-helper design is recorded in
+`docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md`,
+but its implementation and target-host evidence are pending. The runtime
+therefore remains `candidate-only`, and PR #65 is not merge-ready.
 ~~~
 
 - [ ] **Step 5: Perform the final adversarial review**
@@ -2000,6 +2001,44 @@ Task 10 evidence on 2026-07-11:
   finding in this false-green class. Wider suites were not rerun after this
   test-only scanner refinement; the preceding current-head ladder remains the
   latest broad evidence.
+
+### Fresh Killcritic Remediation After Task 10
+
+- [x] Reject incomplete macOS helper-only staged requests synchronously and
+  expose a complete verified-stage handoff value without changing the
+  `DesktopUpdaterKit` product or import.
+- [ ] Complete the packaged .NET helper-only provenance handoff.
+- [ ] Preserve the signed Inno `requiresElevation` policy through the native
+  helper and compatible C/.NET boundaries.
+- [ ] Bound stable Flutter metadata downloads and archive expansion.
+- [ ] Remove elevated Windows diagnostics authority from caller-provided paths.
+- [ ] Resolve the stable Flutter metadata-authenticity default through an
+  explicit public compatibility decision.
+- [ ] Implement and prove the approved cross-platform privileged helper design.
+
+Fresh-review evidence on 2026-07-11:
+
+- Mac helper-only RED, verified locally: `swift test --filter
+  MacInstallHelperTests` failed to compile because `MacVerifiedStage`, its
+  request initializer, and synchronous complete-handoff validation did not
+  exist. `flutter test --no-pub test/native_sdk_consumer_package_test.dart`
+  failed because the external SwiftPM consumer did not construct verified
+  provenance or use a verified-stage request.
+- Mac helper-only GREEN, verified locally: the focused Swift suite passed 10/10;
+  the full SwiftPM suite passed 51/51;
+  the external SwiftPM consumer built and ran against the packaged
+  `DesktopUpdaterKit` product; the Dart consumer and SwiftPM contract suites
+  passed 12/12; and the exact five-source CocoaPods fallback typechecked at
+  `x86_64-apple-macosx10.14`. The public legacy request initializer remains
+  source-compatible, while any non-nil staged request lacking the complete
+  provenance tuple now fails before helper-script creation.
+- Task 6 architecture: `blocked / implementation pending`. The approved design
+  is
+  `docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md`.
+  Per user direction it is not implemented in this execution pass. Until its
+  reservation, packaged helper, lock, durable journal, fd/handle-relative
+  mutation, recovery, and target-host gates exist, the runtime remains
+  `candidate-only` and PR #65 remains not merge-ready.
 
 ## Final Acceptance Checklist
 

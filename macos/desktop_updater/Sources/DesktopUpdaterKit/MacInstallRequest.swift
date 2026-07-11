@@ -27,6 +27,28 @@ public struct StageProvenanceState: Sendable {
     public let markerSHA256: String
 }
 
+public struct MacVerifiedStage: Sendable {
+    public let stagedPath: URL
+    public let stageRoot: URL
+    public let provenance: StageProvenanceState
+    public let artifactKind: String
+    public let expectedPackageIDs: [String]
+
+    public init(
+        stagedPath: URL,
+        stageRoot: URL,
+        provenance: StageProvenanceState,
+        artifactKind: String,
+        expectedPackageIDs: [String] = []
+    ) {
+        self.stagedPath = stagedPath
+        self.stageRoot = stageRoot
+        self.provenance = provenance
+        self.artifactKind = artifactKind
+        self.expectedPackageIDs = expectedPackageIDs
+    }
+}
+
 public enum StageProvenance {
     public static func createOwnedStage(
         parent: URL,
@@ -420,5 +442,22 @@ public struct MacInstallRequest: Sendable {
         self.expectedArtifactSHA256 = expectedArtifactSHA256
         self.expectedPackageIDs = expectedPackageIDs
         self.provenanceEntries = provenanceEntries
+    }
+
+    public init(
+        verifiedStage: MacVerifiedStage,
+        allowUnsignedUpdates: Bool,
+        diagnosticsLogPath: String?
+    ) {
+        stagingPath = verifiedStage.stagedPath.path
+        self.allowUnsignedUpdates = allowUnsignedUpdates
+        self.diagnosticsLogPath = diagnosticsLogPath
+        stageRoot = verifiedStage.stageRoot.path
+        expectedProvenanceSHA256 = verifiedStage.provenance.markerSHA256
+        artifactKind = verifiedStage.artifactKind
+        expectedArtifactSHA256 =
+            verifiedStage.provenance.marker.artifactSha256
+        expectedPackageIDs = verifiedStage.expectedPackageIDs
+        provenanceEntries = verifiedStage.provenance.marker.entries
     }
 }

@@ -143,6 +143,62 @@ final class MacInstallHelperTests: XCTestCase {
         }
     }
 
+    func testIncompleteStagedRequestIsRejectedBeforeScheduling() throws {
+        let incomplete = MacInstallRequest(
+            stagingPath: "/tmp/Example.app",
+            allowUnsignedUpdates: false,
+            diagnosticsLogPath: nil
+        )
+
+        XCTAssertThrowsError(
+            try MacInstallHelper().validateCompleteHandoff(incomplete)
+        ) { error in
+            XCTAssertTrue(
+                error.localizedDescription.contains(
+                    "Verified stage provenance is required"
+                )
+            )
+        }
+    }
+
+    func testVerifiedStagePopulatesCompleteHelperHandoff() {
+        let marker = StageProvenanceMarker(
+            schemaVersion: 1,
+            nonce: "123e4567-e89b-42d3-a456-426614174000",
+            packageId: "com.example.app",
+            descriptorSha256: String(repeating: "0", count: 64),
+            artifactSha256: String(repeating: "2", count: 64),
+            entries: []
+        )
+        let verifiedStage = MacVerifiedStage(
+            stagedPath: URL(fileURLWithPath: "/tmp/Example.app"),
+            stageRoot: URL(
+                fileURLWithPath:
+                    "/tmp/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000"
+            ),
+            provenance: StageProvenanceState(
+                marker: marker,
+                markerSHA256: String(repeating: "1", count: 64)
+            ),
+            artifactKind: "zip",
+            expectedPackageIDs: []
+        )
+        let request = MacInstallRequest(
+            verifiedStage: verifiedStage,
+            allowUnsignedUpdates: false,
+            diagnosticsLogPath: nil
+        )
+
+        XCTAssertEqual(request.stagingPath, verifiedStage.stagedPath.path)
+        XCTAssertEqual(request.stageRoot, verifiedStage.stageRoot.path)
+        XCTAssertEqual(
+            request.expectedProvenanceSHA256,
+            verifiedStage.provenance.markerSHA256
+        )
+        XCTAssertEqual(request.expectedArtifactSHA256, marker.artifactSha256)
+        XCTAssertEqual(request.provenanceEntries, marker.entries)
+    }
+
     func testHelperScriptCollisionFailsWithoutReplacingExistingFile() throws {
         let nonce = UUID()
         let script = FileManager.default.temporaryDirectory

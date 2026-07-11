@@ -24,15 +24,7 @@ public struct MacInstallHelper {
     }
 
     public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws {
-        try validateStagingPath(request.stagingPath)
-        if let root = request.stageRoot,
-           let expected = request.expectedProvenanceSHA256
-        {
-            _ = try StageProvenance.verify(
-                stageRoot: URL(fileURLWithPath: root),
-                expectedMarkerSHA256: expected
-            )
-        }
+        try validateCompleteHandoff(request)
         let scriptURL = try writeHelperScript(for: request)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -42,6 +34,54 @@ public struct MacInstallHelper {
         } catch {
             try? FileManager.default.removeItem(at: scriptURL)
             throw error
+        }
+    }
+
+    func validateCompleteHandoff(_ request: MacInstallRequest) throws {
+        guard let stagingPath = request.stagingPath else { return }
+        guard let root = request.stageRoot,
+              !root.isEmpty,
+              let expectedProvenance = request.expectedProvenanceSHA256,
+              expectedProvenance.range(
+                  of: #"^[0-9a-f]{64}$"#,
+                  options: .regularExpression
+              ) != nil,
+              let artifactKind = request.artifactKind,
+              !artifactKind.isEmpty,
+              let expectedArtifact = request.expectedArtifactSHA256,
+              expectedArtifact.range(
+                  of: #"^[0-9a-f]{64}$"#,
+                  options: .regularExpression
+              ) != nil
+        else {
+            throw MacInstallHelperError(
+                message: "Verified stage provenance is required before scheduling.",
+                path: stagingPath
+            )
+        }
+        try validateStagingPath(stagingPath)
+
+        let stageRoot = URL(fileURLWithPath: root).standardizedFileURL
+        let staged = URL(fileURLWithPath: stagingPath).standardizedFileURL
+        guard staged == stageRoot ||
+            staged.deletingLastPathComponent() == stageRoot
+        else {
+            throw MacInstallHelperError(
+                message: "Staged update is not owned by its verified stage root.",
+                path: stagingPath
+            )
+        }
+        let marker = try StageProvenance.verify(
+            stageRoot: stageRoot,
+            expectedMarkerSHA256: expectedProvenance
+        )
+        guard marker.artifactSha256 == expectedArtifact,
+              marker.entries == request.provenanceEntries
+        else {
+            throw MacInstallHelperError(
+                message: "Verified stage provenance does not match the helper request.",
+                path: stagingPath
+            )
         }
     }
 

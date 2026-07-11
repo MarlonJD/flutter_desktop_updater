@@ -13,6 +13,9 @@ void main() {
     expect(manifest, contains('package: "flutter_desktop_updater"'));
     expect(source, contains("import DesktopUpdaterKit"));
     expect(source, contains("MacInstallRequest("));
+    expect(source, contains("MacVerifiedStage("));
+    expect(source, contains("verifiedStage:"));
+    expect(source, contains("StageProvenance.write("));
     expect(source, contains("DesktopUpdaterVersion.string"));
     expect(source, isNot(contains("currentProcessIdentifier:")));
     expect(source, isNot(contains("bundlePath:")));

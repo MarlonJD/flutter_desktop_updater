@@ -185,17 +185,22 @@ public struct MacArtifactStager {
         diagnosticsLogPath: String?,
         allowUnsignedUpdates: Bool = false
     ) throws {
+        let provenance = try StageProvenance.read(stageRoot: staged.stageRoot)
+        _ = try StageProvenance.verify(
+            stageRoot: staged.stageRoot,
+            expectedMarkerSHA256: staged.stageProvenanceSHA256
+        )
         try MacInstallHelper().scheduleInstallAndRelaunch(
             MacInstallRequest(
-                stagingPath: staged.stagedPath.path,
+                verifiedStage: MacVerifiedStage(
+                    stagedPath: staged.stagedPath,
+                    stageRoot: staged.stageRoot,
+                    provenance: provenance,
+                    artifactKind: staged.descriptor.artifact.kind,
+                    expectedPackageIDs: expectedPackageIDs(staged.descriptor)
+                ),
                 allowUnsignedUpdates: allowUnsignedUpdates,
-                diagnosticsLogPath: diagnosticsLogPath,
-                stageRoot: staged.stageRoot.path,
-                expectedProvenanceSHA256: staged.stageProvenanceSHA256,
-                artifactKind: staged.descriptor.artifact.kind,
-                expectedArtifactSHA256: staged.descriptor.artifact.sha256,
-                expectedPackageIDs: expectedPackageIDs(staged.descriptor),
-                provenanceEntries: staged.provenanceEntries
+                diagnosticsLogPath: diagnosticsLogPath
             )
         )
     }

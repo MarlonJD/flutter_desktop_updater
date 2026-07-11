@@ -41,21 +41,45 @@ dependency.
 
 ```swift
 import DesktopUpdaterKit
+import Foundation
 
+let stageRoot = try StageProvenance.createOwnedStage(parent: stagingParent)
+let stagedApp = stageRoot.appendingPathComponent(verifiedApp.lastPathComponent)
+try FileManager.default.copyItem(at: verifiedApp, to: stagedApp)
+let nonce = stageRoot.lastPathComponent.replacingOccurrences(
+    of: updaterOwnedStagePrefix,
+    with: ""
+)
+let provenance = try StageProvenance.write(
+    stageRoot: stageRoot,
+    nonce: nonce,
+    packageID: "com.example.app",
+    descriptorSHA256: verifiedDescriptorSHA256,
+    artifactSHA256: verifiedArtifactSHA256
+)
+let verifiedStage = MacVerifiedStage(
+    stagedPath: stagedApp,
+    stageRoot: stageRoot,
+    provenance: provenance,
+    artifactKind: "zip"
+)
 let request = MacInstallRequest(
-    stagingPath: stagedApp.path,
+    verifiedStage: verifiedStage,
     allowUnsignedUpdates: false,
     diagnosticsLogPath: diagnosticsPath
 )
 try MacInstallHelper().scheduleInstallAndRelaunch(request)
 ```
 
-Pass a complete verified `.app` staging path. Production signing gates remain
-enabled unless `allowUnsignedUpdates` is explicitly enabled for a controlled
-debug/test flow. The helper rechecks the staged bundle identity and publisher
-trust before replacement. It derives the current PID and `Bundle.main` target
-internally, so callers cannot select another process or application bundle.
-`DesktopUpdaterVersion.string` exposes the helper package version.
+Create an updater-owned stage only after descriptor and artifact verification,
+then pass the resulting `MacVerifiedStage`. A staged request without complete
+provenance is rejected synchronously before helper launch. Production signing
+gates remain enabled unless `allowUnsignedUpdates` is explicitly enabled for a
+controlled debug/test flow. The helper rechecks stage inventory, bundle
+identity, and publisher trust before replacement. It derives the current PID
+and `Bundle.main` target internally, so callers cannot select another process
+or application bundle. `DesktopUpdaterVersion.string` exposes the helper
+package version.
 
 The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback
