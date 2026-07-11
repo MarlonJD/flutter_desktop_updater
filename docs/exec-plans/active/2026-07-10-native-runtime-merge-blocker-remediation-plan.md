@@ -1984,6 +1984,9 @@ Task 10 evidence on 2026-07-11:
   explicit environment-gated skips and 0 failures; generated fixtures were up
   to date; and SwiftPM passed 49/49. Target-host, current-head CI, and
   credential lanes remain not run, and Task 6 remains blocked.
+- Post-commit package verification, verified locally: `dart pub publish
+  --dry-run` exited 0 with 0 warnings and the existing prior-version hint. No
+  version, changelog heading, or lockfile changed.
 
 ## Final Acceptance Checklist
 
