@@ -1987,6 +1987,19 @@ Task 10 evidence on 2026-07-11:
 - Post-commit package verification, verified locally: `dart pub publish
   --dry-run` exited 0 with 0 warnings and the existing prior-version hint. No
   version, changelog heading, or lockfile changed.
+- Final scanner RED/GREEN, verified locally: the structural workflow mutation
+  initially accepted `flutter test --no-pub || true`, and credential prose
+  initially allowed cross-artifact `passed`/`not run` clauses plus a
+  contradictory `blocked but successful` claim. The validator now rejects
+  shell-level failure suppression and evaluates artifact clauses separately
+  for `passed`, `succeeded`, `successful`, `green`, `verified locally`, and
+  `verified in CI`. Plain diagnostic `signature verified` text and explicit
+  repository-style `RED, verified locally:` evidence remain non-promotional.
+  The focused structural suite passed 6/6 and `git diff --check` passed; final
+  independent targeted review reported no Critical, Important, or Minor
+  finding in this false-green class. Wider suites were not rerun after this
+  test-only scanner refinement; the preceding current-head ladder remains the
+  latest broad evidence.
 
 ## Final Acceptance Checklist
 

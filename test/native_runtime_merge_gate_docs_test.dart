@@ -197,6 +197,10 @@ jobs:
         "flutter test --no-pub",
         "echo active # flutter test --no-pub",
       ),
+      valid.replaceFirst(
+        "flutter test --no-pub",
+        "flutter test --no-pub || true",
+      ),
     ]) {
       expect(
         _workflowErrors(mutation, expected),
@@ -241,6 +245,19 @@ The PKG smoke succeeded. Inno lane successful. DMG gate green.
       _credentialPassClaims(
         "Credential-gated DMG and Inno lanes are not run; "
         "the PKG smoke is blocked but successful.",
+      ),
+      hasLength(1),
+    );
+    expect(
+      _credentialPassClaims(
+        "DMG passed, while PKG was not run. "
+        "DMG passed and Inno is not run.",
+      ),
+      hasLength(2),
+    );
+    expect(
+      _credentialPassClaims(
+        "RED, verified locally: signed DMG negative fixture passed.",
       ),
       isEmpty,
     );
@@ -431,10 +448,17 @@ Map<String, Map<String, _WorkflowStep>> _workflowSteps(String yaml) {
   return output;
 }
 
-bool _startsCommand(String line, String command) =>
-    line == command ||
-    line.startsWith("$command ") ||
-    line.startsWith("$command\\");
+bool _startsCommand(String line, String command) {
+  final starts = line == command ||
+      line.startsWith("$command ") ||
+      line.startsWith("$command\\");
+  if (!starts) return false;
+  final suffix = line.substring(command.length);
+  return !RegExp(
+    r"\|\||;\s*(?:true|exit\s+0)\b|\|\s*(?:out-null|tee-object)\b",
+    caseSensitive: false,
+  ).hasMatch(suffix);
+}
 
 bool? _literalBoolean(String? value) {
   if (value == null) return null;
@@ -477,29 +501,53 @@ class _WorkflowStep {
 List<String> _credentialPassClaims(String markdown) {
   final artifact = RegExp(r"\b(?:dmg|pkg|inno)\b", caseSensitive: false);
   final pass = RegExp(
-    r"\b(?:pass(?:ed|es)?|verified(?:\s+(?:locally|in\s+ci))?|succeed(?:ed|s)?|successful|green)\b",
+    r"\b(?:pass(?:ed|es)?|verified\s+(?:locally|in\s+ci)|"
+    r"succeed(?:ed|s)?|successful|green)\b",
     caseSensitive: false,
   );
-  final explicitNonPass = RegExp(
-    r"\b(?:not\s+run|blocked|credential[- ]gated|without\s+(?:explicit\s+)?credentials|no\s+verified|reject\s+claims|must\s+not|do\s+not)\b",
+  final negatedPass = RegExp(
+    r"\b(?:not|never|must\s+not|do\s+not|cannot|can't|no)\s+"
+    r"(?:be\s+)?(?:claimed\s+as\s+)?"
+    r"(?:pass(?:ed|es)?|verified\s+(?:locally|in\s+ci)|"
+    r"succeed(?:ed|s)?|successful|green)\b",
     caseSensitive: false,
   );
-  final evidenceContext = RegExp(
-    r"\b(?:signed|notarized|smoke|lane|gate|artifact|target-host|ci)\b",
+  final rejectedPassClaim = RegExp(
+    r"\b(?:reject(?:s|ed|ing)?|forbid(?:s|den|ding)?)\b[^.;\n]{0,48}"
+    r"\b(?:pass(?:ed|es)?|verified\s+(?:locally|in\s+ci)|"
+    r"succeed(?:ed|s)?|successful|green)\b|"
+    r"\b(?:pass(?:ed|es)?|verified\s+(?:locally|in\s+ci)|"
+    r"succeed(?:ed|s)?|successful|green)\b"
+    r"[^.;\n]{0,24}\b(?:claim|claims)\b[^.;\n]{0,24}"
+    r"\b(?:rejected|forbidden)\b",
+    caseSensitive: false,
+  );
+  final redEvidence = RegExp(
+    r"^\s*(?:[-*]\s*)?"
+    r"(?:(?:re-review|review|follow-up)\s*\d*\s+)?"
+    r"red\s*,?\s*verified\s+locally\b",
     caseSensitive: false,
   );
   return markdown
       .replaceAll("`", "")
-      .split(RegExp(r"[;\n]|[.!?]\s+"))
+      .split(
+        RegExp(
+          r"[;\n]|[.!?]\s+|,\s*(?=(?:while|and|but)\b)|"
+          r"\s+(?:while|and|but)\s+"
+          r"(?=(?:the\s+)?(?:signed\s+)?(?:dmg|pkg|inno)\b)",
+          caseSensitive: false,
+        ),
+      )
       .map((sentence) => sentence.trim())
       .where(
-        (sentence) =>
-            artifact.hasMatch(sentence) &&
-            evidenceContext.hasMatch(sentence) &&
-            pass.hasMatch(sentence) &&
-            !explicitNonPass.hasMatch(sentence),
-      )
-      .toList();
+    (sentence) {
+      if (redEvidence.hasMatch(sentence)) return false;
+      final positiveText = sentence
+          .replaceAll(negatedPass, "")
+          .replaceAll(rejectedPassClaim, "");
+      return artifact.hasMatch(sentence) && pass.hasMatch(positiveText);
+    },
+  ).toList();
 }
 
 String _read(String path) {
