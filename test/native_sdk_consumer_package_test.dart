@@ -131,6 +131,9 @@ void main() {
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
     );
+    final nugetVerifier = readRequiredFile(
+      "tool/verify_windows_nuget_consumer.ps1",
+    );
 
     expect(
       workflow,
@@ -156,13 +159,15 @@ void main() {
       ),
     );
     expect(
-      workflow,
-      contains(r'--source "$packageSource"'),
+      nugetVerifier,
+      contains(r"--source $packageSource"),
     );
     expect(workflow, isNot(contains("api.nuget.org")));
     expect(
       workflow,
-      contains("dotnet run --project example/native/windows-dotnet"),
+      contains(
+        r"""dotnet (Join-Path $build "DesktopUpdater.Consumer.dll")""",
+      ),
     );
     expect(
       workflow,

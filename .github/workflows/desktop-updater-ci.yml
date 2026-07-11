@@ -250,22 +250,23 @@ jobs:
       - name: Run packaged .NET consumer
         shell: pwsh
         run: |
+          $laneRoot = Join-Path $env:RUNNER_TEMP "desktop-updater-nuget-regular"
+          $build = Join-Path $laneRoot "build"
           $packageSource = (Resolve-Path windows/native/artifacts).Path
-          dotnet restore example/native/windows-dotnet/DesktopUpdater.Consumer.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet/DesktopUpdater.Consumer.csproj -LaneRoot $laneRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet run --project example/native/windows-dotnet --no-restore "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          dotnet (Join-Path $build "DesktopUpdater.Consumer.dll")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Windows native runtime ZIP smoke
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
           $packageSource = (Resolve-Path windows/native/artifacts).Path
-          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
-          dotnet restore example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
           $build = Join-Path $smokeRoot "build"
-          dotnet build example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --configuration Release --no-restore --output $build "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $install = Join-Path $smokeRoot "install"
           $payload = Join-Path $smokeRoot "payload"
@@ -354,11 +355,10 @@ jobs:
           choco install innosetup --no-progress -y
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-inno"
           $packageSource = (Resolve-Path windows/native/artifacts).Path
-          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
-          dotnet restore example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --source "$packageSource" "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
           $build = Join-Path $smokeRoot "build"
-          dotnet build example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj --configuration Release --no-restore --output $build "-p:DesktopUpdaterNativeVersion=$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION"
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $install = Join-Path $smokeRoot "install"
           $payload = Join-Path $smokeRoot "payload"
           Copy-Item -LiteralPath $build -Destination $install -Recurse

@@ -1717,6 +1717,52 @@ Task 9 evidence on 2026-07-11:
   lanes are configured in CI but are not claimed as verified in CI. Task 6
   remains blocked/reverted, signed/notarized credential lanes remain not run,
   and the runtime remains candidate-only.
+- Post-commit independent review found two P1 lifetime/package-proof gaps in
+  the first Task 9 changeset. A strong callback-state `GCHandle` could still
+  root a client when an application callback captured that client, and the
+  Windows packaged-consumer jobs could reuse a stale global NuGet cache entry
+  for the canonical package version. The first seven-test finalizer seam also
+  bypassed production callback state and did not prove that cycle.
+- Follow-up RED, verified locally: the focused Flutter package contract failed
+  two assertions for the strong callback token and missing isolated verifier;
+  the managed tests failed to compile after requiring the production-shaped
+  callback-state release seam; and a capture-cycle finalizer test reproduced
+  the lifetime gap. A short weak token allowed collection but was cleared
+  before `ReleaseHandle` could observe callback state, so that intermediate
+  attempt is not counted as GREEN.
+- Follow-up resolution: `NativeClientHandle` strongly owns the managed
+  callback state and callback delegates, while its native context is a
+  non-rooting `WeakTrackResurrection` token. SafeHandle marshalling retains the
+  owner during every P/Invoke. Native/fake release runs while callback state is
+  still available, then the weak token is freed and the state reference is
+  cleared. The private test seam uses the same callback-state constructor as
+  production. Eight managed tests now include GC without `Dispose`, an
+  application delegate/client capture cycle, exactly-once release, and state
+  visibility during release.
+- Windows packaged consumers now call
+  `tool/verify_windows_nuget_consumer.ps1` in three distinct runner-temp lanes
+  (ordinary consumer, ZIP smoke, and credential-gated Inno smoke). The script
+  removes lane and project `obj`/`bin` state, uses lane-local package,
+  intermediate, assets, and output paths with `--no-cache` and the explicit
+  candidate version, then compares SHA-256 for both exact NuGet runtime DLL
+  entries against the isolated cache and consumer output. This PowerShell path
+  was source-reviewed and contract-tested but not executed on macOS because
+  `pwsh`/Windows native DLL execution is unavailable; Step 6 remains open.
+- Final verifier-contract RED/GREEN, verified locally: mutation assertions
+  initially passed incorrectly when package-version/no-cache/cleanup/digest or
+  candidate-to-cache/output comparison proof was removed. The strengthened
+  validator now rejects each mutation. The focused package/docs/layout command
+  passed all 22 tests; the broader follow-up verification is recorded below.
+- Follow-up commit gate, verified locally: Release `dotnet build` compiled
+  `net8.0` and `netstandard2.0` with 0 errors (only offline `NU1900` audit
+  warnings); the eight `DesktopUpdaterClientTests` passed with 0 failures;
+  formatting checked 215 files with 0 changes; repository analysis exited 0
+  with the existing 395 info-only diagnostics; full Flutter passed 595 tests
+  with 3 explicit environment-gated skips and 0 failures; and
+  `git diff --check` passed. The first managed test attempt was stopped because
+  the sandbox denied the VSTest localhost socket; the identical permitted run
+  passed 8/8 and is the counted evidence. Windows PowerShell/real DLL and Linux
+  CMake target-host lanes remain not run, so Step 6 stays open.
 
 ---
 

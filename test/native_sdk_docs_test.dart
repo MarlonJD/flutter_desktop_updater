@@ -104,7 +104,13 @@ void main() {
     expect(workflow, contains("cmake --install windows/native/build"));
     expect(
       workflow,
-      contains("dotnet run --project example/native/windows-dotnet"),
+      contains("tool/verify_windows_nuget_consumer.ps1"),
+    );
+    expect(
+      workflow,
+      contains(
+        r'dotnet (Join-Path $build "DesktopUpdater.Consumer.dll")',
+      ),
     );
     expect(workflow, contains("cmake --install linux/native/build"));
     expect(workflow, contains("Windows Inno update smoke"));

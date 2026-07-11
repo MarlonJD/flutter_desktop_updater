@@ -186,6 +186,8 @@ void main() {
     expect(source, contains(": SafeHandle"));
     expect(source, contains("protected override bool ReleaseHandle()"));
     expect(source, contains("CallbackState"));
+    expect(source, contains("GCHandleType.WeakTrackResurrection"));
+    expect(source, contains("private CallbackState? _callbackState"));
     expect(
       source,
       matches(RegExp(r"CheckForUpdate\s*\(\s*NativeClientHandle client\s*\)")),
@@ -198,7 +200,211 @@ void main() {
     );
     expect(tests, contains("GC.WaitForPendingFinalizers()"));
     expect(tests, contains("CreateForTesting"));
+    expect(tests, contains("CaptureCycleDoesNotPreventFinalization"));
+    expect(tests, contains("CallbackStateWasAliveDuringRelease"));
   });
+
+  test("packaged .NET consumers use isolated caches and candidate DLL hashes",
+      () {
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
+    final verifier = readRequiredFile(
+      "tool/verify_windows_nuget_consumer.ps1",
+    );
+
+    expect(validateNuGetConsumerVerifier(verifier), isEmpty);
+    expect(validatePackagedConsumerWorkflow(workflow), isEmpty);
+  });
+
+  test("NuGet consumer verifier rejects missing isolation and hash proof", () {
+    const valid = r'''
+param($PackagePath, $PackageSource, $ProjectPath, $LaneRoot, $OutputPath, $PackageVersion)
+$packageSource = $PackageSource
+Remove-Item -LiteralPath $LaneRoot -Recurse -Force
+$projectDirectory = Split-Path -Parent $ProjectPath
+Join-Path $projectDirectory "obj"
+Join-Path $projectDirectory "bin"
+$packages = Join-Path $LaneRoot "packages"
+$obj = Join-Path $LaneRoot "obj"
+dotnet restore $ProjectPath --source $packageSource --packages $packages --ignore-failed-sources --no-cache -p:NuGetAudit=false -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
+dotnet build $ProjectPath --no-restore --output $OutputPath -p:NuGetAudit=false -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
+$nativeEntry = $archive.GetEntry("runtimes/win-x64/native/desktop_updater_native.dll")
+$runtimeEntry = $archive.GetEntry("runtimes/win-x64/native/desktop_updater_runtime.dll")
+$expectedHash = $sha256.ComputeHash($stream)
+Get-FileHash -LiteralPath $resolvedDll -Algorithm SHA256
+Get-FileHash -LiteralPath $outputDll -Algorithm SHA256
+if ($resolvedHash -ne $expectedHash) { throw "resolved mismatch" }
+if ($outputHash -ne $expectedHash) { throw "output mismatch" }
+''';
+    expect(validateNuGetConsumerVerifier(valid), isEmpty);
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(r"-p:MSBuildProjectExtensionsPath=$obj", ""),
+      ),
+      contains("isolated MSBuild project extensions"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(
+          r"Get-FileHash -LiteralPath $resolvedDll -Algorithm SHA256",
+          "",
+        ),
+      ),
+      contains("resolved package DLL hash"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(
+          r"Get-FileHash -LiteralPath $outputDll -Algorithm SHA256",
+          "",
+        ),
+      ),
+      contains("output DLL hash"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(r"$PackageVersion", r"$IgnoredVersion"),
+      ),
+      contains("explicit package version"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(valid.replaceAll("--no-cache", "")),
+      contains("restore bypasses global cache"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(r'Join-Path $projectDirectory "obj"', ""),
+      ),
+      contains("stale project obj cleanup"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(r"$sha256.ComputeHash($stream)", ""),
+      ),
+      contains("candidate entry digest"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(
+          r'''if ($resolvedHash -ne $expectedHash) { throw "resolved mismatch" }''',
+          "",
+        ),
+      ),
+      contains("resolved package hash comparison"),
+    );
+    expect(
+      validateNuGetConsumerVerifier(
+        valid.replaceAll(
+          r'''if ($outputHash -ne $expectedHash) { throw "output mismatch" }''',
+          "",
+        ),
+      ),
+      contains("output hash comparison"),
+    );
+  });
+}
+
+List<String> validateNuGetConsumerVerifier(String source) {
+  final failures = <String>[];
+  void require(String token, String failure) {
+    if (!source.contains(token)) {
+      failures.add(failure);
+    }
+  }
+
+  for (final parameter in <String>[
+    r"$PackagePath",
+    r"$PackageSource",
+    r"$ProjectPath",
+    r"$LaneRoot",
+    r"$OutputPath",
+    r"$PackageVersion",
+  ]) {
+    require(parameter, "missing verifier parameter $parameter");
+  }
+  require(r"Remove-Item -LiteralPath $LaneRoot", "stale lane root cleanup");
+  require(
+    r'Join-Path $projectDirectory "obj"',
+    "stale project obj cleanup",
+  );
+  require(
+    r'Join-Path $projectDirectory "bin"',
+    "stale project bin cleanup",
+  );
+  require(
+    r'Join-Path $LaneRoot "packages"',
+    "isolated package cache",
+  );
+  require(r'Join-Path $LaneRoot "obj"', "isolated obj directory");
+  require(r"--source $packageSource", "local-only package source");
+  require(r"--packages $packages", "isolated restore packages");
+  require("--ignore-failed-sources", "offline local restore");
+  require("--no-cache", "restore bypasses global cache");
+  require("-p:NuGetAudit=false", "offline audit configuration");
+  require(
+    r"-p:DesktopUpdaterNativeVersion=$PackageVersion",
+    "explicit package version",
+  );
+  require(r"-p:RestorePackagesPath=$packages", "restore package property");
+  require(
+    r"-p:BaseIntermediateOutputPath=$obj",
+    "isolated intermediate output",
+  );
+  require(
+    r"-p:MSBuildProjectExtensionsPath=$obj",
+    "isolated MSBuild project extensions",
+  );
+  require("--no-restore", "build reuses isolated restore");
+  require(
+    "runtimes/win-x64/native/desktop_updater_native.dll",
+    "candidate native DLL entry",
+  );
+  require(
+    "runtimes/win-x64/native/desktop_updater_runtime.dll",
+    "candidate runtime DLL entry",
+  );
+  require(
+    r"Get-FileHash -LiteralPath $resolvedDll -Algorithm SHA256",
+    "resolved package DLL hash",
+  );
+  require(
+    r"Get-FileHash -LiteralPath $outputDll -Algorithm SHA256",
+    "output DLL hash",
+  );
+  require(
+    r"$sha256.ComputeHash($stream)",
+    "candidate entry digest",
+  );
+  require(
+    r"if ($resolvedHash -ne $expectedHash)",
+    "resolved package hash comparison",
+  );
+  require(
+    r"if ($outputHash -ne $expectedHash)",
+    "output hash comparison",
+  );
+  return failures;
+}
+
+List<String> validatePackagedConsumerWorkflow(String source) {
+  final failures = <String>[];
+  final verifierCalls = RegExp(
+    r"tool/verify_windows_nuget_consumer\.ps1",
+  ).allMatches(source).length;
+  if (verifierCalls != 3) {
+    failures.add("all three packaged consumers must use verifier");
+  }
+  for (final lane in <String>[
+    "desktop-updater-nuget-regular",
+    "native-runtime-windows-zip",
+    "native-runtime-windows-inno",
+  ]) {
+    if (!source.contains('Join-Path \$env:RUNNER_TEMP "$lane"')) {
+      failures.add("missing isolated runner-temp lane $lane");
+    }
+  }
+  return failures;
 }
 
 String readRequiredFile(String path) {

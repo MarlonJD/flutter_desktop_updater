@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using DesktopUpdater.Native;
 using Xunit;
 
@@ -123,28 +124,46 @@ public sealed class DesktopUpdaterClientTests
     [Fact]
     public void FinalizerReleasesNativeClientWhenDisposeIsOmitted()
     {
-        var releaseCount = 0;
-        var releasedHandle = IntPtr.Zero;
-        var weakClient = CreateAbandonedClient(handle =>
-        {
-            releasedHandle = handle;
-            Interlocked.Increment(ref releaseCount);
-        });
+        var release = new ReleaseProbe();
+        var weakClient = CreateAbandonedClient(CreateConfiguration(), release);
 
-        for (var attempt = 0; attempt < 10 && releaseCount == 0; attempt++)
+        ForceFinalizersUntilReleased(release);
+
+        Assert.False(weakClient.IsAlive);
+        Assert.Equal(1, release.Count);
+        Assert.Equal(new IntPtr(0x42), release.Handle);
+        Assert.True(release.CallbackStateWasAliveDuringRelease);
+    }
+
+    [Fact]
+    public void CaptureCycleDoesNotPreventFinalization()
+    {
+        var release = new ReleaseProbe();
+        var cycle = CreateCapturedClientCycle(release);
+
+        ForceFinalizersUntilReleased(release);
+
+        Assert.False(cycle.Client.IsAlive);
+        Assert.False(cycle.Owner.IsAlive);
+        Assert.Equal(1, release.Count);
+        Assert.Equal(new IntPtr(0x42), release.Handle);
+        Assert.True(release.CallbackStateWasAliveDuringRelease);
+    }
+
+    private static void ForceFinalizersUntilReleased(ReleaseProbe release)
+    {
+        for (var attempt = 0; attempt < 10 && release.Count == 0; attempt++)
         {
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
         }
-
-        Assert.False(weakClient.IsAlive);
-        Assert.Equal(1, releaseCount);
-        Assert.Equal(new IntPtr(0x42), releasedHandle);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static WeakReference CreateAbandonedClient(Action<IntPtr> release)
+    private static WeakReference CreateAbandonedClient(
+        DesktopUpdaterConfiguration configuration,
+        ReleaseProbe release)
     {
         var factory = typeof(DesktopUpdaterClient).GetMethod(
             "CreateForTesting",
@@ -154,16 +173,31 @@ public sealed class DesktopUpdaterClientTests
             null,
             new object[]
             {
-                CreateConfiguration(),
+                configuration,
                 new IntPtr(0x42),
-                release,
+                new Action<IntPtr, IntPtr>(release.Record),
             }));
         return new WeakReference(client);
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference Client, WeakReference Owner)
+        CreateCapturedClientCycle(ReleaseProbe release)
+    {
+        var owner = new CapturedClientOwner();
+        var configuration = CreateConfiguration(
+            minimumOSResolver: owner.ResolveMinimumOS,
+            requestHeadersProvider: owner.ProvideHeaders);
+        var weakClient = CreateAbandonedClient(configuration, release);
+        owner.Client = Assert.IsType<DesktopUpdaterClient>(weakClient.Target);
+        return (weakClient, new WeakReference(owner));
+    }
+
     private static DesktopUpdaterConfiguration CreateConfiguration(
         long maximumMetadataBytes =
-            DesktopUpdaterConfiguration.DefaultMaximumMetadataBytes)
+            DesktopUpdaterConfiguration.DefaultMaximumMetadataBytes,
+        MinimumOSResolver? minimumOSResolver = null,
+        RequestHeadersProvider? requestHeadersProvider = null)
     {
         return new DesktopUpdaterConfiguration(
             new Uri("https://updates.example.test/app-archive.json"),
@@ -179,9 +213,44 @@ public sealed class DesktopUpdaterClientTests
             {
                 ["native-contract-stable"] = new byte[32],
             },
-            (_, _) => true,
-            _ => new Dictionary<string, string>(),
+            minimumOSResolver ?? ((_, _) => true),
+            requestHeadersProvider ?? (_ => new Dictionary<string, string>()),
             maximumMetadataBytes: maximumMetadataBytes);
+    }
+
+    private sealed class CapturedClientOwner
+    {
+        public DesktopUpdaterClient? Client { get; set; }
+
+        public bool ResolveMinimumOS(string platform, string minimumOS)
+        {
+            GC.KeepAlive(Client);
+            return true;
+        }
+
+        public IReadOnlyDictionary<string, string> ProvideHeaders(Uri url)
+        {
+            GC.KeepAlive(Client);
+            return new Dictionary<string, string>();
+        }
+    }
+
+    private sealed class ReleaseProbe
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+        public IntPtr Handle { get; private set; }
+        public bool CallbackStateWasAliveDuringRelease { get; private set; }
+
+        public void Record(IntPtr handle, IntPtr applicationContext)
+        {
+            Handle = handle;
+            CallbackStateWasAliveDuringRelease =
+                applicationContext != IntPtr.Zero &&
+                GCHandle.FromIntPtr(applicationContext).Target is not null;
+            Interlocked.Increment(ref _count);
+        }
     }
 
     private static string FindRepositoryFile(string relativePath)

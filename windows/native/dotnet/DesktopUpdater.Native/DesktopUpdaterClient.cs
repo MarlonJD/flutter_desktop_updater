@@ -391,11 +391,14 @@ public sealed class DesktopUpdaterClient : IDisposable
     private static DesktopUpdaterClient CreateForTesting(
         DesktopUpdaterConfiguration configuration,
         IntPtr nativeHandle,
-        Action<IntPtr> release)
+        Action<IntPtr, IntPtr> release)
     {
         return new DesktopUpdaterClient(
             configuration,
-            NativeClientHandle.CreateForTesting(nativeHandle, release));
+            NativeClientHandle.CreateForTesting(
+                configuration,
+                nativeHandle,
+                release));
     }
 
     /// <summary>Downloads and verifies discovery metadata and the descriptor.</summary>
@@ -863,19 +866,26 @@ public sealed class DesktopUpdaterClient : IDisposable
     {
         private readonly MinimumOSDelegate? _minimumOSResolver;
         private readonly HeadersProviderDelegate? _requestHeadersProvider;
-        private readonly Action<IntPtr>? _releaseForTesting;
-        private GCHandle _callbackState;
+        private readonly Action<IntPtr, IntPtr>? _releaseForTesting;
+        private CallbackState? _callbackState;
+        private GCHandle _callbackStateToken;
 
         public NativeClientHandle(DesktopUpdaterConfiguration configuration)
             : base(IntPtr.Zero, true)
         {
             _minimumOSResolver = ResolveMinimumOS;
             _requestHeadersProvider = ProvideHeaders;
-            _callbackState = GCHandle.Alloc(new CallbackState(configuration));
+            _callbackState = new CallbackState(configuration);
+            _callbackStateToken = GCHandle.Alloc(
+                _callbackState,
+                GCHandleType.WeakTrackResurrection);
         }
 
-        private NativeClientHandle(IntPtr nativeHandle, Action<IntPtr> release)
-            : base(IntPtr.Zero, true)
+        private NativeClientHandle(
+            DesktopUpdaterConfiguration configuration,
+            IntPtr nativeHandle,
+            Action<IntPtr, IntPtr> release)
+            : this(configuration)
         {
             _releaseForTesting = release ??
                 throw new ArgumentNullException(nameof(release));
@@ -892,15 +902,19 @@ public sealed class DesktopUpdaterClient : IDisposable
             _requestHeadersProvider ?? throw new InvalidOperationException(
                 "The testing handle has no native callbacks.");
 
-        public IntPtr ApplicationContext => _callbackState.IsAllocated
-            ? GCHandle.ToIntPtr(_callbackState)
+        public IntPtr ApplicationContext => _callbackStateToken.IsAllocated
+            ? GCHandle.ToIntPtr(_callbackStateToken)
             : IntPtr.Zero;
 
         public static NativeClientHandle CreateForTesting(
+            DesktopUpdaterConfiguration configuration,
             IntPtr nativeHandle,
-            Action<IntPtr> release)
+            Action<IntPtr, IntPtr> release)
         {
-            return new NativeClientHandle(nativeHandle, release);
+            return new NativeClientHandle(
+                configuration,
+                nativeHandle,
+                release);
         }
 
         public void Initialize(IntPtr nativeHandle)
@@ -941,7 +955,7 @@ public sealed class DesktopUpdaterClient : IDisposable
                 }
                 else
                 {
-                    _releaseForTesting(handle);
+                    _releaseForTesting(handle, ApplicationContext);
                 }
             }
             catch
@@ -958,10 +972,11 @@ public sealed class DesktopUpdaterClient : IDisposable
 
         private void ReleaseCallbackState()
         {
-            if (_callbackState.IsAllocated)
+            if (_callbackStateToken.IsAllocated)
             {
-                _callbackState.Free();
+                _callbackStateToken.Free();
             }
+            _callbackState = null;
         }
     }
 
