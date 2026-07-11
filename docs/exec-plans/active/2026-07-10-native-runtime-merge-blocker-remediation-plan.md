@@ -1871,7 +1871,7 @@ Draft the corrected PR body for the user; do not post it through a connector.
 ## Verification
 
 - Task 10 complete local ladder: `verified locally`; the fixture check,
-  repository format check, analysis, 600-test Flutter suite, pub dry-run,
+  repository format check, analysis, 601-test Flutter suite, pub dry-run,
   49-test SwiftPM suite, and diff check all exited 0.
 - Current-head macOS, Windows, and Linux target-host CI: `not run`.
 - Signed/notarized DMG, PKG, and signed Inno lanes: `not run` because their
@@ -1945,6 +1945,27 @@ Task 10 evidence on 2026-07-11:
   implemented or claimed. Task 10 Step 2 therefore remains open even though
   all safely configurable non-recovery jobs are present. The runtime remains
   candidate-only and PR #65 is not merge-ready.
+- Review RED, verified locally: after validator false positives were removed,
+  the six-test structural docs suite had exactly one failure: the repository
+  lacked the required atomic `Current-Head Merge-Gate Ledger`. Five validator
+  tests passed and proved rejection of duplicate/stale/deleted/status-swapped
+  rows, commands hidden in YAML comments or moved to unrelated jobs, and
+  backtick-free signed DMG/PKG/Inno promotion prose.
+- Review GREEN, verified locally: the structural suite passed 6/6. The single
+  ledger now separates locally verified macOS root SwiftPM and exact 10.14
+  source-set evidence from the external consumer, both Flutter integration
+  modes, and ZIP smoke that remain not run. Windows source-contract
+  target/reparse evidence is separate from target-host CTest and from the
+  blocked junction/reparse transaction; Linux target-host consumers are
+  separate from the blocked mount/bind transaction. No current-head CI or
+  credential-gated pass is claimed.
+- Review verification, verified locally: the affected docs/package/macOS
+  command passed 37 tests; workflow YAML parsed; formatting checked 216 files
+  with 0 changes; focused analysis of the rewritten structural test reported
+  no issues; repository analysis exited 0 with the existing 395 info-only
+  diagnostics; full Flutter passed 601 tests with 3 explicit environment-gated
+  skips and 0 failures; and `git diff --check` exited 0. Target-host, CI, and
+  credential lanes remain not run, and Task 6 remains blocked.
 
 ## Final Acceptance Checklist
 

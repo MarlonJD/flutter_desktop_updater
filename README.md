@@ -83,8 +83,9 @@ authority, owned stage provenance, explicit install target proof, mount and
 reparse rejection, a one-shot handoff, Windows Unicode paths and relative
 redirects, and Release NuGet packages with third-party notices. The current
 remediation head has not run its macOS, Windows, or Linux target-host jobs in
-CI. Native transaction recovery journal work is `blocked`; signed DMG, PKG,
-and Inno smokes are `not run`. The preview therefore remains
+CI. Windows junction/reparse and Linux mount/bind transaction mutation plus
+native transaction recovery journal work are `blocked`; signed DMG, PKG, and
+Inno smokes are `not run`. The preview therefore remains
 `candidate-only` and is not production-ready.
 
 See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for package

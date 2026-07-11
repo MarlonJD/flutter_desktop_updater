@@ -217,11 +217,12 @@ minimum-OS policy, request headers, UI, and release approval.
 
 The current safety boundary requires signed app-archive authority before
 selection, owned stage provenance through helper handoff, and explicit install
-target proof. Protected roots, mount and reparse rejection, symlink/junction
-boundaries, and install/staging overlap remain fail-closed requirements.
-Windows transport must preserve Unicode paths and resolve relative redirects;
-Windows retail consumption must use the Release NuGet payload and installed
-third-party notices.
+target proof. Local source-contract tests cover the current fail-closed Windows
+target/reparse validation, but real target-host junction execution is `not run`.
+Windows junction/reparse transaction mutation and Linux mount/bind transaction
+mutation remain `blocked` with Task 6. Windows transport must preserve Unicode
+paths and resolve relative redirects; Windows retail consumption must use the
+Release NuGet payload and installed third-party notices.
 
 The implemented scheduling guard provides a one-shot handoff. It is not a
 durable native transaction recovery journal: that work is `blocked` by Task 6

@@ -10,38 +10,56 @@ The preview is implemented and `candidate-only`, but it is not production-ready.
 Configured workflow jobs are not execution evidence; an unchecked or `not run`
 lane must not be promoted by inference.
 
-## Merge-Gate Ledger
+## Current-Head Merge-Gate Ledger
 
 This table describes the current remediation head, not an earlier commit or a
 configured-but-unexecuted workflow.
 
 | Lane | Status | Current evidence |
 | --- | --- | --- |
-| Portable contract, trust, provenance, lifecycle, redirect, package-layout, and docs suites | `verified locally` | Named focused commands and the complete local ladder are recorded in the active remediation plan |
-| Current remediation head in GitHub Actions | `not run` | No CI run for the current head is claimed; therefore no lane is `verified in CI` |
-| macOS SwiftPM/external consumer, exact CocoaPods fallback, Flutter builds, and normal ZIP smoke on the current head | `not run` | Jobs are configured; target-host execution is still required |
-| Windows Unicode/redirect/tamper/reparse tests, Release NuGet consumer, and normal ZIP smoke on the current head | `not run` | Jobs are configured; Windows target-host execution is still required |
-| Linux tamper/package/consumer tests and normal ZIP smoke on the current head | `not run` | Jobs are configured; Linux target-host execution is still required |
-| Native transaction recovery journal, target lock, and crash recovery | `blocked` | Task 6's unsafe candidate was reverted; a packaged standalone-helper architecture is required |
-| macOS signed/notarized DMG and PKG smokes | `not run` | Separate `workflow_dispatch` credential lane |
-| Windows signed Inno smoke | `not run` | Separate `workflow_dispatch` credential lane |
-
-Artifact status is consequently literal:
-
-| Platform | Artifact | Evidence | Handoff |
-| --- | --- | --- | --- |
-| macOS | `zip` | `not run` on the current remediation head | Whole-bundle helper replacement |
-| macOS | `dmg` | `not run` in the credential-gated lane | Read-only mount, app copy, helper replacement |
-| macOS | `pkgInstaller` | `not run` in the credential-gated lane | Installer.app |
-| Windows | `zip` | `not run` on the current remediation head | Directory helper replacement |
-| Windows | `innoInstaller` | `not run` in the credential-gated lane | Authenticode-verified installer handoff |
-| Linux | `zip` | `not run` on the current remediation head | Validated install-root replacement |
+| Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
+| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, 601 Flutter tests, pub dry-run, 49 SwiftPM tests, and diff check exited 0 |
+| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 49 tests on this macOS host |
+| macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
+| macOS external SwiftPM consumer | `not run` | Current-head external-consumer execution is still required |
+| Flutter macOS SwiftPM build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
+| Flutter macOS CocoaPods build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
+| macOS normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
+| Windows Unicode and relative redirect CTest | `not run` | Configured in the Windows CTest job; current-head target-host execution is still required |
+| Windows provenance, lifecycle, and C ABI CTest | `not run` | Registered in Windows CTest; current-head target-host execution is still required |
+| Windows source-contract target and reparse validation | `verified locally` | Dart source-contract tests verified the fail-closed target/reparse checks; this is not junction execution evidence |
+| Windows junction/reparse transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; safe handle-relative transaction mutation is not implemented |
+| Windows Release NuGet isolated P/Invoke consumer | `not run` | Configured in CI; real Release DLL target-host execution is still required |
+| Windows normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
+| Linux native tamper CTest | `not run` | Registered in Linux CTest; current-head target-host execution is still required |
+| Linux installed CMake consumer | `not run` | Configured in CI; installed target-host consumption is still required |
+| Linux standard and multiarch pkg-config consumers | `not run` | Configured in CI; target-host installed-prefix execution is still required |
+| Linux mount/bind transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; fd-relative mount/bind transaction mutation is not implemented |
+| Linux normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
+| Current remediation head in GitHub Actions | `not run` | No CI run for this head is claimed; therefore no lane is `verified in CI` |
+| macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
+| macOS signed/notarized PKG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
+| Windows signed Inno smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 
 `verified locally` means the named behavior passed on the local host.
 `verified in CI` is recorded only after the required target-host job passes.
 `blocked` means a required host, dependency, approval, or credential prevented
 a gate. `production-ready` requires every applicable artifact row, packaged
 consumer, publisher check, and cleanup assertion to pass.
+
+## Artifact Capability Matrix
+
+This matrix describes implemented handoff shapes only. Evidence belongs solely
+to the current-head ledger above.
+
+| Platform | Artifact | Handoff |
+| --- | --- | --- |
+| macOS | `zip` | Whole-bundle helper replacement |
+| macOS | `dmg` | Read-only mount, app copy, helper replacement |
+| macOS | `pkgInstaller` | Installer.app handoff |
+| Windows | `zip` | Directory helper replacement |
+| Windows | `innoInstaller` | Authenticode-verified installer handoff |
+| Linux | `zip` | Validated install-root replacement |
 
 ## Three-Stage Lifecycle
 
@@ -242,11 +260,13 @@ and Windows Inno Authenticode policy are not replaced by descriptor signing.
 
 An owned stage provenance digest binds the verified stage to the helper
 request. Explicit install target proof binds the request to the running app's
-canonical target. Protected roots, mount and reparse rejection, symlink and
-junction escapes, and install/staging overlap are fail-closed requirements.
-The current implementation verifies one-shot handoff scheduling, but the
-durable native transaction recovery journal is `blocked` and is not represented
-by the Flutter recovery marker.
+canonical target. Local source-contract tests verify the current fail-closed
+Windows target/reparse checks, but they are not target-host junction execution
+evidence. Windows junction/reparse transaction mutation, Linux mount/bind
+transaction mutation, and durable native transaction recovery are `blocked`
+by Task 6. The current implementation separately verifies one-shot handoff
+scheduling; the Flutter recovery marker does not satisfy the blocked native
+transaction gate.
 
 Windows keeps filesystem paths wide through its native boundary, including
 Windows Unicode paths, and resolves relative redirects with a five-hop limit
