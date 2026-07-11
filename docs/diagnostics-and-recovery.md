@@ -172,6 +172,16 @@ not by itself decide whether the next app launch succeeded. Add an
 `UpdateRecoveryStore` when you want the next startup to detect unfinished or
 unverified installs.
 
+Flutter `UpdateRecoveryStore` is not a native transaction journal. It records
+an app-owned expectation across relaunch; it does not provide a cross-process
+target lock, fsynced transaction states, or deterministic recovery after a
+native helper is killed between filesystem mutations. The preview's one-shot
+handoff guard and existing best-effort rollback are verified separately. The
+durable native transaction recovery journal is currently `blocked` by the
+standalone-helper ownership/signing architecture recorded in Task 6 of the
+active native runtime merge-blocker remediation plan. Do not interpret the
+marker below as evidence that the blocked native recovery gate passed.
+
 ```dart
 class AppUpdateRecoveryStore implements UpdateRecoveryStore {
   @override

@@ -15,8 +15,9 @@ It runs on push, pull request, and manual `workflow_dispatch`.
 
 The package CI covers:
 
-- synchronized Dart/Swift/C++/CMake/NuGet versions, Dart formatting, analysis,
-  tests, CLI entrypoints, and `dart pub publish --dry-run`;
+- synchronized Dart/Swift/C++/CMake/NuGet versions, generated native contract
+  fixtures, Dart formatting, analysis, full tests, CLI entrypoints, and
+  `dart pub publish --dry-run`;
 - macOS SwiftPM helper tests, an external Flutter-free Swift consumer, and
   separate Flutter SwiftPM and CocoaPods fallback build/integration lanes;
 - Windows debug and release builds, native tests, integration tests, and update smoke tests;
@@ -58,6 +59,22 @@ target, and run the relevant native tests:
   version, runs the external consumer, proves protected roots fail closed, and
   rejects a zero-test CTest run.
 
+The current native merge-gate configuration also contains the normal macOS,
+Windows, and Linux ZIP runtime smokes; the exact CocoaPods macOS 10.14
+five-source typecheck; both current Flutter macOS integration modes; Windows
+Unicode paths and relative redirects; Release NuGet packing, notice checks,
+isolated P/Invoke consumption, and DLL hash proof; and Linux standard plus
+multiarch pkg-config consumers. Every CTest invocation rejects “No tests were
+found.” These are configured gates, not `verified in CI` evidence until that
+exact revision runs successfully on the named target host.
+
+Task 6 is an explicit exception, not an inferred pass. The one-shot scheduling
+guard is covered, but the native transaction recovery journal, cross-process
+target lock, Linux mount/bind transaction traversal, and complete Windows
+reparse-safe transaction remain `blocked` after the unsafe candidate was
+reverted. The ordinary workflow must not label its CTest lanes as recovery
+evidence.
+
 Evidence must stay literal: unavailable credentials or hosts are `blocked` or
 `not run`; unsigned executables are `candidate-only`; only completed required
 target-host and publisher-trust gates can be called `production-ready`.
@@ -70,10 +87,11 @@ diagnostics run. The package does not upload helper logs by default.
 
 The package CI intentionally does not publish app update artifacts. Automatic updates belong to the app that is shipping the update because that app owns the bundle ID, signing identity, notarization credentials, versioning, update hosting, and release approval policy.
 
-The full macOS DMG/PKG production smoke is local/manual unless a workflow is
-explicitly given Developer ID Application, Developer ID Installer, keychain, and
-notary credentials. CI runs without those credentials should label that evidence
-as `not run`, not as production-ready Apple trust.
+The signed/notarized DMG and PKG smokes live in a separate manual job that needs
+Developer ID Application, Developer ID Installer, keychain, and notary
+credentials. The signed Inno smoke likewise needs its explicit Windows signing
+credentials. CI runs without those credentials label that evidence `not run`,
+not as a passed publisher-trust or production-ready gate.
 
 ## App Repository CD
 

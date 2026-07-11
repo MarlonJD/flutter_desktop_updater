@@ -9,6 +9,16 @@
 Linux apps that match the current `desktop_updater` 2.7 discovery, trust,
 download, verification, staging, artifact, and policy contracts.
 
+## Current Merge Authority
+
+This implementation history is superseded for merge-readiness decisions by
+[the 2026-07-10 native runtime merge-blocker remediation plan](2026-07-10-native-runtime-merge-blocker-remediation-plan.md).
+Target-host results recorded below for older commit `6be760e` are historical
+evidence only; they do not verify the current remediation head. Task 6 of the
+remediation plan is `blocked` after its unsafe native transaction candidate was
+reverted. Current-head target-host and credential lanes are `not run`, and the
+runtime remains `candidate-only`.
+
 **Architecture:** Flutter apps continue to use the Dart `UpdateClient`. Native
 runtime targets live beside the helper SDKs but are separate build targets, so
 Flutter plugin builds do not acquire native HTTP, archive, JSON, or crypto
@@ -737,7 +747,7 @@ Linux ZIP update
 
 Signed/notarized/publisher-trust lanes use existing explicit secret gates.
 
-- [x] **Step 7.4: Verify installed package consumption**
+- [ ] **Step 7.4: Verify installed package consumption on the remediation head**
 
 macOS sample uses the repository-tag/local SwiftPM product. Windows sample
 uses the local NuGet package and bundled native DLL. Linux sample uses a CMake
@@ -793,13 +803,12 @@ Task 7 candidate evidence on 2026-07-10:
 - the focused Dart contracts passed 15 tests, the full Flutter suite passed
   529 tests with 3 explicit opt-in E2E skips, formatting checked 208 files
   with no changes, and analyze completed without errors;
-- commit `6be760e` completed the final normal target-host CI pass with 20
-  successful checks, 2 expected credential-gated skips, and no failures or
-  pending checks; packaged SwiftPM, NuGet, and installed CMake consumers plus
-  the macOS, Windows, and Linux ZIP replacement smokes all passed;
-- Step 7.4 is complete. Step 7.3 remains unchecked because the signed/notarized
-  DMG, PKG Installer.app, and signed Inno trust lanes are still `not run`
-  without their explicit credentials.
+- older commit `6be760e` had target-host evidence, but later remediation changed
+  trust, staging, target validation, transport, CocoaPods, and retail package
+  boundaries. Those jobs are `not run` on the current head and cannot complete
+  Step 7.4 by inheritance;
+- Steps 7.3 and 7.4 remain unchecked. Signed/notarized DMG, PKG Installer.app,
+  and signed Inno trust lanes are `not run` without explicit credentials.
 
 ## Task 8: Preview Documentation And Publication Gate
 
@@ -852,7 +861,7 @@ Delta artifacts remain descriptor metadata only. Linux prebuilt binary
 distribution remains outside this plan until ABI/glibc/architecture policy is
 approved.
 
-- [x] **Step 8.5: Run docs and consumer compile tests**
+- [ ] **Step 8.5: Run docs and consumer compile tests on the remediation head**
 
 ```sh
 flutter test --no-pub \
@@ -883,14 +892,13 @@ Task 8 candidate evidence on 2026-07-10:
 - discovery metadata, canonical JSON, pinned key IDs, application-owned
   package identity, publisher checks, helper separation, delta metadata, and
   unsupported Linux prebuilt distribution are explicit;
-- evidence remains literal: the macOS ZIP path is `verified locally` and all
-  three normal ZIP paths plus packaged consumers are `verified in CI`;
-  credential-gated DMG, PKG, and Inno lanes are `not run`, so the preview is
-  not `production-ready`;
+- evidence is now reconciled to the current head: portable/docs checks are
+  `verified locally`; all three target-host ZIP paths and packaged consumers
+  are `not run`; credential-gated DMG, PKG, and Inno lanes are also `not run`,
+  so the preview is not `production-ready`;
 - the focused docs and harness command passed 12 tests locally;
-- commit `6be760e` completed the final normal target-host CI pass with the
-  external SwiftPM, NuGet, and installed CMake samples passing, so Step 8.5 is
-  complete.
+- older commit `6be760e` compiled the external samples, but that result predates
+  the remediation changes and does not complete Step 8.5 for the current head.
 
 ## Final Gate
 
@@ -921,12 +929,14 @@ lanes pass with required publisher trust evidence.
 
 ## Implementation Status
 
-As of 2026-07-10, Tasks 1-8 are implemented. Packaged SwiftPM, NuGet, and CMake
-consumers plus the normal macOS, Windows, and Linux ZIP replacement smokes are
-`verified in CI`. Signed/notarized DMG, PKG, and signed Inno publisher-trust
-lanes remain explicit credential-gated `not run` evidence, leaving Steps 5.7
-and 7.3 plus the production-readiness gate open. The native runtime remains a
-preview and is not `production-ready`.
+As of 2026-07-11, this plan records the original preview implementation, while
+the linked remediation plan is the current authority. Portable and macOS local
+commands are recorded there as `verified locally`. Current-head macOS,
+Windows, and Linux target-host jobs are `not run`; the signed/notarized DMG,
+PKG, and signed Inno lanes are `not run`; and durable native transaction
+recovery is `blocked`. Steps 5.7, 7.3, 7.4, and 8.5 plus the production-readiness
+gate remain open. The native runtime remains a `candidate-only` preview and is
+not `production-ready`.
 
 ## Self-Review
 

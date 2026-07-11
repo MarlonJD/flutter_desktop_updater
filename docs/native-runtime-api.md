@@ -7,20 +7,35 @@ usable without linking the runtime transport, contract, crypto, or archive
 code.
 
 The preview is implemented and `candidate-only`, but it is not production-ready.
-Normal target-host CI and the credential-gated publisher-trust lanes provide
-separate evidence; an unchecked or `not run` lane must not be promoted by
-inference.
+Configured workflow jobs are not execution evidence; an unchecked or `not run`
+lane must not be promoted by inference.
 
-## Current Evidence
+## Merge-Gate Ledger
+
+This table describes the current remediation head, not an earlier commit or a
+configured-but-unexecuted workflow.
+
+| Lane | Status | Current evidence |
+| --- | --- | --- |
+| Portable contract, trust, provenance, lifecycle, redirect, package-layout, and docs suites | `verified locally` | Named focused commands and the complete local ladder are recorded in the active remediation plan |
+| Current remediation head in GitHub Actions | `not run` | No CI run for the current head is claimed; therefore no lane is `verified in CI` |
+| macOS SwiftPM/external consumer, exact CocoaPods fallback, Flutter builds, and normal ZIP smoke on the current head | `not run` | Jobs are configured; target-host execution is still required |
+| Windows Unicode/redirect/tamper/reparse tests, Release NuGet consumer, and normal ZIP smoke on the current head | `not run` | Jobs are configured; Windows target-host execution is still required |
+| Linux tamper/package/consumer tests and normal ZIP smoke on the current head | `not run` | Jobs are configured; Linux target-host execution is still required |
+| Native transaction recovery journal, target lock, and crash recovery | `blocked` | Task 6's unsafe candidate was reverted; a packaged standalone-helper architecture is required |
+| macOS signed/notarized DMG and PKG smokes | `not run` | Separate `workflow_dispatch` credential lane |
+| Windows signed Inno smoke | `not run` | Separate `workflow_dispatch` credential lane |
+
+Artifact status is consequently literal:
 
 | Platform | Artifact | Evidence | Handoff |
 | --- | --- | --- | --- |
-| macOS | `zip` | `verified locally`; `verified in CI` | Whole-bundle helper replacement |
+| macOS | `zip` | `not run` on the current remediation head | Whole-bundle helper replacement |
 | macOS | `dmg` | `not run` in the credential-gated lane | Read-only mount, app copy, helper replacement |
 | macOS | `pkgInstaller` | `not run` in the credential-gated lane | Installer.app |
-| Windows | `zip` | `verified in CI` | Directory helper replacement |
+| Windows | `zip` | `not run` on the current remediation head | Directory helper replacement |
 | Windows | `innoInstaller` | `not run` in the credential-gated lane | Authenticode-verified installer handoff |
-| Linux | `zip` | `verified in CI` | Validated install-root replacement |
+| Linux | `zip` | `not run` on the current remediation head | Validated install-root replacement |
 
 `verified locally` means the named behavior passed on the local host.
 `verified in CI` is recorded only after the required target-host job passes.
@@ -119,6 +134,9 @@ Flutter plugin target, are the compile authority for these examples.
 
 The native runtime is SwiftPM-only at macOS 10.15 or newer; the macOS 10.14
 CocoaPods fallback intentionally excludes `Runtime/**`.
+The native runtime boundary is **SwiftPM macOS 10.15+** and preserves
+`import DesktopUpdaterKit`. The Flutter fallback boundary is **CocoaPods macOS
+10.14** and intentionally excludes `Runtime/**`.
 
 - macOS links the `DesktopUpdaterKit` SwiftPM product from an approved tag or a
   repository checkout. The package has no Flutter dependency.
@@ -209,10 +227,11 @@ disposal, client disposal, and the complete `removedFiles` array.
 
 ## Trust Boundary
 
-`app-archive.json` is discovery metadata, not release authority. A selected
-index item must exactly match descriptor version, integer build number,
-platform, and channel. The descriptor package identity is app-owned and must
-match `expectedPackageId`.
+Unsigned `app-archive.json` is discovery metadata, not release authority. The
+native preview requires signed app-archive authority before selection. A
+selected index item must exactly match descriptor version, integer build
+number, platform, and channel. The descriptor package identity is app-owned
+and must match `expectedPackageId`.
 
 Descriptor signatures use Dart-compatible canonical JSON, Ed25519, and an
 application-pinned key ID from `pinnedPublicKeysById`. Unknown key IDs, invalid
@@ -221,9 +240,19 @@ hash mismatches, and unsafe archive paths fail before helper handoff. Platform
 publisher checks remain mandatory where configured: macOS app/DMG/PKG trust
 and Windows Inno Authenticode policy are not replaced by descriptor signing.
 
-The Linux helper also validates the application-owned install root and
-executable path before scheduling replacement. `/`, shared system prefixes,
-traversal, and symlink escapes fail closed.
+An owned stage provenance digest binds the verified stage to the helper
+request. Explicit install target proof binds the request to the running app's
+canonical target. Protected roots, mount and reparse rejection, symlink and
+junction escapes, and install/staging overlap are fail-closed requirements.
+The current implementation verifies one-shot handoff scheduling, but the
+durable native transaction recovery journal is `blocked` and is not represented
+by the Flutter recovery marker.
+
+Windows keeps filesystem paths wide through its native boundary, including
+Windows Unicode paths, and resolves relative redirects with a five-hop limit
+without forwarding stale authority headers. Release NuGet consumption uses
+the packaged Release DLLs, isolated restore/build roots, hash comparison, and
+the packaged third-party notices.
 
 ## Unsupported Future Work
 

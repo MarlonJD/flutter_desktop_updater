@@ -1788,7 +1788,7 @@ Task 9 evidence on 2026-07-11:
 - Keeps signed/notarized smokes separate from ordinary merge gates while the
   runtime remains candidate-only.
 
-- [ ] **Step 1: Add failing docs/CI drift tests**
+- [x] **Step 1: Add failing docs/CI drift tests**
 
 Require documentation and workflow text for:
 
@@ -1828,7 +1828,7 @@ normal ZIP update smoke on macOS, Windows, and Linux
 Credential-gated signed/notarized DMG, PKG, and Inno lanes remain
 `not run` without secrets and keep the runtime candidate-only.
 
-- [ ] **Step 3: Run the complete local ladder**
+- [x] **Step 3: Run the complete local ladder**
 
 Run:
 
@@ -1845,12 +1845,47 @@ git diff --check
 Expected: all commands exit 0; skipped external-service tests retain their
 explicit opt-in labels.
 
-- [ ] **Step 4: Reconcile plan state and PR text**
+- [x] **Step 4: Reconcile plan state and PR text**
 
 Mark a checkbox complete only with command/run evidence. Keep open or
 credential-dependent rows literal. Update the parent runtime plan to reference
 this remediation plan and remove claims contradicted by current implementation.
 Draft the corrected PR body for the user; do not post it through a connector.
+
+#### Corrected PR #65 body draft (not posted)
+
+~~~markdown
+## Summary
+
+- Aligns the native preview with the generated Dart schema-v3 behavior and
+  authenticates signed app-archive policy before selection.
+- Binds checks, stages, provenance, and explicit install-target proof without
+  changing the released Flutter API/MethodChannel surface or the
+  `DesktopUpdaterKit` product/import.
+- Keeps the SwiftPM runtime at macOS 10.15+ and the exact five-source Flutter
+  CocoaPods fallback at macOS 10.14.
+- Makes Windows transport paths Unicode-safe, resolves bounded relative
+  redirects, and packages Release NuGet DLLs with isolated-consumer hash proof
+  and third-party notices.
+
+## Verification
+
+- Task 10 complete local ladder: `verified locally`; the fixture check,
+  repository format check, analysis, 600-test Flutter suite, pub dry-run,
+  49-test SwiftPM suite, and diff check all exited 0.
+- Current-head macOS, Windows, and Linux target-host CI: `not run`.
+- Signed/notarized DMG, PKG, and signed Inno lanes: `not run` because their
+  explicit credential gates were not dispatched.
+
+## Remaining blocker
+
+Durable native transaction recovery remains `blocked`. The reviewed
+script-helper candidate was reverted because it could not provide safe
+fd/handle-relative mutation, serialized recovery, and crash-safe journal
+ownership. The required packaged standalone-helper architecture is not yet
+defined. The runtime therefore remains `candidate-only`, and PR #65 is not
+merge-ready.
+~~~
 
 - [ ] **Step 5: Perform the final adversarial review**
 
@@ -1867,12 +1902,49 @@ CI/release/tracker truth
 The verdict may become GO only when no P0/P1 remains and no high-risk domain is
 `NOT_VERIFIED`.
 
-- [ ] **Step 6: Record final evidence and commit documentation**
+- [x] **Step 6: Record final evidence and commit documentation**
 
 ~~~sh
 git add README.md docs test/native_runtime_merge_gate_docs_test.dart .github/workflows/desktop-updater-ci.yml
 git commit -m "docs: record native runtime merge gates"
 ~~~
+
+Task 10 evidence on 2026-07-11:
+
+- RED, verified locally: `flutter test --no-pub
+  test/native_runtime_merge_gate_docs_test.dart` ran five tests; four failed
+  for the intended missing behavior (canonical macOS integration-floor text,
+  current trust/safety and blocked-recovery language, target-host workflow
+  gates, and one literal ledger/PR draft). The signed-lane mutation validator
+  passed independently.
+- GREEN, verified locally: the focused docs/CI suite passed 5/5. The combined
+  docs, smoke, retail-package, CocoaPods-layout, and SwiftPM-layout command
+  passed 36/36. The exact five-source macOS 10.14 `swiftc -typecheck` command
+  exited 0, workflow YAML parsed successfully, and every existing macOS docs
+  compatibility assertion remained green.
+- Workflow configuration, not execution evidence: the Dart job now checks
+  generated fixtures; target-host jobs retain nonzero CTest guards, packaged
+  consumers, both current Flutter macOS integrations, and normal ZIP smokes.
+  Windows names its Unicode/relative-redirect gate and isolated Release NuGet
+  P/Invoke consumer; Linux names its native tamper gate and multiarch
+  pkg-config consumer. Comments explicitly forbid treating these lanes as
+  native transaction recovery evidence.
+- Complete local ladder, verified locally: fixture generation reported
+  `Native contract fixtures are up to date`; formatting checked 216 files with
+  0 changes; repository analysis exited 0 with 395 pre-existing info-only
+  diagnostics; full Flutter passed 600 tests with 3 explicit environment-gated
+  skips and 0 failures; pub publish dry-run exited 0 with the expected dirty
+  README warning and prior-version hint; SwiftPM passed 49 tests with 0
+  failures; and `git diff --check` exited 0.
+- Current-head macOS, Windows, and Linux target-host jobs: not run. GitHub
+  Actions: not run; no `verified in CI` result is claimed. Signed/notarized DMG
+  and PKG plus signed Inno credential lanes: not run.
+- BLOCKED: Task 6 remains reverted. Cross-process target locking, durable
+  transaction journal states, privileged Linux mount/bind recovery, complete
+  Windows reparse-safe transaction mutation, and abrupt-crash recovery are not
+  implemented or claimed. Task 10 Step 2 therefore remains open even though
+  all safely configurable non-recovery jobs are present. The runtime remains
+  candidate-only and PR #65 is not merge-ready.
 
 ## Final Acceptance Checklist
 

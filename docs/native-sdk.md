@@ -61,11 +61,14 @@ The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback
 for Flutter hosts that disable SwiftPM.
 
-SwiftPM keeps the `DesktopUpdaterKit` product and import at macOS 10.15 or
-newer. The CocoaPods fallback remains macOS 10.14 compatible and compiles only
+SwiftPM keeps the `DesktopUpdaterKit` product and import at macOS 10.15 or newer.
+In merge-gate terms, the native runtime boundary is **SwiftPM macOS 10.15+**
+and keeps the unchanged source spelling `import DesktopUpdaterKit`.
+The CocoaPods fallback remains macOS 10.14 compatible and compiles only
 `DesktopUpdaterVersion.swift`, `Diagnostics.swift`, `MacInstallHelper.swift`,
-`MacInstallRequest.swift`, and `DesktopUpdaterPlugin.swift`. It does not compile
-`DesktopUpdaterKit/Runtime/**`.
+`MacInstallRequest.swift`, and `DesktopUpdaterPlugin.swift`. In merge-gate
+terms, this exact Flutter fallback boundary is **CocoaPods macOS 10.14**. It
+does not compile `DesktopUpdaterKit/Runtime/**`.
 
 The same SwiftPM product now includes the preview `UpdateClient`. Its
 `checkForUpdate`, `downloadVerifyAndStage`, and `installAndRelaunch` operations
@@ -212,8 +215,20 @@ artifact integrity, bounded safe staging, diagnostics, and existing helper
 handoff. Applications still own configuration, pinned keys, package identity,
 minimum-OS policy, request headers, UI, and release approval.
 
-The API is `preview` and `candidate-only`, not `production-ready`. The macOS
-ZIP flow is `verified locally`, and the macOS, Windows, and Linux ZIP package
-smokes are `verified in CI`. The signed DMG, PKG, and Inno lanes are `not run`
-without explicit credentials. See [Native Runtime Preview API](native-runtime-api.md)
-for compiling examples, packaging boundaries, exact evidence, and trust rules.
+The current safety boundary requires signed app-archive authority before
+selection, owned stage provenance through helper handoff, and explicit install
+target proof. Protected roots, mount and reparse rejection, symlink/junction
+boundaries, and install/staging overlap remain fail-closed requirements.
+Windows transport must preserve Unicode paths and resolve relative redirects;
+Windows retail consumption must use the Release NuGet payload and installed
+third-party notices.
+
+The implemented scheduling guard provides a one-shot handoff. It is not a
+durable native transaction recovery journal: that work is `blocked` by Task 6
+of the merge-blocker remediation plan and the unsafe candidate was reverted.
+The current remediation head's target-host jobs are configured but `not run`;
+no `verified in CI` result is claimed for it. Signed DMG, PKG, and Inno lanes
+are also `not run` without explicit credentials. The API remains `preview` and
+`candidate-only`, not `production-ready`. See
+[Native Runtime Preview API](native-runtime-api.md) for the literal ledger,
+compiling examples, packaging boundaries, and trust rules.

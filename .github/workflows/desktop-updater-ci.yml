@@ -16,6 +16,8 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
+      - name: Check generated native contract fixtures
+        run: dart run tool/generate_native_contract_fixtures.dart --check
       - name: Check synchronized native SDK versions
         run: dart run tool/version_check.dart
       - name: Check formatting
@@ -111,7 +113,9 @@ jobs:
         run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
         run: cmake --build windows/native/build --config Release
-      - name: Run standalone Windows native SDK tests
+      # Native transaction recovery remains blocked by Task 6; this CTest lane
+      # must not be reported as recovery-journal evidence.
+      - name: Run Windows Unicode and relative redirect target-host gates
         shell: pwsh
         run: |
           $serverOut = Join-Path $env:RUNNER_TEMP "native-transport-server.out"
@@ -247,7 +251,7 @@ jobs:
           } finally {
             $archive.Dispose()
           }
-      - name: Run packaged .NET consumer
+      - name: Run isolated Release NuGet P/Invoke consumer
         shell: pwsh
         run: |
           $laneRoot = Join-Path $env:RUNNER_TEMP "desktop-updater-nuget-regular"
@@ -847,7 +851,9 @@ jobs:
         run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON -DCMAKE_INSTALL_PREFIX="$PWD/linux/native/install"
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
-      - name: Run standalone Linux native tests
+      # Native transaction recovery remains blocked by Task 6; this CTest lane
+      # must not be reported as mount/bind recovery evidence.
+      - name: Run Linux native tamper target-host gates
         run: |
           dart run tool/native_transport_fixture_server.dart --port 43891 >"$RUNNER_TEMP/native-transport-server.log" 2>&1 &
           server_pid=$!
