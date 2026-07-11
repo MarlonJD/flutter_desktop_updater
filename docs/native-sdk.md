@@ -137,9 +137,12 @@ wrappers, `buildTransitive` copy target, and both
 exposes `CheckForUpdate`, `DownloadVerifyAndStage`, and `InstallAndRelaunch`;
 helper-only consumers use `DesktopUpdaterInstallRequest` so the managed wrapper
 marshals the retained provenance, artifact digest, signer allowlist, and target
-proof. The old managed overload remains source-compatible for restart-only
-calls and rejects staged requests lacking that trust context. The lower-level C
-ABI uses the corresponding versioned `_v1` functions.
+proof. Its `DesktopUpdaterElevationPolicy` carries the signed Inno
+`requiresElevation` value as `Auto`, `Always`, or `Never`; the native helper
+rejects policy drift from the provenance-protected release manifest before
+installer execution. The old managed overload remains source-compatible for
+restart-only calls and rejects staged requests lacking that trust context. The
+lower-level C ABI uses the corresponding versioned `_v1` functions.
 Repository CI packs the package to a local feed and runs external consumers
 against the real DLLs. It is not a public NuGet release until an approved
 release workflow publishes that exact verified package.

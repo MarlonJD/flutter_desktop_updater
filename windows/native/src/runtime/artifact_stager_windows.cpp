@@ -156,6 +156,25 @@ std::vector<std::string> AuthenticodeThumbprints(
   return result;
 }
 
+desktop_updater_install_elevation_policy_v1 ElevationPolicy(
+    const ReleaseDescriptor& descriptor) {
+  if (descriptor.artifact.kind != "innoInstaller") {
+    return DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO;
+  }
+  const std::string value =
+      descriptor.install.at("inno").at("requiresElevation").string();
+  if (value == "always") {
+    return DESKTOP_UPDATER_INSTALL_ELEVATION_ALWAYS;
+  }
+  if (value == "never") {
+    return DESKTOP_UPDATER_INSTALL_ELEVATION_NEVER;
+  }
+  if (value != "auto") {
+    throw std::invalid_argument("Invalid signed Inno elevation policy.");
+  }
+  return DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO;
+}
+
 }  // namespace
 
 WindowsStagedArtifact StageWindowsZip(
@@ -308,6 +327,7 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
   request.allowed_signer_thumbprints = thumbprint_pointers.empty()
       ? nullptr : thumbprint_pointers.data();
   request.allowed_signer_thumbprint_count = thumbprint_pointers.size();
+  request.elevation_policy = ElevationPolicy(descriptor);
   desktop_updater_result_v1 result =
       desktop_updater_schedule_install_and_relaunch_v1(&request);
   WindowsInstallHandoffResult handoff{

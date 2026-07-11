@@ -19,6 +19,18 @@ enum class WindowsPathComponentState {
   kReparsePoint,
 };
 
+enum class InstallElevationPolicy {
+  kAuto,
+  kAlways,
+  kNever,
+};
+
+enum class InstallLaunchDecision {
+  kNormal,
+  kElevated,
+  kReject,
+};
+
 struct InstallTargetProof {
   std::wstring canonical_root;
   std::wstring executable_relative_path;
@@ -36,7 +48,7 @@ struct InstallRequest {
   std::wstring expected_provenance_sha256;
   std::wstring expected_artifact_sha256;
   std::vector<std::wstring> allowed_signer_thumbprints;
-  bool request_elevation_if_needed = true;
+  InstallElevationPolicy elevation_policy = InstallElevationPolicy::kAuto;
 };
 
 struct InstallResult {
@@ -45,6 +57,12 @@ struct InstallResult {
 };
 
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
+
+InstallLaunchDecision ResolveInstallLaunchDecision(
+    InstallElevationPolicy policy,
+    bool target_is_protected,
+    bool target_is_writable,
+    bool process_is_elevated);
 
 bool IsStrictChildPath(const std::wstring& root,
                        const std::wstring& candidate);

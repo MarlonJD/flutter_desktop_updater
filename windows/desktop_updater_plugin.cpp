@@ -241,7 +241,8 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(version_stream.str()));
   } else if (method_call.method_name().compare("restartApp") == 0) {
     desktop_updater::native::InstallRequest request;
-    request.request_elevation_if_needed = false;
+    request.elevation_policy =
+        desktop_updater::native::InstallElevationPolicy::kNever;
     std::string error;
     if (!ScheduleNativeInstall(request, &error)) {
       result->Error("RestartError", error);
@@ -290,7 +291,22 @@ void DesktopUpdaterPlugin::HandleMethodCall(
         *arguments, "expectedArtifactSha256");
     request.allowed_signer_thumbprints = StringListFromArguments(
         *arguments, "allowedSignerThumbprints");
-    request.request_elevation_if_needed = true;
+    const std::wstring elevation_policy =
+        StringFromArguments(*arguments, "innoRequiresElevation");
+    if (elevation_policy.empty() || elevation_policy == L"auto") {
+      request.elevation_policy =
+          desktop_updater::native::InstallElevationPolicy::kAuto;
+    } else if (elevation_policy == L"always") {
+      request.elevation_policy =
+          desktop_updater::native::InstallElevationPolicy::kAlways;
+    } else if (elevation_policy == L"never") {
+      request.elevation_policy =
+          desktop_updater::native::InstallElevationPolicy::kNever;
+    } else {
+      result->Error("InvalidArguments",
+                    "innoRequiresElevation must be auto, always, or never.");
+      return;
+    }
     std::string error;
     if (!ScheduleNativeInstall(request, &error)) {
       result->Error("InstallError", error);

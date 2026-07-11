@@ -51,6 +51,7 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     List<Map<String, Object?>> stageProvenanceEntries = const [],
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
+    String innoRequiresElevation = "auto",
   }) async {
     await _invokeInstallUpdate(
       stagingPath: stagingPath,
@@ -65,6 +66,7 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
       stageProvenanceEntries: stageProvenanceEntries,
       expectedArtifactSha256: expectedArtifactSha256,
       allowedSignerThumbprints: allowedSignerThumbprints,
+      innoRequiresElevation: innoRequiresElevation,
     );
   }
 
@@ -81,7 +83,15 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     List<Map<String, Object?>> stageProvenanceEntries = const [],
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
+    String innoRequiresElevation = "auto",
   }) async {
+    if (!const {"auto", "always", "never"}.contains(innoRequiresElevation)) {
+      throw ArgumentError.value(
+        innoRequiresElevation,
+        "innoRequiresElevation",
+        "must be auto, always, or never",
+      );
+    }
     final arguments = <String, Object?>{
       "stagingPath": stagingPath,
       "removedFiles": removedFiles,
@@ -113,6 +123,9 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     }
     if (allowedSignerThumbprints.isNotEmpty) {
       arguments["allowedSignerThumbprints"] = allowedSignerThumbprints;
+    }
+    if (innoRequiresElevation != "auto") {
+      arguments["innoRequiresElevation"] = innoRequiresElevation;
     }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }

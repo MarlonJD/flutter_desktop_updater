@@ -28,6 +28,7 @@ public sealed class DesktopUpdaterNativeTests
             expectedProvenanceSha256: new string('a', 64),
             expectedArtifactSha256: new string('b', 64),
             allowedSignerThumbprints: new[] { new string('C', 64) },
+            requiresElevation: DesktopUpdaterElevationPolicy.Never,
             installRoot: @"C:\Program Files\Example",
             executableRelativePath: "Example.exe",
             expectedPackageId: "com.example.app");
@@ -35,6 +36,9 @@ public sealed class DesktopUpdaterNativeTests
         Assert.Equal(new string('a', 64), request.ExpectedProvenanceSha256);
         Assert.Equal(new string('b', 64), request.ExpectedArtifactSha256);
         Assert.Single(request.AllowedSignerThumbprints);
+        Assert.Equal(
+            DesktopUpdaterElevationPolicy.Never,
+            request.RequiresElevation);
         Assert.Equal(@"C:\Program Files\Example", request.InstallRoot);
         Assert.Equal("Example.exe", request.ExecutableRelativePath);
         Assert.Equal("com.example.app", request.ExpectedPackageId);
@@ -51,6 +55,7 @@ public sealed class DesktopUpdaterNativeTests
                 expectedProvenanceSha256: "not-a-sha256",
                 expectedArtifactSha256: new string('b', 64),
                 allowedSignerThumbprints: Array.Empty<string>(),
+                requiresElevation: DesktopUpdaterElevationPolicy.Auto,
                 installRoot: @"C:\Program Files\Example",
                 executableRelativePath: "Example.exe",
                 expectedPackageId: "com.example.app"));

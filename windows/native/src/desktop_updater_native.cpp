@@ -30,6 +30,18 @@ enum class PowerShellLaunchMode {
   kElevated,
 };
 
+std::wstring ElevationPolicyName(InstallElevationPolicy policy) {
+  switch (policy) {
+    case InstallElevationPolicy::kAlways:
+      return L"always";
+    case InstallElevationPolicy::kNever:
+      return L"never";
+    case InstallElevationPolicy::kAuto:
+      return L"auto";
+  }
+  return L"";
+}
+
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
     return L"";
@@ -824,6 +836,27 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
 
 }  // namespace
 
+InstallLaunchDecision ResolveInstallLaunchDecision(
+    InstallElevationPolicy policy,
+    bool target_is_protected,
+    bool target_is_writable,
+    bool process_is_elevated) {
+  if (process_is_elevated) {
+    return target_is_writable ? InstallLaunchDecision::kNormal
+                              : InstallLaunchDecision::kReject;
+  }
+  if (policy == InstallElevationPolicy::kAlways) {
+    return InstallLaunchDecision::kElevated;
+  }
+  if (policy == InstallElevationPolicy::kNever) {
+    return target_is_writable ? InstallLaunchDecision::kNormal
+                              : InstallLaunchDecision::kReject;
+  }
+  return target_is_protected || !target_is_writable
+             ? InstallLaunchDecision::kElevated
+             : InstallLaunchDecision::kNormal;
+}
+
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
   const std::wstring executable_path = CurrentExecutablePath();
   if (executable_path.empty()) {
@@ -850,16 +883,22 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
   }
 
   PowerShellLaunchMode launch_mode = PowerShellLaunchMode::kNormal;
-  if (request.request_elevation_if_needed) {
+  if (!request.staging_path.empty()) {
     const bool target_is_protected = IsKnownProtectedInstallDirectory(
         target_directory.wstring(), ProtectedInstallRootPaths());
     const bool target_is_writable = CanWriteDirectory(target_directory);
     const bool process_is_elevated = IsProcessElevated();
-    if (!target_is_writable && process_is_elevated) {
+    const InstallLaunchDecision launch_decision =
+        ResolveInstallLaunchDecision(request.elevation_policy,
+                                     target_is_protected, target_is_writable,
+                                     process_is_elevated);
+    if (launch_decision == InstallLaunchDecision::kReject) {
       return {false,
-              "Target directory is not writable while running elevated."};
+              process_is_elevated
+                  ? "Target directory is not writable while running elevated."
+                  : "Signed install policy forbids required UAC elevation."};
     }
-    if (!process_is_elevated && (target_is_protected || !target_is_writable)) {
+    if (launch_decision == InstallLaunchDecision::kElevated) {
       launch_mode = PowerShellLaunchMode::kElevated;
     }
   }
@@ -887,6 +926,8 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << PowerShellQuote(request.expected_package_id) << "\n"
       << "$expectedArtifactSha256 = "
       << PowerShellQuote(request.expected_artifact_sha256) << "\n"
+      << "$expectedElevationPolicy = "
+      << PowerShellQuote(ElevationPolicyName(request.elevation_policy)) << "\n"
       << "$allowedSignerThumbprints = @(";
   for (std::size_t index = 0;
        index < request.allowed_signer_thumbprints.size(); ++index) {
@@ -1099,6 +1140,9 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "      $descriptor = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json\n"
       << "      if (-not ([string]$descriptor.packageId).Equals($expectedPackageId, [StringComparison]::Ordinal)) { throw 'Release descriptor package identity changed.' }\n"
       << "      if ($descriptor.install.strategy -eq 'innoInstaller') {\n"
+      << "        $manifestElevationPolicy = [string]$descriptor.install.inno.requiresElevation\n"
+      << "        if ([string]::IsNullOrWhiteSpace($manifestElevationPolicy)) { $manifestElevationPolicy = 'auto' }\n"
+      << "        if (-not $manifestElevationPolicy.Equals($expectedElevationPolicy, [StringComparison]::Ordinal)) { throw 'Release descriptor elevation policy changed.' }\n"
       << "        Write-DiagnosticsEvent 'inno manifest loaded'\n"
       << "        Invoke-InnoInstallerUpdate $descriptor\n"
       << "      }\n"

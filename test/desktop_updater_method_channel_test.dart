@@ -134,14 +134,50 @@ void main() {
       packageId: "com.example.app",
     );
 
-    expect(capturedCall.arguments,
-        containsPair("installRoot", "/opt/example-app"));
+    expect(
+      capturedCall.arguments,
+      containsPair("installRoot", "/opt/example-app"),
+    );
     expect(
       capturedCall.arguments,
       containsPair("executableRelativePath", "bin/example-app"),
     );
     expect(
-        capturedCall.arguments, containsPair("packageId", "com.example.app"));
+      capturedCall.arguments,
+      containsPair("packageId", "com.example.app"),
+    );
+  });
+
+  test("installUpdateWithContext forwards signed Inno elevation policy",
+      () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.installUpdateWithContext(
+      stagingPath: "/tmp/desktop-updater-stage",
+      innoRequiresElevation: "never",
+    );
+
+    expect(capturedCall.method, "installUpdate");
+    expect(
+      capturedCall.arguments,
+      containsPair("innoRequiresElevation", "never"),
+    );
+  });
+
+  test("installUpdateWithContext rejects unknown Inno elevation policy",
+      () async {
+    await expectLater(
+      platform.installUpdateWithContext(
+        stagingPath: "/tmp/desktop-updater-stage",
+        innoRequiresElevation: "sometimes",
+      ),
+      throwsArgumentError,
+    );
   });
 
   test("checkMacOSInstallLocation parses native status", () async {

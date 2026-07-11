@@ -9,7 +9,8 @@ native runtime preview and both `desktop_updater_native.dll` and
 `InstallAndRelaunch`. Helper-only consumers stage and verify artifacts, then
 construct `DesktopUpdaterInstallRequest` with the retained provenance digest,
 artifact digest, signer allowlist, canonical install root, executable-relative
-path, and package identity. The legacy overload remains available for restart
-requests, but rejects non-null staging paths before native helper launch. The
-runtime is `candidate-only` and not production-ready until required target-host
-and publisher-trust smoke gates pass.
+path, package identity, and the signed `DesktopUpdaterElevationPolicy` value.
+The legacy overload remains available for restart requests, but rejects
+non-null staging paths before native helper launch. The runtime is
+`candidate-only` and not production-ready until required target-host and
+publisher-trust smoke gates pass.

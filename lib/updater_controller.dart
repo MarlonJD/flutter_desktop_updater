@@ -734,6 +734,8 @@ class DesktopUpdaterController extends ChangeNotifier {
         allowedSignerThumbprints:
             _activeDescriptor?.install.inno?.authenticode.sha256Thumbprints ??
                 const [],
+        innoRequiresElevation:
+            _activeDescriptor?.install.inno?.requiresElevation ?? "auto",
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,

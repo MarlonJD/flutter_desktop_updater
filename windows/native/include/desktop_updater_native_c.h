@@ -24,6 +24,12 @@
 extern "C" {
 #endif
 
+typedef enum desktop_updater_install_elevation_policy_v1 {
+  DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO = 0,
+  DESKTOP_UPDATER_INSTALL_ELEVATION_ALWAYS = 1,
+  DESKTOP_UPDATER_INSTALL_ELEVATION_NEVER = 2,
+} desktop_updater_install_elevation_policy_v1;
+
 typedef struct desktop_updater_install_request_v1 {
   uint32_t abi_version;
   size_t struct_size;
@@ -38,6 +44,7 @@ typedef struct desktop_updater_install_request_v1 {
   const uint16_t* install_root;
   const uint16_t* executable_relative_path;
   const uint16_t* expected_package_id;
+  uint32_t elevation_policy;
 } desktop_updater_install_request_v1;
 
 typedef struct desktop_updater_result_v1 {

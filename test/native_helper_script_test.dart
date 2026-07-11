@@ -648,6 +648,14 @@ void main() {
     expect(source, contains("IsProcessElevated"));
     expect(source, contains("CanWriteDirectory"));
     expect(source, contains("StartElevatedPowerShell"));
+    expect(source, contains("InstallElevationPolicy::kAlways"));
+    expect(source, contains("InstallElevationPolicy::kNever"));
+    expect(source, contains("ResolveInstallLaunchDecision"));
+    expect(source, contains(r"$expectedElevationPolicy = "));
+    expect(
+      source,
+      contains("Release descriptor elevation policy changed."),
+    );
     expect(source, contains('launch_mode == PowerShellLaunchMode::kElevated'));
     expect(source, contains("ShellExecuteExW"));
     expect(source, contains('L"runas"'));
@@ -682,10 +690,8 @@ void main() {
     expect(source, contains("const bool target_is_protected"));
     expect(
       source,
-      contains(
-        "if (!process_is_elevated && "
-        "(target_is_protected || !target_is_writable))",
-      ),
+      contains("return target_is_protected || !target_is_writable"),
     );
+    expect(source, contains("InstallLaunchDecision::kElevated"));
   });
 }

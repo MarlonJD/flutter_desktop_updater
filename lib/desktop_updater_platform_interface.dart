@@ -105,6 +105,7 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
     List<Map<String, Object?>> stageProvenanceEntries = const [],
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
+    String innoRequiresElevation = "auto",
   }) async {
     final platform = this;
     if (platform.runtimeType == MethodChannelDesktopUpdater) {
@@ -167,6 +168,7 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
         stageProvenanceEntries: resolvedProvenanceEntries,
         expectedArtifactSha256: resolvedArtifactSha256,
         allowedSignerThumbprints: allowedSignerThumbprints,
+        innoRequiresElevation: innoRequiresElevation,
       );
     }
     return installUpdate(

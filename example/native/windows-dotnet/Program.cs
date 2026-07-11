@@ -13,6 +13,7 @@ try
         expectedProvenanceSha256: new string('a', 64),
         expectedArtifactSha256: new string('b', 64),
         allowedSignerThumbprints: new[] { new string('c', 64) },
+        requiresElevation: DesktopUpdaterElevationPolicy.Auto,
         installRoot: AppContext.BaseDirectory,
         executableRelativePath: Path.GetFileName(Environment.ProcessPath!),
         expectedPackageId: "com.example.desktop-updater-consumer");

@@ -25,6 +25,8 @@ void main() {
     );
     expect(header, contains("desktop_updater_result_free_v1"));
     expect(header, contains("DESKTOP_UPDATER_CALL"));
+    expect(header, contains("desktop_updater_install_elevation_policy_v1"));
+    expect(header, contains("elevation_policy"));
 
     expect(cmake, contains("desktop_updater_native_objects OBJECT"));
     expect(cmake, contains("desktop_updater_native_static STATIC"));
@@ -73,6 +75,9 @@ void main() {
     expect(tests, contains('find("verified provenance")'));
     expect(tests, contains("EXPECT_FALSE(scheduler_called)"));
     expect(tests, contains("RemovedFilesReachNativeRequest"));
+    expect(tests, contains("ElevationPolicyReachesNativeRequest"));
+    expect(tests, contains("InvalidElevationPolicyFailsBeforeScheduler"));
+    expect(tests, contains("NeverElevationRejectsUnwritableTarget"));
     expect(tests, contains("ThrownInternalException"));
     expect(tests, contains("RepeatedFreeIsSafe"));
   });
@@ -119,7 +124,12 @@ void main() {
 
     expect(wrapper, contains("IReadOnlyList<string> removedFiles"));
     expect(
-        wrapper, contains("public sealed class DesktopUpdaterInstallRequest"));
+      wrapper,
+      contains("public sealed class DesktopUpdaterInstallRequest"),
+    );
+    expect(wrapper, contains("public enum DesktopUpdaterElevationPolicy"));
+    expect(wrapper, contains("RequiresElevation ="));
+    expect(wrapper, contains("ElevationPolicy = (uint)elevationPolicy"));
     expect(wrapper, contains("ExpectedProvenanceSha256 ="));
     expect(wrapper, contains("ExpectedArtifactSha256 ="));
     expect(wrapper, contains("AllowedSignerThumbprints ="));
@@ -142,8 +152,10 @@ void main() {
     expect(wrapper, contains("CallingConvention = CallingConvention.Cdecl"));
     expect(tests, contains("NativeInvalidRequestReturnsNativeError"));
     expect(tests, contains("IncompleteStagedHandoffFailsBeforeNativeLoad"));
-    expect(tests,
-        contains("VerifiedInstallRequestCarriesCompleteNativeTrustContext"));
+    expect(
+      tests,
+      contains("VerifiedInstallRequestCarriesCompleteNativeTrustContext"),
+    );
     expect(tests, contains("desktop_updater_native.dll"));
     expect(tests, contains("CopyNativeDll"));
   });

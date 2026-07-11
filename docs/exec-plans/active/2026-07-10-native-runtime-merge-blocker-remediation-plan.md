@@ -2011,8 +2011,10 @@ Task 10 evidence on 2026-07-11:
   reject incomplete staged calls before native scheduling.
 - [ ] Run the Windows target-host C ABI test and a positive packaged .NET
   helper-only install smoke against the real DLL/helper.
-- [ ] Preserve the signed Inno `requiresElevation` policy through the native
+- [x] Preserve the signed Inno `requiresElevation` policy through the native
   helper and compatible C/.NET boundaries.
+- [ ] Run Windows target-host `auto`, `always`, `never`, UAC-cancel, protected
+  target, and real packaged helper elevation tests.
 - [ ] Bound stable Flutter metadata downloads and archive expansion.
 - [ ] Remove elevated Windows diagnostics authority from caller-provided paths.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
@@ -2058,6 +2060,35 @@ Fresh-review evidence on 2026-07-11:
   suite ran 11/12 tests; its sole failure was the pre-existing real-DLL P/Invoke
   test because a Windows DLL cannot load on macOS. These target-host gates stay
   open and are not promoted to `verified locally`.
+- Windows elevation-policy RED, verified locally: the focused Dart suite failed
+  to
+  compile because the internal compatible MethodChannel handoff had no
+  `innoRequiresElevation` value; the native structural tests failed because the
+  C ABI, managed wrapper, and helper had no typed elevation policy; and the
+  focused managed tests failed to compile because
+  `DesktopUpdaterElevationPolicy` did not exist.
+- Windows elevation-policy GREEN, verified locally: the focused Dart
+  MethodChannel, helper, Windows layout, and package suites passed 46/46; both
+  managed wrapper target frameworks compiled; and the focused managed request
+  tests passed 2/2. `auto`, `always`, and `never` now cross the verified Dart
+  descriptor, compatible MethodChannel arguments, Windows adapter, appended C ABI field,
+  managed request, and native runtime handoff. The helper binds the requested
+  value back to the provenance-protected release manifest before installer
+  execution, `always` requests elevation, and `never` rejects an unwritable
+  target rather than silently elevating. Legacy C ABI struct sizes default to
+  `auto`, and restart-only calls remain non-elevating.
+- Windows UAC/elevation target-host suite: not run. Source-level GTests cover
+  policy parsing, invalid-value rejection before scheduler invocation, and the
+  pure launch decision, but actual UAC and real helper execution remain open.
+- Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
+  the repository's existing info-only diagnostics; the focused affected Dart
+  and docs suites passed 52/52; both managed targets compiled; and the focused
+  managed tests passed 2/2. A full Flutter run reached 601 passes and 3 explicit
+  skips with two docs failures. The credential-claim failure was resolved and
+  its focused suite passed; the remaining harness failure is unrelated to this
+  task and requires the user-owned dirty `docs/exec-plans/index.md` to index the
+  already-present Linux distribution plan. That user change remains unmodified
+  and unstaged. Windows UAC/real-DLL execution remains `not run`.
 
 ## Final Acceptance Checklist
 

@@ -3,6 +3,17 @@ using System.Text;
 
 namespace DesktopUpdater.Native;
 
+/// <summary>Signed installer elevation policy.</summary>
+public enum DesktopUpdaterElevationPolicy
+{
+    /// <summary>Elevate only when the verified target requires it.</summary>
+    Auto = 0,
+    /// <summary>Always request elevation unless already elevated.</summary>
+    Always = 1,
+    /// <summary>Never request elevation and reject unwritable targets.</summary>
+    Never = 2,
+}
+
 /// <summary>Complete verified context for a staged helper-only install.</summary>
 public sealed class DesktopUpdaterInstallRequest
 {
@@ -14,6 +25,7 @@ public sealed class DesktopUpdaterInstallRequest
         string expectedProvenanceSha256,
         string expectedArtifactSha256,
         IReadOnlyList<string> allowedSignerThumbprints,
+        DesktopUpdaterElevationPolicy requiresElevation,
         string installRoot,
         string executableRelativePath,
         string expectedPackageId)
@@ -30,6 +42,11 @@ public sealed class DesktopUpdaterInstallRequest
         AllowedSignerThumbprints = CopySha256Values(
             allowedSignerThumbprints,
             nameof(allowedSignerThumbprints));
+        if (!Enum.IsDefined(typeof(DesktopUpdaterElevationPolicy), requiresElevation))
+        {
+            throw new ArgumentOutOfRangeException(nameof(requiresElevation));
+        }
+        RequiresElevation = requiresElevation;
         InstallRoot = RequireText(installRoot, nameof(installRoot));
         ExecutableRelativePath = RequireText(
             executableRelativePath,
@@ -51,6 +68,8 @@ public sealed class DesktopUpdaterInstallRequest
     public string ExpectedArtifactSha256 { get; }
     /// <summary>Allowed Authenticode signer SHA-256 thumbprints.</summary>
     public IReadOnlyList<string> AllowedSignerThumbprints { get; }
+    /// <summary>Signed Inno elevation behavior.</summary>
+    public DesktopUpdaterElevationPolicy RequiresElevation { get; }
     /// <summary>Canonical current application root.</summary>
     public string InstallRoot { get; }
     /// <summary>Running executable path relative to the application root.</summary>
@@ -164,6 +183,7 @@ public static class DesktopUpdaterNative
             null,
             null,
             Array.Empty<string>(),
+            DesktopUpdaterElevationPolicy.Never,
             installRoot,
             executableRelativePath,
             expectedPackageId);
@@ -184,6 +204,7 @@ public static class DesktopUpdaterNative
             request.ExpectedProvenanceSha256,
             request.ExpectedArtifactSha256,
             request.AllowedSignerThumbprints,
+            request.RequiresElevation,
             request.InstallRoot,
             request.ExecutableRelativePath,
             request.ExpectedPackageId);
@@ -196,6 +217,7 @@ public static class DesktopUpdaterNative
         string? expectedProvenanceSha256,
         string? expectedArtifactSha256,
         IReadOnlyList<string> allowedSignerThumbprints,
+        DesktopUpdaterElevationPolicy elevationPolicy,
         string? installRoot,
         string? executableRelativePath,
         string? expectedPackageId)
@@ -304,6 +326,7 @@ public static class DesktopUpdaterNative
                 InstallRoot = installRootPointer,
                 ExecutableRelativePath = executableRelativePathPointer,
                 ExpectedPackageId = expectedPackageIdPointer,
+                ElevationPolicy = (uint)elevationPolicy,
             };
 
             result = NativeMethods.ScheduleInstallAndRelaunch(ref request);
@@ -402,6 +425,7 @@ public static class DesktopUpdaterNative
         public IntPtr InstallRoot;
         public IntPtr ExecutableRelativePath;
         public IntPtr ExpectedPackageId;
+        public uint ElevationPolicy;
     }
 
     [StructLayout(LayoutKind.Sequential)]

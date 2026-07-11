@@ -45,9 +45,10 @@ TEST(DesktopUpdaterNativeCAbi, AbiLayoutMatchesDeclaredFieldOrder) {
                      executable_relative_path),
             offsetof(desktop_updater_install_request_v1,
                      expected_package_id));
-  EXPECT_LE(offsetof(desktop_updater_install_request_v1,
-                     expected_package_id) +
-                sizeof(const uint16_t*),
+  EXPECT_LT(offsetof(desktop_updater_install_request_v1, expected_package_id),
+            offsetof(desktop_updater_install_request_v1, elevation_policy));
+  EXPECT_LE(offsetof(desktop_updater_install_request_v1, elevation_policy) +
+                sizeof(uint32_t),
             sizeof(desktop_updater_install_request_v1));
 }
 
@@ -143,6 +144,53 @@ TEST(DesktopUpdaterNativeCAbi, RemovedFilesReachNativeRequest) {
   EXPECT_EQ(captured[0], L"old.dll");
   EXPECT_EQ(captured[1], L"data/old");
   desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, ElevationPolicyReachesNativeRequest) {
+  auto request = ValidRequest();
+  request.elevation_policy = DESKTOP_UPDATER_INSTALL_ELEVATION_NEVER;
+  InstallRequest captured;
+
+  auto result = internal::ScheduleInstallAndRelaunchWith(
+      &request, [&captured](const InstallRequest& parsed) {
+        captured = parsed;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_EQ(captured.elevation_policy, InstallElevationPolicy::kNever);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, InvalidElevationPolicyFailsBeforeScheduler) {
+  auto request = ValidRequest();
+  request.elevation_policy = 99;
+  bool scheduler_called = false;
+
+  auto result = internal::ScheduleInstallAndRelaunchWith(
+      &request, [&scheduler_called](const InstallRequest&) {
+        scheduler_called = true;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_FALSE(scheduler_called);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("elevation policy"),
+            std::string::npos);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, NeverElevationRejectsUnwritableTarget) {
+  EXPECT_EQ(ResolveInstallLaunchDecision(InstallElevationPolicy::kNever,
+                                         true, false, false),
+            InstallLaunchDecision::kReject);
+  EXPECT_EQ(ResolveInstallLaunchDecision(InstallElevationPolicy::kAlways,
+                                         false, true, false),
+            InstallLaunchDecision::kElevated);
+  EXPECT_EQ(ResolveInstallLaunchDecision(InstallElevationPolicy::kAuto,
+                                         false, true, false),
+            InstallLaunchDecision::kNormal);
 }
 
 TEST(DesktopUpdaterNativeCAbi, LegacySizeDoesNotReadAppendedTargetContext) {

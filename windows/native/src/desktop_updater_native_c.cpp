@@ -165,7 +165,26 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
         "Staged install requires complete verified provenance and target context.";
     return false;
   }
-  parsed->request_elevation_if_needed = true;
+  constexpr size_t kElevationPolicySize =
+      offsetof(desktop_updater_install_request_v1, elevation_policy) +
+      sizeof(request->elevation_policy);
+  parsed->elevation_policy = InstallElevationPolicy::kAuto;
+  if (request->struct_size >= kElevationPolicySize) {
+    switch (request->elevation_policy) {
+      case DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO:
+        parsed->elevation_policy = InstallElevationPolicy::kAuto;
+        break;
+      case DESKTOP_UPDATER_INSTALL_ELEVATION_ALWAYS:
+        parsed->elevation_policy = InstallElevationPolicy::kAlways;
+        break;
+      case DESKTOP_UPDATER_INSTALL_ELEVATION_NEVER:
+        parsed->elevation_policy = InstallElevationPolicy::kNever;
+        break;
+      default:
+        *error = "Invalid desktop_updater install elevation policy.";
+        return false;
+    }
+  }
   return true;
 }
 
