@@ -1495,6 +1495,103 @@ Task 8 evidence on 2026-07-11:
   `pod` executable. Signed/notarized and credential-gated release lanes remain
   not run, and the native runtime remains candidate-only.
 
+Task 8 post-commit review remediation evidence on 2026-07-11:
+
+- Review RED, verified locally: bad fixtures reproduced every permissive
+  matcher gap before the strict helpers existed. The combined focused run had
+  9 passes and 5 expected failures for an ignored literal pod source plus a
+  commented 10.14 floor, an exact CI-command prefix with an extra source, a
+  commented-only CI command, launch APIs in the wrong availability branches,
+  and SwiftPM declarations present only in comments. A sixth focused RED
+  independently proved that a multiline `Runtime/*.swift` entry was ignored.
+- Resolution: the podspec validator now strips Ruby comments, parses the one
+  active `s.source_files` array in full, normalizes every literal `File.join`
+  entry, and compares exact five-file order while anchoring the active platform
+  and Swift assignments. The workflow validator extracts the named step's
+  active `run:` scalar at the correct YAML indentation, requires exact command
+  equality, and separately verifies the SwiftPM consumer and CocoaPods Flutter
+  matrix/build/integration gates.
+- The launch validator uses brace-aware extraction of the macOS 10.15 and
+  fallback branches, confines each workspace API to its branch, and compares
+  the shared modern completion and legacy `FlutterError` code, message, and
+  details shape. SwiftPM validation strips comments and binds active macOS
+  10.15, product, module, dependency, and target-path declarations. Repository
+  assertions and bad-fixture meta-tests use the same validators.
+- GREEN, verified locally: the focused Flutter suite passed all 15 tests; the
+  exact macOS 10.14 five-file typecheck exited 0; root SwiftPM passed 49 tests;
+  and plugin SwiftPM passed 51 tests with only its existing privacy-resource
+  warning. Formatting checked 213 files unchanged, analysis exited 0 with the
+  existing 395 info-only diagnostics, and full Flutter passed 587 tests with
+  3 explicit environment-gated skips and 0 failures.
+- Final-review RED, verified locally: the focused two-file run failed 6 tests
+  for an accepted post-allowlist pod mutation, native gates accepted in the
+  wrong YAML job, launch API/error tokens accepted from strings or comments,
+  an unrelated availability check rejected, SwiftPM declarations accepted
+  outside `Package(...)` fields, and the Flutter product dependency accepted
+  from the wrong target. These failures preceded the final helper rewrite.
+- Final-review resolution: the test contract now uses a 63-line shared lexical
+  source helper plus narrow podspec, job-scoped workflow, launch-body, and
+  `Package(...)` field checks. Bad fixtures cover `replace`, append, shift,
+  multiline extra sources, commented floors, missing job/condition/enable/
+  working-directory gates, comment/string decoys, unrelated availability,
+  declarations outside `Package(...)`, and a Flutter product dependency on a
+  decoy target. The formatted test-only diff adds 594 lines over the Task 8
+  implementation commit, below the 600-line review ceiling.
+- Final-review GREEN, verified locally: `flutter test --no-pub
+  test/macos_cocoapods_source_layout_test.dart
+  test/macos_swift_package_test.dart` passed all 14 tests; direct Dart format
+  reported all three touched test files formatted; and `git diff --check`
+  passed. Analysis, the full Flutter suite, SwiftPM suites, and the exact
+  macOS 10.14 typecheck were not rerun after this final test-helper rewrite;
+  the earlier results above remain evidence for the preceding test revision,
+  not for this final diff.
+- Targeted final-review RED, verified locally: the combined focused run passed
+  14 tests and failed 2 because the pod validator accepted `.push`/`+` tokens
+  after the exact array and the launch validator accepted a legacy workspace
+  API in the modern branch. After correcting an older synthetic workflow
+  fixture to mutate the real green workflow, its isolated run also failed as
+  expected with `Actual: []` because an exact native gate embedded in the job's
+  multiline `name: |` scalar was accepted outside the real `steps:` sequence.
+- Targeted final-review resolution: the pod validator now requires the active
+  assignment RHS to terminate after the parsed array; the workflow validator
+  extracts the job's one `steps:` sequence and compares each named step through
+  its next same-indent step/end, rejecting block-scalar decoys and extra fields
+  such as `continue-on-error`; and launch validation explicitly rejects the
+  legacy API in the modern branch and both modern APIs in the fallback branch.
+  The additional fixtures and structural checks increase the formatted
+  test-only addition from 594 to 684 lines over the Task 8 implementation
+  commit; no production source is part of that delta.
+- Targeted final-review GREEN, verified locally: the same focused two-file
+  command passed all 16 tests; direct Dart format checked the three touched
+  test files with 0 changes; and `git diff --check` passed. Analysis, full
+  Flutter, SwiftPM, and the macOS 10.14 typecheck were not run in this targeted
+  review wave.
+- Final Ruby-continuation RED/GREEN, verified locally: independent review
+  demonstrated that Ruby accepts a leading-dot `.push(...)` on the line after
+  the exact source array. A matching fixture was added before the validator
+  inspected the first active token on the following line. The focused
+  two-file command then passed all 16 tests, direct Dart format reported 0
+  changes, and `git diff --check` passed. The final test-only addition is 694
+  lines over the Task 8 implementation commit. Wider suites were not rerun in
+  this last focused wave.
+- Commit-gate verification after the final lint cleanup, verified locally:
+  the exact five-file macOS 10.14 `xcrun swiftc -typecheck` command exited 0
+  with a fresh module cache; root SwiftPM passed 49 tests; plugin SwiftPM
+  passed 51 tests with only its existing privacy-resource warning; analysis
+  returned to the existing 395 info-only diagnostics; the focused contract
+  suite passed all 16 tests; full Flutter passed 588 tests with 3 explicit
+  environment-gated skips and 0 failures; and `git diff --check` passed. The
+  formatted lint-clean test/support addition is 734 lines over the Task 8
+  implementation commit. The first typecheck attempt hit a duplicate module
+  cache path (`/tmp` versus `/private/tmp`) and Swift frontend signal 11; that
+  environmental attempt is not counted as a pass. CI, CocoaPods consumer/lint,
+  real macOS 10.14 launch, and signed/notarized lanes remain not run.
+- No production source, podspec, manifest, public Flutter/MethodChannel API,
+  signing, provenance, or trust behavior changed in this review remediation.
+  CI, CocoaPods consumer/lint, real macOS 10.14 runtime launch,
+  signing/notarization, credentials, and release smoke remain not run; the
+  native runtime remains candidate-only.
+
 ---
 
 ### Task 9: Make Native Packages Retail-Consumable
