@@ -1618,33 +1618,33 @@ Task 8 post-commit review remediation evidence on 2026-07-11:
 - .NET client uses a finalizable SafeHandle-based native owner and no
   self-rooting `GCHandle`.
 
-- [ ] **Step 1: Add failing package-content and clean-host tests**
+- [x] **Step 1: Add failing package-content and clean-host tests**
 
 Require Release DLL paths, reject a DLL linked to Debug CRT, require notices in
 NuGet/install trees, compile/link/run pkg-config from a
 `lib/<multiarch>/pkgconfig` prefix, and force GC without calling Dispose to
 prove the native client is released.
 
-- [ ] **Step 2: Build retail native DLLs**
+- [x] **Step 2: Build retail native DLLs**
 
 Configure/build/install Windows native targets with `--config Release`.
 Set `CMAKE_MSVC_RUNTIME_LIBRARY` explicitly to
 `MultiThreaded$<$<CONFIG:Debug>:Debug>DLL`. Pack only
 `windows/native/build/Release/*.dll`.
 
-- [ ] **Step 3: Package third-party notices**
+- [x] **Step 3: Package third-party notices**
 
 Include miniz MIT and Monocypher CC0/BSD-2-Clause texts in NuGet and both CMake
 install trees. Extend package verification to require the notice entry.
 
-- [ ] **Step 4: Fix pkg-config relocation**
+- [x] **Step 4: Fix pkg-config relocation**
 
 Use configured `CMAKE_INSTALL_PREFIX`, `CMAKE_INSTALL_FULL_LIBDIR`, and
 `CMAKE_INSTALL_FULL_INCLUDEDIR` rather than deriving prefix from
 `pcfiledir/../..`. Test both `lib/pkgconfig` and
 `lib/x86_64-linux-gnu/pkgconfig`.
 
-- [ ] **Step 5: Replace the .NET self-root**
+- [x] **Step 5: Replace the .NET self-root**
 
 Wrap the native client in `SafeHandle`. Keep delegates rooted by the managed
 client without allocating a `GCHandle` that points back to the same object.
@@ -1664,12 +1664,59 @@ Linux pkg-config compile/link/run from multiarch prefix
 
 Expected: every consumer uses installed/package files, not source-tree paths.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~sh
 git add .github/workflows/desktop-updater-ci.yml windows/native linux/native third_party/README.md
 git commit -m "fix: make native packages retail consumable"
 ~~~
+
+Task 9 evidence on 2026-07-11:
+
+- RED, verified locally: `flutter test --no-pub
+  test/native_package_retail_contract_test.dart` ran four focused contract
+  tests and all four failed for the intended missing behavior: no explicit
+  retail MSVC runtime/Release package paths, missing platform notice files,
+  `pcfiledir/../..` pkg-config derivation, and no finalizable SafeHandle owner.
+  The managed RED `dotnet test ... --no-restore` failed at compile time with
+  `CS0117` because the GC-without-Dispose test seam did not yet exist.
+- GREEN, verified locally: the focused Flutter package/layout suite passed 17
+  tests. Its portable clean-prefix probe generated configured `.pc` files in
+  both `lib/pkgconfig` and `lib/x86_64-linux-gnu/pkgconfig`, then used the host
+  `pkg-config --cflags --libs` output to compile, link, and run a consumer for
+  each layout.
+- GREEN, verified locally: `dotnet build` in Release mode compiled both
+  `net8.0` and `netstandard2.0` with 0 errors. The seven portable
+  `DesktopUpdaterClientTests` passed under the locally installed .NET 10 host
+  with major roll-forward, including forced GC without `Dispose`; the fake
+  native release callback ran exactly once for handle `0x42`. NuGet packing
+  with portable placeholder DLL inputs succeeded and the archive contained
+  both managed TFMs, both exact `runtimes/win-x64/native` DLL entries, the
+  build-transitive target, and root `THIRD_PARTY_NOTICES.md`. The placeholder
+  pack proves package layout only, not Windows binary validity.
+- The managed runtime now passes its finalizable SafeHandle directly to every
+  client P/Invoke, so the marshaller holds a reference across each native
+  call. The handle owns the callback delegates and a separate `CallbackState`
+  GCHandle, calls native client free before releasing callback state, and no
+  longer allocates a GCHandle pointing back to `DesktopUpdaterClient`.
+- The Windows CMake source explicitly selects
+  `MultiThreaded$<$<CONFIG:Debug>:Debug>DLL`; CI builds, tests, installs, and
+  packs Release DLLs, locates `dumpbin.exe`, and rejects Debug UCRT,
+  VCRUNTIME, or MSVCP imports before packing. NuGet and both installed CMake
+  trees require notices reproducing the pinned miniz MIT and Monocypher
+  BSD-2-Clause/CC0 texts.
+- Wider verification, verified locally: workflow YAML parsed successfully;
+  formatting checked 215 files with 0 changes; focused analysis reported no
+  issues in the new test; repository analysis exited 0 with 395 info-only
+  diagnostics; full Flutter passed 593 tests with 3 explicit
+  environment-gated skips and 0 failures; `git diff --check` passed.
+- Task 9 Step 6 remains open. Windows Release CMake build/install,
+  `dumpbin` CRT inspection, installed `find_package`, real-DLL NuGet isolated
+  restore/P/Invoke smoke, and Linux installed CMake/pkg-config consumers were
+  not run on this macOS host. `cmake` is unavailable locally. These target-host
+  lanes are configured in CI but are not claimed as verified in CI. Task 6
+  remains blocked/reverted, signed/notarized credential lanes remain not run,
+  and the runtime remains candidate-only.
 
 ---
 

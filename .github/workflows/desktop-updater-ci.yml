@@ -110,7 +110,7 @@ jobs:
       - name: Configure standalone Windows native SDK tests
         run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
-        run: cmake --build windows/native/build --config Debug
+        run: cmake --build windows/native/build --config Release
       - name: Run standalone Windows native SDK tests
         shell: pwsh
         run: |
@@ -135,7 +135,7 @@ jobs:
               throw "Native transport fixture server did not start."
             }
             $env:DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL = "http://127.0.0.1:43891"
-            $output = & ctest --test-dir windows/native/build -C Debug --output-on-failure 2>&1
+            $output = & ctest --test-dir windows/native/build -C Release --output-on-failure 2>&1
             $exitCode = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
             if ($exitCode -ne 0) { exit $exitCode }
@@ -146,16 +146,23 @@ jobs:
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
           }
       - name: Install Windows native SDK
-        run: cmake --install windows/native/build --config Debug --prefix windows/native/install
+        run: cmake --install windows/native/build --config Release --prefix windows/native/install
+      - name: Verify installed Windows third-party notices
+        shell: pwsh
+        run: |
+          $notice = "windows/native/install/share/doc/desktop_updater_native/THIRD_PARTY_NOTICES.md"
+          if (-not (Test-Path -LiteralPath $notice -PathType Leaf)) {
+            throw "Installed Windows SDK is missing $notice"
+          }
       - name: Configure installed Windows CMake consumer
         shell: pwsh
         run: cmake -S example/native/windows-cmake -B example/native/windows-cmake/build "-DCMAKE_PREFIX_PATH=$env:GITHUB_WORKSPACE/windows/native/install"
       - name: Build installed Windows CMake consumer
-        run: cmake --build example/native/windows-cmake/build --config Debug
+        run: cmake --build example/native/windows-cmake/build --config Release
       - name: Run installed Windows CMake consumer
         shell: pwsh
         run: |
-          $output = & ctest --test-dir example/native/windows-cmake/build -C Debug --output-on-failure 2>&1
+          $output = & ctest --test-dir example/native/windows-cmake/build -C Release --output-on-failure 2>&1
           $exitCode = $LASTEXITCODE
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) { exit $exitCode }
@@ -163,7 +170,31 @@ jobs:
             throw "Windows installed consumer CTest registered zero tests."
           }
       - name: Run .NET native DLL consumer tests
-        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
+        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj --configuration Release
+      - name: Reject Debug CRT dependencies from Release native DLLs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $visualStudio = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($visualStudio)) {
+            throw "Unable to locate Visual Studio C++ tools."
+          }
+          $dumpbin = Get-ChildItem "$visualStudio/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $dumpbin) { throw "Unable to locate dumpbin.exe." }
+          $debugRuntimePattern = '(?i)\b(?:ucrtbased|vcruntime\d+(?:_\d+)?d|msvcp\d+(?:_[a-z_]+)?d)\.dll\b'
+          $releaseDlls = @(
+            "windows/native/build/Release/desktop_updater_native.dll",
+            "windows/native/build/Release/desktop_updater_runtime.dll"
+          )
+          foreach ($dll in $releaseDlls) {
+            $dependencies = (& $dumpbin.FullName /dependents $dll | Out-String)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($dependencies -match $debugRuntimePattern) {
+              throw "$dll depends on Debug CRT $($Matches[0])"
+            }
+          }
       - name: Pack DesktopUpdater.Native
         shell: pwsh
         run: |
@@ -172,8 +203,8 @@ jobs:
             throw "Unable to read the canonical version from pubspec.yaml."
           }
           $version = $versionLine.Matches[0].Groups[1].Value
-          $nativeDll = (Resolve-Path windows/native/build/Debug/desktop_updater_native.dll).Path
-          $runtimeDll = (Resolve-Path windows/native/build/Debug/desktop_updater_runtime.dll).Path
+          $nativeDll = (Resolve-Path windows/native/build/Release/desktop_updater_native.dll).Path
+          $runtimeDll = (Resolve-Path windows/native/build/Release/desktop_updater_runtime.dll).Path
           dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll" "-p:RuntimeDllPath=$runtimeDll"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -191,7 +222,8 @@ jobs:
               "lib/netstandard2.0/DesktopUpdater.Native.dll",
               "runtimes/win-x64/native/desktop_updater_native.dll",
               "runtimes/win-x64/native/desktop_updater_runtime.dll",
-              "buildTransitive/DesktopUpdater.Native.targets"
+              "buildTransitive/DesktopUpdater.Native.targets",
+              "THIRD_PARTY_NOTICES.md"
             )
             foreach ($entry in $required) {
               if ($entries -notcontains $entry) {
@@ -812,7 +844,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake libcurl4-openssl-dev libgtk-3-dev libssl-dev ninja-build pkg-config xvfb zip
       - name: Configure standalone Linux native tests
-        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON -DCMAKE_INSTALL_PREFIX="$PWD/linux/native/install"
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
       - name: Run standalone Linux native tests
@@ -844,12 +876,35 @@ jobs:
             exit 1
           fi
       - name: Install Linux native SDK
-        run: cmake --install linux/native/build --prefix linux/native/install
+        run: cmake --install linux/native/build
+      - name: Verify installed Linux third-party notices
+        run: test -f linux/native/install/share/doc/desktop_updater_native/THIRD_PARTY_NOTICES.md
       - name: Verify installed Linux pkg-config version
         run: |
           expected="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
           actual="$(PKG_CONFIG_PATH="$PWD/linux/native/install/lib/pkgconfig" pkg-config --modversion desktop_updater_native)"
           test "$actual" = "$expected"
+      - name: Build and run installed Linux pkg-config consumer
+        run: |
+          pc_path="$PWD/linux/native/install/lib/pkgconfig"
+          c++ example/native/linux-cmake/main.cpp \
+            $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
+            -o linux/native/install/pkg-config-consumer
+          linux/native/install/pkg-config-consumer
+      - name: Configure Linux multiarch pkg-config package
+        run: |
+          cmake -S linux/native -B linux/native/build-multiarch \
+            -DCMAKE_INSTALL_PREFIX="$PWD/linux/native/install-multiarch" \
+            -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu
+          cmake --build linux/native/build-multiarch
+          cmake --install linux/native/build-multiarch
+      - name: Build and run Linux multiarch pkg-config consumer
+        run: |
+          pc_path="$PWD/linux/native/install-multiarch/lib/x86_64-linux-gnu/pkgconfig"
+          c++ example/native/linux-cmake/main.cpp \
+            $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
+            -o linux/native/install-multiarch/pkg-config-consumer
+          linux/native/install-multiarch/pkg-config-consumer
       - name: Configure installed Linux CMake consumer
         run: cmake -S example/native/linux-cmake -B example/native/linux-cmake/build -DCMAKE_PREFIX_PATH="$PWD/linux/native/install"
       - name: Build installed Linux CMake consumer

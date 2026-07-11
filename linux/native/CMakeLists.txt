@@ -83,6 +83,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   endif()
   install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(FILES THIRD_PARTY_NOTICES.md
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/desktop_updater_native)
   install(EXPORT desktop_updater_nativeTargets
     FILE desktop_updater_nativeTargets.cmake
     NAMESPACE desktop_updater::

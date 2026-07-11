@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 
+if(POLICY CMP0091)
+  cmake_policy(SET CMP0091 NEW)
+endif()
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 project(desktop_updater_native VERSION 2.7.0 LANGUAGES CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
@@ -133,6 +138,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   endif()
   install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(FILES THIRD_PARTY_NOTICES.md
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/desktop_updater_native)
   install(EXPORT desktop_updater_nativeTargets
     FILE desktop_updater_nativeTargets.cmake
     NAMESPACE desktop_updater::

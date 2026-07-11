@@ -280,20 +280,14 @@ public sealed class DesktopUpdaterClient : IDisposable
         Marshal.GetFunctionPointerForDelegate(ReleaseHeadersCallback);
 
     private readonly DesktopUpdaterConfiguration _configuration;
-    private readonly MinimumOSDelegate _minimumOS;
-    private readonly HeadersProviderDelegate _headersProvider;
-    private GCHandle _applicationHandle;
-    private IntPtr _client;
-    private bool _disposed;
+    private readonly NativeClientHandle _client;
 
     /// <summary>Creates a native client and copies all configuration values.</summary>
     public DesktopUpdaterClient(DesktopUpdaterConfiguration configuration)
     {
         _configuration = configuration ??
             throw new ArgumentNullException(nameof(configuration));
-        _minimumOS = ResolveMinimumOS;
-        _headersProvider = ProvideHeaders;
-        _applicationHandle = GCHandle.Alloc(this);
+        var client = new NativeClientHandle(configuration);
 
         var allocations = new List<IntPtr>();
         NativeRuntimeResult result = default;
@@ -343,9 +337,9 @@ public sealed class DesktopUpdaterClient : IDisposable
                 RequireDescriptorSignature = configuration.RequireDescriptorSignature ? 1 : 0,
                 PinnedPublicKeys = keyArray,
                 PinnedPublicKeyCount = (nuint)nativeKeys.Length,
-                MinimumOSResolver = _minimumOS,
-                RequestHeadersProvider = _headersProvider,
-                ApplicationContext = GCHandle.ToIntPtr(_applicationHandle),
+                MinimumOSResolver = client.MinimumOSResolver,
+                RequestHeadersProvider = client.RequestHeadersProvider,
+                ApplicationContext = client.ApplicationContext,
                 DownloadTimeoutMilliseconds = checked(
                     (ulong)configuration.DownloadTimeout.TotalMilliseconds),
                 MaximumMetadataBytes = configuration.MaximumMetadataBytes,
@@ -358,19 +352,22 @@ public sealed class DesktopUpdaterClient : IDisposable
             resultReceived = true;
             if (result.Ok == 0 || result.Client == IntPtr.Zero)
             {
+                if (result.Client != IntPtr.Zero)
+                {
+                    NativeMethods.ClientFree(result.Client);
+                    result.Client = IntPtr.Zero;
+                }
                 throw new DesktopUpdaterException(
                     ReadUtf8(result.MessageUtf8) ??
                     "The native runtime client could not be created.");
             }
-            _client = result.Client;
+            client.Initialize(result.Client);
             result.Client = IntPtr.Zero;
+            _client = client;
         }
         catch
         {
-            if (_applicationHandle.IsAllocated)
-            {
-                _applicationHandle.Free();
-            }
+            client.DisposeAfterFailedCreate();
             throw;
         }
         finally
@@ -381,6 +378,24 @@ public sealed class DesktopUpdaterClient : IDisposable
             }
             FreeAllocations(allocations);
         }
+    }
+
+    private DesktopUpdaterClient(
+        DesktopUpdaterConfiguration configuration,
+        NativeClientHandle client)
+    {
+        _configuration = configuration;
+        _client = client;
+    }
+
+    private static DesktopUpdaterClient CreateForTesting(
+        DesktopUpdaterConfiguration configuration,
+        IntPtr nativeHandle,
+        Action<IntPtr> release)
+    {
+        return new DesktopUpdaterClient(
+            configuration,
+            NativeClientHandle.CreateForTesting(nativeHandle, release));
     }
 
     /// <summary>Downloads and verifies discovery metadata and the descriptor.</summary>
@@ -488,31 +503,18 @@ public sealed class DesktopUpdaterClient : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-        _disposed = true;
-        if (_client != IntPtr.Zero)
-        {
-            NativeMethods.ClientFree(_client);
-            _client = IntPtr.Zero;
-        }
-        if (_applicationHandle.IsAllocated)
-        {
-            _applicationHandle.Free();
-        }
-        GC.SuppressFinalize(this);
+        _client.Dispose();
     }
 
-    private int ResolveMinimumOS(
+    private static int ResolveMinimumOS(
         IntPtr applicationContext,
         IntPtr platformUtf8,
         IntPtr minimumOSUtf8)
     {
         try
         {
-            return _configuration.MinimumOSResolver(
+            var state = CallbackState.FromContext(applicationContext);
+            return state.Configuration.MinimumOSResolver(
                 ReadUtf8(platformUtf8) ?? string.Empty,
                 ReadUtf8(minimumOSUtf8) ?? string.Empty)
                 ? 1
@@ -524,14 +526,15 @@ public sealed class DesktopUpdaterClient : IDisposable
         }
     }
 
-    private NativeHeaderList ProvideHeaders(
+    private static NativeHeaderList ProvideHeaders(
         IntPtr applicationContext,
         IntPtr urlUtf8)
     {
         try
         {
+            var state = CallbackState.FromContext(applicationContext);
             var url = new Uri(ReadUtf8(urlUtf8) ?? string.Empty);
-            var values = _configuration.RequestHeadersProvider(url);
+            var values = state.Configuration.RequestHeadersProvider(url);
             var lease = new HeaderLease(values);
             var handle = GCHandle.Alloc(lease);
             return new NativeHeaderList
@@ -606,7 +609,7 @@ public sealed class DesktopUpdaterClient : IDisposable
 
     private void ThrowIfDisposed()
     {
-        if (_disposed || _client == IntPtr.Zero)
+        if (_client.IsClosed || _client.IsInvalid)
         {
             throw new ObjectDisposedException(nameof(DesktopUpdaterClient));
         }
@@ -834,6 +837,134 @@ public sealed class DesktopUpdaterClient : IDisposable
         }
     }
 
+    private sealed class CallbackState
+    {
+        public CallbackState(DesktopUpdaterConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public DesktopUpdaterConfiguration Configuration { get; }
+
+        public static CallbackState FromContext(IntPtr context)
+        {
+            if (context == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    "The native runtime callback context is unavailable.");
+            }
+            var value = GCHandle.FromIntPtr(context).Target as CallbackState;
+            return value ?? throw new InvalidOperationException(
+                "The native runtime callback context is invalid.");
+        }
+    }
+
+    private sealed class NativeClientHandle : SafeHandle
+    {
+        private readonly MinimumOSDelegate? _minimumOSResolver;
+        private readonly HeadersProviderDelegate? _requestHeadersProvider;
+        private readonly Action<IntPtr>? _releaseForTesting;
+        private GCHandle _callbackState;
+
+        public NativeClientHandle(DesktopUpdaterConfiguration configuration)
+            : base(IntPtr.Zero, true)
+        {
+            _minimumOSResolver = ResolveMinimumOS;
+            _requestHeadersProvider = ProvideHeaders;
+            _callbackState = GCHandle.Alloc(new CallbackState(configuration));
+        }
+
+        private NativeClientHandle(IntPtr nativeHandle, Action<IntPtr> release)
+            : base(IntPtr.Zero, true)
+        {
+            _releaseForTesting = release ??
+                throw new ArgumentNullException(nameof(release));
+            Initialize(nativeHandle);
+        }
+
+        public override bool IsInvalid => handle == IntPtr.Zero;
+
+        public MinimumOSDelegate MinimumOSResolver =>
+            _minimumOSResolver ?? throw new InvalidOperationException(
+                "The testing handle has no native callbacks.");
+
+        public HeadersProviderDelegate RequestHeadersProvider =>
+            _requestHeadersProvider ?? throw new InvalidOperationException(
+                "The testing handle has no native callbacks.");
+
+        public IntPtr ApplicationContext => _callbackState.IsAllocated
+            ? GCHandle.ToIntPtr(_callbackState)
+            : IntPtr.Zero;
+
+        public static NativeClientHandle CreateForTesting(
+            IntPtr nativeHandle,
+            Action<IntPtr> release)
+        {
+            return new NativeClientHandle(nativeHandle, release);
+        }
+
+        public void Initialize(IntPtr nativeHandle)
+        {
+            if (nativeHandle == IntPtr.Zero)
+            {
+                throw new ArgumentException(
+                    "The native runtime client handle must not be zero.",
+                    nameof(nativeHandle));
+            }
+            if (!IsInvalid)
+            {
+                throw new InvalidOperationException(
+                    "The native runtime client handle is already initialized.");
+            }
+            SetHandle(nativeHandle);
+        }
+
+        public void DisposeAfterFailedCreate()
+        {
+            if (IsInvalid)
+            {
+                ReleaseCallbackState();
+                Dispose();
+                return;
+            }
+            Dispose();
+        }
+
+        protected override bool ReleaseHandle()
+        {
+            var released = true;
+            try
+            {
+                if (_releaseForTesting is null)
+                {
+                    NativeMethods.ClientFree(handle);
+                }
+                else
+                {
+                    _releaseForTesting(handle);
+                }
+            }
+            catch
+            {
+                released = false;
+            }
+            finally
+            {
+                SetHandle(IntPtr.Zero);
+                ReleaseCallbackState();
+            }
+            return released;
+        }
+
+        private void ReleaseCallbackState()
+        {
+            if (_callbackState.IsAllocated)
+            {
+                _callbackState.Free();
+            }
+        }
+    }
+
     private static class NativeMethods
     {
         [DllImport(
@@ -849,7 +980,8 @@ public sealed class DesktopUpdaterClient : IDisposable
             EntryPoint = "desktop_updater_runtime_client_check_for_update_v1",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
-        internal static extern NativeRuntimeResult CheckForUpdate(IntPtr client);
+        internal static extern NativeRuntimeResult CheckForUpdate(
+            NativeClientHandle client);
 
         [DllImport(
             "desktop_updater_runtime",
@@ -857,7 +989,7 @@ public sealed class DesktopUpdaterClient : IDisposable
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeRuntimeResult DownloadVerifyAndStage(
-            IntPtr client,
+            NativeClientHandle client,
             ref NativeStageRequest request);
 
         [DllImport(
@@ -866,7 +998,7 @@ public sealed class DesktopUpdaterClient : IDisposable
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeRuntimeResult InstallAndRelaunch(
-            IntPtr client,
+            NativeClientHandle client,
             ref NativeInstallRequest request);
 
         [DllImport(

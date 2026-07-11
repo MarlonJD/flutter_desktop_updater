@@ -3,6 +3,11 @@
 Runtime-only dependencies are compiled into the preview non-Flutter runtime
 targets. They are not linked by Flutter helper builds.
 
+The complete vendored license texts below are reproduced in
+`windows/native/THIRD_PARTY_NOTICES.md` and
+`linux/native/THIRD_PARTY_NOTICES.md`. Those notice files ship in the NuGet
+package and both installed native SDK trees.
+
 ## Monocypher 4.0.3
 
 - Source: `https://monocypher.org/download/monocypher-4.0.3.tar.gz`

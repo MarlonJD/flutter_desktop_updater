@@ -147,7 +147,7 @@ void main() {
     expect(
       workflow,
       contains(
-        "ctest --test-dir windows/native/build -C Debug --output-on-failure",
+        "ctest --test-dir windows/native/build -C Release --output-on-failure",
       ),
     );
     expect(workflow, contains("No tests were found"));

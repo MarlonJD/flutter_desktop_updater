@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using DesktopUpdater.Native;
 using Xunit;
 
@@ -61,7 +63,7 @@ public sealed class DesktopUpdaterClientTests
         Assert.Contains("staged_generation_", lifecycle);
         Assert.Contains("install_in_progress_", lifecycle);
         var consume = source.IndexOf(
-            "client->lifecycle.BeginInstall()",
+            "client->lifecycle.BeginInstall(snapshot)",
             StringComparison.Ordinal);
         var rollbackGuard = source.IndexOf(
             "SchedulingRollbackGuard rollback",
@@ -116,6 +118,47 @@ public sealed class DesktopUpdaterClientTests
         Assert.True(publishCheck >= 0);
         Assert.True(invalidDescriptor > publishCheck);
         Assert.True(invalidDescriptor < stageEntry);
+    }
+
+    [Fact]
+    public void FinalizerReleasesNativeClientWhenDisposeIsOmitted()
+    {
+        var releaseCount = 0;
+        var releasedHandle = IntPtr.Zero;
+        var weakClient = CreateAbandonedClient(handle =>
+        {
+            releasedHandle = handle;
+            Interlocked.Increment(ref releaseCount);
+        });
+
+        for (var attempt = 0; attempt < 10 && releaseCount == 0; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        Assert.False(weakClient.IsAlive);
+        Assert.Equal(1, releaseCount);
+        Assert.Equal(new IntPtr(0x42), releasedHandle);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateAbandonedClient(Action<IntPtr> release)
+    {
+        var factory = typeof(DesktopUpdaterClient).GetMethod(
+            "CreateForTesting",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(factory);
+        var client = Assert.IsType<DesktopUpdaterClient>(factory.Invoke(
+            null,
+            new object[]
+            {
+                CreateConfiguration(),
+                new IntPtr(0x42),
+                release,
+            }));
+        return new WeakReference(client);
     }
 
     private static DesktopUpdaterConfiguration CreateConfiguration(

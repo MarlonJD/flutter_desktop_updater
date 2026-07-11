@@ -138,7 +138,7 @@ void main() {
     );
     expect(
       workflow,
-      contains("cmake --install windows/native/build --config Debug"),
+      contains("cmake --install windows/native/build --config Release"),
     );
     expect(
       workflow,

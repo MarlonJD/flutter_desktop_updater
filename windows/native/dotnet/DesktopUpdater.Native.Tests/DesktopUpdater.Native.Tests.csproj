@@ -22,11 +22,11 @@
     AfterTargets="Build"
     Condition="'$(OS)' == 'Windows_NT'">
     <PropertyGroup>
-      <NativeDllPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../build/Debug/desktop_updater_native.dll'))</NativeDllPath>
+      <NativeDllPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../build/Release/desktop_updater_native.dll'))</NativeDllPath>
     </PropertyGroup>
     <Error
       Condition="!Exists('$(NativeDllPath)')"
-      Text="Build the native Debug DLL before running .NET tests: $(NativeDllPath)" />
+      Text="Build the native Release DLL before running .NET tests: $(NativeDllPath)" />
     <Copy
       SourceFiles="$(NativeDllPath)"
       DestinationFiles="$(OutDir)desktop_updater_native.dll" />
