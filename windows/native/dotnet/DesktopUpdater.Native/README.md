@@ -6,7 +6,10 @@ native runtime preview and both `desktop_updater_native.dll` and
 `desktop_updater_runtime.dll`.
 
 `DesktopUpdaterClient` provides `CheckForUpdate`, `DownloadVerifyAndStage`, and
-`InstallAndRelaunch`. Helper-only consumers can continue to stage artifacts
-themselves and call the existing helper wrapper. The runtime is
-`candidate-only` and not production-ready until required target-host and
-publisher-trust smoke gates pass.
+`InstallAndRelaunch`. Helper-only consumers stage and verify artifacts, then
+construct `DesktopUpdaterInstallRequest` with the retained provenance digest,
+artifact digest, signer allowlist, canonical install root, executable-relative
+path, and package identity. The legacy overload remains available for restart
+requests, but rejects non-null staging paths before native helper launch. The
+runtime is `candidate-only` and not production-ready until required target-host
+and publisher-trust smoke gates pass.

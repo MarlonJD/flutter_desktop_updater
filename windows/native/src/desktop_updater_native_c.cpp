@@ -155,6 +155,16 @@ bool ParseRequest(const desktop_updater_install_request_v1* request,
     }
     parsed->removed_files.push_back(std::move(removed_file));
   }
+  if (!parsed->staging_path.empty() &&
+      (parsed->expected_provenance_sha256.empty() ||
+       parsed->expected_artifact_sha256.empty() ||
+       parsed->install_root.empty() ||
+       parsed->executable_relative_path.empty() ||
+       parsed->expected_package_id.empty())) {
+    *error =
+        "Staged install requires complete verified provenance and target context.";
+    return false;
+  }
   parsed->request_elevation_if_needed = true;
   return true;
 }

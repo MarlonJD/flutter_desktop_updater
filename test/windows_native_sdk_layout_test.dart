@@ -66,6 +66,12 @@ void main() {
     expect(tests, contains("WrongAbiVersion"));
     expect(tests, contains("UndersizedStruct"));
     expect(tests, contains("InvalidUtf16"));
+    expect(
+      tests,
+      contains("IncompleteStagedHandoffFailsBeforeScheduler"),
+    );
+    expect(tests, contains('find("verified provenance")'));
+    expect(tests, contains("EXPECT_FALSE(scheduler_called)"));
     expect(tests, contains("RemovedFilesReachNativeRequest"));
     expect(tests, contains("ThrownInternalException"));
     expect(tests, contains("RepeatedFreeIsSafe"));
@@ -112,6 +118,14 @@ void main() {
     );
 
     expect(wrapper, contains("IReadOnlyList<string> removedFiles"));
+    expect(
+        wrapper, contains("public sealed class DesktopUpdaterInstallRequest"));
+    expect(wrapper, contains("ExpectedProvenanceSha256 ="));
+    expect(wrapper, contains("ExpectedArtifactSha256 ="));
+    expect(wrapper, contains("AllowedSignerThumbprints ="));
+    expect(wrapper, contains("ExpectedProvenanceSha256 = provenancePointer"));
+    expect(wrapper, contains("ExpectedArtifactSha256 = artifactPointer"));
+    expect(wrapper, contains("AllowedSignerThumbprints = signerPointers"));
     expect(wrapper, contains("Marshal.StringToHGlobalUni"));
     expect(wrapper, contains("Marshal.WriteIntPtr"));
     expect(wrapper, contains("removedFiles.Count"));
@@ -127,6 +141,9 @@ void main() {
     expect(wrapper, contains("ExactSpelling = true"));
     expect(wrapper, contains("CallingConvention = CallingConvention.Cdecl"));
     expect(tests, contains("NativeInvalidRequestReturnsNativeError"));
+    expect(tests, contains("IncompleteStagedHandoffFailsBeforeNativeLoad"));
+    expect(tests,
+        contains("VerifiedInstallRequestCarriesCompleteNativeTrustContext"));
     expect(tests, contains("desktop_updater_native.dll"));
     expect(tests, contains("CopyNativeDll"));
   });

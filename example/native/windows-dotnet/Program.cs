@@ -6,10 +6,17 @@ var missingStagingPath = Path.Combine(
 
 try
 {
-    DesktopUpdaterNative.ScheduleInstallAndRelaunch(
-        missingStagingPath,
-        new[] { "obsolete.txt" },
-        null);
+    var request = new DesktopUpdaterInstallRequest(
+        stagingPath: missingStagingPath,
+        removedFiles: new[] { "obsolete.txt" },
+        diagnosticsLogPath: null,
+        expectedProvenanceSha256: new string('a', 64),
+        expectedArtifactSha256: new string('b', 64),
+        allowedSignerThumbprints: new[] { new string('c', 64) },
+        installRoot: AppContext.BaseDirectory,
+        executableRelativePath: Path.GetFileName(Environment.ProcessPath!),
+        expectedPackageId: "com.example.desktop-updater-consumer");
+    DesktopUpdaterNative.ScheduleInstallAndRelaunch(request);
 }
 catch (DesktopUpdaterException error)
     when (error.Message.Contains(

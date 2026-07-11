@@ -2007,7 +2007,10 @@ Task 10 evidence on 2026-07-11:
 - [x] Reject incomplete macOS helper-only staged requests synchronously and
   expose a complete verified-stage handoff value without changing the
   `DesktopUpdaterKit` product or import.
-- [ ] Complete the packaged .NET helper-only provenance handoff.
+- [x] Expose and marshal the complete .NET helper-only provenance handoff and
+  reject incomplete staged calls before native scheduling.
+- [ ] Run the Windows target-host C ABI test and a positive packaged .NET
+  helper-only install smoke against the real DLL/helper.
 - [ ] Preserve the signed Inno `requiresElevation` policy through the native
   helper and compatible C/.NET boundaries.
 - [ ] Bound stable Flutter metadata downloads and archive expansion.
@@ -2039,6 +2042,22 @@ Fresh-review evidence on 2026-07-11:
   reservation, packaged helper, lock, durable journal, fd/handle-relative
   mutation, recovery, and target-host gates exist, the runtime remains
   `candidate-only` and PR #65 remains not merge-ready.
+- .NET helper-only RED, verified locally: the focused managed test project
+  failed to compile because `DesktopUpdaterInstallRequest` did not exist. The
+  focused Dart package/layout suite failed because the wrapper did not marshal
+  provenance, artifact, or signer fields and the isolated consumer still used
+  the incomplete legacy staged overload.
+- .NET helper-only GREEN, verified locally: both `net8.0` and `netstandard2.0`
+  wrapper targets compiled; the three new platform-independent managed tests
+  passed under the locally installed .NET 10 runtime with major roll-forward;
+  and the focused Dart layout/package suite passed 11/11. The C ABI parser now
+  rejects a non-empty stage with missing provenance or target proof before the
+  scheduler callback, with a source-level GTest covering the boundary.
+- Windows C ABI GTest, isolated Release NuGet consumer, and a positive packaged
+  helper-only install: not run on a Windows target host. The local full managed
+  suite ran 11/12 tests; its sole failure was the pre-existing real-DLL P/Invoke
+  test because a Windows DLL cannot load on macOS. These target-host gates stay
+  open and are not promoted to `verified locally`.
 
 ## Final Acceptance Checklist
 

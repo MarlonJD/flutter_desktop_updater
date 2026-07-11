@@ -124,7 +124,10 @@ Include `desktop_updater_native.h` for the C++ helper or
 `desktop_updater_native_c.h` for the versioned C ABI. Set
 `DESKTOP_UPDATER_NATIVE_ABI_VERSION`, `struct_size`, every staged path, and the
 complete `removed_files` array before calling
-`desktop_updater_schedule_install_and_relaunch_v1`. The installed header also
+`desktop_updater_schedule_install_and_relaunch_v1`. A staged C ABI request must
+also include the verified provenance and artifact SHA-256 values plus complete
+install-root, executable-relative-path, and package-identity target proof; an
+incomplete request is rejected before scheduling. The installed header also
 exposes `DESKTOP_UPDATER_NATIVE_VERSION_STRING`.
 
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
@@ -132,7 +135,11 @@ wrappers, `buildTransitive` copy target, and both
 `runtimes/win-x64/native/desktop_updater_native.dll` and
 `runtimes/win-x64/native/desktop_updater_runtime.dll`. The preview wrapper
 exposes `CheckForUpdate`, `DownloadVerifyAndStage`, and `InstallAndRelaunch`;
-the lower-level C ABI uses the corresponding versioned `_v1` functions.
+helper-only consumers use `DesktopUpdaterInstallRequest` so the managed wrapper
+marshals the retained provenance, artifact digest, signer allowlist, and target
+proof. The old managed overload remains source-compatible for restart-only
+calls and rejects staged requests lacking that trust context. The lower-level C
+ABI uses the corresponding versioned `_v1` functions.
 Repository CI packs the package to a local feed and runs external consumers
 against the real DLLs. It is not a public NuGet release until an approved
 release workflow publishes that exact verified package.

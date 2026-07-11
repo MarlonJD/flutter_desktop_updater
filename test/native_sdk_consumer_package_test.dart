@@ -127,7 +127,10 @@ void main() {
       contains('PackageReference Include="DesktopUpdater.Native"'),
     );
     expect(consumerSource, contains("DesktopUpdaterException"));
-    expect(consumerSource, contains("Staged update directory"));
+    expect(consumerSource, contains("DesktopUpdaterInstallRequest("));
+    expect(consumerSource, contains("expectedProvenanceSha256:"));
+    expect(consumerSource, contains("expectedArtifactSha256:"));
+    expect(consumerSource, contains("allowedSignerThumbprints:"));
   });
 
   test("target-host CI installs, packs, links, loads, and runs consumers", () {

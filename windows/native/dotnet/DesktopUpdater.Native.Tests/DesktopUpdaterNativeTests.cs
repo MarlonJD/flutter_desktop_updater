@@ -7,6 +7,58 @@ namespace DesktopUpdater.Native.Tests;
 public sealed class DesktopUpdaterNativeTests
 {
     [Fact]
+    public void IncompleteStagedHandoffFailsBeforeNativeLoad()
+    {
+        var error = Assert.Throws<ArgumentException>(() =>
+            DesktopUpdaterNative.ScheduleInstallAndRelaunch(
+                @"C:\staging\Example",
+                Array.Empty<string>(),
+                null));
+
+        Assert.Contains("verified provenance", error.Message);
+    }
+
+    [Fact]
+    public void VerifiedInstallRequestCarriesCompleteNativeTrustContext()
+    {
+        var request = new DesktopUpdaterInstallRequest(
+            stagingPath: @"C:\staging\Example",
+            removedFiles: Array.Empty<string>(),
+            diagnosticsLogPath: null,
+            expectedProvenanceSha256: new string('a', 64),
+            expectedArtifactSha256: new string('b', 64),
+            allowedSignerThumbprints: new[] { new string('C', 64) },
+            installRoot: @"C:\Program Files\Example",
+            executableRelativePath: "Example.exe",
+            expectedPackageId: "com.example.app");
+
+        Assert.Equal(new string('a', 64), request.ExpectedProvenanceSha256);
+        Assert.Equal(new string('b', 64), request.ExpectedArtifactSha256);
+        Assert.Single(request.AllowedSignerThumbprints);
+        Assert.Equal(@"C:\Program Files\Example", request.InstallRoot);
+        Assert.Equal("Example.exe", request.ExecutableRelativePath);
+        Assert.Equal("com.example.app", request.ExpectedPackageId);
+    }
+
+    [Fact]
+    public void VerifiedInstallRequestRejectsMalformedDigests()
+    {
+        var error = Assert.Throws<ArgumentException>(() =>
+            new DesktopUpdaterInstallRequest(
+                stagingPath: @"C:\staging\Example",
+                removedFiles: Array.Empty<string>(),
+                diagnosticsLogPath: null,
+                expectedProvenanceSha256: "not-a-sha256",
+                expectedArtifactSha256: new string('b', 64),
+                allowedSignerThumbprints: Array.Empty<string>(),
+                installRoot: @"C:\Program Files\Example",
+                executableRelativePath: "Example.exe",
+                expectedPackageId: "com.example.app"));
+
+        Assert.Contains("SHA-256", error.Message);
+    }
+
+    [Fact]
     public void NativeInvalidRequestReturnsNativeError()
     {
         var request = new InvalidNativeRequest

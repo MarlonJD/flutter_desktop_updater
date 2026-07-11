@@ -103,6 +103,26 @@ TEST(DesktopUpdaterNativeCAbi, InvalidUtf16) {
   desktop_updater_result_free_v1(&result);
 }
 
+TEST(DesktopUpdaterNativeCAbi, IncompleteStagedHandoffFailsBeforeScheduler) {
+  auto request = ValidRequest();
+  const uint16_t staging[] = {'C', ':', '\\', 's', 't', 'a', 'g', 'e', 0};
+  request.staging_path = staging;
+  bool scheduler_called = false;
+
+  auto result = internal::ScheduleInstallAndRelaunchWith(
+      &request, [&scheduler_called](const InstallRequest&) {
+        scheduler_called = true;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_FALSE(scheduler_called);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("verified provenance"),
+            std::string::npos);
+  desktop_updater_result_free_v1(&result);
+}
+
 TEST(DesktopUpdaterNativeCAbi, RemovedFilesReachNativeRequest) {
   auto request = ValidRequest();
   const uint16_t first[] = {'o', 'l', 'd', '.', 'd', 'l', 'l', 0};
