@@ -35,6 +35,7 @@ configured-but-unexecuted workflow.
 | Linux installed CMake consumer | `not run` | Configured in CI; installed target-host consumption is still required |
 | Linux standard and multiarch pkg-config consumers | `not run` | Configured in CI; target-host installed-prefix execution is still required |
 | Linux mount/bind transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; fd-relative mount/bind transaction mutation is not implemented |
+| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | Task 6 requires a packaged signed standalone-helper architecture and reservation-to-helper ownership protocol that are not defined |
 | Linux normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
 | Current remediation head in GitHub Actions | `not run` | No CI run for this head is claimed; therefore no lane is `verified in CI` |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |

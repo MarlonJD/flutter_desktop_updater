@@ -1966,6 +1966,24 @@ Task 10 evidence on 2026-07-11:
   diagnostics; full Flutter passed 601 tests with 3 explicit environment-gated
   skips and 0 failures; and `git diff --check` exited 0. Target-host, CI, and
   credential lanes remain not run, and Task 6 remains blocked.
+- Final-truth RED, verified locally: after the validator-only mutations were
+  green, the focused six-test structural suite had exactly one failure: the
+  atomic ledger omitted the cross-platform/macOS packaged signed helper
+  ownership-transfer, cross-process target-lock, durable-journal, and crash
+  recovery blocker. The other five tests independently rejected duplicate
+  ledgers, workflow false greens, and credential-lane promotion prose.
+- Final-truth GREEN, verified locally: the focused structural suite passed 6/6
+  after the missing blocker became its own atomic ledger row. Windows
+  junction/reparse transaction mutation and Linux mount/bind transaction
+  mutation remain separate blocked rows rather than being folded into the
+  cross-platform/macOS architecture blocker.
+- Final-truth verification, verified locally: the affected contract set passed
+  45/45; workflow YAML parsed; formatting checked 216 files with 0 changes;
+  focused analysis reported no issues; repository analysis exited 0 with the
+  existing 395 info-only diagnostics; full Flutter passed 601 tests with 3
+  explicit environment-gated skips and 0 failures; generated fixtures were up
+  to date; and SwiftPM passed 49/49. Target-host, current-head CI, and
+  credential lanes remain not run, and Task 6 remains blocked.
 
 ## Final Acceptance Checklist
 

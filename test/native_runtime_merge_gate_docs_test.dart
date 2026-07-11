@@ -24,6 +24,8 @@ const _expectedLedger = <String, String>{
   "Linux installed CMake consumer": "not run",
   "Linux standard and multiarch pkg-config consumers": "not run",
   "Linux mount/bind transaction mutation and recovery": "blocked",
+  "Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
+      "blocked",
   "Linux normal ZIP smoke": "not run",
   "Current remediation head in GitHub Actions": "not run",
   "macOS signed/notarized DMG smoke": "not run",
@@ -31,84 +33,117 @@ const _expectedLedger = <String, String>{
   "Windows signed Inno smoke": "not run",
 };
 
-const _workflowCommands = <String, List<String>>{
-  "dart": <String>[
-    "dart run tool/generate_native_contract_fixtures.dart --check",
-    "dart format --set-exit-if-changed .",
-    "flutter analyze --no-fatal-infos",
-    "flutter test --no-pub",
-    "dart pub publish --dry-run",
-  ],
-  "macos-native": <String>[
-    "xcrun swiftc -typecheck",
-    "x86_64-apple-macosx10.14",
-    "DesktopUpdaterVersion.swift",
-    "Diagnostics.swift",
-    "MacInstallHelper.swift",
-    "MacInstallRequest.swift",
-    "DesktopUpdaterPlugin.swift",
-    "swift test --package-path .",
-    "swift run --package-path example/native/macos",
-    "tool/native_runtime_smoke_server.dart",
-  ],
-  "macos-flutter": <String>[
-    "flutter config --enable-swift-package-manager",
-    "flutter config --no-enable-swift-package-manager",
-    "flutter build macos --debug",
-    "flutter test integration_test -d macos",
-  ],
-  "windows": <String>[
-    "ctest --test-dir windows/native/build -C Release --output-on-failure",
-    "tool/verify_windows_nuget_consumer.ps1",
-    "DesktopUpdater.Consumer.dll",
-    "tool/native_runtime_smoke_server.dart",
-  ],
-  "linux": <String>[
-    "ctest --test-dir linux/native/build --output-on-failure",
-    "pkg-config --cflags --libs desktop_updater_native",
-    "lib/x86_64-linux-gnu/pkgconfig",
-    "ctest --test-dir example/native/linux-cmake-runtime/build",
-    "dart run tool/native_runtime_smoke_server.dart",
-  ],
+const _workflowCommands = <String, Map<String, List<String>>>{
+  "dart": <String, List<String>>{
+    "Check generated native contract fixtures": <String>[
+      "dart run tool/generate_native_contract_fixtures.dart --check",
+    ],
+    "Check formatting": <String>["dart format --set-exit-if-changed ."],
+    "Analyze": <String>["flutter analyze --no-fatal-infos"],
+    "Test Dart surface": <String>["flutter test --no-pub"],
+    "Pub publish dry-run": <String>["dart pub publish --dry-run"],
+  },
+  "macos-native": <String, List<String>>{
+    "Typecheck macOS 10.14 CocoaPods fallback source set": <String>[
+      "xcrun swiftc -typecheck",
+    ],
+    "Run DesktopUpdaterKit SwiftPM tests": <String>[
+      "swift test --package-path .",
+    ],
+    "Run external SwiftPM consumer": <String>[
+      "swift run --package-path example/native/macos",
+    ],
+    "macOS native runtime ZIP smoke": <String>[
+      "dart run tool/native_runtime_smoke_server.dart",
+    ],
+  },
+  "macos-flutter": <String, List<String>>{
+    "Enable SwiftPM integration": <String>[
+      "flutter config --enable-swift-package-manager",
+    ],
+    "Enable CocoaPods fallback integration": <String>[
+      "flutter config --no-enable-swift-package-manager",
+    ],
+    "Build macOS example": <String>["flutter build macos --debug"],
+    "Run macOS integration tests": <String>[
+      "flutter test integration_test -d macos",
+    ],
+  },
+  "windows": <String, List<String>>{
+    "Configure standalone Windows native SDK tests": <String>[
+      "cmake -S windows/native",
+    ],
+    "Pack DesktopUpdater.Native": <String>[
+      "dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj",
+    ],
+    "Run isolated Release NuGet P/Invoke consumer": <String>[
+      "& tool/verify_windows_nuget_consumer.ps1",
+    ],
+  },
+  "linux": <String, List<String>>{
+    "Configure standalone Linux native tests": <String>[
+      "cmake -S linux/native",
+    ],
+    "Build and run installed Linux pkg-config consumer": <String>["c++"],
+    "Configure Linux multiarch pkg-config package": <String>[
+      "cmake -S linux/native",
+    ],
+    "Linux native runtime ZIP smoke": <String>[
+      "cmake -S example/native/linux-cmake-runtime",
+      "dart run tool/native_runtime_smoke_server.dart",
+    ],
+  },
 };
 
 void main() {
   test("publishes exactly one atomic current-head ledger", () {
-    final runtimeApi = _read("docs/native-runtime-api.md");
+    final docs = <String, String>{
+      for (final path in _mergeGateDocs) path: _read(path),
+    };
 
-    expect(_ledgerErrors(runtimeApi), isEmpty);
-    expect(runtimeApi, contains("candidate-only"));
+    expect(_ledgerErrors(docs), isEmpty);
+    expect(docs["docs/native-runtime-api.md"], contains("candidate-only"));
   });
 
   test("ledger validator rejects duplicate, stale, deleted, and swapped rows",
       () {
-    final valid = _ledgerFixture(_expectedLedger);
+    final valid = <String, String>{
+      "docs/native-runtime-api.md": _ledgerFixture(_expectedLedger),
+      "README.md": "candidate-only",
+    };
     expect(_ledgerErrors(valid), isEmpty);
     expect(
-      _ledgerErrors("$valid\n$valid"),
+      _ledgerErrors(<String, String>{
+        ...valid,
+        "README.md": _ledgerFixture(_expectedLedger),
+      }),
       contains("expected one ledger heading"),
     );
+    final ledger = valid["docs/native-runtime-api.md"]!;
     expect(
-      _ledgerErrors(
-        valid.replaceFirst(
+      _ledgerErrors(<String, String>{
+        ...valid,
+        "docs/native-runtime-api.md": ledger.replaceFirst(
           "| macOS root SwiftPM tests | verified locally |",
           "",
         ),
-      ),
+      }),
       contains("missing row: macOS root SwiftPM tests"),
     );
     expect(
-      _ledgerErrors(
-        valid.replaceFirst(
+      _ledgerErrors(<String, String>{
+        ...valid,
+        "docs/native-runtime-api.md": ledger.replaceFirst(
           "| macOS root SwiftPM tests | verified locally |",
           "| stale combined macOS lane | verified locally |",
         ),
-      ),
+      }),
       contains("unexpected row: stale combined macOS lane"),
     );
     expect(
-      _ledgerErrors(
-        valid
+      _ledgerErrors(<String, String>{
+        ...valid,
+        "docs/native-runtime-api.md": ledger
             .replaceFirst(
               "| macOS root SwiftPM tests | verified locally |",
               "| macOS root SwiftPM tests | not run |",
@@ -117,7 +152,7 @@ void main() {
               "| macOS external SwiftPM consumer | not run |",
               "| macOS external SwiftPM consumer | verified locally |",
             ),
-      ),
+      }),
       contains("wrong status: macOS root SwiftPM tests"),
     );
   });
@@ -132,27 +167,61 @@ void main() {
     );
   });
 
-  test("workflow validator ignores comments and rejects commands in wrong jobs",
-      () {
-    const fixture = """
+  test("workflow validator rejects false-green step and command mutations", () {
+    const valid = """
 jobs:
   dart:
     steps:
-      # run: flutter test --no-pub
-      - run: dart format --set-exit-if-changed .
-  unrelated:
-    steps:
-      - run: flutter test --no-pub
+      - name: Test Dart surface
+        run: |
+          set -e
+          flutter test --no-pub
 """;
+    const expected = <String, Map<String, List<String>>>{
+      "dart": <String, List<String>>{
+        "Test Dart surface": <String>["flutter test --no-pub"],
+      },
+    };
 
-    expect(
-      _workflowErrors(fixture, const <String, List<String>>{
-        "dart": <String>[
-          "dart format --set-exit-if-changed .",
+    expect(_workflowErrors(valid, expected), isEmpty);
+    for (final mutation in <String>[
+      valid.replaceFirst(
+        "flutter test --no-pub",
+        "echo flutter test --no-pub",
+      ),
+      valid.replaceFirst(
+        "flutter test --no-pub",
+        'message="flutter test --no-pub"',
+      ),
+      valid.replaceFirst(
+        "flutter test --no-pub",
+        "echo active # flutter test --no-pub",
+      ),
+    ]) {
+      expect(
+        _workflowErrors(mutation, expected),
+        contains(
+          "dart/Test Dart surface missing active command: "
           "flutter test --no-pub",
-        ],
-      }),
-      contains("dart missing command: flutter test --no-pub"),
+        ),
+      );
+    }
+    expect(
+      _workflowErrors(
+        valid.replaceFirst("run: |", "if: false\n        run: |"),
+        expected,
+      ),
+      contains("dart/Test Dart surface is disabled"),
+    );
+    expect(
+      _workflowErrors(
+        valid.replaceFirst(
+          "run: |",
+          "continue-on-error: true\n        run: |",
+        ),
+        expected,
+      ),
+      contains("dart/Test Dart surface continues on error"),
     );
   });
 
@@ -163,15 +232,15 @@ jobs:
     expect(_credentialPassClaims(docs), isEmpty);
     expect(
       _credentialPassClaims("""
-Signed DMG passed.
-The PKG smoke is verified locally.
-Inno lane verified in CI.
+Signed DMG passed; the PKG smoke is not run.
+The PKG smoke succeeded. Inno lane successful. DMG gate green.
 """),
-      hasLength(3),
+      hasLength(4),
     );
     expect(
       _credentialPassClaims(
-        "Credential-gated DMG, PKG, and Inno lanes are not run.",
+        "Credential-gated DMG and Inno lanes are not run; "
+        "the PKG smoke is blocked but successful.",
       ),
       isEmpty,
     );
@@ -220,13 +289,21 @@ const _mergeGateDocs = <String>[
       "2026-07-10-native-runtime-merge-blocker-remediation-plan.md",
 ];
 
-List<String> _ledgerErrors(String markdown) {
-  final headingCount = RegExp(
+List<String> _ledgerErrors(Map<String, String> docs) {
+  final heading = RegExp(
     "^${RegExp.escape(_ledgerHeading)}\\s*\$",
     multiLine: true,
-  ).allMatches(markdown).length;
-  if (headingCount != 1) return <String>["expected one ledger heading"];
+  );
+  final owners = <String>[
+    for (final entry in docs.entries)
+      for (var index = 0;
+          index < heading.allMatches(entry.value).length;
+          index++)
+        entry.key,
+  ];
+  if (owners.length != 1) return <String>["expected one ledger heading"];
 
+  final markdown = docs[owners.single]!;
   final afterHeading = markdown.split(_ledgerHeading).last.trimLeft();
   final tableLines = afterHeading
       .split("\n")
@@ -269,20 +346,38 @@ ${rows.entries.map((entry) => "| ${entry.key} | ${entry.value} |").join("\n")}
 
 List<String> _workflowErrors(
   String yaml,
-  Map<String, List<String>> expected,
+  Map<String, Map<String, List<String>>> expected,
 ) {
-  final runs = _jobRunText(yaml);
-  return <String>[
-    for (final entry in expected.entries)
-      for (final command in entry.value)
-        if (!(runs[entry.key] ?? "").contains(command))
-          "${entry.key} missing command: $command",
-  ];
+  final steps = _workflowSteps(yaml);
+  final errors = <String>[];
+  for (final job in expected.entries) {
+    for (final expectedStep in job.value.entries) {
+      final label = "${job.key}/${expectedStep.key}";
+      final step = steps[job.key]?[expectedStep.key];
+      if (step == null) {
+        errors.add("$label missing step");
+        continue;
+      }
+      if (_literalBoolean(step.ifCondition) == false) {
+        errors.add("$label is disabled");
+      }
+      if (_literalBoolean(step.continueOnError) ?? false) {
+        errors.add("$label continues on error");
+      }
+      for (final command in expectedStep.value) {
+        if (!step.runLines.any((line) => _startsCommand(line, command))) {
+          errors.add("$label missing active command: $command");
+        }
+      }
+    }
+  }
+  return errors;
 }
 
-Map<String, String> _jobRunText(String yaml) {
-  final output = <String, StringBuffer>{};
+Map<String, Map<String, _WorkflowStep>> _workflowSteps(String yaml) {
+  final output = <String, Map<String, _WorkflowStep>>{};
   String? job;
+  _WorkflowStep? step;
   var runIndent = -1;
   for (final line in yaml.split("\n")) {
     final indent = line.length - line.trimLeft().length;
@@ -291,37 +386,102 @@ Map<String, String> _jobRunText(String yaml) {
         indent == 2 ? RegExp(r"^([A-Za-z0-9_-]+):$").firstMatch(trimmed) : null;
     if (jobMatch != null) {
       job = jobMatch.group(1);
-      output.putIfAbsent(job!, StringBuffer.new);
+      output.putIfAbsent(job!, () => <String, _WorkflowStep>{});
+      step = null;
       runIndent = -1;
       continue;
     }
-    if (job == null || trimmed.startsWith("#")) continue;
+    if (job == null) continue;
     if (runIndent >= 0) {
       if (trimmed.isNotEmpty && indent <= runIndent) runIndent = -1;
-      if (runIndent >= 0) output[job]!.writeln(trimmed);
+      if (runIndent >= 0 && !trimmed.startsWith("#")) {
+        final active = _stripComment(trimmed).trim();
+        if (active.isNotEmpty) step!.runLines.add(active);
+      }
+    }
+    final stepMatch =
+        indent == 6 ? RegExp(r"^- name:\s*(.+)$").firstMatch(trimmed) : null;
+    if (stepMatch != null) {
+      final name = stepMatch.group(1)!.trim();
+      step = _WorkflowStep(name);
+      output[job]![name] = step;
+      runIndent = -1;
+      continue;
+    }
+    if (step == null || trimmed.startsWith("#")) continue;
+    if (indent == 8 && trimmed.startsWith("if:")) {
+      step.ifCondition = trimmed.substring(3).trim();
+      continue;
+    }
+    if (indent == 8 && trimmed.startsWith("continue-on-error:")) {
+      step.continueOnError =
+          trimmed.substring("continue-on-error:".length).trim();
+      continue;
     }
     final runMatch = RegExp(r"^run:\s*(.*)$").firstMatch(trimmed);
-    if (runMatch == null) continue;
+    if (indent != 8 || runMatch == null) continue;
     final value = runMatch.group(1)!;
     if (value == "|" || value == ">") {
       runIndent = indent;
     } else {
-      output[job]!.writeln(value);
+      final active = _stripComment(value).trim();
+      if (active.isNotEmpty) step.runLines.add(active);
     }
   }
-  return <String, String>{
-    for (final entry in output.entries) entry.key: entry.value.toString(),
-  };
+  return output;
+}
+
+bool _startsCommand(String line, String command) =>
+    line == command ||
+    line.startsWith("$command ") ||
+    line.startsWith("$command\\");
+
+bool? _literalBoolean(String? value) {
+  if (value == null) return null;
+  final normalized = value
+      .replaceAll(r"${{", "")
+      .replaceAll("}}", "")
+      .replaceAll(RegExp(r'''["'\s]'''), "")
+      .toLowerCase();
+  if (normalized == "true") return true;
+  if (normalized == "false") return false;
+  return null;
+}
+
+String _stripComment(String line) {
+  var singleQuoted = false;
+  var doubleQuoted = false;
+  for (var index = 0; index < line.length; index++) {
+    final character = line[index];
+    if (character == "'" && !doubleQuoted) singleQuoted = !singleQuoted;
+    if (character == '"' && !singleQuoted) doubleQuoted = !doubleQuoted;
+    if (character == "#" &&
+        !singleQuoted &&
+        !doubleQuoted &&
+        (index == 0 || RegExp(r"\s").hasMatch(line[index - 1]))) {
+      return line.substring(0, index);
+    }
+  }
+  return line;
+}
+
+class _WorkflowStep {
+  _WorkflowStep(this.name);
+
+  final String name;
+  final List<String> runLines = <String>[];
+  String? ifCondition;
+  String? continueOnError;
 }
 
 List<String> _credentialPassClaims(String markdown) {
   final artifact = RegExp(r"\b(?:dmg|pkg|inno)\b", caseSensitive: false);
   final pass = RegExp(
-    r"\b(?:pass(?:ed|es)?|verified(?:\s+(?:locally|in\s+ci))?)\b",
+    r"\b(?:pass(?:ed|es)?|verified(?:\s+(?:locally|in\s+ci))?|succeed(?:ed|s)?|successful|green)\b",
     caseSensitive: false,
   );
   final explicitNonPass = RegExp(
-    r"\b(?:not\s+run|credential[- ]gated|without\s+(?:explicit\s+)?credentials|no\s+verified|reject\s+claims|must\s+not|do\s+not)\b",
+    r"\b(?:not\s+run|blocked|credential[- ]gated|without\s+(?:explicit\s+)?credentials|no\s+verified|reject\s+claims|must\s+not|do\s+not)\b",
     caseSensitive: false,
   );
   final evidenceContext = RegExp(
@@ -330,7 +490,7 @@ List<String> _credentialPassClaims(String markdown) {
   );
   return markdown
       .replaceAll("`", "")
-      .split(RegExp(r"\n|[.!?]\s+"))
+      .split(RegExp(r"[;\n]|[.!?]\s+"))
       .map((sentence) => sentence.trim())
       .where(
         (sentence) =>
