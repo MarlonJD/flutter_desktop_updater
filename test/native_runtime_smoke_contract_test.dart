@@ -167,6 +167,15 @@ void main() {
       lane,
       contains(r'"$smoke_root/install/runtime_compile"'),
     );
+    expect(
+      RegExp(
+        RegExp.escape(
+          ".desktop_updater_install_identity.json",
+        ),
+      ).allMatches(lane),
+      hasLength(2),
+    );
+    expect(lane, contains('"packageId":"com.example.native-runtime-smoke"'));
     expect(lane, contains("--executable-relative-path runtime_compile"));
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });

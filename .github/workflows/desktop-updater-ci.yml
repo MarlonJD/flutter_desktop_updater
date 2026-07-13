@@ -955,6 +955,8 @@ jobs:
           chmod +x "$smoke_root/install/runtime_compile" "$smoke_root/payload/runtime_compile"
           printf '2.7.0\n' > "$smoke_root/install/version.txt"
           printf '2.7.1\n' > "$smoke_root/payload/version.txt"
+          printf '%s' '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}' > "$smoke_root/install/.desktop_updater_install_identity.json"
+          printf '%s' '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}' > "$smoke_root/payload/.desktop_updater_install_identity.json"
           (cd "$smoke_root/payload" && zip -qr "$smoke_root/update.zip" .)
           dart run tool/native_runtime_smoke_server.dart \
             --artifact "$smoke_root/update.zip" \
