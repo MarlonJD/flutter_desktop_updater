@@ -179,6 +179,33 @@ void main() {
     expect(lane, contains("--executable-relative-path runtime_compile"));
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });
+
+  test("Windows ZIP handoff does not read Inno signer metadata", () {
+    final source = readFile(
+      "windows/native/src/runtime/artifact_stager_windows.cpp",
+    );
+    final handoffStart = source.indexOf(
+      "WindowsInstallHandoffResult HandoffWindowsInstall(",
+    );
+    final handoffEnd = source.indexOf(
+      "desktop_updater_result_v1 result",
+      handoffStart,
+    );
+
+    expect(handoffStart, greaterThanOrEqualTo(0));
+    expect(handoffEnd, greaterThan(handoffStart));
+    final handoff = source.substring(handoffStart, handoffEnd);
+    expect(
+      handoff,
+      matches(
+        RegExp(
+          r'if\s*\(descriptor\.artifact\.kind == "innoInstaller"\)\s*\{'
+          r'\s*for\s*\(const std::string& thumbprint\s*:'
+          r'\s*AuthenticodeThumbprints\(descriptor\)\)',
+        ),
+      ),
+    );
+  });
 }
 
 String readFile(String path) {

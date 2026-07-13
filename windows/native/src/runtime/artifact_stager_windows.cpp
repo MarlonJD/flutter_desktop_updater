@@ -312,8 +312,10 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
   const std::wstring expected_artifact(descriptor.artifact.sha256.begin(),
                                        descriptor.artifact.sha256.end());
   std::vector<std::wstring> thumbprints;
-  for (const std::string& thumbprint : AuthenticodeThumbprints(descriptor)) {
-    thumbprints.emplace_back(thumbprint.begin(), thumbprint.end());
+  if (descriptor.artifact.kind == "innoInstaller") {
+    for (const std::string& thumbprint : AuthenticodeThumbprints(descriptor)) {
+      thumbprints.emplace_back(thumbprint.begin(), thumbprint.end());
+    }
   }
   std::vector<const std::uint16_t*> thumbprint_pointers;
   for (const std::wstring& thumbprint : thumbprints) {
