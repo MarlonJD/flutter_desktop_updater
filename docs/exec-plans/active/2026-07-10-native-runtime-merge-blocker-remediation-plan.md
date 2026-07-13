@@ -2465,6 +2465,43 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   canonical cache passed. The consumer's first sandboxed attempt could not
   write the user Clang module cache; the identical permitted run passed.
 
+### Final verification and fresh adversarial review on 2026-07-13
+
+- `superpowers:verification-before-completion`: performed against the final
+  implementation and evidence state. The complete Task 10 ladder above is
+  fresh. In addition, the clean repository `dart pub publish --dry-run`
+  exited 0 with 0 warnings and 1 hint, and the focused safety/trust,
+  build/package, API/schema, and merge-gate group passed 57/57.
+- Safety and trust pass: `killcritic-complete-review` re-inspected metadata
+  signatures, package identity, owned staging and provenance, one-shot
+  handoff, destructive operations, rollback, and the final Windows streaming
+  hashes. The new hashes stream read-only bytes and dispose both resources;
+  they do not weaken digest, signer, containment, or no-mutation checks.
+  No additional P0 or P1 was validated. The existing Task 6 P0s remain: there is
+  no cross-process target lock or durable journal/recovery, and helper
+  mutation is not fd/handle-relative across the validation-to-mutation
+  interval.
+- Build and package pass: the `DesktopUpdaterKit` product/import and macOS
+  10.15+ SwiftPM floor are unchanged; the CocoaPods fallback remains macOS
+  10.14 with its exact five-source allowlist. Installed Windows and Linux
+  CMake consumers, isolated NuGet P/Invoke, standard and multiarch pkg-config,
+  third-party notices, and ordinary ZIP smokes retain target-host evidence.
+  No version, changelog heading, or lockfile changed.
+- Schema and API compatibility pass: the released Flutter facade,
+  `DesktopUpdaterController`, legacy install compatibility, custom platform
+  overrides, and MethodChannel surface remain covered. The focused facade,
+  MethodChannel, controller, generated fixture, and conformance group passed
+  61/61; no schema-v3 or native result-field incompatibility was found.
+- CI and release-truth pass: GitHub Actions run `29290035977` was queried again
+  and reports `success` for implementation commit `423e29a`, including its
+  macOS, Windows, Linux, Dart, package-consumer, and candidate CLI jobs. The
+  Windows signed Inno and macOS signed/notarized DMG and PKG credential lanes
+  remain `not run`. Runtime and CI artifacts remain `candidate-only`.
+- Fresh `killcritic-complete-review` verdict: `BLOCK / NO-GO`. The target-host
+  and locally executable remediation work is green, but the validated Task 6
+  P0s are intentionally owned by the approved follow-up implementation plan.
+  PR #65: not merge-ready.
+
 ## Final Acceptance Checklist
 
 - [ ] No caller-provided parent can be recursively deleted.

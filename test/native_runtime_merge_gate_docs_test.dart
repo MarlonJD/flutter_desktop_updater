@@ -116,6 +116,26 @@ void main() {
     expect(ledger, contains("swift run --package-path example/native/macos"));
   });
 
+  test("execution plan records the final verification and review verdict", () {
+    final plan = _read(
+      "docs/exec-plans/active/"
+      "2026-07-10-native-runtime-merge-blocker-remediation-plan.md",
+    );
+
+    for (final phrase in <String>[
+      "### Final verification and fresh adversarial review on 2026-07-13",
+      "superpowers:verification-before-completion",
+      "killcritic-complete-review",
+      "No additional P0 or P1",
+      "0 warnings and 1 hint",
+      "29290035977",
+      "BLOCK / NO-GO",
+      "PR #65: not merge-ready",
+    ]) {
+      expect(plan, contains(phrase), reason: phrase);
+    }
+  });
+
   test("native runtime docs enumerate both metadata signature requirements",
       () {
     final runtimeApi = _read("docs/native-runtime-api.md");
