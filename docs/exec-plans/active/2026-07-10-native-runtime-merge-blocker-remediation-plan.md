@@ -1917,10 +1917,12 @@ Draft the corrected PR body for the user; do not post it through a connector.
 ## Verification
 
 - Task 10 complete local ladder: `blocked`; the fixture check, repository format
-  check, analysis, pub dry-run, 51-test SwiftPM suite, and diff check exited 0.
-  The full Flutter run reached 637 passes and 3 explicit skips with one failure:
-  the user-owned dirty execution-plan index does not yet link the existing Linux
-  distribution plan. That file remains unmodified and unstaged.
+  check, analysis, pub dry-run, 51-test SwiftPM suite, exact macOS 10.14
+  typecheck, external SwiftPM consumer, and diff check exited 0. The full
+  Flutter run reached 647 passes and 3 explicit skips with one failure: the
+  user-owned dirty execution-plan index does not link the existing Linux
+  distribution or cross-platform privileged-helper implementation plans. That
+  file remains unmodified and unstaged.
 - Current-head macOS, Windows, and Linux target-host CI: `not run`.
 - Signed/notarized DMG, PKG, and signed Inno lanes: `not run` because their
   explicit credential gates were not dispatched.
@@ -2293,19 +2295,23 @@ Fresh-review evidence on 2026-07-11:
   syntax checking, and the `net8.0` and `netstandard2.0` Release builds each
   completed with 0 errors. Real Windows ABI probe execution remains `not run`.
 - Complete Task 10 ladder: blocked. Fixture generation was current; formatting
-  checked 218 files with 0 changes; analysis exited 0 with 384 info-only
+  checked 218 files with 0 changes; analysis exited 0 with 385 info-only
   diagnostics; the publication dry run reported 0 warnings and 1 version hint;
-  SwiftPM passed 51/51; and `git diff --check` exited 0. The full Flutter run
-  reached 637 passes and 3 explicit skips with 1 failure in
+  SwiftPM passed 51/51; the exact macOS 10.14 five-source typecheck and
+  `swift run --package-path example/native/macos` passed; and
+  `git diff --check` exited 0. The full Flutter run reached 647 passes and 3
+  explicit skips with 1 failure in
   `test/harness_engineering_docs_test.dart`: the user-owned dirty plan index
-  does not link the existing Linux distribution plan. That file remains
-  unmodified and unstaged, so Task 10 Step 3 is open again.
-- Focused cross-domain review suites: verified locally; 132 trust, helper,
-  package-contract, schema/API, merge-gate, macOS layout, and released Flutter
-  compatibility tests passed. The exact five-file CocoaPods fallback source set
-  typechecked for `x86_64-apple-macosx10.14`, and both external SwiftPM consumer
-  packages built. The `DesktopUpdaterKit` product/import and macOS 10.15 runtime
-  floor remain unchanged.
+  omits both active 2026-07-11 plans. That file remains unmodified and unstaged,
+  so Task 10 Step 3 remains open.
+- Focused cross-domain review suites: verified locally. The affected Flutter
+  facade/trust group passed 62/62; the schema/API/MethodChannel group passed
+  57/57; the corrected merge-gate docs suite passed 9/9; and the strict
+  portable C++17 Clang/OpenSSL fixture runner compiled with
+  `-Wall -Wextra -Werror` and exited 0. The exact five-file CocoaPods fallback
+  source set typechecked for `x86_64-apple-macosx10.14`, and the external
+  SwiftPM consumer built and executed. The `DesktopUpdaterKit` product/import
+  and macOS 10.15 runtime floor remain unchanged.
 - `superpowers:verification-before-completion`: performed. Its fresh-evidence
   gate rejects a completion claim because the complete Flutter command exited
   1 and the required target-host, credential, and Task 6 evidence is absent.
@@ -2335,9 +2341,22 @@ Validated blockers and major findings:
   boundary ownership survives the validation-to-mutation interval. Task 6 must
   provide the packaged broker/helper and target-host adversarial evidence.
 - P1 ordinary merge gate: the current full Flutter command exits 1 because the
-  execution-plan index is incomplete. The overlapping file belongs to the user
-  and was not edited or staged; ordinary CI cannot be claimed until that index
-  state is reconciled and the full command is rerun.
+  execution-plan index omits both
+  `active/2026-07-11-linux-distribution-artifacts-plan.md` and
+  `active/2026-07-11-cross-platform-privileged-install-helper-plan.md`. The
+  overlapping file belongs to the user and was not edited or staged; ordinary
+  CI cannot be claimed until that index state is reconciled and the full
+  command is rerun.
+- Resolved P1 evidence-truth gap: the canonical current-head ledger still
+  promoted the complete Task 10 ladder and retained stale 601/49 counts while
+  marking the now-executed external SwiftPM consumer `not run`. Test-first
+  status and literal-evidence assertions failed on the stale ledger, then the
+  focused docs suite passed 9/9 after recording the blocked ladder, 51 SwiftPM
+  tests, external consumer execution, and both missing index links.
+- Resolved P2 public-doc omission: the native configuration list claimed every
+  platform field but omitted `requireIndexSignature`. A focused RED failed on
+  the missing field, and the same 9/9 GREEN run now requires both index and
+  descriptor signature controls.
 
 Coverage ledger:
 
@@ -2368,22 +2387,27 @@ Coverage ledger:
 - Destructive and privileged safety — `FINDING`: target locks, durable recovery,
   and fd/handle-relative mount/reparse-safe mutation remain unimplemented.
 - CI and test truth — `FINDING`: focused suites prove nonzero discovery, but the
-  complete local Flutter command fails and current-head CI has not run.
+  complete local Flutter command fails on the user-owned index, which omits two
+  active plans, and current-head CI has not run. The canonical lane ledger now
+  records this as `blocked` instead of promoting stale evidence.
 - Release and publication — `NOT_VERIFIED`: signed/notarized artifact lanes are
   not run; the runtime and uploaded assets remain candidate-only.
 - Public API, CLI, and documentation reality — `VERIFIED_NO_BLOCKER`: released
   Flutter and MethodChannel compatibility tests pass, published README links no
   longer target excluded local paths, and production pinned-key metadata trust
-  is documented across README, publishing, and migration guidance.
+  is documented across README, publishing, and migration guidance. Native
+  runtime documentation enumerates both metadata-signature controls.
 - Migration and compatibility — `VERIFIED_NO_BLOCKER`: safe retained-provenance
   legacy calls and custom platform overrides pass; the stable trust default is
   explicitly compatibility-only and strict trust is additive.
-- Plan consistency and completion gates — `FINDING`: open checkboxes accurately
-  expose Task 6, target-host, credential, and full-ladder gaps; therefore final
-  acceptance and merge readiness remain open.
+- Plan consistency and completion gates — `FINDING`: open checkboxes and the
+  canonical ledger accurately expose Task 6, target-host, credential, and
+  full-ladder gaps, but the user-owned plan index remains incomplete; therefore
+  final acceptance and merge readiness remain open.
 
-The three moderate follow-ups identified by this review are resolved. They do
-not replace or reduce the P0/P1 blockers above.
+The three earlier moderate follow-ups, the fresh public-doc P2, and the fresh
+canonical-ledger P1 are resolved. They do not replace or reduce the remaining
+P0/P1 blockers above.
 
 Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
 lanes: `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.

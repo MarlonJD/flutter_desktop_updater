@@ -18,10 +18,10 @@ configured-but-unexecuted workflow.
 | Lane | Status | Current evidence |
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
-| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, 601 Flutter tests, pub dry-run, 49 SwiftPM tests, and diff check exited 0 |
-| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 49 tests on this macOS host |
+| Task 10 complete local ladder | `blocked` | Fixtures, format, analysis, pub dry-run, 51 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check passed; full Flutter reached 647 passes and 3 explicit skips but exited 1, and `docs/exec-plans/index.md` omits `active/2026-07-11-linux-distribution-artifacts-plan.md` plus `active/2026-07-11-cross-platform-privileged-install-helper-plan.md` |
+| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 51 tests on this macOS host |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
-| macOS external SwiftPM consumer | `not run` | Current-head external-consumer execution is still required |
+| macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
 | Flutter macOS SwiftPM build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
 | Flutter macOS CocoaPods build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
 | macOS normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
@@ -183,6 +183,7 @@ Every platform configuration carries the same application-owned inputs:
 - `platform`
 - `channel`
 - `installationIdentity`
+- `requireIndexSignature`
 - `requireDescriptorSignature`
 - `pinnedPublicKeysById`
 - `minimumOSResolver`

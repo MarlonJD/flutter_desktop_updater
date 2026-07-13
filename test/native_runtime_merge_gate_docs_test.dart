@@ -7,10 +7,10 @@ const _ledgerHeading = "## Current-Head Merge-Gate Ledger";
 const _expectedLedger = <String, String>{
   "Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites":
       "verified locally",
-  "Task 10 complete local ladder": "verified locally",
+  "Task 10 complete local ladder": "blocked",
   "macOS root SwiftPM tests": "verified locally",
   "macOS exact CocoaPods 10.14 five-source typecheck": "verified locally",
-  "macOS external SwiftPM consumer": "not run",
+  "macOS external SwiftPM consumer": "verified locally",
   "Flutter macOS SwiftPM build and integration": "not run",
   "Flutter macOS CocoaPods build and integration": "not run",
   "macOS normal ZIP smoke": "not run",
@@ -103,6 +103,32 @@ void main() {
 
     expect(_ledgerErrors(docs), isEmpty);
     expect(docs["docs/native-runtime-api.md"], contains("candidate-only"));
+  });
+
+  test("current-head ledger records fresh local evidence literally", () {
+    final ledger = _read("docs/native-runtime-api.md");
+    expect(ledger, contains("647 passes"));
+    expect(ledger, contains("3 explicit skips"));
+    expect(ledger, contains("exited 1"));
+    expect(
+      ledger,
+      contains("active/2026-07-11-linux-distribution-artifacts-plan.md"),
+    );
+    expect(
+      ledger,
+      contains(
+        "active/2026-07-11-cross-platform-privileged-install-helper-plan.md",
+      ),
+    );
+    expect(ledger, contains("51 tests"));
+    expect(ledger, contains("swift run --package-path example/native/macos"));
+  });
+
+  test("native runtime docs enumerate both metadata signature requirements",
+      () {
+    final runtimeApi = _read("docs/native-runtime-api.md");
+    expect(runtimeApi, contains("- `requireIndexSignature`"));
+    expect(runtimeApi, contains("- `requireDescriptorSignature`"));
   });
 
   test("released Flutter facades document pinned metadata trust", () {
