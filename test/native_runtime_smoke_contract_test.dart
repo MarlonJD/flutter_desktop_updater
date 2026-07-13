@@ -120,7 +120,9 @@ void main() {
     expect(workflow, contains(r"$stagingRoot = Join-Path $smokeRoot"));
     expect(workflow, contains(r"$stagingClean = (Test-Path -LiteralPath"));
     expect(
-        workflow, contains("Get-ChildItem -LiteralPath \$stagingRoot -Force"));
+      workflow,
+      contains(r"Get-ChildItem -LiteralPath $stagingRoot -Force"),
+    );
     expect(
       workflow,
       contains(
