@@ -133,6 +133,25 @@ void main() {
     expect(consumerSource, contains("allowedSignerThumbprints:"));
   });
 
+  test("NuGet target rejects unsupported RIDs before copying x64 DLLs", () {
+    final targets = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/buildTransitive/"
+      "DesktopUpdater.Native.targets",
+    );
+    const unsupportedRidCondition =
+        r'''Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64'"''';
+    const unsupportedRidMessage =
+        "DesktopUpdater.Native supports only RuntimeIdentifier 'win-x64'";
+
+    expect(targets, contains(unsupportedRidCondition));
+    expect(targets, contains(unsupportedRidMessage));
+    expect(
+      targets.indexOf(unsupportedRidCondition),
+      lessThan(targets
+          .indexOf("!Exists('%(DesktopUpdaterNativeRuntime.Identity)')")),
+    );
+  });
+
   test("target-host CI installs, packs, links, loads, and runs consumers", () {
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",

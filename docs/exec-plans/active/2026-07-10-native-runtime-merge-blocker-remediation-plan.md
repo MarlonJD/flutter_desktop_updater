@@ -1774,6 +1774,14 @@ Task 9 evidence on 2026-07-11:
   the sandbox denied the VSTest localhost socket; the identical permitted run
   passed 8/8 and is the counted evidence. Windows PowerShell/real DLL and Linux
   CMake target-host lanes remain not run, so Step 6 stays open.
+- Unsupported-RID follow-up RED/GREEN, verified locally on 2026-07-13: the
+  focused NuGet target contract first exited 1 because the `buildTransitive`
+  target had no RID guard, then passed after an explicit non-empty RID other
+  than `win-x64` was rejected before asset existence checks or copying. A real
+  host-independent `dotnet msbuild` probe with `RuntimeIdentifier=linux-x64`
+  exited 1 with the exact supported-RID diagnostic. A packaged `win-x64`
+  consumer with real Windows DLLs remains part of open Step 6 and is `not run`
+  on this macOS host.
 
 ---
 
@@ -2347,9 +2355,8 @@ Coverage ledger:
   expose Task 6, target-host, credential, trust, and full-ladder gaps; therefore
   final acceptance and merge readiness remain open.
 
-Remaining moderate follow-ups that do not replace the blockers above: fail a
-NuGet consumer clearly on unsupported RIDs instead of copying `win-x64` assets,
-and make published README links resolve within the pub archive.
+The remaining moderate follow-up that does not replace the blockers above is
+to make published README links resolve within the pub archive.
 
 Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
 lanes: `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.

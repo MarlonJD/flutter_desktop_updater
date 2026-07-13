@@ -133,8 +133,12 @@ exposes `DESKTOP_UPDATER_NATIVE_VERSION_STRING`.
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
 wrappers, `buildTransitive` copy target, and both
 `runtimes/win-x64/native/desktop_updater_native.dll` and
-`runtimes/win-x64/native/desktop_updater_runtime.dll`. The preview wrapper
-exposes `CheckForUpdate`, `DownloadVerifyAndStage`, and `InstallAndRelaunch`;
+`runtimes/win-x64/native/desktop_updater_runtime.dll`. The `buildTransitive`
+copy target accepts an explicit `RuntimeIdentifier` only when it is `win-x64`
+and fails before copying assets for any other explicit RID. Framework-dependent
+consumers that omit `RuntimeIdentifier` retain the existing copy behavior. The
+preview wrapper exposes `CheckForUpdate`, `DownloadVerifyAndStage`, and
+`InstallAndRelaunch`;
 helper-only consumers use `DesktopUpdaterInstallRequest` so the managed wrapper
 marshals the retained provenance, artifact digest, signer allowlist, and target
 proof. Its `DesktopUpdaterElevationPolicy` carries the signed Inno

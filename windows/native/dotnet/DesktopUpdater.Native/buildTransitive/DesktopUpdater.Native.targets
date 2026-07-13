@@ -8,6 +8,9 @@
 
   <Target Name="CopyDesktopUpdaterNativeRuntime" AfterTargets="Build">
     <Error
+      Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64'"
+      Text="DesktopUpdater.Native supports only RuntimeIdentifier 'win-x64'; received '$(RuntimeIdentifier)'." />
+    <Error
       Condition="!Exists('%(DesktopUpdaterNativeRuntime.Identity)')"
       Text="DesktopUpdater.Native package is missing %(DesktopUpdaterNativeRuntime.Identity)." />
     <Copy
