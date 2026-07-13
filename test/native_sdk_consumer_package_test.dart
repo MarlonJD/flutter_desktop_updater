@@ -131,6 +131,8 @@ void main() {
     expect(consumerSource, contains("expectedProvenanceSha256:"));
     expect(consumerSource, contains("expectedArtifactSha256:"));
     expect(consumerSource, contains("allowedSignerThumbprints:"));
+    expect(consumerSource, contains('"Staged update"'));
+    expect(consumerSource, contains('"path components"'));
   });
 
   test("NuGet target rejects unsupported RIDs before copying x64 DLLs", () {

@@ -20,9 +20,11 @@ try
     DesktopUpdaterNative.ScheduleInstallAndRelaunch(request);
 }
 catch (DesktopUpdaterException error)
-    when (error.Message.Contains(
-        "Staged update directory",
-        StringComparison.Ordinal))
+    when (error.Message.Contains("Staged update", StringComparison.Ordinal)
+        && (error.Message.Contains("directory", StringComparison.Ordinal)
+            || error.Message.Contains(
+                "path components",
+                StringComparison.Ordinal)))
 {
     Console.WriteLine("DesktopUpdater.Native packaged consumer passed.");
     return 0;
