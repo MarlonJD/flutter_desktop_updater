@@ -591,6 +591,26 @@ void main() {
     expect(windowsSource, contains(r"$stageValidationPhase = 'preflight'"));
     expect(
       windowsSource,
+      contains(r"$markerBytes = [IO.File]::ReadAllBytes($marker)"),
+    );
+    expect(
+      windowsSource,
+      contains(r"$markerSha256 = [Security.Cryptography.SHA256]::Create()"),
+    );
+    expect(
+      windowsSource,
+      contains(r"$markerSha256.ComputeHash($markerBytes)"),
+    );
+    expect(
+      windowsSource,
+      isNot(
+        contains(
+          r"Get-FileHash -Algorithm SHA256 -LiteralPath $marker",
+        ),
+      ),
+    );
+    expect(
+      windowsSource,
       contains(
         "stage provenance validation phase=' + "
         r"$stageValidationPhase",
