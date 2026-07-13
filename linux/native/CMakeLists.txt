@@ -172,7 +172,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     target_include_directories(desktop_updater_runtime_contract_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
-      ${DESKTOP_UPDATER_MINIZ_DIR})
+      ${DESKTOP_UPDATER_MINIZ_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR})
     target_link_libraries(desktop_updater_runtime_contract_test
       PRIVATE desktop_updater_runtime OpenSSL::Crypto)
     add_test(NAME desktop_updater_runtime_contract
