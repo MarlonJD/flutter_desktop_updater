@@ -160,7 +160,7 @@ class UpdateClient {
 
     try {
       final indexFile = File(path.join(tempDir.path, "app-archive.json"));
-      await _transport.download(appArchiveUrl, indexFile);
+      await _downloadMetadata(appArchiveUrl, indexFile);
       final index = ReleaseIndex.fromJson(
         jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>,
       );
@@ -186,7 +186,7 @@ class UpdateClient {
       }
 
       final descriptorFile = File(path.join(tempDir.path, "release.json"));
-      await _transport.download(item.release, descriptorFile);
+      await _downloadMetadata(item.release, descriptorFile);
       final descriptor = ReleaseDescriptor.fromJson(
         jsonDecode(await descriptorFile.readAsString()) as Map<String, dynamic>,
       );
@@ -210,6 +210,30 @@ class UpdateClient {
         await tempDir.delete(recursive: true);
       }
     }
+  }
+
+  Future<void> _downloadMetadata(Uri source, File destination) async {
+    final transport = _transport;
+    if (transport is BoundedUpdateTransport) {
+      await transport.downloadBounded(
+        source,
+        destination,
+        maximumBytes: maximumStableMetadataBytes,
+      );
+      return;
+    }
+
+    await transport.download(source, destination);
+    final downloadedBytes = await destination.length();
+    if (downloadedBytes <= maximumStableMetadataBytes) {
+      return;
+    }
+    await destination.delete();
+    throw UpdateDownloadSizeLimitException(
+      source: source,
+      maximumBytes: maximumStableMetadataBytes,
+      actualBytes: downloadedBytes,
+    );
   }
 
   /// Downloads, verifies, extracts, and stages [descriptor].
@@ -341,6 +365,7 @@ class UpdateClient {
       }
 
       if (descriptor.platform == "macos") {
+        await _extractor.preflight(artifactFile);
         await runDittoExtractZip(
           archivePath: artifactFile.path,
           destination: stagingRoot.path,

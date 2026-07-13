@@ -2015,7 +2015,7 @@ Task 10 evidence on 2026-07-11:
   helper and compatible C/.NET boundaries.
 - [ ] Run Windows target-host `auto`, `always`, `never`, UAC-cancel, protected
   target, and real packaged helper elevation tests.
-- [ ] Bound stable Flutter metadata downloads and archive expansion.
+- [x] Bound stable Flutter metadata downloads and archive expansion.
 - [ ] Remove elevated Windows diagnostics authority from caller-provided paths.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
@@ -2080,6 +2080,52 @@ Fresh-review evidence on 2026-07-11:
 - Windows UAC/elevation target-host suite: not run. Source-level GTests cover
   policy parsing, invalid-value rejection before scheduler invocation, and the
   pure launch decision, but actual UAC and real helper execution remain open.
+- Stable Flutter resource-limit RED, verified locally: `flutter test --no-pub
+  test/native_runtime_resource_limits_test.dart` failed because the optional
+  bounded transport capability, 4 MiB metadata limit, and configurable ZIP
+  limits did not exist. A second focused RED proved the file and composite
+  built-in transports did not yet expose the compatible bounded path.
+- Stable Flutter resource-limit GREEN, verified locally: the focused suite
+  passed 14/14 and the affected transport, extractor, client-security, and ZIP
+  compatibility set passed 45/45. Built-in HTTP rejects declared and streamed
+  overruns without retry and cleans partial/destination files; `UpdateClient`
+  bounds both stable metadata files while retaining a checked legacy custom
+  transport fallback. ZIP and ZIP64 central-directory metadata is preflighted
+  before Dart extraction or macOS `ditto`, with decoded-size rechecks and exact
+  100,000-entry, 8 GiB cumulative, and 4 GiB single-entry defaults.
+- Stable Flutter resource-limit verification, verified locally: formatting
+  checked 218 files with 0 changes; focused analysis reported no issues;
+  repository analysis exited 0 with the existing info-only diagnostics; and
+  `git diff --check` passed. The full Flutter suite reached 616 passes and 3
+  explicit environment-gated skips with only the existing unrelated
+  harness-doc failure caused by the user-owned dirty
+  `docs/exec-plans/index.md`, which remains unmodified and unstaged. Target-host
+  and CI lanes were not run.
+- Stable Flutter local-header review RED, verified locally: the focused suite
+  reached 15 passes and 4 failures because conflicting, missing, and truncated
+  local ZIP/ZIP64 metadata still reached macOS `ditto`, while a valid legacy
+  flag-clear non-UTF8 filename was rejected by unconditional UTF-8 decoding. A
+  separate overflow RED proved signed ZIP64 overflow needed explicit handling.
+- Stable Flutter local-header review GREEN, verified locally: the resource-limit
+  suite passed 20/20 and the affected transport, extractor, client-security,
+  and ZIP compatibility set passed 51/51. Preflight now reconciles local flags,
+  compression, CRC, 32-bit sizes, and required ZIP64 values with central
+  metadata before `ditto`, permits valid data-descriptor placeholders, rejects
+  signed overflow, and decodes filenames according to the ZIP UTF-8 flag.
+  Focused analysis reported no issues; formatting changed 0 files; and
+  `git diff --check` passed.
+- Stable Flutter data-descriptor review RED, verified locally: the focused suite
+  reached 21 passes and 3 failures because conflicting, truncated, and
+  signed-range-overflowing ZIP64 data descriptors still reached macOS `ditto`.
+  Valid signed and unsigned descriptors, including an unsigned descriptor whose
+  CRC equals the optional signature, remained accepted.
+- Stable Flutter data-descriptor review GREEN, verified locally: the
+  resource-limit suite passed 24/24 and the affected transport, extractor,
+  client-security, and ZIP compatibility set passed 55/55. Preflight now parses
+  signed and unsigned classic and ZIP64 descriptors at the compressed-data
+  boundary, reconciles CRC and sizes with central metadata, rejects truncated
+  ranges before the next ZIP structure, and rejects signed ZIP64 overflow before
+  `ditto`. Focused analysis reported no issues and `git diff --check` passed.
 - Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
   the repository's existing info-only diagnostics; the focused affected Dart
   and docs suites passed 52/52; both managed targets compiled; and the focused

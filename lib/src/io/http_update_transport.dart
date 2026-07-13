@@ -10,7 +10,9 @@ typedef UpdateRequestHeadersProvider = FutureOr<Map<String, String>> Function(
   Uri source,
 );
 
-class HttpUpdateTransport implements UpdateTransport {
+/// Downloads update resources over HTTP with retry and resume support.
+class HttpUpdateTransport implements BoundedUpdateTransport {
+  /// Creates an HTTP update transport.
   HttpUpdateTransport({
     http.Client? client,
     UpdateRequestHeadersProvider? requestHeadersProvider,
@@ -32,6 +34,41 @@ class HttpUpdateTransport implements UpdateTransport {
     File destination, {
     void Function(int receivedBytes, int? totalBytes)? onProgress,
     Duration? timeout,
+  }) {
+    return _download(
+      source,
+      destination,
+      onProgress: onProgress,
+      timeout: timeout,
+    );
+  }
+
+  @override
+  Future<void> downloadBounded(
+    Uri source,
+    File destination, {
+    required int maximumBytes,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
+  }) {
+    if (maximumBytes < 0) {
+      throw ArgumentError.value(maximumBytes, "maximumBytes");
+    }
+    return _download(
+      source,
+      destination,
+      maximumBytes: maximumBytes,
+      onProgress: onProgress,
+      timeout: timeout,
+    );
+  }
+
+  Future<void> _download(
+    Uri source,
+    File destination, {
+    int? maximumBytes,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
   }) async {
     if (source.scheme != "http" && source.scheme != "https") {
       throw UnsupportedError("HTTP transport cannot fetch ${source.scheme}.");
@@ -48,6 +85,7 @@ class HttpUpdateTransport implements UpdateTransport {
           await _downloadOnce(
             source,
             partial,
+            maximumBytes: maximumBytes,
             onProgress: onProgress,
             timeout: timeout,
           );
@@ -91,9 +129,13 @@ class HttpUpdateTransport implements UpdateTransport {
         await destination.delete();
       }
       await partial.rename(destination.path);
-    } catch (_) {
+    } catch (error) {
       if (await partial.exists()) {
         await partial.delete();
+      }
+      if (error is UpdateDownloadSizeLimitException &&
+          await destination.exists()) {
+        await destination.delete();
       }
       rethrow;
     }
@@ -102,10 +144,18 @@ class HttpUpdateTransport implements UpdateTransport {
   Future<void> _downloadOnce(
     Uri source,
     File partial, {
+    required int? maximumBytes,
     required void Function(int receivedBytes, int? totalBytes)? onProgress,
     required Duration? timeout,
   }) async {
     final resumeFrom = await partial.exists() ? await partial.length() : 0;
+    if (maximumBytes != null && resumeFrom > maximumBytes) {
+      throw UpdateDownloadSizeLimitException(
+        source: source,
+        maximumBytes: maximumBytes,
+        actualBytes: resumeFrom,
+      );
+    }
     final request = http.Request("GET", source);
     final requestHeadersProvider = _requestHeadersProvider;
     if (requestHeadersProvider != null) {
@@ -135,9 +185,16 @@ class HttpUpdateTransport implements UpdateTransport {
         expectedStart: resumeFrom,
         source: source,
       );
+      _checkDeclaredSize(
+        source: source,
+        maximumBytes: maximumBytes,
+        actualBytes: contentRange.totalBytes,
+      );
       await _writeStream(
         response.stream,
         partial,
+        source: source,
+        maximumBytes: maximumBytes,
         mode: FileMode.append,
         initialReceivedBytes: resumeFrom,
         totalBytes: contentRange.totalBytes,
@@ -157,9 +214,16 @@ class HttpUpdateTransport implements UpdateTransport {
     if (resumeFrom > 0 && await partial.exists()) {
       await partial.delete();
     }
+    _checkDeclaredSize(
+      source: source,
+      maximumBytes: maximumBytes,
+      actualBytes: response.contentLength,
+    );
     await _writeStream(
       response.stream,
       partial,
+      source: source,
+      maximumBytes: maximumBytes,
       mode: FileMode.write,
       totalBytes: response.contentLength,
       onProgress: onProgress,
@@ -170,6 +234,7 @@ class HttpUpdateTransport implements UpdateTransport {
     return attempt < _retryPolicy.maxAttempts;
   }
 
+  /// Closes the underlying HTTP client.
   void close() {
     _client.close();
   }
@@ -195,6 +260,8 @@ Future<void> _defaultDelay(Duration duration) {
 Future<void> _writeStream(
   Stream<List<int>> stream,
   File destination, {
+  required Uri source,
+  required int? maximumBytes,
   required FileMode mode,
   int initialReceivedBytes = 0,
   required int? totalBytes,
@@ -205,12 +272,36 @@ Future<void> _writeStream(
 
   try {
     await for (final chunk in stream) {
-      receivedBytes += chunk.length;
+      final nextReceivedBytes = receivedBytes + chunk.length;
+      if (maximumBytes != null && nextReceivedBytes > maximumBytes) {
+        throw UpdateDownloadSizeLimitException(
+          source: source,
+          maximumBytes: maximumBytes,
+          actualBytes: nextReceivedBytes,
+        );
+      }
       sink.add(chunk);
+      receivedBytes = nextReceivedBytes;
       onProgress?.call(receivedBytes, totalBytes);
     }
   } finally {
     await sink.close();
+  }
+}
+
+void _checkDeclaredSize({
+  required Uri source,
+  required int? maximumBytes,
+  required int? actualBytes,
+}) {
+  if (maximumBytes != null &&
+      actualBytes != null &&
+      actualBytes > maximumBytes) {
+    throw UpdateDownloadSizeLimitException(
+      source: source,
+      maximumBytes: maximumBytes,
+      actualBytes: actualBytes,
+    );
   }
 }
 
