@@ -1,6 +1,7 @@
 #include <flutter_linux/flutter_linux.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cstdlib>
@@ -64,11 +65,17 @@ TEST(LinuxInstallTarget, RejectsUsrBinExecutableParent) {
 }
 
 TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
-  char install_template[] = "/tmp/desktop_updater_install_XXXXXX";
+  char* current_directory = getcwd(nullptr, 0);
+  ASSERT_NE(current_directory, nullptr);
+  const std::string install_root =
+      std::string(current_directory) + "/desktop_updater_install_" +
+      std::to_string(getpid());
+  free(current_directory);
+  rmdir(install_root.c_str());
+  ASSERT_EQ(mkdir(install_root.c_str(), 0700), 0);
+
   char staging_template[] = "/tmp/desktop_updater_staging_XXXXXX";
-  char* install_root = mkdtemp(install_template);
   char* staging_root = mkdtemp(staging_template);
-  ASSERT_NE(install_root, nullptr);
   ASSERT_NE(staging_root, nullptr);
   const auto result = native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,
@@ -81,7 +88,7 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
   });
   EXPECT_TRUE(result.ok) << result.error;
   rmdir(staging_root);
-  rmdir(install_root);
+  rmdir(install_root.c_str());
 }
 
 TEST(LinuxInstallTarget, RejectsEveryProtectedRoot) {

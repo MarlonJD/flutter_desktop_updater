@@ -153,6 +153,21 @@ void main() {
     expect(artifactTest, isNot(contains('TemporaryPath("_install")')));
   });
 
+  test("Linux plugin positive install fixture avoids temporary roots", () {
+    final pluginTest = readRequiredFile(
+      "linux/test/desktop_updater_plugin_test.cc",
+    );
+
+    expect(pluginTest, contains("AcceptsSelfContainedBundle"));
+    expect(pluginTest, contains("getcwd("));
+    expect(pluginTest, contains("desktop_updater_install_"));
+    expect(
+      pluginTest,
+      isNot(contains('/tmp/desktop_updater_install_XXXXXX')),
+    );
+    expect(pluginTest, contains('/tmp/desktop_updater_staging_XXXXXX'));
+  });
+
   test("Linux CI runs standalone native tests with zero-test detection", () {
     final workflow = File(
       ".github/workflows/desktop-updater-ci.yml",
