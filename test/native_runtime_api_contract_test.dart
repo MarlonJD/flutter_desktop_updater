@@ -194,6 +194,21 @@ void main() {
     expect(sample, isNot(contains("DllImport")));
   });
 
+  test("Windows stage provenance includes Windows types before BCrypt", () {
+    final source = readRequiredFile(
+      "native_runtime/cpp/stage_provenance.cc",
+    );
+    final windowsInclude = source.indexOf("#include <windows.h>");
+    final bcryptInclude = source.indexOf("#include <bcrypt.h>");
+
+    expect(windowsInclude, greaterThanOrEqualTo(0));
+    expect(
+      bcryptInclude,
+      greaterThan(windowsInclude),
+      reason: "bcrypt.h requires Windows SDK base types from windows.h",
+    );
+  });
+
   test("Windows stage attempts invalidate before request validation", () {
     final source = readRequiredFile(
       "windows/native/src/runtime/desktop_updater_runtime_c.cpp",
