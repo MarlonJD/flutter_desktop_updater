@@ -7,27 +7,27 @@ const _ledgerHeading = "## Current-Head Merge-Gate Ledger";
 const _expectedLedger = <String, String>{
   "Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites":
       "verified locally",
-  "Task 10 complete local ladder": "blocked",
+  "Task 10 complete local ladder": "verified locally",
   "macOS root SwiftPM tests": "verified locally",
   "macOS exact CocoaPods 10.14 five-source typecheck": "verified locally",
   "macOS external SwiftPM consumer": "verified locally",
-  "Flutter macOS SwiftPM build and integration": "not run",
-  "Flutter macOS CocoaPods build and integration": "not run",
-  "macOS normal ZIP smoke": "not run",
-  "Windows Unicode and relative redirect CTest": "not run",
-  "Windows provenance, lifecycle, and C ABI CTest": "not run",
+  "Flutter macOS SwiftPM build and integration": "verified in CI",
+  "Flutter macOS CocoaPods build and integration": "verified in CI",
+  "macOS normal ZIP smoke": "verified in CI",
+  "Windows Unicode and relative redirect CTest": "verified in CI",
+  "Windows provenance, lifecycle, and C ABI CTest": "verified in CI",
   "Windows source-contract target and reparse validation": "verified locally",
   "Windows junction/reparse transaction mutation and recovery": "blocked",
-  "Windows Release NuGet isolated P/Invoke consumer": "not run",
-  "Windows normal ZIP smoke": "not run",
-  "Linux native tamper CTest": "not run",
-  "Linux installed CMake consumer": "not run",
-  "Linux standard and multiarch pkg-config consumers": "not run",
+  "Windows Release NuGet isolated P/Invoke consumer": "verified in CI",
+  "Windows normal ZIP smoke": "verified in CI",
+  "Linux native tamper CTest": "verified in CI",
+  "Linux installed CMake consumer": "verified in CI",
+  "Linux standard and multiarch pkg-config consumers": "verified in CI",
   "Linux mount/bind transaction mutation and recovery": "blocked",
   "Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
       "blocked",
-  "Linux normal ZIP smoke": "not run",
-  "Current remediation head in GitHub Actions": "not run",
+  "Linux normal ZIP smoke": "verified in CI",
+  "Current remediation head in GitHub Actions": "verified in CI",
   "macOS signed/notarized DMG smoke": "not run",
   "macOS signed/notarized PKG smoke": "not run",
   "Windows signed Inno smoke": "not run",
@@ -107,20 +107,12 @@ void main() {
 
   test("current-head ledger records fresh local evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("647 passes"));
+    expect(ledger, contains("658 passes"));
     expect(ledger, contains("3 explicit skips"));
-    expect(ledger, contains("exited 1"));
-    expect(
-      ledger,
-      contains("active/2026-07-11-linux-distribution-artifacts-plan.md"),
-    );
-    expect(
-      ledger,
-      contains(
-        "active/2026-07-11-cross-platform-privileged-install-helper-plan.md",
-      ),
-    );
-    expect(ledger, contains("51 tests"));
+    expect(ledger, contains("0 warnings"));
+    expect(ledger, contains("1 hint"));
+    expect(ledger, contains("52 tests"));
+    expect(ledger, contains("29290035977"));
     expect(ledger, contains("swift run --package-path example/native/macos"));
   });
 
@@ -195,8 +187,8 @@ void main() {
               "| macOS root SwiftPM tests | not run |",
             )
             .replaceFirst(
-              "| macOS external SwiftPM consumer | not run |",
-              "| macOS external SwiftPM consumer | verified locally |",
+              "| Flutter macOS SwiftPM build and integration | verified in CI |",
+              "| Flutter macOS SwiftPM build and integration | not run |",
             ),
       }),
       contains("wrong status: macOS root SwiftPM tests"),
@@ -304,6 +296,12 @@ The PKG smoke succeeded. Inno lane successful. DMG gate green.
     expect(
       _credentialPassClaims(
         "RED, verified locally: signed DMG negative fixture passed.",
+      ),
+      isEmpty,
+    );
+    expect(
+      _credentialPassClaims(
+        "Linux standard and multiarch pkg-config consumers verified in CI.",
       ),
       isEmpty,
     );
@@ -545,7 +543,10 @@ class _WorkflowStep {
 }
 
 List<String> _credentialPassClaims(String markdown) {
-  final artifact = RegExp(r"\b(?:dmg|pkg|inno)\b", caseSensitive: false);
+  final artifact = RegExp(
+    r"\b(?:dmg|pkg(?!-config)|inno)\b",
+    caseSensitive: false,
+  );
   final pass = RegExp(
     r"\b(?:pass(?:ed|es)?|verified\s+(?:locally|in\s+ci)|"
     r"succeed(?:ed|s)?|successful|green)\b",

@@ -18,35 +18,35 @@ configured-but-unexecuted workflow.
 | Lane | Status | Current evidence |
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
-| Task 10 complete local ladder | `blocked` | Fixtures, format, analysis, pub dry-run, 51 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check passed; full Flutter reached 647 passes and 3 explicit skips but exited 1, and `docs/exec-plans/index.md` omits `active/2026-07-11-linux-distribution-artifacts-plan.md` plus `active/2026-07-11-cross-platform-privileged-install-helper-plan.md` |
-| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 51 tests on this macOS host |
+| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 658 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
+| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 52 tests on this macOS host |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
-| Flutter macOS SwiftPM build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
-| Flutter macOS CocoaPods build and integration | `not run` | Configured in CI; current-head target-host execution is still required |
-| macOS normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
-| Windows Unicode and relative redirect CTest | `not run` | Configured in the Windows CTest job; current-head target-host execution is still required |
-| Windows provenance, lifecycle, and C ABI CTest | `not run` | Registered in Windows CTest; current-head target-host execution is still required |
+| Flutter macOS SwiftPM build and integration | `verified in CI` | Build and integration passed in push run `29290035977` |
+| Flutter macOS CocoaPods build and integration | `verified in CI` | Build and integration passed in push run `29290035977` with the exact fallback boundary unchanged |
+| macOS normal ZIP smoke | `verified in CI` | Native consumer ZIP smoke passed in push run `29290035977` |
+| Windows Unicode and relative redirect CTest | `verified in CI` | The named target-host CTest gate passed in push run `29290035977` |
+| Windows provenance, lifecycle, and C ABI CTest | `verified in CI` | Standalone CTest and real-DLL managed tests passed in push run `29290035977` |
 | Windows source-contract target and reparse validation | `verified locally` | Dart source-contract tests verified the fail-closed target/reparse checks; this is not junction execution evidence |
 | Windows junction/reparse transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; safe handle-relative transaction mutation is not implemented |
-| Windows Release NuGet isolated P/Invoke consumer | `not run` | Configured in CI; real Release DLL target-host execution is still required |
-| Windows normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
-| Linux native tamper CTest | `not run` | Registered in Linux CTest; current-head target-host execution is still required |
-| Linux installed CMake consumer | `not run` | Configured in CI; installed target-host consumption is still required |
-| Linux standard and multiarch pkg-config consumers | `not run` | Configured in CI; target-host installed-prefix execution is still required |
+| Windows Release NuGet isolated P/Invoke consumer | `verified in CI` | Isolated restore, candidate DLL hash proof, and P/Invoke execution passed in push run `29290035977` |
+| Windows normal ZIP smoke | `verified in CI` | The packaged .NET runtime used the real DLL/helper and completed install, cleanup, and diagnostics in push run `29290035977` |
+| Linux native tamper CTest | `verified in CI` | The named target-host native tamper gate passed in push run `29290035977` |
+| Linux installed CMake consumer | `verified in CI` | Configure, build, and execution from the installed prefix passed in push run `29290035977` |
+| Linux standard and multiarch pkg-config consumers | `verified in CI` | Both installed-prefix compile/link/run consumers exited 0 in push run `29290035977` |
 | Linux mount/bind transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; fd-relative mount/bind transaction mutation is not implemented |
-| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | Task 6 requires a packaged signed standalone-helper architecture and reservation-to-helper ownership protocol that are not defined |
-| Linux normal ZIP smoke | `not run` | Configured in CI; current-head smoke execution is still required |
-| Current remediation head in GitHub Actions | `not run` | No CI run for this head is claimed; therefore no lane is `verified in CI` |
+| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | The standalone-helper design is approved, but Task 6 implementation and target-host recovery evidence are pending |
+| Linux normal ZIP smoke | `verified in CI` | Native runtime ZIP smoke passed in push run `29290035977` |
+| Current remediation head in GitHub Actions | `verified in CI` | Push run `29290035977` completed successfully for commit `423e29a`; the credential-gated notarized publish job was skipped |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | macOS signed/notarized PKG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | Windows signed Inno smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 
 `verified locally` means the named behavior passed on the local host.
 `verified in CI` is recorded only after the required target-host job passes.
-`blocked` means a required host, dependency, approval, or credential prevented
-a gate. `production-ready` requires every applicable artifact row, packaged
-consumer, publisher check, and cleanup assertion to pass.
+`blocked` means a required implementation, host, dependency, approval, or
+credential prevented a gate. `production-ready` requires every applicable
+artifact row, packaged consumer, publisher check, and cleanup assertion to pass.
 
 ## Artifact Capability Matrix
 

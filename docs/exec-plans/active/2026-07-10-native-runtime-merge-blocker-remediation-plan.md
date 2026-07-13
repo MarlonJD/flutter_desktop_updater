@@ -1253,7 +1253,7 @@ Resolve `Location` against the current URL with the shared portable RFC 3986
 resolver. Validate the resolved absolute URL, then reject HTTPS downgrade. Pass
 the resolved URL to the WinHTTP adapter, headers provider, and next request.
 
-- [ ] **Step 5: Run Windows target-host tests**
+- [x] **Step 5: Run Windows target-host tests**
 
 Run in CI:
 
@@ -1677,7 +1677,7 @@ client without allocating a `GCHandle` that points back to the same object.
 If native callbacks require context, allocate a separate callback-state object
 owned by the SafeHandle and release it in `ReleaseHandle`.
 
-- [ ] **Step 6: Run package consumers**
+- [x] **Step 6: Run package consumers**
 
 Run target-host:
 
@@ -1874,7 +1874,7 @@ normal ZIP update smoke on macOS, Windows, and Linux
 Credential-gated signed/notarized DMG, PKG, and Inno lanes remain
 `not run` without secrets and keep the runtime candidate-only.
 
-- [ ] **Step 3: Run the complete local ladder**
+- [x] **Step 3: Run the complete local ladder**
 
 Run:
 
@@ -1916,14 +1916,16 @@ Draft the corrected PR body for the user; do not post it through a connector.
 
 ## Verification
 
-- Task 10 complete local ladder: `blocked`; the fixture check, repository format
-  check, analysis, pub dry-run, 51-test SwiftPM suite, exact macOS 10.14
-  typecheck, external SwiftPM consumer, and diff check exited 0. The full
-  Flutter run reached 647 passes and 3 explicit skips with one failure: the
-  user-owned dirty execution-plan index does not link the existing Linux
-  distribution or cross-platform privileged-helper implementation plans. That
-  file remains unmodified and unstaged.
-- Current-head macOS, Windows, and Linux target-host CI: `not run`.
+- Task 10 complete local ladder: `verified locally`; generated fixtures,
+  repository format, analysis, 658 Flutter tests with 3 explicit skips, pub
+  dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, the exact macOS 10.14
+  five-source typecheck, the external SwiftPM consumer, and diff check exited
+  0.
+- Current-head macOS, Windows, and Linux target-host CI: `verified in CI` in
+  successful push run `29290035977` for commit `423e29a`. The run includes both
+  Flutter macOS integrations, native ZIP smokes on all three platforms,
+  Windows CTest/Release NuGet/P/Invoke consumers, and Linux installed
+  CMake/pkg-config consumers.
 - Signed/notarized DMG, PKG, and signed Inno lanes: `not run` because their
   explicit credential gates were not dispatched.
 
@@ -2409,9 +2411,59 @@ The three earlier moderate follow-ups, the fresh public-doc P2, and the fresh
 canonical-ledger P1 are resolved. They do not replace or reduce the remaining
 P0/P1 blockers above.
 
-Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
-lanes: `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.
+The current-head CI and local-ladder statements in that review are superseded
+by the target-host completion follow-up below. Credential-gated release lanes
+remain `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.
 This workflow reduces omission risk but cannot guarantee that no defect remains.
+
+### Target-host completion follow-up on 2026-07-13
+
+- Windows provenance target-host RED, verified in CI: push run `29288618726`
+  reached the real helper after the parent exited, failed closed at
+  `marker-digest`, and performed no target mutation. After the marker digest
+  used explicit raw-byte SHA-256, push run `29289315492` passed the marker and
+  failed closed at `inventory-entry`, again before backup or mutation.
+- Windows provenance GREEN, verified locally: the helper now uses one
+  streaming `File.OpenRead` plus SHA-256 function for marker, staged-file, and
+  Inno artifact hashing. The stream and hash are disposed in `finally`; the
+  existing diagnostics-containment scanner remains unchanged and green. The
+  combined helper, smoke, and diagnostics command passed 41/41, the helper
+  suite passed 28/28, scoped analysis exited 0 with only the five existing
+  info diagnostics, and `git diff --check` passed.
+- Windows provenance GREEN, verified in CI: push run `29290035977` for commit
+  `423e29a` completed successfully. The Windows job passed nonzero CTest with
+  Unicode/relative-redirect, provenance, lifecycle, and C ABI coverage; the
+  installed CMake consumer; real Release DLL managed tests; Debug-CRT
+  rejection; NuGet contents; isolated restore/hash/PInvoke execution; the
+  packaged .NET runtime ZIP install/helper/cleanup smoke; and normal Flutter
+  debug and release integration, publish, Inno, and ZIP update smokes.
+- macOS and Linux target-host GREEN, verified in CI in the same run: both
+  Flutter macOS integrations passed; the exact macOS 10.14 fallback typecheck,
+  10.15+ `DesktopUpdaterKit` SwiftPM tests/external consumer, and normal ZIP
+  smoke passed; Linux native tamper CTest, installed CMake, standard and
+  multiarch pkg-config, normal ZIP, and Flutter debug/release lanes passed.
+- Task 7 Step 5 and Task 9 Step 6 now have target-host evidence and are checked.
+  Task 10 Step 2 remains open because Task 6's mount/bind/junction transaction
+  mutation and durable recovery jobs cannot exist before the approved
+  privileged-helper design is implemented. Signed/notarized DMG and PKG plus
+  signed Inno credential lanes remain `not run`.
+- The earlier execution-plan-index P1 is resolved in the current tree. No
+  version, changelog heading, or lockfile changed.
+- Final Task 10 ladder, verified locally: generated fixtures were current;
+  formatting checked 218 files with 0 changes; repository analysis exited 0
+  with 387 info-only diagnostics; full Flutter passed 658 tests with 3
+  explicit opt-in skips; root SwiftPM passed 52/52; and `git diff --check`
+  exited 0. The first repository publication dry run exited 65 solely because
+  the in-progress tracked docs test was modified; it is not counted as GREEN.
+  The identical current contents in a clean temporary copy exited 0 with 0
+  warnings and 1 prior-version hint.
+- Final macOS boundary checks, verified locally: the exact five-source
+  CocoaPods fallback typechecked for `x86_64-apple-macosx10.14`, and
+  `swift run --package-path example/native/macos` built and ran the external
+  `DesktopUpdaterKit` consumer. A first typecheck attempt hit a stale
+  `/tmp`/`/private/tmp` module-cache alias and Swift frontend signal 11; a fresh
+  canonical cache passed. The consumer's first sandboxed attempt could not
+  write the user Clang module cache; the identical permitted run passed.
 
 ## Final Acceptance Checklist
 
@@ -2426,14 +2478,14 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   is verified for native preview clients.
 - [ ] Every generated validation fixture executes in Dart, Swift, and C++.
 - [ ] Native result fields preserve the full selected policy.
-- [ ] Windows non-ASCII paths and relative redirects pass target-host tests.
+- [x] Windows non-ASCII paths and relative redirects pass target-host tests.
 - [x] SwiftPM runtime remains macOS 10.15+ with
   `import DesktopUpdaterKit`.
 - [x] Exact CocoaPods helper + adapter source set typechecks for macOS 10.14.
 - [x] Safe legacy Flutter install calls and custom platform overrides pass.
 - [x] Unsafe ambiguous legacy roots fail before mutation with migration text.
-- [ ] NuGet contains Release DLLs and third-party notices.
-- [ ] CMake and pkg-config external consumers use installed artifacts.
+- [x] NuGet contains Release DLLs and third-party notices.
+- [x] CMake and pkg-config external consumers use installed artifacts.
 - [ ] Ordinary CI gates pass with nonzero test discovery.
 - [x] Signed/notarized lanes are reported literally as passed or not run.
-- [ ] PR body and execution-plan state match repository evidence.
+- [x] PR body and execution-plan state match repository evidence.
