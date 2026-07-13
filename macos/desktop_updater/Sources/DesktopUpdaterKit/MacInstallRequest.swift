@@ -60,7 +60,10 @@ public enum StageProvenance {
         guard values.isDirectory == true, values.isSymbolicLink != true else {
             throw failure("Staging parent must be a real directory.")
         }
-        let requestedParent = parent.standardizedFileURL
+        let requestedParent = URL(
+            fileURLWithPath: parent.standardizedFileURL.path,
+            isDirectory: true
+        )
         guard requestedParent.deletingLastPathComponent() != requestedParent else {
             throw failure("Filesystem roots cannot be staging parents.")
         }

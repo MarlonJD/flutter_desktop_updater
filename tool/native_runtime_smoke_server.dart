@@ -7,6 +7,7 @@ import "package:args/args.dart";
 import "package:crypto/crypto.dart" as crypto;
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:path/path.dart" as path;
 
 const publicKeyId = "native-runtime-smoke-stable";
@@ -77,22 +78,14 @@ Future<void> main(List<String> arguments) async {
     final descriptorFile = File(path.join(root.path, "release.json"));
     await descriptorFile.writeAsString(jsonEncode(descriptorJson));
     final indexFile = File(path.join(root.path, "app-archive.json"));
-    await indexFile.writeAsString(
-      jsonEncode({
-        "schemaVersion": 3,
-        "appName": appName,
-        "items": [
-          {
-            "version": version,
-            "buildNumber": buildNumber,
-            "platform": platform,
-            "channel": "stable",
-            "mandatory": false,
-            "release": base.resolve("/release.json").toString(),
-          },
-        ],
-      }),
+    final indexJson = await signedIndex(
+      appName: appName,
+      version: version,
+      buildNumber: buildNumber,
+      platform: platform,
+      releaseURL: base.resolve("/release.json"),
     );
+    await indexFile.writeAsString(jsonEncode(indexJson));
     final publicKey =
         await smokeKeyPair().then((pair) => pair.extractPublicKey());
     final ready = {
@@ -144,6 +137,42 @@ Future<void> main(List<String> arguments) async {
       await root.delete(recursive: true);
     }
   }
+}
+
+Future<Map<String, dynamic>> signedIndex({
+  required String appName,
+  required String version,
+  required int buildNumber,
+  required String platform,
+  required Uri releaseURL,
+}) async {
+  final json = <String, dynamic>{
+    "schemaVersion": 3,
+    "appName": appName,
+    "items": [
+      {
+        "version": version,
+        "buildNumber": buildNumber,
+        "platform": platform,
+        "channel": "stable",
+        "mandatory": false,
+        "release": releaseURL.toString(),
+      },
+    ],
+    "signature": {
+      "algorithm": "ed25519",
+      "publicKeyId": publicKeyId,
+      "value": "",
+    },
+  };
+  final index = ReleaseIndex.fromJson(json);
+  final signature = await Ed25519().sign(
+    index.canonicalSignatureBytes(),
+    keyPair: await smokeKeyPair(),
+  );
+  (json["signature"] as Map<String, dynamic>)["value"] =
+      base64Encode(signature.bytes);
+  return json;
 }
 
 Future<Map<String, dynamic>> signedDescriptor({

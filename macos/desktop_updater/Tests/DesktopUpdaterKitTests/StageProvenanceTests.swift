@@ -47,6 +47,27 @@ final class StageProvenanceTests: XCTestCase {
         )
     }
 
+    func testOwnedStageAcceptsExistingDirectoryURLWithoutDirectoryHint() throws {
+        let directory = temporaryDirectory("owned-stage-no-directory-hint")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let parent = URL(fileURLWithPath: directory.path, isDirectory: false)
+        let nonce = UUID(uuidString: "223E4567-E89B-42D3-A456-426614174000")!
+
+        let stage = try StageProvenance.createOwnedStage(
+            parent: parent,
+            nonce: nonce
+        )
+
+        XCTAssertEqual(
+            stage.deletingLastPathComponent().standardizedFileURL.path,
+            parent.standardizedFileURL.path
+        )
+    }
+
     func testMarkerInventoryRejectsFileAndSymlinkTampering() throws {
         let parent = temporaryDirectory("stage-provenance")
         try FileManager.default.createDirectory(

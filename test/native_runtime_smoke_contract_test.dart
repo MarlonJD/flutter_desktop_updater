@@ -1,6 +1,11 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:flutter_test/flutter_test.dart";
+
+import "../tool/native_runtime_smoke_server.dart" as smoke_server;
 
 void main() {
   test("external samples drive the complete packaged runtime flow", () {
@@ -64,6 +69,28 @@ void main() {
     expect(workflow, contains("DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E"));
     expect(linuxSample, contains("/usr/bin"));
     expect(linuxSample, contains("must remain unchanged"));
+  });
+
+  test("runtime smoke server signs app archive discovery metadata", () async {
+    final json = await smoke_server.signedIndex(
+      appName: "NativeRuntimeSmoke",
+      version: "2.7.1",
+      buildNumber: 271,
+      platform: "macos",
+      releaseURL: Uri.parse("http://127.0.0.1:43892/release.json"),
+    );
+    final publicKey = await smoke_server
+        .smokeKeyPair()
+        .then((keyPair) => keyPair.extractPublicKey());
+    final index = ReleaseIndex.fromJson(json);
+
+    expect(index.signature?.publicKeyId, smoke_server.publicKeyId);
+    expect(
+      await Ed25519ReleaseIndexSignatureVerifier({
+        smoke_server.publicKeyId: base64Encode(publicKey.bytes),
+      }).verify(index),
+      isTrue,
+    );
   });
 
   test("runtime smoke consumers use installed package boundaries", () {
