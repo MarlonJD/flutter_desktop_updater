@@ -287,6 +287,7 @@ public sealed class DesktopUpdaterClient : IDisposable
     {
         _configuration = configuration ??
             throw new ArgumentNullException(nameof(configuration));
+        NativeMethods.ValidateRuntimeAbi();
         var client = new NativeClientHandle(configuration);
 
         var allocations = new List<IntPtr>();
@@ -350,6 +351,7 @@ public sealed class DesktopUpdaterClient : IDisposable
 
             result = NativeMethods.Create(ref nativeConfiguration);
             resultReceived = true;
+            ValidateResultLayout(ref result);
             if (result.Ok == 0 || result.Client == IntPtr.Zero)
             {
                 if (result.Client != IntPtr.Zero)
@@ -374,6 +376,11 @@ public sealed class DesktopUpdaterClient : IDisposable
         {
             if (resultReceived)
             {
+                if (result.Client != IntPtr.Zero)
+                {
+                    NativeMethods.ClientFree(result.Client);
+                    result.Client = IntPtr.Zero;
+                }
                 NativeMethods.ResultFree(ref result);
             }
             FreeAllocations(allocations);
@@ -582,6 +589,7 @@ public sealed class DesktopUpdaterClient : IDisposable
     {
         try
         {
+            ValidateResultLayout(ref result);
             if (result.Ok == 0)
             {
                 throw new DesktopUpdaterException(
@@ -607,6 +615,18 @@ public sealed class DesktopUpdaterClient : IDisposable
         finally
         {
             NativeMethods.ResultFree(ref result);
+        }
+    }
+
+    private static void ValidateResultLayout(ref NativeRuntimeResult result)
+    {
+        var expectedSize = (nuint)Marshal.SizeOf<NativeRuntimeResult>();
+        if (result.AbiVersion != AbiVersion || result.StructSize != expectedSize)
+        {
+            throw new DesktopUpdaterException(
+                $"Native runtime result ABI mismatch: expected v{AbiVersion} " +
+                $"and {expectedSize} bytes, received v{result.AbiVersion} " +
+                $"and {result.StructSize} bytes.");
         }
     }
 
@@ -982,6 +1002,35 @@ public sealed class DesktopUpdaterClient : IDisposable
 
     private static class NativeMethods
     {
+        internal static void ValidateRuntimeAbi()
+        {
+            var nativeAbiVersion = RuntimeAbiVersion();
+            var nativeResultSize = RuntimeResultSize();
+            var managedResultSize = (nuint)Marshal.SizeOf<NativeRuntimeResult>();
+            if (nativeAbiVersion != AbiVersion ||
+                nativeResultSize != managedResultSize)
+            {
+                throw new DesktopUpdaterException(
+                    $"Native runtime ABI mismatch: expected v{AbiVersion} " +
+                    $"and {managedResultSize} bytes, received v{nativeAbiVersion} " +
+                    $"and {nativeResultSize} bytes.");
+            }
+        }
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_abi_version_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint RuntimeAbiVersion();
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_result_size_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        private static extern nuint RuntimeResultSize();
+
         [DllImport(
             "desktop_updater_runtime",
             EntryPoint = "desktop_updater_runtime_client_create_v1",

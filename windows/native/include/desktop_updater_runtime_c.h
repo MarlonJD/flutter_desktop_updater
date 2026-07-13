@@ -105,6 +105,9 @@ typedef struct desktop_updater_runtime_configuration_v1 {
 typedef struct desktop_updater_runtime_client_v1
     desktop_updater_runtime_client_v1;
 
+/* This by-value result layout is frozen for v1. Any layout change requires a
+ * new result type and new versioned entry points. Callers must verify the ABI
+ * and exact result size through the scalar probes before any by-value call. */
 typedef struct desktop_updater_runtime_result_v1 {
   uint32_t abi_version;
   size_t struct_size;
@@ -142,6 +145,12 @@ typedef struct desktop_updater_runtime_install_request_v1 {
   const char* executable_relative_path_utf8;
   const char* expected_package_id_utf8;
 } desktop_updater_runtime_install_request_v1;
+
+DESKTOP_UPDATER_RUNTIME_EXPORT uint32_t DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_abi_version_v1(void);
+
+DESKTOP_UPDATER_RUNTIME_EXPORT size_t DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_result_size_v1(void);
 
 DESKTOP_UPDATER_RUNTIME_EXPORT desktop_updater_runtime_result_v1
     DESKTOP_UPDATER_RUNTIME_CALL

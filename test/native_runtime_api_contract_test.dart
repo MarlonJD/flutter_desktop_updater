@@ -116,6 +116,16 @@ void main() {
     expect(source, contains("const bool has_target_fields"));
     expect(header, contains("desktop_updater_runtime_client_free_v1"));
     expect(header, contains("desktop_updater_runtime_result_free_v1"));
+    expect(header, contains("desktop_updater_runtime_abi_version_v1"));
+    expect(header, contains("desktop_updater_runtime_result_size_v1"));
+    expect(
+      source,
+      contains("return DESKTOP_UPDATER_RUNTIME_ABI_VERSION;"),
+    );
+    expect(
+      source,
+      contains("return sizeof(desktop_updater_runtime_result_v1);"),
+    );
     expect(
       header,
       contains("desktop_updater_runtime_client_check_for_update_v1"),
@@ -146,6 +156,38 @@ void main() {
     expect(dotnet, contains("SupportPolicyStatus"));
     expect(dotnet, contains("MaximumMetadataBytes"));
     expect(dotnet, contains("Process.GetCurrentProcess()"));
+    expect(dotnet, contains("NativeMethods.ValidateRuntimeAbi();"));
+    expect(dotnet, contains("ValidateResultLayout(ref result);"));
+    expect(
+      dotnet.indexOf("NativeMethods.ValidateRuntimeAbi();"),
+      lessThan(dotnet.indexOf("NativeMethods.Create(ref nativeConfiguration)")),
+    );
+    expect(
+      dotnet,
+      contains('EntryPoint = "desktop_updater_runtime_abi_version_v1"'),
+    );
+    expect(
+      dotnet,
+      contains('EntryPoint = "desktop_updater_runtime_result_size_v1"'),
+    );
+    final createCleanup = dotnet.lastIndexOf("if (resultReceived)");
+    final cleanupStart = createCleanup < 0 ? 0 : createCleanup;
+    final mismatchedClientFree = dotnet.indexOf(
+      "NativeMethods.ClientFree(result.Client);",
+      cleanupStart,
+    );
+    final clearedClient = dotnet.indexOf(
+      "result.Client = IntPtr.Zero;",
+      mismatchedClientFree < 0 ? cleanupStart : mismatchedClientFree,
+    );
+    final resultFree = dotnet.indexOf(
+      "NativeMethods.ResultFree(ref result);",
+      cleanupStart,
+    );
+    expect(createCleanup, greaterThanOrEqualTo(0));
+    expect(mismatchedClientFree, greaterThan(createCleanup));
+    expect(clearedClient, greaterThan(mismatchedClientFree));
+    expect(resultFree, greaterThan(clearedClient));
     expect(dotnet, isNot(contains("Environment.ProcessPath")));
     expect(sample, contains("new DesktopUpdaterConfiguration("));
     expect(sample, contains("DesktopUpdaterOutcome.NoUpdate"));

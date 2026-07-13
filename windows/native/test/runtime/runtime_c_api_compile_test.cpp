@@ -31,6 +31,12 @@ const char* OwnedString(const char* value) {
 }  // namespace
 
 int main() {
+  if (desktop_updater_runtime_abi_version_v1() !=
+          DESKTOP_UPDATER_RUNTIME_ABI_VERSION ||
+      desktop_updater_runtime_result_size_v1() !=
+          sizeof(desktop_updater_runtime_result_v1)) {
+    return 1;
+  }
   const auto check_for_update =
       &desktop_updater_runtime_client_check_for_update_v1;
   const auto download_verify_and_stage =

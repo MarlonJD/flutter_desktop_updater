@@ -236,6 +236,11 @@ deadlines.
 with `abi_version` and `struct_size`. Callers set both fields and zero any
 unknown tail bytes. The DLL catches exceptions at the C boundary.
 
+The version-1 result is returned by value and its layout is frozen. C and .NET
+consumers call the scalar ABI-version and exact-result-size probes before any
+by-value runtime call. Any future result layout change requires a new result
+type and new versioned entry points.
+
 The runtime client is an opaque owned handle released with
 `desktop_updater_runtime_client_free_v1`. Result strings are owned by the DLL
 and released with `desktop_updater_runtime_result_free_v1`. Callback inputs are

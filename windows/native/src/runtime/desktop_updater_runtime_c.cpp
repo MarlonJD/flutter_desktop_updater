@@ -297,6 +297,16 @@ void ValidateRequest(const Request* request, const char* name) {
 
 }  // namespace
 
+extern "C" uint32_t DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_abi_version_v1(void) {
+  return DESKTOP_UPDATER_RUNTIME_ABI_VERSION;
+}
+
+extern "C" size_t DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_result_size_v1(void) {
+  return sizeof(desktop_updater_runtime_result_v1);
+}
+
 extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
 desktop_updater_runtime_client_create_v1(
     const desktop_updater_runtime_configuration_v1* configuration) {

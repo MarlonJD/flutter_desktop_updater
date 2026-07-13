@@ -2023,6 +2023,8 @@ Task 10 evidence on 2026-07-11:
   helper-only CMake 3.10 floor.
 - [x] Bound stable Flutter artifact transfer and keep Dart ZIP decoding
   file-backed.
+- [x] Freeze the Windows runtime v1 by-value result layout and require exact
+  scalar ABI/size preflight before .NET calls.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
@@ -2202,6 +2204,30 @@ Fresh-review evidence on 2026-07-11:
   ZIP compatibility, and end-to-end set passed 67/67; focused analysis reported
   no issues; formatting and `git diff --check` passed. Target-host and CI lanes
   remain `not run`.
+- Windows runtime ABI RED on 2026-07-13, verified locally: the eight-test
+  runtime API contract suite reached 7 passes and 1 failure because no scalar
+  ABI/result-size probes or pre-call .NET layout verification existed. The
+  Windows C ABI compile smoke was extended first to call both missing probes.
+- Windows runtime ABI GREEN on 2026-07-13, verified locally: additive C exports
+  report ABI v1 and the exact architecture-specific result size; the .NET
+  wrapper verifies both before allocating or making a by-value call and checks
+  the returned ABI fields before reading the result. The v1 result layout is
+  documented as frozen, with any future change requiring new versioned types
+  and entry points. The Dart contract suite passed 8/8, the C++14 header
+  consumer passed strict syntax checking, both `net8.0` and `netstandard2.0`
+  wrapper builds completed with 0 errors, and the platform-independent managed
+  client set passed 8/8.
+- Windows runtime ABI review RED/GREEN on 2026-07-13, verified locally:
+  independent review found that a per-result mismatch after native client
+  creation could leak the untransferred client handle. The cleanup invariant
+  failed 1 focused test before the constructor `finally` began freeing and
+  clearing any residual client before result-string cleanup; the focused suite
+  then passed 8/8. The full managed set reached 11 passes and 1 target-native
+  failure because a Windows DLL cannot load on this macOS host. Real Windows
+  probe/mismatch execution and the positive packaged DLL test remain `not run`,
+  so the target-host checkbox above remains open. The affected runtime API,
+  Windows layout, external-consumer, and merge-gate docs set passed 25/25;
+  independent re-review found no remaining Critical or Important issue.
 - Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
   the repository's existing info-only diagnostics; the focused affected Dart
   and docs suites passed 52/52; both managed targets compiled; and the focused
