@@ -180,6 +180,30 @@ void main() {
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });
 
+  test("Windows ZIP smoke seeds matching installed identity", () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
+    final end = workflow.indexOf(
+      "- name: Windows native runtime Inno smoke",
+      start,
+    );
+
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lane = workflow.substring(start, end);
+    expect(
+      RegExp(
+        RegExp.escape(".desktop_updater_install_identity.json"),
+      ).allMatches(lane),
+      hasLength(2),
+    );
+    expect(lane, contains(r'"packageId":"com.example.native-runtime-smoke"'));
+    expect(
+      lane.indexOf(".desktop_updater_install_identity.json"),
+      lessThan(lane.indexOf("Compress-Archive")),
+    );
+  });
+
   test("Windows ZIP handoff does not read Inno signer metadata", () {
     final source = readFile(
       "windows/native/src/runtime/artifact_stager_windows.cpp",
