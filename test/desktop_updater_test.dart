@@ -1,3 +1,4 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
@@ -12,6 +13,10 @@ import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
+
+const _trustedReleasePublicKeys = <String, String>{
+  "stable-2026": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+};
 
 class MockDesktopUpdaterPlatform
     with MockPlatformInterfaceMixin
@@ -272,5 +277,53 @@ void main() {
     } finally {
       await tempDir.delete(recursive: true);
     }
+  });
+
+  test("checkZipFirstUpdate pinned keys reject an unsigned archive", () async {
+    final tempDir = await Directory.systemTemp.createTemp("desktop_updater_");
+    try {
+      final archive = File(path.join(tempDir.path, "app-archive.json"));
+      await archive.writeAsString(
+        '{"schemaVersion":3,"appName":"Example","items":[]}',
+      );
+
+      await expectLater(
+        DesktopUpdater().checkZipFirstUpdate(
+          appArchiveUrl: archive.uri,
+          currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
+          trustedReleasePublicKeys: _trustedReleasePublicKeys,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("downloadZipFirstUpdate pinned keys reject an unsigned descriptor",
+      () async {
+    final fixture = jsonDecode(
+      File("fixtures/compat/signing-ed25519.json").readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final descriptorJson = Map<String, dynamic>.from(
+      fixture["validDescriptor"] as Map<String, dynamic>,
+    )..remove("signature");
+    final descriptor = ReleaseDescriptor.fromJson(descriptorJson);
+
+    await expectLater(
+      DesktopUpdater().downloadZipFirstUpdate(
+        appArchiveUrl: Uri.parse("https://updates.example/app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
+        descriptor: descriptor,
+        trustedReleasePublicKeys: _trustedReleasePublicKeys,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          "message",
+          contains("release.json signature is required"),
+        ),
+      ),
+    );
   });
 }

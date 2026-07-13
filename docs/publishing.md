@@ -226,6 +226,23 @@ length, and SHA-256. It does not replace app-owned platform trust: Authenticode,
 Apple Developer ID notarization, native package signing, store review, and
 Linux repository signing remain the app publisher's responsibility.
 
+Production Flutter apps should pin the corresponding public keys at runtime:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+);
+```
+
+Supplying `trustedReleasePublicKeys` requires valid Ed25519 signatures on the
+final `app-archive.json` and selected `release.json` before selection or
+artifact download. Leaving it null preserves the released unsigned 2.x
+compatibility behavior and is not production-authenticated. Key rotation can
+temporarily pin both the old and new public key IDs in the same map.
+
 ## Update Policy Modes
 
 `mandatory` is implemented today on each `app-archive.json` item. Use it for

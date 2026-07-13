@@ -105,6 +105,26 @@ void main() {
     expect(docs["docs/native-runtime-api.md"], contains("candidate-only"));
   });
 
+  test("released Flutter facades document pinned metadata trust", () {
+    for (final path in <String>[
+      "README.md",
+      "docs/publishing.md",
+      "docs/migration/1.x-to-2.0.md",
+    ]) {
+      final text = _read(path);
+      expect(text, contains("trustedReleasePublicKeys"), reason: path);
+      expect(text.toLowerCase(), contains("compatibility"), reason: path);
+    }
+    expect(
+      _read("lib/updater_controller.dart"),
+      contains("trustedReleasePublicKeys"),
+    );
+    expect(
+      _read("lib/desktop_updater.dart"),
+      contains("trustedReleasePublicKeys"),
+    );
+  });
+
   test("ledger validator rejects duplicate, stale, deleted, and swapped rows",
       () {
     final valid = <String, String>{

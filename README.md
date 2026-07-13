@@ -311,6 +311,25 @@ Details live in [Diagnostics and recovery](https://github.com/MarlonJD/flutter_d
 
 desktop_updater handles update mechanics. Your app still owns platform trust:
 
+Pin the Ed25519 release keys embedded in your app for production metadata
+authenticity. The same key map verifies both `app-archive.json` and the selected
+`release.json` before policy selection or artifact download:
+
+```dart
+final controller = DesktopUpdaterController(
+  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+);
+```
+
+Leaving `trustedReleasePublicKeys` null preserves the released unsigned 2.x
+compatibility behavior; do not describe that mode as production-authenticated.
+The low-level `DesktopUpdater.checkZipFirstUpdate` and
+`downloadZipFirstUpdate` methods accept the same key map, and callers must pass
+it to both operations.
+
 - macOS production updates should be Developer ID signed, hardened-runtime
   enabled, notarized, stapled, and Gatekeeper accepted before packaging.
 - Windows production updates should use Authenticode when publisher trust is

@@ -2,8 +2,10 @@ import "dart:async";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/release_notes.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
@@ -66,6 +68,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.telemetry,
     this.isMinimumOSSupported,
     this.requestHeadersProvider,
+    Map<String, String>? trustedReleasePublicKeys,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -73,7 +76,10 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ExternalUrlLauncher? externalUrlLauncher,
-  })  : _localization = localization,
+  })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
+            ? null
+            : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+        _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
@@ -111,6 +117,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     this.telemetry,
     this.isMinimumOSSupported,
     this.requestHeadersProvider,
+    Map<String, String>? trustedReleasePublicKeys,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -119,7 +126,10 @@ class DesktopUpdaterController extends ChangeNotifier {
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
     ExternalUrlLauncher? externalUrlLauncher,
-  })  : _localization = localization,
+  })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
+            ? null
+            : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+        _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
             diagnosticsRecorder ?? UpdateDiagnosticsRecorder(channel: channel),
@@ -215,6 +225,13 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Optional app-owned HTTP headers for update metadata and artifact requests.
   final UpdateRequestHeadersProvider? requestHeadersProvider;
+
+  /// Pinned Ed25519 public keys required for app archive and descriptor trust.
+  ///
+  /// When null, the released 2.x unsigned-metadata compatibility behavior is
+  /// preserved. Supplying a map requires valid signatures on both metadata
+  /// documents before release selection or artifact download.
+  final Map<String, String>? trustedReleasePublicKeys;
 
   /// Allows macOS Release installs to bypass native signing, Gatekeeper,
   /// stapler, and Team ID checks.
@@ -398,6 +415,8 @@ class DesktopUpdaterController extends ChangeNotifier {
       }
       _currentAppVersion = _formatVersionInfo(currentVersion);
 
+      final publicKeys = trustedReleasePublicKeys;
+
       final client = UpdateClient(
         appArchiveUrl: archiveUrl,
         currentVersion: currentVersion,
@@ -406,6 +425,17 @@ class DesktopUpdaterController extends ChangeNotifier {
         requestHeadersProvider: requestHeadersProvider,
         telemetry: telemetry,
         isMinimumOSSupported: isMinimumOSSupported,
+        requireIndexSignature: publicKeys != null,
+        indexSignatureVerifier: publicKeys == null
+            ? null
+            : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
+        verifier: publicKeys == null
+            ? const ArtifactVerifier()
+            : ArtifactVerifier(
+                policy: ArtifactVerificationPolicy.requireEd25519Signature(
+                  publicKeys: publicKeys,
+                ),
+              ),
       );
       final result = await client.checkForUpdate();
       if (result == null) {

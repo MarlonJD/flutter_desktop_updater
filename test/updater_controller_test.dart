@@ -11,6 +11,9 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 const MethodChannel _desktopUpdaterChannel = MethodChannel("desktop_updater");
+const _trustedReleasePublicKeys = <String, String>{
+  "stable-2026": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -104,6 +107,32 @@ void main() {
 
     await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
     expect(controller.state, isA<UpdateFailed>());
+  });
+
+  test("controller pinned keys reject an unsigned archive before selection",
+      () async {
+    final fixture = await _ControllerUpdateFixture.create(mandatory: false);
+    try {
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        trustedReleasePublicKeys: _trustedReleasePublicKeys,
+      );
+
+      await expectLater(
+        controller.checkVersion(),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("app-archive.json signature verification failed"),
+          ),
+        ),
+      );
+      expect(controller.state, isA<UpdateFailed>());
+    } finally {
+      await fixture.delete();
+    }
   });
 
   test("controller sends app-owned request headers for update downloads",

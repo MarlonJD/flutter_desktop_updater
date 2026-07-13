@@ -494,6 +494,21 @@ Task 2 evidence:
   exited 0 with 378 pre-existing info-level diagnostics only.
 - Managed Windows wrapper verified locally: `dotnet build` completed for
   `net8.0` and `netstandard2.0` with only NU1900 vulnerability-feed warnings.
+- Post-review public-facade RED verified locally on 2026-07-13: the focused
+  controller and `DesktopUpdater` tests failed to compile at three call sites
+  because `trustedReleasePublicKeys` did not exist. The documentation contract
+  then exited 1 because README, publishing, and migration guidance did not name
+  a public strict metadata-trust path.
+- Post-review public-facade GREEN verified locally on 2026-07-13:
+  `DesktopUpdaterController`, `checkZipFirstUpdate`, and
+  `downloadZipFirstUpdate` accept one pinned Ed25519 key map. A non-null map
+  requires both app-archive and descriptor signatures; null preserves the
+  released unsigned 2.x compatibility behavior from Step 5. Three real facade
+  regressions reject unsigned metadata, all existing unsigned compatibility
+  calls remain source-compatible, and the affected facade, low-level signature,
+  2.2.0 compatibility, trust, and docs group passed 62/62. Focused analysis
+  exited 0 with only six pre-existing info diagnostics. CI and target-host
+  lanes were not run for this follow-up.
 - Linux and Windows target-host CMake/CTest: not run locally on macOS.
 - CI: not run for this task; no CI result is claimed.
 
@@ -2058,7 +2073,7 @@ Task 10 evidence on 2026-07-11:
   file-backed.
 - [x] Freeze the Windows runtime v1 by-value result layout and require exact
   scalar ABI/size preflight before .NET calls.
-- [ ] Resolve the stable Flutter metadata-authenticity default through an
+- [x] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
 
@@ -2301,14 +2316,13 @@ Fresh-review evidence on 2026-07-11:
 
 Validated blockers and major findings:
 
-- P0 metadata authenticity: the released `DesktopUpdaterController` and
-  `DesktopUpdater` facade construct the compatibility `UpdateClient` without
-  pinned index or descriptor verifiers. `UpdateClient.requireIndexSignature`
-  and `ArtifactVerificationPolicy.requireSignature` both default to `false`,
-  so a remotely changed index, descriptor, artifact digest, and Windows signer
-  policy can remain internally consistent without publisher authenticity. The
-  native preview is strict, but the released Flutter path requires an explicit
-  public compatibility and migration decision before this blocker can close.
+- Resolved P0 metadata-authenticity facade gap: the released
+  `DesktopUpdaterController` and `DesktopUpdater` facade now accept
+  `trustedReleasePublicKeys` and bind the same pinned Ed25519 map to strict
+  app-archive and descriptor verification. Null retains the Step 5 unsigned
+  2.x compatibility default and is documented as not production-authenticated;
+  production callers have an explicit fail-closed path without a source or
+  MethodChannel break.
 - P0 transaction safety: current macOS, Windows, and Linux helpers mutate the
   live install through generated shell or PowerShell scripts without one
   cross-process target lock, a durable write-ahead journal, or restartable
@@ -2328,8 +2342,7 @@ Validated blockers and major findings:
 Coverage ledger:
 
 - Baseline and scope — `FINDING`: package version 2.7.0 and candidate-only
-  runtime scope are identifiable, but Task 6 and the public trust decision are
-  intentionally incomplete.
+  runtime scope are identifiable, but Task 6 is intentionally incomplete.
 - Behavior and schema parity — `VERIFIED_NO_BLOCKER`: generated negative
   fixtures now reject whitespace-only descriptor `appName` and rollout salt
   consistently in Dart, Swift, and portable C++ behavior.
@@ -2348,24 +2361,26 @@ Coverage ledger:
 - Platform integration and fallback paths — `NOT_VERIFIED`: macOS SwiftPM and
   the exact CocoaPods fallback are verified locally, while current-head Windows
   and Linux Flutter/native lanes remain not run.
-- Trust and authenticity — `FINDING`: the released Flutter metadata path is not
-  production-authenticated by default or configurable through its facade.
+- Trust and authenticity — `VERIFIED_NO_BLOCKER`: the released compatibility
+  default remains unsigned as required by Task 2, while every public Flutter
+  facade exposes one pinned-key option that requires both metadata signatures
+  before selection or artifact download.
 - Destructive and privileged safety — `FINDING`: target locks, durable recovery,
   and fd/handle-relative mount/reparse-safe mutation remain unimplemented.
 - CI and test truth — `FINDING`: focused suites prove nonzero discovery, but the
   complete local Flutter command fails and current-head CI has not run.
 - Release and publication — `NOT_VERIFIED`: signed/notarized artifact lanes are
   not run; the runtime and uploaded assets remain candidate-only.
-- Public API, CLI, and documentation reality — `FINDING`: released Flutter and
-  MethodChannel compatibility tests pass and published README links no longer
-  target excluded local paths, but the facade has no production metadata-trust
-  configuration.
-- Migration and compatibility — `FINDING`: safe retained-provenance legacy calls
-  and custom platform overrides pass, but changing the stable trust default
-  still requires an explicit migration policy.
+- Public API, CLI, and documentation reality — `VERIFIED_NO_BLOCKER`: released
+  Flutter and MethodChannel compatibility tests pass, published README links no
+  longer target excluded local paths, and production pinned-key metadata trust
+  is documented across README, publishing, and migration guidance.
+- Migration and compatibility — `VERIFIED_NO_BLOCKER`: safe retained-provenance
+  legacy calls and custom platform overrides pass; the stable trust default is
+  explicitly compatibility-only and strict trust is additive.
 - Plan consistency and completion gates — `FINDING`: open checkboxes accurately
-  expose Task 6, target-host, credential, trust, and full-ladder gaps; therefore
-  final acceptance and merge readiness remain open.
+  expose Task 6, target-host, credential, and full-ladder gaps; therefore final
+  acceptance and merge readiness remain open.
 
 The three moderate follow-ups identified by this review are resolved. They do
 not replace or reduce the P0/P1 blockers above.

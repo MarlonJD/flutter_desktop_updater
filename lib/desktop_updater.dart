@@ -1,5 +1,7 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart"
@@ -154,12 +156,27 @@ class DesktopUpdater {
 
     /// Optional app-owned HTTP headers for update metadata requests.
     UpdateRequestHeadersProvider? requestHeadersProvider,
+
+    /// Pinned Ed25519 public keys required for archive and descriptor trust.
+    Map<String, String>? trustedReleasePublicKeys,
   }) {
+    final publicKeys = trustedReleasePublicKeys;
     return UpdateClient(
       appArchiveUrl: appArchiveUrl,
       currentVersion: currentVersion,
       installationIdentity: installationIdentity,
       requestHeadersProvider: requestHeadersProvider,
+      requireIndexSignature: publicKeys != null,
+      indexSignatureVerifier: publicKeys == null
+          ? null
+          : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
+      verifier: publicKeys == null
+          ? const ArtifactVerifier()
+          : ArtifactVerifier(
+              policy: ArtifactVerificationPolicy.requireEd25519Signature(
+                publicKeys: publicKeys,
+              ),
+            ),
     ).checkForUpdate();
   }
 
@@ -179,11 +196,22 @@ class DesktopUpdater {
 
     /// Optional app-owned HTTP headers for artifact requests.
     UpdateRequestHeadersProvider? requestHeadersProvider,
+
+    /// Pinned Ed25519 public keys required for descriptor trust.
+    Map<String, String>? trustedReleasePublicKeys,
   }) {
+    final publicKeys = trustedReleasePublicKeys;
     return UpdateClient(
       appArchiveUrl: appArchiveUrl,
       currentVersion: currentVersion,
       requestHeadersProvider: requestHeadersProvider,
+      verifier: publicKeys == null
+          ? const ArtifactVerifier()
+          : ArtifactVerifier(
+              policy: ArtifactVerificationPolicy.requireEd25519Signature(
+                publicKeys: publicKeys,
+              ),
+            ),
     ).downloadVerifyAndStage(
       descriptor: descriptor,
       onProgress: onProgress,
