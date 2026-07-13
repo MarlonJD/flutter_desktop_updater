@@ -600,7 +600,14 @@ jobs:
             --bundle-path "$smoke_root/install/$app_name" \
             --allow-unsigned-updates
           for attempt in $(seq 1 60); do
-            if [ "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi
+            if [ "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt" 2>/dev/null || true)" = "2.7.1" ] &&
+               [ -d "$smoke_root/runtime/staging" ] &&
+               [ -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)" ] &&
+               grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
+               grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
+               [ -s "$smoke_root/runtime/runtime-diagnostics.log" ]; then
+              break
+            fi
             sleep 0.25
           done
           test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.1"

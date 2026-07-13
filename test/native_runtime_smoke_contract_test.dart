@@ -151,6 +151,30 @@ void main() {
     );
   });
 
+  test("macOS ZIP smoke waits for complete helper evidence", () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final start = workflow.indexOf("- name: macOS native runtime ZIP smoke");
+    final end = workflow.indexOf("\n  macos-flutter:", start);
+
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lane = workflow.substring(start, end);
+    expect(
+      lane,
+      contains(
+        r'''for attempt in $(seq 1 60); do
+            if [ "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt" 2>/dev/null || true)" = "2.7.1" ] &&
+               [ -d "$smoke_root/runtime/staging" ] &&
+               [ -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)" ] &&
+               grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
+               grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
+               [ -s "$smoke_root/runtime/runtime-diagnostics.log" ]; then
+              break
+            fi''',
+      ),
+    );
+  });
+
   test("Linux ZIP smoke binds install root to the executable parent", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final start = workflow.indexOf("- name: Linux native runtime ZIP smoke");
