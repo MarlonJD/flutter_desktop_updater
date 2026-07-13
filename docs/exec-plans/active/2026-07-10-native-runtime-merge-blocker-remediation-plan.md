@@ -2017,6 +2017,8 @@ Task 10 evidence on 2026-07-11:
   target, and real packaged helper elevation tests.
 - [x] Bound stable Flutter metadata downloads and archive expansion.
 - [x] Remove elevated Windows diagnostics authority from caller-provided paths.
+- [x] Keep Linux pkg-config metadata relocatable across documented install-time
+  prefixes.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
@@ -2160,6 +2162,18 @@ Fresh-review evidence on 2026-07-11:
   boundary, reconciles CRC and sizes with central metadata, rejects truncated
   ranges before the next ZIP structure, and rejects signed ZIP64 overflow before
   `ditto`. Focused analysis reported no issues and `git diff --check` passed.
+- RED, verified locally: the Linux pkg-config relocation suite failed 2 tests
+  on 2026-07-13 because the template embedded
+  configure-time absolute install directories and could not compile through
+  the documented install-time `cmake --install --prefix` layout.
+- Linux installed-metadata relocation GREEN on 2026-07-13, verified locally: the
+  `.pc` template now derives its prefix from `pcfiledir`, including the standard
+  and multiarch library layouts. Standard and multiarch CI configuration now
+  installs with an explicit install-time prefix, and the native retail,
+  Linux-layout, native-SDK docs, and merge-gate docs set passed 23/23. An
+  independent build/package review found the fix coherent. Linux target-host
+  CMake execution and current-head CI remain `not run` on this macOS host;
+  Task 9 Step 6 remains open.
 - Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
   the repository's existing info-only diagnostics; the focused affected Dart
   and docs suites passed 52/52; both managed targets compiled; and the focused

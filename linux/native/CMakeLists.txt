@@ -99,6 +99,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_nativeConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion)
+  file(RELATIVE_PATH DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR
+    "/${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+    "/")
   configure_file(
     cmake/desktop_updater_native.pc.in
     ${CMAKE_CURRENT_BINARY_DIR}/desktop_updater_native.pc

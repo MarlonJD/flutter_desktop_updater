@@ -160,6 +160,9 @@ ctest --test-dir linux/native/build --output-on-failure
 cmake --install linux/native/build --prefix linux/native/install
 ```
 
+The installed CMake and pkg-config metadata resolves paths relative to the
+installation tree, so the install-time `--prefix` above remains authoritative.
+
 Use the installed CMake package:
 
 ```cmake

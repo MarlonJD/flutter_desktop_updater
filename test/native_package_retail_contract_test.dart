@@ -83,18 +83,36 @@ void main() {
     );
   });
 
-  test("pkg-config records configured absolute install directories", () {
+  test("pkg-config remains relocatable across install-time prefixes", () {
     final template = readRequiredFile(
       "linux/native/cmake/desktop_updater_native.pc.in",
     );
+    final cmake = readRequiredFile("linux/native/CMakeLists.txt");
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
     );
 
-    expect(template, contains("prefix=@CMAKE_INSTALL_PREFIX@"));
-    expect(template, contains("libdir=@CMAKE_INSTALL_FULL_LIBDIR@"));
-    expect(template, contains("includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@"));
-    expect(template, isNot(contains(r"${pcfiledir}")));
+    expect(
+      template,
+      contains(
+          r"prefix=${pcfiledir}/@DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR@"),
+    );
+    expect(template, contains(r"libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@"));
+    expect(
+      template,
+      contains(r"includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@"),
+    );
+    expect(template, isNot(contains("@CMAKE_INSTALL_PREFIX@")));
+    expect(template, isNot(contains("@CMAKE_INSTALL_FULL_LIBDIR@")));
+    expect(template, isNot(contains("@CMAKE_INSTALL_FULL_INCLUDEDIR@")));
+    expect(cmake, contains("file(RELATIVE_PATH"));
+    expect(cmake, contains("DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR"));
+    expect(
+      workflow,
+      contains(
+        r'cmake --install linux/native/build --prefix "$PWD/linux/native/install"',
+      ),
+    );
     expect(workflow, contains("lib/pkgconfig"));
     expect(workflow, contains("lib/x86_64-linux-gnu/pkgconfig"));
     expect(workflow, contains("pkg-config --cflags --libs"));
@@ -143,9 +161,13 @@ void main() {
       );
       File("${pc.path}/desktop_updater_native.pc").writeAsStringSync(
         template
-            .replaceAll("@CMAKE_INSTALL_PREFIX@", prefix.path)
-            .replaceAll("@CMAKE_INSTALL_FULL_LIBDIR@", lib.path)
-            .replaceAll("@CMAKE_INSTALL_FULL_INCLUDEDIR@", include.path),
+            .replaceAll(
+              "@DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR@",
+              List<String>.filled(libRelative.split("/").length + 1, "..")
+                  .join("/"),
+            )
+            .replaceAll("@CMAKE_INSTALL_LIBDIR@", libRelative)
+            .replaceAll("@CMAKE_INSTALL_INCLUDEDIR@", "include"),
       );
       final environment = <String, String>{
         ...Platform.environment,
