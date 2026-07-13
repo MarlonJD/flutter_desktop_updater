@@ -588,6 +588,14 @@ void main() {
       expect(backup, isNonNegative);
       expect(verification, lessThan(backup));
     }
+    expect(windowsSource, contains(r"$stageValidationPhase = 'preflight'"));
+    expect(
+      windowsSource,
+      contains(
+        "stage provenance validation phase=' + "
+        r"$stageValidationPhase",
+      ),
+    );
   });
 
   test("installer helpers reverify platform trust at installer open", () {
