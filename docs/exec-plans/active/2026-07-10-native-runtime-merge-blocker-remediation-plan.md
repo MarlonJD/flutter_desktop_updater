@@ -1782,6 +1782,18 @@ Task 9 evidence on 2026-07-11:
   exited 1 with the exact supported-RID diagnostic. A packaged `win-x64`
   consumer with real Windows DLLs remains part of open Step 6 and is `not run`
   on this macOS host.
+- Published-README follow-up RED verified locally on 2026-07-13: the focused
+  archive-link contract exited 1 because `README.md` linked
+  `docs/native-sdk.md` while `.pubignore` excluded all of `docs/`. An initial
+  attempt to package the public `docs/` subtree made the contract pass but the
+  real publication dry run exited 65 with Pub's plural top-level `docs`
+  directory warning; that attempt is not counted as GREEN.
+- Published-README follow-up GREEN verified locally on 2026-07-13: every
+  remaining relative Markdown link in the archived README exists and is not
+  pub-ignored, while repository-only `docs/` links use absolute `main` URLs.
+  `docs/` remains excluded. A clean temporary working-tree copy ran
+  `dart pub publish --dry-run` with exit 0, 0 warnings, and the existing single
+  version hint; no version or lockfile changed.
 
 ---
 
@@ -2345,9 +2357,9 @@ Coverage ledger:
 - Release and publication — `NOT_VERIFIED`: signed/notarized artifact lanes are
   not run; the runtime and uploaded assets remain candidate-only.
 - Public API, CLI, and documentation reality — `FINDING`: released Flutter and
-  MethodChannel compatibility tests pass, but the facade has no production
-  metadata-trust configuration and the published README links into excluded
-  `docs/` content.
+  MethodChannel compatibility tests pass and published README links no longer
+  target excluded local paths, but the facade has no production metadata-trust
+  configuration.
 - Migration and compatibility — `FINDING`: safe retained-provenance legacy calls
   and custom platform overrides pass, but changing the stable trust default
   still requires an explicit migration policy.
@@ -2355,8 +2367,8 @@ Coverage ledger:
   expose Task 6, target-host, credential, trust, and full-ladder gaps; therefore
   final acceptance and merge readiness remain open.
 
-The remaining moderate follow-up that does not replace the blockers above is
-to make published README links resolve within the pub archive.
+The three moderate follow-ups identified by this review are resolved. They do
+not replace or reduce the P0/P1 blockers above.
 
 Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
 lanes: `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.

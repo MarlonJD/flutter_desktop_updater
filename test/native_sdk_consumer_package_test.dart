@@ -246,6 +246,58 @@ void main() {
     expect(publishedDocs, contains("not production-ready"));
     expect(publishedDocs, isNot(contains("production-ready native runtime")));
   });
+
+  test("published README has no missing or pub-ignored local links", () {
+    final readme = readRequiredFile("README.md");
+    final ignoredPaths = readRequiredFile(".pubignore")
+        .split("\n")
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty && !line.startsWith("#"))
+        .toList();
+
+    for (final target in localMarkdownTargets(readme)) {
+      final path = target.split("#").first;
+      expect(
+        File(path).existsSync() || Directory(path).existsSync(),
+        isTrue,
+        reason: "README local link target must exist: $target",
+      );
+      expect(
+        isIgnoredBySimplePubPattern(path, ignoredPaths),
+        isFalse,
+        reason:
+            "README local link target must ship in the pub archive: $target",
+      );
+    }
+  });
+}
+
+Iterable<String> localMarkdownTargets(String markdown) sync* {
+  final linkPattern = RegExp(r'''\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)''');
+  for (final match in linkPattern.allMatches(markdown)) {
+    final target = match.group(1)!;
+    if (!target.startsWith("#") && !Uri.parse(target).hasScheme) {
+      yield target;
+    }
+  }
+}
+
+bool isIgnoredBySimplePubPattern(String path, Iterable<String> patterns) {
+  for (final rawPattern in patterns) {
+    if (rawPattern.startsWith("!")) {
+      continue;
+    }
+    final pattern =
+        rawPattern.startsWith("/") ? rawPattern.substring(1) : rawPattern;
+    if (pattern.endsWith("/")) {
+      if (path.startsWith(pattern)) {
+        return true;
+      }
+    } else if (path == pattern || path.startsWith("$pattern/")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 String readRequiredFile(String path) {

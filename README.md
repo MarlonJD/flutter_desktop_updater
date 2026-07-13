@@ -88,8 +88,8 @@ native transaction recovery journal work are `blocked`; signed DMG, PKG, and
 Inno smokes are `not run`. The preview therefore remains
 `candidate-only` and is not production-ready.
 
-See [Native helper SDKs and standalone CLI](docs/native-sdk.md) for package
-integration and [Native Runtime Preview API](docs/native-runtime-api.md) for
+See [Native helper SDKs and standalone CLI](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md) for package
+integration and [Native Runtime Preview API](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-runtime-api.md) for
 compiling examples, current evidence, typed outcomes, and trust boundaries.
 
 ## Additional Release Files
@@ -150,7 +150,7 @@ Other built-in surfaces:
 - `DesktopUpdateSliver`
 - `UpdateDialogListener`
 
-See [Ready-made UI widgets](docs/ui-widgets.md) for screenshots, placement
+See [Ready-made UI widgets](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/ui-widgets.md) for screenshots, placement
 guidance, and when to choose each surface.
 
 For custom UI, switch on `controller.state`.
@@ -168,7 +168,7 @@ locale. Support-policy dates default to `YYYY-MM-DD HH:mm UTC`; pass
 `DesktopUpdateLocalization(formatDateTime: ...)` when the app needs its own
 date format.
 
-See [Localization and i18n](docs/localization.md) for the recommended setup,
+See [Localization and i18n](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/localization.md) for the recommended setup,
 JSON schema, runtime language switching, RTL behavior, and Arabic, Hebrew,
 Japanese, Korean, and Cyrillic screenshots.
 
@@ -303,9 +303,9 @@ sink for durable Dart lifecycle logs, and add `diagnosticsLogPath` plus an
 app-owned `UpdateRecoveryStore` only when support needs post-exit native helper
 evidence.
 
-Details live in [Diagnostics and recovery](docs/diagnostics-and-recovery.md),
-[Ready-made UI widgets](docs/ui-widgets.md#diagnostics-and-support), and
-[Publishing desktop updates](docs/publishing.md#runtime-policies).
+Details live in [Diagnostics and recovery](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/diagnostics-and-recovery.md),
+[Ready-made UI widgets](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/ui-widgets.md#diagnostics-and-support), and
+[Publishing desktop updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/publishing.md#runtime-policies).
 
 ## Production Trust
 
@@ -316,47 +316,47 @@ desktop_updater handles update mechanics. Your app still owns platform trust:
 - Windows production updates should use Authenticode when publisher trust is
   required.
 - Windows can publish direct zip artifacts or
-  [Inno Setup installer artifacts](docs/windows-inno-installer-updates.md).
+  [Inno Setup installer artifacts](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/windows-inno-installer-updates.md).
 - Linux direct zip distribution should add descriptor signing or another
   publisher-authenticity policy when production trust matters.
 
 For macOS DMG first installs, DMG update artifacts, PKG installer artifacts,
 and the local Apple-trust smoke harness, see
-[macOS DMG and PKG installer updates](docs/macos-dmg-pkg-installer-updates.md).
+[macOS DMG and PKG installer updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/macos-dmg-pkg-installer-updates.md).
 
 ## Documentation
 
 - [Update policy modes](doc/update-policy-modes.md): optional, mandatory,
   support-policy, and fresh-install release behavior.
-- [Publishing desktop updates](docs/publishing.md): setup, YAML config,
+- [Publishing desktop updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/publishing.md): setup, YAML config,
   additional release files, manual upload, providers, update policy modes,
   validation, CI, and platform-specific release work.
-- [Native helper SDKs and standalone CLI](docs/native-sdk.md): SwiftPM, CMake,
+- [Native helper SDKs and standalone CLI](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md): SwiftPM, CMake,
   C ABI, NuGet, version synchronization, CLI candidates, and release gates.
-- [Native Runtime Preview API](docs/native-runtime-api.md): non-Flutter
+- [Native Runtime Preview API](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-runtime-api.md): non-Flutter
   discovery, verification, staging, helper handoff, evidence, and trust
   boundaries.
-- [Windows and Linux production release options](docs/windows-linux-production-release.md):
+- [Windows and Linux production release options](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/windows-linux-production-release.md):
   signing choices, native package channels, and country or provider
   restrictions.
-- [Windows Inno installer updates](docs/windows-inno-installer-updates.md):
+- [Windows Inno installer updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/windows-inno-installer-updates.md):
   full Inno installer mode, config, signing, and migration boundaries.
-- [Ready-made UI widgets](docs/ui-widgets.md): screenshots and guidance for
+- [Ready-made UI widgets](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/ui-widgets.md): screenshots and guidance for
   the built-in card, sliver, dialog, and custom state-driven UI surfaces.
-- [Localization and i18n](docs/localization.md): bundled translations, custom
+- [Localization and i18n](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/localization.md): bundled translations, custom
   JSON, resolver-based i18n, runtime locale changes, RTL behavior, and
   multi-script screenshots.
-- [Diagnostics and recovery](docs/diagnostics-and-recovery.md): where logs are
+- [Diagnostics and recovery](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/diagnostics-and-recovery.md): where logs are
   written, how helper diagnostics work, and how to wire support collection.
-- [GitHub Actions CI/CD guide](docs/github-actions-ci-cd.md): longer CI
+- [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
-- [1.x to 2.0 migration guide](docs/migration/1.x-to-2.0.md): migration
+- [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md): migration
   commands and compatibility notes.
-- [2.0 roadmap](docs/2.0-roadmap.md)
+- [2.0 roadmap](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/2.0-roadmap.md)
 
 Maintainers and agentic contributors should start with [AGENTS.md](AGENTS.md),
-then use [Harness engineering](docs/harness-engineering.md) and the
-[execution plan index](docs/exec-plans/index.md) for repo-local workflow,
+then use [Harness engineering](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/harness-engineering.md)
+and the [execution plan index](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/exec-plans/index.md) for repo-local workflow,
 validation, and plan status.
 
 ## Advanced Commands
