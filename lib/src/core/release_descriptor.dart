@@ -156,6 +156,9 @@ class ReleaseDescriptor {
     if (packageId.trim().isEmpty) {
       throw const FormatException("release.json packageId is required.");
     }
+    if (appName.trim().isEmpty) {
+      throw const FormatException("release.json appName is required.");
+    }
     if (version.trim().isEmpty) {
       throw const FormatException("release.json version is required.");
     }

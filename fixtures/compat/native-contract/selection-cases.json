@@ -78,6 +78,27 @@
         ]
       },
       "expectedValid": false
+    },
+    {
+      "name": "whitespace-only rollout salt",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.9.0",
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/macos/stable/release.json",
+            "rollout": {
+              "percentage": 50,
+              "salt": " \n "
+            }
+          }
+        ]
+      },
+      "expectedValid": false
     }
   ],
   "versionComparisons": [

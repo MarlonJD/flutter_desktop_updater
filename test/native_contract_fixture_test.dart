@@ -135,6 +135,26 @@ void main() {
     }
   });
 
+  test("validation fixtures cover blank app names and rollout salts", () async {
+    final descriptorFixture = await _readJson(
+      File(path.join(fixturePath, "descriptor-validation-cases.json")),
+    );
+    final blankAppName = _mapList(
+      descriptorFixture,
+      "cases",
+    ).singleWhere((entry) => entry["name"] == "blank app name");
+    expect(blankAppName["expectedValid"], isFalse);
+
+    final selectionFixture = await _readJson(
+      File(path.join(fixturePath, "selection-cases.json")),
+    );
+    final blankRolloutSalt = _mapList(
+      selectionFixture,
+      "indexValidationCases",
+    ).singleWhere((entry) => entry["name"] == "whitespace-only rollout salt");
+    expect(blankRolloutSalt["expectedValid"], isFalse);
+  });
+
   test("selection and policy cases match current Dart algorithms", () async {
     final fixture = await _readJson(
       File(path.join(fixturePath, "selection-cases.json")),

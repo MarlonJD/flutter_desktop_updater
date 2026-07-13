@@ -573,6 +573,9 @@ ReleaseIndexItem ParseReleaseIndexItem(const JsonValue& json) {
     result.has_rollout = true;
     result.rollout.percentage = rollout->at("percentage").integer();
     result.rollout.salt = RequiredString(*rollout, "salt");
+    if (Trim(result.rollout.salt).empty()) {
+      throw JsonError("Empty JSON string: salt");
+    }
     if (result.rollout.percentage < 0 || result.rollout.percentage > 100) {
       throw JsonError("Invalid rollout percentage.");
     }
@@ -624,6 +627,9 @@ ReleaseDescriptor ParseReleaseDescriptor(const std::string& json) {
   if (result.schema_version != 3) throw JsonError("Descriptor schema must be 3.");
   result.package_id = RequiredTrimmedString(root, "packageId");
   result.app_name = RequiredString(root, "appName");
+  if (Trim(result.app_name).empty()) {
+    throw JsonError("Empty JSON string: appName");
+  }
   result.version = RequiredTrimmedString(root, "version");
   ParseDesktopVersion(result.version);
   if (const JsonValue* build = root.find("buildNumber")) {

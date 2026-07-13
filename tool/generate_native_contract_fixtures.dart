@@ -716,6 +716,7 @@ Future<void> _generateDescriptorValidationCases(
     ("valid descriptor", base),
     ("wrong schema", _mutate(base, "schemaVersion", 2)),
     ("blank package identity", _mutate(base, "packageId", " ")),
+    ("blank app name", _mutate(base, "appName", " \n ")),
     ("blank version", _mutate(base, "version", " ")),
     ("negative build number", _mutate(base, "buildNumber", -1)),
     ("blank platform", _mutate(base, "platform", " ")),
@@ -889,6 +890,11 @@ Future<void> _generateSelectionCases(
   final blankChannelIndex = _cloneMap(missingChannelIndex);
   ((blankChannelIndex["items"]! as List).single
       as Map<String, dynamic>)["channel"] = " ";
+  final blankRolloutSaltIndex = _cloneMap(rolloutIndex);
+  _mapAt(
+    (blankRolloutSaltIndex["items"]! as List).single as Map<String, dynamic>,
+    "rollout",
+  )["salt"] = " \n ";
   final selectionCases = [
     _selectionCase(
       "platform filtering",
@@ -1096,6 +1102,11 @@ Future<void> _generateSelectionCases(
         {
           "name": "present blank index channel is rejected",
           "index": blankChannelIndex,
+          "expectedValid": false,
+        },
+        {
+          "name": "whitespace-only rollout salt",
+          "index": blankRolloutSaltIndex,
           "expectedValid": false,
         },
       ],

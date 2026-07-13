@@ -35,6 +35,22 @@ void main() {
     );
   });
 
+  test("rejects a blank app name", () {
+    expect(
+      () => ReleaseDescriptor.fromJson({
+        ..._descriptorJson(),
+        "appName": " \n ",
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("appName is required"),
+        ),
+      ),
+    );
+  });
+
   test("parses a Windows Inno installer descriptor", () {
     final descriptor = ReleaseDescriptor.fromJson({
       ..._descriptorJson(),

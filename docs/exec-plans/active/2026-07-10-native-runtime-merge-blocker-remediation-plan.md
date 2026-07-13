@@ -350,6 +350,17 @@ Task 1 evidence (2026-07-10):
   tests, full Flutter passed 537 tests with 3 environment-gated skips, Swift
   passed 28 tests, and the portable C++ runner and Windows C API syntax check
   exited 0.
+- Post-review parity RED verified locally on 2026-07-13: the focused Flutter
+  command exited 1 because Dart accepted a whitespace-only descriptor
+  `appName` and the generated negative fixtures did not cover blank `appName`
+  or rollout salt. After generating those cases, the strict portable C++
+  runner exited 1 first for whitespace-only rollout salt and then for blank
+  `appName`.
+- Post-review parity GREEN verified locally on 2026-07-13: deterministic
+  fixture generation was current; 35 focused Dart contract and merge-gate
+  tests passed; the portable C++17 Clang/OpenSSL fixture runner compiled with
+  `-Wall -Wextra -Werror` and exited 0; and root `swift test` passed 51/51,
+  including all six native contract conformance tests.
 - Linux and Windows target-host native builds/tests: not run locally on macOS;
   required in GitHub Actions.
 
@@ -2299,12 +2310,12 @@ Coverage ledger:
 - Baseline and scope — `FINDING`: package version 2.7.0 and candidate-only
   runtime scope are identifiable, but Task 6 and the public trust decision are
   intentionally incomplete.
-- Behavior and schema parity — `FINDING`: core fixture behavior is covered, but
-  Dart accepts a blank descriptor `appName` that native parsers reject, while
-  C++ accepts a whitespace-only rollout salt that Dart and Swift reject.
-- Cross-language data fidelity — `FINDING`: the Windows v1 result layout is now
-  frozen and preflighted, but the two schema-validation differences above are
-  absent from the generated negative fixtures.
+- Behavior and schema parity — `VERIFIED_NO_BLOCKER`: generated negative
+  fixtures now reject whitespace-only descriptor `appName` and rollout salt
+  consistently in Dart, Swift, and portable C++ behavior.
+- Cross-language data fidelity — `VERIFIED_NO_BLOCKER`: the Windows v1 result
+  layout is frozen and preflighted, and the previously missing validation
+  differences are now exercised by generated cross-language fixtures.
 - Build graph and filesystem paths — `VERIFIED_NO_BLOCKER`: source target types,
   install/export paths, the Linux CMake-floor split, and relocatable metadata
   are coherent in the inspected graph and local contract checks.
@@ -2336,9 +2347,8 @@ Coverage ledger:
   expose Task 6, target-host, credential, trust, and full-ladder gaps; therefore
   final acceptance and merge readiness remain open.
 
-Moderate follow-ups that do not replace the blockers above: add generated
-negative fixtures for blank `appName` and whitespace-only rollout salt; fail a
-NuGet consumer clearly on unsupported RIDs instead of copying `win-x64` assets;
+Remaining moderate follow-ups that do not replace the blockers above: fail a
+NuGet consumer clearly on unsupported RIDs instead of copying `win-x64` assets,
 and make published README links resolve within the pub archive.
 
 Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
