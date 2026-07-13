@@ -948,11 +948,11 @@ jobs:
           smoke_root="$RUNNER_TEMP/native-runtime-linux-zip"
           ready_file="$smoke_root/ready.json"
           rm -rf "$smoke_root"
-          mkdir -p "$smoke_root/install/bin" "$smoke_root/payload/bin"
+          mkdir -p "$smoke_root/install" "$smoke_root/payload"
           consumer_bin="$PWD/example/native/linux-cmake-runtime/build/runtime_compile"
-          cp "$consumer_bin" "$smoke_root/install/bin/runtime_compile"
-          cp "$consumer_bin" "$smoke_root/payload/bin/runtime_compile"
-          chmod +x "$smoke_root/install/bin/runtime_compile" "$smoke_root/payload/bin/runtime_compile"
+          cp "$consumer_bin" "$smoke_root/install/runtime_compile"
+          cp "$consumer_bin" "$smoke_root/payload/runtime_compile"
+          chmod +x "$smoke_root/install/runtime_compile" "$smoke_root/payload/runtime_compile"
           printf '2.7.0\n' > "$smoke_root/install/version.txt"
           printf '2.7.1\n' > "$smoke_root/payload/version.txt"
           (cd "$smoke_root/payload" && zip -qr "$smoke_root/update.zip" .)
@@ -983,7 +983,7 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          "$smoke_root/install/bin/runtime_compile" \
+          "$smoke_root/install/runtime_compile" \
             --smoke \
             --verify-protected-root \
             --app-archive-url "$archive_url" \
@@ -991,7 +991,7 @@ jobs:
             --package-id com.example.native-runtime-smoke \
             --smoke-root "$smoke_root/runtime" \
             --install-root "$smoke_root/install" \
-            --executable-relative-path bin/runtime_compile \
+            --executable-relative-path runtime_compile \
             --diagnostics-log "$smoke_root/helper-diagnostics.jsonl"
           for attempt in $(seq 1 120); do
             if [ "$(tr -d '\r\n' < "$smoke_root/install/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi

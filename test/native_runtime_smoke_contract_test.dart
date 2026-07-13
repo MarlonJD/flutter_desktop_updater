@@ -150,6 +150,26 @@ void main() {
       isNot(contains(r'test ! -e "$smoke_root/runtime/staging"')),
     );
   });
+
+  test("Linux ZIP smoke binds install root to the executable parent", () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final start = workflow.indexOf("- name: Linux native runtime ZIP smoke");
+    final end = workflow.indexOf("- name: Enable Linux desktop", start);
+
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lane = workflow.substring(start, end);
+    expect(
+      lane,
+      contains(r'mkdir -p "$smoke_root/install" "$smoke_root/payload"'),
+    );
+    expect(
+      lane,
+      contains(r'"$smoke_root/install/runtime_compile"'),
+    );
+    expect(lane, contains("--executable-relative-path runtime_compile"));
+    expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
+  });
 }
 
 String readFile(String path) {
