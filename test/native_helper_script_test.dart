@@ -591,21 +591,33 @@ void main() {
     expect(windowsSource, contains(r"$stageValidationPhase = 'preflight'"));
     expect(
       windowsSource,
-      contains(r"$markerBytes = [IO.File]::ReadAllBytes($marker)"),
+      contains(r"function Get-FileSha256Hex($Path)"),
     );
     expect(
       windowsSource,
-      contains(r"$markerSha256 = [Security.Cryptography.SHA256]::Create()"),
+      contains(r"$stream = [IO.File]::OpenRead($Path)"),
     );
     expect(
       windowsSource,
-      contains(r"$markerSha256.ComputeHash($markerBytes)"),
+      contains(r"$sha256.ComputeHash($stream)"),
+    );
+    expect(
+      windowsSource,
+      contains(r"$markerHash = Get-FileSha256Hex $marker"),
+    );
+    expect(
+      windowsSource,
+      contains(r"$actual = Get-FileSha256Hex $candidate"),
+    );
+    expect(
+      windowsSource,
+      contains(r"$artifactHash = Get-FileSha256Hex $installer"),
     );
     expect(
       windowsSource,
       isNot(
         contains(
-          r"Get-FileHash -Algorithm SHA256 -LiteralPath $marker",
+          "Get-FileHash -Algorithm SHA256",
         ),
       ),
     );
@@ -639,7 +651,10 @@ void main() {
 
     expect(windowsSource, contains(r"$expectedArtifactSha256 = "));
     expect(windowsSource, contains(r"$allowedSignerThumbprints = @("));
-    expect(windowsSource, contains("Get-FileHash -Algorithm SHA256"));
+    expect(
+      windowsSource,
+      contains(r"$artifactHash = Get-FileSha256Hex $installer"),
+    );
     final windowsProvenance = windowsSource.indexOf(
       r'<< "  Test-StageProvenance\n"',
     );
