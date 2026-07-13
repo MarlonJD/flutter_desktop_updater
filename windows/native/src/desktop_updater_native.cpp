@@ -903,6 +903,11 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     }
   }
 
+  const std::wstring helper_diagnostics_log_path =
+      launch_mode == PowerShellLaunchMode::kElevated
+          ? L""
+          : request.diagnostics_log_path;
+
   const std::wstring nonce = CreateUuidNonce();
   if (nonce.empty()) {
     return {false, "Unable to generate update helper nonce."};
@@ -919,7 +924,7 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
       << "$target = " << PowerShellQuote(target_directory.wstring()) << "\n"
       << "$exe = " << PowerShellQuote(executable.wstring()) << "\n"
       << "$diagnosticsLog = "
-      << PowerShellQuote(request.diagnostics_log_path) << "\n"
+      << PowerShellQuote(helper_diagnostics_log_path) << "\n"
       << "$expected_provenance_sha256 = "
       << PowerShellQuote(request.expected_provenance_sha256) << "\n"
       << "$expectedPackageId = "

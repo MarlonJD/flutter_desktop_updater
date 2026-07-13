@@ -58,6 +58,38 @@ void main() {
     expect(source, isNot(contains("docs/plans")));
   });
 
+  test("diagnostics docs distinguish normal and elevated Windows helpers", () {
+    final source = File("docs/diagnostics-and-recovery.md")
+        .readAsStringSync()
+        .replaceAll(RegExp(r"\s+"), " ");
+
+    expect(
+      source,
+      contains(
+        "A normal, non-elevated Windows helper may append best-effort "
+        "redacted lifecycle events to the explicit `diagnosticsLogPath`.",
+      ),
+    );
+    expect(
+      source,
+      contains(
+        "An elevated Windows helper does not receive, open, create, append "
+        "to, or otherwise use the caller-provided `diagnosticsLogPath`.",
+      ),
+    );
+    expect(
+      source,
+      contains(
+        "App-owned Dart diagnostics and the package's in-memory problem "
+        "report remain available before the elevated handoff.",
+      ),
+    );
+    expect(
+      source,
+      contains("Windows UAC and real helper execution: `not run`."),
+    );
+  });
+
   test("CI docs keep helper diagnostics artifacts opt-in", () {
     final source = File("docs/github-actions-ci-cd.md").readAsStringSync();
 

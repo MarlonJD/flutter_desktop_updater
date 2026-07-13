@@ -110,10 +110,13 @@ the current app directory and checks for known protected install roots:
   the helper returns `InstallError` instead of exiting into a doomed install.
 
 The elevated path keeps the 2.x staged update context: `stagingPath`,
-`removedFiles`, the app target directory, relaunch path, and optional
-`diagnosticsLogPath` are written into the helper script before elevation. The
-elevated bootstrap verifies the helper script hash before executing it, so the
-UAC flow does not depend on rediscovering update folders after relaunch.
+`removedFiles`, the app target directory, and relaunch path are written into the
+helper script before elevation. After the launch mode is resolved, the native
+scheduler replaces the caller-provided `diagnosticsLogPath` with an empty value
+before PowerShell interpolation. A normal hidden helper retains the explicit
+app-owned path. The elevated bootstrap verifies the helper script hash before
+executing it, so the UAC flow does not depend on rediscovering update folders
+after relaunch. Windows UAC and real helper execution remain `not run` locally.
 
 ### Microsoft Artifact Signing
 
@@ -376,7 +379,8 @@ Keep diagnostics app-owned:
 - Add `UpdateDiagnosticsRecorder(sink: ...)` only when your app chooses a
   durable Dart lifecycle log path and retention policy.
 - Add `diagnosticsLogPath` plus an app-owned recovery store only when support
-  needs post-exit helper evidence.
+  needs post-exit helper evidence. Elevated Windows helpers intentionally do
+  not receive the caller-selected path.
 
 Recommended support wording:
 

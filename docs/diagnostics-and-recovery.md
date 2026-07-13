@@ -13,7 +13,7 @@ file, a database row, a support attachment, or an upload.
 | --- | --- | --- | --- | --- |
 | In-memory problem report | No path | Package keeps it in memory | When check, download, verify, stage, or install handoff fails | Show/copy `UpdateFailed.report.toPlainText()` or use `onProblemReport` after a user action |
 | Dart lifecycle log | No path unless your app supplies a sink | Your `UpdateDiagnosticsSink` | While the Flutter process is running update checks, downloads, verification, staging, and native handoff | Persist redacted `UpdateDiagnosticEntry` lines in your app-owned support location |
-| Native helper log | No path unless your app passes `diagnosticsLogPath` | Your app passes the exact path | After the Flutter process exits and the platform helper performs install, rollback, cleanup, and relaunch work | Ask support users to attach this JSON Lines file only when post-exit install evidence is needed |
+| Native helper log | No path unless your app passes `diagnosticsLogPath` | Your app passes the exact path; an elevated Windows helper does not receive it | After the Flutter process exits and a non-elevated Windows or other platform helper performs install, rollback, cleanup, and relaunch work | Ask support users to attach this JSON Lines file only when post-exit install evidence is needed |
 | Pending install recovery marker | No marker unless your app supplies a store | Your `UpdateRecoveryStore` | Immediately before native install handoff, then cleared after a verified relaunch | Turn "the app relaunched but stayed on the old version" into `UpdateFailed(report)` on next startup |
 | Cleanup report | In memory on the controller | Optional `onCleanupReport` callback | After install scheduling or cleanup evidence is available | Save scheduling or cleanup evidence in your app-owned audit trail |
 
@@ -92,6 +92,13 @@ final controller = DesktopUpdaterController(
 );
 ```
 
+A normal, non-elevated Windows helper may append best-effort redacted lifecycle
+events to the explicit `diagnosticsLogPath`. An elevated Windows helper does not
+receive, open, create, append to, or otherwise use the caller-provided
+`diagnosticsLogPath`. App-owned Dart diagnostics and the package's in-memory
+problem report remain available before the elevated handoff.
+Windows UAC and real helper execution: `not run`.
+
 The helper appends one JSON object per line when the path is present:
 
 ```jsonl
@@ -119,7 +126,8 @@ macOS may also emit `package identity checks` before bundle replacement.
 Windows may emit repeated `move start` entries while it waits for locked files
 to become replaceable.
 
-For Windows Inno installer updates, native helper diagnostics may include:
+For non-elevated Windows Inno installer updates, native helper diagnostics may
+include:
 `inno manifest loaded`, `inno authenticode verified`,
 `inno authenticode failure`, `inno installer start`,
 `inno installer success`, `inno installer failure exitCode=<code>`, and
@@ -144,20 +152,18 @@ before passing the path. If the path is missing, the parent directory does not
 exist, or the file cannot be written, the helper ignores the logging failure and
 continues the install, rollback, cleanup, or relaunch attempt.
 
-On Windows, a machine-wide install under `Program Files` may require UAC. When
-the helper detects a known protected install root or a non-writable app
-directory and the user accepts elevation, the native helper log includes
-`elevation requested` before the usual
-`helper scheduled`, backup, copy, rollback, cleanup, and relaunch events. If
-the user cancels the UAC prompt, the app remains open and `installUpdate`
-returns an `InstallError`; no post-exit helper log is written because the helper
-never starts.
+On Windows, a machine-wide install under `Program Files` may require UAC. The
+native scheduler removes the caller-selected diagnostic sink before generating
+an elevated script, so the elevated helper writes none of its post-exit events
+to that file. If the user cancels the UAC prompt, the app remains open and
+`installUpdate` returns an `InstallError`; no post-exit helper starts.
 
 After a successful Windows copy, the helper retries staging cleanup for a short
-bounded window. The diagnostics log may include `cleanup retry` before
-`cleanup success` when antivirus, indexing, or another process temporarily
-holds a file. If cleanup still fails, the helper writes `cleanup failure` and
-continues to relaunch because the update has already been copied into place.
+bounded window. A non-elevated helper diagnostics log may include
+`cleanup retry` before `cleanup success` when antivirus, indexing, or another
+process temporarily holds a file. If cleanup still fails, the helper writes
+`cleanup failure` and continues to relaunch because the update has already been
+copied into place.
 
 Before staging a new update, the Dart update client removes old
 `desktop_updater_stage_*` directories from the staging parent when they are
@@ -167,10 +173,10 @@ lose the staged update.
 
 ## Recovery Store
 
-`diagnosticsLogPath` tells you what happened inside the native helper. It does
-not by itself decide whether the next app launch succeeded. Add an
-`UpdateRecoveryStore` when you want the next startup to detect unfinished or
-unverified installs.
+When the native helper receives `diagnosticsLogPath`, it tells you what happened
+inside that helper. It does not by itself decide whether the next app launch
+succeeded. Add an `UpdateRecoveryStore` when you want the next startup to detect
+unfinished or unverified installs.
 
 Flutter `UpdateRecoveryStore` is not a native transaction journal. It records
 an app-owned expectation across relaunch; it does not provide a cross-process

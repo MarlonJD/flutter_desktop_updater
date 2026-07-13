@@ -166,7 +166,8 @@ not add new files to Inno's uninstall log.
 
 ## Diagnostics
 
-When `diagnosticsLogPath` is supplied, Windows helper diagnostics can include:
+When `diagnosticsLogPath` is supplied to a normal, non-elevated Windows helper,
+diagnostics can include:
 
 - `inno manifest loaded`
 - `inno authenticode verified`
@@ -175,6 +176,10 @@ When `diagnosticsLogPath` is supplied, Windows helper diagnostics can include:
 - `inno installer success`
 - `inno installer failure exitCode=<code>`
 - `inno relaunch attempt`
+
+An elevated Windows helper does not receive the caller-provided path and does
+not write these events to it. App-owned Dart and in-memory diagnostics remain
+available before the elevated handoff.
 
 The Inno installer log file defaults to
 `desktop_updater_inno_install.log` under the system temp directory.

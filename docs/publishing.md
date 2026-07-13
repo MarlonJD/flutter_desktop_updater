@@ -430,8 +430,9 @@ app-owned:
 - Apps can pass `diagnosticsLogPath` to `DesktopUpdaterController` or
   `DesktopUpdater.installUpdate()` when they want native helper post-exit
   diagnostics. The path is explicit and app-owned; native helpers append
-  bounded JSONL-style events only when it is present, and logging failures do
-  not block install, rollback, cleanup, or relaunch attempts.
+  bounded JSONL-style events only when it is present, except that an elevated
+  Windows helper does not receive or use the caller-provided path. Logging
+  failures do not block install, rollback, cleanup, or relaunch attempts.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor
@@ -460,7 +461,8 @@ Use three explicit support levels:
 3. **App-owned native helper log plus recovery store.** Supply
    `diagnosticsLogPath` with an app-owned `UpdateRecoveryStore` when support
    needs post-exit install, rollback, cleanup, or relaunch evidence and
-   post-relaunch `UpdateFailed(report)` recovery.
+   post-relaunch `UpdateFailed(report)` recovery. Elevated Windows helpers do
+   not write to this caller-selected helper log.
 
 See [Diagnostics and recovery](diagnostics-and-recovery.md) for concrete log
 locations, JSONL helper events, and support handoff examples.

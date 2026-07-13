@@ -676,6 +676,88 @@ void main() {
     );
   });
 
+  test("Windows diagnostics invariant accepts the contained scheduler", () {
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+
+    expect(
+      _windowsDiagnosticsContainmentViolations(source),
+      isEmpty,
+    );
+  });
+
+  test("Windows diagnostics invariant rejects a pre-script caller-path alias",
+      () {
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+    const marker = "  const std::wstring nonce = CreateUuidNonce();";
+    expect(source, contains(marker));
+    final mutatedSource = source.replaceFirst(
+      marker,
+      "  const std::wstring unsafe_diagnostics_alias =\n"
+      "      request.diagnostics_log_path;\n\n"
+      "$marker",
+    );
+
+    expect(
+      _windowsDiagnosticsContainmentViolations(mutatedSource),
+      contains(
+        "request.diagnostics_log_path must appear exactly once in "
+        "ScheduleInstallAndRelaunch",
+      ),
+    );
+  });
+
+  test("Windows diagnostics invariant rejects an alternate diagnostics sink",
+      () {
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+    const marker =
+        r'''      << "    Add-Content -LiteralPath $diagnosticsLog -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue\n"''';
+    expect(source, contains(marker));
+    final mutatedSource = source.replaceFirst(
+      marker,
+      r'''      << "    $alternateSink = $diagnosticsLog\n"
+      << "    Set-Content -LiteralPath $alternateSink -Value $line\n"
+''' +
+          marker,
+    );
+
+    expect(
+      _windowsDiagnosticsContainmentViolations(mutatedSource),
+      contains(
+        r"$diagnosticsLog may appear only in its assignment, guard, and "
+        "Add-Content sink",
+      ),
+    );
+    expect(
+      _windowsDiagnosticsContainmentViolations(mutatedSource),
+      contains(
+        "alternate diagnostics write primitive is forbidden: Set-Content",
+      ),
+    );
+  });
+
+  test("Windows diagnostics invariant rejects a second Add-Content sink", () {
+    final source = File("windows/native/src/desktop_updater_native.cpp")
+        .readAsStringSync();
+    const marker =
+        r'''      << "    Add-Content -LiteralPath $diagnosticsLog -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue\n"''';
+    expect(source, contains(marker));
+    final mutatedSource = source.replaceFirst(
+      marker,
+      "$marker\n"
+      r'''      << "    Add-Content -LiteralPath $secondDiagnosticsSink -Value $line\n"''',
+    );
+
+    expect(
+      _windowsDiagnosticsContainmentViolations(mutatedSource),
+      contains(
+        r"Add-Content must appear exactly once and target $diagnosticsLog",
+      ),
+    );
+  });
+
   test("Windows helper treats Program Files roots as protected installs", () {
     final source = File("windows/native/src/desktop_updater_native.cpp")
         .readAsStringSync();
@@ -694,4 +776,131 @@ void main() {
     );
     expect(source, contains("InstallLaunchDecision::kElevated"));
   });
+}
+
+List<String> _windowsDiagnosticsContainmentViolations(String source) {
+  const scheduleStartMarker = "InstallResult ScheduleInstallAndRelaunch(";
+  const scheduleEndMarker = "\nbool IsStrictChildPath(";
+  final scheduleStart = source.indexOf(scheduleStartMarker);
+  if (scheduleStart < 0) {
+    return <String>["ScheduleInstallAndRelaunch is missing"];
+  }
+  final scheduleEnd = source.indexOf(scheduleEndMarker, scheduleStart);
+  if (scheduleEnd < 0) {
+    return <String>["ScheduleInstallAndRelaunch scope end is missing"];
+  }
+
+  final schedule = source.substring(scheduleStart, scheduleEnd);
+  final violations = <String>[];
+  const selectedPathDecision =
+      "const std::wstring helper_diagnostics_log_path =\n"
+      "      launch_mode == PowerShellLaunchMode::kElevated\n"
+      "          ? L\"\"\n"
+      "          : request.diagnostics_log_path;";
+  const launchModeResolution = "launch_mode = PowerShellLaunchMode::kElevated;";
+  const scriptConstruction = "std::ostringstream script;";
+  const selectedInterpolation = r'''<< "$diagnosticsLog = "
+      << PowerShellQuote(helper_diagnostics_log_path) << "\n"''';
+
+  final callerPathCount = RegExp(
+    r"\brequest\.diagnostics_log_path\b",
+  ).allMatches(schedule).length;
+  if (callerPathCount != 1) {
+    violations.add(
+      "request.diagnostics_log_path must appear exactly once in "
+      "ScheduleInstallAndRelaunch",
+    );
+  }
+  if (_countOccurrences(schedule, selectedPathDecision) != 1) {
+    violations.add(
+      "the caller path must occur only in the normal branch of the "
+      "launch-mode-selected helper diagnostics path",
+    );
+  }
+
+  final launchModeIndex = schedule.indexOf(launchModeResolution);
+  final decisionIndex = schedule.indexOf(selectedPathDecision);
+  final scriptIndex = schedule.indexOf(scriptConstruction);
+  if (launchModeIndex < 0 ||
+      decisionIndex <= launchModeIndex ||
+      scriptIndex <= decisionIndex) {
+    violations.add(
+      "helper diagnostics selection must follow launch-mode resolution and "
+      "precede script construction",
+    );
+  }
+
+  if (_countOccurrences(
+        schedule,
+        "PowerShellQuote(helper_diagnostics_log_path)",
+      ) !=
+      1) {
+    violations.add(
+      "the selected helper diagnostics path must be interpolated exactly once",
+    );
+  }
+  if (_countOccurrences(schedule, selectedInterpolation) != 1) {
+    violations.add(
+      r"the selected helper diagnostics path must assign only $diagnosticsLog",
+    );
+  }
+
+  final diagnosticsAssignments = RegExp(
+    r"\$[A-Za-z0-9_]*diagnostic[A-Za-z0-9_]*\s*=",
+    caseSensitive: false,
+  ).allMatches(schedule).toList(growable: false);
+  final soleAssignment = diagnosticsAssignments.length == 1
+      ? diagnosticsAssignments.single.group(0)!.replaceAll(RegExp(r"\s+"), " ")
+      : "";
+  if (diagnosticsAssignments.length != 1 ||
+      soleAssignment != r"$diagnosticsLog =") {
+    violations.add("exactly one diagnostics sink assignment is allowed");
+  }
+  final diagnosticsLogReferences = RegExp(
+    r"\$diagnosticsLog\b",
+  ).allMatches(schedule).length;
+  if (diagnosticsLogReferences != 3) {
+    violations.add(
+      r"$diagnosticsLog may appear only in its assignment, guard, and "
+      "Add-Content sink",
+    );
+  }
+
+  final addContentCount = RegExp(
+    r"\bAdd-Content\b",
+  ).allMatches(schedule).length;
+  const expectedAddContent =
+      r"Add-Content -LiteralPath $diagnosticsLog -Value $line";
+  if (addContentCount != 1 ||
+      _countOccurrences(schedule, expectedAddContent) != 1) {
+    violations.add(
+      r"Add-Content must appear exactly once and target $diagnosticsLog",
+    );
+  }
+
+  const forbiddenWritePrimitives = <String>[
+    "Set-Content",
+    "Out-File",
+    "AppendAllText",
+    "WriteAllText",
+    "OpenWrite",
+    "CreateText",
+    "StreamWriter",
+    "New-Item",
+    "File]::Open(",
+    "File]::Create(",
+  ];
+  for (final primitive in forbiddenWritePrimitives) {
+    if (schedule.contains(primitive)) {
+      violations.add(
+        "alternate diagnostics write primitive is forbidden: $primitive",
+      );
+    }
+  }
+
+  return violations;
+}
+
+int _countOccurrences(String source, String pattern) {
+  return RegExp(RegExp.escape(pattern)).allMatches(source).length;
 }

@@ -2016,7 +2016,7 @@ Task 10 evidence on 2026-07-11:
 - [ ] Run Windows target-host `auto`, `always`, `never`, UAC-cancel, protected
   target, and real packaged helper elevation tests.
 - [x] Bound stable Flutter metadata downloads and archive expansion.
-- [ ] Remove elevated Windows diagnostics authority from caller-provided paths.
+- [x] Remove elevated Windows diagnostics authority from caller-provided paths.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
@@ -2080,6 +2080,40 @@ Fresh-review evidence on 2026-07-11:
 - Windows UAC/elevation target-host suite: not run. Source-level GTests cover
   policy parsing, invalid-value rejection before scheduler invocation, and the
   pure launch decision, but actual UAC and real helper execution remain open.
+- Elevated Windows diagnostics RED on 2026-07-13, verified locally: `flutter
+  test --no-pub test/native_helper_script_test.dart
+  test/native_helper_diagnostics_docs_test.dart` exited 1 after 32 tests with
+  exactly the two expected failures. The native source still interpolated
+  `request.diagnostics_log_path` directly, and the diagnostics guide still
+  claimed elevated helper file events instead of the required containment.
+- Elevated Windows diagnostics GREEN on 2026-07-13, verified locally: the same
+  focused command passed 34/34. Native scheduling now selects an empty helper
+  diagnostics path from the resolved `PowerShellLaunchMode::kElevated` before
+  PowerShell quoting and script construction, while the normal branch retains
+  `request.diagnostics_log_path`. Source contracts reject direct caller-path
+  interpolation in the generated script, and diagnostics documentation states
+  the elevated-versus-normal boundary literally.
+- Windows UAC and real helper execution for the diagnostics containment on
+  2026-07-13: `not run`. The separate Windows target-host elevation checkbox
+  remains open.
+- Elevated Windows diagnostics independent-review RED on 2026-07-13, verified
+  locally: the original scanner inspected only the generated-script tail and
+  could miss a pre-script caller-path alias, alternate PowerShell sink, second
+  `Add-Content`, or another write primitive. After the mutation fixtures were
+  added first, `flutter test --no-pub test/native_helper_script_test.dart`
+  compile-failed solely because the wished-for
+  `_windowsDiagnosticsContainmentViolations` helper was missing at five call
+  sites.
+- Elevated Windows diagnostics independent-review GREEN on 2026-07-13,
+  verified locally: the reusable real-source invariant scopes checks to
+  `ScheduleInstallAndRelaunch`, and mutation fixtures reject a pre-script
+  caller-path alias, generic alternate `Set-Content` sink, and second
+  `Add-Content` sink. The focused helper suite passed 28/28 and the affected
+  helper, docs, Windows layout, diagnostics, MethodChannel, and runtime API set
+  passed 64/64. Formatting and `git diff --check` were clean; scoped analysis
+  exited 0 with only five pre-existing info diagnostics. The production
+  implementation and diagnostics checkbox are unchanged. Windows target-host
+  UAC and real helper execution: `not run`.
 - Stable Flutter resource-limit RED, verified locally: `flutter test --no-pub
   test/native_runtime_resource_limits_test.dart` failed because the optional
   bounded transport capability, 4 MiB metadata limit, and configurable ZIP
