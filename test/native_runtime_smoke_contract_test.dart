@@ -113,15 +113,39 @@ void main() {
     expect(workflow, contains("CMAKE_PREFIX_PATH"));
   });
 
-  test("Windows ZIP smoke waits for helper cleanup before asserting", () {
+  test("ZIP smokes preserve caller-owned staging roots", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
 
     expect(workflow, contains(r"$cleanupComplete = $false"));
+    expect(workflow, contains(r"$stagingRoot = Join-Path $smokeRoot"));
+    expect(workflow, contains(r"$stagingClean = (Test-Path -LiteralPath"));
+    expect(
+        workflow, contains("Get-ChildItem -LiteralPath \$stagingRoot -Force"));
     expect(
       workflow,
       contains(
-        r"$versionReady -and $stagingRemoved -and $cleanupComplete",
+        r"$versionReady -and $stagingClean -and $cleanupComplete",
       ),
+    );
+    expect(workflow, isNot(contains(r"$stagingRemoved")));
+    expect(
+      RegExp(
+        RegExp.escape(r'test -d "$smoke_root/runtime/staging"'),
+      ).allMatches(workflow),
+      hasLength(2),
+    );
+    expect(
+      RegExp(
+        RegExp.escape(
+          r'test -z "$(find "$smoke_root/runtime/staging" '
+          r'-mindepth 1 -maxdepth 1 -print -quit)"',
+        ),
+      ).allMatches(workflow),
+      hasLength(2),
+    );
+    expect(
+      workflow,
+      isNot(contains(r'test ! -e "$smoke_root/runtime/staging"')),
     );
   });
 }
