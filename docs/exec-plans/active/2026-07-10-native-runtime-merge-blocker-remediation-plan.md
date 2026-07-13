@@ -2019,6 +2019,8 @@ Task 10 evidence on 2026-07-11:
 - [x] Remove elevated Windows diagnostics authority from caller-provided paths.
 - [x] Keep Linux pkg-config metadata relocatable across documented install-time
   prefixes.
+- [x] Declare the Linux preview runtime's CMake 3.12 floor without raising the
+  helper-only CMake 3.10 floor.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
@@ -2174,6 +2176,15 @@ Fresh-review evidence on 2026-07-11:
   independent build/package review found the fix coherent. Linux target-host
   CMake execution and current-head CI remain `not run` on this macOS host;
   Task 9 Step 6 remains open.
+- RED, verified locally: the Linux layout suite failed 1 test on 2026-07-13
+  because the opt-in runtime linked the CMake 3.12-era imported libcurl target
+  while the only declared project floor was CMake 3.10.
+- Linux runtime CMake-floor GREEN on 2026-07-13, verified locally: runtime
+  configuration now fails clearly below CMake 3.12, while the runtime-off
+  helper retains CMake 3.10 compatibility. The Linux README and native SDK guide
+  state the split literally, and the affected Linux layout, native SDK docs,
+  native retail, and merge-gate docs set passed 24/24. CMake 3.10/3.11
+  target-host configuration and current-head CI remain `not run` on this host.
 - Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
   the repository's existing info-only diagnostics; the focused affected Dart
   and docs suites passed 52/52; both managed targets compiled; and the focused

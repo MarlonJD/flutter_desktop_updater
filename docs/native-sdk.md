@@ -151,6 +151,10 @@ release workflow publishes that exact verified package.
 
 Build, test, and install the Linux helper from source on the target host:
 
+The helper-only target supports CMake 3.10+, while the opt-in preview runtime
+requires CMake 3.12+ for its imported libcurl target. The build-and-test command
+below requires CMake 3.14+ because it also enables the native test suite.
+
 ```sh
 cmake -S linux/native -B linux/native/build \
   -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON \

@@ -94,6 +94,24 @@ void main() {
     }
   });
 
+  test("Linux preview declares the CMake floor required by CURL target", () {
+    final nativeCmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final readme = readRequiredFile("linux/native/README.md");
+    final runtimeFloor = nativeCmake.indexOf(
+      'if(DESKTOP_UPDATER_NATIVE_RUNTIME AND CMAKE_VERSION VERSION_LESS "3.12")',
+    );
+    final curlLookup = nativeCmake.indexOf("find_package(CURL REQUIRED)");
+
+    expect(runtimeFloor, greaterThanOrEqualTo(0));
+    expect(curlLookup, greaterThan(runtimeFloor));
+    expect(
+      nativeCmake,
+      contains("The native runtime requires CMake 3.12 or later"),
+    );
+    expect(readme, contains("CMake 3.12 or later"));
+    expect(readme, contains("Native tests require CMake 3.14"));
+  });
+
   test("Linux helper safety behavior lives in native source", () {
     final plugin = File("linux/desktop_updater_plugin.cc").readAsStringSync();
     final source = readRequiredFile(

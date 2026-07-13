@@ -7,6 +7,10 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
 
+if(DESKTOP_UPDATER_NATIVE_RUNTIME AND CMAKE_VERSION VERSION_LESS "3.12")
+  message(FATAL_ERROR "The native runtime requires CMake 3.12 or later")
+endif()
+
 set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
   ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
 add_library(desktop_updater_native STATIC
