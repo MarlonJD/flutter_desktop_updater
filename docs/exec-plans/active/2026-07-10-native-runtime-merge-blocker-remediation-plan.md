@@ -1917,12 +1917,12 @@ Draft the corrected PR body for the user; do not post it through a connector.
 ## Verification
 
 - Task 10 complete local ladder: `verified locally`; generated fixtures,
-  repository format, analysis, 659 Flutter tests with 3 explicit skips, pub
+  repository format, analysis, 660 Flutter tests with 3 explicit skips, pub
   dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, the exact macOS 10.14
   five-source typecheck, the external SwiftPM consumer, and diff check exited
   0.
 - Current-head macOS, Windows, and Linux target-host CI: `verified in CI` in
-  successful push run `29290035977` for commit `423e29a`. The run includes both
+  successful push run `29291937840` for commit `87a2adf`. The run includes both
   Flutter macOS integrations, native ZIP smokes on all three platforms,
   Windows CTest/Release NuGet/P/Invoke consumers, and Linux installed
   CMake/pkg-config consumers.
@@ -2492,8 +2492,8 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   overrides, and MethodChannel surface remain covered. The focused facade,
   MethodChannel, controller, generated fixture, and conformance group passed
   61/61; no schema-v3 or native result-field incompatibility was found.
-- CI and release-truth pass: GitHub Actions run `29290035977` was queried again
-  and reports `success` for implementation commit `423e29a`, including its
+- CI and release-truth pass: GitHub Actions run `29291937840` was queried again
+  and reports `success` for implementation commit `87a2adf`, including its
   macOS, Windows, Linux, Dart, package-consumer, and candidate CLI jobs. The
   Windows signed Inno and macOS signed/notarized DMG and PKG credential lanes
   remain `not run`. Runtime and CI artifacts remain `candidate-only`.
@@ -2501,6 +2501,34 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   and locally executable remediation work is green, but the validated Task 6
   P0s are intentionally owned by the approved follow-up implementation plan.
   PR #65: not merge-ready.
+
+### Final CI race remediation follow-up on 2026-07-14
+
+- macOS ZIP smoke RED, verified in CI: push run `29291639192` reached
+  `installAndRelaunch scheduled 2.7.1`, then the workflow asserted asynchronous
+  helper cleanup evidence immediately after the version changed. The exact
+  macOS 10.14 fallback typecheck, root SwiftPM tests, and external consumer had
+  already passed; the failure was isolated to evidence synchronization.
+- Source-contract RED, verified locally: the new smoke contract test failed
+  because the workflow did not wait for the complete owned-staging and helper
+  diagnostics evidence set.
+- GREEN, verified locally: the bounded poll now requires version `2.7.1`, the
+  owned staging directory to be empty, move and cleanup diagnostics, and a
+  nonempty runtime diagnostics file before continuing. The final strict
+  assertions remain unchanged. The focused smoke and merge-gate group passed
+  21/21; formatting and diff checks were clean; scoped analysis exited 0 with
+  the two existing info-only diagnostics.
+- GREEN, verified in CI: push run `29291937840` for commit `87a2adf` completed
+  successfully across all ordinary macOS, Windows, Linux, Dart, package
+  consumer, and candidate CLI jobs. The macOS native runtime ZIP smoke passed.
+  Credential-gated signed/notarized artifact lanes remain `not run`.
+- Final local Flutter suite after the regression test: 660 passes with 3
+  explicit skips.
+- Post-fix four-pass `killcritic-complete-review` delta found no additional P0
+  or P1. The known Task 6 P0s remain unchanged: no cross-process target lock or
+  durable journal/recovery, and no fd/handle-relative mutation stable across
+  the validation-to-mutation interval. Verdict: `BLOCK / NO-GO`; runtime status:
+  `candidate-only`; PR #65: not merge-ready.
 
 ## Final Acceptance Checklist
 

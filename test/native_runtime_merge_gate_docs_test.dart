@@ -107,12 +107,12 @@ void main() {
 
   test("current-head ledger records fresh local evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("659 passes"));
+    expect(ledger, contains("660 passes"));
     expect(ledger, contains("3 explicit skips"));
     expect(ledger, contains("0 warnings"));
     expect(ledger, contains("1 hint"));
     expect(ledger, contains("52 tests"));
-    expect(ledger, contains("29290035977"));
+    expect(ledger, contains("29291937840"));
     expect(ledger, contains("swift run --package-path example/native/macos"));
   });
 
@@ -128,7 +128,7 @@ void main() {
       "killcritic-complete-review",
       "No additional P0 or P1",
       "0 warnings and 1 hint",
-      "29290035977",
+      "29291937840",
       "BLOCK / NO-GO",
       "PR #65: not merge-ready",
     ]) {

@@ -18,26 +18,26 @@ configured-but-unexecuted workflow.
 | Lane | Status | Current evidence |
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
-| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 659 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
+| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 660 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
 | macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 52 tests on this macOS host |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
-| Flutter macOS SwiftPM build and integration | `verified in CI` | Build and integration passed in push run `29290035977` |
-| Flutter macOS CocoaPods build and integration | `verified in CI` | Build and integration passed in push run `29290035977` with the exact fallback boundary unchanged |
-| macOS normal ZIP smoke | `verified in CI` | Native consumer ZIP smoke passed in push run `29290035977` |
-| Windows Unicode and relative redirect CTest | `verified in CI` | The named target-host CTest gate passed in push run `29290035977` |
-| Windows provenance, lifecycle, and C ABI CTest | `verified in CI` | Standalone CTest and real-DLL managed tests passed in push run `29290035977` |
+| Flutter macOS SwiftPM build and integration | `verified in CI` | Build and integration passed in push run `29291937840` |
+| Flutter macOS CocoaPods build and integration | `verified in CI` | Build and integration passed in push run `29291937840` with the exact fallback boundary unchanged |
+| macOS normal ZIP smoke | `verified in CI` | Native consumer ZIP smoke passed in push run `29291937840` |
+| Windows Unicode and relative redirect CTest | `verified in CI` | The named target-host CTest gate passed in push run `29291937840` |
+| Windows provenance, lifecycle, and C ABI CTest | `verified in CI` | Standalone CTest and real-DLL managed tests passed in push run `29291937840` |
 | Windows source-contract target and reparse validation | `verified locally` | Dart source-contract tests verified the fail-closed target/reparse checks; this is not junction execution evidence |
 | Windows junction/reparse transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; safe handle-relative transaction mutation is not implemented |
-| Windows Release NuGet isolated P/Invoke consumer | `verified in CI` | Isolated restore, candidate DLL hash proof, and P/Invoke execution passed in push run `29290035977` |
-| Windows normal ZIP smoke | `verified in CI` | The packaged .NET runtime used the real DLL/helper and completed install, cleanup, and diagnostics in push run `29290035977` |
-| Linux native tamper CTest | `verified in CI` | The named target-host native tamper gate passed in push run `29290035977` |
-| Linux installed CMake consumer | `verified in CI` | Configure, build, and execution from the installed prefix passed in push run `29290035977` |
-| Linux standard and multiarch pkg-config consumers | `verified in CI` | Both installed-prefix compile/link/run consumers exited 0 in push run `29290035977` |
+| Windows Release NuGet isolated P/Invoke consumer | `verified in CI` | Isolated restore, candidate DLL hash proof, and P/Invoke execution passed in push run `29291937840` |
+| Windows normal ZIP smoke | `verified in CI` | The packaged .NET runtime used the real DLL/helper and completed install, cleanup, and diagnostics in push run `29291937840` |
+| Linux native tamper CTest | `verified in CI` | The named target-host native tamper gate passed in push run `29291937840` |
+| Linux installed CMake consumer | `verified in CI` | Configure, build, and execution from the installed prefix passed in push run `29291937840` |
+| Linux standard and multiarch pkg-config consumers | `verified in CI` | Both installed-prefix compile/link/run consumers exited 0 in push run `29291937840` |
 | Linux mount/bind transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; fd-relative mount/bind transaction mutation is not implemented |
 | Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | The standalone-helper design is approved, but Task 6 implementation and target-host recovery evidence are pending |
-| Linux normal ZIP smoke | `verified in CI` | Native runtime ZIP smoke passed in push run `29290035977` |
-| Current remediation head in GitHub Actions | `verified in CI` | Push run `29290035977` completed successfully for commit `423e29a`; the credential-gated notarized publish job was skipped |
+| Linux normal ZIP smoke | `verified in CI` | Native runtime ZIP smoke passed in push run `29291937840` |
+| Current remediation head in GitHub Actions | `verified in CI` | Push run `29291937840` completed successfully for commit `87a2adf`; the credential-gated notarized publish job was skipped |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | macOS signed/notarized PKG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | Windows signed Inno smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
