@@ -68,87 +68,93 @@ class SafeZipExtractor {
     }
 
     await preflight(archiveFile, rejectSymlinks: rejectSymlinks);
-    final archive = ZipDecoder().decodeBytes(await archiveFile.readAsBytes());
-    _validateDecodedArchive(
-      archive,
-      destination: destination,
-      rejectSymlinks: rejectSymlinks,
-      maximumArchiveEntries: maximumArchiveEntries,
-      maximumUncompressedBytes: maximumUncompressedBytes,
-      maximumSingleEntryBytes: maximumSingleEntryBytes,
-    );
-
-    await destination.parent.create(recursive: true);
-    final scratch = await destination.parent.createTemp(
-      ".desktop_updater_extract_",
-    );
-    final root = path.normalize(path.absolute(scratch.path));
-    final filePermissions = <int, List<String>>{};
-    final directoryPermissions = <String, int>{};
-    var decodedUncompressedBytes = 0;
-
+    final input = InputFileStream(archiveFile.path);
     try {
-      for (final entry in archive.files) {
-        final relativePath = normalizeArchivePath(entry.name);
-        if (relativePath.isEmpty) {
-          continue;
-        }
-        final destinationPath = path.normalize(path.join(root, relativePath));
+      final archive = ZipDecoder().decodeStream(input);
+      _validateDecodedArchive(
+        archive,
+        destination: destination,
+        rejectSymlinks: rejectSymlinks,
+        maximumArchiveEntries: maximumArchiveEntries,
+        maximumUncompressedBytes: maximumUncompressedBytes,
+        maximumSingleEntryBytes: maximumSingleEntryBytes,
+      );
 
-        if (entry.isDirectory) {
-          await Directory(destinationPath).create(recursive: true);
-          _recordDirectoryPermissions(
-            directoryPermissions,
+      await destination.parent.create(recursive: true);
+      final scratch = await destination.parent.createTemp(
+        ".desktop_updater_extract_",
+      );
+      final root = path.normalize(path.absolute(scratch.path));
+      final filePermissions = <int, List<String>>{};
+      final directoryPermissions = <String, int>{};
+      var decodedUncompressedBytes = 0;
+
+      try {
+        for (final entry in archive.files) {
+          final relativePath = normalizeArchivePath(entry.name);
+          if (relativePath.isEmpty) {
+            continue;
+          }
+          final destinationPath = path.normalize(path.join(root, relativePath));
+
+          if (entry.isDirectory) {
+            await Directory(destinationPath).create(recursive: true);
+            _recordDirectoryPermissions(
+              directoryPermissions,
+              destinationPath,
+              entry.unixPermissions,
+            );
+            continue;
+          }
+
+          await Directory(path.dirname(destinationPath))
+              .create(recursive: true);
+          final output = OutputFileStream(destinationPath);
+          final remainingTotal =
+              maximumUncompressedBytes - decodedUncompressedBytes;
+          final maximumEntryOutput = remainingTotal < maximumSingleEntryBytes
+              ? remainingTotal
+              : maximumSingleEntryBytes;
+          final limited = _LimitedOutputStream(output, maximumEntryOutput);
+          try {
+            entry.writeContent(limited);
+          } finally {
+            limited.closeSync();
+          }
+          if (limited.length != entry.size) {
+            throw FormatException(
+              "ZIP entry decoded size differs from metadata: ${entry.name}",
+            );
+          }
+          decodedUncompressedBytes += limited.length;
+          _recordFilePermissions(
+            filePermissions,
             destinationPath,
             entry.unixPermissions,
           );
-          continue;
         }
 
-        await Directory(path.dirname(destinationPath)).create(recursive: true);
-        final output = OutputFileStream(destinationPath);
-        final remainingTotal =
-            maximumUncompressedBytes - decodedUncompressedBytes;
-        final maximumEntryOutput = remainingTotal < maximumSingleEntryBytes
-            ? remainingTotal
-            : maximumSingleEntryBytes;
-        final limited = _LimitedOutputStream(output, maximumEntryOutput);
-        try {
-          entry.writeContent(limited);
-        } finally {
-          limited.closeSync();
-        }
-        if (limited.length != entry.size) {
-          throw FormatException(
-            "ZIP entry decoded size differs from metadata: ${entry.name}",
+        await _applyUnixPermissions(filePermissions, targetPlatform);
+
+        final directories = directoryPermissions.entries.toList()
+          ..sort((a, b) => b.key.length.compareTo(a.key.length));
+        for (final directory in directories) {
+          await _applyUnixPermissions(
+            {
+              directory.value: [directory.key],
+            },
+            targetPlatform,
           );
         }
-        decodedUncompressedBytes += limited.length;
-        _recordFilePermissions(
-          filePermissions,
-          destinationPath,
-          entry.unixPermissions,
-        );
+        await destination.create(recursive: true);
+        await _mergeDirectory(scratch, destination);
+      } finally {
+        if (await scratch.exists()) {
+          await scratch.delete(recursive: true);
+        }
       }
-
-      await _applyUnixPermissions(filePermissions, targetPlatform);
-
-      final directories = directoryPermissions.entries.toList()
-        ..sort((a, b) => b.key.length.compareTo(a.key.length));
-      for (final directory in directories) {
-        await _applyUnixPermissions(
-          {
-            directory.value: [directory.key],
-          },
-          targetPlatform,
-        );
-      }
-      await destination.create(recursive: true);
-      await _mergeDirectory(scratch, destination);
     } finally {
-      if (await scratch.exists()) {
-        await scratch.delete(recursive: true);
-      }
+      input.closeSync();
     }
   }
 }

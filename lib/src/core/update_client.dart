@@ -236,6 +236,39 @@ class UpdateClient {
     );
   }
 
+  Future<void> _downloadArtifact(
+    ReleaseArtifact artifact,
+    File destination, {
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+  }) async {
+    final transport = _transport;
+    if (transport is BoundedUpdateTransport) {
+      await transport.downloadBounded(
+        artifact.url,
+        destination,
+        maximumBytes: artifact.length,
+        onProgress: onProgress,
+      );
+      return;
+    }
+
+    await transport.download(
+      artifact.url,
+      destination,
+      onProgress: onProgress,
+    );
+    final downloadedBytes = await destination.length();
+    if (downloadedBytes <= artifact.length) {
+      return;
+    }
+    await destination.delete();
+    throw UpdateDownloadSizeLimitException(
+      source: artifact.url,
+      maximumBytes: artifact.length,
+      actualBytes: downloadedBytes,
+    );
+  }
+
   /// Downloads, verifies, extracts, and stages [descriptor].
   Future<UpdateStageResult> downloadVerifyAndStage({
     required ReleaseDescriptor descriptor,
@@ -264,8 +297,8 @@ class UpdateClient {
     );
 
     try {
-      await _transport.download(
-        descriptor.artifact.url,
+      await _downloadArtifact(
+        descriptor.artifact,
         artifactFile,
         onProgress: onProgress,
       );

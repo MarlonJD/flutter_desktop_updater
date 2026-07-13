@@ -185,9 +185,148 @@ void main() {
 
       expect(transport.downloadedSources, <Uri>[archiveUrl, releaseUrl]);
     });
+
+    test("UpdateClient bounds artifact transfer to descriptor length",
+        () async {
+      final artifactUrl =
+          Uri.parse("https://updates.example.test/artifact.zip");
+      final transport = _ArtifactRecordingTransport(artifactUrl);
+      final client = UpdateClient(
+        appArchiveUrl:
+            Uri.parse("https://updates.example.test/app-archive.json"),
+        currentVersion: DesktopVersionInfo.parse("1.0.0"),
+        platform: "linux",
+        transport: transport,
+      );
+      final descriptor = ReleaseDescriptor(
+        schemaVersion: 3,
+        packageId: "com.example.app",
+        appName: "Example",
+        version: "2.0.0",
+        buildNumber: 200,
+        platform: "linux",
+        channel: "stable",
+        artifact: ReleaseArtifact(
+          kind: "zip",
+          url: artifactUrl,
+          sha256: "a" * 64,
+          length: 123,
+        ),
+        install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+        minimumUpdaterVersion: "2.0.0",
+        generatedAt: DateTime.utc(2026, 7, 13),
+      );
+
+      await expectLater(
+        client.downloadVerifyAndStage(descriptor: descriptor),
+        throwsA(isA<_ArtifactTransferStopped>()),
+      );
+
+      expect(transport.unboundedSources, isEmpty);
+      expect(transport.boundedCalls, <(Uri, int)>[(artifactUrl, 123)]);
+    });
+
+    test("built-in artifact overrun removes partials and owned stage",
+        () async {
+      final root = await Directory.systemTemp.createTemp("artifact_limit_");
+      addTearDown(() => root.delete(recursive: true));
+      final artifact = File(path.join(root.path, "oversized.zip"));
+      final bytes = utf8.encode("oversized");
+      await artifact.writeAsBytes(bytes);
+      final client = UpdateClient(
+        appArchiveUrl: Uri.file(path.join(root.path, "app-archive.json")),
+        currentVersion: DesktopVersionInfo.parse("1.0.0"),
+        platform: "linux",
+        stagingParent: root,
+      );
+
+      await expectLater(
+        client.downloadVerifyAndStage(
+          descriptor: _artifactDescriptor(
+            artifact.uri,
+            length: bytes.length - 1,
+          ),
+        ),
+        throwsA(isA<UpdateDownloadSizeLimitException>()),
+      );
+
+      expect(await artifact.exists(), isTrue);
+      expect(await _ownedStages(root), isEmpty);
+      expect(
+        await root
+            .list()
+            .where((entity) => entity.path.endsWith(".part"))
+            .toList(),
+        isEmpty,
+      );
+    });
+
+    test("legacy artifact overrun is rejected and cleans owned stage",
+        () async {
+      final root = await Directory.systemTemp.createTemp("artifact_limit_");
+      addTearDown(() => root.delete(recursive: true));
+      final artifactUrl =
+          Uri.parse("https://updates.example.test/oversized.zip");
+      final client = UpdateClient(
+        appArchiveUrl:
+            Uri.parse("https://updates.example.test/app-archive.json"),
+        currentVersion: DesktopVersionInfo.parse("1.0.0"),
+        platform: "linux",
+        stagingParent: root,
+        transport: _LegacyArtifactTransport(List<int>.filled(124, 1)),
+      );
+
+      await expectLater(
+        client.downloadVerifyAndStage(
+          descriptor: _artifactDescriptor(artifactUrl, length: 123),
+        ),
+        throwsA(isA<UpdateDownloadSizeLimitException>()),
+      );
+
+      expect(await _ownedStages(root), isEmpty);
+    });
   });
 
   group("bounded zip staging", () {
+    test("Dart ZIP decoding remains file-backed", () {
+      final source =
+          File("lib/src/core/safe_zip_extractor.dart").readAsStringSync();
+
+      expect(source, contains("InputFileStream(archiveFile.path)"));
+      expect(source, contains("ZipDecoder().decodeStream("));
+      expect(source, isNot(contains("archiveFile.readAsBytes()")));
+      expect(source, contains("input.closeSync()"));
+    });
+
+    test("file-backed ZIP input closes after successful extraction", () async {
+      final fixture = await _ZipFixture.create(
+        Archive()..addFile(ArchiveFile.string("file.txt", "content")),
+      );
+      addTearDown(fixture.delete);
+
+      await const SafeZipExtractor().extract(
+        archiveFile: fixture.archive,
+        destination: fixture.destination,
+        platform: "linux",
+      );
+      final renamed = await fixture.archive.rename(
+        path.join(fixture.root.path, "renamed.zip"),
+      );
+
+      expect(await renamed.exists(), isTrue);
+      expect(
+        await fixture.root
+            .list()
+            .where(
+              (entity) => path.basename(entity.path).startsWith(
+                    ".desktop_updater_extract_",
+                  ),
+            )
+            .toList(),
+        isEmpty,
+      );
+    });
+
     test("native-compatible archive defaults are exact", () {
       const extractor = SafeZipExtractor();
 
@@ -550,6 +689,37 @@ String _descriptorJson(Uri artifactUrl) => jsonEncode(<String, Object?>{
       "generatedAt": DateTime.utc(2026, 7, 13).toIso8601String(),
     });
 
+ReleaseDescriptor _artifactDescriptor(Uri artifactUrl, {required int length}) {
+  return ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.app",
+    appName: "Example",
+    version: "2.0.0",
+    buildNumber: 200,
+    platform: "linux",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: artifactUrl,
+      sha256: "a" * 64,
+      length: length,
+    ),
+    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    minimumUpdaterVersion: "2.0.0",
+    generatedAt: DateTime.utc(2026, 7, 13),
+  );
+}
+
+Future<List<FileSystemEntity>> _ownedStages(Directory parent) {
+  return parent
+      .list()
+      .where(
+        (entity) =>
+            path.basename(entity.path).startsWith("desktop_updater_stage_"),
+      )
+      .toList();
+}
+
 Future<ReleaseDescriptor> _zipDescriptor(
   File archive, {
   required String platform,
@@ -658,6 +828,59 @@ class _LegacyMapTransport implements UpdateTransport {
     downloadedSources.add(source);
     await destination.create(recursive: true);
     await destination.writeAsString(responses[source]!);
+  }
+}
+
+class _ArtifactRecordingTransport implements BoundedUpdateTransport {
+  _ArtifactRecordingTransport(this.artifactUrl);
+
+  final Uri artifactUrl;
+  final List<Uri> unboundedSources = <Uri>[];
+  final List<(Uri, int)> boundedCalls = <(Uri, int)>[];
+
+  @override
+  Future<void> download(
+    Uri source,
+    File destination, {
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
+  }) async {
+    unboundedSources.add(source);
+    throw StateError("Artifact download must be bounded.");
+  }
+
+  @override
+  Future<void> downloadBounded(
+    Uri source,
+    File destination, {
+    required int maximumBytes,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
+  }) async {
+    boundedCalls.add((source, maximumBytes));
+    if (source == artifactUrl) {
+      throw _ArtifactTransferStopped();
+    }
+    throw StateError("Unexpected bounded source: $source");
+  }
+}
+
+class _ArtifactTransferStopped implements Exception {}
+
+class _LegacyArtifactTransport implements UpdateTransport {
+  _LegacyArtifactTransport(this.bytes);
+
+  final List<int> bytes;
+
+  @override
+  Future<void> download(
+    Uri source,
+    File destination, {
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
+  }) async {
+    await destination.create(recursive: true);
+    await destination.writeAsBytes(bytes);
   }
 }
 

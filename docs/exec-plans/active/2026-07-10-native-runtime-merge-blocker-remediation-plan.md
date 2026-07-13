@@ -2021,6 +2021,8 @@ Task 10 evidence on 2026-07-11:
   prefixes.
 - [x] Declare the Linux preview runtime's CMake 3.12 floor without raising the
   helper-only CMake 3.10 floor.
+- [x] Bound stable Flutter artifact transfer and keep Dart ZIP decoding
+  file-backed.
 - [ ] Resolve the stable Flutter metadata-authenticity default through an
   explicit public compatibility decision.
 - [ ] Implement and prove the approved cross-platform privileged helper design.
@@ -2185,6 +2187,21 @@ Fresh-review evidence on 2026-07-11:
   state the split literally, and the affected Linux layout, native SDK docs,
   native retail, and merge-gate docs set passed 24/24. CMake 3.10/3.11
   target-host configuration and current-head CI remain `not run` on this host.
+- Stable Flutter artifact-bound RED on 2026-07-13, verified locally: the
+  resource-limit suite reached 24 passes and 2 failures because artifact
+  transfer still used the unbounded transport path and Dart ZIP decoding read
+  the complete compressed archive into memory.
+- Stable Flutter artifact-bound GREEN on 2026-07-13, verified locally: built-in
+  transports now enforce the descriptor artifact length in flight, compatible
+  legacy custom transports reject an overrun immediately after download, and
+  Dart extraction decodes from a file-backed input retained through lazy entry
+  writes. Focused review found no Critical or Important issue. Added cleanup
+  regressions prove built-in and legacy overruns remove partial/owned stages,
+  and successful extraction closes the archive input and removes scratch. The
+  focused suite passed 29/29; the affected transport, extractor, client-trust,
+  ZIP compatibility, and end-to-end set passed 67/67; focused analysis reported
+  no issues; formatting and `git diff --check` passed. Target-host and CI lanes
+  remain `not run`.
 - Pause handoff on 2026-07-11: `flutter analyze --no-fatal-infos` exited 0 with
   the repository's existing info-only diagnostics; the focused affected Dart
   and docs suites passed 52/52; both managed targets compiled; and the focused
