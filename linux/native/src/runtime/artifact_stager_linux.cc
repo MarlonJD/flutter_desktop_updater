@@ -75,6 +75,7 @@ LinuxStagedArtifact StageLinuxZip(const std::string& archive_path,
         stage.path + "/.desktop_updater_release_manifest.json",
         std::ios::binary);
     manifest << EncodeCanonicalJson(descriptor.raw) << "\n";
+    manifest.close();
     if (!manifest) {
       throw std::runtime_error("Unable to write release manifest.");
     }
