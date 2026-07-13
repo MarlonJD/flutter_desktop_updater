@@ -142,6 +142,17 @@ void main() {
     expect(tests, contains("StagingCleanupCannotDeleteInstallRoot"));
   });
 
+  test("Linux runtime artifact handoff uses a non-temporary install root", () {
+    final artifactTest = readRequiredFile(
+      "linux/native/test/runtime/artifact_stager_test.cc",
+    );
+
+    expect(artifactTest, contains('WorkingPath("_install")'));
+    expect(artifactTest, contains('TemporaryPath("_staging_parent")'));
+    expect(artifactTest, contains("valid_handoff.error"));
+    expect(artifactTest, isNot(contains('TemporaryPath("_install")')));
+  });
+
   test("Linux CI runs standalone native tests with zero-test detection", () {
     final workflow = File(
       ".github/workflows/desktop-updater-ci.yml",

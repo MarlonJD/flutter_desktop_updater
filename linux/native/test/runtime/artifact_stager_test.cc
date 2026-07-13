@@ -34,6 +34,15 @@ std::string TemporaryPath(const std::string& suffix) {
          "/desktop_updater_linux_stager_" + std::to_string(getpid()) + suffix;
 }
 
+std::string WorkingPath(const std::string& suffix) {
+  char canonical_root[PATH_MAX];
+  if (realpath(".", canonical_root) == nullptr) {
+    throw std::runtime_error("Unable to resolve Linux test working path.");
+  }
+  return std::string(canonical_root) + "/desktop_updater_linux_stager_" +
+         std::to_string(getpid()) + suffix;
+}
+
 void WriteExecutableZip(const std::string& archive_path,
                         const std::string& source_path) {
   std::ofstream source(source_path, std::ios::binary);
@@ -96,7 +105,7 @@ int main(int argument_count, char** arguments) {
   const std::string source = TemporaryPath("_source");
   const std::string staging_parent = TemporaryPath("_staging_parent");
   std::string destination;
-  const std::string install_root = TemporaryPath("_install");
+  const std::string install_root = WorkingPath("_install");
   try {
     RemoveStagingDirectory(archive);
     RemoveStagingDirectory(source);
@@ -130,7 +139,9 @@ int main(int argument_count, char** arguments) {
             "com.example.native-contract", {}, "",
             staged.provenance.marker_sha256);
     if (!valid_handoff.ok) {
-      throw std::runtime_error("Validated Linux install handoff was rejected.");
+      throw std::runtime_error(
+          "Validated Linux install handoff was rejected: " +
+          valid_handoff.error);
     }
     const auto protected_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(
