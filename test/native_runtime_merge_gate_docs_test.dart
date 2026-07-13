@@ -107,7 +107,7 @@ void main() {
 
   test("current-head ledger records fresh local evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("658 passes"));
+    expect(ledger, contains("659 passes"));
     expect(ledger, contains("3 explicit skips"));
     expect(ledger, contains("0 warnings"));
     expect(ledger, contains("1 hint"));

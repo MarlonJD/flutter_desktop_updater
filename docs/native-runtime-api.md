@@ -18,7 +18,7 @@ configured-but-unexecuted workflow.
 | Lane | Status | Current evidence |
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
-| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 658 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
+| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 659 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
 | macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 52 tests on this macOS host |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |

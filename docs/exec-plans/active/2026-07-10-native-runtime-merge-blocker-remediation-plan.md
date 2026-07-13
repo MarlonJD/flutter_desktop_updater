@@ -1917,7 +1917,7 @@ Draft the corrected PR body for the user; do not post it through a connector.
 ## Verification
 
 - Task 10 complete local ladder: `verified locally`; generated fixtures,
-  repository format, analysis, 658 Flutter tests with 3 explicit skips, pub
+  repository format, analysis, 659 Flutter tests with 3 explicit skips, pub
   dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, the exact macOS 10.14
   five-source typecheck, the external SwiftPM consumer, and diff check exited
   0.
@@ -2451,7 +2451,7 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   version, changelog heading, or lockfile changed.
 - Final Task 10 ladder, verified locally: generated fixtures were current;
   formatting checked 218 files with 0 changes; repository analysis exited 0
-  with 387 info-only diagnostics; full Flutter passed 658 tests with 3
+  with 387 info-only diagnostics; full Flutter passed 659 tests with 3
   explicit opt-in skips; root SwiftPM passed 52/52; and `git diff --check`
   exited 0. The first repository publication dry run exited 65 solely because
   the in-progress tracked docs test was modified; it is not counted as GREEN.
