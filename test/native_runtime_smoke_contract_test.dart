@@ -204,6 +204,37 @@ void main() {
     );
   });
 
+  test("Windows ZIP smoke outlives helper retries and preserves diagnostics",
+      () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
+    final end = workflow.indexOf(
+      "- name: Windows native runtime Inno smoke",
+      start,
+    );
+
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lane = workflow.substring(start, end);
+    expect(
+      lane,
+      contains(r"for ($attempt = 0; $attempt -lt 600; $attempt++)"),
+    );
+    final diagnosticsDump = lane.indexOf(
+      r"Get-Content -LiteralPath $diagnosticsPath "
+      "-ErrorAction SilentlyContinue",
+    );
+    final versionFailure = lane.indexOf(
+      "Windows ZIP runtime smoke did not install version 2.7.1.",
+    );
+    final smokeCleanup = lane.indexOf(
+      r"Remove-Item -LiteralPath $smokeRoot -Recurse -Force",
+    );
+    expect(diagnosticsDump, greaterThanOrEqualTo(0));
+    expect(versionFailure, greaterThan(diagnosticsDump));
+    expect(smokeCleanup, greaterThan(versionFailure));
+  });
+
   test("direct Flutter smokes hand off owned verified provenance", () {
     final tool = readFile("example/tool/updater_smoke.dart");
     final app = readFile("example/lib/app.dart");

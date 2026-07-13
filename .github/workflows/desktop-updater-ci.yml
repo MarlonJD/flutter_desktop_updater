@@ -317,7 +317,7 @@ jobs:
             & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log $diagnosticsPath
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
-            for ($attempt = 0; $attempt -lt 120; $attempt++) {
+            for ($attempt = 0; $attempt -lt 600; $attempt++) {
               $versionFile = Join-Path $install "version.txt"
               $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
               $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
@@ -328,7 +328,10 @@ jobs:
               if ($versionReady -and $stagingClean -and $cleanupComplete) { break }
               Start-Sleep -Milliseconds 250
             }
-            if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") {
+            if (-not $versionReady -or -not $stagingClean -or -not $cleanupComplete) {
+              Get-Content -LiteralPath $diagnosticsPath -ErrorAction SilentlyContinue
+            }
+            if (-not $versionReady) {
               throw "Windows ZIP runtime smoke did not install version 2.7.1."
             }
             if (-not $stagingClean) {
