@@ -1,6 +1,21 @@
 import "dart:async";
 import "dart:io";
 
+// The direct helper smoke intentionally exercises the package's internal
+// provenance handoff instead of expanding the released Flutter API.
+// ignore: implementation_imports
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
+
+const _smokePackageId = "com.example.desktop_updater";
+const _smokeStageNonce = "123e4567-e89b-42d3-a456-426614174000";
+const _smokeDescriptorSha256 =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const _smokeArtifactSha256 =
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const _installedIdentityFileName = ".desktop_updater_install_identity.json";
+const _installedIdentity =
+    '{"packageId":"com.example.desktop_updater","schemaVersion":1}';
+
 Future<void> main(List<String> args) async {
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
@@ -38,13 +53,24 @@ Future<void> main(List<String> args) async {
     exit(66);
   }
 
+  if (Platform.isWindows || Platform.isLinux) {
+    await File(_join(installRoot, _installedIdentityFileName)).writeAsString(
+      _installedIdentity,
+      flush: true,
+    );
+  }
+
   final tempRoot = await Directory.systemTemp.createTemp(
     "desktop_updater_smoke_",
+  );
+  final ownedStageRoot = await createOwnedStagingDirectory(
+    parent: tempRoot,
+    nonce: _smokeStageNonce,
   );
   final stagingRoot = await _prepareStagingRoot(
     appPath: appPath,
     stagedAppPath: stagedAppPath,
-    tempRoot: tempRoot,
+    stageParent: ownedStageRoot,
   );
   final markerPath = _join(tempRoot.path, "marker.txt");
   final diagnosticsLogPath =
@@ -89,6 +115,14 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  final provenance = await writeStagedUpdateProvenance(
+    stageRoot: ownedStageRoot,
+    nonce: _smokeStageNonce,
+    packageId: _smokePackageId,
+    descriptorSha256: _smokeDescriptorSha256,
+    artifactSha256: _smokeArtifactSha256,
+  );
+
   stdout
     ..writeln("Launching $executablePath")
     ..writeln("Staging update in ${stagingRoot.path}");
@@ -100,8 +134,8 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
       "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
       "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
-      if (Platform.isLinux)
-        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": "com.example.desktop_updater",
+      "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": _smokePackageId,
+      "DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256": provenance.markerSha256,
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
@@ -214,15 +248,15 @@ String _installRoot(String appPath) {
 Future<Directory> _prepareStagingRoot({
   required String appPath,
   required String? stagedAppPath,
-  required Directory tempRoot,
+  required Directory stageParent,
 }) async {
-  final stageParent = Directory(_join(tempRoot.path, "stage"));
-
   if (!Platform.isMacOS) {
+    await _copyInstallTree(
+      sourceRoot: Directory(_installRoot(appPath)),
+      destinationRoot: stageParent,
+    );
     return stageParent;
   }
-
-  await stageParent.create(recursive: true);
   final sourceAppPath = stagedAppPath ?? appPath;
   final stagedApp =
       Directory(_join(stageParent.path, _basename(sourceAppPath)));
@@ -243,6 +277,41 @@ Future<Directory> _prepareStagingRoot({
     _join(stageParent.path, ".desktop_updater_release_manifest.json"),
   ).writeAsString("{}");
   return stagedApp;
+}
+
+Future<void> _copyInstallTree({
+  required Directory sourceRoot,
+  required Directory destinationRoot,
+}) async {
+  late final String executable;
+  late final List<String> arguments;
+  if (Platform.isWindows) {
+    executable = "robocopy";
+    arguments = [
+      sourceRoot.path,
+      destinationRoot.path,
+      "/E",
+      "/COPY:DAT",
+      "/DCOPY:DAT",
+      "/R:0",
+      "/W:0",
+    ];
+  } else {
+    executable = "/bin/cp";
+    arguments = ["-a", "${sourceRoot.path}/.", destinationRoot.path];
+  }
+  final result = await Process.run(executable, arguments);
+  final succeeded = Platform.isWindows
+      ? result.exitCode >= 0 && result.exitCode < 8
+      : result.exitCode == 0;
+  if (!succeeded) {
+    throw ProcessException(
+      executable,
+      arguments,
+      "${result.stdout}${result.stderr}",
+      result.exitCode,
+    );
+  }
 }
 
 String _stagingContentRoot(String stagingPath) {

@@ -2,6 +2,11 @@ import "dart:async";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
+import "package:desktop_updater/desktop_updater_platform_interface.dart";
+// The direct helper smoke intentionally supplies verified internal provenance
+// without expanding the released Flutter API.
+// ignore: implementation_imports
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:desktop_updater_example/release_notes_examples.dart";
 import "package:flutter/material.dart";
@@ -198,20 +203,37 @@ class _HomePageState extends State<HomePage> {
     final diagnosticsLogPath =
         Platform.environment["DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"];
     final packageId = Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"];
+    final expectedProvenanceSha256 =
+        Platform.environment["DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"];
     final stagingDirectory = Directory(stagingPath);
 
-    if (!await stagingDirectory.exists()) {
+    if (!await stagingDirectory.exists() ||
+        expectedProvenanceSha256 == null ||
+        expectedProvenanceSha256.isEmpty) {
       await _writeSmokeMarker(markerPath, "staging-missing");
       return;
     }
 
+    final provenanceRoot =
+        Platform.isMacOS ? stagingDirectory.parent : stagingDirectory;
+    final provenance = await verifyStagedUpdateProvenance(
+      stageRoot: provenanceRoot,
+      expectedMarkerSha256: expectedProvenanceSha256,
+    );
+
     await _writeSmokeMarker(markerPath, "installing");
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    await _desktopUpdaterPlugin.installUpdate(
+    await DesktopUpdaterPlatform.instance.installUpdateWithContext(
       stagingPath: stagingPath,
       allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS,
       diagnosticsLogPath: diagnosticsLogPath,
       packageId: packageId,
+      stageProvenanceSha256: expectedProvenanceSha256,
+      stageProvenanceNonce: provenance.nonce,
+      stageProvenanceEntries: provenance.entries
+          .map((entry) => Map<String, Object?>.from(entry.toJson()))
+          .toList(growable: false),
+      expectedArtifactSha256: provenance.artifactSha256,
     );
   }
 

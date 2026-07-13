@@ -204,6 +204,31 @@ void main() {
     );
   });
 
+  test("direct Flutter smokes hand off owned verified provenance", () {
+    final tool = readFile("example/tool/updater_smoke.dart");
+    final app = readFile("example/lib/app.dart");
+
+    expect(tool, contains("createOwnedStagingDirectory("));
+    expect(tool, contains("_copyInstallTree("));
+    expect(tool, contains("robocopy"));
+    expect(tool, contains("executable = \"/bin/cp\""));
+    expect(tool, contains("Process.run(executable, arguments)"));
+    expect(tool, contains(".desktop_updater_install_identity.json"));
+    expect(tool, contains("Platform.isWindows || Platform.isLinux"));
+    expect(tool, contains("writeStagedUpdateProvenance("));
+    expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
+    expect(app, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
+    expect(app, contains("verifyStagedUpdateProvenance("));
+    expect(
+      app,
+      contains("DesktopUpdaterPlatform.instance.installUpdateWithContext("),
+    );
+    expect(app, contains("stageProvenanceSha256:"));
+    expect(app, contains("stageProvenanceNonce:"));
+    expect(app, contains("stageProvenanceEntries:"));
+    expect(app, contains("expectedArtifactSha256:"));
+  });
+
   test("Windows ZIP handoff does not read Inno signer metadata", () {
     final source = readFile(
       "windows/native/src/runtime/artifact_stager_windows.cpp",
