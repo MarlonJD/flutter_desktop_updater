@@ -163,9 +163,9 @@ void main() {
     expect(pluginTest, contains("desktop_updater_install_"));
     expect(
       pluginTest,
-      isNot(contains('/tmp/desktop_updater_install_XXXXXX')),
+      isNot(contains("/tmp/desktop_updater_install_XXXXXX")),
     );
-    expect(pluginTest, contains('/tmp/desktop_updater_staging_XXXXXX'));
+    expect(pluginTest, contains("/tmp/desktop_updater_staging_XXXXXX"));
   });
 
   test("Linux CI runs standalone native tests with zero-test detection", () {
