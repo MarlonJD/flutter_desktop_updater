@@ -74,10 +74,36 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
   rmdir(install_root.c_str());
   ASSERT_EQ(mkdir(install_root.c_str(), 0700), 0);
 
-  char staging_template[] = "/tmp/desktop_updater_staging_XXXXXX";
-  char* staging_root = mkdtemp(staging_template);
-  ASSERT_NE(staging_root, nullptr);
-  const auto result = native::ValidateInstallRequest({
+  char staging_template[] = "/tmp/desktop_updater_staging_parent_XXXXXX";
+  char* staging_parent = mkdtemp(staging_template);
+  ASSERT_NE(staging_parent, nullptr);
+  const std::string staging_root =
+      std::string(staging_parent) +
+      "/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  const std::string staging_bin = staging_root + "/bin";
+  const std::string staged_executable = staging_bin + "/my-app";
+  ASSERT_EQ(mkdir(staging_root.c_str(), 0700), 0);
+  ASSERT_EQ(mkdir(staging_bin.c_str(), 0700), 0);
+  ASSERT_TRUE(g_file_set_contents(staged_executable.c_str(), "", 0, nullptr));
+
+  const std::string marker =
+      "{\"artifactSha256\":\"" + std::string(64, 'a') +
+      "\",\"descriptorSha256\":\"" + std::string(64, 'b') +
+      "\",\"entries\":[{\"kind\":\"directory\",\"length\":0,\"path\":\"bin\"},"
+      "{\"kind\":\"file\",\"length\":0,\"path\":\"bin/my-app\","
+      "\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb924"
+      "27ae41e4649b934ca495991b7852b855\"}],"
+      "\"nonce\":\"123e4567-e89b-42d3-a456-426614174000\","
+      "\"packageId\":\"com.example.app\",\"schemaVersion\":1}";
+  const std::string marker_path =
+      staging_root + "/.desktop_updater_stage_provenance.json";
+  ASSERT_TRUE(g_file_set_contents(
+      marker_path.c_str(), marker.c_str(), marker.size(), nullptr));
+  g_autofree gchar* marker_sha256 = g_compute_checksum_for_string(
+      G_CHECKSUM_SHA256, marker.c_str(), marker.size());
+  ASSERT_NE(marker_sha256, nullptr);
+
+  InstallRequest request = {
       LinuxInstallOperation::kInstall,
       staging_root,
       install_root,
@@ -85,9 +111,15 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
       "com.example.app",
       {},
       "",
-  });
+  };
+  request.expected_provenance_sha256 = marker_sha256;
+  const auto result = native::ValidateInstallRequest(request);
   EXPECT_TRUE(result.ok) << result.error;
-  rmdir(staging_root);
+  unlink(marker_path.c_str());
+  unlink(staged_executable.c_str());
+  rmdir(staging_bin.c_str());
+  rmdir(staging_root.c_str());
+  rmdir(staging_parent);
   rmdir(install_root.c_str());
 }
 

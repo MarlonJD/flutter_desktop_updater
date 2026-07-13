@@ -165,7 +165,22 @@ void main() {
       pluginTest,
       isNot(contains("/tmp/desktop_updater_install_XXXXXX")),
     );
-    expect(pluginTest, contains("/tmp/desktop_updater_staging_XXXXXX"));
+    expect(
+      pluginTest,
+      contains("/tmp/desktop_updater_staging_parent_XXXXXX"),
+    );
+    expect(
+      pluginTest,
+      contains(
+        "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000",
+      ),
+    );
+    expect(
+      pluginTest,
+      contains(".desktop_updater_stage_provenance.json"),
+    );
+    expect(pluginTest, contains("g_compute_checksum_for_string"));
+    expect(pluginTest, isNot(contains("/tmp/desktop_updater_staging_XXXXXX")));
   });
 
   test("Linux CI runs standalone native tests with zero-test detection", () {
