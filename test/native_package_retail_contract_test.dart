@@ -83,23 +83,25 @@ void main() {
     );
   });
 
-  test("Linux runtime contract tests include Monocypher headers", () {
-    final cmake = readRequiredFile("linux/native/CMakeLists.txt");
-    final includeStart = cmake.indexOf(
-      "target_include_directories(desktop_updater_runtime_contract_test",
-    );
-    final includeEnd = cmake.indexOf(
-      "target_link_libraries(desktop_updater_runtime_contract_test",
-      includeStart,
-    );
+  test("native runtime contract tests include Monocypher headers", () {
+    for (final platform in <String>["windows", "linux"]) {
+      final cmake = readRequiredFile("$platform/native/CMakeLists.txt");
+      final includeStart = cmake.indexOf(
+        "target_include_directories(desktop_updater_runtime_contract_test",
+      );
+      final includeEnd = cmake.indexOf(
+        "target_link_libraries(desktop_updater_runtime_contract_test",
+        includeStart,
+      );
 
-    expect(includeStart, greaterThanOrEqualTo(0));
-    expect(includeEnd, greaterThan(includeStart));
-    expect(
-      cmake.substring(includeStart, includeEnd),
-      contains(r"${DESKTOP_UPDATER_MONOCYPHER_DIR}"),
-      reason: "shared fixture sources include optional/monocypher-ed25519.h",
-    );
+      expect(includeStart, greaterThanOrEqualTo(0), reason: platform);
+      expect(includeEnd, greaterThan(includeStart), reason: platform);
+      expect(
+        cmake.substring(includeStart, includeEnd),
+        contains(r"${DESKTOP_UPDATER_MONOCYPHER_DIR}"),
+        reason: "$platform fixture sources include monocypher-ed25519.h",
+      );
+    }
   });
 
   test("pkg-config remains relocatable across install-time prefixes", () {
