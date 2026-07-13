@@ -1828,7 +1828,7 @@ normal ZIP update smoke on macOS, Windows, and Linux
 Credential-gated signed/notarized DMG, PKG, and Inno lanes remain
 `not run` without secrets and keep the runtime candidate-only.
 
-- [x] **Step 3: Run the complete local ladder**
+- [ ] **Step 3: Run the complete local ladder**
 
 Run:
 
@@ -1870,9 +1870,11 @@ Draft the corrected PR body for the user; do not post it through a connector.
 
 ## Verification
 
-- Task 10 complete local ladder: `verified locally`; the fixture check,
-  repository format check, analysis, 601-test Flutter suite, pub dry-run,
-  49-test SwiftPM suite, and diff check all exited 0.
+- Task 10 complete local ladder: `blocked`; the fixture check, repository format
+  check, analysis, pub dry-run, 51-test SwiftPM suite, and diff check exited 0.
+  The full Flutter run reached 637 passes and 3 explicit skips with one failure:
+  the user-owned dirty execution-plan index does not yet link the existing Linux
+  distribution plan. That file remains unmodified and unstaged.
 - Current-head macOS, Windows, and Linux target-host CI: `not run`.
 - Signed/notarized DMG, PKG, and signed Inno lanes: `not run` because their
   explicit credential gates were not dispatched.
@@ -1888,7 +1890,7 @@ but its implementation and target-host evidence are pending. The runtime
 therefore remains `candidate-only`, and PR #65 is not merge-ready.
 ~~~
 
-- [ ] **Step 5: Perform the final adversarial review**
+- [x] **Step 5: Perform the final adversarial review**
 
 Run `killcritic-complete-review` again from a fresh finding list. Required
 independent passes:
@@ -2238,6 +2240,111 @@ Fresh-review evidence on 2026-07-11:
   already-present Linux distribution plan. That user change remains unmodified
   and unstaged. Windows UAC/real-DLL execution remains `not run`.
 
+### Fresh completion verification and adversarial review on 2026-07-13
+
+- Windows runtime ABI task: verified locally and committed as `e04fe90`. The
+  focused Dart contract passed 8/8, the C++14 header consumer passed strict
+  syntax checking, and the `net8.0` and `netstandard2.0` Release builds each
+  completed with 0 errors. Real Windows ABI probe execution remains `not run`.
+- Complete Task 10 ladder: blocked. Fixture generation was current; formatting
+  checked 218 files with 0 changes; analysis exited 0 with 384 info-only
+  diagnostics; the publication dry run reported 0 warnings and 1 version hint;
+  SwiftPM passed 51/51; and `git diff --check` exited 0. The full Flutter run
+  reached 637 passes and 3 explicit skips with 1 failure in
+  `test/harness_engineering_docs_test.dart`: the user-owned dirty plan index
+  does not link the existing Linux distribution plan. That file remains
+  unmodified and unstaged, so Task 10 Step 3 is open again.
+- Focused cross-domain review suites: verified locally; 132 trust, helper,
+  package-contract, schema/API, merge-gate, macOS layout, and released Flutter
+  compatibility tests passed. The exact five-file CocoaPods fallback source set
+  typechecked for `x86_64-apple-macosx10.14`, and both external SwiftPM consumer
+  packages built. The `DesktopUpdaterKit` product/import and macOS 10.15 runtime
+  floor remain unchanged.
+- `superpowers:verification-before-completion`: performed. Its fresh-evidence
+  gate rejects a completion claim because the complete Flutter command exited
+  1 and the required target-host, credential, and Task 6 evidence is absent.
+- `killcritic-complete-review`: performed serially from a fresh finding list
+  across safety/trust/destructive operations, build/link/package/consumers,
+  behavior/schema/API/compatibility, and CI/release/tracker truth. Verdict:
+  `BLOCK / NO-GO`.
+
+Validated blockers and major findings:
+
+- P0 metadata authenticity: the released `DesktopUpdaterController` and
+  `DesktopUpdater` facade construct the compatibility `UpdateClient` without
+  pinned index or descriptor verifiers. `UpdateClient.requireIndexSignature`
+  and `ArtifactVerificationPolicy.requireSignature` both default to `false`,
+  so a remotely changed index, descriptor, artifact digest, and Windows signer
+  policy can remain internally consistent without publisher authenticity. The
+  native preview is strict, but the released Flutter path requires an explicit
+  public compatibility and migration decision before this blocker can close.
+- P0 transaction safety: current macOS, Windows, and Linux helpers mutate the
+  live install through generated shell or PowerShell scripts without one
+  cross-process target lock, a durable write-ahead journal, or restartable
+  crash recovery. Process termination or power loss can leave a partial target
+  and an unowned backup. The approved privileged-helper implementation plan is
+  present but intentionally not implemented in this remediation run.
+- P0 mount/reparse race safety: path, identity, provenance, and reparse checks
+  occur before later path-string `mv`, `rm -rf`, `Remove-Item`, `Copy-Item`, and
+  `cp` operations. No fd/handle-relative mutation or stable mount/reparse
+  boundary ownership survives the validation-to-mutation interval. Task 6 must
+  provide the packaged broker/helper and target-host adversarial evidence.
+- P1 ordinary merge gate: the current full Flutter command exits 1 because the
+  execution-plan index is incomplete. The overlapping file belongs to the user
+  and was not edited or staged; ordinary CI cannot be claimed until that index
+  state is reconciled and the full command is rerun.
+
+Coverage ledger:
+
+- Baseline and scope — `FINDING`: package version 2.7.0 and candidate-only
+  runtime scope are identifiable, but Task 6 and the public trust decision are
+  intentionally incomplete.
+- Behavior and schema parity — `FINDING`: core fixture behavior is covered, but
+  Dart accepts a blank descriptor `appName` that native parsers reject, while
+  C++ accepts a whitespace-only rollout salt that Dart and Swift reject.
+- Cross-language data fidelity — `FINDING`: the Windows v1 result layout is now
+  frozen and preflighted, but the two schema-validation differences above are
+  absent from the generated negative fixtures.
+- Build graph and filesystem paths — `VERIFIED_NO_BLOCKER`: source target types,
+  install/export paths, the Linux CMake-floor split, and relocatable metadata
+  are coherent in the inspected graph and local contract checks.
+- ABI and runtime loading — `NOT_VERIFIED`: portable ABI and managed builds are
+  green, but a real packaged Windows DLL has not executed the new scalar probes
+  or mismatch path.
+- Package consumability — `NOT_VERIFIED`: local package contracts and macOS
+  consumers are green; installed Windows and Linux consumers on their target
+  hosts and the isolated runtime load remain not run.
+- Platform integration and fallback paths — `NOT_VERIFIED`: macOS SwiftPM and
+  the exact CocoaPods fallback are verified locally, while current-head Windows
+  and Linux Flutter/native lanes remain not run.
+- Trust and authenticity — `FINDING`: the released Flutter metadata path is not
+  production-authenticated by default or configurable through its facade.
+- Destructive and privileged safety — `FINDING`: target locks, durable recovery,
+  and fd/handle-relative mount/reparse-safe mutation remain unimplemented.
+- CI and test truth — `FINDING`: focused suites prove nonzero discovery, but the
+  complete local Flutter command fails and current-head CI has not run.
+- Release and publication — `NOT_VERIFIED`: signed/notarized artifact lanes are
+  not run; the runtime and uploaded assets remain candidate-only.
+- Public API, CLI, and documentation reality — `FINDING`: released Flutter and
+  MethodChannel compatibility tests pass, but the facade has no production
+  metadata-trust configuration and the published README links into excluded
+  `docs/` content.
+- Migration and compatibility — `FINDING`: safe retained-provenance legacy calls
+  and custom platform overrides pass, but changing the stable trust default
+  still requires an explicit migration policy.
+- Plan consistency and completion gates — `FINDING`: open checkboxes accurately
+  expose Task 6, target-host, credential, trust, and full-ladder gaps; therefore
+  final acceptance and merge readiness remain open.
+
+Moderate follow-ups that do not replace the blockers above: add generated
+negative fixtures for blank `appName` and whitespace-only rollout salt; fail a
+NuGet consumer clearly on unsupported RIDs instead of copying `win-x64` assets;
+and make published README links resolve within the pub archive.
+
+Current-head macOS, Windows, and Linux CI: `not run`. Credential-gated release
+lanes: `not run`. Runtime status: `candidate-only`. PR #65: not merge-ready.
+This workflow reduces omission risk but cannot guarantee that no defect remains.
+
 ## Final Acceptance Checklist
 
 - [ ] No caller-provided parent can be recursively deleted.
@@ -2255,10 +2362,10 @@ Fresh-review evidence on 2026-07-11:
 - [x] SwiftPM runtime remains macOS 10.15+ with
   `import DesktopUpdaterKit`.
 - [x] Exact CocoaPods helper + adapter source set typechecks for macOS 10.14.
-- [ ] Safe legacy Flutter install calls and custom platform overrides pass.
-- [ ] Unsafe ambiguous legacy roots fail before mutation with migration text.
+- [x] Safe legacy Flutter install calls and custom platform overrides pass.
+- [x] Unsafe ambiguous legacy roots fail before mutation with migration text.
 - [ ] NuGet contains Release DLLs and third-party notices.
 - [ ] CMake and pkg-config external consumers use installed artifacts.
 - [ ] Ordinary CI gates pass with nonzero test discovery.
-- [ ] Signed/notarized lanes are reported literally as passed or not run.
+- [x] Signed/notarized lanes are reported literally as passed or not run.
 - [ ] PR body and execution-plan state match repository evidence.
