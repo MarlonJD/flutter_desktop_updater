@@ -21,6 +21,11 @@ final class MacCrashRecoveryTests: XCTestCase {
                 point == .beforePreparedJournalFlush ? "old" : "new",
                 "fault \(point)"
             )
+            XCTAssertEqual(
+                try fixture.transactionArtifacts(),
+                [],
+                "durable state leaked after recovery at \(point)"
+            )
             fixture.remove()
         }
     }
@@ -108,6 +113,43 @@ final class MacCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(try recovery.recover(), .nothingToRecover)
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
     }
+
+    func testRecoveryRemovesOwnedLockWithoutAJournal() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+
+        XCTAssertEqual(
+            try fixture.makeRecoveryService().recover(),
+            .recovered
+        )
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+        withExtendedLifetime(transaction) {}
+    }
+
+    func testRecoveryDoesNotRemoveAnotherTransactionsLock() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        let otherRecovery = MacRecoveryService(
+            targetURL: fixture.targetURL,
+            transactionID: "00000000-0000-4000-8000-000000000007",
+            expectedPayloadIdentity: fixture.verifier.identity(
+                forVersion: "new"
+            ),
+            verifier: fixture.verifier,
+            processLivenessChecker: FixedProcessLivenessChecker(
+                isAlive: false
+            )
+        )
+
+        XCTAssertEqual(try otherRecovery.recover(), .nothingToRecover)
+        XCTAssertEqual(
+            try fixture.transactionArtifacts(),
+            [".Example.app.desktop-updater-lock"]
+        )
+        withExtendedLifetime(transaction) {}
+    }
 }
 final class MacTransactionFixture {
     let transactionID = "00000000-0000-4000-8000-000000000006"
@@ -140,6 +182,7 @@ final class MacTransactionFixture {
     }
 
     func makeTransaction(
+        transactionID: String? = nil,
         ownerProcessIdentifier: Int32 = 999_999,
         faultInjector: any MacTransactionFaultInjecting =
             NoMacTransactionFaultInjector()
@@ -147,7 +190,7 @@ final class MacTransactionFixture {
         try MacFileTransaction(
             targetURL: targetURL,
             stageURL: stageURL,
-            transactionID: transactionID,
+            transactionID: transactionID ?? self.transactionID,
             ownerProcessIdentifier: ownerProcessIdentifier,
             expectedPayloadIdentity: verifier.identity(forVersion: "new"),
             verifier: verifier,
@@ -186,7 +229,7 @@ final class MacTransactionFixture {
 
     func transactionArtifacts() throws -> [String] {
         try FileManager.default.contentsOfDirectory(atPath: rootURL.path)
-            .filter { $0.contains(".desktop-updater-\(transactionID)") }
+            .filter { $0.contains(".desktop-updater") }
             .sorted()
     }
 

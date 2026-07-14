@@ -16,6 +16,10 @@ final class MacFileTransactionTests: XCTestCase {
             transaction.paths.backupName,
             ".Example.app.desktop-updater-\(fixture.transactionID).backup"
         )
+        XCTAssertEqual(
+            transaction.paths.lockName,
+            ".Example.app.desktop-updater-lock"
+        )
 
         let result = try transaction.execute()
 
@@ -23,6 +27,33 @@ final class MacFileTransactionTests: XCTestCase {
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stageURL.path))
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testSecondTransactionCannotReserveTheSameTargetBeforeMutation()
+        throws
+    {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+
+        let first = try fixture.makeTransaction()
+        let lockURL = fixture.rootURL.appendingPathComponent(
+            first.paths.lockName
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lockURL.path))
+        try withExtendedLifetime(first) {
+            XCTAssertThrowsError(
+                try fixture.makeTransaction(
+                    transactionID:
+                        "00000000-0000-4000-8000-000000000007"
+                )
+            ) { error in
+                XCTAssertEqual(
+                    error as? MacFileTransactionError,
+                    .targetBusy
+                )
+            }
+        }
     }
 
     func testRejectsSymlinkReplacementBeforeMutation() throws {

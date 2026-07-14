@@ -74,6 +74,11 @@ final class MacRecoveryService {
         let journal: MacTransactionJournal
         do {
             guard let loaded = try store.load() else {
+                if try lockOwner(directory, paths: paths)
+                    == paths.transactionID {
+                    try releaseLock(directory, paths: paths)
+                    return .recovered
+                }
                 return .nothingToRecover
             }
             journal = loaded
@@ -81,6 +86,10 @@ final class MacRecoveryService {
             throw MacRecoveryError.invalidJournal
         }
         try validate(journal, paths: paths)
+        guard try lockOwner(directory, paths: paths)
+            == paths.transactionID else {
+            throw MacRecoveryError.inconsistentState
+        }
         if processLivenessChecker.isProcessAlive(
             journal.ownerProcessIdentifier
         ) {
@@ -188,6 +197,7 @@ final class MacRecoveryService {
         } catch {
             throw MacRecoveryError.filesystemOperationFailed
         }
+        try releaseLock(directory, paths: paths)
         return .recovered
     }
 
@@ -256,6 +266,39 @@ final class MacRecoveryService {
     ) throws {
         do {
             try store.persist(journal)
+        } catch {
+            throw MacRecoveryError.filesystemOperationFailed
+        }
+    }
+
+    private func lockOwner(
+        _ directory: MacTransactionDirectory,
+        paths: MacTransactionPaths
+    ) throws -> String? {
+        do {
+            return try MacTargetLock.owner(
+                directory: directory,
+                name: paths.lockName
+            )
+        } catch {
+            throw MacRecoveryError.filesystemOperationFailed
+        }
+    }
+
+    private func releaseLock(
+        _ directory: MacTransactionDirectory,
+        paths: MacTransactionPaths
+    ) throws {
+        do {
+            try MacTargetLock.releaseExisting(
+                directory: directory,
+                name: paths.lockName,
+                transactionID: paths.transactionID
+            )
+        } catch MacFileTransactionError.targetBusy {
+            throw MacRecoveryError.inconsistentState
+        } catch MacFileTransactionError.targetIdentityChanged {
+            throw MacRecoveryError.inconsistentState
         } catch {
             throw MacRecoveryError.filesystemOperationFailed
         }
