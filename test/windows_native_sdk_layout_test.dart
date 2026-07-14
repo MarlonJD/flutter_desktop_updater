@@ -496,6 +496,22 @@ void main() {
       ),
     );
   });
+
+  test("Windows client accepts the staged canonical manifest terminator", () {
+    final stager = readRequiredFile(
+      "windows/native/src/runtime/artifact_stager_windows.cpp",
+    );
+    final client = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+
+    expect(stager, contains('EncodeCanonicalJson(descriptor.raw) << "\\n"'));
+    expect(client, contains("allow_single_trailing_newline"));
+    expect(
+      client,
+      contains('"Staged release manifest", true'),
+    );
+  });
 }
 
 String readRequiredFile(String path) {

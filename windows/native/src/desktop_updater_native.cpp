@@ -120,12 +120,18 @@ std::string Sha256Hex(const std::string& bytes) {
 
 std::string CanonicalJsonFile(const fs::path& path,
                               std::size_t maximum_bytes,
-                              const char* description) {
+                              const char* description,
+                              bool allow_single_trailing_newline = false) {
   const std::string contents =
       ReadBoundedRegularFileNoReparse(path, maximum_bytes);
+  std::string canonical = contents;
+  if (allow_single_trailing_newline && !canonical.empty() &&
+      canonical.back() == '\n') {
+    canonical.pop_back();
+  }
   const runtime::internal::JsonValue value =
-      runtime::internal::ParseJson(contents);
-  if (runtime::internal::EncodeCanonicalJson(value) != contents) {
+      runtime::internal::ParseJson(canonical);
+  if (runtime::internal::EncodeCanonicalJson(value) != canonical) {
     throw std::runtime_error(std::string(description) +
                              " must be canonical JSON.");
   }
@@ -796,7 +802,7 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
                             runtime::internal::BCryptSha256);
   const std::string release_manifest = CanonicalJsonFile(
       stage_path / kStagedReleaseManifestName, kMaximumHelperMetadataBytes,
-      "Staged release manifest");
+      "Staged release manifest", true);
 
   const helper::VerifiedWindowsExecutable caller_identity =
       helper::VerifyWindowsExecutable(running_executable);
