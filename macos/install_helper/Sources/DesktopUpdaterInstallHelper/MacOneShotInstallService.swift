@@ -164,6 +164,25 @@ final class MacOneShotInstallSession {
         }
     }
 
+    func cancelCommitAwaitingCallerExit()
+        throws -> MacOneShotTransactionStatusV1
+    {
+        try transition(from: .commitAccepted, to: .cancelling)
+        let prepared = try requiredReservation()
+        do {
+            try requiredTransaction().cancelPrepared()
+            setState(.cancelled)
+            return status(
+                reservation: prepared,
+                state: "cancelled",
+                resultCode: "completed"
+            )
+        } catch {
+            setState(.recoveryRequired)
+            throw error
+        }
+    }
+
     func cancel(
         transactionID: String,
         readyToken: String,

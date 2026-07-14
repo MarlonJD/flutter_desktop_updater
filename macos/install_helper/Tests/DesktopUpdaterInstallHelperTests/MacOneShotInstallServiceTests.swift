@@ -126,6 +126,108 @@ final class MacOneShotInstallServiceTests: XCTestCase {
         XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
     }
+
+    func testWireRuntimeWaitsForCallerExitAfterCommitAcceptance() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let session = MacOneShotInstallSession(
+            authorizer: FixtureOneShotAuthorizer(
+                transaction: try fixture.makeTransaction()
+            ),
+            readyTokenGenerator: {
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            },
+            nowUnixMilliseconds: { 1_000 },
+            reservationLifetimeMilliseconds: 60_000
+        )
+        let channel = RecordingOneShotWireChannel(
+            requestData: try canonicalRequestData()
+        )
+        let monitorFactory = RecordingCallerMonitorFactory {
+            XCTAssertEqual(channel.outputs.count, 2)
+            XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+            let accepted = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: channel.outputs[1])
+                    as? [String: Any]
+            )
+            XCTAssertEqual(accepted["state"] as? String, "commitAccepted")
+        }
+        let runtime = MacOneShotServiceRuntime(
+            session: session,
+            callerMonitorFactory: monitorFactory
+        )
+
+        try runtime.run(channel: channel)
+
+        XCTAssertEqual(monitorFactory.processIdentifier, 4_243)
+        XCTAssertTrue(monitorFactory.didWait)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testWireRuntimeCancelsPreparedTransactionForInvalidCommand() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let channel = InvalidCommandOneShotWireChannel(
+            requestData: try canonicalRequestData()
+        )
+        let monitorFactory = RecordingCallerMonitorFactory {}
+        let runtime = MacOneShotServiceRuntime(
+            session: MacOneShotInstallSession(
+                authorizer: FixtureOneShotAuthorizer(
+                    transaction: try fixture.makeTransaction()
+                ),
+                readyTokenGenerator: {
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                },
+                nowUnixMilliseconds: { 1_000 },
+                reservationLifetimeMilliseconds: 60_000
+            ),
+            callerMonitorFactory: monitorFactory
+        )
+
+        XCTAssertThrowsError(try runtime.run(channel: channel)) { error in
+            XCTAssertEqual(error as? MacOneShotWireError, .invalidMessage)
+        }
+
+        XCTAssertFalse(monitorFactory.didWait)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testWireRuntimeCancelsCommitWhenCallerExitTimesOut() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let channel = RecordingOneShotWireChannel(
+            requestData: try canonicalRequestData()
+        )
+        let monitorFactory = RecordingCallerMonitorFactory {
+            throw MacCallerExitMonitorError.timedOut
+        }
+        let runtime = MacOneShotServiceRuntime(
+            session: MacOneShotInstallSession(
+                authorizer: FixtureOneShotAuthorizer(
+                    transaction: try fixture.makeTransaction()
+                ),
+                readyTokenGenerator: {
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                },
+                nowUnixMilliseconds: { 1_000 },
+                reservationLifetimeMilliseconds: 60_000
+            ),
+            callerMonitorFactory: monitorFactory
+        )
+
+        XCTAssertThrowsError(try runtime.run(channel: channel)) { error in
+            XCTAssertEqual(error as? MacCallerExitMonitorError, .timedOut)
+        }
+
+        XCTAssertTrue(monitorFactory.didWait)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
 }
 
 private final class FixtureOneShotAuthorizer: MacOneShotInstallAuthorizing {
@@ -141,6 +243,82 @@ private final class FixtureOneShotAuthorizer: MacOneShotInstallAuthorizing {
     ) throws -> MacFileTransaction {
         XCTAssertEqual(request.protocolVersion, 1)
         return transaction
+    }
+}
+
+private final class RecordingOneShotWireChannel: MacOneShotWireChannel {
+    private let requestData: Data
+    private var readCount = 0
+    private(set) var outputs: [Data] = []
+
+    init(requestData: Data) {
+        self.requestData = requestData
+    }
+
+    func readFrame() throws -> Data {
+        defer { readCount += 1 }
+        if readCount == 0 { return requestData }
+        let reservation = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(outputs.first))
+                as? [String: Any]
+        )
+        return try JSONSerialization.data(
+            withJSONObject: [
+                "operation": "commitAfterExit",
+                "protocolVersion": 1,
+                "transactionId": reservation["transactionId"] as Any,
+                "readyToken": reservation["readyToken"] as Any,
+                "journalSha256": reservation["journalSha256"] as Any,
+                "helperEndpointIdentitySha256":
+                    reservation["helperEndpointIdentitySha256"] as Any,
+            ],
+            options: [.sortedKeys]
+        )
+    }
+
+    func writeFrame(_ data: Data) throws {
+        outputs.append(data)
+    }
+}
+
+private final class InvalidCommandOneShotWireChannel: MacOneShotWireChannel {
+    private let requestData: Data
+    private var readCount = 0
+
+    init(requestData: Data) {
+        self.requestData = requestData
+    }
+
+    func readFrame() throws -> Data {
+        defer { readCount += 1 }
+        return readCount == 0 ? requestData : Data("{}".utf8)
+    }
+
+    func writeFrame(_: Data) throws {}
+}
+
+private final class RecordingCallerMonitorFactory:
+    MacCallerExitMonitorCreating,
+    MacCallerExitMonitoring
+{
+    private let onWait: () throws -> Void
+    private(set) var processIdentifier: Int64?
+    private(set) var didWait = false
+
+    init(onWait: @escaping () throws -> Void) {
+        self.onWait = onWait
+    }
+
+    func makeMonitor(
+        processIdentifier: Int64
+    ) throws -> any MacCallerExitMonitoring {
+        self.processIdentifier = processIdentifier
+        return self
+    }
+
+    func waitForExit(expiresAtUnixMilliseconds _: Int64) throws {
+        didWait = true
+        try onWait()
     }
 }
 
