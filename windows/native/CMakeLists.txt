@@ -8,7 +8,7 @@ if(POLICY CMP0135)
 endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-project(desktop_updater_native VERSION 2.7.0 LANGUAGES CXX)
+project(desktop_updater_native VERSION 2.7.0 LANGUAGES C CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
@@ -24,6 +24,8 @@ endif()
 
 set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
   ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
+set(DESKTOP_UPDATER_MONOCYPHER_DIR
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
@@ -74,6 +76,10 @@ set_target_properties(desktop_updater_native PROPERTIES
   OUTPUT_NAME desktop_updater_native)
 
 set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+  ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
+  ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c
   src/helper/install_strategy.cpp
   src/helper/helper_policy_windows.cpp
   src/helper/helper_authenticode.cpp
@@ -102,7 +108,10 @@ if(MSVC)
 endif()
 target_include_directories(desktop_updater_install_helper_support
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/helper
-  PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+  PRIVATE
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional)
 target_link_libraries(desktop_updater_install_helper_support
   PUBLIC Wintrust Crypt32 Advapi32 Shell32 Bcrypt)
 
@@ -118,8 +127,6 @@ set_target_properties(desktop_updater_install_helper PROPERTIES
 
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
-  set(DESKTOP_UPDATER_MONOCYPHER_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
   set(DESKTOP_UPDATER_MINIZ_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/miniz)
   set_source_files_properties(${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c PROPERTIES
@@ -243,18 +250,26 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     test/desktop_updater_native_c_test.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract_fixture_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request_fixture_tests.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/windows_native_install_request_builder_tests.cc
-    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy_fixture_tests.cc)
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy_fixture_tests.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
+    ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
   target_compile_features(desktop_updater_native_test PRIVATE cxx_std_17)
   target_include_directories(desktop_updater_native_test
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
-      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}
+      ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional)
   target_compile_definitions(desktop_updater_native_test PRIVATE
     DESKTOP_UPDATER_JOURNAL_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/journal-transitions.json\"
     DESKTOP_UPDATER_VALID_REQUEST_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/valid-requests.json\"
+    DESKTOP_UPDATER_SIGNATURE_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-contract/canonical-signature-cases.json\"
     DESKTOP_UPDATER_POLICY_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/policy-cases.json\")
   target_link_libraries(desktop_updater_native_test
     PRIVATE desktop_updater_native_static GTest::gtest_main)
