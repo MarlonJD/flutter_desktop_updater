@@ -29,11 +29,19 @@ set(DESKTOP_UPDATER_MONOCYPHER_DIR
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
+  src/helper/helper_authenticode.cpp
+  src/helper/helper_policy_windows.cpp
+  src/helper/named_pipe_transport.cpp
+  src/helper/windows_one_shot_transport.cpp
+  src/helper/windows_transaction_journal.cpp
+  src/runtime/sha256_bcrypt.cpp
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_service_runtime.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/windows_native_install_request_builder.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
 )
@@ -45,8 +53,18 @@ target_include_directories(desktop_updater_native_objects
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/helper
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
 )
+target_compile_definitions(desktop_updater_native_objects
+  PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+    _WIN32_WINNT=0x0A00
+    DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR="${DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}")
+if(MSVC)
+  target_compile_options(desktop_updater_native_objects PRIVATE /utf-8)
+endif()
 set_target_properties(desktop_updater_native_objects PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 
@@ -55,7 +73,7 @@ add_library(desktop_updater_native_static STATIC
 target_include_directories(desktop_updater_native_static
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(desktop_updater_native_static
-  PUBLIC Advapi32 Bcrypt Ole32 Shell32)
+  PUBLIC Advapi32 Bcrypt Crypt32 Ole32 Shell32 Wintrust)
 
 add_library(desktop_updater_native SHARED
   $<TARGET_OBJECTS:desktop_updater_native_objects>)
@@ -69,7 +87,7 @@ target_compile_definitions(desktop_updater_native
 target_compile_definitions(desktop_updater_native
   INTERFACE DESKTOP_UPDATER_NATIVE_USING_DLL)
 target_link_libraries(desktop_updater_native
-  PRIVATE Advapi32 Bcrypt Ole32 Shell32)
+  PRIVATE Advapi32 Bcrypt Crypt32 Ole32 Shell32 Wintrust)
 set_target_properties(desktop_updater_native PROPERTIES
   EXPORT_NAME native
   WINDOWS_EXPORT_ALL_SYMBOLS ON

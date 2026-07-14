@@ -141,7 +141,10 @@ void main() {
     expect(plugin, contains("PrepareInstall"));
     expect(plugin, contains("CommitAfterExit"));
     expect(plugin, isNot(contains("ScheduleInstallAndRelaunch")));
-    expect(native, contains("SerializeCommonInstallRequest"));
+    expect(
+      native,
+      contains("EncodeCanonicalNativeInstallTransactionRequestV1"),
+    );
     expect(native, contains("EndpointUnavailableStatus"));
     expect(native, isNot(contains("PowerShell")));
     expect(native, isNot(contains("powershell.exe")));
@@ -460,6 +463,38 @@ void main() {
     expect(source, contains("helper_endpoint_identity_sha256"));
     expect(source, contains("VerifyWindowsExecutableStillMatches"));
     expect(source, isNot(contains('"AUTHENTICATED "')));
+  });
+
+  test("Windows public client routes prepare commit and cancel to helper", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final nativeSources = cmake.substring(
+      cmake.indexOf("set(NATIVE_SOURCES"),
+      cmake.indexOf("add_library(desktop_updater_native_objects"),
+    );
+    final source = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+
+    expect(nativeSources, contains("named_pipe_transport.cpp"));
+    expect(
+      nativeSources,
+      contains("windows_native_install_request_builder.cc"),
+    );
+    expect(source, contains("BuildWindowsNativeInstallTransactionRequestV1"));
+    expect(source, contains("LaunchAuthenticatedElevatedHelper"));
+    expect(source, contains("WindowsElevatedHelperClientSession"));
+    expect(
+        source, contains("EncodeCanonicalNativeInstallTransactionRequestV1"));
+    expect(source, contains("CommitAfterExit()"));
+    expect(source, contains("CancelReservation()"));
+    expect(
+      source,
+      isNot(
+        contains(
+          "Packaged Windows install helper endpoint is unavailable; no ",
+        ),
+      ),
+    );
   });
 }
 
