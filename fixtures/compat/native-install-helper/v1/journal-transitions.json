@@ -1,0 +1,124 @@
+{
+  "invalidTransitions": [
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "name": "swap skips durable backup",
+      "to": "targetActivated"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "name": "manager invents file rollback",
+      "to": "rolledBack"
+    },
+    {
+      "from": "completed",
+      "machine": "swap",
+      "name": "terminal state is immutable",
+      "to": "prepared"
+    }
+  ],
+  "journal": {
+    "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "backupName": ".example.desktop-updater-backup-00000000",
+    "evidence": {
+      "targetIdentitySha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "journalName": ".example.desktop-updater-journal-00000000.json",
+    "lockName": ".example.desktop-updater-lock",
+    "ownerGeneration": 1,
+    "packageId": "com.example.app",
+    "policyId": "com.example.desktop-updater",
+    "preparedName": ".example.desktop-updater-prepared-00000000",
+    "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "schemaVersion": 1,
+    "state": "prepared",
+    "strategy": "directoryReplace",
+    "targetName": "example",
+    "transactionId": "00000000-0000-4000-8000-000000000001"
+  },
+  "schemaVersion": 1,
+  "states": [
+    "prepared",
+    "backupCreated",
+    "targetActivated",
+    "managerStarted",
+    "verificationPending",
+    "completed",
+    "rolledBack",
+    "manualActionRequired"
+  ],
+  "validTransitions": [
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "backupCreated"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "targetActivated"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "completed"
+    },
+    {
+      "from": "prepared",
+      "machine": "manager",
+      "to": "managerStarted"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "to": "verificationPending"
+    },
+    {
+      "from": "verificationPending",
+      "machine": "manager",
+      "to": "completed"
+    },
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "verificationPending",
+      "machine": "manager",
+      "to": "manualActionRequired"
+    }
+  ]
+}

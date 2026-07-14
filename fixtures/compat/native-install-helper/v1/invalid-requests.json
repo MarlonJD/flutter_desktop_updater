@@ -1,0 +1,2480 @@
+{
+  "cases": [
+    {
+      "expectedFailure": "unsupportedSchemaVersion",
+      "name": "unknown schema major",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 2,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unsupportedProtocolVersion",
+      "name": "unknown protocol major",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 2,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidTransactionId",
+      "name": "non-canonical uppercase UUID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-00000000000A"
+      }
+    },
+    {
+      "expectedFailure": "invalidPolicyId",
+      "name": "invalid policy ID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "../policy",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidPackageId",
+      "name": "invalid package ID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "COM EXAMPLE",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownStrategy",
+      "name": "unknown strategy",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "recursiveCopy",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownProvider",
+      "name": "unknown provider",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "callerCommand",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "strategyProviderMismatch",
+      "name": "strategy provider mismatch",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "apt",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "missingField:target",
+      "name": "missing target",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownField:target.parentPath",
+      "name": "unknown target field",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "parentPath": "/tmp",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownTargetClass",
+      "name": "unknown target class",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "filesystemRoot",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "strategyTargetMismatch",
+      "name": "strategy target mismatch",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "systemPackage",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:target.pathHint",
+      "name": "blank target path hint",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidTargetNameHint",
+      "name": "absolute sibling name",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "/tmp/backup"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidExecutableRelativePath",
+      "name": "relative path traversal",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "../bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidExecutableRelativePath",
+      "name": "absolute executable proof",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "/bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:target.identityProofSha256",
+      "name": "invalid target identity digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "ABC",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:currentIdentity.version",
+      "name": "blank current version",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": " "
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidInteger:currentIdentity.buildNumber",
+      "name": "negative current build",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": -1,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:currentIdentity.packageIdentitySha256",
+      "name": "invalid current package identity digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "0",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:desiredIdentity.version",
+      "name": "blank desired version",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": ""
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidInteger:desiredIdentity.buildNumber",
+      "name": "non-integer desired build",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 2.8,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:desiredIdentity.packageIdentitySha256",
+      "name": "invalid desired package identity digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:stage.pathHint",
+      "name": "blank stage path hint",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidStageOwnershipNonce",
+      "name": "invalid stage ownership nonce",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "short",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:stage.provenanceSha256",
+      "name": "invalid stage provenance digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:stage.artifactSha256",
+      "name": "invalid artifact digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidInteger:stage.artifactLength",
+      "name": "zero artifact length",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 0,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:signedDescriptor.canonicalSha256",
+      "name": "invalid descriptor binding digest",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bad",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unsupportedDescriptorSignatureAlgorithm",
+      "name": "unsupported descriptor signature algorithm",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "rsa",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidDescriptorKeyId",
+      "name": "invalid descriptor key ID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "caller key!",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidDescriptorSignature",
+      "name": "invalid descriptor signature",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "not-base64"
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidInteger:caller.processId",
+      "name": "zero caller process ID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 0,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:caller.processStartIdentity",
+      "name": "blank caller start identity",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidSha256:caller.executableSha256",
+      "name": "invalid caller executable digest",
+      "request": {
+        "caller": {
+          "executableSha256": "00000000000000000000000000000000000000000000000000000000000000000",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidCallerPackageId",
+      "name": "invalid caller package ID",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "INVALID ID",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "callerPackageIdMismatch",
+      "name": "caller package mismatch",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.other",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidString:caller.signerIdentity",
+      "name": "blank caller signer",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": ""
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidRequestNonce",
+      "name": "short request nonce",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "short",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidDiagnosticsDestination",
+      "name": "unknown diagnostics kind",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "callerFile"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "invalidDiagnosticsDestination",
+      "name": "invalid inherited diagnostics stream",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "inheritedStream",
+          "stream": "stdout"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownField:releaseRootPublicKeys",
+      "name": "caller supplied release trust root",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "releaseRootPublicKeys": [
+          "attacker-key"
+        ],
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownField:signedDescriptor.allowedInstallRoots",
+      "name": "caller supplied allowed install root",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "allowedInstallRoots": [
+            "/"
+          ],
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownField:preparedPath",
+      "name": "caller supplied prepared sibling",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "preparedPath": "/tmp/attacker-prepared",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "unknownField:command",
+      "name": "unknown request field",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4243,
+          "processStartIdentity": "pid-start-1",
+          "signerIdentity": "Example Publisher"
+        },
+        "command": "caller-supplied-command",
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_1",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "applicationDirectory",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/opt/example",
+          "targetNameHint": "example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "expectedFailure": "duplicateKey:schemaVersion",
+      "name": "duplicate request field",
+      "rawJson": "{\"schemaVersion\":1,\"schemaVersion\":1}"
+    }
+  ],
+  "coveredRequestFields": [
+    "schemaVersion",
+    "protocolVersion",
+    "transactionId",
+    "policyId",
+    "packageId",
+    "strategy",
+    "provider",
+    "target.class",
+    "target.pathHint",
+    "target.targetNameHint",
+    "target.executableRelativePath",
+    "target.identityProofSha256",
+    "currentIdentity.version",
+    "currentIdentity.buildNumber",
+    "currentIdentity.packageIdentitySha256",
+    "desiredIdentity.version",
+    "desiredIdentity.buildNumber",
+    "desiredIdentity.packageIdentitySha256",
+    "stage.pathHint",
+    "stage.ownershipNonce",
+    "stage.provenanceSha256",
+    "stage.artifactSha256",
+    "stage.artifactLength",
+    "signedDescriptor.canonicalSha256",
+    "signedDescriptor.signatureAlgorithm",
+    "signedDescriptor.keyId",
+    "signedDescriptor.signatureBase64",
+    "caller.processId",
+    "caller.processStartIdentity",
+    "caller.executableSha256",
+    "caller.packageId",
+    "caller.signerIdentity",
+    "requestNonce",
+    "diagnosticsDestination.kind",
+    "diagnosticsDestination.stream"
+  ],
+  "schemaVersion": 1
+}

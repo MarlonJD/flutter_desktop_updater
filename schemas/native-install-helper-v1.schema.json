@@ -1,0 +1,663 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MarlonJD/flutter_desktop_updater/schemas/native-install-helper-v1.schema.json",
+  "title": "NativeInstallTransactionRequestV1",
+  "description": "Strict wire request for the native install helper protocol. Path values are untrusted hints, never mutation authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocolVersion",
+    "transactionId",
+    "policyId",
+    "packageId",
+    "strategy",
+    "provider",
+    "target",
+    "currentIdentity",
+    "desiredIdentity",
+    "stage",
+    "signedDescriptor",
+    "caller",
+    "requestNonce"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "protocolVersion": {
+      "const": 1
+    },
+    "transactionId": {
+      "$ref": "#/$defs/lowercaseUuid"
+    },
+    "policyId": {
+      "$ref": "#/$defs/dottedIdentifier"
+    },
+    "packageId": {
+      "$ref": "#/$defs/dottedIdentifier"
+    },
+    "strategy": {
+      "enum": [
+        "directoryReplace",
+        "singleFileReplace",
+        "verifiedInstallerHandoff",
+        "systemPackageTransaction",
+        "externalManagedRefresh"
+      ]
+    },
+    "provider": {
+      "enum": [
+        "platformDirectory",
+        "platformFile",
+        "macosInstaller",
+        "windowsInno",
+        "apt",
+        "dnf",
+        "flatpak",
+        "snap"
+      ]
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "currentIdentity": {
+      "$ref": "#/$defs/versionIdentity"
+    },
+    "desiredIdentity": {
+      "$ref": "#/$defs/versionIdentity"
+    },
+    "stage": {
+      "$ref": "#/$defs/stage"
+    },
+    "signedDescriptor": {
+      "$ref": "#/$defs/signedDescriptor"
+    },
+    "caller": {
+      "$ref": "#/$defs/caller"
+    },
+    "requestNonce": {
+      "$ref": "#/$defs/readyToken"
+    },
+    "diagnosticsDestination": {
+      "$ref": "#/$defs/diagnosticsDestination"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "directoryReplace"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "const": "platformDirectory"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "singleFileReplace"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "const": "platformFile"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "verifiedInstallerHandoff"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "macosInstaller",
+              "windowsInno"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "systemPackageTransaction"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "apt",
+              "dnf"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "externalManagedRefresh"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "flatpak",
+              "snap"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "lowercaseUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "readyToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "dottedIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "safeSiblingName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!\\.?\\.?$)[^/\\\\:]+$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "pathHint",
+        "targetNameHint",
+        "executableRelativePath",
+        "identityProofSha256"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "applicationBundle",
+            "applicationDirectory",
+            "singleExecutable",
+            "systemPackage",
+            "externalManaged"
+          ]
+        },
+        "pathHint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "targetNameHint": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "executableRelativePath": {
+          "$ref": "#/$defs/safeRelativePath"
+        },
+        "identityProofSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "versionIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "buildNumber",
+        "packageIdentitySha256"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "buildNumber": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packageIdentitySha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pathHint",
+        "ownershipNonce",
+        "provenanceSha256",
+        "artifactSha256",
+        "artifactLength"
+      ],
+      "properties": {
+        "pathHint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "ownershipNonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "provenanceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "signedDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalSha256",
+        "signatureAlgorithm",
+        "keyId",
+        "signatureBase64"
+      ],
+      "properties": {
+        "canonicalSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signatureAlgorithm": {
+          "const": "ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "signatureBase64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processId",
+        "processStartIdentity",
+        "executableSha256",
+        "packageId",
+        "signerIdentity"
+      ],
+      "properties": {
+        "processId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "processStartIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "executableSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "packageId": {
+          "$ref": "#/$defs/dottedIdentifier"
+        },
+        "signerIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "diagnosticsDestination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "platformLog",
+            "inheritedStream"
+          ]
+        },
+        "stream": {
+          "enum": [
+            "stderr"
+          ]
+        }
+      }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "transactionId",
+        "readyToken",
+        "journalSha256",
+        "helperEndpointIdentitySha256",
+        "expiresAtUnixMilliseconds"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "transactionId": {
+          "$ref": "#/$defs/lowercaseUuid"
+        },
+        "readyToken": {
+          "$ref": "#/$defs/readyToken"
+        },
+        "journalSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "helperEndpointIdentitySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expiresAtUnixMilliseconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "journalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetIdentitySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "backupIdentitySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "providerTransactionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "observedArtifactSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "journal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "transactionId",
+        "policyId",
+        "packageId",
+        "strategy",
+        "targetName",
+        "preparedName",
+        "backupName",
+        "journalName",
+        "lockName",
+        "provenanceSha256",
+        "artifactSha256",
+        "ownerGeneration",
+        "state",
+        "evidence"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "transactionId": {
+          "$ref": "#/$defs/lowercaseUuid"
+        },
+        "policyId": {
+          "$ref": "#/$defs/dottedIdentifier"
+        },
+        "packageId": {
+          "$ref": "#/$defs/dottedIdentifier"
+        },
+        "strategy": {
+          "enum": [
+            "directoryReplace",
+            "singleFileReplace",
+            "verifiedInstallerHandoff",
+            "systemPackageTransaction",
+            "externalManagedRefresh"
+          ]
+        },
+        "targetName": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "preparedName": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "backupName": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "journalName": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "lockName": {
+          "$ref": "#/$defs/safeSiblingName"
+        },
+        "provenanceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ownerGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "backupCreated",
+            "targetActivated",
+            "managerStarted",
+            "verificationPending",
+            "completed",
+            "rolledBack",
+            "manualActionRequired"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/journalEvidence"
+        }
+      }
+    },
+    "transactionStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "transactionId",
+        "state",
+        "resultCode",
+        "journalSha256"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "transactionId": {
+          "$ref": "#/$defs/lowercaseUuid"
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "backupCreated",
+            "targetActivated",
+            "managerStarted",
+            "verificationPending",
+            "completed",
+            "rolledBack",
+            "manualActionRequired"
+          ]
+        },
+        "resultCode": {
+          "$ref": "#/$defs/resultCode"
+        },
+        "journalSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "recoveryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "transactionId",
+        "resultCode",
+        "verifiedOutcome",
+        "journalSha256"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "transactionId": {
+          "$ref": "#/$defs/lowercaseUuid"
+        },
+        "resultCode": {
+          "$ref": "#/$defs/resultCode"
+        },
+        "verifiedOutcome": {
+          "enum": [
+            "oldTarget",
+            "newTarget",
+            "none"
+          ]
+        },
+        "journalSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "diagnosticEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "name",
+        "detailCode"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "enum": [
+            "helper authenticated",
+            "target lock acquired",
+            "transaction journal persisted",
+            "caller exit observed",
+            "recovery detected",
+            "backup restored",
+            "activation verified",
+            "package manager state verified",
+            "manual action required",
+            "transaction completed"
+          ]
+        },
+        "detailCode": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,127}$"
+        }
+      }
+    },
+    "diagnosticResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "transactionId",
+        "resultCode",
+        "events"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "transactionId": {
+          "$ref": "#/$defs/lowercaseUuid"
+        },
+        "resultCode": {
+          "$ref": "#/$defs/resultCode"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnosticEvent"
+          }
+        }
+      }
+    },
+    "resultCode": {
+      "enum": [
+        "helperUnavailable",
+        "helperTrustFailure",
+        "authorizationDenied",
+        "targetValidationFailure",
+        "stageProvenanceFailure",
+        "transactionBusy",
+        "journalCorrupt",
+        "recoveryRequired",
+        "rolledBack",
+        "externalManagerPending",
+        "manualActionRequired",
+        "packageManagerFailure",
+        "relaunchFailure",
+        "completed"
+      ]
+    }
+  }
+}

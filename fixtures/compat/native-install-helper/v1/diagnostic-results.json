@@ -1,0 +1,1444 @@
+{
+  "coveredResultFields": [
+    "reservation.protocolVersion",
+    "reservation.transactionId",
+    "reservation.readyToken",
+    "reservation.journalSha256",
+    "reservation.helperEndpointIdentitySha256",
+    "reservation.expiresAtUnixMilliseconds",
+    "transactionStatus.protocolVersion",
+    "transactionStatus.transactionId",
+    "transactionStatus.state",
+    "transactionStatus.resultCode",
+    "transactionStatus.journalSha256",
+    "recoveryResult.protocolVersion",
+    "recoveryResult.transactionId",
+    "recoveryResult.resultCode",
+    "recoveryResult.verifiedOutcome",
+    "recoveryResult.journalSha256",
+    "diagnosticResult.schemaVersion",
+    "diagnosticResult.transactionId",
+    "diagnosticResult.resultCode",
+    "diagnosticResult.events",
+    "diagnosticEvent.sequence",
+    "diagnosticEvent.name",
+    "diagnosticEvent.detailCode"
+  ],
+  "diagnosticResults": [
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "helperUnavailable",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "helperTrustFailure",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "authorizationDenied",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "targetValidationFailure",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "stageProvenanceFailure",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "transactionBusy",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "journalCorrupt",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "recoveryRequired",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "rolledBack",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "externalManagerPending",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "manualActionRequired",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "packageManagerFailure",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "relaunchFailure",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "events": [
+        {
+          "detailCode": "helperAuthenticated",
+          "name": "helper authenticated",
+          "sequence": 0
+        },
+        {
+          "detailCode": "targetLockAcquired",
+          "name": "target lock acquired",
+          "sequence": 1
+        },
+        {
+          "detailCode": "journalPersisted",
+          "name": "transaction journal persisted",
+          "sequence": 2
+        },
+        {
+          "detailCode": "callerExitObserved",
+          "name": "caller exit observed",
+          "sequence": 3
+        },
+        {
+          "detailCode": "recoveryDetected",
+          "name": "recovery detected",
+          "sequence": 4
+        },
+        {
+          "detailCode": "backupRestored",
+          "name": "backup restored",
+          "sequence": 5
+        },
+        {
+          "detailCode": "activationVerified",
+          "name": "activation verified",
+          "sequence": 6
+        },
+        {
+          "detailCode": "packageManagerVerified",
+          "name": "package manager state verified",
+          "sequence": 7
+        },
+        {
+          "detailCode": "manualActionRequired",
+          "name": "manual action required",
+          "sequence": 8
+        },
+        {
+          "detailCode": "transactionCompleted",
+          "name": "transaction completed",
+          "sequence": 9
+        }
+      ],
+      "resultCode": "completed",
+      "schemaVersion": 1,
+      "transactionId": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "events": [
+    "helper authenticated",
+    "target lock acquired",
+    "transaction journal persisted",
+    "caller exit observed",
+    "recovery detected",
+    "backup restored",
+    "activation verified",
+    "package manager state verified",
+    "manual action required",
+    "transaction completed"
+  ],
+  "invalidResults": [
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": 1783987200000,
+        "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 2,
+        "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unsupportedProtocolVersion",
+      "field": "reservation.protocolVersion"
+    },
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": 1783987200000,
+        "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "transactionId": "UPPERCASE"
+      },
+      "expectedFailure": "invalidTransactionId",
+      "field": "reservation.transactionId"
+    },
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": 1783987200000,
+        "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "readyToken": "short",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidReadyToken",
+      "field": "reservation.readyToken"
+    },
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": 1783987200000,
+        "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "journalSha256": "bad",
+        "protocolVersion": 1,
+        "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidSha256:reservation.journalSha256",
+      "field": "reservation.journalSha256"
+    },
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": 1783987200000,
+        "helperEndpointIdentitySha256": "bad",
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidSha256:reservation.helperEndpointIdentitySha256",
+      "field": "reservation.helperEndpointIdentitySha256"
+    },
+    {
+      "candidate": {
+        "expiresAtUnixMilliseconds": -1,
+        "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidInteger:reservation.expiresAtUnixMilliseconds",
+      "field": "reservation.expiresAtUnixMilliseconds"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 2,
+        "resultCode": "completed",
+        "state": "completed",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unsupportedProtocolVersion",
+      "field": "transactionStatus.protocolVersion"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "completed",
+        "state": "completed",
+        "transactionId": "bad"
+      },
+      "expectedFailure": "invalidTransactionId",
+      "field": "transactionStatus.transactionId"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "completed",
+        "state": "cleaned",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unknownJournalState",
+      "field": "transactionStatus.state"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "success",
+        "state": "completed",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unknownResultCode",
+      "field": "transactionStatus.resultCode"
+    },
+    {
+      "candidate": {
+        "journalSha256": "bad",
+        "protocolVersion": 1,
+        "resultCode": "completed",
+        "state": "completed",
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidSha256:transactionStatus.journalSha256",
+      "field": "transactionStatus.journalSha256"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 2,
+        "resultCode": "rolledBack",
+        "transactionId": "00000000-0000-4000-8000-000000000001",
+        "verifiedOutcome": "oldTarget"
+      },
+      "expectedFailure": "unsupportedProtocolVersion",
+      "field": "recoveryResult.protocolVersion"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "rolledBack",
+        "transactionId": "bad",
+        "verifiedOutcome": "oldTarget"
+      },
+      "expectedFailure": "invalidTransactionId",
+      "field": "recoveryResult.transactionId"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "success",
+        "transactionId": "00000000-0000-4000-8000-000000000001",
+        "verifiedOutcome": "oldTarget"
+      },
+      "expectedFailure": "unknownResultCode",
+      "field": "recoveryResult.resultCode"
+    },
+    {
+      "candidate": {
+        "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolVersion": 1,
+        "resultCode": "rolledBack",
+        "transactionId": "00000000-0000-4000-8000-000000000001",
+        "verifiedOutcome": "maybe"
+      },
+      "expectedFailure": "unknownVerifiedOutcome",
+      "field": "recoveryResult.verifiedOutcome"
+    },
+    {
+      "candidate": {
+        "journalSha256": "bad",
+        "protocolVersion": 1,
+        "resultCode": "rolledBack",
+        "transactionId": "00000000-0000-4000-8000-000000000001",
+        "verifiedOutcome": "oldTarget"
+      },
+      "expectedFailure": "invalidSha256:recoveryResult.journalSha256",
+      "field": "recoveryResult.journalSha256"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "helperAuthenticated",
+            "name": "helper authenticated",
+            "sequence": 0
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "completed",
+        "schemaVersion": 2,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unsupportedSchemaVersion",
+      "field": "diagnosticResult.schemaVersion"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "helperAuthenticated",
+            "name": "helper authenticated",
+            "sequence": 0
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "completed",
+        "schemaVersion": 1,
+        "transactionId": "bad"
+      },
+      "expectedFailure": "invalidTransactionId",
+      "field": "diagnosticResult.transactionId"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "helperAuthenticated",
+            "name": "helper authenticated",
+            "sequence": 0
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "success",
+        "schemaVersion": 1,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unknownResultCode",
+      "field": "diagnosticResult.resultCode"
+    },
+    {
+      "candidate": {
+        "events": "not-an-array",
+        "resultCode": "completed",
+        "schemaVersion": 1,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidType:diagnosticResult.events",
+      "field": "diagnosticResult.events"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "helperAuthenticated",
+            "name": "helper authenticated",
+            "sequence": -1
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "completed",
+        "schemaVersion": 1,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidInteger:diagnosticEvent.sequence",
+      "field": "diagnosticEvent.sequence"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "helperAuthenticated",
+            "name": "raw path emitted",
+            "sequence": 0
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "completed",
+        "schemaVersion": 1,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "unknownDiagnosticEvent",
+      "field": "diagnosticEvent.name"
+    },
+    {
+      "candidate": {
+        "events": [
+          {
+            "detailCode": "/Users/example/secret",
+            "name": "helper authenticated",
+            "sequence": 0
+          },
+          {
+            "detailCode": "targetLockAcquired",
+            "name": "target lock acquired",
+            "sequence": 1
+          },
+          {
+            "detailCode": "journalPersisted",
+            "name": "transaction journal persisted",
+            "sequence": 2
+          },
+          {
+            "detailCode": "callerExitObserved",
+            "name": "caller exit observed",
+            "sequence": 3
+          },
+          {
+            "detailCode": "recoveryDetected",
+            "name": "recovery detected",
+            "sequence": 4
+          },
+          {
+            "detailCode": "backupRestored",
+            "name": "backup restored",
+            "sequence": 5
+          },
+          {
+            "detailCode": "activationVerified",
+            "name": "activation verified",
+            "sequence": 6
+          },
+          {
+            "detailCode": "packageManagerVerified",
+            "name": "package manager state verified",
+            "sequence": 7
+          },
+          {
+            "detailCode": "manualActionRequired",
+            "name": "manual action required",
+            "sequence": 8
+          },
+          {
+            "detailCode": "transactionCompleted",
+            "name": "transaction completed",
+            "sequence": 9
+          }
+        ],
+        "resultCode": "completed",
+        "schemaVersion": 1,
+        "transactionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "expectedFailure": "invalidDiagnosticDetailCode",
+      "field": "diagnosticEvent.detailCode"
+    }
+  ],
+  "recoveryResult": {
+    "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protocolVersion": 1,
+    "resultCode": "rolledBack",
+    "transactionId": "00000000-0000-4000-8000-000000000001",
+    "verifiedOutcome": "oldTarget"
+  },
+  "redactionRules": [
+    "never emit readyToken or requestNonce",
+    "never emit release keys, signatures, headers, or credentials",
+    "replace full user paths with target class and basename",
+    "retain transaction ID, state, package ID, event name, and detail code"
+  ],
+  "reservation": {
+    "expiresAtUnixMilliseconds": 1783987200000,
+    "helperEndpointIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protocolVersion": 1,
+    "readyToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "transactionId": "00000000-0000-4000-8000-000000000001"
+  },
+  "resultCodes": [
+    "helperUnavailable",
+    "helperTrustFailure",
+    "authorizationDenied",
+    "targetValidationFailure",
+    "stageProvenanceFailure",
+    "transactionBusy",
+    "journalCorrupt",
+    "recoveryRequired",
+    "rolledBack",
+    "externalManagerPending",
+    "manualActionRequired",
+    "packageManagerFailure",
+    "relaunchFailure",
+    "completed"
+  ],
+  "schemaVersion": 1,
+  "transactionStatus": {
+    "journalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protocolVersion": 1,
+    "resultCode": "completed",
+    "state": "completed",
+    "transactionId": "00000000-0000-4000-8000-000000000001"
+  }
+}

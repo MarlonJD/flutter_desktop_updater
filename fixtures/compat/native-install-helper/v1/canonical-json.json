@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "canonicalJson": "{\"Z\":0,\"a\":{\"b\":1,\"z\":2,\"ä\":3},\"😀\":1}",
+      "inputJson": "{\"😀\":1,\"a\":{\"z\":2,\"ä\":3,\"b\":1},\"Z\":0}",
+      "name": "sorts nested object keys by Unicode scalar value"
+    },
+    {
+      "canonicalJson": "{\"small\":1,\"value\":9007199254740993}",
+      "inputJson": "{\"value\":9007199254740993,\"small\":1}",
+      "name": "preserves large integer values"
+    },
+    {
+      "expectedFailure": "duplicateKey:a",
+      "inputJson": "{\"a\":1,\"a\":2}",
+      "name": "rejects duplicate object keys"
+    }
+  ],
+  "encoding": "UTF-8",
+  "keyOrder": "ascending Unicode scalar value (equivalent UTF-8 byte order)",
+  "schemaVersion": 1
+}
