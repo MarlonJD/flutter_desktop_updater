@@ -247,5 +247,24 @@ TEST(LinuxInstallTarget, RemovedTraversalCreatesNoHelperScript) {
   EXPECT_NE(access(script_path.c_str(), F_OK), 0);
 }
 
+TEST(DesktopUpdaterPlugin, AcceptsOnlyProofBoundNativeCommit) {
+  native::InstallReservation reservation = {
+      "123e4567-e89b-42d3-a456-426614174000", "ready-token",
+      std::string(64, 'a'), std::string(64, 'b'), 1};
+  native::InstallTransactionStatus accepted = {
+      reservation.transaction_id,
+      native::InstallTransactionState::kCommitAccepted,
+      native::InstallTransactionResultCode::kAccepted,
+      "Install accepted.", reservation.response_digest_sha256,
+      reservation.helper_endpoint_identity_sha256};
+
+  EXPECT_TRUE(is_accepted_install_handoff(reservation, accepted));
+  accepted.response_digest_sha256 = std::string(64, 'c');
+  EXPECT_FALSE(is_accepted_install_handoff(reservation, accepted));
+  accepted.response_digest_sha256 = reservation.response_digest_sha256;
+  accepted.result_code = native::InstallTransactionResultCode::kRejected;
+  EXPECT_FALSE(is_accepted_install_handoff(reservation, accepted));
+}
+
 }  // namespace test
 }  // namespace desktop_updater

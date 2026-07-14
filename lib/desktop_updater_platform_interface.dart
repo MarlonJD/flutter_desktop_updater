@@ -4,6 +4,7 @@ import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart"
     show retainedVerifiedStageFor;
+import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
@@ -177,5 +178,35 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
       allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
       diagnosticsLogPath: diagnosticsLogPath,
     );
+  }
+}
+
+/// Internal native recovery lookup that preserves released platform subclasses.
+extension DesktopUpdaterPlatformNativeRecovery on DesktopUpdaterPlatform {
+  /// Queries native helper status when the default MethodChannel adapter is in
+  /// use. Custom released platform subclasses keep their existing behavior.
+  Future<NativeInstallTransactionStatus?> queryNativeInstallTransaction(
+    String transactionId,
+  ) {
+    final platform = this;
+    if (platform.runtimeType == MethodChannelDesktopUpdater) {
+      return (platform as MethodChannelDesktopUpdater).queryInstallTransaction(
+        transactionId,
+      );
+    }
+    return Future.value();
+  }
+
+  /// Requests helper-owned recovery without granting the Dart store mutation
+  /// authority.
+  Future<NativeInstallTransactionStatus?> recoverNativeInstallTransaction(
+    String transactionId,
+  ) {
+    final platform = this;
+    if (platform.runtimeType == MethodChannelDesktopUpdater) {
+      return (platform as MethodChannelDesktopUpdater)
+          .recoverPendingInstallTransaction(transactionId);
+    }
+    return Future.value();
   }
 }

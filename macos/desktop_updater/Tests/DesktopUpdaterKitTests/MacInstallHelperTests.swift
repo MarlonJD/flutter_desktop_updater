@@ -3,124 +3,6 @@ import XCTest
 @testable import DesktopUpdaterKit
 
 final class MacInstallHelperTests: XCTestCase {
-    func testUnsignedUpdatesRemainExplicitlyOptIn() {
-        let helper = MacInstallHelper()
-        let protectedScript = helper.makeHelperScript(
-            for: request(allowUnsignedUpdates: false)
-        )
-        let bypassScript = helper.makeHelperScript(
-            for: request(allowUnsignedUpdates: true)
-        )
-
-        XCTAssertTrue(protectedScript.contains("ALLOW_UNSIGNED_MACOS"))
-        XCTAssertTrue(protectedScript.contains("codesign --verify --deep --strict"))
-        XCTAssertTrue(protectedScript.contains("spctl --assess --type execute"))
-        XCTAssertTrue(protectedScript.contains("xcrun stapler validate"))
-        XCTAssertFalse(protectedScript.contains("ALLOW_UNSIGNED_MACOS=\"1\""))
-        XCTAssertTrue(
-            bypassScript.contains("ALLOW_UNSIGNED_MACOS=\"1\"") ||
-                bypassScript.contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-1")
-        )
-    }
-
-    func testAppBundleAndPkgHandoffGatesRemainInGeneratedScript() {
-        let script = MacInstallHelper().makeHelperScript(
-            for: request(allowUnsignedUpdates: false)
-        )
-
-        XCTAssertTrue(script.contains("CFBundleIdentifier mismatch"))
-        XCTAssertTrue(script.contains("TeamIdentifier mismatch"))
-        XCTAssertTrue(script.contains("pkgInstaller"))
-        XCTAssertTrue(script.contains("installerApp"))
-        XCTAssertTrue(script.contains("/usr/bin/open \"$PKG\""))
-        XCTAssertTrue(script.contains("log_event \"backup start\""))
-        XCTAssertTrue(script.contains("log_event \"rollback success\""))
-        XCTAssertTrue(script.contains("log_event \"cleanup success\""))
-        XCTAssertTrue(script.contains("open -n \"$BUNDLE\""))
-    }
-
-    func testProvenanceAndPkgTrustPrecedeMutationOrInstallerOpen() {
-        let script = MacInstallHelper().makeHelperScript(
-            for: request(allowUnsignedUpdates: false)
-        )
-
-        let provenance = try! XCTUnwrap(
-            script.range(of: "stage provenance validation")?.lowerBound
-        )
-        let pkgutil = try! XCTUnwrap(
-            script.range(of: "pkgutil --check-signature")?.lowerBound
-        )
-        let open = try! XCTUnwrap(
-            script.range(of: "/usr/bin/open \"$PKG\"")?.lowerBound
-        )
-        let backup = try! XCTUnwrap(
-            script.range(of: "backup start")?.lowerBound
-        )
-        XCTAssertLessThan(provenance, pkgutil)
-        XCTAssertLessThan(pkgutil, open)
-        XCTAssertLessThan(provenance, backup)
-        XCTAssertTrue(script.contains("spctl --assess --type install"))
-        XCTAssertTrue(script.contains("stapler validate \"$PKG\""))
-        XCTAssertTrue(script.contains("EXPECTED_PACKAGE_IDS"))
-        XCTAssertFalse(script.contains("rm -rf \"$(dirname \"$MANIFEST\")\""))
-        XCTAssertTrue(script.contains("cleanup_owned_stage \"$STAGE_ROOT\""))
-    }
-
-    func testProvenancePathsAndTargetsAreShellQuotedAsData() {
-        let paths = [
-            "payload/$(touch command-substitution)",
-            "payload/`touch backtick-substitution`",
-            "payload/it's-data",
-            "payload/line\nbreak",
-        ]
-        let targets = [
-            "targets/$(touch target-command-substitution)",
-            "targets/`touch target-backtick-substitution`",
-            "targets/it's-data",
-            "targets/line\nbreak",
-        ]
-        let entries = paths.map {
-            StageProvenanceEntry(
-                path: $0,
-                kind: "directory",
-                length: 0,
-                sha256: nil,
-                target: nil
-            )
-        } + zip(paths, targets).map {
-            StageProvenanceEntry(
-                path: "links/\($0.0)",
-                kind: "symlink",
-                length: 0,
-                sha256: nil,
-                target: $0.1
-            )
-        }
-
-        let script = MacInstallHelper().makeHelperScript(
-            for: request(
-                allowUnsignedUpdates: false,
-                provenanceEntries: entries
-            )
-        )
-
-        for path in entries.map(\.path) {
-            XCTAssertTrue(
-                script.contains(
-                    "candidate=\"$STAGE_ROOT/\"\(shellQuote(path))"
-                ),
-                "unquoted inventory path: \(path)"
-            )
-            XCTAssertFalse(script.contains("candidate=\"$STAGE_ROOT/\(path)\""))
-        }
-        for target in targets {
-            XCTAssertTrue(
-                script.contains("= \(shellQuote(target)) ]"),
-                "unquoted symlink target: \(target)"
-            )
-        }
-    }
-
     func testTopLevelStagingSymlinkIsRejectedBeforeScheduling() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DesktopUpdaterKitTests-\(UUID().uuidString)")
@@ -199,21 +81,21 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertEqual(request.provenanceEntries, marker.entries)
     }
 
-    func testHelperScriptCollisionFailsWithoutReplacingExistingFile() throws {
-        let nonce = UUID()
-        let script = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "desktop_updater_\(nonce.uuidString).command"
-            )
-        let sentinel = Data("existing helper".utf8)
-        try sentinel.write(to: script, options: .withoutOverwriting)
-        defer { try? FileManager.default.removeItem(at: script) }
+    func testDefaultClientFailsClosedWhenPackagedEndpointIsUnavailable() {
+        let request = MacInstallRequest(
+            stagingPath: nil,
+            allowUnsignedUpdates: false,
+            diagnosticsLogPath: nil
+        )
 
-        XCTAssertThrowsError(try MacInstallHelper().writeHelperScript(
-            for: request(allowUnsignedUpdates: true),
-            nonce: nonce
-        ))
-        XCTAssertEqual(try Data(contentsOf: script), sentinel)
+        XCTAssertThrowsError(
+            try MacInstallHelper().scheduleInstallAndRelaunch(request)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
     }
 
     func testCanonicalHelperEventsMatchTheDartFixture() throws {
@@ -243,26 +125,6 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertEqual(event.timestamp, first.timestamp)
     }
 
-    private func request(
-        allowUnsignedUpdates: Bool,
-        provenanceEntries: [StageProvenanceEntry] = []
-    ) -> MacInstallRequest {
-        return MacInstallRequest(
-            stagingPath: "/tmp/Example.app",
-            allowUnsignedUpdates: allowUnsignedUpdates,
-            diagnosticsLogPath: "/tmp/desktop_updater.jsonl",
-            stageRoot: "/tmp/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000",
-            expectedProvenanceSHA256: String(repeating: "1", count: 64),
-            artifactKind: "pkgInstaller",
-            expectedArtifactSHA256: String(repeating: "2", count: 64),
-            expectedPackageIDs: ["com.example.app.pkg"],
-            provenanceEntries: provenanceEntries
-        )
-    }
-
-    private func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }
 
 private struct HelperEventsFixture: Decodable {

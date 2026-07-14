@@ -172,19 +172,109 @@ std::vector<std::wstring> StringListFromArguments(
   return result;
 }
 
-bool ScheduleNativeInstall(
+bool HandoffNativeInstall(
     const desktop_updater::native::InstallRequest& request,
     std::string* error) {
-  const desktop_updater::native::InstallResult native_result =
-      desktop_updater::native::ScheduleInstallAndRelaunch(request);
-  if (!native_result.ok) {
-    *error = native_result.error_message;
+  desktop_updater::native::InstallReservation reservation;
+  const desktop_updater::native::InstallResult prepared =
+      desktop_updater::native::PrepareInstall(request, &reservation);
+  if (!prepared.ok) {
+    *error = prepared.error_message;
+    return false;
+  }
+  const desktop_updater::native::InstallTransactionStatus status =
+      desktop_updater::native::CommitAfterExit(reservation);
+  if (!IsAcceptedInstallHandoff(reservation, status)) {
+    *error = status.detail.empty()
+                 ? "Native install helper commit was not accepted."
+                 : status.detail;
     return false;
   }
   return true;
 }
 
+std::string TransactionStateName(
+    desktop_updater::native::InstallTransactionState state) {
+  using State = desktop_updater::native::InstallTransactionState;
+  switch (state) {
+    case State::kPrepared: return "prepared";
+    case State::kCommitAccepted: return "commitAccepted";
+    case State::kCompleted: return "completed";
+    case State::kCancelled: return "cancelled";
+    case State::kExpired: return "expired";
+    case State::kRolledBack: return "rolledBack";
+    case State::kManualActionRequired: return "manualActionRequired";
+    case State::kUnknown: return "unknown";
+  }
+  return "unknown";
+}
+
+std::string TransactionResultName(
+    desktop_updater::native::InstallTransactionResultCode code) {
+  using Code = desktop_updater::native::InstallTransactionResultCode;
+  switch (code) {
+    case Code::kAccepted: return "accepted";
+    case Code::kSucceeded: return "succeeded";
+    case Code::kRejected: return "rejected";
+    case Code::kEndpointUnavailable: return "endpointUnavailable";
+    case Code::kAuthenticationFailed: return "authenticationFailed";
+    case Code::kInvalidResponse: return "invalidResponse";
+    case Code::kRecoveryRequired: return "recoveryRequired";
+    case Code::kNone: return "none";
+  }
+  return "none";
+}
+
+flutter::EncodableValue TransactionStatusValue(
+    const desktop_updater::native::InstallTransactionStatus& status) {
+  flutter::EncodableMap value;
+  value[flutter::EncodableValue("transactionId")] =
+      flutter::EncodableValue(status.transaction_id);
+  value[flutter::EncodableValue("state")] =
+      flutter::EncodableValue(TransactionStateName(status.state));
+  value[flutter::EncodableValue("resultCode")] =
+      flutter::EncodableValue(TransactionResultName(status.result_code));
+  value[flutter::EncodableValue("detail")] =
+      flutter::EncodableValue(status.detail);
+  value[flutter::EncodableValue("responseDigestSha256")] =
+      flutter::EncodableValue(status.response_digest_sha256);
+  value[flutter::EncodableValue("helperEndpointIdentitySha256")] =
+      flutter::EncodableValue(status.helper_endpoint_identity_sha256);
+  return flutter::EncodableValue(value);
+}
+
+bool ReadTransactionId(const flutter::EncodableValue* arguments,
+                       std::string* transaction_id) {
+  const auto* values =
+      arguments == nullptr
+          ? nullptr
+          : std::get_if<flutter::EncodableMap>(arguments);
+  if (values == nullptr) return false;
+  const auto entry = values->find(flutter::EncodableValue("transactionId"));
+  if (entry == values->end()) return false;
+  const auto* value = std::get_if<std::string>(&entry->second);
+  if (value == nullptr || value->empty()) return false;
+  *transaction_id = *value;
+  return true;
+}
+
 }  // namespace
+
+bool IsAcceptedInstallHandoff(
+    const native::InstallReservation& reservation,
+    const native::InstallTransactionStatus& status) {
+  const bool accepted_state =
+      status.state == native::InstallTransactionState::kCommitAccepted ||
+      status.state == native::InstallTransactionState::kCompleted;
+  const bool accepted_result =
+      status.result_code == native::InstallTransactionResultCode::kAccepted ||
+      status.result_code == native::InstallTransactionResultCode::kSucceeded;
+  return accepted_state && accepted_result &&
+         status.transaction_id == reservation.transaction_id &&
+         status.response_digest_sha256 == reservation.response_digest_sha256 &&
+         status.helper_endpoint_identity_sha256 ==
+             reservation.helper_endpoint_identity_sha256;
+}
 
 ProductVersionBuildParseResult ParseProductVersionBuildNumber(
     const std::wstring& product_version,
@@ -244,7 +334,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     request.elevation_policy =
         desktop_updater::native::InstallElevationPolicy::kNever;
     std::string error;
-    if (!ScheduleNativeInstall(request, &error)) {
+    if (!HandoffNativeInstall(request, &error)) {
       result->Error("RestartError", error);
       return;
     }
@@ -308,12 +398,26 @@ void DesktopUpdaterPlugin::HandleMethodCall(
       return;
     }
     std::string error;
-    if (!ScheduleNativeInstall(request, &error)) {
+    if (!HandoffNativeInstall(request, &error)) {
       result->Error("InstallError", error);
       return;
     }
     result->Success();
     ExitProcess(0);
+  } else if (method_call.method_name().compare("queryInstallTransaction") ==
+             0 ||
+             method_call.method_name().compare(
+                 "recoverPendingInstallTransaction") == 0) {
+    std::string transaction_id;
+    if (!ReadTransactionId(method_call.arguments(), &transaction_id)) {
+      result->Error("InvalidArguments", "transactionId must be a string.");
+      return;
+    }
+    const native::InstallTransactionStatus status =
+        method_call.method_name().compare("queryInstallTransaction") == 0
+            ? native::QueryTransaction(transaction_id)
+            : native::RecoverPendingInstall(transaction_id);
+    result->Success(TransactionStatusValue(status));
   } else if (method_call.method_name().compare("getExecutablePath") == 0) {
     result->Success(flutter::EncodableValue(WideToUtf8(CurrentExecutablePath())));
   } else if (method_call.method_name().compare("getCurrentVersion") == 0) {

@@ -188,6 +188,26 @@ TEST(DesktopUpdaterPlugin, InstalledIdentityJsonDecodesPublisherEscapes) {
       std::string(70 * 1024, ' '), L"com.example"));
 }
 
+TEST(DesktopUpdaterPlugin, AcceptsOnlyProofBoundNativeCommit) {
+  native::InstallReservation reservation = {
+      "123e4567-e89b-42d3-a456-426614174000", "ready-token",
+      std::string(64, 'a'), std::string(64, 'b'), 1};
+  native::InstallTransactionStatus accepted = {
+      reservation.transaction_id,
+      native::InstallTransactionState::kCommitAccepted,
+      native::InstallTransactionResultCode::kAccepted,
+      "Install accepted.", reservation.response_digest_sha256,
+      reservation.helper_endpoint_identity_sha256};
+
+  EXPECT_TRUE(IsAcceptedInstallHandoff(reservation, accepted));
+  accepted.helper_endpoint_identity_sha256 = std::string(64, 'c');
+  EXPECT_FALSE(IsAcceptedInstallHandoff(reservation, accepted));
+  accepted.helper_endpoint_identity_sha256 =
+      reservation.helper_endpoint_identity_sha256;
+  accepted.result_code = native::InstallTransactionResultCode::kRejected;
+  EXPECT_FALSE(IsAcceptedInstallHandoff(reservation, accepted));
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

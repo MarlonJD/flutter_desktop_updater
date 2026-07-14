@@ -119,17 +119,18 @@ void main() {
     );
 
     expect(plugin, contains("desktop_updater::native::InstallRequest"));
-    expect(plugin, contains("ScheduleInstallAndRelaunch"));
+    expect(plugin, contains("PrepareInstall"));
+    expect(plugin, contains("CommitAfterExit"));
+    expect(plugin, isNot(contains("ScheduleInstallAndRelaunch")));
     expect(plugin, isNot(contains("kProtectedInstallRoots")));
     expect(plugin, isNot(contains("rollback_and_exit")));
     expect(source, contains("kProtectedInstallRoots"));
     expect(source, contains("Removed file path escapes install root"));
     expect(source, contains("Staging path must not overlap install root"));
-    expect(source, contains(r'rm -rf \"$target\"'));
-    expect(source, contains(r'rm -rf \"$staging\"'));
-    expect(source, contains(r'cp -a \"$backup/.\" \"$target/\"'));
-    expect(source, contains(r'chmod +x \"$exe\"'));
-    expect(source, contains("rollback success"));
+    expect(source, contains("SerializeCommonInstallRequest"));
+    expect(source, contains("EndpointUnavailableStatus"));
+    expect(source, isNot(contains("/bin/bash")));
+    expect(source, isNot(contains("BuildInstallScriptForTesting")));
   });
 
   test("Linux native tests prove destructive commands stay bounded", () {
@@ -137,9 +138,9 @@ void main() {
 
     expect(tests, contains("RejectsProtectedSharedRoots"));
     expect(tests, contains("RejectsNonCanonicalAndSymlinkEscapes"));
-    expect(tests, contains("GeneratedScriptBoundsDestructiveCommands"));
-    expect(tests, contains("RollbackRestoresOnlyVerifiedBundle"));
-    expect(tests, contains("StagingCleanupCannotDeleteInstallRoot"));
+    expect(tests, contains("PersistenceFailuresNeverStartMutation"));
+    expect(tests, contains("RecoversEveryRenameAndJournalBoundary"));
+    expect(tests, contains("InvalidBackupIdentityIsManual"));
   });
 
   test("Linux runtime artifact handoff uses a non-temporary install root", () {

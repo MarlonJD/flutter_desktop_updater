@@ -1,4 +1,5 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
@@ -173,5 +174,48 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
       "getCurrentVersionInfo",
     );
     return versionInfo == null ? null : Map<String, String?>.from(versionInfo);
+  }
+
+  /// Queries read-only transaction status from the authenticated native helper.
+  Future<NativeInstallTransactionStatus> queryInstallTransaction(
+    String transactionId,
+  ) async {
+    return _invokeTransactionStatus(
+      "queryInstallTransaction",
+      transactionId,
+    );
+  }
+
+  /// Asks the authenticated native helper to recover its pending transaction.
+  Future<NativeInstallTransactionStatus> recoverPendingInstallTransaction(
+    String transactionId,
+  ) async {
+    return _invokeTransactionStatus(
+      "recoverPendingInstallTransaction",
+      transactionId,
+    );
+  }
+
+  Future<NativeInstallTransactionStatus> _invokeTransactionStatus(
+    String method,
+    String transactionId,
+  ) async {
+    if (transactionId.isEmpty) {
+      throw ArgumentError.value(
+        transactionId,
+        "transactionId",
+        "must not be empty",
+      );
+    }
+    final status = await methodChannel.invokeMapMethod<String, Object?>(
+      method,
+      {"transactionId": transactionId},
+    );
+    if (status == null) {
+      throw StateError("Native helper returned no transaction status.");
+    }
+    return NativeInstallTransactionStatus.fromJson(
+      Map<String, Object?>.from(status),
+    );
   }
 }

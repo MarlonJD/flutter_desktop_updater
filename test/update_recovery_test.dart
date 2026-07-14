@@ -13,6 +13,7 @@ void main() {
       updateBuildNumber: 201,
       stagingPath: "/tmp/staged-app",
       diagnosticsText: "redacted diagnostics",
+      transactionId: "123e4567-e89b-42d3-a456-426614174000",
     );
 
     expect(marker.createdAt, DateTime.utc(2026, 6, 16, 10));
@@ -24,6 +25,37 @@ void main() {
     expect(marker.updateBuildNumber, 201);
     expect(marker.stagingPath, "/tmp/staged-app");
     expect(marker.diagnosticsText, "redacted diagnostics");
+    expect(marker.transactionId, "123e4567-e89b-42d3-a456-426614174000");
+  });
+
+  test("native transaction status keeps helper authority explicit", () {
+    final status = NativeInstallTransactionStatus.fromJson({
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+      "state": "completed",
+      "resultCode": "succeeded",
+      "detail": "Install completed.",
+      "responseDigestSha256": "a" * 64,
+      "helperEndpointIdentitySha256": "b" * 64,
+    });
+
+    expect(status.state, NativeInstallTransactionState.completed);
+    expect(status.resultCode, NativeInstallTransactionResultCode.succeeded);
+    expect(status.isTerminalSuccess, isTrue);
+    expect(status.requiresRecovery, isFalse);
+  });
+
+  test("recovery-required helper status remains non-authoritative UX data", () {
+    final status = NativeInstallTransactionStatus.fromJson({
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+      "state": "prepared",
+      "resultCode": "recoveryRequired",
+      "detail": "Recovery is required.",
+      "responseDigestSha256": "a" * 64,
+      "helperEndpointIdentitySha256": "b" * 64,
+    });
+
+    expect(status.requiresRecovery, isTrue);
+    expect(status.isTerminalSuccess, isFalse);
   });
 
   test("app-owned recovery store contract can read write and clear by channel",

@@ -19,7 +19,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         case "getPlatformVersion":
             result("macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
         case "restartApp":
-            scheduleInstallAndRelaunch(
+            handoffInstallAndRelaunch(
                 stagingPath: nil,
                 removedFiles: [],
                 diagnosticsLogPath: nil,
@@ -47,7 +47,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
             let stageProvenanceSHA256 =
                 arguments["stageProvenanceSha256"] as? String
-            scheduleInstallAndRelaunch(
+            handoffInstallAndRelaunch(
                 stagingPath: stagingPath,
                 removedFiles: removedFiles,
                 allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
@@ -55,6 +55,10 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 stageProvenanceSHA256: stageProvenanceSHA256,
                 result: result
             )
+        case "queryInstallTransaction":
+            queryInstallTransaction(call.arguments, result: result)
+        case "recoverPendingInstallTransaction":
+            recoverPendingInstallTransaction(call.arguments, result: result)
         case "getExecutablePath":
             result(Bundle.main.executablePath)
         case "getCurrentVersion":
@@ -78,7 +82,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         }
     }
 
-    private func scheduleInstallAndRelaunch(
+    private func handoffInstallAndRelaunch(
         stagingPath: String?,
         removedFiles _: [String],
         allowUnsignedMacOSUpdates: Bool = false,
@@ -137,7 +141,17 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 expectedPackageIDs: expectedPackageIDs,
                 provenanceEntries: provenance?.marker.entries ?? []
             )
-            try MacInstallHelper().scheduleInstallAndRelaunch(request)
+            let helper = MacInstallHelper()
+            let reservation = try helper.prepareInstall(request)
+            let status = try helper.commitAfterExit(reservation)
+            guard status.state == .commitAccepted || status.state == .completed,
+                  status.resultCode == .accepted || status.resultCode == .succeeded,
+                  status.responseDigestSHA256 == reservation.responseDigestSHA256,
+                  status.helperEndpointIdentitySHA256 ==
+                    reservation.helperEndpointIdentitySHA256
+            else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
 
             result(nil)
             DispatchQueue.main.async {
@@ -160,6 +174,99 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                         : error.localizedDescription
                 )
             )
+        }
+    }
+
+    private func queryInstallTransaction(
+        _ arguments: Any?,
+        result: @escaping FlutterResult
+    ) {
+        withTransactionID(arguments, result: result) { transactionID in
+            try MacInstallHelper().queryTransaction(transactionID)
+        }
+    }
+
+    private func recoverPendingInstallTransaction(
+        _ arguments: Any?,
+        result: @escaping FlutterResult
+    ) {
+        withTransactionID(arguments, result: result) { transactionID in
+            try MacInstallHelper().recoverPendingInstall(transactionID)
+        }
+    }
+
+    private func withTransactionID(
+        _ arguments: Any?,
+        result: @escaping FlutterResult,
+        operation: (String) throws -> InstallTransactionStatus
+    ) {
+        guard let values = arguments as? [String: Any],
+              let transactionID = values["transactionId"] as? String,
+              !transactionID.isEmpty
+        else {
+            result(
+                FlutterError(
+                    code: "InvalidArguments",
+                    message: "transactionId must be a string.",
+                    details: nil
+                )
+            )
+            return
+        }
+        do {
+            result(transactionStatusMap(try operation(transactionID)))
+        } catch {
+            result(
+                FlutterError(
+                    code: "InstallError",
+                    message: "Unable to query native install status.",
+                    details: String(describing: error)
+                )
+            )
+        }
+    }
+
+    private func transactionStatusMap(
+        _ status: InstallTransactionStatus
+    ) -> [String: Any] {
+        return [
+            "transactionId": status.transactionID,
+            "state": transactionStateName(status.state),
+            "resultCode": transactionResultName(status.resultCode),
+            "detail": status.detail,
+            "responseDigestSha256": status.responseDigestSHA256,
+            "helperEndpointIdentitySha256":
+                status.helperEndpointIdentitySHA256,
+        ]
+    }
+
+    private func transactionStateName(
+        _ state: InstallTransactionState
+    ) -> String {
+        switch state {
+        case .unknown: return "unknown"
+        case .prepared: return "prepared"
+        case .commitAccepted: return "commitAccepted"
+        case .completed: return "completed"
+        case .cancelled: return "cancelled"
+        case .expired: return "expired"
+        case .rolledBack: return "rolledBack"
+        case .manualActionRequired: return "manualActionRequired"
+        }
+    }
+
+    private func transactionResultName(
+        _ code: InstallTransactionResultCode
+    ) -> String {
+        switch code {
+        case .none: return "none"
+        case .accepted: return "accepted"
+        case .succeeded: return "succeeded"
+        case .rejected: return "rejected"
+        case .endpointUnavailable: return "endpointUnavailable"
+        case .authenticationFailed: return "authenticationFailed"
+        case .invalidResponse: return "invalidResponse"
+        case .recoveryRequired: return "recoveryRequired"
         }
     }
 

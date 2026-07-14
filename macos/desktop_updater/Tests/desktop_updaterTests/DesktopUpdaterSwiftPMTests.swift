@@ -13,6 +13,11 @@ final class DesktopUpdaterSwiftPMTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains("installUpdate"))
+        XCTAssertTrue(source.contains("prepareInstall"))
+        XCTAssertTrue(source.contains("commitAfterExit"))
+        XCTAssertFalse(source.contains("scheduleInstallAndRelaunch"))
+        XCTAssertTrue(source.contains("queryInstallTransaction"))
+        XCTAssertTrue(source.contains("recoverPendingInstallTransaction"))
         XCTAssertTrue(source.contains("checkMacOSInstallLocation"))
         XCTAssertTrue(source.contains("moveMacOSAppToApplications"))
     }

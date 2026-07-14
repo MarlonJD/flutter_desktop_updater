@@ -1,4 +1,5 @@
 import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -211,5 +212,55 @@ void main() {
 
     expect(capturedCall.method, "moveMacOSAppToApplications");
     expect(capturedCall.arguments, {"replaceExisting": true});
+  });
+
+  test("queryInstallTransaction forwards ID and parses helper status",
+      () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return {
+        "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+        "state": "completed",
+        "resultCode": "succeeded",
+        "detail": "Install completed.",
+        "responseDigestSha256": "a" * 64,
+        "helperEndpointIdentitySha256": "b" * 64,
+      };
+    });
+
+    final status = await platform.queryInstallTransaction(
+      "123e4567-e89b-42d3-a456-426614174000",
+    );
+
+    expect(capturedCall.method, "queryInstallTransaction");
+    expect(capturedCall.arguments, {
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+    });
+    expect(status.state, NativeInstallTransactionState.completed);
+  });
+
+  test("recoverPendingInstallTransaction uses compatible map shape", () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return {
+        "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+        "state": "rolledBack",
+        "resultCode": "rejected",
+        "detail": "Rollback completed.",
+        "responseDigestSha256": "a" * 64,
+        "helperEndpointIdentitySha256": "b" * 64,
+      };
+    });
+
+    final status = await platform.recoverPendingInstallTransaction(
+      "123e4567-e89b-42d3-a456-426614174000",
+    );
+
+    expect(capturedCall.method, "recoverPendingInstallTransaction");
+    expect(status.state, NativeInstallTransactionState.rolledBack);
   });
 }

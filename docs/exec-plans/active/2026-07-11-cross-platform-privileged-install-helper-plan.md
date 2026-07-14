@@ -144,7 +144,7 @@ endpoint identity, and expiry. Unknown major versions, duplicate JSON keys,
 unknown enum values, non-canonical UUIDs, invalid digests, absolute sibling
 names, and caller-supplied trust authority fail closed.
 
-- [ ] **Step 1: Write the failing contract test**
+- [x] **Step 1: Write the failing contract test**
 
   Assert that the schema and all five fixture files exist; the generator is
   idempotent; every valid request validates; every invalid request names a
@@ -159,7 +159,7 @@ names, and caller-supplied trust authority fail closed.
 
   Expected RED: missing schema, fixtures, generator, and protocol document.
 
-- [ ] **Step 2: Implement the schema and deterministic generator**
+- [x] **Step 2: Implement the schema and deterministic generator**
 
   Generate, do not hand-maintain, positive and adversarial cases for every
   request/result field and these strategies:
@@ -176,14 +176,14 @@ names, and caller-supplied trust authority fail closed.
   preserving, and independent of locale. The generator must write byte-identical
   output on a second run.
 
-- [ ] **Step 3: Document the normative protocol and compatibility rules**
+- [x] **Step 3: Document the normative protocol and compatibility rules**
 
   Specify exact state names, result codes, diagnostic event names, redaction,
   protocol negotiation, timeout behavior, and the rule that paths are hints,
   never mutation authority. Link the approved design spec and state explicitly
   that artifact production is out of scope.
 
-- [ ] **Step 4: Run focused verification and commit**
+- [x] **Step 4: Run focused verification and commit**
 
   ```sh
   dart run tool/generate_native_install_helper_fixtures.dart
@@ -201,9 +201,37 @@ names, and caller-supplied trust authority fail closed.
 
 **Evidence:**
 
-- RED: `not run`
-- Fixture idempotence and Dart contract: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_contract_test.dart`;
+  exit 1; 0 passed, 6 failed; first failure was the intended missing
+  `schemas/native-install-helper-v1.schema.json`. The added exhaustive field
+  coverage assertion was separately observed RED with exit 1 and 0/1 tests
+  before its generated cases existed.
+- Fixture generation: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart run tool/generate_native_install_helper_fixtures.dart`;
+  exit 0.
+- Fixture idempotence: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart run tool/generate_native_install_helper_fixtures.dart --check`;
+  exit 0.
+- Dart contract: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_contract_test.dart`;
+  exit 0; 9 tests passed.
+- Existing fixture-generator drift guard: `verified locally` — macOS 26.5.2
+  arm64;
+  `flutter test --no-pub test/native_contract_fixture_test.dart --plain-name 'native contract generation is byte-for-byte deterministic'`;
+  exit 0; 1 test passed.
+- Targeted analysis: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart analyze tool/generate_native_install_helper_fixtures.dart test/native_install_helper_contract_test.dart`;
+  exit 0; no issues found.
+- Format: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart format --set-exit-if-changed tool/generate_native_install_helper_fixtures.dart test/native_install_helper_contract_test.dart`;
+  exit 0; 2 files checked, 0 changed.
+- Plan-spelled `dart` wrapper: `blocked` — the exact wrapper invocation tried
+  to rewrite the external Flutter SDK cache and exited 1 under the workspace
+  sandbox; the same Dart `run`, `analyze`, and `format` subcommands were
+  `verified locally` above through the installed SDK binary without that
+  external mutation.
+- Commit: `verified locally` — `292b112 feat: define native install helper protocol`.
 
 ---
 
@@ -237,7 +265,7 @@ allowedStrategies
 minimumHelperProtocolVersion
 ```
 
-- [ ] **Step 1: Write failing Dart and C++ policy tests**
+- [x] **Step 1: Write failing Dart and C++ policy tests**
 
   Cover valid portable and privileged policies plus wrong package ID, unknown
   strategy, root filesystem authorization, relative install root, caller-added
@@ -252,21 +280,21 @@ minimumHelperProtocolVersion
 
   Expected RED: schema, generator, fixtures, and C++ parser are absent.
 
-- [ ] **Step 2: Implement strict common parsing without filesystem mutation**
+- [x] **Step 2: Implement strict common parsing without filesystem mutation**
 
   `install_helper_policy.cc` may parse and validate policy bytes and expose
   immutable values. It must not open, copy, delete, rename, elevate, or recover
   filesystem objects. Reject unknown fields in security-authority objects and
   canonicalize the policy before computing its digest.
 
-- [ ] **Step 3: Implement build-time policy generation**
+- [x] **Step 3: Implement build-time policy generation**
 
   The tool accepts an application-owned configuration and writes a canonical
   policy plus digest. It refuses wildcard signers, filesystem roots, empty
   release keys, `externalManagedRefresh` without a named provider, and elevated
   capability in a portable policy. Never write private keys into policy output.
 
-- [ ] **Step 4: Run focused verification and commit**
+- [x] **Step 4: Run focused verification and commit**
 
   ```sh
   flutter test --no-pub test/native_install_helper_policy_test.dart
@@ -286,11 +314,32 @@ minimumHelperProtocolVersion
 
 **Evidence:**
 
-- RED: `not run`
-- Dart policy tests: `not run`
-- Linux C++ policy tests: `not run`
-- Windows C++ policy tests: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_policy_test.dart`;
+  exit 1; 0 of 6 tests passed; the first failure reported the absent policy
+  schema. The C++ fixture test was also added before the parser; the plan-spelled
+  local CMake configure was `blocked` because CMake is not installed on this
+  macOS host.
+- Dart policy tests: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_policy_test.dart`;
+  exit 0; 6 tests passed.
+- Policy fixture drift: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart run tool/generate_native_install_helper_policy.dart --check-fixtures`;
+  exit 0; generated fixtures matched.
+- Linux C++ policy tests: `verified locally` — disposable Alpine Linux 3.24
+  container on macOS 26.5.2 arm64; repository mounted read-only;
+  `docker run --rm -v /Users/marlonjd/Developer/library/flutter_desktop_updater:/src:ro -w /src postgres:18.4-alpine3.24 sh -lc 'apk add --no-cache cmake g++ make git && cmake -S linux/native -B /tmp/linux-policy -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON && cmake --build /tmp/linux-policy --target desktop_updater_native_test && ctest --test-dir /tmp/linux-policy -R install_helper_policy --output-on-failure'`;
+  exit 0; GCC 15.2.0 and CMake 4.2.3 built the production native target and
+  CTest discovered and passed 2 of 2 policy tests.
+- Windows C++ policy tests: `not run` — no Windows target host is available in
+  this environment; Windows CMake wiring is candidate-only.
+- Targeted analysis: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart analyze tool/generate_native_install_helper_policy.dart test/native_install_helper_policy_test.dart`;
+  exit 0; no issues found.
+- Format: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart format --output=none --set-exit-if-changed tool/generate_native_install_helper_policy.dart test/native_install_helper_policy_test.dart`;
+  exit 0; 2 files checked, 0 changed.
+- Commit: `verified locally` — `95e8d57 feat: seal native helper policies`.
 
 ---
 
@@ -315,7 +364,7 @@ manager: prepared -> managerStarted -> verificationPending -> completed
 terminal alternatives: rolledBack | manualActionRequired
 ```
 
-- [ ] **Step 1: Write failing state-machine tests**
+- [x] **Step 1: Write failing state-machine tests**
 
   Generate a case for helper death before and after every durable transition,
   repeated recovery, live-owner recovery rejection, torn/short writes, disk
@@ -328,7 +377,7 @@ terminal alternatives: rolledBack | manualActionRequired
 
   Expected RED: no executable reference model or crash matrix exists.
 
-- [ ] **Step 2: Implement the pure reference model**
+- [x] **Step 2: Implement the pure reference model**
 
   The common implementation accepts observations and returns a decision only:
 
@@ -340,13 +389,13 @@ terminal alternatives: rolledBack | manualActionRequired
   It must never invoke filesystem or platform APIs. Its only purpose is to make
   Swift, Windows, and Linux consume the same decisions and adversarial fixtures.
 
-- [ ] **Step 3: Prove deterministic, idempotent recovery decisions**
+- [x] **Step 3: Prove deterministic, idempotent recovery decisions**
 
   Require each fixture to converge to exactly one of verified old target,
   verified new target, or non-destructive `manualActionRequired`. A corrupt or
   ambiguous journal must never authorize cleanup.
 
-- [ ] **Step 4: Run focused verification and commit**
+- [x] **Step 4: Run focused verification and commit**
 
   ```sh
   flutter test --no-pub test/native_install_helper_state_machine_test.dart
@@ -365,11 +414,38 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Evidence:**
 
-- RED: `not run`
-- Dart state-machine tests: `not run`
-- Linux reference-model tests: `not run`
-- Windows reference-model tests: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_state_machine_test.dart`;
+  exit 1; 1 of 6 tests passed and 5 failed because the reference-model files
+  and recovery matrix were absent. The C++ RED was also `verified locally`
+  with `clang++ -std=c++17 -I /private/tmp -I native_runtime/cpp -fsyntax-only native_runtime/cpp/install_helper_contract_fixture_tests.cc`;
+  exit 1 at the absent `install_helper_contract.h`.
+- Dart state-machine tests: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_state_machine_test.dart`;
+  exit 0; 6 tests passed.
+- Fixture drift: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart run tool/generate_native_install_helper_fixtures.dart --check`;
+  exit 0; the five helper-contract fixtures matched. The independently
+  generated policy fixture is excluded from this ownership check.
+- Task 1 contract regression: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_install_helper_contract_test.dart`;
+  exit 0; 9 tests passed.
+- Linux reference-model tests: `verified locally` — disposable Alpine Linux
+  3.24 container on macOS 26.5.2 arm64; repository mounted read-only;
+  `docker run --rm -v /Users/marlonjd/Developer/library/flutter_desktop_updater:/src:ro -w /src postgres:18.4-alpine3.24 sh -lc 'apk add --no-cache cmake g++ make git && cmake -S linux/native -B /tmp/linux-contract -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON && cmake --build /tmp/linux-contract --target desktop_updater_native_test && ctest --test-dir /tmp/linux-contract -R install_helper_contract --output-on-failure'`;
+  exit 0; GCC 15.2.0 and CMake 4.2.3 built the production native target and
+  CTest discovered and passed 4 of 4 recovery tests, including explicit
+  repeated-recovery idempotence.
+- Windows reference-model tests: `not run` — no Windows target host is
+  available in this environment; Windows CMake wiring is candidate-only.
+- Targeted analysis: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart analyze tool/generate_native_install_helper_fixtures.dart test/native_install_helper_state_machine_test.dart test/native_install_helper_contract_test.dart`;
+  exit 0; no issues found.
+- Format: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart format --output=none --set-exit-if-changed tool/generate_native_install_helper_fixtures.dart test/native_install_helper_state_machine_test.dart test/native_install_helper_contract_test.dart`;
+  exit 0; 3 files checked, 0 changed.
+- Commit: `verified locally` —
+  `136bf28 test: define native helper recovery model`.
 
 ---
 
@@ -387,7 +463,7 @@ terminal alternatives: rolledBack | manualActionRequired
 - Modify: `test/macos_cocoapods_source_layout_test.dart`
 - Modify: `test/macos_swift_package_test.dart`
 
-- [ ] **Step 1: Write failing layout and compatibility tests**
+- [x] **Step 1: Write failing layout and compatibility tests**
 
   Assert that SwiftPM still exposes `DesktopUpdaterKit` at macOS 10.15+, the
   helper executable is compiled for macOS 10.14, the helper is a distinct
@@ -404,7 +480,7 @@ terminal alternatives: rolledBack | manualActionRequired
 
   Expected RED: helper product and embed contract are absent.
 
-- [ ] **Step 2: Add a no-mutation helper executable target**
+- [x] **Step 2: Add a no-mutation helper executable target**
 
   A separate Swift package with `.macOS(.v10_14)` builds the helper; neither
   repository `DesktopUpdaterKit` package changes its macOS 10.15 floor. The
@@ -413,13 +489,13 @@ terminal alternatives: rolledBack | manualActionRequired
   elevate. Keep macOS 10.14-compatible sources separate from
   `Sources/DesktopUpdaterKit/Runtime/`.
 
-- [ ] **Step 3: Add deterministic helper discovery**
+- [x] **Step 3: Add deterministic helper discovery**
 
   `EmbeddedHelperLocator` resolves only the signed nested helper at the fixed
   bundle-relative location. Do not search `PATH`, temporary directories, the
   source tree, or caller-provided paths.
 
-- [ ] **Step 4: Run macOS build checks and commit**
+- [x] **Step 4: Run macOS build checks and commit**
 
   ```sh
   swift test --package-path macos/install_helper
@@ -440,11 +516,44 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Evidence:**
 
-- RED: `not run`
-- SwiftPM macOS 10.15+: `not run`
-- Helper macOS 10.14 compile: `not run`
-- Exact CocoaPods allowlist: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/macos_native_helper_layout_test.dart test/macos_cocoapods_source_layout_test.dart test/macos_swift_package_test.dart`;
+  exit 1; 18 tests passed and 5 failed because the helper package/product and
+  fixed locator were absent. The Swift API RED was also `verified locally`
+  with `swift test --package-path macos/install_helper`; exit 1 because the
+  executable target was empty before its sources were added.
+- Helper Swift tests: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --package-path macos/install_helper`; exit 0; 3 tests passed.
+- SwiftPM macOS 10.15+: `verified locally` — macOS 26.5.2 arm64;
+  `swift test`; exit 0; 55 `DesktopUpdaterKit` tests passed, including 3 fixed
+  helper-layout tests. `swift test --package-path macos/desktop_updater` is
+  `blocked` outside a generated Flutter host because its declared sibling
+  package `macos/FlutterFramework` does not exist in the repository. The real
+  adapter integration was instead `verified locally` with
+  `flutter build macos --debug` from `example/`; exit 0; the debug application
+  built successfully. Flutter's migration-only rewrites were restored and
+  `git diff --exit-code -- example` exited 0.
+- Helper macOS 10.14 compile: `verified locally` — macOS 26.5.2 arm64;
+  `swift build --package-path macos/install_helper --triple x86_64-apple-macosx10.14`;
+  exit 0; the executable compiled and linked for the forced 10.14 deployment
+  triple.
+- Helper executable: `verified locally` — macOS 26.5.2 arm64;
+  `swift run --package-path macos/install_helper DesktopUpdaterInstallHelper --version`;
+  exit 0; printed `DesktopUpdaterInstallHelper 2.7.0 (protocol 1)`.
+- Exact CocoaPods allowlist: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/macos_native_helper_layout_test.dart test/macos_cocoapods_source_layout_test.dart test/macos_swift_package_test.dart`;
+  exit 0; 23 tests passed and the podspec retained exactly five sources.
+- CocoaPods macOS 10.14 compile: `verified locally` — macOS 26.5.2 arm64;
+  `RUNNER_TEMP=/private/tmp FLUTTER_ROOT=/Users/marlonjd/Developer/flutter xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path /private/tmp/desktop-updater-swift-module-cache -F /Users/marlonjd/Developer/flutter/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64 macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift`;
+  exit 0.
+- Targeted analysis: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart analyze test/macos_native_helper_layout_test.dart test/macos_cocoapods_source_layout_test.dart test/macos_swift_package_test.dart`;
+  exit 0; no issues found.
+- Format: `verified locally` — macOS 26.5.2 arm64;
+  `HOME=/private/tmp DART_TOOL_DISABLE_ANALYTICS=1 /Users/marlonjd/Developer/flutter/bin/cache/dart-sdk/bin/dart format --output=none --set-exit-if-changed test/macos_native_helper_layout_test.dart test/macos_cocoapods_source_layout_test.dart test/macos_swift_package_test.dart`;
+  exit 0; 3 files checked, 0 changed.
+- Commit: `verified locally` —
+  `050cf9a build: package macos install helper`.
 
 ---
 
@@ -462,7 +571,7 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacHelperAuthenticationTests.swift`
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallReservationTests.swift`
 
-- [ ] **Step 1: Write failing authentication and reservation tests**
+- [x] **Step 1: Write failing authentication and reservation tests**
 
   Cover wrong Team ID, bundle ID, designated requirement, helper digest,
   policy digest, protocol version, transaction nonce, stale audit token,
@@ -476,14 +585,14 @@ terminal alternatives: rolledBack | manualActionRequired
 
   Expected RED: authentication and reservation APIs do not exist.
 
-- [ ] **Step 2: Implement strict protocol and sealed policy loading**
+- [x] **Step 2: Implement strict protocol and sealed policy loading**
 
   Bind the app, helper, policy, transaction, and request digest. Verify static
   code and audit-token identity with Security framework APIs. The application
   must not supply release roots, designated requirements, allowed install roots,
   or helper identity at runtime.
 
-- [ ] **Step 3: Implement no-mutation reservation ownership**
+- [x] **Step 3: Implement no-mutation reservation ownership**
 
   `prepareInstall` authenticates, proves target and stage, obtains the exclusive
   target lock, writes and flushes the initial journal, installs an exact caller
@@ -491,7 +600,7 @@ terminal alternatives: rolledBack | manualActionRequired
   still-`prepared` transaction after lock, token, journal digest, and derived
   sibling validation. No target mutation is allowed in this task.
 
-- [ ] **Step 4: Run focused tests and commit**
+- [x] **Step 4: Run focused tests and commit**
 
   ```sh
   swift test --package-path macos/install_helper
@@ -508,10 +617,37 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Evidence:**
 
-- RED: `not run`
-- Swift unit/integration tests: `not run`
-- Actual signed audit-token peer test: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --package-path macos/install_helper --filter HelperServerTests`;
+  exit 1 at the absent `HelperServer`, `ReservationStore`, journal, and monitor
+  APIs. The kit RED was `verified locally` through the repository root with
+  `swift test --filter 'MacHelperAuthenticationTests|MacInstallReservationTests'`;
+  exit 1 at the absent sealed-policy, Security identity, and reservation APIs.
+- Focused helper tests: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --package-path macos/install_helper --filter HelperServerTests`;
+  exit 0; 6 tests passed, covering durable exclusive journal creation,
+  journal-before-monitor ordering, cancellation, timeout, duplicate commit,
+  authentication gating, and target reservation races.
+- Focused kit tests: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --filter 'MacHelperAuthenticationTests|MacInstallReservationTests'`;
+  exit 0; 7 tests passed. The plan-spelled
+  `swift test --package-path macos/desktop_updater --filter 'MacHelperAuthenticationTests|MacInstallReservationTests'`
+  is `blocked` outside a generated Flutter host because
+  `macos/FlutterFramework` is absent.
+- Full Swift tests: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --package-path macos/install_helper`; exit 0; 9 tests passed;
+  `swift test`; exit 0; 62 `DesktopUpdaterKit` tests passed.
+- Helper macOS 10.14 compile: `verified locally` — macOS 26.5.2 arm64;
+  `swift build --package-path macos/install_helper --triple x86_64-apple-macosx10.14`;
+  exit 0; the helper server, reservation store, and durable journal code
+  compiled and linked for the forced 10.14 deployment triple.
+- Actual signed audit-token peer test: `not run` — there is no signed XPC peer
+  or production signing identity in this environment. Security-framework
+  `kSecGuestAttributeAudit`, designated-requirement, static-code, Team ID,
+  bundle ID, and helper-digest paths are compiled and unit-tested with injected
+  identities only; the macOS runtime remains candidate-only.
+- Commit: `verified locally` —
+  `9068d79 feat: reserve macos install transactions`.
 
 ---
 
@@ -519,6 +655,9 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Files:**
 
+- Modify: `macos/install_helper/Package.swift`
+- Modify: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift`
+- Modify: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/main.swift`
 - Create: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/TransactionJournal.swift`
 - Create: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacFileTransaction.swift`
 - Create: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRecoveryService.swift`
@@ -530,13 +669,15 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift`
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift`
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift`
+- Modify: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/HelperVersionTests.swift`
+- Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeBootstrapTests.swift`
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallTransactionTests.swift`
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallCrashRecoveryTests.swift`
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacPrivilegedHelperTests.swift`
 - Create: `tool/macos_install_helper_smoke.dart`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 
-- [ ] **Step 1: Write failing mutation and crash tests**
+- [x] **Step 1: Write failing mutation and crash tests**
 
   Inject failure before and after every journal flush and rename. Cover symlink
   replacement, mount crossing, target-parent replacement, stage mutation,
@@ -544,7 +685,7 @@ terminal alternatives: rolledBack | manualActionRequired
   directory fsync failure, repeated recovery, wrong Team ID, invalid blessing,
   XPC spoofing, unsigned nested helper, and authorization cancellation.
 
-- [ ] **Step 2: Implement unprivileged handle-bound swap**
+- [x] **Step 2: Implement unprivileged handle-bound swap**
 
   Open and retain the canonical target parent and stage objects before
   reservation. Derive prepared, backup, journal, and lock names from the target
@@ -565,6 +706,12 @@ terminal alternatives: rolledBack | manualActionRequired
   `Contents/Library/LaunchServices`. Protected targets never run a
   user-writable helper as root.
 
+  Implementation note (2026-07-14): Apple documents that SMJobBless replaces
+  `ProgramArguments` with the fixed helper path, so the blessed service starts
+  with an empty argument list. Task 6 therefore also owns the helper bootstrap
+  and SwiftPM linker metadata required to embed `__info_plist` and
+  `__launchd_plist`; these files were missing from the original task boundary.
+
 - [ ] **Step 4: Prove recovery and elevation on a macOS target host**
 
   ```sh
@@ -577,7 +724,7 @@ terminal alternatives: rolledBack | manualActionRequired
   The privileged lane must exercise an actual blessed helper. Mocks may verify
   parser behavior but cannot satisfy the target-host gate.
 
-- [ ] **Step 5: Run the macOS suite and commit**
+- [x] **Step 5: Run the macOS suite and commit**
 
   ```sh
   swift test --package-path macos/install_helper
@@ -588,17 +735,34 @@ terminal alternatives: rolledBack | manualActionRequired
   Commit:
 
   ```sh
-  git add macos/install_helper/Sources/DesktopUpdaterInstallHelper/TransactionJournal.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacFileTransaction.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRecoveryService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRelaunchService.swift macos/install_helper/Configuration/Helper-Info.plist macos/install_helper/Configuration/Helper-Launchd.plist macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallTransactionTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallCrashRecoveryTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacPrivilegedHelperTests.swift tool/macos_install_helper_smoke.dart .github/workflows/desktop-updater-ci.yml
+  git add macos/install_helper/Package.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/main.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/TransactionJournal.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacFileTransaction.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRecoveryService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRelaunchService.swift macos/install_helper/Configuration/Helper-Info.plist macos/install_helper/Configuration/Helper-Launchd.plist macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/HelperVersionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeBootstrapTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallTransactionTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallCrashRecoveryTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacPrivilegedHelperTests.swift tool/macos_install_helper_smoke.dart .github/workflows/desktop-updater-ci.yml
   git commit -m "feat: recover macos install transactions"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- Unprivileged crash/recovery tests: `not run`
-- Signed SMJobBless/XPC test: `not run`
-- Hardened runtime/notarized nested-helper test: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64; the focused helper command
+  exited 1 on the missing transaction, recovery, privilege, and bootstrap APIs.
+- Unprivileged crash/recovery tests: `verified locally` — the focused helper
+  command passed 26 tests, the full helper suite passed 35 tests, and
+  `dart run tool/macos_install_helper_smoke.dart --mode unprivileged` passed its
+  one on-disk swap test. The root Swift package passed the three focused Kit
+  tests and all 65 Kit tests. The nested `macos/desktop_updater` command is
+  `blocked` locally because the generated `macos/FlutterFramework` package is
+  absent; the root package exercises the same `DesktopUpdaterKit` sources.
+- Build and metadata checks: `verified locally` — arm64 Release and forced
+  x86_64 macOS 10.14 helper builds exited 0; `otool` found both embedded
+  `__info_plist` and `__launchd_plist` sections; all three plists passed
+  `plutil -lint`; the Dart smoke tool passed format and analysis.
+- Signed SMJobBless/XPC test: `blocked` — the host reports zero valid code-signing
+  identities and the required signed smoke app/host variables are unavailable.
+  Unit tests cover sealed-policy reload, reciprocal requirements, root-only
+  bootstrap, Team-bound XPC admission, spoof rejection, cancellation, and
+  fixed nested paths, but do not satisfy the actual blessed-helper gate.
+- Hardened runtime/notarized nested-helper test: `not run` — no Developer ID
+  identity, signed host artifact, or notary credentials are available locally.
+- Commit: `verified locally` —
+  `2c7d123 feat: recover macos install transactions`.
 
 ---
 
@@ -620,7 +784,7 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `windows/native/test/helper/windows_helper_reservation_test.cpp`
 - Modify: `test/windows_native_sdk_layout_test.dart`
 
-- [ ] **Step 1: Write failing build, trust, IPC, and reservation tests**
+- [x] **Step 1: Write failing build, trust, IPC, and reservation tests**
 
   Require a Release `desktop_updater_install_helper.exe`, fixed installed
   location, Authenticode verification, exact helper digest, protected policy,
@@ -632,20 +796,20 @@ terminal alternatives: rolledBack | manualActionRequired
   replacement after verification, pipe spoof, wrong peer token, nonce reuse,
   UAC cancellation, timeout, and portable elevation rejection.
 
-- [ ] **Step 2: Build the no-mutation helper and package contract**
+- [x] **Step 2: Build the no-mutation helper and package contract**
 
   Add an executable target linked to `Wintrust`, `Crypt32`, `Advapi32`, and the
   required shell/security libraries. Install it beside the runtime artifacts,
   but keep production routing disabled until Task 8 is green.
 
-- [ ] **Step 3: Implement authentication, named-pipe IPC, and UAC launch**
+- [x] **Step 3: Implement authentication, named-pipe IPC, and UAC launch**
 
   Use `ShellExecuteExW(..., "runas", ...)` only for an installer-protected,
   signed helper. Pass only the pipe locator and nonce on the command line; send
   the canonical request over the authenticated pipe. Do not use PowerShell or
   a temporary executable.
 
-- [ ] **Step 4: Implement no-mutation reservation and cancellation**
+- [x] **Step 4: Implement no-mutation reservation and cancellation**
 
   Retain handles for the helper process, caller process, target parent, stage,
   lock, and journal. A cancelled or timed-out reservation may remove only its
@@ -669,10 +833,17 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Evidence:**
 
-- RED: `not run`
-- Windows Release build/tests: `not run`
-- Actual Authenticode/UAC test: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS arm64; the focused Flutter layout test
+  exited 1 because the Windows helper entry point and reservation surface did
+  not exist.
+- Local layout contract: `verified locally` — the focused Flutter test passed
+  all 6 tests; focused Dart analysis and `git diff --check` passed.
+- Windows Release build/tests: `not run` — this host has no Windows SDK,
+  MSVC/clang-cl/MinGW toolchain, or CMake executable.
+- Actual Authenticode/UAC test: `not run` — no Windows host, signed helper, or
+  interactive UAC lane is available locally.
+- Commit: `verified locally` —
+  `70e806a feat: reserve windows install transactions`.
 
 ---
 
@@ -680,6 +851,7 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Files:**
 
+- Modify: `windows/native/CMakeLists.txt`
 - Create: `windows/native/src/helper/windows_transaction_journal.h`
 - Create: `windows/native/src/helper/windows_transaction_journal.cpp`
 - Create: `windows/native/src/helper/windows_file_transaction.h`
@@ -692,8 +864,9 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `windows/native/test/helper/windows_crash_recovery_test.cpp`
 - Create: `tool/windows_install_helper_smoke.ps1`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
+- Modify: `test/windows_native_sdk_layout_test.dart`
 
-- [ ] **Step 1: Write failing transaction and recovery tests**
+- [x] **Step 1: Write failing transaction and recovery tests**
 
   Cover junction/reparse replacement at every component, alternate data
   streams, target-parent replacement, hard links where applicable, stage
@@ -701,7 +874,7 @@ terminal alternatives: rolledBack | manualActionRequired
   every state, disk full, short/torn journal writes, `FlushFileBuffers` failure,
   invalid backup identity, recovery idempotence, and UTF-8/non-BMP install paths.
 
-- [ ] **Step 2: Implement handle-relative swap and durable journal**
+- [x] **Step 2: Implement handle-relative swap and durable journal**
 
   Use wide Win32 APIs, open reparse-point-safe handles, compare volume/file
   identities, retain the exclusive lock, atomically replace the journal, flush
@@ -709,7 +882,7 @@ terminal alternatives: rolledBack | manualActionRequired
   siblings under the validated parent. Never reconstruct authority from a raw
   absolute path after reservation.
 
-- [ ] **Step 3: Implement fail-closed recovery and verified relaunch**
+- [x] **Step 3: Implement fail-closed recovery and verified relaunch**
 
   Recovery acquires ownership atomically. Unknown/corrupt/ambiguous journals
   yield `manualActionRequired` with no cleanup. Delete backup only after the
@@ -729,16 +902,25 @@ terminal alternatives: rolledBack | manualActionRequired
   Commit:
 
   ```sh
-  git add windows/native/src/helper windows/native/test/helper tool/windows_install_helper_smoke.ps1 .github/workflows/desktop-updater-ci.yml
+  git add windows/native/CMakeLists.txt windows/native/src/helper windows/native/test/helper tool/windows_install_helper_smoke.ps1 .github/workflows/desktop-updater-ci.yml test/windows_native_sdk_layout_test.dart
   git commit -m "feat: recover windows install transactions"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- Windows crash/recovery suite: `not run`
-- Signed elevated UAC smoke: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS arm64; the focused Flutter layout test
+  exited 1 because the Windows durable transaction journal did not exist.
+- Local layout contract: `verified locally` — the focused Flutter test passed
+  all 7 tests; focused Dart analysis and `git diff --check` passed.
+- Windows crash/recovery suite: `not run` — this host has no Windows SDK,
+  CMake/MSVC toolchain, or PowerShell. The target-host GTests and explicit CI
+  lane cover reparse/junction components, hard links, parent and stage races,
+  sharing, journal failures, every rename/journal crash point, corrupt and
+  ambiguous journals, invalid backup identity, idempotence, and non-BMP paths.
+- Signed elevated UAC smoke: `not run` — no Windows host or signed fixed helper
+  is available; the smoke script fails closed unless both are present.
+- Commit: `verified locally` —
+  `929ada2 feat: recover windows install transactions`.
 
 ---
 
@@ -761,7 +943,7 @@ terminal alternatives: rolledBack | manualActionRequired
 - Modify: `linux/native/cmake/desktop_updater_native.pc.in`
 - Modify: `test/linux_native_sdk_layout_test.dart`
 
-- [ ] **Step 1: Write failing layout, ownership, IPC, and reservation tests**
+- [x] **Step 1: Write failing layout, ownership, IPC, and reservation tests**
 
   Require install output at `/usr/libexec/desktop-updater-helper`, a polkit
   action, a root-owned `/etc/desktop-updater/policies/<package-id>.json`, strict
@@ -774,14 +956,14 @@ terminal alternatives: rolledBack | manualActionRequired
   replacement, nonce replay, polkit cancellation, root-owned AppImage without a
   broker, and any attempt to pass a target path or command through `pkexec`.
 
-- [ ] **Step 2: Build unprivileged and broker modes from one codebase**
+- [x] **Step 2: Build unprivileged and broker modes from one codebase**
 
   The helper selects its mode from a fixed invocation contract, not a caller
   command. The installed broker re-opens and validates itself and its policy
   after elevation. User-writable bundle/AppImage targets use one-shot mode;
   root-owned targets require the installed broker.
 
-- [ ] **Step 3: Implement authenticated socket reservation**
+- [x] **Step 3: Implement authenticated socket reservation**
 
   Pass only socket locator and nonce through `pkexec`. Send the canonical
   request over the authenticated socket. Pin the stage and target parent with
@@ -806,10 +988,16 @@ terminal alternatives: rolledBack | manualActionRequired
 
 **Evidence:**
 
-- RED: `not run`
-- Linux helper/broker tests: `not run`
-- Actual polkit root-broker test: `not run`
-- Commit: `not run`
+- RED: `verified locally` — macOS arm64; the focused Flutter layout test
+  exited 1 because the Linux helper entry point did not exist.
+- Local layout contract: `verified locally` — the focused Flutter test passed
+  all 10 tests; focused Dart analysis and `git diff --check` passed.
+- Linux helper/broker tests: `not run` — this host has no Linux kernel,
+  Linux CMake toolchain lane, `/proc`, pidfd, or `SO_PEERCRED` environment.
+- Actual polkit root-broker test: `not run` — no Linux/polkit host or installed
+  root-owned sealed broker and package policy are available locally.
+- Commit: `verified locally` —
+  `1dc9097 feat: reserve linux install transactions`.
 
 ---
 
@@ -830,9 +1018,11 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `linux/native/test/helper/linux_transaction_test.cc`
 - Create: `linux/native/test/helper/linux_crash_recovery_test.cc`
 - Create: `tool/linux_install_helper_smoke.sh`
+- Modify: `linux/native/CMakeLists.txt`
+- Modify: `test/linux_native_sdk_layout_test.dart`
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 
-- [ ] **Step 1: Write failing namespace, mount, crash, and recovery tests**
+- [x] **Step 1: Write failing namespace, mount, crash, and recovery tests**
 
   Run tests in user/mount namespaces where available. Cover symlink, bind mount,
   mount point, device change, target-parent replacement, stage replacement,
@@ -841,14 +1031,14 @@ terminal alternatives: rolledBack | manualActionRequired
   directory fsync failure, corrupt journal, invalid backup, live-owner recovery,
   and repeated recovery.
 
-- [ ] **Step 2: Implement fd-relative durable swap**
+- [x] **Step 2: Implement fd-relative durable swap**
 
   Use pinned descriptors plus `openat`, `fstatat`, `O_NOFOLLOW`, `renameat` or
   `renameat2`, `unlinkat`, device/inode comparisons, `/proc/self/mountinfo`
   checks, and file/directory fsync. Every destructive operation is relative to
   a validated descriptor and strictly derived name.
 
-- [ ] **Step 3: Implement fail-closed recovery and relaunch**
+- [x] **Step 3: Implement fail-closed recovery and relaunch**
 
   A dead transaction may be recovered only after atomic ownership acquisition.
   Verify the activated ELF/AppImage or bundle identity, executable-relative
@@ -871,16 +1061,39 @@ terminal alternatives: rolledBack | manualActionRequired
   Commit:
 
   ```sh
-  git add linux/native/src/helper linux/native/test/helper tool/linux_install_helper_smoke.sh .github/workflows/desktop-updater-ci.yml
+  git add linux/native/src/helper linux/native/test/helper tool/linux_install_helper_smoke.sh linux/native/CMakeLists.txt test/linux_native_sdk_layout_test.dart .github/workflows/desktop-updater-ci.yml
   git commit -m "feat: recover linux install transactions"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- Namespace/mount crash suite: `not run`
-- Actual polkit root-broker smoke: `not run`
-- Commit: `not run`
+- RED: `verified locally` —
+  `flutter test --no-pub test/linux_native_sdk_layout_test.dart` failed at the
+  new fd-relative recovery contract because
+  `linux/native/src/helper/linux_transaction_journal.cc` did not exist
+  (`+10 -1`).
+- Linux helper build: `verified locally` — the Task 10 helper sources and both
+  GTest executables compiled in an ephemeral `gcc:14-bookworm` Linux container
+  with GCC 14.3.0, CMake 3.25.1, and OpenSSL 3.0.20.
+- Focused transaction/crash suite: `verified locally` —
+  `ctest --test-dir /tmp/linux-helper -R
+  "linux_(transaction|crash_recovery)" --output-on-failure` passed 15 tests;
+  the sixteenth bind-mount/mount-ID test was `Skipped` because the safe
+  container did not grant `CLONE_NEWNS`/mount capability.
+- Namespace/mount target-host gate: `blocked` — a request for broad container
+  `SYS_ADMIN`/unconfined privileges was rejected as unsafe, so the actual bind
+  mount/device-change execution remains unverified.
+- Unprivileged helper smoke: `verified locally` —
+  `sh tool/linux_install_helper_smoke.sh --mode unprivileged` passed as the
+  container's `nobody` user against the built helper.
+- Flutter layout contract: `verified locally` —
+  `flutter test --no-pub test/linux_native_sdk_layout_test.dart` passed
+  (`+11`).
+- Actual polkit root-broker smoke: `not run` — no isolated target host with an
+  installed root-owned helper, sealed policy, and polkit authorization is
+  available.
+- Commit: `verified locally` —
+  `32ee081 feat: recover linux install transactions`.
 
 ---
 
@@ -899,11 +1112,14 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `linux/native/src/helper/system_package_transaction.cc`
 - Create: `linux/native/src/helper/external_managed_refresh.cc`
 - Create: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallStrategyTests.swift`
+- Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/InstallStrategyTests.swift`
 - Create: `windows/native/test/helper/windows_install_strategy_test.cpp`
 - Create: `linux/native/test/helper/linux_install_strategy_test.cc`
 - Create: `test/linux_helper_strategy_scope_test.dart`
+- Modify: `windows/native/CMakeLists.txt`
+- Modify: `linux/native/CMakeLists.txt`
 
-- [ ] **Step 1: Write failing strategy capability tests**
+- [x] **Step 1: Write failing strategy capability tests**
 
   Assert that policy and protocol capability negotiation selects only an
   allowed provider and never silently changes strategy. Cover:
@@ -921,7 +1137,7 @@ terminal alternatives: rolledBack | manualActionRequired
   or Snap mounted revisions, caller-supplied package-manager command lines,
   unknown providers, and root AppImage updates without the broker.
 
-- [ ] **Step 2: Implement provider interfaces and bounded execution**
+- [x] **Step 2: Implement provider interfaces and bounded execution**
 
   File strategies call only the platform transaction implementations from Tasks
   6, 8, and 10. Installer/package-manager strategies use fixed argument
@@ -929,7 +1145,7 @@ terminal alternatives: rolledBack | manualActionRequired
   provider transaction identity and query real provider state after interruption
   rather than inventing file rollback.
 
-- [ ] **Step 3: Keep packaging out of scope with executable drift tests**
+- [x] **Step 3: Keep packaging out of scope with executable drift tests**
 
   `test/linux_helper_strategy_scope_test.dart` must fail if this plan adds
   AppImage/deb/rpm/Flatpak/Snap packagers, public release descriptor artifact
@@ -949,18 +1165,39 @@ terminal alternatives: rolledBack | manualActionRequired
   Commit:
 
   ```sh
-  git add macos/install_helper/Sources/DesktopUpdaterInstallHelper/InstallStrategy.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/VerifiedInstallerHandoff.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallStrategyTests.swift windows/native/src/helper/install_strategy.h windows/native/src/helper/install_strategy.cpp windows/native/src/helper/verified_installer_handoff.cpp windows/native/test/helper/windows_install_strategy_test.cpp linux/native/src/helper/install_strategy.h linux/native/src/helper/install_strategy.cc linux/native/src/helper/single_file_replace.cc linux/native/src/helper/system_package_transaction.cc linux/native/src/helper/external_managed_refresh.cc linux/native/test/helper/linux_install_strategy_test.cc test/linux_helper_strategy_scope_test.dart
+  git add macos/install_helper/Sources/DesktopUpdaterInstallHelper/InstallStrategy.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/VerifiedInstallerHandoff.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/InstallStrategyTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallStrategyTests.swift windows/native/src/helper/install_strategy.h windows/native/src/helper/install_strategy.cpp windows/native/src/helper/verified_installer_handoff.cpp windows/native/test/helper/windows_install_strategy_test.cpp windows/native/CMakeLists.txt linux/native/src/helper/install_strategy.h linux/native/src/helper/install_strategy.cc linux/native/src/helper/single_file_replace.cc linux/native/src/helper/system_package_transaction.cc linux/native/src/helper/external_managed_refresh.cc linux/native/test/helper/linux_install_strategy_test.cc linux/native/CMakeLists.txt test/linux_helper_strategy_scope_test.dart
   git commit -m "feat: add native install strategy providers"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- macOS strategy tests: `not run`
-- Windows strategy tests: `not run`
-- Linux strategy tests: `not run`
-- Scope drift test: `not run`
-- Commit: `not run`
+- RED: `verified locally` —
+  `flutter test --no-pub test/linux_helper_strategy_scope_test.dart` failed at
+  the two new helper-provider contracts because `InstallStrategy.swift` and
+  `single_file_replace.cc` did not exist (`+2 -2`). The artifact-production and
+  follow-on mapping guards already passed.
+- macOS helper strategy tests: `verified locally` —
+  `swift test --package-path macos/install_helper` passed all 38 tests,
+  including three `InstallStrategyTests`, with zero failures.
+- DesktopUpdaterKit strategy boundary test: `blocked` —
+  `swift test --package-path macos/desktop_updater --filter
+  MacInstallStrategyTests` cannot resolve the existing broken
+  `macos/FlutterFramework` generated-package symlink on this host. No fake
+  Flutter package was substituted.
+- Windows strategy tests: `not run` — this macOS host cannot build or execute
+  the Windows CMake/GTest target; `windows_install_strategy` is registered for
+  the Windows target-host lane.
+- Linux strategy tests: `verified locally` — helper sources compiled with GCC
+  14.3.0 in the local Linux test image and
+  `ctest --test-dir /tmp/linux-helper -R "linux_install_strategy"
+  --output-on-failure` passed 5/5 tests.
+- Scope drift test: `verified locally` —
+  `flutter test --no-pub test/linux_helper_strategy_scope_test.dart` passed
+  4/4 tests, including the absence of Linux artifact production, public
+  descriptor kinds, repository/store credentials, arbitrary commands, and
+  production dangerous sideload execution.
+- Commit: `verified locally` —
+  `731d275 feat: add native install strategy providers`.
 
 ---
 
@@ -1002,7 +1239,7 @@ Retain `scheduleInstallAndRelaunch` as a source-compatible convenience API. Its
 implementation must prepare, validate the reservation, commit, and return only
 after durable ownership exists; it must not generate a script.
 
-- [ ] **Step 1: Write failing ABI/API and external-consumer tests**
+- [x] **Step 1: Write failing ABI/API and external-consumer tests**
 
   Require Swift source compatibility, C ABI version/`struct_size` forward
   compatibility, .NET safe handles and deterministic disposal, Linux installed
@@ -1010,20 +1247,20 @@ after durable ownership exists; it must not generate a script.
   `queryTransaction`/`recoverPendingInstall` examples. Tests must consume
   installed/package artifacts rather than source-tree relative libraries.
 
-- [ ] **Step 2: Implement thin platform client APIs**
+- [x] **Step 2: Implement thin platform client APIs**
 
   Clients serialize the common request, authenticate the endpoint, validate the
   response digest/identity, and expose native result detail. They do not own the
   authoritative journal or recovery decision. Dispose/cancel abandoned
   reservations safely.
 
-- [ ] **Step 3: Update Flutter-free examples and docs**
+- [x] **Step 3: Update Flutter-free examples and docs**
 
   Demonstrate Swift, Windows C++, .NET, and Linux C++ startup recovery and
   install handoff. State which helper/policy artifacts must be packaged and how
   elevated installation is provisioned on each platform.
 
-- [ ] **Step 4: Run SDK and consumer checks and commit**
+- [x] **Step 4: Run SDK and consumer checks and commit**
 
   ```sh
   swift test --package-path macos/desktop_updater
@@ -1043,12 +1280,35 @@ after durable ownership exists; it must not generate a script.
 
 **Evidence:**
 
-- RED: `not run`
-- Swift external consumer: `not run`
-- Windows C++ consumer: `not run`
-- Isolated NuGet/.NET consumer: `not run`
-- Linux CMake/pkg-config consumer: `not run`
-- Commit: `not run`
+- RED: `verified locally` —
+  `flutter test --no-pub test/native_sdk_consumer_package_test.dart` failed
+  because
+  `macos/desktop_updater/Sources/DesktopUpdaterKit/InstallHelper/InstallTransactionStatus.swift`
+  did not exist.
+- Swift external consumer: `verified locally` —
+  `swift run --package-path example/native/macos DesktopUpdaterConsumer --help`
+  built and ran successfully; root `swift test` passed 66/66 tests; and the
+  exact CocoaPods five-file macOS 10.14 `swiftc -typecheck` boundary passed.
+  The plan's `swift test --package-path macos/desktop_updater` command remains
+  `blocked` because the pre-existing `macos/FlutterFramework` symlink targets
+  the absent
+  `/private/tmp/flutter_spm_probe_debug_out/FlutterNativeIntegration/Debug/Packages/FlutterFramework`.
+- Windows C++ consumer: `not run` on a Windows target host. The installed
+  consumer source and both public headers passed local macOS
+  `clang++ -std=c++17 -fsyntax-only`; this is not Windows link/run evidence.
+- Isolated NuGet/.NET consumer: `not run` on a Windows target host. The managed
+  wrapper built locally for `net8.0` and `netstandard2.0`, and the focused
+  safe-handle/API test passed 1/1 with .NET major roll-forward. The full managed
+  suite passed 12/13 tests; its native invocation test was blocked by the
+  expected absence of a Windows `desktop_updater_native` DLL on macOS.
+- Linux CMake/pkg-config consumer: `verified locally` — GCC 14.3.0 built and
+  installed the SDK in the local Linux image; the installed CMake consumer
+  passed 1/1 CTest and the independently compiled pkg-config consumer exited
+  0. The public clients fail closed with `endpointUnavailable` when no
+  authenticated packaged helper endpoint exists; no application-side journal
+  or recovery authority is synthesized.
+- Commit: `verified locally` —
+  `da0d92b feat: expose native install helper clients`.
 
 ---
 
@@ -1058,24 +1318,33 @@ after durable ownership exists; it must not generate a script.
 
 - Modify: `macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift`
 - Modify: `windows/desktop_updater_plugin.cpp`
+- Modify: `windows/desktop_updater_plugin.h`
 - Modify: `linux/desktop_updater_plugin.cc`
+- Modify: `linux/desktop_updater_plugin_private.h`
 - Modify: `macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift`
 - Modify: `windows/native/src/desktop_updater_native.cpp`
 - Modify: `linux/native/src/desktop_updater_native.cc`
 - Modify: `lib/desktop_updater_method_channel.dart`
 - Modify: `lib/desktop_updater_platform_interface.dart`
 - Modify: `lib/src/core/update_recovery.dart`
+- Modify: `lib/updater_controller.dart`
 - Modify: `test/compat/flutter_220_channel_controller_contract_test.dart`
 - Modify: `test/compat/flutter_220_public_api_test.dart`
 - Modify: `test/desktop_updater_method_channel_test.dart`
 - Modify: `test/native_helper_script_test.dart`
-- Modify: `test/native_helper_events_220_contract_test.dart`
+- Modify: `test/windows_native_sdk_layout_test.dart`
+- Modify: `test/linux_native_sdk_layout_test.dart`
+- Modify: `test/compat/native_helper_events_220_contract_test.dart`
 - Modify: `test/update_recovery_test.dart`
+- Modify: `test/updater_controller_test.dart`
 - Modify: `windows/test/desktop_updater_plugin_test.cpp`
 - Modify: `linux/test/desktop_updater_plugin_test.cc`
+- Delete: `linux/native/src/desktop_updater_native_internal.h`
+- Modify: `linux/native/test/desktop_updater_native_test.cc`
+- Modify: `macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallHelperTests.swift`
 - Modify: `macos/desktop_updater/Tests/desktop_updaterTests/DesktopUpdaterSwiftPMTests.swift`
 
-- [ ] **Step 1: Write failing compatibility and no-script tests**
+- [x] **Step 1: Write failing compatibility and no-script tests**
 
   Snapshot the released Dart signatures, MethodChannel name
   `desktop_updater`, existing methods including `restartApp` and
@@ -1083,20 +1352,20 @@ after durable ownership exists; it must not generate a script.
   codes. Assert that production source contains no generated `.command`, `.sh`,
   PowerShell, `/bin/sh`, `powershell.exe`, `sudo`, or fallback mutation path.
 
-- [ ] **Step 2: Route each plugin through its native SDK client**
+- [x] **Step 2: Route each plugin through its native SDK client**
 
   Translate the existing channel arguments to native requests. Return handoff
   success only after a validated reservation exists and commit has been
   accepted. Terminate the app only after that success. Map native detailed
   results into the existing compatible Flutter shapes and redacted diagnostics.
 
-- [ ] **Step 3: Keep Dart recovery as optional UX evidence**
+- [x] **Step 3: Keep Dart recovery as optional UX evidence**
 
   `UpdateRecoveryStore` may display pending state but cannot decide rollback or
   authorize mutation. Startup recovery queries the native helper status and
   preserves behavior when no store is configured.
 
-- [ ] **Step 4: Delete script generation only after platform routes are green**
+- [x] **Step 4: Delete script generation only after platform routes are green**
 
   Remove the old macOS shell, Windows PowerShell, and Linux shell generator
   implementations. Do not leave a hidden compatibility fallback. A missing or
@@ -1105,7 +1374,7 @@ after durable ownership exists; it must not generate a script.
 - [ ] **Step 5: Run focused compatibility tests and commit**
 
   ```sh
-  flutter test --no-pub test/compat/flutter_220_channel_controller_contract_test.dart test/compat/flutter_220_public_api_test.dart test/desktop_updater_method_channel_test.dart test/native_helper_script_test.dart test/native_helper_events_220_contract_test.dart test/update_recovery_test.dart
+  flutter test --no-pub test/compat/flutter_220_channel_controller_contract_test.dart test/compat/flutter_220_public_api_test.dart test/desktop_updater_method_channel_test.dart test/native_helper_script_test.dart test/compat/native_helper_events_220_contract_test.dart test/update_recovery_test.dart test/updater_controller_test.dart
   swift test --package-path macos/desktop_updater
   ```
 
@@ -1114,18 +1383,37 @@ after durable ownership exists; it must not generate a script.
   Commit:
 
   ```sh
-  git add macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift windows/desktop_updater_plugin.cpp windows/native/src/desktop_updater_native.cpp linux/desktop_updater_plugin.cc linux/native/src/desktop_updater_native.cc lib/desktop_updater_method_channel.dart lib/desktop_updater_platform_interface.dart lib/src/core/update_recovery.dart test/compat/flutter_220_channel_controller_contract_test.dart test/compat/flutter_220_public_api_test.dart test/desktop_updater_method_channel_test.dart test/native_helper_script_test.dart test/native_helper_events_220_contract_test.dart test/update_recovery_test.dart windows/test/desktop_updater_plugin_test.cpp linux/test/desktop_updater_plugin_test.cc macos/desktop_updater/Tests/desktop_updaterTests/DesktopUpdaterSwiftPMTests.swift
+  git add macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallHelperTests.swift macos/desktop_updater/Tests/desktop_updaterTests/DesktopUpdaterSwiftPMTests.swift windows/desktop_updater_plugin.cpp windows/desktop_updater_plugin.h windows/native/src/desktop_updater_native.cpp windows/test/desktop_updater_plugin_test.cpp linux/desktop_updater_plugin.cc linux/desktop_updater_plugin_private.h linux/native/src/desktop_updater_native.cc linux/native/src/desktop_updater_native_internal.h linux/native/test/desktop_updater_native_test.cc linux/test/desktop_updater_plugin_test.cc lib/desktop_updater_method_channel.dart lib/desktop_updater_platform_interface.dart lib/src/core/update_recovery.dart lib/updater_controller.dart test/compat/flutter_220_channel_controller_contract_test.dart test/compat/flutter_220_public_api_test.dart test/compat/native_helper_events_220_contract_test.dart test/desktop_updater_method_channel_test.dart test/native_helper_script_test.dart test/windows_native_sdk_layout_test.dart test/linux_native_sdk_layout_test.dart test/update_recovery_test.dart test/updater_controller_test.dart
   git commit -m "refactor: route flutter installs through native helpers"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- Flutter API/MethodChannel compatibility: `not run`
-- No-script/no-fallback scan: `not run`
-- macOS Flutter plugin tests: `not run`
-- Windows Flutter plugin tests: `not run`
-- Linux Flutter plugin tests: `not run`
+- RED: `verified locally` — the focused Flutter command failed on the absent
+  native transaction status model and MethodChannel methods, and the
+  no-script tests found the macOS `.command`, Windows PowerShell, and Linux
+  shell generators plus plugin convenience routing; exit 1.
+- Flutter API/MethodChannel compatibility: `verified locally` — macOS 26.5.2
+  arm64; the exact focused seven-file command passed 61 tests, including the
+  unchanged `desktop_updater` channel, `restartApp` null arguments,
+  `installUpdate` argument map, legacy subclass dispatch, and native recovery
+  status mapping; exit 0.
+- No-script/no-fallback scan: `verified locally` — the focused suite asserts
+  that the three production clients contain no `.command`, `.ps1`, generated
+  shell, PowerShell, `/bin/sh`, `/bin/bash`, `sudo`, or legacy mutation entry
+  point, and that every Flutter plugin calls prepare then commit; exit 0.
+- macOS Flutter plugin tests: `blocked` —
+  `swift test --package-path macos/desktop_updater` cannot access the existing
+  broken `macos/FlutterFramework` symlink. The exact five-source CocoaPods
+  macOS 10.14 `swiftc -typecheck` passed, and repository-root `swift test`
+  passed 62 tests with zero failures.
+- Windows Flutter plugin tests: `not run` — no Windows target host is
+  available. Source/API compatibility and no-script routing tests passed
+  locally; target-native compilation remains required.
+- Linux Flutter plugin tests: `not run` — the existing Linux container has no
+  Flutter or GTK plugin toolchain. Fresh GCC 14.3 native build passed; CTest
+  discovered 37 tests, passed 36, and literally skipped the bind-mount test in
+  the unprivileged container.
 - Commit: `not run`
 
 ---

@@ -16,6 +16,15 @@ void main() {
     expect(UpdateProblemReport, isNotNull);
     expect(UpdateDiagnosticsRecorder, isNotNull);
     expect(UpdateInstallRecoveryMarker, isNotNull);
+    expect(
+      UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026),
+        packageVersion: "2.2.0",
+        platform: "linux",
+        channel: "stable",
+      ).transactionId,
+      isNull,
+    );
     expect(UpdateCleanupReport, isNotNull);
     expect(DesktopVersionInfo.parse("2.2.0").versionName, "2.2.0");
   });

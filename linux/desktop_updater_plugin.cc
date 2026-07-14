@@ -36,7 +36,106 @@ desktop_updater::native::InstallRequest RestartRequest() {
   return request;
 }
 
+desktop_updater::native::InstallResult HandoffNativeInstall(
+    const desktop_updater::native::InstallRequest& request) {
+  desktop_updater::native::InstallReservation reservation;
+  const auto prepared =
+      desktop_updater::native::PrepareInstall(request, &reservation);
+  if (!prepared.ok) return prepared;
+  const auto status = desktop_updater::native::CommitAfterExit(reservation);
+  if (!is_accepted_install_handoff(reservation, status)) {
+    return {false, status.detail.empty()
+                       ? "Native install helper commit was not accepted."
+                       : status.detail};
+  }
+  return {true, ""};
+}
+
+const char* TransactionStateName(
+    desktop_updater::native::InstallTransactionState state) {
+  using State = desktop_updater::native::InstallTransactionState;
+  switch (state) {
+    case State::kPrepared: return "prepared";
+    case State::kCommitAccepted: return "commitAccepted";
+    case State::kCompleted: return "completed";
+    case State::kCancelled: return "cancelled";
+    case State::kExpired: return "expired";
+    case State::kRolledBack: return "rolledBack";
+    case State::kManualActionRequired: return "manualActionRequired";
+    case State::kUnknown: return "unknown";
+  }
+  return "unknown";
+}
+
+const char* TransactionResultName(
+    desktop_updater::native::InstallTransactionResultCode code) {
+  using Code = desktop_updater::native::InstallTransactionResultCode;
+  switch (code) {
+    case Code::kAccepted: return "accepted";
+    case Code::kSucceeded: return "succeeded";
+    case Code::kRejected: return "rejected";
+    case Code::kEndpointUnavailable: return "endpointUnavailable";
+    case Code::kAuthenticationFailed: return "authenticationFailed";
+    case Code::kInvalidResponse: return "invalidResponse";
+    case Code::kRecoveryRequired: return "recoveryRequired";
+    case Code::kNone: return "none";
+  }
+  return "none";
+}
+
+FlValue* TransactionStatusValue(
+    const desktop_updater::native::InstallTransactionStatus& status) {
+  FlValue* value = fl_value_new_map();
+  fl_value_set_string_take(
+      value, "transactionId", fl_value_new_string(status.transaction_id.c_str()));
+  fl_value_set_string_take(value, "state",
+                           fl_value_new_string(TransactionStateName(status.state)));
+  fl_value_set_string_take(
+      value, "resultCode",
+      fl_value_new_string(TransactionResultName(status.result_code)));
+  fl_value_set_string_take(value, "detail",
+                           fl_value_new_string(status.detail.c_str()));
+  fl_value_set_string_take(
+      value, "responseDigestSha256",
+      fl_value_new_string(status.response_digest_sha256.c_str()));
+  fl_value_set_string_take(
+      value, "helperEndpointIdentitySha256",
+      fl_value_new_string(status.helper_endpoint_identity_sha256.c_str()));
+  return value;
+}
+
+bool ReadTransactionId(FlValue* args, std::string* transaction_id) {
+  if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
+    return false;
+  }
+  FlValue* value = fl_value_lookup_string(args, "transactionId");
+  if (value == nullptr || fl_value_get_type(value) != FL_VALUE_TYPE_STRING) {
+    return false;
+  }
+  *transaction_id = fl_value_get_string(value);
+  return !transaction_id->empty();
+}
+
 }  // namespace
+
+bool is_accepted_install_handoff(
+    const desktop_updater::native::InstallReservation& reservation,
+    const desktop_updater::native::InstallTransactionStatus& status) {
+  const bool accepted_state =
+      status.state ==
+          desktop_updater::native::InstallTransactionState::kCommitAccepted ||
+      status.state == desktop_updater::native::InstallTransactionState::kCompleted;
+  const bool accepted_result =
+      status.result_code ==
+          desktop_updater::native::InstallTransactionResultCode::kAccepted ||
+      status.result_code ==
+          desktop_updater::native::InstallTransactionResultCode::kSucceeded;
+  return accepted_state && accepted_result &&
+         status.transaction_id == reservation.transaction_id &&
+         status.response_digest_sha256 == reservation.response_digest_sha256 &&
+         status.helper_endpoint_identity_sha256 ==
+             reservation.helper_endpoint_identity_sha256;
+}
 
 FlMethodResponse* get_platform_version() {
   struct utsname uname_data = {};
@@ -65,8 +164,7 @@ static void desktop_updater_plugin_handle_method_call(
   if (strcmp(method, "getPlatformVersion") == 0) {
     response = get_platform_version();
   } else if (strcmp(method, "restartApp") == 0) {
-    const auto result = desktop_updater::native::ScheduleInstallAndRelaunch(
-        RestartRequest());
+    const auto result = HandoffNativeInstall(RestartRequest());
     if (!result.ok) {
       g_autoptr(FlValue) details = fl_value_new_string(result.error.c_str());
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
@@ -133,8 +231,7 @@ static void desktop_updater_plugin_handle_method_call(
           request.removed_files = removed_files;
           request.diagnostics_log_path = diagnostics_log_path;
           request.expected_provenance_sha256 = provenance_sha256;
-          const auto result =
-              desktop_updater::native::ScheduleInstallAndRelaunch(request);
+          const auto result = HandoffNativeInstall(request);
           if (!result.ok) {
             g_autoptr(FlValue) details =
                 fl_value_new_string(result.error.c_str());
@@ -148,6 +245,23 @@ static void desktop_updater_plugin_handle_method_call(
           }
         }
       }
+    }
+  } else if (strcmp(method, "queryInstallTransaction") == 0 ||
+             strcmp(method, "recoverPendingInstallTransaction") == 0) {
+    std::string transaction_id;
+    if (!ReadTransactionId(fl_method_call_get_args(method_call),
+                           &transaction_id)) {
+      response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "InvalidArguments", "transactionId must be a string.", nullptr));
+    } else {
+      const auto status = strcmp(method, "queryInstallTransaction") == 0
+                              ? desktop_updater::native::QueryTransaction(
+                                    transaction_id)
+                              : desktop_updater::native::RecoverPendingInstall(
+                                    transaction_id);
+      g_autoptr(FlValue) value = TransactionStatusValue(status);
+      response =
+          FL_METHOD_RESPONSE(fl_method_success_response_new(value));
     }
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());

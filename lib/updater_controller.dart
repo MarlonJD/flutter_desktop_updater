@@ -849,6 +849,41 @@ class DesktopUpdaterController extends ChangeNotifier {
             "${marker.updateVersion ?? "unknown update"}.",
       );
 
+    final transactionId = marker.transactionId;
+    if (transactionId != null && transactionId.isNotEmpty) {
+      final NativeInstallTransactionStatus? nativeStatus;
+      try {
+        var status = await DesktopUpdaterPlatform.instance
+            .queryNativeInstallTransaction(transactionId);
+        if (status?.requiresRecovery ?? false) {
+          status = await DesktopUpdaterPlatform.instance
+              .recoverNativeInstallTransaction(transactionId);
+        }
+        nativeStatus = status;
+      } on Object catch (error) {
+        _failRecoveredInstall(
+          marker,
+          StateError("Could not verify native install transaction status."),
+          message: "Could not verify native install transaction status.",
+          appVersion: marker.appVersion,
+          error: error,
+        );
+        return;
+      }
+
+      // A custom released platform implementation has no native recovery
+      // lookup surface, so preserve its existing version-only behavior.
+      if (nativeStatus != null && !nativeStatus.isTerminalSuccess) {
+        _failRecoveredInstall(
+          marker,
+          StateError("Native helper did not confirm a completed install."),
+          message: "Native helper did not confirm a completed install.",
+          appVersion: marker.appVersion,
+        );
+        return;
+      }
+    }
+
     final DesktopVersionInfo? currentVersion;
     try {
       currentVersion = await currentVersionInfo();

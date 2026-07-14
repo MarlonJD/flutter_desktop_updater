@@ -101,17 +101,13 @@ void main() {
       isNot(contains('add_subdirectory("native/desktop_updater")')),
     );
     expect(plugin, contains("desktop_updater::native::InstallRequest"));
-    expect(plugin, contains("ScheduleInstallAndRelaunch"));
-    expect(plugin, isNot(contains("function Test-AuthenticodePolicy")));
-    expect(native, contains("function Test-AuthenticodePolicy"));
-    expect(native, contains("StartElevatedPowerShell"));
-    expect(native, contains("Remove-StagingDirectoryWithRetry"));
-    expect(native, contains("rollback success"));
-    expect(
-      native.indexOf("#include <windows.h>"),
-      lessThan(native.indexOf("#include <bcrypt.h>")),
-      reason: "Windows SDK base types must be declared before bcrypt.h",
-    );
+    expect(plugin, contains("PrepareInstall"));
+    expect(plugin, contains("CommitAfterExit"));
+    expect(plugin, isNot(contains("ScheduleInstallAndRelaunch")));
+    expect(native, contains("SerializeCommonInstallRequest"));
+    expect(native, contains("EndpointUnavailableStatus"));
+    expect(native, isNot(contains("PowerShell")));
+    expect(native, isNot(contains("powershell.exe")));
   });
 
   test(".NET wrapper marshals every removed file and calls the real DLL", () {

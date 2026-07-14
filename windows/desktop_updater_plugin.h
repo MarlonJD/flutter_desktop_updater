@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "desktop_updater_native.h"
+
 namespace desktop_updater {
 
 enum class ProductVersionBuildParseResult {
@@ -19,6 +21,10 @@ enum class ProductVersionBuildParseResult {
 ProductVersionBuildParseResult ParseProductVersionBuildNumber(
     const std::wstring& product_version,
     std::wstring* build_number);
+
+bool IsAcceptedInstallHandoff(
+    const native::InstallReservation& reservation,
+    const native::InstallTransactionStatus& status);
 
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:

@@ -577,6 +577,87 @@ void main() {
     expect(recoveryStore.clearedChannels, ["stable"]);
   });
 
+  test("startup recovery queries native helper before trusting app version",
+      () async {
+    var queryCalls = 0;
+    _setMockPlatformHandler(
+      versionName: "2.0.1",
+      buildNumber: "201",
+      onQueryInstallTransaction: (methodCall) {
+        queryCalls += 1;
+        expect(methodCall.arguments, {
+          "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+        });
+        return _nativeTransactionStatus(
+          state: "completed",
+          resultCode: "succeeded",
+        );
+      },
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: Platform.operatingSystem,
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: "/tmp/staged-app",
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(queryCalls, 1);
+    expect(controller.state, isA<UpdateIdle>());
+    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+  });
+
+  test("startup asks native helper to recover a pending transaction", () async {
+    var recoveryCalls = 0;
+    _setMockPlatformHandler(
+      versionName: "2.0.1",
+      buildNumber: "201",
+      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
+        state: "prepared",
+        resultCode: "recoveryRequired",
+      ),
+      onRecoverPendingInstallTransaction: (_) {
+        recoveryCalls += 1;
+        return _nativeTransactionStatus(
+          state: "completed",
+          resultCode: "succeeded",
+        );
+      },
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: Platform.operatingSystem,
+        channel: "stable",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(recoveryCalls, 1);
+    expect(controller.state, isA<UpdateIdle>());
+  });
+
   test("recovery store failures do not crash startup or install handoff",
       () async {
     final readFailureStore = _ThrowingRecoveryStore(readFailure: true);
@@ -929,6 +1010,10 @@ void _setMockPlatformHandler({
   String versionName = "1.0.0",
   String buildNumber = "100",
   FutureOr<void> Function(MethodCall methodCall)? onInstallUpdate,
+  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
+      onQueryInstallTransaction,
+  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
+      onRecoverPendingInstallTransaction,
 }) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_desktopUpdaterChannel, (
@@ -952,8 +1037,28 @@ void _setMockPlatformHandler({
         message: "Native install failed",
       );
     }
+    if (methodCall.method == "queryInstallTransaction") {
+      return onQueryInstallTransaction?.call(methodCall);
+    }
+    if (methodCall.method == "recoverPendingInstallTransaction") {
+      return onRecoverPendingInstallTransaction?.call(methodCall);
+    }
     return null;
   });
+}
+
+Map<String, Object?> _nativeTransactionStatus({
+  required String state,
+  required String resultCode,
+}) {
+  return {
+    "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+    "state": state,
+    "resultCode": resultCode,
+    "detail": "Native helper status.",
+    "responseDigestSha256": "a" * 64,
+    "helperEndpointIdentitySha256": "b" * 64,
+  };
 }
 
 class _ManualCheckTestController extends DesktopUpdaterController {
