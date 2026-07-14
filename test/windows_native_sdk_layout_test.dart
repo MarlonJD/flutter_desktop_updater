@@ -238,6 +238,9 @@ void main() {
     final reservation = readRequiredFile(
       "windows/native/src/helper/windows_reservation.cpp",
     );
+    final requestParser = readRequiredFile(
+      "native_runtime/cpp/native_install_request.cc",
+    );
 
     expect(cmake, contains("desktop_updater_install_helper"));
     expect(cmake, contains("Wintrust Crypt32 Advapi32 Shell32 Bcrypt"));
@@ -267,6 +270,10 @@ void main() {
     expect(pipe, contains("canonical_request"));
     expect(pipe, contains('L"runas"'));
     expect(pipe, contains("ShellExecuteExW"));
+    expect(requestParser, contains("ParseNativeInstallTransactionRequestV1"));
+    expect(requestParser, contains("strategyProviderMismatch"));
+    expect(requestParser, contains("callerPackageIdMismatch"));
+    expect(requestParser, contains("invalidDiagnosticsDestination"));
     expect(reservation, contains("FILE_FLAG_OPEN_REPARSE_POINT"));
     expect(reservation, contains("FlushFileBuffers"));
     expect(reservation, contains("journalDurableBeforeReadyToken"));
