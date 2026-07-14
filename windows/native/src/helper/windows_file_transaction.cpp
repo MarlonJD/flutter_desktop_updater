@@ -230,7 +230,12 @@ void WindowsFileTransaction::DurableRename(
   }
 }
 
-WindowsFileTransactionResult WindowsFileTransaction::Execute() {
+void WindowsFileTransaction::Prepare() {
+  if (prepared_ || cancelled_ || completed_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
+        "transaction cannot be prepared twice");
+  }
   ValidateParentLocator();
   ValidateIdentity(stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
@@ -238,22 +243,39 @@ WindowsFileTransactionResult WindowsFileTransaction::Execute() {
   ValidateIdentity(paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
 
-  WindowsTransactionJournal journal;
-  journal.transaction_id = paths_.transaction_id;
-  journal.owner_process_id = owner_process_id_;
-  journal.owner_process_start_identity = owner_process_start_identity_;
-  journal.target_name = paths_.target_name;
-  journal.original_stage_name = stage_name_;
-  journal.prepared_name = paths_.prepared_name;
-  journal.backup_name = paths_.backup_name;
-  journal.lock_name = paths_.lock_name;
-  journal.parent_identity = parent_identity_;
-  journal.target_identity = target_identity_;
-  journal.stage_identity = stage_identity_;
-  journal.expected_payload_identity = expected_payload_identity_;
-  journal.state = WindowsTransactionState::kPrepared;
-  journal_store_->Persist(journal);
+  journal_.transaction_id = paths_.transaction_id;
+  journal_.owner_process_id = owner_process_id_;
+  journal_.owner_process_start_identity = owner_process_start_identity_;
+  journal_.target_name = paths_.target_name;
+  journal_.original_stage_name = stage_name_;
+  journal_.prepared_name = paths_.prepared_name;
+  journal_.backup_name = paths_.backup_name;
+  journal_.lock_name = paths_.lock_name;
+  journal_.parent_identity = parent_identity_;
+  journal_.target_identity = target_identity_;
+  journal_.stage_identity = stage_identity_;
+  journal_.expected_payload_identity = expected_payload_identity_;
+  journal_.state = WindowsTransactionState::kPrepared;
+  journal_store_->Persist(journal_);
   journal_persisted_ = true;
+  prepared_ = true;
+}
+
+std::string WindowsFileTransaction::prepared_journal_canonical() const {
+  if (!prepared_ || !journal_persisted_ || cancelled_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
+        "prepared journal is unavailable");
+  }
+  return journal_.EncodeCanonical();
+}
+
+WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
+  if (!prepared_ || !journal_persisted_ || cancelled_ || completed_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
+        "transaction is not prepared for commit");
+  }
 
   ValidateIdentity(stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
@@ -270,8 +292,8 @@ WindowsFileTransactionResult WindowsFileTransaction::Execute() {
                 WindowsTransactionFaultPoint::kBeforeBackupRename,
                 WindowsTransactionFaultPoint::kAfterBackupRenameBeforeDirectoryFlush,
                 WindowsTransactionFaultPoint::kAfterBackupRename);
-  journal.state = WindowsTransactionState::kBackupCreated;
-  journal_store_->Persist(journal);
+  journal_.state = WindowsTransactionState::kBackupCreated;
+  journal_store_->Persist(journal_);
 
   ValidateIdentity(paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
@@ -280,14 +302,14 @@ WindowsFileTransactionResult WindowsFileTransaction::Execute() {
                 WindowsTransactionFaultPoint::kBeforeActivationRename,
                 WindowsTransactionFaultPoint::kAfterActivationRenameBeforeDirectoryFlush,
                 WindowsTransactionFaultPoint::kAfterActivationRename);
-  journal.state = WindowsTransactionState::kTargetActivated;
-  journal_store_->Persist(journal);
+  journal_.state = WindowsTransactionState::kTargetActivated;
+  journal_store_->Persist(journal_);
 
   ValidateIdentity(paths_.target_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
   ValidatePayload(paths_.target_name);
-  journal.state = WindowsTransactionState::kCompleted;
-  journal_store_->Persist(journal);
+  journal_.state = WindowsTransactionState::kCompleted;
+  journal_store_->Persist(journal_);
 
   target_.reset();
   DeleteTreeRelative(parent_.get(), paths_.backup_name, target_identity_);
@@ -296,6 +318,30 @@ WindowsFileTransactionResult WindowsFileTransaction::Execute() {
   RemoveLockExact();
   FlushWindowsDirectory(parent_.get());
   return WindowsFileTransactionResult::kCompleted;
+}
+
+void WindowsFileTransaction::CancelPrepared() {
+  if (!prepared_ || !journal_persisted_ || cancelled_ || completed_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
+        "transaction is not a cancellable prepared transaction");
+  }
+  ValidateParentLocator();
+  ValidateIdentity(stage_name_, stage_identity_,
+                   WindowsFileTransactionError::Code::kStageIdentityChanged);
+  ValidatePayload(stage_name_);
+  ValidateIdentity(paths_.target_name, target_identity_,
+                   WindowsFileTransactionError::Code::kTargetIdentityChanged);
+  journal_store_->Remove();
+  journal_persisted_ = false;
+  cancelled_ = true;
+  RemoveLockExact();
+  FlushWindowsDirectory(parent_.get());
+}
+
+WindowsFileTransactionResult WindowsFileTransaction::Execute() {
+  if (!prepared_) Prepare();
+  return ExecutePrepared();
 }
 
 void WindowsFileTransaction::RemoveLockExact() noexcept {

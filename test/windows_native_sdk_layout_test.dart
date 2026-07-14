@@ -313,6 +313,12 @@ void main() {
     expect(transactionBoundary, contains("NumberOfLinks"));
     expect(transactionBoundary, contains("alternateDataStreamRejected"));
     expect(transactionBoundary, contains("beforeActivationRename"));
+    expect(transaction, contains("WindowsFileTransaction::Prepare()"));
+    expect(
+      transaction,
+      contains("WindowsFileTransaction::ExecutePrepared()"),
+    );
+    expect(transaction, contains("WindowsFileTransaction::CancelPrepared()"));
     expect(recovery, contains("manualActionRequired"));
     expect(recovery, contains("backupIdentityMismatch"));
     expect(recovery, contains("stageProvenanceSha256"));

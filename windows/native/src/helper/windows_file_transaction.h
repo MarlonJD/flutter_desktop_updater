@@ -64,6 +64,11 @@ class WindowsFileTransaction {
   WindowsFileTransaction& operator=(const WindowsFileTransaction&) = delete;
 
   const WindowsTransactionPaths& paths() const { return paths_; }
+  void Prepare();
+  bool prepared() const { return prepared_; }
+  std::string prepared_journal_canonical() const;
+  WindowsFileTransactionResult ExecutePrepared();
+  void CancelPrepared();
   WindowsFileTransactionResult Execute();
 
   static void ValidateSameVolume(std::uint64_t target_volume,
@@ -99,6 +104,9 @@ class WindowsFileTransaction {
   WindowsFileIdentity target_identity_;
   WindowsFileIdentity stage_identity_;
   std::unique_ptr<DurableWindowsTransactionJournalStore> journal_store_;
+  WindowsTransactionJournal journal_;
+  bool prepared_ = false;
+  bool cancelled_ = false;
   bool journal_persisted_ = false;
   bool completed_ = false;
 };

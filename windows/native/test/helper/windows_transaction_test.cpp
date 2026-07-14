@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <winternl.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -128,6 +129,49 @@ TEST(WindowsFileTransaction, SwapsUnicodeTreeAndRemovesDerivedState) {
   EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
   EXPECT_FALSE(std::filesystem::exists(fixture.stage));
   EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+}
+
+TEST(WindowsFileTransaction, PrepareIsDurableAndDoesNotMutateTarget) {
+  WindowsTransactionFixture fixture;
+  auto transaction = fixture.MakeTransaction();
+
+  transaction->Prepare();
+
+  EXPECT_TRUE(transaction->prepared());
+  EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+  EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+  EXPECT_FALSE(transaction->prepared_journal_canonical().empty());
+  const auto artifacts = FindWindowsTransactionArtifacts(fixture.root);
+  EXPECT_NE(artifacts.end(),
+            std::find(artifacts.begin(), artifacts.end(),
+                      transaction->paths().journal_name));
+  EXPECT_NE(artifacts.end(),
+            std::find(artifacts.begin(), artifacts.end(),
+                      transaction->paths().lock_name));
+}
+
+TEST(WindowsFileTransaction, PreparedCommitAndCancellationAreDisjoint) {
+  {
+    WindowsTransactionFixture fixture;
+    auto transaction = fixture.MakeTransaction();
+    transaction->Prepare();
+
+    EXPECT_EQ(WindowsFileTransactionResult::kCompleted,
+              transaction->ExecutePrepared());
+    EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
+    EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+  }
+  {
+    WindowsTransactionFixture fixture;
+    auto transaction = fixture.MakeTransaction();
+    transaction->Prepare();
+
+    transaction->CancelPrepared();
+    EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+    EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+    EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+    EXPECT_THROW(transaction->ExecutePrepared(), WindowsFileTransactionError);
+  }
 }
 
 TEST(WindowsFileTransaction, RejectsAlternateStreamsAndHardLinks) {
