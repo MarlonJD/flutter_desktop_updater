@@ -1371,7 +1371,7 @@ after durable ownership exists; it must not generate a script.
   implementations. Do not leave a hidden compatibility fallback. A missing or
   untrusted helper returns a pre-mutation failure.
 
-- [ ] **Step 5: Run focused compatibility tests and commit**
+- [x] **Step 5: Run focused compatibility tests and commit**
 
   ```sh
   flutter test --no-pub test/compat/flutter_220_channel_controller_contract_test.dart test/compat/flutter_220_public_api_test.dart test/desktop_updater_method_channel_test.dart test/native_helper_script_test.dart test/compat/native_helper_events_220_contract_test.dart test/update_recovery_test.dart test/updater_controller_test.dart
@@ -1414,7 +1414,8 @@ after durable ownership exists; it must not generate a script.
   Flutter or GTK plugin toolchain. Fresh GCC 14.3 native build passed; CTest
   discovered 37 tests, passed 36, and literally skipped the bind-mount test in
   the unprivileged container.
-- Commit: `not run`
+- Commit: `verified locally` —
+  `18e2c1b refactor: route flutter installs through native helpers`.
 
 ---
 
@@ -1424,16 +1425,21 @@ after durable ownership exists; it must not generate a script.
 
 - Modify: `macos/desktop_updater/Package.swift`
 - Modify: `macos/desktop_updater.podspec`
+- Modify: `macos/install_helper/Package.swift`
 - Create: `macos/install_helper/embed_install_helper.sh`
 - Create: `macos/install_helper/verify_install_helper_layout.sh`
 - Modify: `example/macos/Runner.xcodeproj/project.pbxproj`
+- Create: `example/macos/Runner/DesktopUpdaterHelperPolicy.json`
 - Modify: `windows/CMakeLists.txt`
 - Modify: `windows/native/CMakeLists.txt`
 - Modify: `windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj`
 - Modify: `windows/native/dotnet/DesktopUpdater.Native/buildTransitive/DesktopUpdater.Native.targets`
 - Modify: `linux/CMakeLists.txt`
 - Modify: `linux/native/CMakeLists.txt`
+- Modify: `linux/native/cmake/desktop_updater_native.pc.in`
+- Modify: `test/macos_cocoapods_source_layout_test.dart`
 - Modify: `test/macos_distribution_artifacts_test.dart`
+- Modify: `test/macos_swift_package_test.dart`
 - Modify: `test/windows_native_sdk_layout_test.dart`
 - Modify: `test/linux_native_sdk_layout_test.dart`
 - Modify: `test/native_package_retail_contract_test.dart`
@@ -1441,7 +1447,7 @@ after durable ownership exists; it must not generate a script.
 - Modify: `docs/native-sdk.md`
 - Modify: `docs/windows-linux-production-release.md`
 
-- [ ] **Step 1: Write failing retail-layout tests**
+- [x] **Step 1: Write failing retail-layout tests**
 
   Require Release packages and Flutter host builds to contain the expected
   helper and policy metadata:
@@ -1457,7 +1463,7 @@ after durable ownership exists; it must not generate a script.
   Reassert the exact CocoaPods five-source allowlist and `DesktopUpdaterKit`
   module/product name.
 
-- [ ] **Step 2: Implement build/embed/install rules**
+- [x] **Step 2: Implement build/embed/install rules**
 
   Avoid source-tree shortcuts and Debug artifacts in Release packages. The
   CocoaPods and SwiftPM integration invokes the dedicated helper build/embed
@@ -1487,18 +1493,58 @@ after durable ownership exists; it must not generate a script.
   Commit:
 
   ```sh
-  git add macos/desktop_updater/Package.swift macos/desktop_updater.podspec macos/install_helper/embed_install_helper.sh macos/install_helper/verify_install_helper_layout.sh example/macos/Runner.xcodeproj/project.pbxproj windows/CMakeLists.txt windows/native/CMakeLists.txt windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj windows/native/dotnet/DesktopUpdater.Native/buildTransitive/DesktopUpdater.Native.targets linux/CMakeLists.txt linux/native/CMakeLists.txt test/macos_distribution_artifacts_test.dart test/windows_native_sdk_layout_test.dart test/linux_native_sdk_layout_test.dart test/native_package_retail_contract_test.dart test/native_sdk_consumer_package_test.dart docs/native-sdk.md docs/windows-linux-production-release.md
+  git add macos/desktop_updater/Package.swift macos/desktop_updater.podspec macos/install_helper/Package.swift macos/install_helper/embed_install_helper.sh macos/install_helper/verify_install_helper_layout.sh example/macos/Runner.xcodeproj/project.pbxproj example/macos/Runner/DesktopUpdaterHelperPolicy.json windows/CMakeLists.txt windows/native/CMakeLists.txt windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj windows/native/dotnet/DesktopUpdater.Native/buildTransitive/DesktopUpdater.Native.targets linux/CMakeLists.txt linux/native/CMakeLists.txt linux/native/cmake/desktop_updater_native.pc.in test/macos_cocoapods_source_layout_test.dart test/macos_distribution_artifacts_test.dart test/macos_swift_package_test.dart test/windows_native_sdk_layout_test.dart test/linux_native_sdk_layout_test.dart test/native_package_retail_contract_test.dart test/native_sdk_consumer_package_test.dart docs/native-sdk.md docs/windows-linux-production-release.md
   git commit -m "build: package native install helpers"
   ```
 
 **Evidence:**
 
-- RED: `not run`
-- macOS CocoaPods 10.14 Flutter host: `not run`
-- macOS SwiftPM 10.15+ Flutter/native hosts: `not run`
-- Windows Release/NuGet consumers: `not run`
-- Linux installed CMake/pkg-config consumers: `not run`
-- Package dry run: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64; the five new retail
+  contracts first ran as 41 passing tests plus 5 intended failures, one for
+  each missing macOS, Windows, Linux, retail-policy, and consumer artifact.
+- Retail contract tests: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/macos_distribution_artifacts_test.dart test/windows_native_sdk_layout_test.dart test/linux_native_sdk_layout_test.dart test/native_package_retail_contract_test.dart test/native_sdk_consumer_package_test.dart`;
+  exit 0; 46 tests passed. The additional CocoaPods, SwiftPM, and helper-layout
+  contract group passed 23 tests. Both helper shell scripts passed `sh -n`, the
+  podspec passed `ruby -c`, and the example sealed policy validated at version
+  3 with canonical SHA-256
+  `05247eb6b09f8e88751b2299567fad350a48e9bb7310a53e76a7fdab81ee0be3`.
+- macOS CocoaPods 10.14 Flutter host: `blocked` — no `pod` executable is
+  installed on this host. The exact five-source macOS 10.14 `swiftc -typecheck`
+  and Xcode project graph parse passed; CocoaPods preserves the helper package
+  and tooling while the final host-app embed/sign phase remains host-owned.
+- macOS SwiftPM 10.15+ Flutter/native hosts: `verified locally` for a
+  `candidate-only` debug host — `flutter build macos --debug` exited 0 after
+  building the helper in Release mode and running the embed verifier. The app
+  contained byte-identical helper files at `Contents/Helpers` and
+  `Contents/Library/LaunchServices/net.monolib.updater.helper`; the helper was
+  arm64, hardened-runtime signed, and identified as
+  `net.monolib.updater.helper`. The outer debug app failed strict trust with
+  `CSSMERR_TP_NOT_TRUSTED`, and `security find-identity -v -p codesigning`
+  reported 0 valid identities, so production signing/notarization is `not run`.
+  `swift test --disable-sandbox --package-path macos/install_helper` passed 38
+  tests and `swift test --disable-sandbox` passed 62 tests. The external Swift
+  consumer also compiled and ran against `DesktopUpdaterKit 2.7.0`.
+- Windows Release/NuGet consumers: `not run` — no Windows target host is
+  available. Source contracts require Release helper and policy assets,
+  fail missing pack inputs, and provide an opt-in absolute installer-protected
+  helper destination; no Authenticode/UAC or installed NuGet claim is made.
+- Linux installed CMake/pkg-config consumers: `verified locally` — GCC 14.3.0
+  in the repository Linux build image configured and built a fresh Release
+  portable package; CTest discovered 37 tests, passed 36, and explicitly
+  skipped the one unprivileged bind-mount case. The installed CMake consumer
+  passed 1/1 CTest and the pkg-config consumer compiled and ran. Portable
+  inventory contained a root-owned `libexec/desktop-updater-helper` and no
+  policy/polkit files. Missing system-broker policy failed configuration; an
+  explicit non-production policy staged the fixed `/usr/libexec`, polkit, and
+  `/etc/desktop-updater/policies` candidate layout. Privileged broker execution
+  remains `not run`. The temporary verification container was removed.
+- Package dry run: `blocked` — the plan-spelled `dart pub publish --dry-run`
+  attempted to update the external Flutter SDK cache. Direct Dart execution
+  then reached dependency resolution but could not read the pub.dev advisory
+  endpoint under restricted network access; both escalation requests were
+  rejected. `publish` has no offline option, so no successful dry-run is
+  claimed.
 - Commit: `not run`
 
 ---

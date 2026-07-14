@@ -14,6 +14,13 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
+set(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR "" CACHE PATH
+  "Absolute installer-protected directory for an elevated helper copy")
+if(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR AND
+   NOT IS_ABSOLUTE "${DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}")
+  message(FATAL_ERROR
+    "DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR must be absolute")
+endif()
 
 set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
   ${CMAKE_CURRENT_SOURCE_DIR}/../../native_runtime/cpp)
@@ -176,6 +183,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(TARGETS desktop_updater_install_helper
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  if(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR)
+    install(TARGETS desktop_updater_install_helper
+      RUNTIME DESTINATION
+        "${DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}")
+  endif()
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     install(TARGETS desktop_updater_runtime
       EXPORT desktop_updater_nativeTargets

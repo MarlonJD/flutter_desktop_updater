@@ -154,6 +154,20 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     final helperSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
+    final embedTool = File(
+      "macos/install_helper/embed_install_helper.sh",
+    ).readAsStringSync();
+    final verifyTool = File(
+      "macos/install_helper/verify_install_helper_layout.sh",
+    ).readAsStringSync();
+    final privilegeSource = File(
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/"
+      "MacPrivilegeService.swift",
+    ).readAsStringSync();
+    final artifactVerifier = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/Runtime/"
+      "ArtifactStager.swift",
+    ).readAsStringSync();
     final project = File(
       "example/macos/Runner.xcodeproj/project.pbxproj",
     ).readAsStringSync();
@@ -165,32 +179,19 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(pluginSource, contains("import DesktopUpdaterKit"));
     expect(pluginSource, contains("MacInstallHelper"));
     expect(pluginSource, contains("MacInstallRequest"));
-    expect(helperSource, contains("#if DEBUG"));
     expect(pluginSource, contains("allowUnsignedMacOSUpdates"));
-    expect(
-      helperSource,
-      contains(
-        'let allowUnsignedValue = request.allowUnsignedUpdates ? "1" : ""',
-      ),
-    );
-    expect(
-      helperSource,
-      contains(
-        r'ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-\(allowUnsignedValue)}\"',
-      ),
-    );
-    expect(helperSource, contains("#else"));
-    expect(
-      helperSource,
-      contains(r'ALLOW_UNSIGNED_MACOS=\"\(allowUnsignedValue)\"'),
-    );
-    expect(helperSource, contains("/usr/bin/codesign --verify"));
-    expect(helperSource, contains("/usr/sbin/spctl --assess"));
-    expect(helperSource, contains("/usr/bin/xcrun stapler validate"));
-    expect(helperSource, contains("TeamIdentifier mismatch"));
-    expect(helperSource, contains("CFBundleIdentifier mismatch"));
-    expect(helperSource, contains("pkg manifest loaded"));
-    expect(helperSource, contains('log_event "rollback success"'));
+    expect(helperSource, isNot(contains("makeHelperScript")));
+    expect(helperSource, isNot(contains("/bin/sh")));
+    expect(embedTool, contains("--options runtime --timestamp"));
+    expect(embedTool, contains("DESKTOP_UPDATER_SEALED_POLICY_SHA256"));
+    expect(verifyTool, contains("codesign --verify --strict"));
+    expect(verifyTool, contains("SMPrivilegedExecutables"));
+    expect(verifyTool, contains("SMAuthorizedClients"));
+    expect(privilegeSource, contains("teamIdentifier"));
+    expect(privilegeSource, contains("signedIdentityMismatch"));
+    expect(artifactVerifier, contains("/usr/bin/codesign"));
+    expect(artifactVerifier, contains("/usr/sbin/spctl"));
+    expect(artifactVerifier, contains("stapler"));
 
     expect(
       project,

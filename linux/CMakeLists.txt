@@ -43,12 +43,13 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
+add_dependencies(${PLUGIN_NAME} desktop-updater-helper)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(desktop_updater_bundled_libraries
-  ""
+  "$<TARGET_FILE:desktop-updater-helper>"
   PARENT_SCOPE
 )
 

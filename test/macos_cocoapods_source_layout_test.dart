@@ -50,11 +50,12 @@ void main() {
     );
   });
 
-  test("native install helper stays outside the CocoaPods source allowlist",
+  test("CocoaPods invokes helper tooling outside the exact source allowlist",
       () {
     final podspec = File("macos/desktop_updater.podspec").readAsStringSync();
     expect(_podErrors(podspec), isEmpty);
-    expect(podspec, isNot(contains("install_helper")));
+    expect(podspec, contains("install_helper/embed_install_helper.sh"));
+    expect(podspec, contains("preserve_paths"));
     expect(podspec, isNot(contains("EmbeddedHelperLocator.swift")));
   });
 

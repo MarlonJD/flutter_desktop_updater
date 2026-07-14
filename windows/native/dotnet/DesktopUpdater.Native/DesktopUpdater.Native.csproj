@@ -27,6 +27,16 @@
       PackagePath="runtimes/win-x64/native"
       Condition="'$(RuntimeDllPath)' != ''" />
     <None
+      Include="$(InstallHelperPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native/desktop_updater_install_helper.exe"
+      Condition="'$(InstallHelperPath)' != ''" />
+    <None
+      Include="$(HelperPolicyPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native/desktop_updater_helper_policy.json"
+      Condition="'$(HelperPolicyPath)' != ''" />
+    <None
       Include="README.md"
       Pack="true"
       PackagePath="/" />
@@ -54,5 +64,17 @@
     <Error
       Condition="'$(RuntimeDllPath)' != '' and !Exists('$(RuntimeDllPath)')"
       Text="Native desktop_updater runtime DLL was not found: $(RuntimeDllPath)" />
+    <Error
+      Condition="'$(InstallHelperPath)' == ''"
+      Text="InstallHelperPath must point to the built desktop_updater_install_helper.exe." />
+    <Error
+      Condition="'$(InstallHelperPath)' != '' and !Exists('$(InstallHelperPath)')"
+      Text="Native desktop_updater install helper was not found: $(InstallHelperPath)" />
+    <Error
+      Condition="'$(HelperPolicyPath)' == ''"
+      Text="HelperPolicyPath must point to a consumer-specific sealed helper policy." />
+    <Error
+      Condition="'$(HelperPolicyPath)' != '' and !Exists('$(HelperPolicyPath)')"
+      Text="Native desktop_updater helper policy was not found: $(HelperPolicyPath)" />
   </Target>
 </Project>

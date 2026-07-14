@@ -3,6 +3,43 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("Windows retail layouts package the helper and sealed policy", () {
+    final pluginCmake = readRequiredFile("windows/CMakeLists.txt");
+    final nativeCmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final project = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/"
+      "DesktopUpdater.Native.csproj",
+    );
+    final targets = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/buildTransitive/"
+      "DesktopUpdater.Native.targets",
+    );
+
+    expect(pluginCmake, contains("desktop_updater_install_helper"));
+    expect(pluginCmake,
+        contains(r"$<TARGET_FILE:desktop_updater_install_helper>"));
+    expect(
+      pluginCmake,
+      contains(
+          "add_dependencies(\${PLUGIN_NAME} desktop_updater_install_helper)"),
+    );
+    expect(
+      nativeCmake,
+      contains("DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR"),
+    );
+    expect(nativeCmake, contains("IS_ABSOLUTE"));
+    expect(nativeCmake, contains("desktop_updater_install_helper"));
+    expect(nativeCmake, contains("RUNTIME DESTINATION"));
+
+    expect(project, contains(r'Include="$(InstallHelperPath)"'));
+    expect(project, contains(r'Include="$(HelperPolicyPath)"'));
+    expect(project, contains("desktop_updater_install_helper.exe"));
+    expect(project, contains("desktop_updater_helper_policy.json"));
+    expect(targets, contains("desktop_updater_install_helper.exe"));
+    expect(targets, contains("desktop_updater_helper_policy.json"));
+    expect(targets, contains("CopyDesktopUpdaterNativeRuntime"));
+  });
+
   test("Windows native SDK exposes the versioned C ABI", () {
     final cmake = readRequiredFile("windows/native/CMakeLists.txt");
     final header = readRequiredFile(

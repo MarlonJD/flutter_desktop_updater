@@ -3,6 +3,41 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("Linux retail layouts separate portable and system broker installs", () {
+    final pluginCmake = readRequiredFile("linux/CMakeLists.txt");
+    final nativeCmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final pkgConfig = readRequiredFile(
+      "linux/native/cmake/desktop_updater_native.pc.in",
+    );
+
+    expect(pluginCmake, contains("desktop-updater-helper"));
+    expect(pluginCmake, contains(r"$<TARGET_FILE:desktop-updater-helper>"));
+    expect(
+      pluginCmake,
+      contains("add_dependencies(\${PLUGIN_NAME} desktop-updater-helper)"),
+    );
+    expect(
+      nativeCmake,
+      contains("DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER"),
+    );
+    expect(nativeCmake, contains('DESTINATION "/usr/libexec"'));
+    expect(
+      nativeCmake,
+      contains('DESTINATION "/usr/share/polkit-1/actions"'),
+    );
+    expect(
+      nativeCmake,
+      contains('DESTINATION "/etc/desktop-updater/policies"'),
+    );
+    expect(nativeCmake, contains("DESKTOP_UPDATER_HELPER_SHA256"));
+    expect(
+        nativeCmake, contains("DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON"));
+    expect(nativeCmake, contains("message(FATAL_ERROR"));
+    expect(nativeCmake, contains(r"${CMAKE_INSTALL_LIBEXECDIR}"));
+    expect(pkgConfig, contains("broker=/usr/libexec/desktop-updater-helper"));
+    expect(pkgConfig, contains("portable_mode=unprivileged"));
+  });
+
   test("Linux native SDK exposes a Flutter-free install contract", () {
     final header = readRequiredFile(
       "linux/native/include/desktop_updater_native.h",

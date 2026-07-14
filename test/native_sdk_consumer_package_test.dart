@@ -226,7 +226,7 @@ void main() {
     );
   });
 
-  test("NuGet package carries both wrappers and the win-x64 DLL", () {
+  test("NuGet package carries wrappers, win-x64 DLLs, helper, and policy", () {
     final project = readRequiredFile(
       "windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj",
     );
@@ -247,6 +247,8 @@ void main() {
     );
     expect(project, contains(r'Include="$(NativeDllPath)"'));
     expect(project, contains(r'Include="$(RuntimeDllPath)"'));
+    expect(project, contains(r'Include="$(InstallHelperPath)"'));
+    expect(project, contains(r'Include="$(HelperPolicyPath)"'));
     expect(project, contains('PackagePath="runtimes/win-x64/native"'));
     expect(
       project,
@@ -254,6 +256,8 @@ void main() {
     );
     expect(targets, contains("CopyDesktopUpdaterNativeRuntime"));
     expect(targets, contains("desktop_updater_runtime.dll"));
+    expect(targets, contains("desktop_updater_install_helper.exe"));
+    expect(targets, contains("desktop_updater_helper_policy.json"));
     expect(
       consumerProject,
       contains('PackageReference Include="DesktopUpdater.Native"'),

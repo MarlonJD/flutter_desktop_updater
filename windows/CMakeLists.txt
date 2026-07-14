@@ -53,12 +53,13 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter_wrapper_plugin
   desktop_updater_native_static
   Version)
+add_dependencies(${PLUGIN_NAME} desktop_updater_install_helper)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(desktop_updater_bundled_libraries
-  ""
+  "$<TARGET_FILE:desktop_updater_install_helper>"
   PARENT_SCOPE
 )
 

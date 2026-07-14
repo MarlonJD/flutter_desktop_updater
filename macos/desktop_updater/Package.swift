@@ -1,7 +1,16 @@
 // swift-tools-version: 5.9
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
+import Foundation
 import PackageDescription
+
+let installHelperEmbedTool = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("../install_helper/embed_install_helper.sh")
+    .standardizedFileURL.path
+guard FileManager.default.isExecutableFile(atPath: installHelperEmbedTool) else {
+    fatalError("Missing executable install helper embed tool: \(installHelperEmbedTool)")
+}
 
 let package = Package(
     name: "desktop_updater",

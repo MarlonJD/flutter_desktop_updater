@@ -16,7 +16,7 @@ Flutter runtime or the independently consumable helper boundary.
 | macOS helper | SwiftPM product `DesktopUpdaterKit` | Flutter-free Swift install and relaunch helper |
 | macOS runtime preview | SwiftPM product `DesktopUpdaterKit` | Stateful Swift update client plus helper handoff |
 | Windows helper | Installed CMake target `desktop_updater::native` | Static/shared C++ helper and versioned C ABI |
-| Windows runtime preview | `DesktopUpdater.Native` NuGet package | Managed client, versioned runtime C ABI, and both `win-x64` native DLLs |
+| Windows runtime preview | `DesktopUpdater.Native` NuGet package | Managed client, versioned runtime C ABI, native DLLs, helper, and sealed policy |
 | Linux helper | Installed CMake target `desktop_updater::native` and pkg-config metadata | Source-first static C++ install helper |
 | Linux runtime preview | Installed CMake target `desktop_updater::runtime` | Source-first C++ update client; no prebuilt ABI promise |
 | CLI | Dart entrypoints or native-host standalone executable | Release, package, verify, and app-archive commands |
@@ -81,6 +81,11 @@ Each retail application must provision these policy-bound artifacts:
   only the unprivileged helper mode; system-owned targets require the installed
   root broker.
 
+These are packaging contracts, not trust claims. A source scan or unsigned
+local build can prove only layout. Authenticode, Apple code-signing,
+installer-owned ACL/ownership, polkit elevation, and notarization require their
+named target-host gates.
+
 ## macOS: DesktopUpdaterKit
 
 Add this repository as a Swift package at an approved tag and link the
@@ -129,6 +134,25 @@ identity, and publisher trust before replacement. It derives the current PID
 and `Bundle.main` target internally, so callers cannot select another process
 or application bundle. `DesktopUpdaterVersion.string` exposes the helper
 package version.
+
+Flutter macOS hosts invoke `macos/install_helper/embed_install_helper.sh` from
+their final app target after Flutter assembly. The CocoaPods fallback preserves
+the tooling in its sandbox without adding helper sources to the pod's exact
+five-source allowlist; a CocoaPods host invokes it from
+`${PODS_ROOT}/../.symlinks/plugins/desktop_updater/macos/install_helper`.
+SwiftPM hosts add the same final-app phase from the checked-out plugin source.
+The example Xcode target is shared by both Flutter integration modes and shows
+the invocation. Set `DESKTOP_UPDATER_HELPER_INFO_TEMPLATE` and
+`DESKTOP_UPDATER_SEALED_POLICY_PATH` to consumer-owned metadata, and set
+`DESKTOP_UPDATER_SEALED_POLICY_SHA256` to the digest emitted by the canonical
+policy generator. The policy must
+bind the actual app bundle identifier, helper service identifier, and reciprocal
+Apple designated requirements. The tool always builds the helper with SwiftPM's
+Release configuration into DerivedData, signs it once, copies the same signed
+bytes to `Contents/Helpers/DesktopUpdaterInstallHelper` and
+`Contents/Library/LaunchServices/<helper-service-id>`, and validates the layout
+before Xcode signs the outer app. Missing policy, requirement, identity, or
+signing metadata fails the host build.
 
 The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback
@@ -180,9 +204,13 @@ incomplete request is rejected before scheduling. The installed header also
 exposes `DESKTOP_UPDATER_NATIVE_VERSION_STRING`.
 
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
-wrappers, `buildTransitive` copy target, and both
+wrappers, `buildTransitive` copy target, both
 `runtimes/win-x64/native/desktop_updater_native.dll` and
-`runtimes/win-x64/native/desktop_updater_runtime.dll`. The `buildTransitive`
+`runtimes/win-x64/native/desktop_updater_runtime.dll`,
+`desktop_updater_install_helper.exe`, and the consumer-specific
+`desktop_updater_helper_policy.json`. Pack requires explicit
+`InstallHelperPath` and `HelperPolicyPath` inputs and fails when either is
+missing. The `buildTransitive`
 copy target accepts an explicit `RuntimeIdentifier` only when it is `win-x64`
 and fails before copying assets for any other explicit RID. Framework-dependent
 consumers that omit `RuntimeIdentifier` retain the existing copy behavior. The
@@ -199,6 +227,14 @@ lower-level C ABI uses the corresponding versioned `_v1` functions.
 Repository CI packs the package to a local feed and runs external consumers
 against the real DLLs. It is not a public NuGet release until an approved
 release workflow publishes that exact verified package.
+
+The NuGet or Flutter copy beside the runtime DLLs is a discovery artifact. It
+does not become an elevation authority merely by being present. A machine-wide
+installer must copy the exact signed helper and sealed policy into an absolute,
+installer-owned protected directory and pass that directory as
+`DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR`. The elevated path verifies
+Authenticode publisher, helper digest, final path, and directory writability
+before UAC launch. A user-writable package copy is rejected for elevation.
 
 ## Linux: Source-First CMake Package
 
@@ -219,6 +255,20 @@ cmake --install linux/native/build --prefix linux/native/install
 
 The installed CMake and pkg-config metadata resolves paths relative to the
 installation tree, so the install-time `--prefix` above remains authoritative.
+That default install is portable and unprivileged. The helper may run beside a
+Flutter bundle or under the chosen prefix, but its root mode rejects every path
+except `/usr/libexec/desktop-updater-helper`.
+
+Distribution packagers that need the system broker configure a separate staged
+install with `DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER=ON` and provide the exact
+package ID, broker SHA-256, canonical policy JSON, and canonical policy digest.
+Configuration fails when those values are missing or left at placeholders. The
+system-broker install uses the fixed paths `/usr/libexec/desktop-updater-helper`,
+`/usr/share/polkit-1/actions/com.desktopupdater.install.policy`, and
+`/etc/desktop-updater/policies/<package-id>.json`; use the packaging system's
+staging mechanism such as `DESTDIR` rather than relocating those absolute
+paths. This repository does not add AppImage, deb, rpm, Flatpak, or Snap
+packagers in this task.
 
 Use the installed CMake package:
 
@@ -238,7 +288,7 @@ The install tree also generates `desktop_updater_native.pc` with the canonical
 package version. The helper requires an explicit application-owned
 `install_root` and canonical `executable_relative_path`. It rejects `/`, shared
 system prefixes, traversal, symlink escapes, and destructive work outside that
-root before it writes a helper script.
+root before it opens a helper transaction.
 
 ## Standalone CLI
 
@@ -311,16 +361,15 @@ minimum-OS policy, request headers, UI, and release approval.
 
 The current safety boundary requires signed app-archive authority before
 selection, owned stage provenance through helper handoff, and explicit install
-target proof. Local source-contract tests cover the current fail-closed Windows
-target/reparse validation, but real target-host junction execution is `not run`.
-Windows junction/reparse transaction mutation and Linux mount/bind transaction
-mutation remain `blocked` with Task 6. Windows transport must preserve Unicode
-paths and resolve relative redirects; Windows retail consumption must use the
-Release NuGet payload and installed third-party notices.
+target proof. The native helpers persist transaction journals, reconcile
+interrupted swaps, and expose prepare/commit recovery semantics. Local tests
+cover the macOS journal and swap paths and the fail-closed Windows and Linux
+target checks. Real Windows junction/reparse mutation and installed privileged
+Linux mount/bind mutation remain `not run` until their target-host lanes run.
+Windows transport must preserve Unicode paths and resolve relative redirects;
+Windows retail consumption must use the Release NuGet payload and installed
+third-party notices.
 
-The implemented scheduling guard provides a one-shot handoff. It is not a
-durable native transaction recovery journal: that work is `blocked` by Task 6
-of the merge-blocker remediation plan and the unsafe candidate was reverted.
 The current remediation head's target-host jobs are configured but `not run`;
 no `verified in CI` result is claimed for it. Signed DMG, PKG, and Inno lanes
 are also `not run` without explicit credentials. The API remains `preview` and

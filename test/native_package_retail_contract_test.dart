@@ -3,6 +3,33 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test(
+      "native helper retail packaging rejects Debug and incomplete policy inputs",
+      () {
+    final macEmbed = readRequiredFile(
+      "macos/install_helper/embed_install_helper.sh",
+    );
+    final windowsProject = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/"
+      "DesktopUpdater.Native.csproj",
+    );
+    final windowsTargets = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/buildTransitive/"
+      "DesktopUpdater.Native.targets",
+    );
+    final linuxCmake = readRequiredFile("linux/native/CMakeLists.txt");
+
+    expect(macEmbed, contains("-c release"));
+    expect(macEmbed, contains("CODE_SIGN_IDENTITY"));
+    expect(macEmbed, contains("DESKTOP_UPDATER_HELPER_INFO_TEMPLATE"));
+    expect(macEmbed, isNot(contains(".build/debug")));
+    expect(windowsProject, contains("InstallHelperPath must point"));
+    expect(windowsProject, contains("HelperPolicyPath must point"));
+    expect(windowsTargets, isNot(contains("Debug")));
+    expect(linuxCmake, contains("DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER"));
+    expect(linuxCmake, contains("policy metadata is required"));
+  });
+
   test("Windows retail package uses Release DLLs and the dynamic retail CRT",
       () {
     final cmake = readRequiredFile("windows/native/CMakeLists.txt");

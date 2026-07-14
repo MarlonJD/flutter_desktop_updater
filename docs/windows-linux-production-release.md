@@ -95,28 +95,28 @@ current user. A machine-wide install under `C:\Program Files` or
 `C:\Program Files (x86)` usually requires elevation.
 
 During `installUpdate`, the Windows helper performs a write preflight against
-the current app directory and checks for known protected install roots:
+the current app directory and resolves a packaged native helper endpoint. There
+is no generated PowerShell or command script fallback.
 
-- If the directory is a known protected root such as `C:\Program Files`, and
-  the process is not elevated, the helper starts the same install script
-  through Windows UAC.
-- If the directory is not protected and is writable, the normal hidden helper
-  script is scheduled.
-- If the directory is not writable and the process is not elevated, the helper
-  also starts the install script through Windows UAC.
-- If the user cancels UAC, `installUpdate` returns `InstallError` and the app
-  remains open.
-- If the process is already elevated but the directory is still not writable,
-  the helper returns `InstallError` instead of exiting into a doomed install.
+- Flutter bundles and `DesktopUpdater.Native` place
+  `desktop_updater_install_helper.exe` beside the runtime DLLs for discovery.
+- That user-writable copy is never sufficient for elevation. A machine-wide
+  installer must place the same Authenticode-signed bytes and the sealed policy
+  in an absolute installer-owned protected directory. CMake exposes
+  `DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR` for that installer staging
+  rule.
+- Before UAC launch, the client verifies the helper's Authenticode chain,
+  publisher, SHA-256, final non-reparse path, and protected parent directory.
+- The elevated helper connects through the nonce-derived local named pipe and
+  binds the request to the authenticated caller process and canonical request
+  digest. User cancellation leaves the reservation uncommitted.
+- Per-user writable installs remain in unprivileged mode. A portable or NuGet
+  copy cannot opt itself into the protected-helper trust class.
 
-The elevated path keeps the 2.x staged update context: `stagingPath`,
-`removedFiles`, the app target directory, and relaunch path are written into the
-helper script before elevation. After the launch mode is resolved, the native
-scheduler replaces the caller-provided `diagnosticsLogPath` with an empty value
-before PowerShell interpolation. A normal hidden helper retains the explicit
-app-owned path. The elevated bootstrap verifies the helper script hash before
-executing it, so the UAC flow does not depend on rediscovering update folders
-after relaunch. Windows UAC and real helper execution remain `not run` locally.
+The repository's local packaging checks prove only that the expected Release
+artifacts and policy inputs are present. Authenticode, protected ACLs, UAC, and
+real helper execution remain `not run` until their Windows target-host lane
+records them; the result is therefore `candidate-only`.
 
 ### Microsoft Artifact Signing
 
@@ -202,6 +202,30 @@ unmanaged users.
 
 Linux has no single OS-wide equivalent of macOS notarization or Windows public
 Authenticode trust. Production trust depends on the chosen distribution channel.
+
+### Portable Helper Versus Installed Root Broker
+
+Flutter and prefix-relocatable CMake installs may bundle
+`desktop-updater-helper` only for unprivileged updates. Even if launched as
+root, that binary rejects broker mode unless its resolved executable path is
+exactly `/usr/libexec/desktop-updater-helper`.
+
+A distro or machine-wide package that updates root-owned targets must stage all
+three fixed system artifacts together:
+
+- `/usr/libexec/desktop-updater-helper`, owned by root and not group/world
+  writable;
+- `/usr/share/polkit-1/actions/com.desktopupdater.install.policy`;
+- `/etc/desktop-updater/policies/<package-id>.json`, containing the exact broker
+  digest and canonical sealed policy metadata.
+
+Configure that packaging build with
+`DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER=ON`. Missing consumer-specific policy or
+digest values fail configuration. This is a system-package input contract, not
+a deb/rpm/AppImage/Flatpak/Snap implementation. Root ownership, mode, polkit
+authorization, and broker execution are `not run` until the Linux privileged
+target-host lane proves them, so locally staged output remains
+`candidate-only`.
 
 ### Direct Zip Plus Descriptor Signing
 

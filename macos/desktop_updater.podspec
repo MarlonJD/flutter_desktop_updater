@@ -30,6 +30,14 @@ A new Flutter plugin project.
 
   s.dependency 'FlutterMacOS'
 
+  s.preserve_paths = [
+    'install_helper/Package.swift',
+    'install_helper/Configuration/*.plist',
+    'install_helper/Sources/**/*.swift',
+    'install_helper/embed_install_helper.sh',
+    'install_helper/verify_install_helper_layout.sh'
+  ]
+
   s.platform = :osx, '10.14'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'

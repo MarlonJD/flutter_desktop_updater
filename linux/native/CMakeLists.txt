@@ -10,6 +10,8 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
+option(DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER
+  "Install the fixed root broker, polkit action, and sealed policy" OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
@@ -79,6 +81,17 @@ set(DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON "" CACHE STRING
 set(DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256
   "0000000000000000000000000000000000000000000000000000000000000000"
   CACHE STRING "SHA-256 of the canonical helper policy JSON")
+if(DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER AND
+   (DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID STREQUAL
+      "com.desktopupdater.default" OR
+    DESKTOP_UPDATER_HELPER_SHA256 STREQUAL
+      "0000000000000000000000000000000000000000000000000000000000000000" OR
+    DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON STREQUAL "" OR
+    DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256 STREQUAL
+      "0000000000000000000000000000000000000000000000000000000000000000"))
+  message(FATAL_ERROR
+    "Consumer-specific sealed helper policy metadata is required for the system broker")
+endif()
 configure_file(
   polkit/com.desktopupdater.install.policy.in
   ${CMAKE_CURRENT_BINARY_DIR}/com.desktopupdater.install.policy
@@ -138,13 +151,19 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   install(TARGETS desktop_updater_native
     EXPORT desktop_updater_nativeTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-  install(TARGETS desktop-updater-helper
-    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/com.desktopupdater.install.policy
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions)
-  install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/${DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID}.json
-    DESTINATION /etc/desktop-updater/policies)
+  if(DESKTOP_UPDATER_INSTALL_SYSTEM_BROKER)
+    install(TARGETS desktop-updater-helper
+      RUNTIME DESTINATION "/usr/libexec")
+    install(FILES
+      ${CMAKE_CURRENT_BINARY_DIR}/com.desktopupdater.install.policy
+      DESTINATION "/usr/share/polkit-1/actions")
+    install(FILES
+      ${CMAKE_CURRENT_BINARY_DIR}/${DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID}.json
+      DESTINATION "/etc/desktop-updater/policies")
+  else()
+    install(TARGETS desktop-updater-helper
+      RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
+  endif()
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     install(TARGETS desktop_updater_runtime
       EXPORT desktop_updater_nativeTargets

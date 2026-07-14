@@ -205,6 +205,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
+				D35A6C012E20000100D35A6C /* Embed Desktop Updater Install Helper */,
 			);
 			buildRules = (
 			);
@@ -329,6 +330,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		D35A6C012E20000100D35A6C /* Embed Desktop Updater Install Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/../../macos/install_helper/embed_install_helper.sh",
+				"$(PROJECT_DIR)/../../macos/install_helper/verify_install_helper_layout.sh",
+				"$(PROJECT_DIR)/Runner/DesktopUpdaterHelperPolicy.json",
+			);
+			name = "Embed Desktop Updater Install Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Helpers/DesktopUpdaterInstallHelper",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Library/LaunchServices/net.monolib.updater.helper",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"05247eb6b09f8e88751b2299567fad350a48e9bb7310a53e76a7fdab81ee0be3\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
