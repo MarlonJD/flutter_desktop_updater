@@ -3,6 +3,48 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class MacCrashRecoveryTests: XCTestCase {
+    func testPreparedTransactionWithoutCommitAuthorizationRollsBack() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+
+        XCTAssertEqual(try fixture.makeRecoveryService().recover(), .recovered)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testDurableCommitAuthorizationAllowsRecoveryToCompleteInstall()
+        throws
+    {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+        try transaction.authorizeCommit()
+
+        XCTAssertEqual(try fixture.makeRecoveryService().recover(), .recovered)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testTamperedCommitAuthorizationRollsBackWithoutMutation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+        try transaction.authorizeCommit()
+        try Data("tampered".utf8).write(
+            to: fixture.rootURL.appendingPathComponent(
+                transaction.paths.commitAuthorizationName
+            )
+        )
+
+        XCTAssertEqual(try fixture.makeRecoveryService().recover(), .recovered)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
     func testRecoversBeforeAndAfterEveryJournalFlushAndRename() throws {
         for point in MacTransactionFaultPoint.crashInjectionPoints {
             let fixture = try MacTransactionFixture()
@@ -22,6 +64,7 @@ final class MacCrashRecoveryTests: XCTestCase {
                     MacTransactionFaultPoint.beforeStageRename,
                     .afterStageRename,
                     .beforePreparedJournalFlush,
+                    .afterPreparedJournalFlush,
                 ].contains(point) ? "old" : "new",
                 "fault \(point)"
             )

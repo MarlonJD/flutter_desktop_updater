@@ -140,6 +140,17 @@ final class MacOneShotInstallSession {
             setState(.cancelled)
             throw MacOneShotInstallError.expired
         }
+        do {
+            try requiredTransaction().authorizeCommit()
+        } catch {
+            do {
+                try requiredTransaction().cancelPrepared()
+                setState(.cancelled)
+            } catch {
+                setState(.recoveryRequired)
+            }
+            throw error
+        }
         return status(
             reservation: prepared,
             state: "commitAccepted",

@@ -71,6 +71,10 @@ final class MacRecoveryService {
             directory: directory,
             paths: paths
         )
+        let commitAuthorizationStore = MacCommitAuthorizationStore(
+            directory: directory,
+            paths: paths
+        )
         let journal: MacTransactionJournal
         do {
             guard let loaded = try store.load() else {
@@ -90,6 +94,7 @@ final class MacRecoveryService {
                             throw MacRecoveryError.filesystemOperationFailed
                         }
                     }
+                    try commitAuthorizationStore.removeIfPresent()
                     try releaseLock(directory, paths: paths)
                     return .recovered
                 }
@@ -112,6 +117,20 @@ final class MacRecoveryService {
 
         guard directory.identity == journal.parentIdentity else {
             throw MacRecoveryError.parentIdentityMismatch
+        }
+
+        if journal.state == .prepared,
+           try !commitAuthorizationStore.validates(
+               journalSHA256: store.sha256()
+           ) {
+            try rollbackUncommittedPreparation(
+                journal: journal,
+                directory: directory,
+                store: store,
+                commitAuthorizationStore: commitAuthorizationStore,
+                paths: paths
+            )
+            return .recovered
         }
 
         var mutableJournal = journal
@@ -211,8 +230,49 @@ final class MacRecoveryService {
         } catch {
             throw MacRecoveryError.filesystemOperationFailed
         }
+        do {
+            try commitAuthorizationStore.removeIfPresent()
+        } catch {
+            throw MacRecoveryError.filesystemOperationFailed
+        }
         try releaseLock(directory, paths: paths)
         return .recovered
+    }
+
+    private func rollbackUncommittedPreparation(
+        journal: MacTransactionJournal,
+        directory: MacTransactionDirectory,
+        store: DurableTransactionJournalStore,
+        commitAuthorizationStore: MacCommitAuthorizationStore,
+        paths: MacTransactionPaths
+    ) throws {
+        guard directory.exists(name: paths.targetName),
+              try recoveryIdentity(directory, name: paths.targetName)
+                == journal.targetIdentity,
+              !directory.exists(name: paths.backupName) else {
+            throw MacRecoveryError.inconsistentState
+        }
+        if directory.exists(name: paths.preparedName) {
+            guard try recoveryIdentity(directory, name: paths.preparedName)
+                    == journal.stageIdentity else {
+                throw MacRecoveryError.stageIdentityMismatch
+            }
+            do {
+                try directory.removeTree(
+                    name: paths.preparedName,
+                    expectedIdentity: journal.stageIdentity
+                )
+            } catch {
+                throw MacRecoveryError.filesystemOperationFailed
+            }
+        }
+        do {
+            try commitAuthorizationStore.removeIfPresent()
+            try store.remove()
+        } catch {
+            throw MacRecoveryError.filesystemOperationFailed
+        }
+        try releaseLock(directory, paths: paths)
     }
 
     private func validate(

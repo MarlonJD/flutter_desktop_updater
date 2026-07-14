@@ -29,6 +29,7 @@ struct MacTransactionPaths: Equatable {
     let preparedName: String
     let backupName: String
     let journalName: String
+    let commitAuthorizationName: String
     let lockName: String
 
     init(targetName: String, transactionID: String) throws {
@@ -48,6 +49,7 @@ struct MacTransactionPaths: Equatable {
         preparedName = prefix + ".prepared"
         backupName = prefix + ".backup"
         journalName = prefix + ".journal.json"
+        commitAuthorizationName = prefix + ".commit"
         lockName = ".\(targetName).desktop-updater-lock"
     }
 }
@@ -136,6 +138,7 @@ final class MacFileTransaction {
     private let verifier: any MacInstallPayloadVerifying
     private let faultInjector: any MacTransactionFaultInjecting
     private let store: DurableTransactionJournalStore
+    private let commitAuthorizationStore: MacCommitAuthorizationStore
     private let retainedStage: MacRetainedFileObject
     private let initialStageIdentity: MacFileIdentity
     private let targetIdentity: MacFileIdentity
@@ -180,6 +183,10 @@ final class MacFileTransaction {
             paths: paths,
             faultInjector: faultInjector
         )
+        commitAuthorizationStore = MacCommitAuthorizationStore(
+            directory: directory,
+            paths: paths
+        )
 
         targetIdentity = try directory.identity(
             name: paths.targetName,
@@ -203,6 +210,7 @@ final class MacFileTransaction {
             paths.backupName,
             paths.journalName,
             paths.journalName + ".next",
+            paths.commitAuthorizationName,
         ] where directory.exists(name: name) {
             throw MacFileTransactionError.derivedArtifactAlreadyExists
         }
@@ -250,6 +258,7 @@ final class MacFileTransaction {
         try transition(from: .prepared, to: .preparing)
         do {
             let journal = try loadPreparedJournal()
+            try commitAuthorizationStore.removeIfPresent()
             try directory.validatePathIdentity()
             if directory.exists(name: paths.preparedName) {
                 try directory.removeTree(
@@ -274,6 +283,7 @@ final class MacFileTransaction {
         if currentLifecycle() == .reserved {
             _ = try prepare()
         }
+        try authorizeCommit()
         try transition(from: .prepared, to: .executing)
         do {
             var journal = try loadPreparedJournal()
@@ -340,6 +350,7 @@ final class MacFileTransaction {
                 expectedIdentity: targetIdentity
             )
             try store.remove()
+            try commitAuthorizationStore.removeIfPresent()
             try targetLock.release()
             try? stageDirectory.removeTree(
                 name: stageName,
@@ -354,6 +365,15 @@ final class MacFileTransaction {
             setLifecycle(.recoveryRequired)
             throw error
         }
+    }
+
+    func authorizeCommit() throws {
+        guard currentLifecycle() == .prepared else {
+            throw MacFileTransactionError.invalidState
+        }
+        try commitAuthorizationStore.create(
+            journalSHA256: store.sha256()
+        )
     }
 
     static func validateSameVolume(
