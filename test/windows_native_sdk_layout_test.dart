@@ -327,6 +327,19 @@ void main() {
     expect(recovery, contains("stageProvenanceSha256"));
     expect(recovery, contains("artifactSha256"));
     expect(recovery, contains("authenticodePublisher"));
+    expect(
+      relaunch,
+      contains('.desktop_updater_stage_provenance.json'),
+    );
+    expect(relaunch, contains('"descriptorSha256"'));
+    expect(relaunch, contains('"entries"'));
+    expect(relaunch, contains("VerifyCompleteStageInventory"));
+    expect(relaunch, contains("FileStreamInfo"));
+    expect(relaunch, contains('L"::\$DATA"'));
+    expect(
+      relaunch,
+      isNot(contains('desktop-updater-stage-provenance.json')),
+    );
     expect(relaunch, contains("CreateProcessW"));
     expect(relaunch, contains("VerifyWindowsExecutableStillMatches"));
     expect(smoke, contains('ValidateSet("Unprivileged", "Elevated")'));

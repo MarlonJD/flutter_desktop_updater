@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "windows_file_transaction.h"
 
@@ -27,6 +28,7 @@ class AuthenticodeWindowsPayloadVerifier final
 
  private:
   WindowsVerifiedPayloadIdentity expectation_;
+  std::vector<UniqueWindowsHandle> retained_stage_handles_;
 };
 
 class WindowsProcessLauncher {
