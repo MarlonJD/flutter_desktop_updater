@@ -60,6 +60,28 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     );
   });
 
+  test("install helper remains a separate package from both kit products", () {
+    final helper = File(
+      "macos/install_helper/Package.swift",
+    ).readAsStringSync();
+    expect(helper, contains(".macOS(.v10_14)"));
+    expect(
+      helper,
+      contains(
+        '.executable(name: "DesktopUpdaterInstallHelper", '
+        'targets: ["DesktopUpdaterInstallHelper"])',
+      ),
+    );
+    for (final manifestPath in <String>[
+      "Package.swift",
+      "macos/desktop_updater/Package.swift",
+    ]) {
+      final manifest = File(manifestPath).readAsStringSync();
+      expect(manifest, contains('.macOS("10.15")'));
+      expect(manifest, isNot(contains("DesktopUpdaterInstallHelper")));
+    }
+  });
+
   test("native docs separate SwiftPM runtime from CocoaPods fallback", () {
     final nativeSdk = File(
       "docs/native-sdk.md",

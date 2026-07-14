@@ -50,6 +50,14 @@ void main() {
     );
   });
 
+  test("native install helper stays outside the CocoaPods source allowlist",
+      () {
+    final podspec = File("macos/desktop_updater.podspec").readAsStringSync();
+    expect(_podErrors(podspec), isEmpty);
+    expect(podspec, isNot(contains("install_helper")));
+    expect(podspec, isNot(contains("EmbeddedHelperLocator.swift")));
+  });
+
   test("CI gates are structurally bound to the macOS jobs", () {
     final valid = File(
       ".github/workflows/desktop-updater-ci.yml",
