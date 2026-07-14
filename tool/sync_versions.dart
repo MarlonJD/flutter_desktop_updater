@@ -196,16 +196,18 @@ Future<String> _cmakeProject(
 ) async {
   final source = await File(_join(root.path, relativePath)).readAsString();
   final pattern = RegExp(
-    r"project\(desktop_updater_native(?: VERSION [^ )]+)? LANGUAGES CXX\)",
+    r"project\(desktop_updater_native(?: VERSION [^ )]+)? "
+    r"(LANGUAGES (?:C )?CXX)\)",
   );
   if (!pattern.hasMatch(source)) {
     throw FormatException(
       "CMake project declaration is missing in $relativePath.",
     );
   }
-  return source.replaceFirst(
+  return source.replaceFirstMapped(
     pattern,
-    "project(desktop_updater_native VERSION ${versions.cmake} LANGUAGES CXX)",
+    (match) => "project(desktop_updater_native VERSION ${versions.cmake} "
+        "${match.group(1)})",
   );
 }
 

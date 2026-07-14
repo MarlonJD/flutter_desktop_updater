@@ -110,7 +110,10 @@ void main() {
         "  InstallReservation reservation;",
       ),
     );
-    expect(windowsNative, contains("SerializeCommonInstallRequest"));
+    expect(
+      windowsNative,
+      contains("BuildWindowsNativeInstallTransactionRequestV1"),
+    );
     expect(windowsCNative, contains("destination->struct_size <"));
     expect(
       windowsCNative,
