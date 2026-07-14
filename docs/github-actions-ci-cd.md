@@ -99,10 +99,11 @@ The package CI intentionally does not publish app update artifacts. Automatic up
 
 The credential and privileged helper gates are separate manual jobs:
 
-- `macos-notarized` uses `DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E` for the signed
-  nested-helper/SMJobBless/XPC recovery smoke. The existing notarized publish
-  and signed runtime modes additionally require the Developer ID Installer and
-  notary credentials.
+- `macos-smappservice-helper` runs on a separately provisioned self-hosted
+  `desktop-updater-smappservice` runner when
+  `DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E=1`. Its administrator-approved signed
+  apps exercise the bundled root daemon/XPC recovery path. The
+  `macos-notarized` job separately owns Developer ID and notary credentials.
 - `windows-elevated-helper` runs only on a self-hosted
   `desktop-updater-uac` runner when
   `DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E=1`. It signs the fixed Release

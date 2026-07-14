@@ -24,14 +24,16 @@ const _expectedLedger = <String, String>{
   "Linux installed CMake consumer": "verified locally",
   "Linux standard and multiarch pkg-config consumers": "verified locally",
   "Linux mount/bind transaction mutation and recovery": "not run",
-  "Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
-      "blocked",
+  "macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
+      "verified locally",
+  "macOS local Developer ID/notarized SMAppService target-host smoke":
+      "verified locally",
   "Linux normal ZIP smoke": "not run",
   "Portable native helper fixture/state-machine CI": "not run",
   "macOS unprivileged helper crash-recovery CI": "not run",
   "Windows helper trust/reparse/crash-recovery CI": "not run",
   "Linux helper and privileged mount-namespace CI": "not run",
-  "macOS signed nested helper/SMJobBless/XPC CI": "not run",
+  "macOS signed bundled SMAppService daemon/XPC CI": "not run",
   "Windows Authenticode/UAC helper CI": "not run",
   "Linux installed polkit broker CI": "not run",
   "Current remediation head in GitHub Actions": "not run",
@@ -119,9 +121,8 @@ const _workflowCommands = <String, Map<String, List<String>>>{
       "sudo ctest --test-dir linux/native/build",
     ],
   },
-  "macos-notarized": <String, List<String>>{
-    "Run signed nested helper layout and SMJobBless/XPC recovery smoke":
-        <String>[
+  "macos-smappservice-helper": <String, List<String>>{
+    "Run signed bundled SMAppService daemon and XPC recovery smoke": <String>[
       "dart run tool/macos_install_helper_smoke.dart --mode privileged",
     ],
   },
@@ -150,9 +151,9 @@ void main() {
 
   test("current-head ledger records helper evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("62 tests"));
-    expect(ledger, contains("38 tests"));
-    expect(ledger, contains("0 valid code-signing identities"));
+    expect(ledger, contains("82/82"));
+    expect(ledger, contains("82/82"));
+    expect(ledger, contains("Notarized Developer ID"));
     expect(ledger, contains("one explicit mount-namespace skip"));
     expect(
         ledger, contains("current helper head has not run in GitHub Actions"));

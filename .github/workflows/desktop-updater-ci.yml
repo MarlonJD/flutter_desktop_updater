@@ -634,7 +634,6 @@ jobs:
         run: |
           plutil -lint macos/install_helper/Configuration/Helper-Info.plist
           plutil -lint macos/install_helper/Configuration/Helper-Launchd.plist
-          plutil -lint macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist
       - name: Run macOS install helper tests
         run: swift test --package-path macos/install_helper
       - name: Run macOS unprivileged crash recovery suite
@@ -789,7 +788,7 @@ jobs:
   macos-notarized:
     name: macOS Notarized Publish
     runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E == '1')
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1')
     # Signed production and native runtime lanes remain explicit
     # workflow_dispatch gates requiring Developer ID Application,
     # Developer ID Installer, and notary credentials:
@@ -839,20 +838,6 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --keychain "$DESKTOP_UPDATER_MACOS_KEYCHAIN"
           echo "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=$DESKTOP_UPDATER_MACOS_NOTARY_PROFILE" >> "$GITHUB_ENV"
-      - name: Run signed nested helper layout and SMJobBless/XPC recovery smoke
-        if: vars.DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E == '1'
-        env:
-          DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP }}
-          DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST }}
-          DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          helper="$DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP/Contents/Helpers/DesktopUpdaterInstallHelper"
-          signature="$(codesign -d --verbose=4 "$helper" 2>&1)"
-          printf '%s\n' "$signature"
-          printf '%s\n' "$signature" | grep -q 'flags=.*runtime'
-          dart run tool/macos_install_helper_smoke.dart --mode privileged
       - name: Run notarized release publish smoke
         if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
         working-directory: example
@@ -990,6 +975,30 @@ jobs:
           DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
           DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
         run: dart run tool/macos_production_smoke.dart cleanup
+
+  macos-smappservice-helper:
+    name: macOS SMAppService Privileged Helper (not run unless enabled)
+    runs-on: [self-hosted, macOS, desktop-updater-smappservice]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run signed bundled SMAppService daemon and XPC recovery smoke
+        env:
+          DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP }}
+          DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP/Contents/Helpers/DesktopUpdaterInstallHelper"
+          signature="$(codesign -d --verbose=4 "$helper" 2>&1)"
+          printf '%s\n' "$signature"
+          printf '%s\n' "$signature" | grep -q 'flags=.*runtime'
+          dart run tool/macos_install_helper_smoke.dart --mode privileged
 
   linux-polkit-helper:
     name: Linux Installed Polkit Broker (not run unless enabled)

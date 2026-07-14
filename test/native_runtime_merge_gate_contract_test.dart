@@ -158,7 +158,7 @@ void main() {
       "Run Windows helper trust, pipe, transaction, and crash recovery tests",
       "Run Linux unprivileged helper and crash recovery tests",
       "Run Linux privileged mount namespace rejection test",
-      "Run signed nested helper layout and SMJobBless/XPC recovery smoke",
+      "Run signed bundled SMAppService daemon and XPC recovery smoke",
       "Run Authenticode and interactive UAC helper smoke",
       "Run installed polkit root broker smoke",
     ]) {

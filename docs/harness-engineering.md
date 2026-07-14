@@ -60,8 +60,8 @@ The broad platform gates are in GitHub Actions:
   helper lane rejects zero discovery and uploads only fixed-field redacted test
   counts, not raw helper logs.
 - A privileged Linux mount-namespace rejection gate in the hosted Linux job.
-  Signed SMJobBless/XPC, Authenticode/UAC, and installed polkit broker smokes
-  remain separate manual credential/target-host jobs.
+  Signed SMAppService daemon/XPC, Authenticode/UAC, and installed polkit broker
+  smokes remain separate manual credential/target-host jobs.
 - The `macOS native runtime ZIP smoke`, `Windows native runtime ZIP smoke`, and
   `Linux native runtime ZIP smoke` exercise the three-stage preview through
   external SwiftPM, NuGet, and installed CMake consumers. CTest consumers fail
