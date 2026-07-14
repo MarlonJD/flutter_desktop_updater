@@ -219,6 +219,370 @@ enum MacXPCPeerRequirement {
     }
 }
 
+protocol MacPrivilegedInstallSessionServing: AnyObject {
+    func prepare(requestData: Data) throws -> MacOneShotReservationV1
+
+    func acceptCommit(
+        transactionID: String,
+        readyToken: String,
+        journalSHA256: String,
+        helperEndpointIdentitySHA256: String
+    ) throws -> MacOneShotTransactionStatusV1
+
+    func executeAfterCallerExit() throws
+        -> MacOneShotTransactionStatusV1
+
+    func cancelCommitAwaitingCallerExit() throws
+        -> MacOneShotTransactionStatusV1
+
+    func cancel(
+        transactionID: String,
+        readyToken: String,
+        journalSHA256: String,
+        helperEndpointIdentitySHA256: String
+    ) throws -> MacOneShotTransactionStatusV1
+}
+
+extension MacOneShotInstallSession: MacPrivilegedInstallSessionServing {}
+
+enum MacPrivilegedTransactionHandlerError: Error, Equatable {
+    case invalidOperation
+    case invalidPeer
+    case duplicateTransaction
+    case transactionNotFound
+    case transactionBindingMismatch
+}
+
+struct MacPrivilegedTransactionResponse {
+    let payload: Data
+    let helperEndpointIdentitySHA256: String
+    let completeAfterReply: (() throws -> Void)?
+}
+
+final class MacPrivilegedTransactionHandler {
+    private final class PendingTransaction {
+        let peerProcessIdentifier: Int32
+        let session: any MacPrivilegedInstallSessionServing
+        let monitor: any MacCallerExitMonitoring
+        let reservation: MacOneShotReservationV1
+        var commitAccepted = false
+
+        init(
+            peerProcessIdentifier: Int32,
+            session: any MacPrivilegedInstallSessionServing,
+            monitor: any MacCallerExitMonitoring,
+            reservation: MacOneShotReservationV1
+        ) {
+            self.peerProcessIdentifier = peerProcessIdentifier
+            self.session = session
+            self.monitor = monitor
+            self.reservation = reservation
+        }
+    }
+
+    private let helperEndpointIdentitySHA256: String
+    private let sessionFactory:
+        (Int32) throws -> any MacPrivilegedInstallSessionServing
+    private let monitorFactory: any MacCallerExitMonitorCreating
+    private let recoveryHandler: any MacPrivilegedRecoveryRequestHandling
+    private let lock = NSLock()
+    private var preparing: Set<String> = []
+    private var pending: [String: PendingTransaction] = [:]
+
+    init(
+        helperEndpointIdentitySHA256: String = String(
+            repeating: "c",
+            count: 64
+        ),
+        sessionFactory: @escaping
+            (Int32) throws -> any MacPrivilegedInstallSessionServing,
+        monitorFactory: any MacCallerExitMonitorCreating,
+        recoveryHandler: any MacPrivilegedRecoveryRequestHandling
+    ) {
+        self.helperEndpointIdentitySHA256 =
+            helperEndpointIdentitySHA256
+        self.sessionFactory = sessionFactory
+        self.monitorFactory = monitorFactory
+        self.recoveryHandler = recoveryHandler
+    }
+
+    convenience init(
+        policy: MacSealedInstallPolicyV1,
+        helperEndpointIdentitySHA256: String
+    ) {
+        let recovery = MacPersistentRecoveryService(
+            policy: policy,
+            callerAuthenticator:
+                AuthenticatedMacXPCRecoveryCallerAuthenticator(),
+            verifierFactory: SystemMacRecoveryPayloadVerifierFactory()
+        )
+        self.init(
+            helperEndpointIdentitySHA256:
+                helperEndpointIdentitySHA256,
+            sessionFactory: { peerProcessIdentifier in
+                let validator = MacOneShotInstallRequestValidator(
+                    parentProcessIdentifier: {
+                        peerProcessIdentifier
+                    },
+                    callerInspector:
+                        SystemMacCallerInstallEvidenceInspector(),
+                    stageInspector:
+                        SystemMacStageInstallEvidenceInspector()
+                )
+                let authorizer = SealedMacOneShotInstallAuthorizer(
+                    policy: policy,
+                    helperEndpointIdentitySHA256:
+                        helperEndpointIdentitySHA256,
+                    requestValidator: validator
+                )
+                return MacOneShotInstallSession(
+                    authorizer: authorizer,
+                    readyTokenGenerator:
+                        MacPrivilegedTransactionHandler.secureReadyToken,
+                    nowUnixMilliseconds:
+                        MacPrivilegedTransactionHandler.unixMilliseconds,
+                    reservationLifetimeMilliseconds: 300_000
+                )
+            },
+            monitorFactory: SystemMacCallerExitMonitorFactory(),
+            recoveryHandler: MacPersistentRecoveryRequestHandler(
+                service: recovery
+            )
+        )
+    }
+
+    func handle(
+        operation: String,
+        payload: Data,
+        peerProcessIdentifier: Int32
+    ) throws -> MacPrivilegedTransactionResponse {
+        guard peerProcessIdentifier > 0 else {
+            throw MacPrivilegedTransactionHandlerError.invalidPeer
+        }
+        switch operation {
+        case "prepareInstall":
+            return try prepare(
+                payload: payload,
+                peerProcessIdentifier: peerProcessIdentifier
+            )
+        case "commitAfterExit":
+            return try commit(
+                payload: payload,
+                peerProcessIdentifier: peerProcessIdentifier
+            )
+        case "cancelReservation":
+            return try cancel(
+                payload: payload,
+                peerProcessIdentifier: peerProcessIdentifier
+            )
+        case "queryTransaction", "recoverPendingInstall":
+            return MacPrivilegedTransactionResponse(
+                payload: try recoveryHandler.response(for: payload),
+                helperEndpointIdentitySHA256:
+                    helperEndpointIdentitySHA256,
+                completeAfterReply: nil
+            )
+        default:
+            throw MacPrivilegedTransactionHandlerError.invalidOperation
+        }
+    }
+
+    private func prepare(
+        payload: Data,
+        peerProcessIdentifier: Int32
+    ) throws -> MacPrivilegedTransactionResponse {
+        let request = try NativeInstallTransactionRequestV1.parse(payload)
+        guard request.caller.processIdentifier
+                == Int64(peerProcessIdentifier) else {
+            throw MacPrivilegedTransactionHandlerError.invalidPeer
+        }
+        lock.lock()
+        guard pending[request.transactionID] == nil,
+              preparing.insert(request.transactionID).inserted else {
+            lock.unlock()
+            throw MacPrivilegedTransactionHandlerError
+                .duplicateTransaction
+        }
+        lock.unlock()
+
+        do {
+            let session = try sessionFactory(peerProcessIdentifier)
+            let monitor = try monitorFactory.makeMonitor(
+                processIdentifier: request.caller.processIdentifier
+            )
+            let reservation = try session.prepare(requestData: payload)
+            guard reservation.transactionID == request.transactionID,
+                  reservation.helperEndpointIdentitySHA256
+                    == helperEndpointIdentitySHA256 else {
+                throw MacPrivilegedTransactionHandlerError
+                    .transactionBindingMismatch
+            }
+            let transaction = PendingTransaction(
+                peerProcessIdentifier: peerProcessIdentifier,
+                session: session,
+                monitor: monitor,
+                reservation: reservation
+            )
+            lock.lock()
+            preparing.remove(request.transactionID)
+            pending[request.transactionID] = transaction
+            lock.unlock()
+            return MacPrivilegedTransactionResponse(
+                payload: try macEncodeReservation(reservation),
+                helperEndpointIdentitySHA256:
+                    helperEndpointIdentitySHA256,
+                completeAfterReply: nil
+            )
+        } catch {
+            lock.lock()
+            preparing.remove(request.transactionID)
+            lock.unlock()
+            throw error
+        }
+    }
+
+    private func commit(
+        payload: Data,
+        peerProcessIdentifier: Int32
+    ) throws -> MacPrivilegedTransactionResponse {
+        let command = try MacOneShotWireCommand.parse(payload)
+        guard command.operation == "commitAfterExit" else {
+            throw MacPrivilegedTransactionHandlerError.invalidOperation
+        }
+        let transaction = try claim(
+            command: command,
+            peerProcessIdentifier: peerProcessIdentifier,
+            acceptingCommit: true
+        )
+        do {
+            _ = try transaction.session.acceptCommit(
+                transactionID: command.transactionID,
+                readyToken: command.readyToken,
+                journalSHA256: command.journalSHA256,
+                helperEndpointIdentitySHA256:
+                    command.helperEndpointIdentitySHA256
+            )
+        } catch {
+            remove(transaction)
+            throw error
+        }
+        return MacPrivilegedTransactionResponse(
+            payload: try macEncodeReservation(transaction.reservation),
+            helperEndpointIdentitySHA256:
+                helperEndpointIdentitySHA256,
+            completeAfterReply: { [weak self, weak transaction] in
+                guard let self, let transaction else { return }
+                defer { self.remove(transaction) }
+                do {
+                    try transaction.monitor.waitForExit(
+                        expiresAtUnixMilliseconds:
+                            transaction.reservation
+                            .expiresAtUnixMilliseconds
+                    )
+                    _ = try transaction.session.executeAfterCallerExit()
+                } catch {
+                    _ = try? transaction.session
+                        .cancelCommitAwaitingCallerExit()
+                    throw error
+                }
+            }
+        )
+    }
+
+    private func cancel(
+        payload: Data,
+        peerProcessIdentifier: Int32
+    ) throws -> MacPrivilegedTransactionResponse {
+        let command = try MacOneShotWireCommand.parse(payload)
+        guard command.operation == "cancelReservation" else {
+            throw MacPrivilegedTransactionHandlerError.invalidOperation
+        }
+        let transaction = try claim(
+            command: command,
+            peerProcessIdentifier: peerProcessIdentifier,
+            acceptingCommit: false
+        )
+        defer { remove(transaction) }
+        _ = try transaction.session.cancel(
+            transactionID: command.transactionID,
+            readyToken: command.readyToken,
+            journalSHA256: command.journalSHA256,
+            helperEndpointIdentitySHA256:
+                command.helperEndpointIdentitySHA256
+        )
+        return MacPrivilegedTransactionResponse(
+            payload: try macEncodeCancellation(transaction.reservation),
+            helperEndpointIdentitySHA256:
+                helperEndpointIdentitySHA256,
+            completeAfterReply: nil
+        )
+    }
+
+    private func claim(
+        command: MacOneShotWireCommand,
+        peerProcessIdentifier: Int32,
+        acceptingCommit: Bool
+    ) throws -> PendingTransaction {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let transaction = pending[command.transactionID] else {
+            throw MacPrivilegedTransactionHandlerError
+                .transactionNotFound
+        }
+        guard transaction.peerProcessIdentifier
+                == peerProcessIdentifier,
+              transaction.reservation.readyToken == command.readyToken,
+              transaction.reservation.journalSHA256
+                == command.journalSHA256,
+              transaction.reservation.helperEndpointIdentitySHA256
+                == command.helperEndpointIdentitySHA256,
+              !transaction.commitAccepted else {
+            throw MacPrivilegedTransactionHandlerError
+                .transactionBindingMismatch
+        }
+        if acceptingCommit {
+            transaction.commitAccepted = true
+        }
+        return transaction
+    }
+
+    private func remove(_ transaction: PendingTransaction) {
+        lock.lock()
+        if pending[transaction.reservation.transactionID]
+            === transaction {
+            pending.removeValue(
+                forKey: transaction.reservation.transactionID
+            )
+        }
+        lock.unlock()
+    }
+
+    private static func secureReadyToken() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(
+            kSecRandomDefault,
+            bytes.count,
+            &bytes
+        ) == errSecSuccess else {
+            throw MacOneShotInstallError.invalidReadyToken
+        }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func unixMilliseconds() -> Int64 {
+        Int64((Date().timeIntervalSince1970 * 1_000).rounded(.down))
+    }
+}
+
+private final class AuthenticatedMacXPCRecoveryCallerAuthenticator:
+    MacRecoveryCallerAuthenticating
+{
+    func authenticate(policy _: MacSealedInstallPolicyV1) throws {}
+}
+
 final class SystemMacPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
     private let infoDictionary: [String: Any]
 
@@ -252,9 +616,17 @@ final class SystemMacPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
             applicationRequirement: configuration.applicationRequirement,
             helperTeamIdentifier: helperIdentity.teamIdentifier
         )
+        let policy = try MacSealedInstallPolicyV1.load(
+            infoDictionary: infoDictionary
+        )
+        let handler = MacPrivilegedTransactionHandler(
+            policy: policy,
+            helperEndpointIdentitySHA256: helperIdentity.sha256
+        )
         MacPrivilegedXPCServer(
             configuration: configuration,
-            peerRequirement: peerRequirement
+            peerRequirement: peerRequirement,
+            transactionHandler: handler
         ).run()
     }
 }
@@ -263,17 +635,21 @@ final class SystemMacPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
 private final class MacPrivilegedXPCServer {
     private let configuration: MacPrivilegeConfiguration
     private let peerRequirement: String
+    private let transactionHandler: MacPrivilegedTransactionHandler
 
     init(
         configuration: MacPrivilegeConfiguration,
-        peerRequirement: String
+        peerRequirement: String,
+        transactionHandler: MacPrivilegedTransactionHandler
     ) {
         self.configuration = configuration
         self.peerRequirement = peerRequirement
+        self.transactionHandler = transactionHandler
     }
 
     func run() -> Never {
         let requirement = peerRequirement
+        let handler = transactionHandler
         let queue = DispatchQueue(
             label: "\(configuration.serviceIdentifier).listener"
         )
@@ -300,15 +676,67 @@ private final class MacPrivilegedXPCServer {
                       let operation = xpc_dictionary_get_string(
                           message,
                           "operation"
-                      ),
-                      String(cString: operation) == "health",
-                      let reply = xpc_dictionary_create_reply(message) else {
+                      ), let reply = xpc_dictionary_create_reply(message)
+                else {
                     xpc_connection_cancel(connection)
                     return
                 }
-                xpc_dictionary_set_bool(reply, "ok", true)
-                xpc_dictionary_set_int64(reply, "protocolVersion", 1)
-                xpc_connection_send_message(connection, reply)
+                let operationText = String(cString: operation)
+                if operationText == "health" {
+                    xpc_dictionary_set_bool(reply, "ok", true)
+                    xpc_dictionary_set_int64(
+                        reply,
+                        "protocolVersion",
+                        1
+                    )
+                    xpc_connection_send_message(connection, reply)
+                    return
+                }
+                var payloadLength = 0
+                guard let payloadBytes = xpc_dictionary_get_data(
+                    message,
+                    "payload",
+                    &payloadLength
+                ), (1 ... MacLengthPrefixedFileHandleChannel
+                    .maximumFrameLength).contains(payloadLength) else {
+                    xpc_connection_cancel(connection)
+                    return
+                }
+                let payload = Data(
+                    bytes: payloadBytes,
+                    count: payloadLength
+                )
+                do {
+                    let response = try handler.handle(
+                        operation: operationText,
+                        payload: payload,
+                        peerProcessIdentifier:
+                            xpc_connection_get_pid(connection)
+                    )
+                    response.payload.withUnsafeBytes { bytes in
+                        xpc_dictionary_set_data(
+                            reply,
+                            "payload",
+                            bytes.baseAddress,
+                            bytes.count
+                        )
+                    }
+                    response.helperEndpointIdentitySHA256.withCString {
+                        xpc_dictionary_set_string(
+                            reply,
+                            "helperEndpointIdentitySha256",
+                            $0
+                        )
+                    }
+                    xpc_connection_send_message(connection, reply)
+                    if let complete = response.completeAfterReply {
+                        DispatchQueue.global(qos: .utility).async {
+                            try? complete()
+                        }
+                    }
+                } catch {
+                    xpc_connection_cancel(connection)
+                }
             }
             xpc_connection_resume(connection)
         }

@@ -97,7 +97,7 @@ final class MacOneShotServiceRuntime {
         )
         let reservation = try session.prepare(requestData: requestData)
         do {
-            try channel.writeFrame(try encode(reservation))
+            try channel.writeFrame(try macEncodeReservation(reservation))
 
             let command = try MacOneShotWireCommand.parse(
                 try channel.readFrame()
@@ -112,7 +112,9 @@ final class MacOneShotServiceRuntime {
                         command.helperEndpointIdentitySHA256
                 )
                 do {
-                    try channel.writeFrame(try encode(reservation))
+                    try channel.writeFrame(
+                        try macEncodeReservation(reservation)
+                    )
                     try monitor.waitForExit(
                         expiresAtUnixMilliseconds:
                             reservation.expiresAtUnixMilliseconds
@@ -131,7 +133,7 @@ final class MacOneShotServiceRuntime {
                         command.helperEndpointIdentitySHA256
                 )
                 try channel.writeFrame(
-                    try encodeCancellation(reservation)
+                    try macEncodeCancellation(reservation)
                 )
             default:
                 throw MacOneShotWireError.unsupportedOperation
@@ -148,39 +150,42 @@ final class MacOneShotServiceRuntime {
         }
     }
 
-    private func encode(_ value: MacOneShotReservationV1) throws -> Data {
-        try JSONSerialization.data(
-            withJSONObject: [
-                "protocolVersion": value.protocolVersion,
-                "transactionId": value.transactionID,
-                "readyToken": value.readyToken,
-                "journalSha256": value.journalSHA256,
-                "helperEndpointIdentitySha256":
-                    value.helperEndpointIdentitySHA256,
-                "expiresAtUnixMilliseconds":
-                    value.expiresAtUnixMilliseconds,
-            ],
-            options: [.sortedKeys]
-        )
-    }
-
-    private func encodeCancellation(
-        _ value: MacOneShotReservationV1
-    ) throws -> Data {
-        try JSONSerialization.data(
-            withJSONObject: [
-                "protocolVersion": value.protocolVersion,
-                "transactionId": value.transactionID,
-                "resultCode": "rolledBack",
-                "verifiedOutcome": "oldTarget",
-                "journalSha256": value.journalSHA256,
-            ],
-            options: [.sortedKeys]
-        )
-    }
 }
 
-private struct MacOneShotWireCommand {
+func macEncodeReservation(
+    _ value: MacOneShotReservationV1
+) throws -> Data {
+    try JSONSerialization.data(
+        withJSONObject: [
+            "protocolVersion": value.protocolVersion,
+            "transactionId": value.transactionID,
+            "readyToken": value.readyToken,
+            "journalSha256": value.journalSHA256,
+            "helperEndpointIdentitySha256":
+                value.helperEndpointIdentitySHA256,
+            "expiresAtUnixMilliseconds":
+                value.expiresAtUnixMilliseconds,
+        ],
+        options: [.sortedKeys]
+    )
+}
+
+func macEncodeCancellation(
+    _ value: MacOneShotReservationV1
+) throws -> Data {
+    try JSONSerialization.data(
+        withJSONObject: [
+            "protocolVersion": value.protocolVersion,
+            "transactionId": value.transactionID,
+            "resultCode": "rolledBack",
+            "verifiedOutcome": "oldTarget",
+            "journalSha256": value.journalSHA256,
+        ],
+        options: [.sortedKeys]
+    )
+}
+
+struct MacOneShotWireCommand {
     let operation: String
     let transactionID: String
     let readyToken: String

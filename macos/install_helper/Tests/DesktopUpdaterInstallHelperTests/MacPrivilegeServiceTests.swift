@@ -153,6 +153,270 @@ final class MacPrivilegeServiceTests: XCTestCase {
             }
         }
     }
+
+    func testPrivilegedHandlerBindsPeerAndMutatesOnlyAfterCommitReply()
+        throws
+    {
+        let request = try privilegedValidRequestData()
+        let session = RecordingPrivilegedInstallSession()
+        let monitor = RecordingPrivilegedCallerExitMonitor()
+        let handler = MacPrivilegedTransactionHandler(
+            sessionFactory: { processIdentifier in
+                XCTAssertEqual(processIdentifier, 4_243)
+                return session
+            },
+            monitorFactory: RecordingPrivilegedMonitorFactory(
+                monitor: monitor
+            ),
+            recoveryHandler: RecordingPrivilegedRecoveryHandler()
+        )
+
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "prepareInstall",
+                payload: request,
+                peerProcessIdentifier: 9_999
+            )
+        )
+
+        let prepared = try handler.handle(
+            operation: "prepareInstall",
+            payload: request,
+            peerProcessIdentifier: 4_243
+        )
+        XCTAssertNil(prepared.completeAfterReply)
+        XCTAssertEqual(
+            try NativeStrictJSON.canonicalize(prepared.payload),
+            prepared.payload
+        )
+
+        let committed = try handler.handle(
+            operation: "commitAfterExit",
+            payload: privilegedCommandData(
+                operation: "commitAfterExit",
+                reservation: session.reservation
+            ),
+            peerProcessIdentifier: 4_243
+        )
+
+        XCTAssertFalse(session.didExecute)
+        XCTAssertEqual(session.acceptCommitCount, 1)
+        try XCTUnwrap(committed.completeAfterReply)()
+        XCTAssertTrue(monitor.didWait)
+        XCTAssertTrue(session.didExecute)
+    }
+
+    func testPrivilegedHandlerRoutesCanonicalQueryAndRecovery() throws {
+        let recovery = RecordingPrivilegedRecoveryHandler()
+        let handler = MacPrivilegedTransactionHandler(
+            sessionFactory: { _ in RecordingPrivilegedInstallSession() },
+            monitorFactory: RecordingPrivilegedMonitorFactory(
+                monitor: RecordingPrivilegedCallerExitMonitor()
+            ),
+            recoveryHandler: recovery
+        )
+        let payload = Data(#"{"operation":"queryTransaction"}"#.utf8)
+
+        let query = try handler.handle(
+            operation: "queryTransaction",
+            payload: payload,
+            peerProcessIdentifier: 4_243
+        )
+        let recover = try handler.handle(
+            operation: "recoverPendingInstall",
+            payload: payload,
+            peerProcessIdentifier: 4_243
+        )
+
+        XCTAssertEqual(recovery.requests, [payload, payload])
+        XCTAssertEqual(query.payload, recovery.response)
+        XCTAssertEqual(recover.payload, recovery.response)
+    }
+
+    func testPrivilegedHandlerDropsReservationWhenCommitAcceptanceFails()
+        throws
+    {
+        let session = RecordingPrivilegedInstallSession()
+        let handler = MacPrivilegedTransactionHandler(
+            sessionFactory: { _ in session },
+            monitorFactory: RecordingPrivilegedMonitorFactory(
+                monitor: RecordingPrivilegedCallerExitMonitor()
+            ),
+            recoveryHandler: RecordingPrivilegedRecoveryHandler()
+        )
+        _ = try handler.handle(
+            operation: "prepareInstall",
+            payload: privilegedValidRequestData(),
+            peerProcessIdentifier: 4_243
+        )
+        session.rejectCommit = true
+        let commit = try privilegedCommandData(
+            operation: "commitAfterExit",
+            reservation: session.reservation
+        )
+
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "commitAfterExit",
+                payload: commit,
+                peerProcessIdentifier: 4_243
+            )
+        )
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "cancelReservation",
+                payload: privilegedCommandData(
+                    operation: "cancelReservation",
+                    reservation: session.reservation
+                ),
+                peerProcessIdentifier: 4_243
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacPrivilegedTransactionHandlerError,
+                .transactionNotFound
+            )
+        }
+    }
+}
+
+private final class RecordingPrivilegedInstallSession:
+    MacPrivilegedInstallSessionServing
+{
+    let reservation = MacOneShotReservationV1(
+        protocolVersion: 1,
+        transactionID: "00000000-0000-4000-8000-000000000001",
+        readyToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        journalSHA256: String(repeating: "b", count: 64),
+        helperEndpointIdentitySHA256: String(repeating: "c", count: 64),
+        expiresAtUnixMilliseconds: 99_999
+    )
+    private(set) var acceptCommitCount = 0
+    private(set) var didExecute = false
+    var rejectCommit = false
+
+    func prepare(requestData _: Data) throws -> MacOneShotReservationV1 {
+        reservation
+    }
+
+    func acceptCommit(
+        transactionID _: String,
+        readyToken _: String,
+        journalSHA256 _: String,
+        helperEndpointIdentitySHA256 _: String
+    ) throws -> MacOneShotTransactionStatusV1 {
+        acceptCommitCount += 1
+        if rejectCommit {
+            throw MacOneShotInstallError.expired
+        }
+        return status(state: "commitAccepted", resultCode: "accepted")
+    }
+
+    func executeAfterCallerExit() throws -> MacOneShotTransactionStatusV1 {
+        didExecute = true
+        return status(state: "completed", resultCode: "completed")
+    }
+
+    func cancelCommitAwaitingCallerExit()
+        throws -> MacOneShotTransactionStatusV1
+    {
+        status(state: "cancelled", resultCode: "completed")
+    }
+
+    func cancel(
+        transactionID _: String,
+        readyToken _: String,
+        journalSHA256 _: String,
+        helperEndpointIdentitySHA256 _: String
+    ) throws -> MacOneShotTransactionStatusV1 {
+        status(state: "cancelled", resultCode: "completed")
+    }
+
+    private func status(
+        state: String,
+        resultCode: String
+    ) -> MacOneShotTransactionStatusV1 {
+        MacOneShotTransactionStatusV1(
+            protocolVersion: 1,
+            transactionID: reservation.transactionID,
+            state: state,
+            resultCode: resultCode,
+            journalSHA256: reservation.journalSHA256,
+            helperEndpointIdentitySHA256:
+                reservation.helperEndpointIdentitySHA256
+        )
+    }
+}
+
+private final class RecordingPrivilegedCallerExitMonitor:
+    MacCallerExitMonitoring
+{
+    private(set) var didWait = false
+
+    func waitForExit(expiresAtUnixMilliseconds _: Int64) throws {
+        didWait = true
+    }
+}
+
+private final class RecordingPrivilegedMonitorFactory:
+    MacCallerExitMonitorCreating
+{
+    let monitor: any MacCallerExitMonitoring
+
+    init(monitor: any MacCallerExitMonitoring) {
+        self.monitor = monitor
+    }
+
+    func makeMonitor(
+        processIdentifier: Int64
+    ) throws -> any MacCallerExitMonitoring {
+        XCTAssertEqual(processIdentifier, 4_243)
+        return monitor
+    }
+}
+
+private final class RecordingPrivilegedRecoveryHandler:
+    MacPrivilegedRecoveryRequestHandling
+{
+    let response = Data(#"{"ok":true}"#.utf8)
+    private(set) var requests: [Data] = []
+
+    func response(for request: Data) throws -> Data {
+        requests.append(request)
+        return response
+    }
+}
+
+private func privilegedValidRequestData() throws -> Data {
+    let url = try helperRepositoryRoot().appendingPathComponent(
+        "fixtures/compat/native-install-helper/v1/valid-requests.json"
+    )
+    let fixture = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: Data(contentsOf: url))
+            as? [String: Any]
+    )
+    let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+    let request = try XCTUnwrap(try XCTUnwrap(cases.first)["request"])
+    return try NativeStrictJSON.canonicalize(
+        JSONSerialization.data(withJSONObject: request)
+    )
+}
+
+private func privilegedCommandData(
+    operation: String,
+    reservation: MacOneShotReservationV1
+) throws -> Data {
+    try NativeStrictJSON.canonicalize(
+        JSONSerialization.data(withJSONObject: [
+            "operation": operation,
+            "protocolVersion": 1,
+            "transactionId": reservation.transactionID,
+            "readyToken": reservation.readyToken,
+            "journalSha256": reservation.journalSHA256,
+            "helperEndpointIdentitySha256":
+                reservation.helperEndpointIdentitySHA256,
+        ])
+    )
 }
 
 private final class PrivilegeFixture {

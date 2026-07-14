@@ -225,20 +225,20 @@ enum MacPersistentRecoveryWireError: Error, Equatable {
     case invalidRequest
 }
 
-final class MacPersistentRecoveryWireRuntime: MacOneShotServiceRunning {
-    private let service: MacPersistentRecoveryService
-    private let channel: any MacOneShotWireChannel
+protocol MacPrivilegedRecoveryRequestHandling: AnyObject {
+    func response(for request: Data) throws -> Data
+}
 
-    init(
-        service: MacPersistentRecoveryService,
-        channel: any MacOneShotWireChannel
-    ) {
+final class MacPersistentRecoveryRequestHandler:
+    MacPrivilegedRecoveryRequestHandling
+{
+    private let service: MacPersistentRecoveryService
+
+    init(service: MacPersistentRecoveryService) {
         self.service = service
-        self.channel = channel
     }
 
-    func run() throws {
-        let data = try channel.readFrame()
+    func response(for data: Data) throws -> Data {
         guard try NativeStrictJSON.canonicalize(data) == data,
               let request = try NativeStrictJSON.decode(data)
                 as? [String: Any],
@@ -256,27 +256,42 @@ final class MacPersistentRecoveryWireRuntime: MacOneShotServiceRunning {
         }
         if operation == "queryTransaction" {
             let status = try service.query(transactionID: transactionID)
-            try channel.writeFrame(
-                try persistentCanonicalData([
-                    "protocolVersion": status.protocolVersion,
-                    "transactionId": status.transactionID,
-                    "state": status.state,
-                    "resultCode": status.resultCode,
-                    "journalSha256": status.journalSHA256,
-                ])
-            )
-        } else {
-            let result = try service.recover(transactionID: transactionID)
-            try channel.writeFrame(
-                try persistentCanonicalData([
-                    "protocolVersion": result.protocolVersion,
-                    "transactionId": result.transactionID,
-                    "resultCode": result.resultCode,
-                    "verifiedOutcome": result.verifiedOutcome,
-                    "journalSha256": result.journalSHA256,
-                ])
-            )
+            return try persistentCanonicalData([
+                "protocolVersion": status.protocolVersion,
+                "transactionId": status.transactionID,
+                "state": status.state,
+                "resultCode": status.resultCode,
+                "journalSha256": status.journalSHA256,
+            ])
         }
+        let result = try service.recover(transactionID: transactionID)
+        return try persistentCanonicalData([
+            "protocolVersion": result.protocolVersion,
+            "transactionId": result.transactionID,
+            "resultCode": result.resultCode,
+            "verifiedOutcome": result.verifiedOutcome,
+            "journalSha256": result.journalSHA256,
+        ])
+    }
+}
+
+final class MacPersistentRecoveryWireRuntime: MacOneShotServiceRunning {
+    private let requestHandler: MacPersistentRecoveryRequestHandler
+    private let channel: any MacOneShotWireChannel
+
+    init(
+        service: MacPersistentRecoveryService,
+        channel: any MacOneShotWireChannel
+    ) {
+        requestHandler = MacPersistentRecoveryRequestHandler(
+            service: service
+        )
+        self.channel = channel
+    }
+
+    func run() throws {
+        let data = try channel.readFrame()
+        try channel.writeFrame(try requestHandler.response(for: data))
     }
 }
 
