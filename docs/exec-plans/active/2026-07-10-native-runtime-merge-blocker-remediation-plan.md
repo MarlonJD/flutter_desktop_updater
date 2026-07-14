@@ -1216,7 +1216,7 @@ Current standalone-helper implementation follow-up (2026-07-14):
   candidate was staged. The suite reported one explicit mount-namespace skip,
   so the privileged boundary is not verified.
 - Windows target-host execution, the privileged Linux mount-namespace lane,
-  current-helper-head GitHub Actions, macOS SMJobBless/XPC, Windows
+  current-helper-head GitHub Actions, macOS SMAppService daemon/XPC, Windows
   Authenticode/UAC, Linux installed polkit, and signed/notarized release lanes
   are `not run`. The combined signed/elevated production boundary remains
   `blocked` and the runtime remains `candidate-only`.
@@ -2558,31 +2558,60 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
 
 ### Privileged-helper Task 16 review follow-up on 2026-07-14
 
-- The new helper implementation has isolated reservation, transaction,
-  strategy, recovery, relaunch, trust, and packaging components, but the fresh
-  production call-graph review found that they are not joined into an install
-  endpoint. The macOS packaged transport throws `endpointUnavailable` for all
-  operations and its XPC server accepts only `health`; Windows public clients
-  return `endpointUnavailable` and the elevated process stops after a named
-  pipe authentication handshake; Linux public clients also return
-  `endpointUnavailable`, while the helper's in-process reservation never
-  invokes file transaction or recovery code. This is a validated P0, not
-  closure evidence for Task 6.
-- The canonical helper protocol fixtures and the three serialized/parsed wire
-  shapes are not connected by one production validator. Current helper smokes
-  can pass at a version probe or externally asserted JSON without exercising
-  prepare, commit, mutation, query, or recovery. The protocol-v1 diagnostic
-  event set remains fixture-only. These are three validated P1 findings.
+- The macOS production graph is now joined and verified; the remaining P0 is
+  scoped to Windows and Linux. Windows production prepare/commit owns an
+  authenticated elevated named-pipe session, but its public query and recovery
+  operations still return `endpointUnavailable`. Linux public helper operations
+  remain disconnected; its serializer does not match the helper parser, and
+  the helper's `COMMIT` path marks the reservation complete without invoking
+  `LinuxFileTransaction` or `LinuxRecoveryService`.
+- The remaining P1 findings are likewise scoped: the Linux client/helper wire
+  shapes are incompatible, the Windows/Linux smoke scripts can pass at a
+  version probe without a production mutation/recovery boundary, and the
+  protocol-v1 diagnostic event set remains fixture-only.
 - Fresh local evidence remains useful but scoped: the final Flutter suite
-  passed 689 tests with 3 explicit skips; macOS helper tests passed 38/38 and
-  root SwiftPM passed 62/62; an unprivileged Linux container passed 36/37 CTests
-  with the bind-mount test explicitly skipped, then passed installed CMake 1/1
-  and pkg-config consumers. Windows target-host, privileged Linux, signed
-  SMJobBless/XPC, Authenticode/UAC, notarization, and current-head CI remain
-  `not run` or `blocked`.
-- Task 6 therefore remains open. The runtime remains `candidate-only`; PR #65
-  remains `blocked / not merge-ready`. The privileged-helper plan contains the
-  full fresh coverage ledger and `BLOCK / NO-GO` report.
+  passed 702 tests with 3 explicit skips; the macOS helper and repo-context
+  DesktopUpdaterKit suites each passed 82/82; the signed transport subset
+  passed 18/18; and a fresh Linux Release build passed 57/58 CTests with the
+  bind-mount test explicitly skipped before that exact test passed 1/1 in a
+  separate privileged container. Installed CMake and pkg-config consumers ran
+  successfully. Windows target-host, installed Linux polkit/root-broker, and
+  current-head CI remain `not run`.
+- The macOS Task 6 slice is closed with the notarized target-host evidence
+  below. The cross-platform plan remains open, the runtime remains
+  `candidate-only`, and PR #65 remains `blocked / not merge-ready`.
+
+### macOS privileged-helper correction evidence on 2026-07-14
+
+- The macOS portion of the disconnected-helper P0 is resolved and
+  `verified locally`. `PackagedMacInstallHelperTransport` now routes protected
+  prepare/commit/cancel/query/recovery through the installed authenticated XPC
+  daemon, while writable targets retain the one-shot unprivileged path. The
+  daemon reloads sealed policy, authenticates the connection audit token and
+  caller signature, owns the durable transaction, and exits after a completed
+  replacement so launchd resolves the newly installed bundled helper.
+- The privileged helper package passed 82/82 tests and the repo-context
+  DesktopUpdaterKit package passed 82/82. The focused SMAppService transport
+  suite passed 18/18, including RED/GREEN coverage for forced fresh-process XPC
+  queries and asynchronous unregister completion before re-registration.
+- The actual protected-target gate is `verified locally`: notarized universal
+  v1/v2 Developer ID applications ran from a recursively `root:wheel`
+  `/Applications` fixture. An administrator-approved root daemon completed XPC
+  prepare, survived a real `SIGKILL` through verified rollback recovery, then
+  installed v2 and restarted from endpoint `308d4b3e…`; daemon PIDs were
+  `27851`, `28621`, and `29512`. The installed v2 passed strict code-signing,
+  stapler, and Gatekeeper assessment as `Notarized Developer ID`.
+- Apple notarization accepted the final current-source submissions
+  `6b39195a-c4c6-4a51-ba3c-1c775b7d2473` and
+  `78719a41-139b-4313-8fd4-0caaea103916`. A prior RED submission correctly
+  rejected Xcode's injected `get-task-allow`; the Runner Release configuration
+  now fixes `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO` under a regression
+  contract.
+- The macOS Task 6 implementation and signed target-host gate are closed.
+  Windows Authenticode/UAC target-host execution, installed Linux polkit
+  execution, and current-head CI are still `not run`, so the cross-platform
+  plan and runtime remain `candidate-only`; no Windows/Linux or overall
+  production-ready claim is inferred from the closed macOS slice.
 
 ## Final Acceptance Checklist
 

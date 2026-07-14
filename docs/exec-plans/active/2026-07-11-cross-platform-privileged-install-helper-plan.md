@@ -467,10 +467,10 @@ terminal alternatives: rolledBack | manualActionRequired
 
   Assert that SwiftPM still exposes `DesktopUpdaterKit` at macOS 10.15+, the
   helper executable is compiled for macOS 10.14, the helper is a distinct
-  product embedded for one-shot use at
-  `Contents/Helpers/DesktopUpdaterInstallHelper`, the identical signed build is
-  staged for SMJobBless at
-  `Contents/Library/LaunchServices/<helper-service-id>`, and the
+  product embedded for both one-shot and privileged use at
+  `Contents/Helpers/DesktopUpdaterInstallHelper`, its `SMAppService`
+  LaunchDaemon plist is embedded at
+  `Contents/Library/LaunchDaemons/<helper-service-id>.plist`, and the
   podspec source allowlist remains byte-for-byte the exact five entries in the
   global constraints.
 
@@ -651,7 +651,7 @@ terminal alternatives: rolledBack | manualActionRequired
 
 ---
 
-### Task 6: Implement macOS Swap Recovery and SMJobBless Elevation
+### Task 6: Implement macOS Swap Recovery and SMAppService Elevation
 
 **Files:**
 
@@ -665,7 +665,6 @@ terminal alternatives: rolledBack | manualActionRequired
 - Create: `macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRelaunchService.swift`
 - Create: `macos/install_helper/Configuration/Helper-Info.plist`
 - Create: `macos/install_helper/Configuration/Helper-Launchd.plist`
-- Create: `macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist`
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift`
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift`
 - Create: `macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift`
@@ -682,8 +681,9 @@ terminal alternatives: rolledBack | manualActionRequired
   Inject failure before and after every journal flush and rename. Cover symlink
   replacement, mount crossing, target-parent replacement, stage mutation,
   invalid backup identity, live-owner recovery, disk full, torn journal,
-  directory fsync failure, repeated recovery, wrong Team ID, invalid blessing,
-  XPC spoofing, unsigned nested helper, and authorization cancellation.
+  directory fsync failure, repeated recovery, wrong Team ID, invalid daemon
+  registration, XPC spoofing, unsigned nested helper, and denied admin
+  approval.
 
 - [x] **Step 2: Implement unprivileged handle-bound swap**
 
@@ -694,25 +694,26 @@ terminal alternatives: rolledBack | manualActionRequired
   code signature, provenance, and executable identity before deleting backup or
   relaunching.
 
-- [ ] **Step 3: Implement privileged SMJobBless/XPC mode**
+- [x] **Step 3: Implement privileged SMAppService daemon/XPC mode**
 
-  Bless only the fixed package-unique helper with reciprocal designated
-  requirements. Generate `SMAuthorizedClients`, `SMPrivilegedExecutables`, and
-  the launchd Mach-service label from the sealed application policy; fail the
-  build if they disagree. The blessed service reloads its sealed policy,
-  authenticates the audit token, and performs the same transaction. Writable
-  targets use the signed one-shot helper under `Contents/Helpers`; the
-  identically built and signed SMJobBless payload is embedded under
-  `Contents/Library/LaunchServices`. Protected targets never run a
-  user-writable helper as root.
+  Register only the fixed package-unique LaunchDaemon with
+  `SMAppService.daemon(plistName:)` on macOS 13 and later. Keep the signed
+  executable in `Contents/Helpers`, place its plist in
+  `Contents/Library/LaunchDaemons`, and use a bundle-relative `BundleProgram`.
+  Derive the Mach-service label and signing requirements from the sealed
+  application policy and fail the build if they disagree. The root daemon
+  reloads its sealed policy, authenticates the caller's audit token and code
+  signature, and performs the same transaction. Protected targets fail closed
+  until an administrator approves the daemon in System Settings. The package
+  and CocoaPods source floors remain unchanged; systems before macOS 13 retain
+  unprivileged mode but do not use a deprecated privileged fallback.
 
-  Implementation note (2026-07-14): Apple documents that SMJobBless replaces
-  `ProgramArguments` with the fixed helper path, so the blessed service starts
-  with an empty argument list. Task 6 therefore also owns the helper bootstrap
-  and SwiftPM linker metadata required to embed `__info_plist` and
-  `__launchd_plist`; these files were missing from the original task boundary.
+  Correction note (2026-07-14): the earlier implementation targeted the
+  deprecated `SMJobBless` API. That implementation and its reciprocal legacy
+  plist metadata are not accepted evidence. Apple's current Service Management
+  bundle layout and `SMAppService` registration model are the production gate.
 
-- [ ] **Step 4: Prove recovery and elevation on a macOS target host**
+- [x] **Step 4: Prove recovery and elevation on a macOS target host**
 
   ```sh
   swift test --package-path macos/install_helper --filter 'MacFileTransactionTests|MacCrashRecoveryTests|MacPrivilegeServiceTests'
@@ -721,8 +722,9 @@ terminal alternatives: rolledBack | manualActionRequired
   dart run tool/macos_install_helper_smoke.dart --mode privileged
   ```
 
-  The privileged lane must exercise an actual blessed helper. Mocks may verify
-  parser behavior but cannot satisfy the target-host gate.
+  The privileged lane must exercise an administrator-approved root daemon from
+  the signed app bundle. Mocks may verify parser behavior but cannot satisfy
+  the target-host gate.
 
 - [x] **Step 5: Run the macOS suite and commit**
 
@@ -735,7 +737,7 @@ terminal alternatives: rolledBack | manualActionRequired
   Commit:
 
   ```sh
-  git add macos/install_helper/Package.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/main.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/TransactionJournal.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacFileTransaction.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRecoveryService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRelaunchService.swift macos/install_helper/Configuration/Helper-Info.plist macos/install_helper/Configuration/Helper-Launchd.plist macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/HelperVersionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeBootstrapTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallTransactionTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallCrashRecoveryTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacPrivilegedHelperTests.swift tool/macos_install_helper_smoke.dart .github/workflows/desktop-updater-ci.yml
+  git add macos/install_helper/Package.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/main.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/TransactionJournal.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacFileTransaction.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRecoveryService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacRelaunchService.swift macos/install_helper/Configuration/Helper-Info.plist macos/install_helper/Configuration/Helper-Launchd.plist macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/HelperVersionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeBootstrapTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacFileTransactionTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacCrashRecoveryTests.swift macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/MacPrivilegeServiceTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallTransactionTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacInstallCrashRecoveryTests.swift macos/desktop_updater/Tests/DesktopUpdaterKitTests/MacPrivilegedHelperTests.swift tool/macos_install_helper_smoke.dart .github/workflows/desktop-updater-ci.yml
   git commit -m "feat: recover macos install transactions"
   ```
 
@@ -751,18 +753,46 @@ terminal alternatives: rolledBack | manualActionRequired
   `blocked` locally because the generated `macos/FlutterFramework` package is
   absent; the root package exercises the same `DesktopUpdaterKit` sources.
 - Build and metadata checks: `verified locally` — arm64 Release and forced
-  x86_64 macOS 10.14 helper builds exited 0; `otool` found both embedded
-  `__info_plist` and `__launchd_plist` sections; all three plists passed
-  `plutil -lint`; the Dart smoke tool passed format and analysis.
-- Signed SMJobBless/XPC test: `blocked` — the host reports zero valid code-signing
-  identities and the required signed smoke app/host variables are unavailable.
-  Unit tests cover sealed-policy reload, reciprocal requirements, root-only
-  bootstrap, Team-bound XPC admission, spoof rejection, cancellation, and
-  fixed nested paths, but do not satisfy the actual blessed-helper gate.
-- Hardened runtime/notarized nested-helper test: `not run` — no Developer ID
-  identity, signed host artifact, or notary credentials are available locally.
+  x86_64 macOS 10.14 helper builds exited 0; the helper embeds its sealed
+  `__info_plist`, and the app bundle carries the LaunchDaemon plist separately
+  with `BundleProgram`; both plists passed `plutil -lint`; the Dart smoke tool
+  passed format and analysis.
+- Signed SMAppService daemon/XPC test: `verified locally` — macOS 26.5.2 arm64;
+  final notarized v1 `2.0.0+200` and v2 `2.0.1+201` universal applications ran
+  from the protected
+  `/Applications/DesktopUpdaterSMAppServiceSmoke/desktop_updater_example.app`
+  target. The administrator-approved root daemon accepted prepare/commit/query
+  over Team-bound authenticated XPC. A real `launchctl kill SIGKILL` changed
+  the daemon PID from `27851` to `28621`; recovery returned
+  `rolledBack/succeeded` and verified the old target. The committed update then
+  installed v2, changed the endpoint identity from
+  `525c98124a9bbec5d8aec0a55d912732f224345f9a89c5ea7d6df462be67cc0a`
+  to
+  `308d4b3ee241761e88627192a99196b607da588e156dae5d545fb19d9009b1ae`,
+  restarted the daemon at PID `29512`, and returned `completed/succeeded` from
+  a fresh v2 host process. The target remained recursively `root:wheel`; the
+  staged source was `501:0`, proving privileged ownership normalization.
+- SMAppService refresh race: `verified locally` — an initial target-host run
+  exposed that synchronous `unregister()` returns before the daemon is reaped,
+  so immediate registration transiently failed with `endpointUnavailable`.
+  A RED unit test first failed on the missing completion waiter. The registrar
+  now waits for `unregister(completionHandler:)` before re-registering and maps
+  `kSMErrorLaunchDeniedByUser` to
+  `PrivilegedHelperApprovalRequired`; the focused transport suite passed 18/18.
+  The existing administrator approval remained enabled after the refresh.
+- Hardened runtime/notarized nested-helper test: `verified locally` — both
+  final applications and helpers were Developer ID Application signed by Team
+  `UPK4SC93AN`, hardened-runtime enabled, securely timestamped, and universal
+  `x86_64 arm64`. Apple notarization accepted submissions
+  `6b39195a-c4c6-4a51-ba3c-1c775b7d2473` and
+  `78719a41-139b-4313-8fd4-0caaea103916`; both tickets were stapled. The
+  installed v2 passed `codesign --verify --deep --strict`, `stapler validate`,
+  and Gatekeeper with `source=Notarized Developer ID` after replacement.
+- Final native suites: `verified locally` — the privileged helper Swift package
+  passed 82/82 tests and the repo-context isolated DesktopUpdaterKit package
+  passed 82/82 tests. The signed SMAppService transport subset passed 18/18.
 - Commit: `verified locally` —
-  `2c7d123 feat: recover macos install transactions`.
+  `839bb09 feat(macos): add privileged SMAppService install helper`.
 
 ---
 
@@ -1452,9 +1482,10 @@ after durable ownership exists; it must not generate a script.
   Require Release packages and Flutter host builds to contain the expected
   helper and policy metadata:
 
-  - macOS one-shot helper at `Contents/Helpers` and the same signed SMJobBless
-    payload at `Contents/Library/LaunchServices`, both signed before the outer
-    app, with reciprocal requirement plists matching the sealed policy;
+  - macOS signed helper at `Contents/Helpers`, used by both one-shot and root
+    daemon modes, plus its `BundleProgram` LaunchDaemon plist at
+    `Contents/Library/LaunchDaemons`, with host metadata matching the sealed
+    policy;
   - Windows helper beside runtime DLLs/NuGet runtime asset and installed in a
     protected location for elevated use;
   - Linux helper/broker, polkit action, and policy templates installed to their
@@ -1468,8 +1499,8 @@ after durable ownership exists; it must not generate a script.
   Avoid source-tree shortcuts and Debug artifacts in Release packages. The
   CocoaPods and SwiftPM integration invokes the dedicated helper build/embed
   tooling without adding helper sources to the pod source allowlist. It builds
-  the consumer-specific sealed policy and reciprocal SMJobBless requirements,
-  embeds both required locations, signs nested code before the app, and fails
+  the consumer-specific sealed policy and SMAppService LaunchDaemon metadata,
+  embeds both required artifacts, signs nested code before the app, and fails
   if host metadata is incomplete. Fail the build if the helper or required
   policy metadata is missing. Do not add Linux AppImage/deb/rpm/Flatpak/Snap
   packagers in this task.
@@ -1516,9 +1547,9 @@ after durable ownership exists; it must not generate a script.
 - macOS SwiftPM 10.15+ Flutter/native hosts: `verified locally` for a
   `candidate-only` debug host — `flutter build macos --debug` exited 0 after
   building the helper in Release mode and running the embed verifier. The app
-  contained byte-identical helper files at `Contents/Helpers` and
-  `Contents/Library/LaunchServices/net.monolib.updater.helper`; the helper was
-  arm64, hardened-runtime signed, and identified as
+  contained the helper at `Contents/Helpers` and its `BundleProgram` plist at
+  `Contents/Library/LaunchDaemons/net.monolib.updater.helper.plist`; the helper
+  was arm64, hardened-runtime signed, and identified as
   `net.monolib.updater.helper`. The outer debug app failed strict trust with
   `CSSMERR_TP_NOT_TRUSTED`, and `security find-identity -v -p codesigning`
   reported 0 valid identities, so production signing/notarization is `not run`.
@@ -1574,7 +1605,8 @@ after durable ownership exists; it must not generate a script.
 
   - portable common schema/policy/state-machine fixtures;
   - macOS unprivileged crash recovery;
-  - macOS signed nested helper, SMJobBless/XPC, hardened runtime, notarization;
+  - macOS signed bundled SMAppService daemon/XPC, hardened runtime,
+    notarization, and admin approval;
   - Windows Release helper, Authenticode, UAC, pipe spoofing, crash recovery;
   - Linux unprivileged helper, namespace mount/bind tests, polkit root broker,
     crash recovery;
@@ -1591,7 +1623,7 @@ after durable ownership exists; it must not generate a script.
 
 - [x] **Step 3: Add explicit credential/target-host lanes**
 
-  Gate actual SMJobBless/notarization, Authenticode/UAC, and installed polkit
+  Gate actual SMAppService daemon/notarization, Authenticode/UAC, and installed polkit
   broker smokes behind the required credentials and target hosts. Missing
   credentials must produce literal `not run`, never green substitute evidence.
 
@@ -1626,7 +1658,11 @@ after durable ownership exists; it must not generate a script.
   exit 1; 0 passed and 1 intended failure because the workflow passed raw JSON
   into a template that requires escaped canonical policy bytes.
 - Secretless macOS lane: `not run`
-- Signed/blessed/notarized macOS lane: `not run`
+- Signed/admin-approved/notarized macOS CI lane: `not run`
+- Signed/admin-approved/notarized macOS local target-host lane:
+  `verified locally` — the Task 6 evidence records accepted notarization IDs,
+  stapled/Gatekeeper validation, root-daemon XPC, forced-kill recovery,
+  privileged ownership normalization, and v1-to-v2 daemon restart.
 - Secretless Windows lane: `not run`
 - Signed/elevated Windows lane: `not run`
 - Secretless Linux lane: `not run`
@@ -1636,7 +1672,7 @@ after durable ownership exists; it must not generate a script.
   trust/pipe/transaction/recovery, Linux helper/recovery and privileged
   mount-namespace lanes plus redacted nonzero test-count artifacts are
   implemented; configured jobs are not execution evidence.
-- Credential/target-host configuration: separate manual SMJobBless/XPC,
+- Credential/target-host configuration: separate manual SMAppService daemon/XPC,
   Authenticode/UAC, and installed polkit jobs are gated by explicit repository
   variables, credentials, and named self-hosted runners; all remain `not run`.
 - CI truth contracts: `verified locally` — macOS 26.5.2 arm64;
@@ -1665,7 +1701,8 @@ after durable ownership exists; it must not generate a script.
   workflow's JSON escaping produced valid nested JSON and a matching canonical
   policy SHA-256. Native CMake rendering was not run because `cmake` is not
   installed on this macOS host.
-- Commit: `verified locally` — `d0ab8b1 ci: verify native install helper recovery`.
+- Commit: `verified locally` —
+  `3fbf76d ci: verify privileged helper recovery`.
 
 ---
 
@@ -1742,78 +1779,88 @@ after durable ownership exists; it must not generate a script.
 
 - Complete Dart/Flutter ladder: `verified locally` on macOS 26.5.2 arm64.
   Both native fixture generators ran, helper fixtures and policy fixtures were
-  current, and the fixture directories had no diff. Final
-  `dart format --set-exit-if-changed .` checked 226 files with 0 changes;
-  `flutter analyze --no-fatal-infos` exited 0 with info-only diagnostics; the
-  final `flutter test --no-pub` passed 689 tests with 3 explicit opt-in skips;
-  and `dart pub publish --dry-run` exited 0 with 0 warnings and 1
-  prior-version hint. The first full Flutter run exposed three stale
-  script-source assertions after script removal. They were converted to the
-  native transaction/diagnostics boundaries under TDD and committed as
-  `7247037 test: align native helper source contracts` before the green rerun.
-- Complete macOS ladder: `blocked`. A clean
-  `swift test --package-path macos/install_helper` passed 38/38 and a clean
-  root `swift test` passed 62/62. The exact five-source CocoaPods macOS 10.14
-  typecheck and external Swift consumer both exited 0. A Flutter macOS debug
-  host built successfully and contained byte-identical helper payloads at the
-  two fixed nested locations with hardened-runtime flags. Strict outer-app
-  verification failed with `CSSMERR_TP_NOT_TRUSTED`, and
-  `security find-identity -v -p codesigning` found 0 valid identities.
-  `swift test --package-path macos/desktop_updater` remains blocked because the
-  repository's `macos/FlutterFramework` path is absent. Signed SMJobBless/XPC,
-  privileged mutation, crash recovery, and notarization were not run.
+  current, and the fixture directories had no diff.
+  `dart format --set-exit-if-changed .` checked 229 files with 0 changes;
+  `flutter analyze --no-fatal-infos` exited 0 with 404 info-only diagnostics;
+  and the final `flutter test --no-pub` passed 702 tests with 3 explicit
+  opt-in skips. The first full Flutter run exposed three stale verification
+  contracts: CMake language preservation, macOS result ordering, and the
+  current Windows request builder. Focused RED/GREEN tests covered each fix
+  before the green full rerun. A pre-commit `dart pub publish --dry-run`
+  reached package validation and exited 65 only because the intended tracked
+  deletion and 46 other task files were still uncommitted; it reported no
+  package-content error beyond those dirty-tree warnings and the existing
+  prior-version hint. A clean post-commit dry run remains part of Step 2.
+- Complete macOS helper ladder: `verified locally`. The privileged helper and
+  repo-context DesktopUpdaterKit suites each passed 82/82, and the signed
+  SMAppService transport subset passed 18/18. The exact five-source CocoaPods
+  macOS 10.14 typecheck and the external SwiftPM consumer exited 0. The raw
+  `swift test --package-path macos/desktop_updater` command remains `blocked`
+  outside a generated Flutter host because `FlutterMacOS` is unavailable; the
+  exact fallback typecheck plus real Flutter Release applications cover the
+  source and host-build boundaries without treating that environment limit as
+  a signed-runtime failure.
+- macOS signed target-host gate: `verified locally`. Final universal v1
+  `2.0.0+200` and v2 `2.0.1+201` Developer ID applications were accepted by
+  Apple notarization under submissions
+  `6b39195a-c4c6-4a51-ba3c-1c775b7d2473` and
+  `78719a41-139b-4313-8fd4-0caaea103916`, stapled, and Gatekeeper accepted as
+  `Notarized Developer ID`. The administrator-approved root daemon completed
+  authenticated XPC prepare, forced-`SIGKILL` rollback recovery, v1-to-v2
+  protected-target replacement, root ownership normalization, daemon refresh,
+  and a completed query from a fresh v2 process. Daemon PIDs were
+  `27851` -> `28621` -> `29512`; helper endpoint SHA-256 changed from
+  `525c98124a9bbec5d8aec0a55d912732f224345f9a89c5ea7d6df462be67cc0a`
+  to
+  `308d4b3ee241761e88627192a99196b607da588e156dae5d545fb19d9009b1ae`.
 - Complete Windows ladder: `not run` on a Windows target host. The local
-  managed suite built both projects and passed 12/13 tests with .NET major
-  roll-forward; its only failure was the expected inability to load a Windows
-  `desktop_updater_native` DLL on macOS. Windows CMake/CTest, Flutter plugin,
-  installed CMake/NuGet, real DLL/helper handoff, UAC cancellation, reparse,
-  abrupt-crash, Authenticode, and retail inventory lanes remain not run.
+  production source graph now prepares and commits through an authenticated
+  elevated named-pipe session, but `QueryTransaction` and
+  `RecoverPendingInstall` still return `endpointUnavailable`. Windows
+  CMake/CTest, Flutter plugin, installed CMake/NuGet, real DLL/helper handoff,
+  UAC cancellation, reparse, abrupt-crash, Authenticode, and retail inventory
+  lanes remain `not run`; source inspection is not target-host evidence.
 - Complete Linux ladder: `blocked`. The unprivileged portion was
-  `verified locally` in a `gcc:14-bookworm` container. A clean Release build
-  discovered 37 CTests,
-  passed 36, and explicitly skipped the bind-mount test because the container
-  lacked that privilege. The installed CMake consumer passed 1/1, the
-  independently compiled pkg-config consumer exited 0, the installed helper
-  version probe exited 0, and the installed inventory showed the helper as
-  root-owned mode 0755. The privileged mount namespace and installed
+  `verified locally` in the existing Linux build image with GCC 14.3.0 and
+  CMake 3.25.1. A fresh Release build discovered 58 CTests, passed 57, and
+  explicitly skipped the bind-mount test in the unprivileged container; a
+  separate throwaway privileged container then passed that exact test 1/1.
+  Installed CMake and pkg-config consumers compiled and ran, a non-root helper
+  probe exited 0, and the portable inventory was root-owned with helper mode
+  0755 and intentionally contained no polkit/policy files. The installed
   polkit/root-broker handoff, mutation, crash recovery, and package-provider
-  lanes were not run.
-- Credential-gated lanes: `not run`. There is no current-head Developer ID,
-  notarization, Authenticode/UAC, or installed polkit evidence.
+  lanes remain `not run`. The public Linux client is still disconnected, its
+  serialized request does not match the helper parser, and helper `COMMIT`
+  does not invoke the file transaction or recovery service.
+- Credential-gated lanes: macOS Developer ID/notarization is
+  `verified locally` as scoped above. Windows Authenticode/UAC and installed
+  Linux polkit/root-broker evidence remain `not run`.
 - Verification-before-completion: `verified locally` against the fresh outputs
   above. Passing unit/contract tests are not treated as production handoff
   proof, and missing target-host or credential gates remain literal.
 - Fresh killcritic review: `BLOCK / NO-GO`. The repository inventory covered
-  837 files and reported 54 checked and 16 unchecked plan items. Four complete
+  802 files and reported 60 checked and 10 unchecked plan items. Four complete
   passes covered safety/trust, build/embed/retail consumers,
   protocol/schema/ABI/Flutter compatibility, and CI/release truth, followed by
   a reverse traversal from artifacts and smoke claims back to production
   endpoints and mutation authorities.
-- P0 — production helper handoff is disconnected on every platform. The public
-  macOS transport in `MacInstallHelper.swift` throws `endpointUnavailable` for
-  every operation while the privileged XPC server accepts only `health`.
-  Windows `PrepareInstall` and all transaction queries return the packaged
-  endpoint unavailable result; its elevated helper only authenticates the
-  named pipe and explicitly stops before consuming the request. Linux has the
-  same unconditional client result; its helper creates an in-process
-  reservation, but no client launches that session and no production path
-  invokes `LinuxFileTransaction` or `LinuxRecoveryService`. The macOS and
-  Windows file transaction/recovery implementations are likewise reachable
-  only from tests. Therefore Flutter and Flutter-free installs cannot obtain a
-  durable reservation, mutate a target, or recover a transaction.
-- P1 — the helper wire representations are not one implemented protocol. The
-  canonical v1 fixtures require transaction, package, policy, nonce, identity,
-  signed-descriptor, strategy, and diagnostics fields. The three public
-  clients serialize smaller platform-specific envelopes, while the Linux
-  helper parses a third ad hoc shape and the Windows/macOS servers do not parse
-  install operations. No end-to-end schema validator currently joins these
-  boundaries.
-- P1 — current smoke lanes can be false green. Windows elevated and Linux
-  root-broker smoke stop at `--version`; Linux unprivileged smoke also stops at
-  the version probe. The macOS privileged wrapper trusts JSON emitted by an
-  externally supplied host, while the repository XPC service itself supports
-  only `health`. None of these repository-owned lanes proves prepare, commit,
-  mutation, recovery, or query through the packaged production client.
+- P0 — the production helper graph remains incomplete on Windows and Linux.
+  Windows prepare/commit is connected, but public query/recovery has no
+  production endpoint. Linux public prepare/commit/cancel/query/recovery is
+  disconnected, and the standalone helper's commit path removes reservation
+  state without invoking mutation or durable recovery. The macOS portion of
+  this former cross-platform P0 is resolved and has real notarized target-host
+  evidence.
+- P1 — Linux helper wire representations are incompatible. The public client
+  serializes a smaller platform envelope without the top-level package,
+  transaction, and nonce fields that `helper/main.cc` reads; no production
+  end-to-end parser test joins those boundaries.
+- P1 — remaining Windows/Linux smoke lanes can be false green. The elevated
+  Windows and Linux root-broker scripts stop at `--version`, and the Linux
+  unprivileged smoke does the same. They do not prove a packaged production
+  prepare, commit, mutation, query, or recovery boundary. The macOS privileged
+  smoke is no longer in this finding because it exercised all of those phases
+  against the notarized app and root daemon.
 - P1 — protocol-v1 helper diagnostics are fixture-only. The stable events in
   `fixtures/compat/native-install-helper/v1/diagnostic-results.json` do not
   occur in the standalone helper implementations, and caller-provided
@@ -1823,25 +1870,27 @@ after durable ownership exists; it must not generate a script.
   fail-closed endpoint behavior, isolated fd/handle-relative transaction and
   crash-recovery algorithms, stage provenance checks, public Dart/MethodChannel
   compatibility, C ABI sizing/ownership contracts, helper retail layout rules,
-  and candidate-only documentation all had supporting local evidence. These
-  do not make the disconnected production graph usable.
-- Modification statement: the review changed only the three stale source
-  contract tests and the evidence ledgers. No P0/P1 implementation was changed
-  because a safe fix requires completing and target-host testing the entire
-  client transport, authenticated server protocol, durable reservation,
-  mutation, query/recovery, diagnostics, and relaunch graph on all three
-  platforms; a partial local shim would create a privileged false positive.
-- Coverage limitation: Windows, privileged Linux, signed SMJobBless/XPC,
-  Authenticode, notarization, real-device/retail elevation, and current-head CI
-  were unavailable. This review reduces omission risk but cannot guarantee
-  that no additional defect remains.
-- Validated P0/P1 remaining: `1 P0 and 3 P1`. Task 6 is not closed. Task 16
-  Steps 1 and 2 plus the plan-level readiness gate remain open; the earlier
-  Task 12-15 construction commits do not establish a working handoff.
+  macOS authenticated XPC/daemon replacement and candidate-only documentation
+  all had supporting local evidence. These do not make the unfinished
+  Windows/Linux production graph usable.
+- Modification statement: this change resolves the macOS production transport,
+  approval UX, signed packaging, privileged mutation, and recovery slice, and
+  corrects the stale CMake/result/request verification contracts found by the
+  full rerun. The remaining Windows/Linux P0/P1 findings were not papered over
+  with local shims because their required target-host and installed-broker
+  boundaries are absent.
+- Coverage limitation: Windows target-host, Windows Authenticode/UAC, installed
+  Linux polkit/root-broker, and current-head CI remain unavailable or not run.
+  This review reduces omission risk but cannot guarantee that no additional
+  platform defect remains.
+- Validated P0/P1 remaining: `1 P0 and 3 P1`. Task 16 Steps 1 and 2 plus the
+  plan-level readiness gate remain open. The macOS Task 6 implementation and
+  signed target-host gate are closed; the overall plan is not.
 - Runtime status: `candidate-only`.
 - PR #65 merge readiness: `blocked / not merge-ready`.
-- Commit: `verified locally` —
-  `720b313 docs: record native helper verification`.
+- Linux distribution follow-on: `not started`; its prerequisite helper plan is
+  still blocked by the remaining Windows/Linux production graph.
+- Commit: `pending` until the final evidence update is committed.
 
 ---
 

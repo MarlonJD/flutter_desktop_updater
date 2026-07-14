@@ -19,7 +19,7 @@ configured-but-unexecuted workflow.
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
 | Task 10 complete local ladder | `verified locally` | Historical pre-helper ladder remains recorded in the remediation plan; current helper evidence is listed separately below |
-| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 62 tests on this macOS host after the helper integration |
+| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 82/82 tests on this macOS host after the helper integration |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
 | Flutter macOS SwiftPM build and integration | `not run` | The current helper head has not run in GitHub Actions |
@@ -34,14 +34,15 @@ configured-but-unexecuted workflow.
 | Linux native tamper CTest | `verified locally` | The local Linux container lane passed its native suite |
 | Linux installed CMake consumer | `verified locally` | The local Linux container installed and consumed the CMake package |
 | Linux standard and multiarch pkg-config consumers | `verified locally` | The local Linux container consumed the installed pkg-config metadata |
-| Linux mount/bind transaction mutation and recovery | `not run` | The local container suite had one explicit mount-namespace skip; the required privileged target-host lane has not run |
-| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | Local macOS helper tests passed 38 tests and root SwiftPM passed 62 tests, but signed/elevated combined-boundary evidence is absent; local signing inspection found 0 valid code-signing identities |
+| Linux mount/bind transaction mutation and recovery | `not run` | The unprivileged container suite had one explicit mount-namespace skip. A separate privileged throwaway container passed the exact bind-mount rejection test 1/1, but installed-polkit transaction mutation and recovery have not run |
+| macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `verified locally` | The helper suite passed 82/82 and DesktopUpdaterKit passed 82/82; an administrator-approved notarized root daemon completed real XPC prepare, forced-kill rollback recovery, v1-to-v2 replacement, ownership normalization, and fresh-process completed query on this macOS host |
+| macOS local Developer ID/notarized SMAppService target-host smoke | `verified locally` | Final universal v1/v2 apps were accepted by Apple notarization, stapled, and Gatekeeper accepted with `source=Notarized Developer ID`; the protected root-owned target updated with daemon PIDs `27851` → `28621` → `29512` and endpoint identities `525c…` → `308d…` |
 | Linux normal ZIP smoke | `not run` | Requires the Linux target-host job for the current helper head |
 | Portable native helper fixture/state-machine CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | macOS unprivileged helper crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | Windows helper trust/reparse/crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | Linux helper and privileged mount-namespace CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| macOS signed nested helper/SMJobBless/XPC CI | `not run` | Manual credential-gated lane; hardened-runtime and trust boundary not executed |
+| macOS signed bundled SMAppService daemon/XPC CI | `not run` | The equivalent target-host boundary is verified locally, but the manual credential-gated CI lane has not executed for the current head |
 | Windows Authenticode/UAC helper CI | `not run` | Manual self-hosted credential-gated lane |
 | Linux installed polkit broker CI | `not run` | Manual self-hosted policy/privilege lane |
 | Current remediation head in GitHub Actions | `not run` | The current helper head has not run in GitHub Actions; older run `29291937840` does not prove these helper changes |
