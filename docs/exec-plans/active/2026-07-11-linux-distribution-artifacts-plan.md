@@ -24,6 +24,18 @@ Flatpak/OSTree/GPG, Snapcraft/Snap Store, Ed25519 release metadata, GPG
 repository signing, Docker/Podman or isolated Linux runners, Flutter test,
 GoogleTest, and GitHub Actions.
 
+## Execution Status
+
+`blocked` as of 2026-07-14. The hard prerequisite check found 13 unchecked
+steps in the privileged-helper plan, including target-host/elevation gates and
+Task 16's final validation steps. Its fresh adversarial review also records one
+validated P0 and three validated P1 findings, reports Task 6 open, and retains
+the runtime as `candidate-only`. Therefore Task 1 was not started, no Linux
+distribution implementation or RED test was written, and no prerequisite
+checkbox was bypassed. Re-run the prerequisite only after the helper plan has
+working packaged prepare/commit/mutation/query/recovery paths and all mandatory
+secretless target-host gates.
+
 ## Global Constraints
 
 - **Hard execution dependency:** Do not start Task 1 until
