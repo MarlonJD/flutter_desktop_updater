@@ -46,6 +46,7 @@ set_target_properties(desktop_updater_native PROPERTIES
 
 add_library(desktop_updater_linux_helper_support STATIC
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_service_runtime.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
   ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
   ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c
@@ -235,6 +236,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request_fixture_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_authorization_tests.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_service_runtime.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_service_runtime_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/windows_native_install_request_builder.cc
