@@ -120,6 +120,24 @@ TEST(WindowsCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
   }
 }
 
+TEST(WindowsCrashRecovery, RecoversExternalStageAfterPreparedJournal) {
+  Fixture fixture;
+  const auto external_parent = fixture.root / L"owned-stage";
+  const auto external_stage = external_parent / L"Stage.app";
+  std::filesystem::create_directories(external_parent);
+  std::filesystem::rename(fixture.stage, external_stage);
+  fixture.stage = external_stage;
+  OneShotFault fault(WindowsTransactionFaultPoint::kBeforeStageRename);
+  auto transaction = fixture.Transaction(&fault);
+  EXPECT_THROW(transaction->Execute(), WindowsFileTransactionError);
+  transaction.reset();
+  FixedLiveness dead(false);
+
+  EXPECT_EQ(WindowsRecoveryOutcome::kRecovered,
+            fixture.Recovery(dead).Recover());
+  EXPECT_EQ("new", fixture.Read(fixture.target));
+}
+
 TEST(WindowsCrashRecovery, TornJournalIsManualWithoutCleanup) {
   Fixture fixture;
   const auto paths = WindowsTransactionPaths::Create(L"Example.app",

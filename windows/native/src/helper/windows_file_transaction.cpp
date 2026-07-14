@@ -3,7 +3,6 @@
 #include <winternl.h>
 
 #include <algorithm>
-#include <cwctype>
 #include <utility>
 
 #ifndef OBJ_DONT_REPARSE
@@ -37,14 +36,6 @@ UniqueWindowsHandle OpenAbsoluteDirectoryNoReparse(
         "target parent is not a non-reparse directory");
   }
   return result;
-}
-
-std::wstring NormalizePath(std::wstring value) {
-  std::replace(value.begin(), value.end(), L'/', L'\\');
-  std::transform(value.begin(), value.end(), value.begin(),
-                 [](wchar_t character) { return std::towlower(character); });
-  while (value.size() > 3 && value.back() == L'\\') value.pop_back();
-  return value;
 }
 
 void ThrowFilesystem(const char* detail) {
@@ -89,6 +80,8 @@ WindowsFileTransaction::WindowsFileTransaction(
     WindowsTransactionFaultInjector* fault_injector)
     : parent_locator_(
           std::filesystem::absolute(target_path.parent_path()).lexically_normal()),
+      stage_parent_locator_(
+          std::filesystem::absolute(stage_path.parent_path()).lexically_normal()),
       stage_name_(stage_path.filename().wstring()),
       paths_(WindowsTransactionPaths::Create(target_path.filename().wstring(),
                                              transaction_id)),
@@ -98,25 +91,23 @@ WindowsFileTransaction::WindowsFileTransaction(
       verifier_(verifier),
       fault_injector_(fault_injector == nullptr ? &no_faults_
                                                : fault_injector),
-      parent_(OpenAbsoluteDirectoryNoReparse(parent_locator_)) {
-  const auto stage_parent =
-      std::filesystem::absolute(stage_path.parent_path()).lexically_normal();
-  if (NormalizePath(stage_parent.wstring()) !=
-          NormalizePath(parent_locator_.wstring()) ||
-      stage_name_.empty() || stage_name_ == paths_.target_name ||
+      parent_(OpenAbsoluteDirectoryNoReparse(parent_locator_)),
+      stage_parent_(OpenAbsoluteDirectoryNoReparse(stage_parent_locator_)) {
+  if (stage_name_.empty() || stage_name_ == paths_.target_name ||
       stage_name_.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) {
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
         alternateDataStreamRejected);
   }
   parent_identity_ = ReadWindowsFileIdentity(parent_.get());
+  stage_parent_identity_ = ReadWindowsFileIdentity(stage_parent_.get());
   target_ = OpenRelativeNoReparse(
       parent_.get(), paths_.target_name,
       DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   stage_ = OpenRelativeNoReparse(
-      parent_.get(), stage_name_,
+      stage_parent_.get(), stage_name_,
       DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
@@ -124,7 +115,7 @@ WindowsFileTransaction::WindowsFileTransaction(
   stage_identity_ = ReadWindowsFileIdentity(stage_.get());
   ValidateSameVolume(target_identity_.volume_serial,
                      stage_identity_.volume_serial);
-  ValidatePayload(stage_name_);
+  ValidatePayload(stage_parent_.get(), stage_name_);
 
   for (const std::wstring& name : {
            paths_.prepared_name,
@@ -175,14 +166,24 @@ void WindowsFileTransaction::ValidateParentLocator() const {
   }
 }
 
+void WindowsFileTransaction::ValidateStageParentLocator() const {
+  auto observed = OpenAbsoluteDirectoryNoReparse(stage_parent_locator_);
+  if (ReadWindowsFileIdentity(observed.get()) != stage_parent_identity_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kStageIdentityChanged,
+        "stage parent path identity changed");
+  }
+}
+
 void WindowsFileTransaction::ValidateIdentity(
+    HANDLE parent,
     const std::wstring& name,
     const WindowsFileIdentity& expected,
     WindowsFileTransactionError::Code error) const {
   try {
     auto observed = OpenRelativeNoReparse(
-        parent_.get(), name, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
-                                 SYNCHRONIZE,
+        parent, name,
+        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
         FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
     if (ReadWindowsFileIdentity(observed.get()) != expected) {
@@ -195,9 +196,11 @@ void WindowsFileTransaction::ValidateIdentity(
   }
 }
 
-void WindowsFileTransaction::ValidatePayload(const std::wstring& name) const {
+void WindowsFileTransaction::ValidatePayload(
+    HANDLE parent,
+    const std::wstring& name) const {
   try {
-    if (verifier_.Verify(parent_.get(), name) != expected_payload_identity_) {
+    if (verifier_.Verify(parent, name) != expected_payload_identity_) {
       throw WindowsFileTransactionError(
           WindowsFileTransactionError::Code::kStagePayloadChanged,
           "payload identity changed");
@@ -237,27 +240,41 @@ void WindowsFileTransaction::Prepare() {
         "transaction cannot be prepared twice");
   }
   ValidateParentLocator();
-  ValidateIdentity(stage_name_, stage_identity_,
+  ValidateStageParentLocator();
+  ValidateIdentity(stage_parent_.get(), stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
-  ValidatePayload(stage_name_);
-  ValidateIdentity(paths_.target_name, target_identity_,
+  ValidatePayload(stage_parent_.get(), stage_name_);
+  ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
 
   journal_.transaction_id = paths_.transaction_id;
   journal_.owner_process_id = owner_process_id_;
   journal_.owner_process_start_identity = owner_process_start_identity_;
   journal_.target_name = paths_.target_name;
+  journal_.original_stage_parent_path = stage_parent_locator_.wstring();
   journal_.original_stage_name = stage_name_;
   journal_.prepared_name = paths_.prepared_name;
   journal_.backup_name = paths_.backup_name;
   journal_.lock_name = paths_.lock_name;
   journal_.parent_identity = parent_identity_;
+  journal_.stage_parent_identity = stage_parent_identity_;
   journal_.target_identity = target_identity_;
   journal_.stage_identity = stage_identity_;
   journal_.expected_payload_identity = expected_payload_identity_;
   journal_.state = WindowsTransactionState::kPrepared;
   journal_store_->Persist(journal_);
   journal_persisted_ = true;
+  ValidateStageParentLocator();
+  ValidateIdentity(stage_parent_.get(), stage_name_, stage_identity_,
+                   WindowsFileTransactionError::Code::kStageIdentityChanged);
+  ValidatePayload(stage_parent_.get(), stage_name_);
+  DurableRename(stage_.get(), paths_.prepared_name,
+                WindowsTransactionFaultPoint::kBeforeStageRename,
+                WindowsTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush,
+                WindowsTransactionFaultPoint::kAfterStageRename);
+  if (stage_parent_identity_ != parent_identity_) {
+    FlushWindowsDirectory(stage_parent_.get());
+  }
   prepared_ = true;
 }
 
@@ -277,16 +294,12 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
         "transaction is not prepared for commit");
   }
 
-  ValidateIdentity(stage_name_, stage_identity_,
+  ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
-  ValidatePayload(stage_name_);
-  DurableRename(stage_.get(), paths_.prepared_name,
-                WindowsTransactionFaultPoint::kBeforeStageRename,
-                WindowsTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush,
-                WindowsTransactionFaultPoint::kAfterStageRename);
+  ValidatePayload(parent_.get(), paths_.prepared_name);
 
   ValidateParentLocator();
-  ValidateIdentity(paths_.target_name, target_identity_,
+  ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
   DurableRename(target_.get(), paths_.backup_name,
                 WindowsTransactionFaultPoint::kBeforeBackupRename,
@@ -295,9 +308,9 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   journal_.state = WindowsTransactionState::kBackupCreated;
   journal_store_->Persist(journal_);
 
-  ValidateIdentity(paths_.prepared_name, stage_identity_,
+  ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
-  ValidatePayload(paths_.prepared_name);
+  ValidatePayload(parent_.get(), paths_.prepared_name);
   DurableRename(stage_.get(), paths_.target_name,
                 WindowsTransactionFaultPoint::kBeforeActivationRename,
                 WindowsTransactionFaultPoint::kAfterActivationRenameBeforeDirectoryFlush,
@@ -305,9 +318,9 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   journal_.state = WindowsTransactionState::kTargetActivated;
   journal_store_->Persist(journal_);
 
-  ValidateIdentity(paths_.target_name, stage_identity_,
+  ValidateIdentity(parent_.get(), paths_.target_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
-  ValidatePayload(paths_.target_name);
+  ValidatePayload(parent_.get(), paths_.target_name);
   journal_.state = WindowsTransactionState::kCompleted;
   journal_store_->Persist(journal_);
 
@@ -327,11 +340,17 @@ void WindowsFileTransaction::CancelPrepared() {
         "transaction is not a cancellable prepared transaction");
   }
   ValidateParentLocator();
-  ValidateIdentity(stage_name_, stage_identity_,
+  ValidateStageParentLocator();
+  ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
-  ValidatePayload(stage_name_);
-  ValidateIdentity(paths_.target_name, target_identity_,
+  ValidatePayload(parent_.get(), paths_.prepared_name);
+  ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
+  RenameHandleRelative(stage_.get(), stage_parent_.get(), stage_name_, false);
+  FlushWindowsDirectory(stage_parent_.get());
+  if (stage_parent_identity_ != parent_identity_) {
+    FlushWindowsDirectory(parent_.get());
+  }
   journal_store_->Remove();
   journal_persisted_ = false;
   cancelled_ = true;

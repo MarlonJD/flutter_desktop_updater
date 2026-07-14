@@ -433,6 +433,8 @@ std::string WindowsTransactionJournal::EncodeCanonical() const {
   object.emplace("expectedPayloadIdentity",
                  EncodePayload(expected_payload_identity));
   object.emplace("lockName", JsonValue(WideToUtf8(lock_name)));
+  object.emplace("originalStageParentPath",
+                 JsonValue(WideToUtf8(original_stage_parent_path)));
   object.emplace("originalStageName",
                  JsonValue(WideToUtf8(original_stage_name)));
   object.emplace("ownerProcessId",
@@ -444,6 +446,8 @@ std::string WindowsTransactionJournal::EncodeCanonical() const {
   object.emplace("preparedName", JsonValue(WideToUtf8(prepared_name)));
   object.emplace("schemaVersion", JsonValue(schema_version));
   object.emplace("stageIdentity", EncodeIdentity(stage_identity));
+  object.emplace("stageParentIdentity",
+                 EncodeIdentity(stage_parent_identity));
   object.emplace("state", JsonValue(StateName(state)));
   object.emplace("targetIdentity", EncodeIdentity(target_identity));
   object.emplace("targetName", JsonValue(WideToUtf8(target_name)));
@@ -467,9 +471,10 @@ WindowsTransactionJournal WindowsTransactionJournal::DecodeStrict(
     }
     RequireKeys(value,
                 {"backupName", "expectedPayloadIdentity", "lockName",
-                 "originalStageName", "ownerProcessId",
-                 "ownerProcessStartIdentity", "parentIdentity",
-                 "preparedName", "schemaVersion", "stageIdentity", "state",
+                 "originalStageName", "originalStageParentPath",
+                 "ownerProcessId", "ownerProcessStartIdentity",
+                 "parentIdentity", "preparedName", "schemaVersion",
+                 "stageIdentity", "stageParentIdentity", "state",
                  "targetIdentity", "targetName", "transactionId"});
     WindowsTransactionJournal journal;
     journal.schema_version = value.at("schemaVersion").integer();
@@ -479,12 +484,16 @@ WindowsTransactionJournal WindowsTransactionJournal::DecodeStrict(
     journal.owner_process_start_identity = static_cast<std::uint64_t>(
         value.at("ownerProcessStartIdentity").integer());
     journal.target_name = Utf8ToWide(value.at("targetName").string());
+    journal.original_stage_parent_path =
+        Utf8ToWide(value.at("originalStageParentPath").string());
     journal.original_stage_name =
         Utf8ToWide(value.at("originalStageName").string());
     journal.prepared_name = Utf8ToWide(value.at("preparedName").string());
     journal.backup_name = Utf8ToWide(value.at("backupName").string());
     journal.lock_name = Utf8ToWide(value.at("lockName").string());
     journal.parent_identity = DecodeIdentity(value.at("parentIdentity"));
+    journal.stage_parent_identity =
+        DecodeIdentity(value.at("stageParentIdentity"));
     journal.target_identity = DecodeIdentity(value.at("targetIdentity"));
     journal.stage_identity = DecodeIdentity(value.at("stageIdentity"));
     journal.expected_payload_identity =
@@ -493,9 +502,14 @@ WindowsTransactionJournal WindowsTransactionJournal::DecodeStrict(
     const WindowsTransactionPaths paths = WindowsTransactionPaths::Create(
         journal.target_name, journal.transaction_id);
     ValidateSimpleName(journal.original_stage_name);
+    const std::filesystem::path original_stage_parent(
+        journal.original_stage_parent_path);
     if (journal.schema_version != kSchemaVersion ||
         journal.owner_process_id == 0 ||
         journal.owner_process_start_identity == 0 ||
+        !original_stage_parent.is_absolute() ||
+        original_stage_parent.lexically_normal() != original_stage_parent ||
+        !journal.stage_parent_identity.directory ||
         journal.original_stage_name == journal.target_name ||
         journal.prepared_name != paths.prepared_name ||
         journal.backup_name != paths.backup_name ||

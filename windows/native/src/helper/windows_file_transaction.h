@@ -76,10 +76,12 @@ class WindowsFileTransaction {
 
  private:
   void ValidateParentLocator() const;
-  void ValidateIdentity(const std::wstring& name,
+  void ValidateStageParentLocator() const;
+  void ValidateIdentity(HANDLE parent,
+                        const std::wstring& name,
                         const WindowsFileIdentity& expected,
                         WindowsFileTransactionError::Code error) const;
-  void ValidatePayload(const std::wstring& name) const;
+  void ValidatePayload(HANDLE parent, const std::wstring& name) const;
   void DurableRename(HANDLE source,
                      const std::wstring& destination,
                      WindowsTransactionFaultPoint before,
@@ -88,6 +90,7 @@ class WindowsFileTransaction {
   void RemoveLockExact() noexcept;
 
   std::filesystem::path parent_locator_;
+  std::filesystem::path stage_parent_locator_;
   std::wstring stage_name_;
   WindowsTransactionPaths paths_;
   DWORD owner_process_id_;
@@ -97,10 +100,12 @@ class WindowsFileTransaction {
   NoWindowsTransactionFaultInjector no_faults_;
   WindowsTransactionFaultInjector* fault_injector_;
   UniqueWindowsHandle parent_;
+  UniqueWindowsHandle stage_parent_;
   UniqueWindowsHandle target_;
   UniqueWindowsHandle stage_;
   UniqueWindowsHandle lock_;
   WindowsFileIdentity parent_identity_;
+  WindowsFileIdentity stage_parent_identity_;
   WindowsFileIdentity target_identity_;
   WindowsFileIdentity stage_identity_;
   std::unique_ptr<DurableWindowsTransactionJournalStore> journal_store_;

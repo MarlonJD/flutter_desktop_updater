@@ -149,11 +149,13 @@ struct WindowsTransactionJournal {
   DWORD owner_process_id = 0;
   std::uint64_t owner_process_start_identity = 0;
   std::wstring target_name;
+  std::wstring original_stage_parent_path;
   std::wstring original_stage_name;
   std::wstring prepared_name;
   std::wstring backup_name;
   std::wstring lock_name;
   WindowsFileIdentity parent_identity;
+  WindowsFileIdentity stage_parent_identity;
   WindowsFileIdentity target_identity;
   WindowsFileIdentity stage_identity;
   WindowsVerifiedPayloadIdentity expected_payload_identity;

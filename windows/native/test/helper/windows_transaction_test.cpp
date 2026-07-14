@@ -139,7 +139,9 @@ TEST(WindowsFileTransaction, PrepareIsDurableAndDoesNotMutateTarget) {
 
   EXPECT_TRUE(transaction->prepared());
   EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
-  EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+  EXPECT_FALSE(std::filesystem::exists(fixture.stage));
+  EXPECT_EQ("new", fixture.ReadVersion(
+                       fixture.root / transaction->paths().prepared_name));
   EXPECT_FALSE(transaction->prepared_journal_canonical().empty());
   const auto artifacts = FindWindowsTransactionArtifacts(fixture.root);
   EXPECT_NE(artifacts.end(),
@@ -172,6 +174,31 @@ TEST(WindowsFileTransaction, PreparedCommitAndCancellationAreDisjoint) {
     EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
     EXPECT_THROW(transaction->ExecutePrepared(), WindowsFileTransactionError);
   }
+}
+
+TEST(WindowsFileTransaction, ExternalStageParentIsRetainedAndRestoredOnCancel) {
+  WindowsTransactionFixture fixture;
+  const auto external_parent = fixture.root / L"staging";
+  const auto external_stage = external_parent / L"External.app";
+  std::filesystem::create_directories(external_stage);
+  fixture.WriteVersion(external_stage, "new");
+  auto transaction = std::make_unique<WindowsFileTransaction>(
+      fixture.target, external_stage,
+      "00000000-0000-4000-8000-000000000008", GetCurrentProcessId(),
+      IdentityForVersion("new"), fixture.verifier);
+
+  transaction->Prepare();
+
+  EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+  EXPECT_FALSE(std::filesystem::exists(external_stage));
+  EXPECT_TRUE(std::filesystem::exists(
+      fixture.root / transaction->paths().prepared_name));
+
+  transaction->CancelPrepared();
+  EXPECT_EQ("new", fixture.ReadVersion(external_stage));
+  EXPECT_FALSE(std::filesystem::exists(
+      fixture.root / transaction->paths().prepared_name));
+  EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
 }
 
 TEST(WindowsFileTransaction, RejectsAlternateStreamsAndHardLinks) {

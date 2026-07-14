@@ -310,6 +310,9 @@ void main() {
     expect(journal, contains("EncodeCanonicalJson"));
     expect(transactionBoundary, contains("OBJ_DONT_REPARSE"));
     expect(transactionBoundary, contains("FileIdInfo"));
+    expect(journal, contains("stageParentIdentity"));
+    expect(transaction, contains("stage_parent_"));
+    expect(transaction, contains("ValidateStageParentLocator"));
     expect(transactionBoundary, contains("NumberOfLinks"));
     expect(transactionBoundary, contains("alternateDataStreamRejected"));
     expect(transactionBoundary, contains("beforeActivationRename"));

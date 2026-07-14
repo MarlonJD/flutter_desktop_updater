@@ -168,9 +168,15 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       return WindowsRecoveryOutcome::kManualActionRequired;
     }
 
+    auto stage_parent = OpenRecoveryParent(
+        std::filesystem::path(journal.original_stage_parent_path));
+    if (ReadWindowsFileIdentity(stage_parent.get()) !=
+        journal.stage_parent_identity) {
+      return WindowsRecoveryOutcome::kManualActionRequired;
+    }
     bool target_exists = ExistsRelativeNoReparse(parent, paths_.target_name);
-    bool stage_exists =
-        ExistsRelativeNoReparse(parent, journal.original_stage_name);
+    bool stage_exists = ExistsRelativeNoReparse(
+        stage_parent.get(), journal.original_stage_name);
     bool prepared_exists =
         ExistsRelativeNoReparse(parent, paths_.prepared_name);
     bool backup_exists = ExistsRelativeNoReparse(parent, paths_.backup_name);
@@ -207,13 +213,19 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
     }
 
     if (!prepared_exists && stage_exists) {
-      if (Identity(parent, journal.original_stage_name) !=
+      if (Identity(stage_parent.get(), journal.original_stage_name) !=
               journal.stage_identity ||
-          !VerifyPayload(parent, journal.original_stage_name)) {
+          !VerifyPayload(stage_parent.get(), journal.original_stage_name)) {
         return WindowsRecoveryOutcome::kManualActionRequired;
       }
-      RecoveryRename(parent, journal.original_stage_name,
-                     paths_.prepared_name);
+      auto stage = OpenRelativeNoReparse(
+          stage_parent.get(), journal.original_stage_name,
+          DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+          FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+      RenameHandleRelative(stage.get(), parent, paths_.prepared_name, false);
+      FlushWindowsDirectory(stage_parent.get());
+      FlushWindowsDirectory(parent);
       stage_exists = false;
       prepared_exists = true;
     }
