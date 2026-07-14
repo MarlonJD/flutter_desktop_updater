@@ -30,6 +30,7 @@ set(NATIVE_SOURCES
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/windows_native_install_request_builder.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
@@ -85,6 +86,7 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/verified_installer_handoff.cpp
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
 add_library(desktop_updater_install_helper_support STATIC
@@ -241,6 +243,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     test/desktop_updater_native_c_test.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract_fixture_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request_fixture_tests.cc
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/windows_native_install_request_builder_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy_fixture_tests.cc)
