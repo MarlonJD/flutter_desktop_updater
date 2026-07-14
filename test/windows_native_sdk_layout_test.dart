@@ -240,6 +240,55 @@ void main() {
     expect(reservation, contains("targetLock"));
     expect(reservation, contains("caller_process"));
   });
+
+  test("Windows transactions stay handle-relative and recover fail-closed", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final journal = readRequiredFile(
+      "windows/native/src/helper/windows_transaction_journal.cpp",
+    );
+    final transaction = readRequiredFile(
+      "windows/native/src/helper/windows_file_transaction.cpp",
+    );
+    final transactionBoundary = journal + transaction;
+    final recovery = readRequiredFile(
+      "windows/native/src/helper/windows_recovery_service.cpp",
+    );
+    final relaunch = readRequiredFile(
+      "windows/native/src/helper/windows_relaunch_service.cpp",
+    );
+    final smoke = readRequiredFile("tool/windows_install_helper_smoke.ps1");
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
+
+    expect(cmake, contains("windows_transaction"));
+    expect(cmake, contains("windows_crash_recovery"));
+    expect(journal, contains("NtCreateFile"));
+    expect(journal, contains("RootDirectory"));
+    expect(journal, contains("FileRenameInfoEx"));
+    expect(journal, contains("FlushFileBuffers"));
+    expect(journal, contains("EncodeCanonicalJson"));
+    expect(transactionBoundary, contains("OBJ_DONT_REPARSE"));
+    expect(transactionBoundary, contains("FileIdInfo"));
+    expect(transactionBoundary, contains("NumberOfLinks"));
+    expect(transactionBoundary, contains("alternateDataStreamRejected"));
+    expect(transactionBoundary, contains("beforeActivationRename"));
+    expect(recovery, contains("manualActionRequired"));
+    expect(recovery, contains("backupIdentityMismatch"));
+    expect(recovery, contains("stageProvenanceSha256"));
+    expect(recovery, contains("artifactSha256"));
+    expect(recovery, contains("authenticodePublisher"));
+    expect(relaunch, contains("CreateProcessW"));
+    expect(relaunch, contains("VerifyWindowsExecutableStillMatches"));
+    expect(smoke, contains('ValidateSet("Unprivileged", "Elevated")'));
+    expect(smoke, contains("desktop_updater_install_helper.exe"));
+    expect(
+      workflow,
+      contains(
+        'ctest --test-dir windows/native/build -C Release -R "windows_(transaction|crash_recovery)"',
+      ),
+    );
+  });
 }
 
 String readRequiredFile(String path) {

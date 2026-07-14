@@ -67,6 +67,10 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/helper_authenticode.cpp
   src/helper/named_pipe_transport.cpp
   src/helper/windows_reservation.cpp
+  src/helper/windows_transaction_journal.cpp
+  src/helper/windows_file_transaction.cpp
+  src/helper/windows_recovery_service.cpp
+  src/helper/windows_relaunch_service.cpp
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
 add_library(desktop_updater_install_helper_support STATIC
@@ -74,7 +78,12 @@ add_library(desktop_updater_install_helper_support STATIC
 target_compile_features(desktop_updater_install_helper_support
   PUBLIC cxx_std_17)
 target_compile_definitions(desktop_updater_install_helper_support
-  PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+    _WIN32_WINNT=0x0A00)
+if(MSVC)
+  target_compile_options(desktop_updater_install_helper_support PRIVATE /utf-8)
+endif()
 target_include_directories(desktop_updater_install_helper_support
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/helper
   PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
@@ -244,6 +253,34 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(windows_helper_reservation
     PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
   gtest_discover_tests(windows_helper_reservation)
+
+  add_executable(windows_transaction
+    test/helper/windows_transaction_test.cpp)
+  target_compile_features(windows_transaction PRIVATE cxx_std_17)
+  target_compile_definitions(windows_transaction
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_transaction PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_transaction
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_transaction)
+
+  add_executable(windows_crash_recovery
+    test/helper/windows_crash_recovery_test.cpp)
+  target_compile_features(windows_crash_recovery PRIVATE cxx_std_17)
+  target_compile_definitions(windows_crash_recovery
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_crash_recovery PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_crash_recovery
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_crash_recovery)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

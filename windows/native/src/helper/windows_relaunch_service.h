@@ -1,0 +1,60 @@
+#ifndef DESKTOP_UPDATER_WINDOWS_HELPER_WINDOWS_RELAUNCH_SERVICE_H_
+#define DESKTOP_UPDATER_WINDOWS_HELPER_WINDOWS_RELAUNCH_SERVICE_H_
+
+#include <filesystem>
+#include <stdexcept>
+#include <string>
+
+#include "windows_file_transaction.h"
+
+namespace desktop_updater::helper {
+
+class WindowsRelaunchError : public std::runtime_error {
+ public:
+  explicit WindowsRelaunchError(const std::string& detail)
+      : std::runtime_error(detail) {}
+};
+
+class AuthenticodeWindowsPayloadVerifier final
+    : public WindowsInstallPayloadVerifier {
+ public:
+  explicit AuthenticodeWindowsPayloadVerifier(
+      WindowsVerifiedPayloadIdentity expectation);
+
+  WindowsVerifiedPayloadIdentity Verify(
+      HANDLE parent,
+      const std::wstring& bundle_leaf) override;
+
+ private:
+  WindowsVerifiedPayloadIdentity expectation_;
+};
+
+class WindowsProcessLauncher {
+ public:
+  virtual ~WindowsProcessLauncher() = default;
+  virtual void Launch(const std::filesystem::path& executable) = 0;
+};
+
+class CreateProcessWindowsLauncher final : public WindowsProcessLauncher {
+ public:
+  void Launch(const std::filesystem::path& executable) override;
+};
+
+class WindowsRelaunchService {
+ public:
+  WindowsRelaunchService(
+      WindowsVerifiedPayloadIdentity expected_payload_identity,
+      WindowsInstallPayloadVerifier& verifier,
+      WindowsProcessLauncher& launcher);
+
+  void Relaunch(const std::filesystem::path& application_path);
+
+ private:
+  WindowsVerifiedPayloadIdentity expected_payload_identity_;
+  WindowsInstallPayloadVerifier& verifier_;
+  WindowsProcessLauncher& launcher_;
+};
+
+}  // namespace desktop_updater::helper
+
+#endif  // DESKTOP_UPDATER_WINDOWS_HELPER_WINDOWS_RELAUNCH_SERVICE_H_

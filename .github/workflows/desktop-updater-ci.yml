@@ -113,8 +113,22 @@ jobs:
         run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
         run: cmake --build windows/native/build --config Release
-      # Native transaction recovery remains blocked by Task 6; this CTest lane
-      # must not be reported as recovery-journal evidence.
+      - name: Run Windows handle-relative transaction and recovery tests
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir windows/native/build -C Release -R "windows_(transaction|crash_recovery)" --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Windows helper CTest registered zero transaction tests."
+          }
+      - name: Run unprivileged Windows install helper smoke
+        shell: pwsh
+        run: ./tool/windows_install_helper_smoke.ps1 -Mode Unprivileged -BuildDirectory windows/native/build
+      # Signed interactive UAC remains credential- and host-gated. The script
+      # fails closed unless the fixed helper is Authenticode-valid and an
+      # operator explicitly enables an interactive elevation prompt.
       - name: Run Windows Unicode and relative redirect target-host gates
         shell: pwsh
         run: |
