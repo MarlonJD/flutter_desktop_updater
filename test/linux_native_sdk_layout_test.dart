@@ -258,6 +258,63 @@ void main() {
     expect(pkgConfig, contains(r"helper=${prefix}"));
     expect(pkgConfig, contains("policy_dir=/etc/desktop-updater/policies"));
   });
+
+  test("Linux helper has fd-relative durable transaction recovery", () {
+    final cmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final journal = readRequiredFile(
+      "linux/native/src/helper/linux_transaction_journal.cc",
+    );
+    final transaction = readRequiredFile(
+      "linux/native/src/helper/linux_file_transaction.cc",
+    );
+    final mountGuard = readRequiredFile(
+      "linux/native/src/helper/linux_mount_guard.cc",
+    );
+    final recovery = readRequiredFile(
+      "linux/native/src/helper/linux_recovery_service.cc",
+    );
+    final relaunch = readRequiredFile(
+      "linux/native/src/helper/linux_relaunch_service.cc",
+    );
+    final transactionTest = readRequiredFile(
+      "linux/native/test/helper/linux_transaction_test.cc",
+    );
+    final crashTest = readRequiredFile(
+      "linux/native/test/helper/linux_crash_recovery_test.cc",
+    );
+    final smoke = readRequiredFile("tool/linux_install_helper_smoke.sh");
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
+
+    expect(cmake, contains("linux_transaction"));
+    expect(cmake, contains("linux_crash_recovery"));
+    expect(journal, contains("openat"));
+    expect(journal, contains("renameat2"));
+    expect(journal, contains("fdatasync"));
+    expect(journal, contains("fsync"));
+    expect(transaction, contains("O_PATH"));
+    expect(transaction, contains("O_NOFOLLOW"));
+    expect(transaction, contains("renameat2"));
+    expect(transaction, contains("unlinkat"));
+    expect(mountGuard, contains("/proc/self/mountinfo"));
+    expect(mountGuard, contains("STATX_MNT_ID"));
+    expect(recovery, contains("manualActionRequired"));
+    expect(recovery, contains("liveOwner"));
+    expect(relaunch, contains("fexecve"));
+    expect(relaunch, contains("stageProvenance"));
+    expect(transactionTest, contains("CLONE_NEWNS"));
+    expect(transactionTest, contains("bindMount"));
+    expect(crashTest, contains("tornJournal"));
+    expect(crashTest, contains("invalidBackup"));
+    expect(smoke, contains("--mode"));
+    expect(smoke, contains("root-broker"));
+    expect(
+      workflow,
+      contains("ctest --test-dir linux/native/build "
+          "-R 'linux_(transaction|crash_recovery)'"),
+    );
+  });
 }
 
 String readRequiredFile(String path) {

@@ -39,8 +39,13 @@ set_target_properties(desktop_updater_native PROPERTIES
 
 add_library(desktop_updater_linux_helper_support STATIC
   src/helper/linux_helper_policy.cc
+  src/helper/linux_file_transaction.cc
+  src/helper/linux_mount_guard.cc
+  src/helper/linux_recovery_service.cc
+  src/helper/linux_relaunch_service.cc
   src/helper/unix_socket_transport.cc
-  src/helper/linux_reservation.cc)
+  src/helper/linux_reservation.cc
+  src/helper/linux_transaction_journal.cc)
 target_compile_features(desktop_updater_linux_helper_support PUBLIC cxx_std_17)
 target_compile_definitions(desktop_updater_linux_helper_support
   PRIVATE _GNU_SOURCE)
@@ -223,6 +228,23 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(linux_helper_reservation
     PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
   gtest_discover_tests(linux_helper_reservation)
+
+  add_executable(linux_transaction
+    test/helper/linux_transaction_test.cc)
+  target_compile_features(linux_transaction PRIVATE cxx_std_17)
+  target_compile_definitions(linux_transaction PRIVATE _GNU_SOURCE)
+  target_link_libraries(linux_transaction
+    PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
+  gtest_discover_tests(linux_transaction TEST_PREFIX "linux_transaction.")
+
+  add_executable(linux_crash_recovery
+    test/helper/linux_crash_recovery_test.cc)
+  target_compile_features(linux_crash_recovery PRIVATE cxx_std_17)
+  target_compile_definitions(linux_crash_recovery PRIVATE _GNU_SOURCE)
+  target_link_libraries(linux_crash_recovery
+    PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
+  gtest_discover_tests(linux_crash_recovery
+    TEST_PREFIX "linux_crash_recovery.")
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test
