@@ -51,6 +51,7 @@ cp "$script_dir/Configuration/Helper-Launchd.plist" "$helper_launchd"
 /usr/bin/plutil -convert xml1 -o "$policy_plist" "$canonical_policy"
 
 application_id=$(/usr/bin/plutil -extract applicationPackageId raw -o - "$policy_plist")
+policy_id=$(/usr/bin/plutil -extract policyId raw -o - "$policy_plist")
 helper_id=$(/usr/bin/plutil -extract helperServiceId raw -o - "$policy_plist")
 application_signer_kind=$(/usr/bin/plutil -extract allowedApplicationSigner.kind raw -o - "$policy_plist")
 helper_signer_kind=$(/usr/bin/plutil -extract allowedHelperSigner.kind raw -o - "$policy_plist")
@@ -86,6 +87,8 @@ policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 /usr/bin/plutil -replace ProgramArguments.0 -string "/Library/PrivilegedHelperTools/$helper_id" "$helper_launchd"
 
 /usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables dict" "$app_info" >/dev/null 2>&1 || true
+/usr/bin/plutil -replace DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info" 2>/dev/null || \
+  /usr/bin/plutil -insert DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info"
 /usr/libexec/PlistBuddy -c "Delete :SMPrivilegedExecutables:$helper_id" "$app_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables:$helper_id string $helper_requirement_for_plist_buddy" "$app_info"
 

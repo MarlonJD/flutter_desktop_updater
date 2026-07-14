@@ -1,5 +1,7 @@
 import CommonCrypto
+import Darwin
 import Foundation
+import Security
 
 public let stageProvenanceFileName =
     ".desktop_updater_stage_provenance.json"
@@ -46,6 +48,166 @@ public struct MacVerifiedStage: Sendable {
         self.provenance = provenance
         self.artifactKind = artifactKind
         self.expectedPackageIDs = expectedPackageIDs
+    }
+}
+
+struct MacInstallRequestEvidence: Sendable {
+    let policyID: String
+    let packageID: String
+    let processStartIdentity: String
+    let executableSHA256: String
+    let signerIdentity: String
+    let targetClass: String
+    let executableRelativePath: String
+    let currentVersion: String
+    let currentBuildNumber: Int64
+    let currentPackageIdentitySHA256: String
+    let targetIdentityProofSHA256: String
+    let requestNonce: String
+}
+
+protocol MacInstallRequestEvidenceBuilding: Sendable {
+    func build(for target: MacInstallTarget) throws
+        -> MacInstallRequestEvidence
+}
+
+struct SystemMacInstallRequestEvidenceBuilder:
+    MacInstallRequestEvidenceBuilding
+{
+    func build(for target: MacInstallTarget) throws
+        -> MacInstallRequestEvidence
+    {
+        guard target.processIdentifier
+            == ProcessInfo.processInfo.processIdentifier,
+            let info = Bundle(url: target.bundleURL)?.infoDictionary,
+            let policyID = info["DesktopUpdaterInstallPolicyID"] as? String,
+            let packageID = info["CFBundleIdentifier"] as? String,
+            let executableName = info["CFBundleExecutable"] as? String,
+            isSimpleComponent(executableName),
+            let version = info["CFBundleShortVersionString"] as? String,
+            !version.isEmpty,
+            let buildText = info["CFBundleVersion"] as? String,
+            let buildNumber = Int64(buildText),
+            buildNumber >= 0 else {
+            throw macInstallRequestFailure(
+                "Signed application helper metadata is incomplete."
+            )
+        }
+        let executableRelativePath = "Contents/MacOS/\(executableName)"
+        let executableURL = target.bundleURL.appendingPathComponent(
+            executableRelativePath
+        )
+        let executableData = try Data(
+            contentsOf: executableURL,
+            options: [.mappedIfSafe]
+        )
+        let executableSHA256 = macInstallRequestSHA256(executableData)
+        let startIdentity = try processStartIdentity(
+            target.processIdentifier
+        )
+        let signerIdentity = try designatedRequirement(
+            target.bundleURL
+        )
+        let packageIdentity = macInstallRequestSHA256(
+            Data(
+                "\(packageID)\n\(version)\n\(buildNumber)\n"
+                    .appending(executableSHA256).utf8
+            )
+        )
+        return MacInstallRequestEvidence(
+            policyID: policyID,
+            packageID: packageID,
+            processStartIdentity: startIdentity,
+            executableSHA256: executableSHA256,
+            signerIdentity: signerIdentity,
+            targetClass: "applicationBundle",
+            executableRelativePath: executableRelativePath,
+            currentVersion: version,
+            currentBuildNumber: buildNumber,
+            currentPackageIdentitySHA256: packageIdentity,
+            targetIdentityProofSHA256: executableSHA256,
+            requestNonce: try requestNonce()
+        )
+    }
+
+    private func processStartIdentity(_ processIdentifier: Int32) throws
+        -> String
+    {
+        var info = proc_bsdinfo()
+        let size = MemoryLayout<proc_bsdinfo>.size
+        guard proc_pidinfo(
+            processIdentifier,
+            PROC_PIDTBSDINFO,
+            0,
+            &info,
+            Int32(size)
+        ) == size else {
+            throw macInstallRequestFailure(
+                "Caller process identity is unavailable."
+            )
+        }
+        return "macos:\(info.pbi_start_tvsec):\(info.pbi_start_tvusec)"
+    }
+
+    private func designatedRequirement(_ bundleURL: URL) throws -> String {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &code)
+            == errSecSuccess,
+            let code,
+            SecStaticCodeCheckValidity(
+                code,
+                SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
+                nil
+            ) == errSecSuccess else {
+            throw macInstallRequestFailure(
+                "Caller code signature is invalid."
+            )
+        }
+        var requirement: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(
+            code,
+            [],
+            &requirement
+        ) == errSecSuccess,
+            let requirement else {
+            throw macInstallRequestFailure(
+                "Caller designated requirement is unavailable."
+            )
+        }
+        var text: CFString?
+        guard SecRequirementCopyString(requirement, [], &text)
+            == errSecSuccess,
+            let text else {
+            throw macInstallRequestFailure(
+                "Caller designated requirement is unavailable."
+            )
+        }
+        return text as String
+    }
+
+    private func requestNonce() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(
+            kSecRandomDefault,
+            bytes.count,
+            &bytes
+        ) == errSecSuccess else {
+            throw macInstallRequestFailure(
+                "Secure request nonce generation failed."
+            )
+        }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private func isSimpleComponent(_ value: String) -> Bool {
+        !value.isEmpty
+            && value != "."
+            && value != ".."
+            && !value.contains("/")
+            && !value.contains("\0")
     }
 }
 
@@ -467,46 +629,179 @@ public struct MacInstallRequest: Sendable {
     func helperRequestData(
         transactionID: String,
         processIdentifier: Int32,
-        bundleURL: URL
+        bundleURL: URL,
+        evidence: MacInstallRequestEvidence
     ) throws -> Data {
-        let entries: [[String: Any]] = provenanceEntries.map { entry in
-            [
-                "path": entry.path,
-                "kind": entry.kind,
-                "length": entry.length,
-                "sha256": entry.sha256 ?? NSNull(),
-                "target": entry.target ?? NSNull(),
-            ]
+        guard !allowUnsignedUpdates,
+              let stageRoot,
+              let stagingPath,
+              let expectedProvenanceSHA256,
+              let expectedArtifactSHA256,
+              let artifactKind else {
+            throw macInstallRequestFailure(
+                "Canonical signed install evidence is required."
+            )
         }
+        let root = URL(fileURLWithPath: stageRoot).standardizedFileURL
+        let staged = URL(fileURLWithPath: stagingPath).standardizedFileURL
+        let marker = try StageProvenance.verify(
+            stageRoot: root,
+            expectedMarkerSHA256: expectedProvenanceSHA256
+        )
+        guard marker.packageId == evidence.packageID,
+              marker.artifactSha256 == expectedArtifactSHA256 else {
+            throw macInstallRequestFailure(
+                "Stage provenance is not bound to the install request."
+            )
+        }
+        let manifestURL = root.appendingPathComponent(
+            ".desktop_updater_release_manifest.json"
+        )
+        let manifestData = try Data(contentsOf: manifestURL)
+        guard let manifest = try JSONSerialization.jsonObject(
+            with: manifestData
+        ) as? [String: Any],
+            let packageID = manifest["packageId"] as? String,
+            packageID == evidence.packageID,
+            let desiredVersion = manifest["version"] as? String,
+            let artifact = manifest["artifact"] as? [String: Any],
+            artifact["sha256"] as? String == expectedArtifactSHA256,
+            let artifactLength = exactInt64(artifact["length"]),
+            artifactLength > 0,
+            let signature = manifest["signature"] as? [String: Any],
+            signature["algorithm"] as? String == "ed25519",
+            let keyID = signature["publicKeyId"] as? String,
+            let signatureBase64 = signature["value"] as? String else {
+            throw macInstallRequestFailure(
+                "Signed release manifest is invalid."
+            )
+        }
+        let canonicalManifest = try macInstallCanonicalJSON(manifest)
+        guard macInstallRequestSHA256(canonicalManifest)
+            == marker.descriptorSha256 else {
+            throw macInstallRequestFailure(
+                "Signed release manifest digest changed."
+            )
+        }
+        let strategy: String
+        let provider: String
+        switch artifactKind {
+        case "zip", "dmg":
+            strategy = "directoryReplace"
+            provider = "platformDirectory"
+        case "pkgInstaller":
+            strategy = "verifiedInstallerHandoff"
+            provider = "macosInstaller"
+        default:
+            throw macInstallRequestFailure(
+                "The staged artifact has no native helper strategy."
+            )
+        }
+        let desiredBuild = exactInt64(manifest["buildNumber"]) ?? 0
         let request: [String: Any] = [
             "schemaVersion": 1,
             "protocolVersion": 1,
-            "operation": "prepareInstall",
             "transactionId": transactionID,
-            "caller": [
-                "processId": processIdentifier,
-                "bundlePath": bundleURL.standardizedFileURL.path,
-            ],
+            "policyId": evidence.policyID,
+            "packageId": evidence.packageID,
+            "strategy": strategy,
+            "provider": provider,
             "target": [
+                "class": evidence.targetClass,
                 "pathHint": bundleURL.standardizedFileURL.path,
-                "packageIds": expectedPackageIDs,
+                "targetNameHint": bundleURL.lastPathComponent,
+                "executableRelativePath": evidence.executableRelativePath,
+                "identityProofSha256":
+                    evidence.targetIdentityProofSHA256,
+            ],
+            "currentIdentity": [
+                "version": evidence.currentVersion,
+                "buildNumber": evidence.currentBuildNumber,
+                "packageIdentitySha256":
+                    evidence.currentPackageIdentitySHA256,
+            ],
+            "desiredIdentity": [
+                "version": desiredVersion,
+                "buildNumber": desiredBuild,
+                "packageIdentitySha256": marker.descriptorSha256,
             ],
             "stage": [
-                "pathHint": stagingPath ?? "",
-                "rootPathHint": stageRoot ?? "",
-                "provenanceSha256": expectedProvenanceSHA256 ?? "",
-                "artifactKind": artifactKind ?? "",
-                "artifactSha256": expectedArtifactSHA256 ?? "",
-                "entries": entries,
+                "pathHint": staged.path,
+                "ownershipNonce": macInstallRequestSHA256(
+                    Data(marker.nonce.utf8)
+                ),
+                "provenanceSha256": expectedProvenanceSHA256,
+                "artifactSha256": expectedArtifactSHA256,
+                "artifactLength": artifactLength,
             ],
-            "options": [
-                "allowUnsignedUpdates": allowUnsignedUpdates,
-                "diagnosticsLogPath": diagnosticsLogPath ?? "",
+            "signedDescriptor": [
+                "canonicalSha256": marker.descriptorSha256,
+                "signatureAlgorithm": "ed25519",
+                "keyId": keyID,
+                "signatureBase64": signatureBase64,
             ],
+            "caller": [
+                "processId": processIdentifier,
+                "processStartIdentity": evidence.processStartIdentity,
+                "executableSha256": evidence.executableSHA256,
+                "packageId": evidence.packageID,
+                "signerIdentity": evidence.signerIdentity,
+            ],
+            "requestNonce": evidence.requestNonce,
+            "diagnosticsDestination": ["kind": "platformLog"],
         ]
-        return try JSONSerialization.data(
-            withJSONObject: request,
-            options: [.sortedKeys]
-        )
+        return try macInstallCanonicalJSON(request)
     }
+}
+
+private func macInstallCanonicalJSON(_ object: Any) throws -> Data {
+    let encoded = try JSONSerialization.data(
+        withJSONObject: object,
+        options: [.sortedKeys]
+    )
+    guard let text = String(data: encoded, encoding: .utf8) else {
+        throw macInstallRequestFailure("Canonical JSON is not UTF-8.")
+    }
+    return Data(text.replacingOccurrences(of: "\\/", with: "/").utf8)
+}
+
+private func exactInt64(_ value: Any?) -> Int64? {
+    guard let number = value as? NSNumber,
+          !["c", "f", "d"].contains(String(cString: number.objCType)) else {
+        return nil
+    }
+    let result = number.int64Value
+    return NSNumber(value: result) == number ? result : nil
+}
+
+private func macInstallRequestSHA256(_ data: Data) -> String {
+    var context = CC_SHA256_CTX()
+    _ = CC_SHA256_Init(&context)
+    data.withUnsafeBytes { bytes in
+        guard let baseAddress = bytes.baseAddress else { return }
+        var offset = 0
+        while offset < bytes.count {
+            let count = min(bytes.count - offset, Int(CC_LONG.max))
+            _ = CC_SHA256_Update(
+                &context,
+                baseAddress.advanced(by: offset),
+                CC_LONG(count)
+            )
+            offset += count
+        }
+    }
+    var digest = [UInt8](
+        repeating: 0,
+        count: Int(CC_SHA256_DIGEST_LENGTH)
+    )
+    _ = CC_SHA256_Final(&digest, &context)
+    return digest.map { String(format: "%02x", $0) }.joined()
+}
+
+private func macInstallRequestFailure(_ message: String) -> NSError {
+    NSError(
+        domain: "DesktopUpdaterKit.MacInstallRequest",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: message]
+    )
 }

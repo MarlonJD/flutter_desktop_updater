@@ -159,6 +159,8 @@ public enum MacInstallClientError: Error, Equatable {
 }
 
 protocol MacInstallHelperTransport: AnyObject {
+    func validateEndpoint() throws
+
     func prepareInstall(
         request: Data,
         transactionID: String
@@ -183,9 +185,22 @@ protocol MacInstallHelperTransport: AnyObject {
     ) throws -> InstallTransactionStatus
 }
 
+extension MacInstallHelperTransport {
+    func validateEndpoint() throws {}
+}
+
 private final class PackagedMacInstallHelperTransport:
     MacInstallHelperTransport
 {
+    func validateEndpoint() throws {
+        let helper = Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
+        )
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+    }
+
     func prepareInstall(
         request _: Data,
         transactionID _: String
@@ -222,6 +237,7 @@ private final class PackagedMacInstallHelperTransport:
 
 public struct MacInstallHelper {
     private let targetResolver: MacInstallTargetResolver
+    private let evidenceBuilder: any MacInstallRequestEvidenceBuilding
     private let transport: MacInstallHelperTransport
 
     public init() {
@@ -231,19 +247,24 @@ public struct MacInstallHelper {
                 bundleURL: Bundle.main.bundleURL
             )
         }
+        evidenceBuilder = SystemMacInstallRequestEvidenceBuilder()
         transport = PackagedMacInstallHelperTransport()
     }
 
     init(targetResolver: @escaping MacInstallTargetResolver) {
         self.targetResolver = targetResolver
+        evidenceBuilder = SystemMacInstallRequestEvidenceBuilder()
         transport = PackagedMacInstallHelperTransport()
     }
 
     init(
         targetResolver: @escaping MacInstallTargetResolver,
+        evidenceBuilder: any MacInstallRequestEvidenceBuilding =
+            SystemMacInstallRequestEvidenceBuilder(),
         transport: MacInstallHelperTransport
     ) {
         self.targetResolver = targetResolver
+        self.evidenceBuilder = evidenceBuilder
         self.transport = transport
     }
 
@@ -256,12 +277,15 @@ public struct MacInstallHelper {
         _ request: MacInstallRequest
     ) throws -> MacInstallReservation {
         try validateCompleteHandoff(request)
+        try transport.validateEndpoint()
         let target = targetResolver()
+        let evidence = try evidenceBuilder.build(for: target)
         let transactionID = UUID().uuidString.lowercased()
         let requestData = try request.helperRequestData(
             transactionID: transactionID,
             processIdentifier: target.processIdentifier,
-            bundleURL: target.bundleURL
+            bundleURL: target.bundleURL,
+            evidence: evidence
         )
         let response = try transport.prepareInstall(
             request: requestData,

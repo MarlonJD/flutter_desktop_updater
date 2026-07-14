@@ -23,6 +23,7 @@ void main() {
     expect(embed, isNot(contains("/.build/debug/")));
     expect(embed, contains("DESKTOP_UPDATER_HELPER_INFO_TEMPLATE"));
     expect(embed, contains("DesktopUpdaterSealedPolicySHA256"));
+    expect(embed, contains("DesktopUpdaterInstallPolicyID"));
     expect(embed, contains("SMPrivilegedExecutables"));
     expect(embed, contains("SMAuthorizedClients"));
     expect(embed, contains("escape_plist_buddy_string"));
