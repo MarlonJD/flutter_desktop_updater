@@ -89,6 +89,8 @@ policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 /usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables dict" "$app_info" >/dev/null 2>&1 || true
 /usr/bin/plutil -replace DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info" 2>/dev/null || \
   /usr/bin/plutil -insert DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info"
+/usr/bin/plutil -replace DesktopUpdaterInstallHelperServiceID -string "$helper_id" "$app_info" 2>/dev/null || \
+  /usr/bin/plutil -insert DesktopUpdaterInstallHelperServiceID -string "$helper_id" "$app_info"
 /usr/libexec/PlistBuddy -c "Delete :SMPrivilegedExecutables:$helper_id" "$app_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables:$helper_id string $helper_requirement_for_plist_buddy" "$app_info"
 

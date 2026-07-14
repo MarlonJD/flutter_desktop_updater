@@ -45,6 +45,9 @@ host_requirement=$(/usr/libexec/PlistBuddy \
   -c "Print :SMPrivilegedExecutables:$helper_id" "$app_info")
 [ "$host_requirement" = "$helper_requirement" ] || \
   fail "host SMPrivilegedExecutables requirement is not reciprocal"
+host_helper_id=$(/usr/bin/plutil -extract DesktopUpdaterInstallHelperServiceID raw -o - "$app_info")
+[ "$host_helper_id" = "$helper_id" ] || \
+  fail "host one-shot helper service identifier is not sealed"
 authorized_client=$(/usr/libexec/PlistBuddy \
   -c "Print :SMAuthorizedClients:0" "$embedded_info")
 [ "$authorized_client" = "$application_requirement" ] || \

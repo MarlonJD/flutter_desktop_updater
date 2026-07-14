@@ -24,6 +24,7 @@ void main() {
     expect(embed, contains("DESKTOP_UPDATER_HELPER_INFO_TEMPLATE"));
     expect(embed, contains("DesktopUpdaterSealedPolicySHA256"));
     expect(embed, contains("DesktopUpdaterInstallPolicyID"));
+    expect(embed, contains("DesktopUpdaterInstallHelperServiceID"));
     expect(embed, contains("SMPrivilegedExecutables"));
     expect(embed, contains("SMAuthorizedClients"));
     expect(embed, contains("escape_plist_buddy_string"));
@@ -40,6 +41,7 @@ void main() {
     expect(verify, contains("SMPrivilegedExecutables"));
     expect(verify, contains("SMAuthorizedClients"));
     expect(verify, contains("DesktopUpdaterSealedPolicy"));
+    expect(verify, contains("DesktopUpdaterInstallHelperServiceID"));
 
     expect(podspec, contains("embed_install_helper.sh"));
     expect(package, contains("embed_install_helper.sh"));

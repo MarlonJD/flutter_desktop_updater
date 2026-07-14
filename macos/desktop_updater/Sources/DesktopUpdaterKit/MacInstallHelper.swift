@@ -1,4 +1,7 @@
+import CommonCrypto
+import Darwin
 import Foundation
+import Security
 
 struct MacInstallTarget: Sendable {
     let processIdentifier: Int32
@@ -189,37 +192,407 @@ extension MacInstallHelperTransport {
     func validateEndpoint() throws {}
 }
 
-private final class PackagedMacInstallHelperTransport:
+protocol MacOneShotClientSession: AnyObject {
+    var processIdentifier: Int32 { get }
+    func writeFrame(_ data: Data) throws
+    func readFrame() throws -> Data
+    func closeInput()
+}
+
+protocol MacOneShotProcessLaunching: AnyObject {
+    func launch(
+        executableURL: URL,
+        arguments: [String]
+    ) throws -> any MacOneShotClientSession
+}
+
+protocol MacOneShotEndpointAuthenticating: AnyObject {
+    func authenticate(
+        executableURL: URL,
+        processIdentifier: Int32?
+    ) throws -> String
+}
+
+final class SystemMacOneShotEndpointAuthenticator:
+    MacOneShotEndpointAuthenticating
+{
+    private let infoDictionary: [String: Any]
+
+    init(infoDictionary: [String: Any]? = Bundle.main.infoDictionary) {
+        self.infoDictionary = infoDictionary ?? [:]
+    }
+
+    func authenticate(
+        executableURL: URL,
+        processIdentifier: Int32?
+    ) throws -> String {
+        guard let serviceID = infoDictionary[
+            "DesktopUpdaterInstallHelperServiceID"
+        ] as? String,
+            let executables = infoDictionary["SMPrivilegedExecutables"]
+                as? [String: String],
+            let requirementText = executables[serviceID],
+            !requirementText.isEmpty else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(
+            requirementText as CFString,
+            [],
+            &requirement
+        ) == errSecSuccess,
+            let requirement else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+
+        var staticCode: SecStaticCode?
+        if let processIdentifier {
+            guard processIdentifier > 0 else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            var pathBuffer = [CChar](
+                repeating: 0,
+                count: Int(MAXPATHLEN) * 4
+            )
+            guard proc_pidpath(
+                processIdentifier,
+                &pathBuffer,
+                UInt32(pathBuffer.count)
+            ) > 0,
+                URL(fileURLWithPath: String(cString: pathBuffer))
+                    .resolvingSymlinksInPath().path
+                    == executableURL.resolvingSymlinksInPath().path else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            let attributes = NSDictionary(
+                object: NSNumber(value: processIdentifier),
+                forKey: kSecGuestAttributePid as String as NSString
+            )
+            var code: SecCode?
+            guard SecCodeCopyGuestWithAttributes(
+                nil,
+                attributes,
+                [],
+                &code
+            ) == errSecSuccess,
+                let code,
+                SecCodeCheckValidity(code, [], requirement) == errSecSuccess,
+                SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess
+            else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+        } else {
+            guard SecStaticCodeCreateWithPath(
+                executableURL as CFURL,
+                [],
+                &staticCode
+            ) == errSecSuccess,
+                let staticCode,
+                SecStaticCodeCheckValidity(staticCode, [], requirement)
+                    == errSecSuccess else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+        }
+        guard let staticCode else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+            let values = information as? [String: Any],
+            values[kSecCodeInfoIdentifier as String] as? String == serviceID
+        else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        let data: Data
+        do {
+            data = try Data(
+                contentsOf: executableURL,
+                options: [.mappedIfSafe]
+            )
+        } catch {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        var context = CC_SHA256_CTX()
+        _ = CC_SHA256_Init(&context)
+        data.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            var offset = 0
+            while offset < bytes.count {
+                let count = min(bytes.count - offset, Int(CC_LONG.max))
+                _ = CC_SHA256_Update(
+                    &context,
+                    baseAddress.advanced(by: offset),
+                    CC_LONG(count)
+                )
+                offset += count
+            }
+        }
+        var digest = [UInt8](
+            repeating: 0,
+            count: Int(CC_SHA256_DIGEST_LENGTH)
+        )
+        _ = CC_SHA256_Final(&digest, &context)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+final class ProcessMacOneShotProcessLauncher: MacOneShotProcessLaunching {
+    func launch(
+        executableURL: URL,
+        arguments: [String]
+    ) throws -> any MacOneShotClientSession {
+        let process = Process()
+        let input = Pipe()
+        let output = Pipe()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.standardError
+        do {
+            try process.run()
+        } catch {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        return ProcessMacOneShotClientSession(
+            process: process,
+            input: input.fileHandleForWriting,
+            output: output.fileHandleForReading
+        )
+    }
+}
+
+private final class ProcessMacOneShotClientSession:
+    MacOneShotClientSession
+{
+    private let process: Process
+    private let input: FileHandle
+    private let output: FileHandle
+    private var inputIsClosed = false
+
+    init(process: Process, input: FileHandle, output: FileHandle) {
+        self.process = process
+        self.input = input
+        self.output = output
+    }
+
+    var processIdentifier: Int32 {
+        process.processIdentifier
+    }
+
+    func writeFrame(_ data: Data) throws {
+        guard (1 ... 1_048_576).contains(data.count), !inputIsClosed else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        let length = UInt32(data.count)
+        var frame = Data([
+            UInt8((length >> 24) & 0xff),
+            UInt8((length >> 16) & 0xff),
+            UInt8((length >> 8) & 0xff),
+            UInt8(length & 0xff),
+        ])
+        frame.append(data)
+        input.write(frame)
+    }
+
+    func readFrame() throws -> Data {
+        let header = try readExactly(4)
+        let length = header.reduce(0) { partial, byte in
+            (partial << 8) | Int(byte)
+        }
+        guard (1 ... 1_048_576).contains(length) else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return try readExactly(length)
+    }
+
+    func closeInput() {
+        guard !inputIsClosed else { return }
+        input.closeFile()
+        inputIsClosed = true
+    }
+
+    private func readExactly(_ count: Int) throws -> Data {
+        var result = Data()
+        while result.count < count {
+            let fragment = output.readData(ofLength: count - result.count)
+            guard !fragment.isEmpty else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            result.append(fragment)
+        }
+        return result
+    }
+}
+
+final class PackagedMacInstallHelperTransport:
     MacInstallHelperTransport
 {
-    func validateEndpoint() throws {
-        let helper = Bundle.main.bundleURL.appendingPathComponent(
-            "Contents/Helpers/DesktopUpdaterInstallHelper"
-        )
-        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            throw MacInstallClientError.endpointUnavailable
+    private final class ActiveSession {
+        let channel: any MacOneShotClientSession
+        let reservation: InstallReservationResponseV1
+
+        init(
+            channel: any MacOneShotClientSession,
+            reservation: InstallReservationResponseV1
+        ) {
+            self.channel = channel
+            self.reservation = reservation
         }
     }
 
+    private let helperURL: URL
+    private let launcher: any MacOneShotProcessLaunching
+    private let authenticator: any MacOneShotEndpointAuthenticating
+    private let lock = NSLock()
+    private var sessions: [String: ActiveSession] = [:]
+
+    init(
+        helperURL: URL = Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
+        ),
+        launcher: any MacOneShotProcessLaunching =
+            ProcessMacOneShotProcessLauncher(),
+        authenticator: any MacOneShotEndpointAuthenticating =
+            SystemMacOneShotEndpointAuthenticator()
+    ) {
+        self.helperURL = helperURL.standardizedFileURL
+        self.launcher = launcher
+        self.authenticator = authenticator
+    }
+
+    func validateEndpoint() throws {
+        guard FileManager.default.isExecutableFile(atPath: helperURL.path)
+        else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        _ = try authenticator.authenticate(
+            executableURL: helperURL,
+            processIdentifier: nil
+        )
+    }
+
     func prepareInstall(
-        request _: Data,
-        transactionID _: String
+        request: Data,
+        transactionID: String
     ) throws -> InstallReservationResponseV1 {
-        throw MacInstallClientError.endpointUnavailable
+        let expectedEndpoint = try authenticator.authenticate(
+            executableURL: helperURL,
+            processIdentifier: nil
+        )
+        let channel = try launcher.launch(
+            executableURL: helperURL,
+            arguments: ["--one-shot-service"]
+        )
+        do {
+            let runningEndpoint = try authenticator.authenticate(
+                executableURL: helperURL,
+                processIdentifier: channel.processIdentifier
+            )
+            guard runningEndpoint == expectedEndpoint else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            try channel.writeFrame(request)
+            let reservation = try parseReservation(
+                channel.readFrame(),
+                transactionID: transactionID
+            )
+            guard reservation.helperEndpointIdentitySHA256
+                    == runningEndpoint else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            guard sessions[transactionID] == nil else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            sessions[transactionID] = ActiveSession(
+                channel: channel,
+                reservation: reservation
+            )
+            return reservation
+        } catch {
+            channel.closeInput()
+            throw error
+        }
     }
 
     func commitAfterExit(
-        transactionID _: String,
-        readyToken _: String
+        transactionID: String,
+        readyToken: String
     ) throws -> InstallTransactionStatus {
-        throw MacInstallClientError.endpointUnavailable
+        let session = try takeSession(
+            transactionID: transactionID,
+            readyToken: readyToken
+        )
+        do {
+            try session.channel.writeFrame(
+                try commandData(
+                    operation: "commitAfterExit",
+                    reservation: session.reservation
+                )
+            )
+            let acknowledgement = try parseReservation(
+                session.channel.readFrame(),
+                transactionID: transactionID
+            )
+            guard acknowledgement == session.reservation else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            session.channel.closeInput()
+            return InstallTransactionStatus(
+                transactionID: transactionID,
+                state: .commitAccepted,
+                resultCode: .accepted,
+                detail: "",
+                responseDigestSHA256: acknowledgement.journalSHA256,
+                helperEndpointIdentitySHA256:
+                    acknowledgement.helperEndpointIdentitySHA256
+            )
+        } catch {
+            session.channel.closeInput()
+            throw error
+        }
     }
 
     func cancelReservation(
-        transactionID _: String,
-        readyToken _: String
+        transactionID: String,
+        readyToken: String
     ) throws -> InstallTransactionStatus {
-        throw MacInstallClientError.endpointUnavailable
+        let session = try takeSession(
+            transactionID: transactionID,
+            readyToken: readyToken
+        )
+        do {
+            try session.channel.writeFrame(
+                try commandData(
+                    operation: "cancelReservation",
+                    reservation: session.reservation
+                )
+            )
+            try validateCancellation(
+                session.channel.readFrame(),
+                reservation: session.reservation
+            )
+            session.channel.closeInput()
+            return InstallTransactionStatus(
+                transactionID: transactionID,
+                state: .cancelled,
+                resultCode: .succeeded,
+                detail: "",
+                responseDigestSHA256:
+                    session.reservation.journalSHA256,
+                helperEndpointIdentitySHA256:
+                    session.reservation.helperEndpointIdentitySHA256
+            )
+        } catch {
+            session.channel.closeInput()
+            throw error
+        }
     }
 
     func queryTransaction(
@@ -232,6 +605,125 @@ private final class PackagedMacInstallHelperTransport:
         transactionID _: String
     ) throws -> InstallTransactionStatus {
         throw MacInstallClientError.endpointUnavailable
+    }
+
+    private func takeSession(
+        transactionID: String,
+        readyToken: String
+    ) throws -> ActiveSession {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let session = sessions.removeValue(forKey: transactionID),
+              session.reservation.readyToken == readyToken else {
+            throw MacInstallClientError.inactiveReservation
+        }
+        return session
+    }
+
+    private func parseReservation(
+        _ data: Data,
+        transactionID: String
+    ) throws -> InstallReservationResponseV1 {
+        let object = try canonicalObject(data)
+        guard Set(object.keys) == [
+            "protocolVersion",
+            "transactionId",
+            "readyToken",
+            "journalSha256",
+            "helperEndpointIdentitySha256",
+            "expiresAtUnixMilliseconds",
+        ],
+            exactInteger(object["protocolVersion"]) == 1,
+            object["transactionId"] as? String == transactionID,
+            let readyToken = object["readyToken"] as? String,
+            HelperProtocolValidation.isReadyToken(readyToken),
+            let journalSHA256 = object["journalSha256"] as? String,
+            HelperProtocolValidation.isSHA256(journalSHA256),
+            let endpoint = object["helperEndpointIdentitySha256"] as? String,
+            HelperProtocolValidation.isSHA256(endpoint),
+            let expiresAt = exactInteger(
+                object["expiresAtUnixMilliseconds"]
+            ),
+            expiresAt > 0 else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return InstallReservationResponseV1(
+            protocolVersion: 1,
+            transactionID: transactionID,
+            readyToken: readyToken,
+            journalSHA256: journalSHA256,
+            helperEndpointIdentitySHA256: endpoint,
+            expiresAtUnixMilliseconds: expiresAt
+        )
+    }
+
+    private func validateCancellation(
+        _ data: Data,
+        reservation: InstallReservationResponseV1
+    ) throws {
+        let object = try canonicalObject(data)
+        guard Set(object.keys) == [
+            "protocolVersion",
+            "transactionId",
+            "resultCode",
+            "verifiedOutcome",
+            "journalSha256",
+        ],
+            exactInteger(object["protocolVersion"]) == 1,
+            object["transactionId"] as? String
+                == reservation.transactionID,
+            object["resultCode"] as? String == "rolledBack",
+            object["verifiedOutcome"] as? String == "oldTarget",
+            object["journalSha256"] as? String
+                == reservation.journalSHA256 else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+    }
+
+    private func commandData(
+        operation: String,
+        reservation: InstallReservationResponseV1
+    ) throws -> Data {
+        try canonicalData([
+            "operation": operation,
+            "protocolVersion": 1,
+            "transactionId": reservation.transactionID,
+            "readyToken": reservation.readyToken,
+            "journalSha256": reservation.journalSHA256,
+            "helperEndpointIdentitySha256":
+                reservation.helperEndpointIdentitySHA256,
+        ])
+    }
+
+    private func canonicalObject(_ data: Data) throws -> [String: Any] {
+        guard let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+              try canonicalData(object) == data else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return object
+    }
+
+    private func canonicalData(_ object: Any) throws -> Data {
+        let data = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return Data(text.replacingOccurrences(of: "\\/", with: "/").utf8)
+    }
+
+    private func exactInteger(_ value: Any?) -> Int64? {
+        guard let number = value as? NSNumber,
+              !["c", "f", "d"].contains(
+                  String(cString: number.objCType)
+              ) else {
+            return nil
+        }
+        let result = number.int64Value
+        return NSNumber(value: result) == number ? result : nil
     }
 }
 

@@ -182,7 +182,10 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(pluginSource, contains("allowUnsignedMacOSUpdates"));
     expect(helperSource, isNot(contains("makeHelperScript")));
     expect(helperSource, isNot(contains("/bin/sh")));
+    expect(helperSource, contains("SecCodeCopyGuestWithAttributes"));
+    expect(helperSource, contains("helperEndpointIdentitySHA256"));
     expect(embedTool, contains("--options runtime --timestamp"));
+    expect(embedTool, contains("DesktopUpdaterInstallHelperServiceID"));
     expect(embedTool, contains("DESKTOP_UPDATER_SEALED_POLICY_SHA256"));
     expect(verifyTool, contains("codesign --verify --strict"));
     expect(verifyTool, contains("SMPrivilegedExecutables"));
