@@ -490,11 +490,21 @@ List<Map<String, dynamic>> _mapList(
 }
 
 Future<Map<String, List<int>>> _readTree(Directory root) async {
+  const generatedContractFixtures = <String>{
+    "canonical-json.json",
+    "diagnostic-results.json",
+    "invalid-requests.json",
+    "journal-transitions.json",
+    "valid-requests.json",
+  };
   final files = <String, List<int>>{};
   await for (final entity in root.list(recursive: true, followLinks: false)) {
     if (entity is File) {
       final relative =
           path.relative(entity.path, from: root.path).replaceAll(r"\", "/");
+      if (!generatedContractFixtures.contains(relative)) {
+        continue;
+      }
       files[relative] = await entity.readAsBytes();
     }
   }

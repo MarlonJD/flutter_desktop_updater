@@ -20,6 +20,7 @@ set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
 )
@@ -179,6 +180,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   add_executable(desktop_updater_native_test
     test/desktop_updater_native_c_test.cpp
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract_fixture_tests.cc
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy_fixture_tests.cc)
   target_compile_features(desktop_updater_native_test PRIVATE cxx_std_17)
   target_include_directories(desktop_updater_native_test
@@ -186,6 +188,7 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
   target_compile_definitions(desktop_updater_native_test PRIVATE
+    DESKTOP_UPDATER_JOURNAL_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/journal-transitions.json\"
     DESKTOP_UPDATER_POLICY_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/policy-cases.json\")
   target_link_libraries(desktop_updater_native_test
     PRIVATE desktop_updater_native_static GTest::gtest_main)
