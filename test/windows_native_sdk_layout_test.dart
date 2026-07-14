@@ -318,7 +318,13 @@ void main() {
     expect(
       workflow,
       contains(
-        'ctest --test-dir windows/native/build -C Release -R "windows_(transaction|crash_recovery)"',
+        r'$filter = "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        "ctest --test-dir windows/native/build -C Release -R \$filter",
       ),
     );
   });

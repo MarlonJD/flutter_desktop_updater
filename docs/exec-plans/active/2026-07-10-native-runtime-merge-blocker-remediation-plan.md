@@ -1199,6 +1199,32 @@ Task 6 blocker evidence (2026-07-11):
   injection, helper signing/packaging, CI, signing/notarization, and release
   smoke: not run. Steps 1-8 remain open and the runtime remains candidate-only.
 
+Current standalone-helper implementation follow-up (2026-07-14):
+
+- Privileged-helper plan Tasks 1-14, commits `292b112` through `d06d0c6`,
+  replace the rejected script architecture with standalone macOS, Windows, and
+  Linux helpers; reservation ownership transfer; sealed policies; per-target
+  locks; durable native transaction journals; deterministic recovery; native
+  strategy providers; Flutter routing; and retail packaging.
+- Local macOS evidence is `verified locally`: the helper Swift package passed
+  38 tests and root SwiftPM passed 62 tests. The nested helpers were
+  byte-identical arm64 hardened-runtime binaries, but the outer debug app could
+  not establish production trust because the host reported 0 valid
+  code-signing identities.
+- Local Linux container evidence is `verified locally`: 36 native tests passed,
+  installed CMake and pkg-config consumers passed, and the portable retail
+  candidate was staged. The suite reported one explicit mount-namespace skip,
+  so the privileged boundary is not verified.
+- Windows target-host execution, the privileged Linux mount-namespace lane,
+  current-helper-head GitHub Actions, macOS SMJobBless/XPC, Windows
+  Authenticode/UAC, Linux installed polkit, and signed/notarized release lanes
+  are `not run`. The combined signed/elevated production boundary remains
+  `blocked` and the runtime remains `candidate-only`.
+- Steps 1-8 intentionally remain open: the implementation exists, but the
+  mandatory current-head target-host evidence required by this task has not
+  run. The 2026-07-11 statements above describe the historical reverted
+  candidate, not the current implementation.
+
 ---
 
 ### Task 7: Make Windows Paths Unicode-Safe and Resolve Relative Redirects

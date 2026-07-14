@@ -1545,7 +1545,8 @@ after durable ownership exists; it must not generate a script.
   endpoint under restricted network access; both escalation requests were
   rejected. `publish` has no offline option, so no successful dry-run is
   claimed.
-- Commit: `not run`
+- Commit: `verified locally` —
+  `d06d0c6 build: package native install helpers`.
 
 ---
 
@@ -1556,13 +1557,18 @@ after durable ownership exists; it must not generate a script.
 - Modify: `.github/workflows/desktop-updater-ci.yml`
 - Modify: `test/native_runtime_merge_gate_contract_test.dart`
 - Modify: `test/native_runtime_merge_gate_docs_test.dart`
+- Modify: `test/windows_native_sdk_layout_test.dart`
+- Modify: `test/linux_native_sdk_layout_test.dart`
+- Modify: `docs/native-runtime-api.md`
 - Modify: `docs/github-actions-ci-cd.md`
 - Modify: `docs/harness-engineering.md`
 - Modify: `docs/diagnostics-and-recovery.md`
 - Modify: `docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md`
+- Modify: `tool/windows_install_helper_smoke.ps1`
+- Modify: `tool/linux_install_helper_smoke.sh`
 - Modify: this plan
 
-- [ ] **Step 1: Write failing CI truth tests**
+- [x] **Step 1: Write failing CI truth tests**
 
   Require named, nonzero-discovery jobs for:
 
@@ -1577,13 +1583,13 @@ after durable ownership exists; it must not generate a script.
   Assert that source scans, mocks, dry runs, or ordinary CTest lanes are not
   labeled as signed/elevated/notarized recovery evidence.
 
-- [ ] **Step 2: Add secretless mandatory lanes**
+- [x] **Step 2: Add secretless mandatory lanes**
 
   Run protocol/policy fixtures, local helper builds, unprivileged transaction
   suites, compatibility tests, package inventories, and external consumers on
   hosted target runners. Upload redacted logs and test counts.
 
-- [ ] **Step 3: Add explicit credential/target-host lanes**
+- [x] **Step 3: Add explicit credential/target-host lanes**
 
   Gate actual SMJobBless/notarization, Authenticode/UAC, and installed polkit
   broker smokes behind the required credentials and target hosts. Missing
@@ -1596,7 +1602,7 @@ after durable ownership exists; it must not generate a script.
   `not run`. Keep the runtime `candidate-only` until every required signed and
   elevated lane has actually passed.
 
-- [ ] **Step 5: Run CI contract tests and commit**
+- [x] **Step 5: Run CI contract tests and commit**
 
   ```sh
   flutter test --no-pub test/native_runtime_merge_gate_contract_test.dart test/native_runtime_merge_gate_docs_test.dart
@@ -1605,13 +1611,20 @@ after durable ownership exists; it must not generate a script.
   Commit:
 
   ```sh
-  git add .github/workflows/desktop-updater-ci.yml test/native_runtime_merge_gate_contract_test.dart test/native_runtime_merge_gate_docs_test.dart docs/github-actions-ci-cd.md docs/harness-engineering.md docs/diagnostics-and-recovery.md docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md docs/exec-plans/active/2026-07-11-cross-platform-privileged-install-helper-plan.md
+  git add .github/workflows/desktop-updater-ci.yml test/native_runtime_merge_gate_contract_test.dart test/native_runtime_merge_gate_docs_test.dart test/windows_native_sdk_layout_test.dart test/linux_native_sdk_layout_test.dart docs/native-runtime-api.md docs/github-actions-ci-cd.md docs/harness-engineering.md docs/diagnostics-and-recovery.md docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md docs/exec-plans/active/2026-07-11-cross-platform-privileged-install-helper-plan.md tool/windows_install_helper_smoke.ps1 tool/linux_install_helper_smoke.sh
   git commit -m "ci: verify native install helper recovery"
   ```
 
 **Evidence:**
 
-- RED: `not run`
+- RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_runtime_merge_gate_contract_test.dart test/native_runtime_merge_gate_docs_test.dart`;
+  exit 1; 12 tests passed and 2 intended CI-truth tests failed because the
+  named helper recovery and privileged target-host lanes were absent.
+- Polkit policy-sealing RED: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_runtime_merge_gate_contract_test.dart --plain-name 'Linux polkit lane seals canonical policy bytes safely'`;
+  exit 1; 0 passed and 1 intended failure because the workflow passed raw JSON
+  into a template that requires escaped canonical policy bytes.
 - Secretless macOS lane: `not run`
 - Signed/blessed/notarized macOS lane: `not run`
 - Secretless Windows lane: `not run`
@@ -1619,6 +1632,39 @@ after durable ownership exists; it must not generate a script.
 - Secretless Linux lane: `not run`
 - Installed polkit broker lane: `not run`
 - Consumer/package matrix: `not run`
+- CI configuration: named portable fixture, macOS crash-recovery, Windows
+  trust/pipe/transaction/recovery, Linux helper/recovery and privileged
+  mount-namespace lanes plus redacted nonzero test-count artifacts are
+  implemented; configured jobs are not execution evidence.
+- Credential/target-host configuration: separate manual SMJobBless/XPC,
+  Authenticode/UAC, and installed polkit jobs are gated by explicit repository
+  variables, credentials, and named self-hosted runners; all remain `not run`.
+- CI truth contracts: `verified locally` — macOS 26.5.2 arm64;
+  `flutter test --no-pub test/native_runtime_merge_gate_contract_test.dart test/native_runtime_merge_gate_docs_test.dart`;
+  exit 0; 15 tests passed.
+- Existing layout-contract drift RED: `verified locally` — the related
+  packaging/docs/smoke group exited 1 with 65 tests passed and 2 intended
+  failures because the Windows and Linux layout tests still required the
+  superseded transaction-only CTest filters.
+- Related packaging/docs/smoke regressions: `verified locally` — macOS 26.5.2
+  arm64; the eight-file Flutter test group covering harness docs, helper
+  diagnostics, retail packages, installed consumers, Windows/Linux layouts,
+  notarized configuration, and runtime smoke contracts exited 0; 67 tests
+  passed after the layout contracts named the trust/recovery filters.
+- Portable fixture drift: `verified locally` — macOS 26.5.2 arm64; direct Dart
+  SDK invocations of
+  `tool/generate_native_install_helper_fixtures.dart --check` and
+  `tool/generate_native_install_helper_policy.dart --check-fixtures`; both
+  exited 0 and reported the fixtures up to date.
+- macOS named crash-recovery suite: `verified locally` — macOS 26.5.2 arm64;
+  `swift test --disable-sandbox --package-path macos/install_helper --filter MacCrashRecoveryTests`;
+  exit 0; 5 tests passed.
+- Workflow and smoke syntax: `verified locally` — Ruby YAML parsing,
+  `sh -n tool/linux_install_helper_smoke.sh`, and `git diff --check` exited 0.
+  Rendering `linux/native/policy/helper-policy.json.in` in memory with the
+  workflow's JSON escaping produced valid nested JSON and a matching canonical
+  policy SHA-256. Native CMake rendering was not run because `cmake` is not
+  installed on this macOS host.
 - Commit: `not run`
 
 ---

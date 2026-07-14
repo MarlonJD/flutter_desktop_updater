@@ -147,6 +147,65 @@ void main() {
       hasLength(greaterThanOrEqualTo(2)),
     );
   });
+
+  test("CI names real helper recovery and privileged target-host evidence", () {
+    final workflow = File(
+      ".github/workflows/desktop-updater-ci.yml",
+    ).readAsStringSync();
+
+    for (final lane in <String>[
+      "Run macOS unprivileged crash recovery suite",
+      "Run Windows helper trust, pipe, transaction, and crash recovery tests",
+      "Run Linux unprivileged helper and crash recovery tests",
+      "Run Linux privileged mount namespace rejection test",
+      "Run signed nested helper layout and SMJobBless/XPC recovery smoke",
+      "Run Authenticode and interactive UAC helper smoke",
+      "Run installed polkit root broker smoke",
+    ]) {
+      expect(workflow, contains("- name: $lane"), reason: lane);
+    }
+
+    expect(
+      workflow,
+      contains("runs-on: [self-hosted, Windows, X64, desktop-updater-uac]"),
+    );
+    expect(
+      workflow,
+      contains("runs-on: [self-hosted, Linux, X64, desktop-updater-polkit]"),
+    );
+    expect(
+      workflow,
+      contains("DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1'"),
+    );
+    expect(
+      workflow,
+      contains("DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1'"),
+    );
+    expect(workflow, contains("native-helper-test-counts"));
+    expect(workflow, contains("helper-test-counts"));
+    expect(workflow, isNot(contains("helper-raw-diagnostics")));
+  });
+
+  test("Linux polkit lane seals canonical policy bytes safely", () {
+    final workflow = File(
+      ".github/workflows/desktop-updater-ci.yml",
+    ).readAsStringSync();
+    final smoke = File(
+      "tool/linux_install_helper_smoke.sh",
+    ).readAsStringSync();
+
+    expect(workflow, contains("jq -cS ."));
+    expect(workflow, contains("canonical_policy_sha="));
+    expect(workflow, contains("escaped_policy_json="));
+    expect(
+      workflow,
+      contains(
+        r"DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON=$escaped_policy_json",
+      ),
+    );
+    expect(smoke, contains("canonicalPolicySha256"));
+    expect(smoke, contains("actual_policy_sha"));
+  });
 }
 
 Map<String, dynamic> _json(String path) {

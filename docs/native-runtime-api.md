@@ -18,26 +18,33 @@ configured-but-unexecuted workflow.
 | Lane | Status | Current evidence |
 | --- | --- | --- |
 | Portable contract, trust, provenance, lifecycle, redirect, and package-layout suites | `verified locally` | Named focused commands are recorded in the active remediation plan |
-| Task 10 complete local ladder | `verified locally` | Fixtures, format, analysis, full Flutter with 660 passes and 3 explicit skips, pub dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, exact 10.14 typecheck, external consumer, and diff check exited 0 |
-| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 52 tests on this macOS host |
+| Task 10 complete local ladder | `verified locally` | Historical pre-helper ladder remains recorded in the remediation plan; current helper evidence is listed separately below |
+| macOS root SwiftPM tests | `verified locally` | Root `swift test` passed 62 tests on this macOS host after the helper integration |
 | macOS exact CocoaPods 10.14 five-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
-| Flutter macOS SwiftPM build and integration | `verified in CI` | Build and integration passed in push run `29291937840` |
-| Flutter macOS CocoaPods build and integration | `verified in CI` | Build and integration passed in push run `29291937840` with the exact fallback boundary unchanged |
-| macOS normal ZIP smoke | `verified in CI` | Native consumer ZIP smoke passed in push run `29291937840` |
-| Windows Unicode and relative redirect CTest | `verified in CI` | The named target-host CTest gate passed in push run `29291937840` |
-| Windows provenance, lifecycle, and C ABI CTest | `verified in CI` | Standalone CTest and real-DLL managed tests passed in push run `29291937840` |
+| Flutter macOS SwiftPM build and integration | `not run` | The current helper head has not run in GitHub Actions |
+| Flutter macOS CocoaPods build and integration | `not run` | The current helper head has not run in GitHub Actions |
+| macOS normal ZIP smoke | `not run` | The current helper head has not run in GitHub Actions |
+| Windows Unicode and relative redirect CTest | `not run` | Requires the Windows target-host job for the current helper head |
+| Windows provenance, lifecycle, and C ABI CTest | `not run` | Requires the Windows target-host job for the current helper head |
 | Windows source-contract target and reparse validation | `verified locally` | Dart source-contract tests verified the fail-closed target/reparse checks; this is not junction execution evidence |
-| Windows junction/reparse transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; safe handle-relative transaction mutation is not implemented |
-| Windows Release NuGet isolated P/Invoke consumer | `verified in CI` | Isolated restore, candidate DLL hash proof, and P/Invoke execution passed in push run `29291937840` |
-| Windows normal ZIP smoke | `verified in CI` | The packaged .NET runtime used the real DLL/helper and completed install, cleanup, and diagnostics in push run `29291937840` |
-| Linux native tamper CTest | `verified in CI` | The named target-host native tamper gate passed in push run `29291937840` |
-| Linux installed CMake consumer | `verified in CI` | Configure, build, and execution from the installed prefix passed in push run `29291937840` |
-| Linux standard and multiarch pkg-config consumers | `verified in CI` | Both installed-prefix compile/link/run consumers exited 0 in push run `29291937840` |
-| Linux mount/bind transaction mutation and recovery | `blocked` | Task 6's unsafe candidate was reverted; fd-relative mount/bind transaction mutation is not implemented |
-| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | The standalone-helper design is approved, but Task 6 implementation and target-host recovery evidence are pending |
-| Linux normal ZIP smoke | `verified in CI` | Native runtime ZIP smoke passed in push run `29291937840` |
-| Current remediation head in GitHub Actions | `verified in CI` | Push run `29291937840` completed successfully for commit `87a2adf`; the credential-gated notarized publish job was skipped |
+| Windows junction/reparse transaction mutation and recovery | `not run` | The standalone helper implementation exists; mandatory Windows target-host execution is absent |
+| Windows Release NuGet isolated P/Invoke consumer | `not run` | The current package, embedded helper, and sealed policy inventory have not run on Windows CI |
+| Windows normal ZIP smoke | `not run` | Requires the Windows target-host job for the current helper head |
+| Linux native tamper CTest | `verified locally` | The local Linux container lane passed its native suite |
+| Linux installed CMake consumer | `verified locally` | The local Linux container installed and consumed the CMake package |
+| Linux standard and multiarch pkg-config consumers | `verified locally` | The local Linux container consumed the installed pkg-config metadata |
+| Linux mount/bind transaction mutation and recovery | `not run` | The local container suite had one explicit mount-namespace skip; the required privileged target-host lane has not run |
+| Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `blocked` | Local macOS helper tests passed 38 tests and root SwiftPM passed 62 tests, but signed/elevated combined-boundary evidence is absent; local signing inspection found 0 valid code-signing identities |
+| Linux normal ZIP smoke | `not run` | Requires the Linux target-host job for the current helper head |
+| Portable native helper fixture/state-machine CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
+| macOS unprivileged helper crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
+| Windows helper trust/reparse/crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
+| Linux helper and privileged mount-namespace CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
+| macOS signed nested helper/SMJobBless/XPC CI | `not run` | Manual credential-gated lane; hardened-runtime and trust boundary not executed |
+| Windows Authenticode/UAC helper CI | `not run` | Manual self-hosted credential-gated lane |
+| Linux installed polkit broker CI | `not run` | Manual self-hosted policy/privilege lane |
+| Current remediation head in GitHub Actions | `not run` | The current helper head has not run in GitHub Actions; older run `29291937840` does not prove these helper changes |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | macOS signed/notarized PKG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | Windows signed Inno smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
@@ -269,11 +276,13 @@ An owned stage provenance digest binds the verified stage to the helper
 request. Explicit install target proof binds the request to the running app's
 canonical target. Local source-contract tests verify the current fail-closed
 Windows target/reparse checks, but they are not target-host junction execution
-evidence. Windows junction/reparse transaction mutation, Linux mount/bind
-transaction mutation, and durable native transaction recovery are `blocked`
-by Task 6. The current implementation separately verifies one-shot handoff
-scheduling; the Flutter recovery marker does not satisfy the blocked native
-transaction gate.
+evidence. The packaged standalone helpers now use a durable native transaction
+journal, cross-process target locks, and platform-specific reparse or mount
+checks. Local source and macOS/Linux execution are candidate evidence only:
+mandatory Windows and privileged Linux target-host lanes remain `not run`, and
+the signed/elevated combined boundary remains `blocked`. The Flutter recovery
+marker is a separate app-owned relaunch expectation and is not a substitute
+for the native transaction journal.
 
 Windows keeps filesystem paths wide through its native boundary, including
 Windows Unicode paths, and resolves relative redirects with a five-hop limit

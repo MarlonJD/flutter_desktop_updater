@@ -11,23 +11,30 @@ const _expectedLedger = <String, String>{
   "macOS root SwiftPM tests": "verified locally",
   "macOS exact CocoaPods 10.14 five-source typecheck": "verified locally",
   "macOS external SwiftPM consumer": "verified locally",
-  "Flutter macOS SwiftPM build and integration": "verified in CI",
-  "Flutter macOS CocoaPods build and integration": "verified in CI",
-  "macOS normal ZIP smoke": "verified in CI",
-  "Windows Unicode and relative redirect CTest": "verified in CI",
-  "Windows provenance, lifecycle, and C ABI CTest": "verified in CI",
+  "Flutter macOS SwiftPM build and integration": "not run",
+  "Flutter macOS CocoaPods build and integration": "not run",
+  "macOS normal ZIP smoke": "not run",
+  "Windows Unicode and relative redirect CTest": "not run",
+  "Windows provenance, lifecycle, and C ABI CTest": "not run",
   "Windows source-contract target and reparse validation": "verified locally",
-  "Windows junction/reparse transaction mutation and recovery": "blocked",
-  "Windows Release NuGet isolated P/Invoke consumer": "verified in CI",
-  "Windows normal ZIP smoke": "verified in CI",
-  "Linux native tamper CTest": "verified in CI",
-  "Linux installed CMake consumer": "verified in CI",
-  "Linux standard and multiarch pkg-config consumers": "verified in CI",
-  "Linux mount/bind transaction mutation and recovery": "blocked",
+  "Windows junction/reparse transaction mutation and recovery": "not run",
+  "Windows Release NuGet isolated P/Invoke consumer": "not run",
+  "Windows normal ZIP smoke": "not run",
+  "Linux native tamper CTest": "verified locally",
+  "Linux installed CMake consumer": "verified locally",
+  "Linux standard and multiarch pkg-config consumers": "verified locally",
+  "Linux mount/bind transaction mutation and recovery": "not run",
   "Cross-platform/macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
       "blocked",
-  "Linux normal ZIP smoke": "verified in CI",
-  "Current remediation head in GitHub Actions": "verified in CI",
+  "Linux normal ZIP smoke": "not run",
+  "Portable native helper fixture/state-machine CI": "not run",
+  "macOS unprivileged helper crash-recovery CI": "not run",
+  "Windows helper trust/reparse/crash-recovery CI": "not run",
+  "Linux helper and privileged mount-namespace CI": "not run",
+  "macOS signed nested helper/SMJobBless/XPC CI": "not run",
+  "Windows Authenticode/UAC helper CI": "not run",
+  "Linux installed polkit broker CI": "not run",
+  "Current remediation head in GitHub Actions": "not run",
   "macOS signed/notarized DMG smoke": "not run",
   "macOS signed/notarized PKG smoke": "not run",
   "Windows signed Inno smoke": "not run",
@@ -38,12 +45,21 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     "Check generated native contract fixtures": <String>[
       "dart run tool/generate_native_contract_fixtures.dart --check",
     ],
+    "Check generated native install helper fixtures": <String>[
+      "dart run tool/generate_native_install_helper_fixtures.dart --check",
+    ],
+    "Check generated native install helper policies": <String>[
+      "dart run tool/generate_native_install_helper_policy.dart --check-fixtures",
+    ],
     "Check formatting": <String>["dart format --set-exit-if-changed ."],
     "Analyze": <String>["flutter analyze --no-fatal-infos"],
     "Test Dart surface": <String>["flutter test --no-pub"],
     "Pub publish dry-run": <String>["dart pub publish --dry-run"],
   },
   "macos-native": <String, List<String>>{
+    "Run macOS unprivileged crash recovery suite": <String>[
+      "swift test --package-path macos/install_helper --filter MacCrashRecoveryTests",
+    ],
     "Typecheck macOS 10.14 CocoaPods fallback source set": <String>[
       "xcrun swiftc -typecheck",
     ],
@@ -79,6 +95,10 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     "Run isolated Release NuGet P/Invoke consumer": <String>[
       "& tool/verify_windows_nuget_consumer.ps1",
     ],
+    "Run Windows helper trust, pipe, transaction, and crash recovery tests":
+        <String>[
+      "ctest --test-dir windows/native/build",
+    ],
   },
   "linux": <String, List<String>>{
     "Configure standalone Linux native tests": <String>[
@@ -91,6 +111,29 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     "Linux native runtime ZIP smoke": <String>[
       "cmake -S example/native/linux-cmake-runtime",
       "dart run tool/native_runtime_smoke_server.dart",
+    ],
+    "Run Linux unprivileged helper and crash recovery tests": <String>[
+      "ctest --test-dir linux/native/build",
+    ],
+    "Run Linux privileged mount namespace rejection test": <String>[
+      "sudo ctest --test-dir linux/native/build",
+    ],
+  },
+  "macos-notarized": <String, List<String>>{
+    "Run signed nested helper layout and SMJobBless/XPC recovery smoke":
+        <String>[
+      "dart run tool/macos_install_helper_smoke.dart --mode privileged",
+    ],
+  },
+  "windows-elevated-helper": <String, List<String>>{
+    "Run Authenticode and interactive UAC helper smoke": <String>[
+      "./tool/windows_install_helper_smoke.ps1 -Mode Elevated",
+    ],
+  },
+  "linux-polkit-helper": <String, List<String>>{
+    "Run installed polkit root broker smoke": <String>[
+      "sudo env",
+      "sh tool/linux_install_helper_smoke.sh --mode root-broker",
     ],
   },
 };
@@ -105,15 +148,14 @@ void main() {
     expect(docs["docs/native-runtime-api.md"], contains("candidate-only"));
   });
 
-  test("current-head ledger records fresh local evidence literally", () {
+  test("current-head ledger records helper evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("660 passes"));
-    expect(ledger, contains("3 explicit skips"));
-    expect(ledger, contains("0 warnings"));
-    expect(ledger, contains("1 hint"));
-    expect(ledger, contains("52 tests"));
-    expect(ledger, contains("29291937840"));
-    expect(ledger, contains("swift run --package-path example/native/macos"));
+    expect(ledger, contains("62 tests"));
+    expect(ledger, contains("38 tests"));
+    expect(ledger, contains("0 valid code-signing identities"));
+    expect(ledger, contains("one explicit mount-namespace skip"));
+    expect(
+        ledger, contains("current helper head has not run in GitHub Actions"));
   });
 
   test("execution plan records the final verification and review verdict", () {
@@ -207,8 +249,8 @@ void main() {
               "| macOS root SwiftPM tests | not run |",
             )
             .replaceFirst(
-              "| Flutter macOS SwiftPM build and integration | verified in CI |",
               "| Flutter macOS SwiftPM build and integration | not run |",
+              "| Flutter macOS SwiftPM build and integration | verified in CI |",
             ),
       }),
       contains("wrong status: macOS root SwiftPM tests"),
@@ -223,6 +265,12 @@ void main() {
       RegExp("No tests were found").allMatches(workflow).length,
       greaterThanOrEqualTo(9),
     );
+    expect(workflow, contains(r'"-p:InstallHelperPath=$installHelper"'));
+    expect(workflow, contains(r'"-p:HelperPolicyPath=$helperPolicy"'));
+    expect(workflow, contains("desktop_updater_install_helper.exe"));
+    expect(workflow, contains("desktop_updater_helper_policy.json"));
+    expect(workflow, contains("native-helper-test-counts"));
+    expect(workflow, isNot(contains("helper-raw-diagnostics")));
   });
 
   test("workflow validator rejects false-green step and command mutations", () {
@@ -327,7 +375,7 @@ The PKG smoke succeeded. Inno lane successful. DMG gate green.
     );
   });
 
-  test("preserves integration floors and blocked recovery truth", () {
+  test("preserves integration floors and candidate recovery truth", () {
     final guide = _read("docs/native-sdk.md");
     final runtimeApi = _read("docs/native-runtime-api.md");
     final diagnostics = _read("docs/diagnostics-and-recovery.md");
@@ -347,8 +395,8 @@ The PKG smoke succeeded. Inno lane successful. DMG gate green.
       "signed app-archive authority",
       "owned stage provenance",
       "explicit install target proof",
-      "one-shot handoff",
-      "native transaction recovery journal",
+      "durable native transaction journal",
+      "target-host lanes remain `not run`",
     ]) {
       expect(combined, contains(phrase), reason: phrase);
     }

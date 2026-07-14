@@ -347,8 +347,13 @@ void main() {
     expect(smoke, contains("root-broker"));
     expect(
       workflow,
-      contains("ctest --test-dir linux/native/build "
-          "-R 'linux_(transaction|crash_recovery)'"),
+      contains(
+        "filter='(LinuxHelperAuth|linux_transaction|linux_crash_recovery)'",
+      ),
+    );
+    expect(
+      workflow,
+      contains('ctest --test-dir linux/native/build -R "\$filter"'),
     );
   });
 }

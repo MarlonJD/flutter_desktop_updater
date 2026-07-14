@@ -99,12 +99,15 @@ receive, open, create, append to, or otherwise use the caller-provided
 problem report remain available before the elevated handoff.
 Windows UAC and real helper execution: `not run`.
 
-The helper appends one JSON object per line when the path is present:
+The helper appends one JSON object per line when the path is present. A native
+transaction can add these recovery events to the existing lifecycle sequence:
 
 ```jsonl
 {"timestamp":"2026-06-16T10:15:30Z","event":"helper scheduled"}
 {"timestamp":"2026-06-16T10:15:31Z","event":"waiting for parent process"}
 {"timestamp":"2026-06-16T10:15:32Z","event":"parent process exited"}
+{"timestamp":"2026-06-16T10:15:32Z","event":"transaction lock acquired"}
+{"timestamp":"2026-06-16T10:15:33Z","event":"transaction journal persisted"}
 {"timestamp":"2026-06-16T10:15:33Z","event":"move start"}
 {"timestamp":"2026-06-16T10:15:34Z","event":"move success"}
 {"timestamp":"2026-06-16T10:15:35Z","event":"relaunch attempt"}
@@ -115,6 +118,11 @@ Common helper events include:
 - `helper scheduled`
 - `waiting for parent process`
 - `parent process exited`
+- `transaction lock acquired`
+- `transaction journal persisted`
+- `recovery detected`
+- `recovery restored backup`
+- `recovery completed activation`
 - `staging path validation`
 - `backup start`, `backup success`, `backup failure`
 - `move start`, `move success`, `move failure`
@@ -153,10 +161,11 @@ exist, or the file cannot be written, the helper ignores the logging failure and
 continues the install, rollback, cleanup, or relaunch attempt.
 
 On Windows, a machine-wide install under `Program Files` may require UAC. The
-native scheduler removes the caller-selected diagnostic sink before generating
-an elevated script, so the elevated helper writes none of its post-exit events
-to that file. If the user cancels the UAC prompt, the app remains open and
-`installUpdate` returns an `InstallError`; no post-exit helper starts.
+native client removes the caller-selected diagnostic sink before submitting an
+elevated request, so the elevated standalone helper writes none of its
+post-exit events to that file. If the user cancels the UAC prompt, the app
+remains open and `installUpdate` returns an `InstallError`; no post-exit helper
+starts.
 
 After a successful Windows copy, the helper retries staging cleanup for a short
 bounded window. A non-elevated helper diagnostics log may include
@@ -181,12 +190,13 @@ unfinished or unverified installs.
 Flutter `UpdateRecoveryStore` is not a native transaction journal. It records
 an app-owned expectation across relaunch; it does not provide a cross-process
 target lock, fsynced transaction states, or deterministic recovery after a
-native helper is killed between filesystem mutations. The preview's one-shot
-handoff guard and existing best-effort rollback are verified separately. The
-durable native transaction recovery journal is currently `blocked` by the
-standalone-helper ownership/signing architecture recorded in Task 6 of the
-active native runtime merge-blocker remediation plan. Do not interpret the
-marker below as evidence that the blocked native recovery gate passed.
+native helper is killed between filesystem mutations. The standalone helpers
+now own that separate durable native transaction journal and recover a pending
+transaction to a restored old target or completed new target. Do not interpret
+the Flutter marker below as native-journal evidence. Local implementation
+tests are candidate evidence: mandatory Windows and privileged Linux
+target-host lanes remain `not run`, while signed/elevated combined-boundary
+evidence remains `blocked`.
 
 ```dart
 class AppUpdateRecoveryStore implements UpdateRecoveryStore {

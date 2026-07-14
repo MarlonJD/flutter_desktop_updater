@@ -55,6 +55,13 @@ The broad platform gates are in GitHub Actions:
   smoke, and update smoke.
 - Linux debug/release builds, native tests, integration tests, release publish
   smoke, and update smoke.
+- Portable install-helper schema, policy, and state-machine fixture checks plus
+  named macOS, Windows, and Linux unprivileged crash-recovery suites. Every
+  helper lane rejects zero discovery and uploads only fixed-field redacted test
+  counts, not raw helper logs.
+- A privileged Linux mount-namespace rejection gate in the hosted Linux job.
+  Signed SMJobBless/XPC, Authenticode/UAC, and installed polkit broker smokes
+  remain separate manual credential/target-host jobs.
 - The `macOS native runtime ZIP smoke`, `Windows native runtime ZIP smoke`, and
   `Linux native runtime ZIP smoke` exercise the three-stage preview through
   external SwiftPM, NuGet, and installed CMake consumers. CTest consumers fail
@@ -70,6 +77,14 @@ means the gate was not exercised; `blocked` means a required dependency,
 credential, approval, or host prevented it; and `candidate-only` means release
 trust is incomplete. Use `production-ready` only after every required
 target-host package, artifact, trust, cleanup, and release gate passes.
+
+Source scans, mocked brokers, unsigned helpers, packaging dry runs, and
+secretless unit tests cannot stand in for signed, elevated, notarized, or
+installed-system behavior. A workflow definition proves only that a lane is
+configured. Until that exact revision executes on its named host, record it as
+`not run`. The manual privileged lanes require the repository variables and
+self-hosted labels documented in `docs/github-actions-ci-cd.md`; missing
+credentials or hosts never convert a neighboring green job into evidence.
 
 `test/harness_engineering_docs_test.dart` is the first harness guard. It keeps
 the agent map, this document, and the completed staged implementation record

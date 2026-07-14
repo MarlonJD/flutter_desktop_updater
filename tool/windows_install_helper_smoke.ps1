@@ -17,12 +17,12 @@ if ($Mode -eq "Unprivileged") {
   if ($LASTEXITCODE -ne 0) {
     throw "The fixed helper executable failed its version probe."
   }
-  $output = & ctest --test-dir $build -C Release -R "windows_(transaction|crash_recovery)" --output-on-failure 2>&1
+  $output = & ctest --test-dir $build -C Release -R "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)" --output-on-failure --no-tests=error 2>&1
   $exitCode = $LASTEXITCODE
   $output | ForEach-Object { Write-Host $_ }
   if ($exitCode -ne 0) { exit $exitCode }
   if (($output -join "`n") -match "No tests were found") {
-    throw "Windows helper smoke registered zero transaction tests."
+    throw "Windows helper smoke registered zero trust/recovery tests."
   }
   exit 0
 }

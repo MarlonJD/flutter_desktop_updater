@@ -18,6 +18,18 @@ jobs:
         run: flutter pub get
       - name: Check generated native contract fixtures
         run: dart run tool/generate_native_contract_fixtures.dart --check
+      - name: Check generated native install helper fixtures
+        run: dart run tool/generate_native_install_helper_fixtures.dart --check
+      - name: Check generated native install helper policies
+        run: dart run tool/generate_native_install_helper_policy.dart --check-fixtures
+      - name: Record portable native helper fixture counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          fixture_count="$(grep -h '"name"' fixtures/compat/native-install-helper/v1/*.json | wc -l | tr -d ' ')"
+          test "$fixture_count" -gt 0
+          printf 'platform=portable\nsuite=native-install-helper-fixtures\ntestCount=%s\n' "$fixture_count" > reports/native-helper-common-test-counts.txt
       - name: Check synchronized native SDK versions
         run: dart run tool/version_check.dart
       - name: Check formatting
@@ -40,6 +52,13 @@ jobs:
           dart run desktop_updater:release publish --help
       - name: Pub publish dry-run
         run: dart pub publish --dry-run
+      - name: Upload portable native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-portable
+          path: reports/native-helper-common-test-counts.txt
+          if-no-files-found: ignore
 
   cli-candidates:
     name: Standalone CLI candidate (${{ matrix.artifact }})
@@ -113,16 +132,20 @@ jobs:
         run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
         run: cmake --build windows/native/build --config Release
-      - name: Run Windows handle-relative transaction and recovery tests
+      - name: Run Windows helper trust, pipe, transaction, and crash recovery tests
         shell: pwsh
         run: |
-          $output = & ctest --test-dir windows/native/build -C Release -R "windows_(transaction|crash_recovery)" --output-on-failure 2>&1
-          $exitCode = $LASTEXITCODE
-          $output | ForEach-Object { Write-Host $_ }
-          if ($exitCode -ne 0) { exit $exitCode }
-          if (($output -join "`n") -match "No tests were found") {
-            throw "Windows helper CTest registered zero transaction tests."
+          $filter = "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)"
+          ctest --test-dir windows/native/build -C Release -R $filter --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $inventory = & ctest --test-dir windows/native/build -C Release -N -R $filter 2>&1
+          $inventory | ForEach-Object { Write-Host $_ }
+          $match = [regex]::Match(($inventory -join "`n"), "Total Tests:\s*([1-9][0-9]*)")
+          if (-not $match.Success) {
+            throw "Windows helper CTest registered zero trust/recovery tests."
           }
+          New-Item -ItemType Directory -Path reports -Force | Out-Null
+          "platform=windows`nsuite=helper-trust-pipe-transaction-recovery`ntestCount=$($match.Groups[1].Value)" | Set-Content reports/windows-helper-test-counts.txt
       - name: Run unprivileged Windows install helper smoke
         shell: pwsh
         run: ./tool/windows_install_helper_smoke.ps1 -Mode Unprivileged -BuildDirectory windows/native/build
@@ -223,7 +246,15 @@ jobs:
           $version = $versionLine.Matches[0].Groups[1].Value
           $nativeDll = (Resolve-Path windows/native/build/Release/desktop_updater_native.dll).Path
           $runtimeDll = (Resolve-Path windows/native/build/Release/desktop_updater_runtime.dll).Path
-          dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll" "-p:RuntimeDllPath=$runtimeDll"
+          $installHelper = (Resolve-Path windows/native/build/Release/desktop_updater_install_helper.exe).Path
+          $fixture = Get-Content -Raw fixtures/compat/native-install-helper/v1/policy-cases.json | ConvertFrom-Json
+          $validPolicy = $fixture.cases | Where-Object { $_.expectedValid -eq $true } | Select-Object -First 1
+          if ($null -eq $validPolicy -or [string]::IsNullOrWhiteSpace($validPolicy.canonicalJson)) {
+            throw "No canonical helper policy fixture is available for NuGet packing."
+          }
+          $helperPolicy = Join-Path $env:RUNNER_TEMP "desktop_updater_helper_policy.json"
+          [IO.File]::WriteAllText($helperPolicy, $validPolicy.canonicalJson, [Text.UTF8Encoding]::new($false))
+          dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll" "-p:RuntimeDllPath=$runtimeDll" "-p:InstallHelperPath=$installHelper" "-p:HelperPolicyPath=$helperPolicy"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify DesktopUpdater.Native package contents
@@ -240,6 +271,8 @@ jobs:
               "lib/netstandard2.0/DesktopUpdater.Native.dll",
               "runtimes/win-x64/native/desktop_updater_native.dll",
               "runtimes/win-x64/native/desktop_updater_runtime.dll",
+              "runtimes/win-x64/native/desktop_updater_install_helper.exe",
+              "runtimes/win-x64/native/desktop_updater_helper_policy.json",
               "buildTransitive/DesktopUpdater.Native.targets",
               "THIRD_PARTY_NOTICES.md"
             )
@@ -534,6 +567,58 @@ jobs:
           name: windows-update-smoke-release-diagnostics
           path: reports/windows-update-smoke-release-diagnostics.jsonl
           if-no-files-found: ignore
+      - name: Upload Windows native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-windows
+          path: reports/windows-helper-test-counts.txt
+          if-no-files-found: ignore
+
+  windows-elevated-helper:
+    name: Windows Authenticode/UAC Helper (not run unless enabled)
+    runs-on: [self-hosted, Windows, X64, desktop-updater-uac]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Configure Release helper
+        run: cmake -S windows/native -B windows/native/build-elevated -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=OFF
+      - name: Build Release helper
+        run: cmake --build windows/native/build-elevated --config Release --target desktop_updater_install_helper
+      - name: Sign fixed helper with Authenticode
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_P12_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_P12_BASE64 }}
+          WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+            throw "Authenticode helper smoke credentials are required."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_P12_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found." }
+          $helper = (Resolve-Path windows/native/build-elevated/Release/desktop_updater_install_helper.exe).Path
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CODE_SIGNING_P12_PASSWORD $helper
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-AuthenticodeSignature -LiteralPath $helper).Status -ne "Valid") {
+            throw "Signed helper did not pass Authenticode verification."
+          }
+      - name: Run Authenticode and interactive UAC helper smoke
+        shell: pwsh
+        env:
+          DESKTOP_UPDATER_ALLOW_INTERACTIVE_UAC_SMOKE: "1"
+        run: ./tool/windows_install_helper_smoke.ps1 -Mode Elevated -BuildDirectory windows/native/build-elevated
+      - name: Remove ephemeral signing credential
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx") -Force -ErrorAction SilentlyContinue
 
   macos-native:
     name: macOS Native Consumer
@@ -552,6 +637,17 @@ jobs:
           plutil -lint macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist
       - name: Run macOS install helper tests
         run: swift test --package-path macos/install_helper
+      - name: Run macOS unprivileged crash recovery suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path macos/install_helper --filter MacCrashRecoveryTests 2>&1 | tee "$RUNNER_TEMP/macos-crash-recovery-test.log"
+          output="$(cat "$RUNNER_TEMP/macos-crash-recovery-test.log")"
+          test_count="$(printf '%s\n' "$output" | sed -n 's/.*Executed \([0-9][0-9]*\) tests.*/\1/p' | tail -1)"
+          test -n "$test_count"
+          test "$test_count" -gt 0
+          mkdir -p reports
+          printf 'platform=macos\nsuite=unprivileged-crash-recovery\ntestCount=%s\n' "$test_count" > reports/macos-helper-test-counts.txt
       - name: Run unprivileged macOS install helper smoke
         run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
       - name: Typecheck macOS 10.14 CocoaPods fallback source set
@@ -639,6 +735,13 @@ jobs:
           grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"
           grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl"
           test -s "$smoke_root/runtime/runtime-diagnostics.log"
+      - name: Upload macOS native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-macos
+          path: reports/macos-helper-test-counts.txt
+          if-no-files-found: ignore
 
   macos-flutter:
     name: macOS Flutter (${{ matrix.integration }})
@@ -686,7 +789,7 @@ jobs:
   macos-notarized:
     name: macOS Notarized Publish
     runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1')
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E == '1')
     # Signed production and native runtime lanes remain explicit
     # workflow_dispatch gates requiring Developer ID Application,
     # Developer ID Installer, and notary credentials:
@@ -720,6 +823,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "DESKTOP_UPDATER_MACOS_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
       - name: Configure notary profile
+        if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -735,13 +839,20 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --keychain "$DESKTOP_UPDATER_MACOS_KEYCHAIN"
           echo "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=$DESKTOP_UPDATER_MACOS_NOTARY_PROFILE" >> "$GITHUB_ENV"
-      - name: Run signed SMJobBless install helper smoke
+      - name: Run signed nested helper layout and SMJobBless/XPC recovery smoke
         if: vars.DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E == '1'
         env:
           DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP }}
           DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST }}
           DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID }}
-        run: dart run tool/macos_install_helper_smoke.dart --mode privileged
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP/Contents/Helpers/DesktopUpdaterInstallHelper"
+          signature="$(codesign -d --verbose=4 "$helper" 2>&1)"
+          printf '%s\n' "$signature"
+          printf '%s\n' "$signature" | grep -q 'flags=.*runtime'
+          dart run tool/macos_install_helper_smoke.dart --mode privileged
       - name: Run notarized release publish smoke
         if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
         working-directory: example
@@ -880,6 +991,80 @@ jobs:
           DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
         run: dart run tool/macos_production_smoke.dart cleanup
 
+  linux-polkit-helper:
+    name: Linux Installed Polkit Broker (not run unless enabled)
+    runs-on: [self-hosted, Linux, X64, desktop-updater-polkit]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate sealed broker policy inputs
+        env:
+          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
+          DESKTOP_UPDATER_LINUX_POLICY_JSON: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_JSON }}
+          DESKTOP_UPDATER_LINUX_POLICY_SHA256: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID"
+          test -n "$DESKTOP_UPDATER_LINUX_POLICY_JSON"
+          test -n "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
+          canonical_policy_json="$(printf '%s' "$DESKTOP_UPDATER_LINUX_POLICY_JSON" | jq -cS .)"
+          test "$canonical_policy_json" = "$DESKTOP_UPDATER_LINUX_POLICY_JSON"
+          printf '%s' "$canonical_policy_json" | jq -e \
+            --arg package_id "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
+            '.applicationPackageId == $package_id' >/dev/null
+          canonical_policy_sha="$(printf '%s' "$canonical_policy_json" | sha256sum | awk '{print $1}')"
+          test "$canonical_policy_sha" = "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
+      - name: Build and install fixed system broker artifacts
+        env:
+          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
+          DESKTOP_UPDATER_LINUX_POLICY_JSON: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_JSON }}
+          DESKTOP_UPDATER_LINUX_POLICY_SHA256: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          build="$RUNNER_TEMP/desktop-updater-polkit-build"
+          canonical_policy_json="$(printf '%s' "$DESKTOP_UPDATER_LINUX_POLICY_JSON" | jq -cS .)"
+          canonical_policy_sha="$(printf '%s' "$canonical_policy_json" | sha256sum | awk '{print $1}')"
+          test "$canonical_policy_sha" = "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
+          escaped_policy_json="$(printf '%s' "$canonical_policy_json" | jq -Rs .)"
+          escaped_policy_json="${escaped_policy_json#\"}"
+          escaped_policy_json="${escaped_policy_json%\"}"
+          cmake -S linux/native -B "$build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$build" --target desktop-updater-helper
+          helper_sha="$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')"
+          cmake -S linux/native -B "$build" \
+            -DDESKTOP_UPDATER_INSTALL_SYSTEM_BROKER=ON \
+            "-DDESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID=$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
+            "-DDESKTOP_UPDATER_HELPER_SHA256=$helper_sha" \
+            "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON=$escaped_policy_json" \
+            "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256=$canonical_policy_sha"
+          cmake --build "$build" --target desktop-updater-helper
+          test "$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')" = "$helper_sha"
+          sudo cmake --install "$build"
+          printf 'DESKTOP_UPDATER_LINUX_HELPER_SHA256=%s\n' "$helper_sha" >> "$GITHUB_ENV"
+      - name: Run installed polkit root broker smoke
+        env:
+          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkexec /usr/libexec/desktop-updater-helper --version
+          sudo env \
+            DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID="$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
+            DESKTOP_UPDATER_LINUX_HELPER_SHA256="$DESKTOP_UPDATER_LINUX_HELPER_SHA256" \
+            sh tool/linux_install_helper_smoke.sh --mode root-broker
+      - name: Remove installed broker smoke artifacts
+        if: always()
+        shell: bash
+        env:
+          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
+        run: |
+          sudo rm -f /usr/libexec/desktop-updater-helper
+          sudo rm -f /usr/share/polkit-1/actions/com.desktopupdater.install.policy
+          if [ -n "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" ]; then
+            sudo rm -f "/etc/desktop-updater/policies/$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID.json"
+          fi
+
   linux:
     name: Linux
     runs-on: ubuntu-latest
@@ -896,16 +1081,28 @@ jobs:
         run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
-      - name: Run Linux transaction and crash recovery tests
+      - name: Run Linux unprivileged helper and crash recovery tests
         run: |
-          output="$(ctest --test-dir linux/native/build -R 'linux_(transaction|crash_recovery)' --output-on-failure 2>&1)"
-          status=$?
-          printf '%s\n' "$output"
-          if [ "$status" -ne 0 ]; then exit "$status"; fi
-          if printf '%s\n' "$output" | grep -q "No tests were found"; then
-            echo "Linux transaction CTest registered zero tests"
+          set -euo pipefail
+          filter='(LinuxHelperAuth|linux_transaction|linux_crash_recovery)'
+          ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error
+          test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
+          test -n "$test_count"
+          mkdir -p reports
+          printf 'platform=linux\nsuite=unprivileged-helper-recovery\ntestCount=%s\n' "$test_count" > reports/linux-helper-test-counts.txt
+      - name: Run Linux privileged mount namespace rejection test
+        shell: bash
+        run: |
+          set -euo pipefail
+          filter='^linux_transaction\.LinuxFileTransaction\.RejectsBindMountAndMountIdChange$'
+          sudo ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error | tee "$RUNNER_TEMP/linux-privileged-mount-test.log"
+          if grep -q 'Skipped' "$RUNNER_TEMP/linux-privileged-mount-test.log"; then
+            echo "Linux privileged mount namespace test was skipped"
             exit 1
           fi
+          test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
+          test -n "$test_count"
+          printf 'platform=linux\nsuite=privileged-mount-namespace\ntestCount=%s\n' "$test_count" >> reports/linux-helper-test-counts.txt
       - name: Run unprivileged Linux install helper smoke
         run: sh tool/linux_install_helper_smoke.sh --mode unprivileged
       - name: Run Linux native tamper target-host gates
@@ -938,6 +1135,11 @@ jobs:
           fi
       - name: Install Linux native SDK
         run: cmake --install linux/native/build --prefix "$PWD/linux/native/install"
+      - name: Verify Linux portable retail inventory
+        run: |
+          test -x linux/native/install/libexec/desktop-updater-helper
+          test ! -e linux/native/install/share/polkit-1/actions/com.desktopupdater.install.policy
+          test ! -e linux/native/install/etc/desktop-updater/policies
       - name: Verify installed Linux third-party notices
         run: test -f linux/native/install/share/doc/desktop_updater_native/THIRD_PARTY_NOTICES.md
       - name: Verify installed Linux pkg-config version
@@ -1131,4 +1333,11 @@ jobs:
         with:
           name: linux-update-smoke-release-diagnostics
           path: reports/linux-update-smoke-release-diagnostics.jsonl
+          if-no-files-found: ignore
+      - name: Upload Linux native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-linux
+          path: reports/linux-helper-test-counts.txt
           if-no-files-found: ignore
