@@ -215,20 +215,35 @@ final class MacPrivilegeServiceTests: XCTestCase {
             ),
             recoveryHandler: recovery
         )
-        let payload = Data(#"{"operation":"queryTransaction"}"#.utf8)
+        let queryPayload = Data(
+            #"{"operation":"queryTransaction"}"#.utf8
+        )
+        let recoveryPayload = Data(
+            #"{"operation":"recoverPendingInstall"}"#.utf8
+        )
 
         let query = try handler.handle(
             operation: "queryTransaction",
-            payload: payload,
+            payload: queryPayload,
             peerProcessIdentifier: 4_243
         )
         let recover = try handler.handle(
             operation: "recoverPendingInstall",
-            payload: payload,
+            payload: recoveryPayload,
             peerProcessIdentifier: 4_243
         )
 
-        XCTAssertEqual(recovery.requests, [payload, payload])
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "queryTransaction",
+                payload: recoveryPayload,
+                peerProcessIdentifier: 4_243
+            )
+        )
+        XCTAssertEqual(
+            recovery.requests,
+            [queryPayload, recoveryPayload]
+        )
         XCTAssertEqual(query.payload, recovery.response)
         XCTAssertEqual(recover.payload, recovery.response)
     }

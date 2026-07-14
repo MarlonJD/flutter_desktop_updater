@@ -256,6 +256,165 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
         XCTAssertTrue(session.didCloseInput)
     }
+
+    func testProtectedPrepareAndCommitUseInstalledAuthenticatedXPC()
+        throws
+    {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [
+                reservationData(transactionID: transactionID),
+                reservationData(transactionID: transactionID),
+            ]
+        )
+        let installer = RecordingPrivilegedHelperInstaller {
+            privileged.isInstalled = true
+        }
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegeRequired: { _ in true }
+        )
+
+        let reservation = try transport.prepareInstall(
+            request: Data("canonical-request".utf8),
+            transactionID: transactionID
+        )
+        let status = try transport.commitAfterExit(
+            transactionID: transactionID,
+            readyToken: reservation.readyToken
+        )
+
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(privileged.validationCount, 2)
+        XCTAssertEqual(
+            privileged.operations,
+            ["prepareInstall", "commitAfterExit"]
+        )
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(status.state, .commitAccepted)
+        XCTAssertEqual(status.resultCode, .accepted)
+    }
+
+    func testRecoveryFallsBackToInstalledXPCAfterUnprivilegedFailure()
+        throws
+    {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [recoveryData(transactionID: transactionID)]
+        )
+        let installer = RecordingPrivilegedHelperInstaller {
+            privileged.isInstalled = true
+        }
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        let status = try transport.recoverPendingInstall(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 1)
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(privileged.operations, ["recoverPendingInstall"])
+        XCTAssertEqual(status.state, .rolledBack)
+        XCTAssertEqual(status.resultCode, .succeeded)
+    }
+
+    func testPrivilegeSelectionUsesTargetClassAndParentPermissions()
+        throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertTrue(
+            try PackagedMacInstallHelperTransport.defaultPrivilegeRequired(
+                targetRequestData(
+                    targetClass: "protectedApplication",
+                    path: root.appendingPathComponent("Example.app").path
+                )
+            )
+        )
+        XCTAssertFalse(
+            try PackagedMacInstallHelperTransport.defaultPrivilegeRequired(
+                targetRequestData(
+                    targetClass: "applicationBundle",
+                    path: root.appendingPathComponent("Example.app").path
+                )
+            )
+        )
+    }
+}
+
+private final class RecordingPrivilegedHelperInstaller:
+    MacPrivilegedHelperInstalling
+{
+    private let onInstall: () -> Void
+    private(set) var installCount = 0
+
+    init(onInstall: @escaping () -> Void) {
+        self.onInstall = onInstall
+    }
+
+    func install() throws {
+        installCount += 1
+        onInstall()
+    }
+}
+
+private final class RecordingPrivilegedXPCExchange:
+    MacPrivilegedXPCExchanging
+{
+    var isInstalled = false
+    private var responses: [Data]
+    private(set) var validationCount = 0
+    private(set) var operations: [String] = []
+
+    init(responses: [Data]) {
+        self.responses = responses
+    }
+
+    func validateEndpoint() throws -> String {
+        validationCount += 1
+        guard isInstalled else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        return String(repeating: "c", count: 64)
+    }
+
+    func exchange(
+        operation: String,
+        payload _: Data
+    ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+        guard isInstalled, !responses.isEmpty else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        operations.append(operation)
+        return (
+            responses.removeFirst(),
+            String(repeating: "c", count: 64)
+        )
+    }
 }
 
 private final class RecordingEndpointAuthenticator:
@@ -283,6 +442,7 @@ private final class RecordingMacOneShotProcessLauncher:
     private let session: any MacOneShotClientSession
     private(set) var executableURL: URL?
     private(set) var arguments: [String]?
+    private(set) var launchCount = 0
 
     init(session: any MacOneShotClientSession) {
         self.session = session
@@ -292,6 +452,7 @@ private final class RecordingMacOneShotProcessLauncher:
         executableURL: URL,
         arguments: [String]
     ) throws -> any MacOneShotClientSession {
+        launchCount += 1
         self.executableURL = executableURL
         self.arguments = arguments
         return session
@@ -365,6 +526,21 @@ private func statusData(
             "state": state,
             "resultCode": resultCode,
             "journalSha256": String(repeating: "b", count: 64),
+        ],
+        options: [.sortedKeys]
+    )
+}
+
+private func targetRequestData(
+    targetClass: String,
+    path: String
+) -> Data {
+    try! JSONSerialization.data(
+        withJSONObject: [
+            "target": [
+                "class": targetClass,
+                "pathHint": path,
+            ],
         ],
         options: [.sortedKeys]
     )

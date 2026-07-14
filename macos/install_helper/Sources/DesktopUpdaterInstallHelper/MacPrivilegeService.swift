@@ -280,7 +280,7 @@ final class MacPrivilegedTransactionHandler {
         }
     }
 
-    private let helperEndpointIdentitySHA256: String
+    let helperEndpointIdentitySHA256: String
     private let sessionFactory:
         (Int32) throws -> any MacPrivilegedInstallSessionServing
     private let monitorFactory: any MacCallerExitMonitorCreating
@@ -376,6 +376,13 @@ final class MacPrivilegedTransactionHandler {
                 peerProcessIdentifier: peerProcessIdentifier
             )
         case "queryTransaction", "recoverPendingInstall":
+            guard try NativeStrictJSON.canonicalize(payload) == payload,
+                  let object = try NativeStrictJSON.decode(payload)
+                    as? [String: Any],
+                  object["operation"] as? String == operation else {
+                throw MacPrivilegedTransactionHandlerError
+                    .invalidOperation
+            }
             return MacPrivilegedTransactionResponse(
                 payload: try recoveryHandler.response(for: payload),
                 helperEndpointIdentitySHA256:
@@ -609,7 +616,11 @@ final class SystemMacPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
             )
         guard helperIdentity.isSignatureValid,
               helperIdentity.bundleIdentifier
-                == configuration.serviceIdentifier else {
+                == configuration.serviceIdentifier,
+              helperIdentity.sha256.count == 64,
+              helperIdentity.sha256.allSatisfy({
+                  $0.isNumber || ("a" ... "f").contains($0)
+              }) else {
             throw MacPrivilegeError.signedIdentityMismatch
         }
         let peerRequirement = try MacXPCPeerRequirement.make(
@@ -689,6 +700,13 @@ private final class MacPrivilegedXPCServer {
                         "protocolVersion",
                         1
                     )
+                    handler.helperEndpointIdentitySHA256.withCString {
+                        xpc_dictionary_set_string(
+                            reply,
+                            "helperEndpointIdentitySha256",
+                            $0
+                        )
+                    }
                     xpc_connection_send_message(connection, reply)
                     return
                 }
