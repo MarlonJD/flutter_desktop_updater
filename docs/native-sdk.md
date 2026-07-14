@@ -32,6 +32,55 @@ The sync command updates checked Dart, Swift, C/C++, CMake, pkg-config, and
 NuGet version surfaces. It never changes `pubspec.yaml`, the changelog, or Git
 tags.
 
+## Install Reservation And Startup Recovery
+
+All native helper SDKs expose the same native-first operations:
+
+```text
+prepareInstall
+commitAfterExit
+cancelReservation
+queryTransaction
+recoverPendingInstall
+```
+
+The platform spelling follows its language conventions (`prepareInstall` in
+Swift, `PrepareInstall` in C++/.NET, and versioned
+`desktop_updater_*_v1` functions in the Windows C ABI). Preparation returns an
+owned reservation only after a helper response has a valid transaction ID,
+response digest, endpoint identity, and durable journal proof. Commit is
+accepted only when those values still match. Dropping a Swift reservation or
+disposing a .NET safe handle sends a best-effort cancellation; the helper's
+journal remains authoritative if the caller dies or cancellation cannot be
+delivered.
+
+At startup, persist only the transaction ID in application state. Call
+`queryTransaction`, then call `recoverPendingInstall` only when the returned
+native state requires recovery. Application or Flutter state may drive UX but
+must not authorize mutation, choose rollback, or rewrite helper state.
+
+The compatibility method `scheduleInstallAndRelaunch` remains available. It is
+implemented as prepare, reservation validation, and commit; it has no script
+fallback. A missing, untrusted, or unavailable packaged endpoint fails before
+mutation. The transport integration and signed/elevated retail evidence are
+still **candidate-only**; this API surface is not production-ready until the
+target-host gates described below pass.
+
+Each retail application must provision these policy-bound artifacts:
+
+- macOS: `Contents/Helpers/DesktopUpdaterInstallHelper`, the byte-identical
+  privileged payload in `Contents/Library/LaunchServices`, reciprocal
+  SMJobBless requirements, and the helper's sealed policy metadata. Nested code
+  is signed before the outer app.
+- Windows: `desktop_updater_install_helper.exe` beside the packaged native
+  DLLs for discovery, plus an installer-owned, Authenticode-verified copy in a
+  protected location for UAC use. The sealed policy binds the application,
+  helper signer, package identity, roots, and allowed strategies.
+- Linux: `/usr/libexec/desktop-updater-helper`, its polkit action, and a sealed
+  package policy in `/etc/desktop-updater/policies`. Portable packages may use
+  only the unprivileged helper mode; system-owned targets require the installed
+  root broker.
+
 ## macOS: DesktopUpdaterKit
 
 Add this repository as a Swift package at an approved tag and link the

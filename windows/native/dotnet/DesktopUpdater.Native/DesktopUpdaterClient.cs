@@ -510,6 +510,46 @@ public sealed class DesktopUpdaterClient : IDisposable
         }
     }
 
+    /// <summary>Prepares a helper-owned install reservation.</summary>
+    public DesktopUpdaterInstallReservation PrepareInstall(
+        DesktopUpdaterInstallRequest request)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.PrepareInstall(request);
+    }
+
+    /// <summary>Commits one prepared helper reservation.</summary>
+    public DesktopUpdaterInstallTransactionStatus CommitAfterExit(
+        DesktopUpdaterInstallReservation reservation)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.CommitAfterExit(reservation);
+    }
+
+    /// <summary>Cancels one prepared helper reservation.</summary>
+    public DesktopUpdaterInstallTransactionStatus CancelReservation(
+        DesktopUpdaterInstallReservation reservation)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.CancelReservation(reservation);
+    }
+
+    /// <summary>Queries helper-owned state during application startup.</summary>
+    public DesktopUpdaterInstallTransactionStatus QueryTransaction(
+        string transactionId)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.QueryTransaction(transactionId);
+    }
+
+    /// <summary>Requests authoritative native recovery during startup.</summary>
+    public DesktopUpdaterInstallTransactionStatus RecoverPendingInstall(
+        string transactionId)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.RecoverPendingInstall(transactionId);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

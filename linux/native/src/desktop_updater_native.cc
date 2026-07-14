@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "desktop_updater_native_internal.h"
+#include "json_value.h"
 #include "stage_provenance.h"
 
 namespace desktop_updater {
@@ -845,7 +846,8 @@ InstallResult BuildInstallScriptForTesting(
 
 }  // namespace internal
 
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
+[[maybe_unused]] InstallResult LegacyScriptScheduleForRemoval(
+    const InstallRequest& request) {
   const int64_t process_identifier = static_cast<int64_t>(getpid());
   std::string script;
   const InstallResult build = internal::BuildInstallScriptForTesting(
@@ -872,6 +874,176 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     return {false, "Unable to start update helper script."};
   }
   return {true, ""};
+}
+
+namespace {
+
+InstallResult SerializeCommonInstallRequest(
+    const InstallRequest& request,
+    std::string* canonical_request) {
+  if (canonical_request == nullptr) {
+    return {false, "Canonical helper request output must not be null."};
+  }
+  try {
+    using JsonValue = runtime::internal::JsonValue;
+    JsonValue::Array removed_files;
+    for (const std::string& path : request.removed_files) {
+      removed_files.emplace_back(path);
+    }
+    JsonValue::Array entries;
+    for (const InstallProvenanceEntry& entry : request.provenance_entries) {
+      JsonValue::Object value;
+      value.emplace("path", JsonValue(entry.path));
+      value.emplace("kind", JsonValue(entry.kind));
+      value.emplace("length", JsonValue(entry.length));
+      value.emplace("sha256", JsonValue(entry.sha256));
+      value.emplace("target", JsonValue(entry.target));
+      entries.emplace_back(std::move(value));
+    }
+    JsonValue::Object caller;
+    caller.emplace("processId",
+                   JsonValue(static_cast<std::int64_t>(getpid())));
+    caller.emplace("executablePath", JsonValue(CurrentExecutablePath()));
+    JsonValue::Object target;
+    target.emplace("pathHint", JsonValue(request.install_root));
+    target.emplace("executableRelativePath",
+                   JsonValue(request.executable_relative_path));
+    target.emplace("packageId", JsonValue(request.package_id));
+    JsonValue::Object stage;
+    stage.emplace("pathHint", JsonValue(request.staging_path));
+    stage.emplace("provenanceSha256",
+                  JsonValue(request.expected_provenance_sha256));
+    stage.emplace("provenanceNonce",
+                  JsonValue(request.provenance_nonce));
+    stage.emplace("entries", JsonValue(std::move(entries)));
+    JsonValue::Object options;
+    options.emplace("diagnosticsLogPath",
+                    JsonValue(request.diagnostics_log_path));
+    options.emplace("removedFiles", JsonValue(std::move(removed_files)));
+    options.emplace(
+        "operation",
+        JsonValue(std::string(
+            request.operation == LinuxInstallOperation::kInstall
+                ? "install"
+                : "restart")));
+    JsonValue::Object envelope;
+    envelope.emplace("schemaVersion", JsonValue(std::int64_t{1}));
+    envelope.emplace("protocolVersion", JsonValue(std::int64_t{1}));
+    envelope.emplace("operation",
+                     JsonValue(std::string("prepareInstall")));
+    envelope.emplace("caller", JsonValue(std::move(caller)));
+    envelope.emplace("target", JsonValue(std::move(target)));
+    envelope.emplace("stage", JsonValue(std::move(stage)));
+    envelope.emplace("options", JsonValue(std::move(options)));
+    *canonical_request = runtime::internal::EncodeCanonicalJson(
+        JsonValue(std::move(envelope)));
+    return canonical_request->empty()
+               ? InstallResult{false,
+                               "Canonical helper request is empty."}
+               : InstallResult{true, ""};
+  } catch (const std::exception& error) {
+    return {false, std::string("Unable to serialize helper request: ") +
+                       error.what()};
+  }
+}
+
+InstallTransactionStatus EndpointUnavailableStatus(
+    const std::string& transaction_id) {
+  return {transaction_id, InstallTransactionState::kUnknown,
+          InstallTransactionResultCode::kEndpointUnavailable,
+          "Packaged Linux install helper endpoint is unavailable.", "", ""};
+}
+
+}  // namespace
+
+InstallResult PrepareInstall(const InstallRequest& request,
+                             InstallReservation* reservation) {
+  if (reservation == nullptr) {
+    return {false, "Install reservation output must not be null."};
+  }
+  *reservation = {};
+  const InstallResult validation = ValidateInstallRequest(request);
+  if (!validation.ok) {
+    return validation;
+  }
+  std::string canonical_request;
+  const InstallResult serialization =
+      SerializeCommonInstallRequest(request, &canonical_request);
+  if (!serialization.ok) {
+    return serialization;
+  }
+  return {false,
+          "Packaged Linux install helper endpoint is unavailable; no durable "
+          "authenticated response or reservation was created."};
+}
+
+InstallTransactionStatus CommitAfterExit(
+    const InstallReservation& reservation) {
+  if (!IsLowercaseUuidNonce(reservation.transaction_id) ||
+      reservation.ready_token.empty()) {
+    return {reservation.transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kInvalidResponse,
+            "Install reservation is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(reservation.transaction_id);
+}
+
+InstallTransactionStatus CancelReservation(
+    const InstallReservation& reservation) {
+  if (!IsLowercaseUuidNonce(reservation.transaction_id) ||
+      reservation.ready_token.empty()) {
+    return {reservation.transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kInvalidResponse,
+            "Install reservation is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(reservation.transaction_id);
+}
+
+InstallTransactionStatus QueryTransaction(
+    const std::string& transaction_id) {
+  if (!IsLowercaseUuidNonce(transaction_id)) {
+    return {transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kRejected,
+            "Transaction ID is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(transaction_id);
+}
+
+InstallTransactionStatus RecoverPendingInstall(
+    const std::string& transaction_id) {
+  if (!IsLowercaseUuidNonce(transaction_id)) {
+    return {transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kRejected,
+            "Transaction ID is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(transaction_id);
+}
+
+InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
+  InstallReservation reservation;
+  const InstallResult prepare = PrepareInstall(request, &reservation);
+  if (!prepare.ok) return prepare;
+  if (!IsLowercaseUuidNonce(reservation.transaction_id) ||
+      reservation.ready_token.empty() ||
+      !IsLowercaseSHA256(reservation.response_digest_sha256) ||
+      !IsLowercaseSHA256(reservation.helper_endpoint_identity_sha256)) {
+    return {false, "Install helper returned an invalid reservation."};
+  }
+  const InstallTransactionStatus status = CommitAfterExit(reservation);
+  const bool accepted =
+      (status.state == InstallTransactionState::kCommitAccepted ||
+       status.state == InstallTransactionState::kCompleted) &&
+      (status.result_code == InstallTransactionResultCode::kAccepted ||
+       status.result_code == InstallTransactionResultCode::kSucceeded) &&
+      status.response_digest_sha256 == reservation.response_digest_sha256 &&
+      status.helper_endpoint_identity_sha256 ==
+          reservation.helper_endpoint_identity_sha256;
+  return accepted
+             ? InstallResult{true, ""}
+             : InstallResult{false,
+                             status.detail.empty()
+                                 ? "Install helper commit was not accepted."
+                                 : status.detail};
 }
 
 }  // namespace native

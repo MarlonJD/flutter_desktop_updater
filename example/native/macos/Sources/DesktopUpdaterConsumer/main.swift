@@ -1,6 +1,20 @@
 import DesktopUpdaterKit
 import Foundation
 
+if CommandLine.arguments.count == 3,
+   CommandLine.arguments[1] == "--recover"
+{
+    let transactionID = CommandLine.arguments[2]
+    let helper = MacInstallHelper()
+    let status = try helper.queryTransaction(transactionID)
+    if status.state == .prepared ||
+        status.state == .commitAccepted ||
+        status.state == .manualActionRequired
+    {
+        _ = try helper.recoverPendingInstall(transactionID)
+    }
+}
+
 if CommandLine.arguments.count == 7,
    CommandLine.arguments[1] == "--schedule"
 {
@@ -35,6 +49,10 @@ if CommandLine.arguments.count == 7,
         diagnosticsLogPath: nil
     )
     try MacInstallHelper().scheduleInstallAndRelaunch(request)
+}
+
+if CommandLine.arguments.contains("--help") {
+    print("DesktopUpdaterConsumer [--recover TRANSACTION_ID]")
 }
 
 precondition(!DesktopUpdaterVersion.string.isEmpty)

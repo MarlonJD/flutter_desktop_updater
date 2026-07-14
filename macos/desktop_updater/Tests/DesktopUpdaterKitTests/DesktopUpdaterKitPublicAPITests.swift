@@ -13,6 +13,27 @@ final class DesktopUpdaterKitPublicAPITests: XCTestCase {
             event: MacHelperEvent.helperScheduled.rawValue
         )
         let helper = MacInstallHelper()
+        let prepareInstall: (MacInstallRequest) throws
+            -> MacInstallReservation = helper.prepareInstall
+        let commitAfterExit: (MacInstallReservation) throws
+            -> InstallTransactionStatus = helper.commitAfterExit
+        let cancelReservation: (MacInstallReservation) throws
+            -> InstallTransactionStatus = helper.cancelReservation
+        let queryTransaction: (String) throws
+            -> InstallTransactionStatus = helper.queryTransaction
+        let recoverPendingInstall: (String) throws
+            -> InstallTransactionStatus = helper.recoverPendingInstall
+        let status = InstallTransactionStatus(
+            transactionID: "00000000-0000-4000-8000-000000000001",
+            state: .prepared,
+            resultCode: .accepted,
+            detail: "prepared",
+            responseDigestSHA256: String(repeating: "a", count: 64),
+            helperEndpointIdentitySHA256: String(
+                repeating: "b",
+                count: 64
+            )
+        )
 
         XCTAssertEqual(request.stagingPath, "/tmp/Example.app")
         XCTAssertFalse(request.allowUnsignedUpdates)
@@ -22,6 +43,13 @@ final class DesktopUpdaterKitPublicAPITests: XCTestCase {
             }
         )
         XCTAssertEqual(diagnosticsEvent.event, "helper scheduled")
+        XCTAssertEqual(status.state, .prepared)
+        XCTAssertEqual(status.resultCode, .accepted)
         XCTAssertNotNil(helper)
+        XCTAssertNotNil(prepareInstall)
+        XCTAssertNotNil(commitAfterExit)
+        XCTAssertNotNil(cancelReservation)
+        XCTAssertNotNil(queryTransaction)
+        XCTAssertNotNil(recoverPendingInstall)
     }
 }

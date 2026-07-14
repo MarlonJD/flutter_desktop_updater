@@ -857,7 +857,8 @@ InstallLaunchDecision ResolveInstallLaunchDecision(
              : InstallLaunchDecision::kNormal;
 }
 
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
+[[maybe_unused]] InstallResult LegacyScriptScheduleForRemoval(
+    const InstallRequest& request) {
   const std::wstring executable_path = CurrentExecutablePath();
   if (executable_path.empty()) {
     return {false, "Unable to resolve executable path."};
@@ -1289,6 +1290,191 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
     return {false, error};
   }
   return {true, ""};
+}
+
+namespace {
+
+InstallResult SerializeCommonInstallRequest(
+    const InstallRequest& request,
+    std::string* canonical_request) {
+  if (canonical_request == nullptr) {
+    return {false, "Canonical helper request output must not be null."};
+  }
+  try {
+    using JsonValue = runtime::internal::JsonValue;
+    JsonValue::Array removed_files;
+    for (const std::wstring& path : request.removed_files) {
+      removed_files.emplace_back(WideToUtf8(path));
+    }
+    JsonValue::Array signer_thumbprints;
+    for (const std::wstring& thumbprint :
+         request.allowed_signer_thumbprints) {
+      signer_thumbprints.emplace_back(WideToUtf8(thumbprint));
+    }
+    JsonValue::Object caller;
+    caller.emplace("processId", JsonValue(
+        static_cast<std::int64_t>(GetCurrentProcessId())));
+    caller.emplace("executablePath",
+                   JsonValue(WideToUtf8(CurrentExecutablePath())));
+    JsonValue::Object target;
+    target.emplace("pathHint", JsonValue(WideToUtf8(request.install_root)));
+    target.emplace("executableRelativePath",
+                   JsonValue(WideToUtf8(
+                       request.executable_relative_path)));
+    target.emplace("packageId",
+                   JsonValue(WideToUtf8(request.expected_package_id)));
+    JsonValue::Object stage;
+    stage.emplace("pathHint",
+                  JsonValue(WideToUtf8(request.staging_path)));
+    stage.emplace("provenanceSha256",
+                  JsonValue(WideToUtf8(
+                      request.expected_provenance_sha256)));
+    stage.emplace("artifactSha256",
+                  JsonValue(WideToUtf8(request.expected_artifact_sha256)));
+    JsonValue::Object options;
+    options.emplace("diagnosticsLogPath",
+                    JsonValue(WideToUtf8(
+                        request.diagnostics_log_path)));
+    options.emplace("removedFiles", JsonValue(std::move(removed_files)));
+    options.emplace("allowedSignerThumbprints",
+                    JsonValue(std::move(signer_thumbprints)));
+    options.emplace("elevationPolicy",
+                    JsonValue(WideToUtf8(
+                        ElevationPolicyName(request.elevation_policy))));
+    JsonValue::Object envelope;
+    envelope.emplace("schemaVersion", JsonValue(std::int64_t{1}));
+    envelope.emplace("protocolVersion", JsonValue(std::int64_t{1}));
+    envelope.emplace("operation", JsonValue(std::string("prepareInstall")));
+    envelope.emplace("caller", JsonValue(std::move(caller)));
+    envelope.emplace("target", JsonValue(std::move(target)));
+    envelope.emplace("stage", JsonValue(std::move(stage)));
+    envelope.emplace("options", JsonValue(std::move(options)));
+    *canonical_request = runtime::internal::EncodeCanonicalJson(
+        JsonValue(std::move(envelope)));
+    return canonical_request->empty()
+               ? InstallResult{false,
+                               "Canonical helper request is empty."}
+               : InstallResult{true, ""};
+  } catch (const std::exception& error) {
+    return {false, std::string("Unable to serialize helper request: ") +
+                       error.what()};
+  }
+}
+
+bool IsTransactionId(const std::string& value) {
+  if (value.size() != 36 || value[8] != '-' || value[13] != '-' ||
+      value[18] != '-' || value[23] != '-' || value[14] != '4' ||
+      std::string("89ab").find(value[19]) == std::string::npos) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) continue;
+    const char byte = value[index];
+    if (!(byte >= '0' && byte <= '9') && !(byte >= 'a' && byte <= 'f')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+InstallTransactionStatus EndpointUnavailableStatus(
+    const std::string& transaction_id) {
+  return {transaction_id, InstallTransactionState::kUnknown,
+          InstallTransactionResultCode::kEndpointUnavailable,
+          "Packaged Windows install helper endpoint is unavailable.", "",
+          ""};
+}
+
+}  // namespace
+
+InstallResult PrepareInstall(const InstallRequest& request,
+                             InstallReservation* reservation) {
+  if (reservation == nullptr) {
+    return {false, "Install reservation output must not be null."};
+  }
+  *reservation = {};
+  const InstallResult staging = ValidateStagingRoot(request);
+  if (!staging.ok) {
+    return staging;
+  }
+  std::string canonical_request;
+  const InstallResult serialization =
+      SerializeCommonInstallRequest(request, &canonical_request);
+  if (!serialization.ok) {
+    return serialization;
+  }
+  return {false,
+          "Packaged Windows install helper endpoint is unavailable; no "
+          "authenticated response or durable reservation was created."};
+}
+
+InstallTransactionStatus CommitAfterExit(
+    const InstallReservation& reservation) {
+  if (!IsTransactionId(reservation.transaction_id) ||
+      reservation.ready_token.empty()) {
+    return {reservation.transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kInvalidResponse,
+            "Install reservation is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(reservation.transaction_id);
+}
+
+InstallTransactionStatus CancelReservation(
+    const InstallReservation& reservation) {
+  if (!IsTransactionId(reservation.transaction_id) ||
+      reservation.ready_token.empty()) {
+    return {reservation.transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kInvalidResponse,
+            "Install reservation is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(reservation.transaction_id);
+}
+
+InstallTransactionStatus QueryTransaction(
+    const std::string& transaction_id) {
+  if (!IsTransactionId(transaction_id)) {
+    return {transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kRejected,
+            "Transaction ID is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(transaction_id);
+}
+
+InstallTransactionStatus RecoverPendingInstall(
+    const std::string& transaction_id) {
+  if (!IsTransactionId(transaction_id)) {
+    return {transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kRejected,
+            "Transaction ID is invalid.", "", ""};
+  }
+  return EndpointUnavailableStatus(transaction_id);
+}
+
+InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
+  InstallReservation reservation;
+  const InstallResult prepare = PrepareInstall(request, &reservation);
+  if (!prepare.ok) return prepare;
+  if (!IsTransactionId(reservation.transaction_id) ||
+      reservation.ready_token.empty() ||
+      reservation.response_digest_sha256.size() != 64 ||
+      reservation.helper_endpoint_identity_sha256.size() != 64) {
+    return {false, "Install helper returned an invalid reservation."};
+  }
+  const InstallTransactionStatus status = CommitAfterExit(reservation);
+  const bool accepted =
+      (status.state == InstallTransactionState::kCommitAccepted ||
+       status.state == InstallTransactionState::kCompleted) &&
+      (status.result_code == InstallTransactionResultCode::kAccepted ||
+       status.result_code == InstallTransactionResultCode::kSucceeded) &&
+      status.response_digest_sha256 == reservation.response_digest_sha256 &&
+      status.helper_endpoint_identity_sha256 ==
+          reservation.helper_endpoint_identity_sha256;
+  return accepted
+             ? InstallResult{true, ""}
+             : InstallResult{false,
+                             status.detail.empty()
+                                 ? "Install helper commit was not accepted."
+                                 : status.detail};
 }
 
 bool IsStrictChildPath(const std::wstring& root,

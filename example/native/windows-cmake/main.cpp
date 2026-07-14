@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include "desktop_updater_native.h"
 #include "desktop_updater_native_c.h"
 
 int main() {
@@ -17,6 +18,22 @@ int main() {
       std::strstr(result.error_message_utf8, "ABI version") != nullptr;
   desktop_updater_result_free_v1(&result);
   if (!rejected) {
+    return 1;
+  }
+  const std::string transaction_id =
+      "00000000-0000-4000-8000-000000000012";
+  const auto queried =
+      desktop_updater::native::QueryTransaction(transaction_id);
+  if (queried.result_code != desktop_updater::native::
+                                 InstallTransactionResultCode::
+                                     kEndpointUnavailable) {
+    return 1;
+  }
+  const auto recovered =
+      desktop_updater::native::RecoverPendingInstall(transaction_id);
+  if (recovered.result_code != desktop_updater::native::
+                                   InstallTransactionResultCode::
+                                       kEndpointUnavailable) {
     return 1;
   }
   return 0;

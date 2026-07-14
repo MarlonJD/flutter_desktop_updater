@@ -23,6 +23,138 @@ void main() {
     expect("$manifest\n$source", isNot(contains("Flutter")));
   });
 
+  test("native install clients expose reservation and recovery contracts", () {
+    final macHelper = readRequiredFile(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    );
+    final macStatus = readRequiredFile(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/InstallHelper/"
+      "InstallTransactionStatus.swift",
+    );
+    final macConsumer = readRequiredFile(
+      "example/native/macos/Sources/DesktopUpdaterConsumer/main.swift",
+    );
+    final windowsHeader = readRequiredFile(
+      "windows/native/include/desktop_updater_native.h",
+    );
+    final windowsCHeader = readRequiredFile(
+      "windows/native/include/desktop_updater_native_c.h",
+    );
+    final windowsNative = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final windowsCNative = readRequiredFile(
+      "windows/native/src/desktop_updater_native_c.cpp",
+    );
+    final dotnetNative = readRequiredFile(
+      "windows/native/dotnet/DesktopUpdater.Native/DesktopUpdaterNative.cs",
+    );
+    final windowsConsumer = readRequiredFile(
+      "example/native/windows-cmake/main.cpp",
+    );
+    final dotnetConsumer = readRequiredFile(
+      "example/native/windows-dotnet/Program.cs",
+    );
+    final linuxHeader = readRequiredFile(
+      "linux/native/include/desktop_updater_native.h",
+    );
+    final linuxNative = readRequiredFile(
+      "linux/native/src/desktop_updater_native.cc",
+    );
+    final linuxConsumer = readRequiredFile(
+      "example/native/linux-cmake/main.cpp",
+    );
+    final docs = readRequiredFile("docs/native-sdk.md");
+
+    for (final operation in <String>[
+      "prepareInstall",
+      "commitAfterExit",
+      "cancelReservation",
+      "queryTransaction",
+      "recoverPendingInstall",
+    ]) {
+      expect(macHelper, contains(operation));
+    }
+    expect(macStatus, contains("public enum InstallTransactionState"));
+    expect(macStatus, contains("public enum InstallTransactionResultCode"));
+    expect(macStatus, contains("public final class MacInstallReservation"));
+    expect(macStatus, contains("deinit"));
+    expect(macHelper, contains("prepareInstall(request)"));
+    expect(macHelper, contains("commitAfterExit(reservation)"));
+    expect(macConsumer, contains("queryTransaction"));
+    expect(macConsumer, contains("recoverPendingInstall"));
+
+    for (final operation in <String>[
+      "PrepareInstall",
+      "CommitAfterExit",
+      "CancelReservation",
+      "QueryTransaction",
+      "RecoverPendingInstall",
+    ]) {
+      expect(windowsHeader, contains(operation));
+    }
+    expect(windowsHeader, contains("enum class InstallTransactionState"));
+    expect(windowsHeader, contains("enum class InstallTransactionResultCode"));
+    expect(windowsCHeader, contains("desktop_updater_reservation_handle_v1"));
+    expect(windowsCHeader, contains("desktop_updater_prepare_install_v1"));
+    expect(windowsCHeader, contains("desktop_updater_commit_after_exit_v1"));
+    expect(windowsCHeader, contains("desktop_updater_query_transaction_v1"));
+    expect(
+        windowsCHeader, contains("desktop_updater_recover_pending_install_v1"));
+    expect(windowsCHeader, contains("desktop_updater_reservation_release_v1"));
+    expect(windowsCHeader, contains("desktop_updater_transaction_status_v1"));
+    expect(
+      windowsNative,
+      contains(
+        "InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {\n"
+        "  InstallReservation reservation;",
+      ),
+    );
+    expect(windowsNative, contains("SerializeCommonInstallRequest"));
+    expect(windowsCNative, contains("destination->struct_size <"));
+    expect(
+      windowsCNative,
+      contains("sizeof(desktop_updater_transaction_status_v1)"),
+    );
+    expect(dotnetNative,
+        contains("sealed class DesktopUpdaterInstallReservation"));
+    expect(dotnetNative, contains("SafeHandle"));
+    expect(dotnetNative, contains("protected override bool ReleaseHandle()"));
+    expect(dotnetNative, contains("public void Dispose()"));
+    expect(windowsConsumer, contains("QueryTransaction"));
+    expect(windowsConsumer, contains("RecoverPendingInstall"));
+    expect(dotnetConsumer, contains("QueryTransaction"));
+    expect(dotnetConsumer, contains("RecoverPendingInstall"));
+
+    for (final operation in <String>[
+      "PrepareInstall",
+      "CommitAfterExit",
+      "CancelReservation",
+      "QueryTransaction",
+      "RecoverPendingInstall",
+    ]) {
+      expect(linuxHeader, contains(operation));
+    }
+    expect(linuxHeader, contains("enum class InstallTransactionState"));
+    expect(linuxHeader, contains("enum class InstallTransactionResultCode"));
+    expect(
+      linuxNative,
+      contains(
+        "InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {\n"
+        "  InstallReservation reservation;",
+      ),
+    );
+    expect(linuxNative, contains("SerializeCommonInstallRequest"));
+    expect(linuxConsumer, contains("QueryTransaction"));
+    expect(linuxConsumer, contains("RecoverPendingInstall"));
+
+    expect(windowsCHeader, contains("struct_size"));
+    expect(docs, contains("Contents/Helpers/DesktopUpdaterInstallHelper"));
+    expect(docs, contains("desktop_updater_install_helper.exe"));
+    expect(docs, contains("/usr/libexec/desktop-updater-helper"));
+    expect(docs, contains("candidate-only"));
+  });
+
   test("installed Windows and Linux CMake packages have real consumers", () {
     for (final platform in <String>["windows", "linux"]) {
       final nativeCmake = readRequiredFile("$platform/native/CMakeLists.txt");

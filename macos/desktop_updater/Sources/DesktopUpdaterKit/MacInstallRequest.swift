@@ -463,4 +463,50 @@ public struct MacInstallRequest: Sendable {
         expectedPackageIDs = verifiedStage.expectedPackageIDs
         provenanceEntries = verifiedStage.provenance.marker.entries
     }
+
+    func helperRequestData(
+        transactionID: String,
+        processIdentifier: Int32,
+        bundleURL: URL
+    ) throws -> Data {
+        let entries: [[String: Any]] = provenanceEntries.map { entry in
+            [
+                "path": entry.path,
+                "kind": entry.kind,
+                "length": entry.length,
+                "sha256": entry.sha256 ?? NSNull(),
+                "target": entry.target ?? NSNull(),
+            ]
+        }
+        let request: [String: Any] = [
+            "schemaVersion": 1,
+            "protocolVersion": 1,
+            "operation": "prepareInstall",
+            "transactionId": transactionID,
+            "caller": [
+                "processId": processIdentifier,
+                "bundlePath": bundleURL.standardizedFileURL.path,
+            ],
+            "target": [
+                "pathHint": bundleURL.standardizedFileURL.path,
+                "packageIds": expectedPackageIDs,
+            ],
+            "stage": [
+                "pathHint": stagingPath ?? "",
+                "rootPathHint": stageRoot ?? "",
+                "provenanceSha256": expectedProvenanceSHA256 ?? "",
+                "artifactKind": artifactKind ?? "",
+                "artifactSha256": expectedArtifactSHA256 ?? "",
+                "entries": entries,
+            ],
+            "options": [
+                "allowUnsignedUpdates": allowUnsignedUpdates,
+                "diagnosticsLogPath": diagnosticsLogPath ?? "",
+            ],
+        ]
+        return try JSONSerialization.data(
+            withJSONObject: request,
+            options: [.sortedKeys]
+        )
+    }
 }

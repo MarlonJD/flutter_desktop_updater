@@ -144,6 +144,127 @@ public sealed class DesktopUpdaterInstallRequest
     }
 }
 
+/// <summary>Authoritative native helper transaction state.</summary>
+public enum DesktopUpdaterInstallTransactionState
+{
+    /// <summary>No authoritative transaction was found.</summary>
+    Unknown = 0,
+    /// <summary>The helper durably reserved the target.</summary>
+    Prepared = 1,
+    /// <summary>The helper accepted commit ownership.</summary>
+    CommitAccepted = 2,
+    /// <summary>The install and relaunch transaction completed.</summary>
+    Completed = 3,
+    /// <summary>The reservation was cancelled before mutation.</summary>
+    Cancelled = 4,
+    /// <summary>The reservation expired before commit.</summary>
+    Expired = 5,
+    /// <summary>The helper completed rollback.</summary>
+    RolledBack = 6,
+    /// <summary>The helper requires operator recovery.</summary>
+    ManualActionRequired = 7,
+}
+
+/// <summary>Stable result category returned by the native helper.</summary>
+public enum DesktopUpdaterInstallTransactionResultCode
+{
+    /// <summary>No result has been recorded.</summary>
+    None = 0,
+    /// <summary>The requested transition was accepted.</summary>
+    Accepted = 1,
+    /// <summary>The requested operation succeeded.</summary>
+    Succeeded = 2,
+    /// <summary>The helper rejected the request.</summary>
+    Rejected = 3,
+    /// <summary>The packaged helper endpoint is unavailable.</summary>
+    EndpointUnavailable = 4,
+    /// <summary>Endpoint or caller authentication failed.</summary>
+    AuthenticationFailed = 5,
+    /// <summary>The helper response failed validation.</summary>
+    InvalidResponse = 6,
+    /// <summary>Authoritative recovery is required.</summary>
+    RecoveryRequired = 7,
+}
+
+/// <summary>One validated helper-owned transaction snapshot.</summary>
+public sealed class DesktopUpdaterInstallTransactionStatus
+{
+    internal DesktopUpdaterInstallTransactionStatus(
+        string transactionId,
+        DesktopUpdaterInstallTransactionState state,
+        DesktopUpdaterInstallTransactionResultCode resultCode,
+        string detail,
+        string responseDigestSha256,
+        string helperEndpointIdentitySha256)
+    {
+        TransactionId = transactionId;
+        State = state;
+        ResultCode = resultCode;
+        Detail = detail;
+        ResponseDigestSha256 = responseDigestSha256;
+        HelperEndpointIdentitySha256 = helperEndpointIdentitySha256;
+    }
+
+    /// <summary>Lowercase UUID identifying the helper transaction.</summary>
+    public string TransactionId { get; }
+    /// <summary>Current authoritative transaction state.</summary>
+    public DesktopUpdaterInstallTransactionState State { get; }
+    /// <summary>Stable result category.</summary>
+    public DesktopUpdaterInstallTransactionResultCode ResultCode { get; }
+    /// <summary>Redacted native detail.</summary>
+    public string Detail { get; }
+    /// <summary>SHA-256 binding the helper response.</summary>
+    public string ResponseDigestSha256 { get; }
+    /// <summary>SHA-256 identity of the authenticated helper endpoint.</summary>
+    public string HelperEndpointIdentitySha256 { get; }
+}
+
+/// <summary>Caller-owned lease for one durable native helper reservation.</summary>
+public sealed class DesktopUpdaterInstallReservation : IDisposable
+{
+    internal DesktopUpdaterInstallReservation(
+        DesktopUpdaterReservationSafeHandle handle,
+        DesktopUpdaterInstallTransactionStatus preparedStatus)
+    {
+        Handle = handle;
+        PreparedStatus = preparedStatus;
+    }
+
+    internal DesktopUpdaterReservationSafeHandle Handle { get; }
+    /// <summary>Validated status returned with this reservation.</summary>
+    public DesktopUpdaterInstallTransactionStatus PreparedStatus { get; }
+    /// <summary>Lowercase UUID identifying the helper transaction.</summary>
+    public string TransactionId => PreparedStatus.TransactionId;
+
+    /// <summary>Cancels an abandoned reservation and releases its handle.</summary>
+    public void Dispose()
+    {
+        Handle.Dispose();
+    }
+}
+
+internal sealed class DesktopUpdaterReservationSafeHandle : SafeHandle
+{
+    internal DesktopUpdaterReservationSafeHandle()
+        : base(IntPtr.Zero, true)
+    {
+    }
+
+    internal DesktopUpdaterReservationSafeHandle(IntPtr value)
+        : this()
+    {
+        SetHandle(value);
+    }
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    protected override bool ReleaseHandle()
+    {
+        DesktopUpdaterNative.ReleaseReservationHandle(handle);
+        return true;
+    }
+}
+
 /// <summary>Schedules installation through the versioned native updater ABI.</summary>
 public static class DesktopUpdaterNative
 {
@@ -176,7 +297,7 @@ public static class DesktopUpdaterNative
                 "DesktopUpdaterInstallRequest overload.",
                 nameof(stagingPath));
         }
-        ScheduleInstallAndRelaunchCore(
+        _ = ScheduleInstallAndRelaunchCore(
             stagingPath,
             removedFiles,
             diagnosticsLogPath,
@@ -186,7 +307,8 @@ public static class DesktopUpdaterNative
             DesktopUpdaterElevationPolicy.Never,
             installRoot,
             executableRelativePath,
-            expectedPackageId);
+            expectedPackageId,
+            prepareOnly: false);
     }
 
     /// <summary>Schedules a complete verified staged update.</summary>
@@ -197,7 +319,7 @@ public static class DesktopUpdaterNative
         {
             throw new ArgumentNullException(nameof(request));
         }
-        ScheduleInstallAndRelaunchCore(
+        _ = ScheduleInstallAndRelaunchCore(
             request.StagingPath,
             request.RemovedFiles,
             request.DiagnosticsLogPath,
@@ -207,10 +329,62 @@ public static class DesktopUpdaterNative
             request.RequiresElevation,
             request.InstallRoot,
             request.ExecutableRelativePath,
-            request.ExpectedPackageId);
+            request.ExpectedPackageId,
+            prepareOnly: false);
     }
 
-    private static void ScheduleInstallAndRelaunchCore(
+    /// <summary>Prepares a durable helper reservation without exiting.</summary>
+    public static DesktopUpdaterInstallReservation PrepareInstall(
+        DesktopUpdaterInstallRequest request)
+    {
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
+        return ScheduleInstallAndRelaunchCore(
+            request.StagingPath,
+            request.RemovedFiles,
+            request.DiagnosticsLogPath,
+            request.ExpectedProvenanceSha256,
+            request.ExpectedArtifactSha256,
+            request.AllowedSignerThumbprints,
+            request.RequiresElevation,
+            request.InstallRoot,
+            request.ExecutableRelativePath,
+            request.ExpectedPackageId,
+            prepareOnly: true) ?? throw new DesktopUpdaterException(
+                "The native helper did not return a reservation.");
+    }
+
+    /// <summary>Commits a prepared reservation after app-exit ownership exists.</summary>
+    public static DesktopUpdaterInstallTransactionStatus CommitAfterExit(
+        DesktopUpdaterInstallReservation reservation)
+    {
+        return InvokeReservationOperation(reservation, commit: true);
+    }
+
+    /// <summary>Cancels a prepared reservation.</summary>
+    public static DesktopUpdaterInstallTransactionStatus CancelReservation(
+        DesktopUpdaterInstallReservation reservation)
+    {
+        return InvokeReservationOperation(reservation, commit: false);
+    }
+
+    /// <summary>Queries authoritative helper state during startup.</summary>
+    public static DesktopUpdaterInstallTransactionStatus QueryTransaction(
+        string transactionId)
+    {
+        return InvokeTransactionOperation(transactionId, recover: false);
+    }
+
+    /// <summary>Asks the helper to recover an incomplete transaction.</summary>
+    public static DesktopUpdaterInstallTransactionStatus RecoverPendingInstall(
+        string transactionId)
+    {
+        return InvokeTransactionOperation(transactionId, recover: true);
+    }
+
+    private static DesktopUpdaterInstallReservation? ScheduleInstallAndRelaunchCore(
         string? stagingPath,
         IReadOnlyList<string> removedFiles,
         string? diagnosticsLogPath,
@@ -220,7 +394,8 @@ public static class DesktopUpdaterNative
         DesktopUpdaterElevationPolicy elevationPolicy,
         string? installRoot,
         string? executableRelativePath,
-        string? expectedPackageId)
+        string? expectedPackageId,
+        bool prepareOnly)
     {
         IntPtr stagingPointer = IntPtr.Zero;
         IntPtr diagnosticsPointer = IntPtr.Zero;
@@ -235,6 +410,10 @@ public static class DesktopUpdaterNative
         var signerAllocations = new List<IntPtr>(allowedSignerThumbprints.Count);
         NativeResultV1 result = default;
         var resultReceived = false;
+        NativeTransactionStatusV1 status = default;
+        var statusReceived = false;
+        IntPtr reservationPointer = IntPtr.Zero;
+        var reservationTransferred = false;
 
         try
         {
@@ -329,7 +508,19 @@ public static class DesktopUpdaterNative
                 ElevationPolicy = (uint)elevationPolicy,
             };
 
-            result = NativeMethods.ScheduleInstallAndRelaunch(ref request);
+            if (prepareOnly)
+            {
+                status = CreateNativeStatus();
+                statusReceived = true;
+                result = NativeMethods.PrepareInstall(
+                    ref request,
+                    out reservationPointer,
+                    ref status);
+            }
+            else
+            {
+                result = NativeMethods.ScheduleInstallAndRelaunch(ref request);
+            }
             resultReceived = true;
             if (result.Ok == 0)
             {
@@ -339,9 +530,40 @@ public static class DesktopUpdaterNative
                         ?? "The native desktop updater returned an invalid error message.";
                 throw new DesktopUpdaterException(message);
             }
+            if (!prepareOnly)
+            {
+                return null;
+            }
+            if (reservationPointer == IntPtr.Zero)
+            {
+                throw new DesktopUpdaterException(
+                    "The native helper returned no reservation handle.");
+            }
+            var preparedStatus = ReadStatus(status, requireProof: true);
+            if (preparedStatus.State !=
+                    DesktopUpdaterInstallTransactionState.Prepared ||
+                preparedStatus.ResultCode !=
+                    DesktopUpdaterInstallTransactionResultCode.Accepted)
+            {
+                throw new DesktopUpdaterException(
+                    "The native helper returned an invalid prepared status.");
+            }
+            var reservation = new DesktopUpdaterInstallReservation(
+                new DesktopUpdaterReservationSafeHandle(reservationPointer),
+                preparedStatus);
+            reservationTransferred = true;
+            return reservation;
         }
         finally
         {
+            if (!reservationTransferred && reservationPointer != IntPtr.Zero)
+            {
+                NativeMethods.ReservationRelease(reservationPointer);
+            }
+            if (statusReceived)
+            {
+                NativeMethods.TransactionStatusFree(ref status);
+            }
             if (resultReceived)
             {
                 NativeMethods.ResultFree(ref result);
@@ -393,6 +615,198 @@ public static class DesktopUpdaterNative
         }
     }
 
+    private static DesktopUpdaterInstallTransactionStatus InvokeReservationOperation(
+        DesktopUpdaterInstallReservation reservation,
+        bool commit)
+    {
+        if (reservation is null)
+        {
+            throw new ArgumentNullException(nameof(reservation));
+        }
+        if (reservation.Handle.IsClosed || reservation.Handle.IsInvalid)
+        {
+            throw new ObjectDisposedException(
+                nameof(DesktopUpdaterInstallReservation));
+        }
+        var status = CreateNativeStatus();
+        NativeResultV1 result = default;
+        var resultReceived = false;
+        try
+        {
+            result = commit
+                ? NativeMethods.CommitAfterExit(reservation.Handle, ref status)
+                : NativeMethods.CancelReservation(reservation.Handle, ref status);
+            resultReceived = true;
+            ThrowIfNativeError(result);
+            var managed = ReadStatus(status, requireProof: false);
+            if (!string.Equals(
+                    managed.TransactionId,
+                    reservation.TransactionId,
+                    StringComparison.Ordinal))
+            {
+                throw new DesktopUpdaterException(
+                    "The native helper changed the transaction identity.");
+            }
+            if (!string.IsNullOrEmpty(managed.ResponseDigestSha256) &&
+                !string.Equals(
+                    managed.ResponseDigestSha256,
+                    reservation.PreparedStatus.ResponseDigestSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new DesktopUpdaterException(
+                    "The native helper changed the response digest.");
+            }
+            if (!string.IsNullOrEmpty(
+                    managed.HelperEndpointIdentitySha256) &&
+                !string.Equals(
+                    managed.HelperEndpointIdentitySha256,
+                    reservation.PreparedStatus.HelperEndpointIdentitySha256,
+                    StringComparison.Ordinal))
+            {
+                throw new DesktopUpdaterException(
+                    "The native helper endpoint identity changed.");
+            }
+            if (!commit && managed.State ==
+                DesktopUpdaterInstallTransactionState.Cancelled)
+            {
+                reservation.Dispose();
+            }
+            return managed;
+        }
+        finally
+        {
+            NativeMethods.TransactionStatusFree(ref status);
+            if (resultReceived)
+            {
+                NativeMethods.ResultFree(ref result);
+            }
+        }
+    }
+
+    private static DesktopUpdaterInstallTransactionStatus InvokeTransactionOperation(
+        string transactionId,
+        bool recover)
+    {
+        if (!Guid.TryParseExact(transactionId, "D", out _) ||
+            !string.Equals(
+                transactionId,
+                transactionId.ToLowerInvariant(),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "A lowercase transaction UUID is required.",
+                nameof(transactionId));
+        }
+        var transactionPointer = Marshal.StringToHGlobalUni(transactionId);
+        var status = CreateNativeStatus();
+        NativeResultV1 result = default;
+        var resultReceived = false;
+        try
+        {
+            result = recover
+                ? NativeMethods.RecoverPendingInstall(
+                    transactionPointer,
+                    ref status)
+                : NativeMethods.QueryTransaction(
+                    transactionPointer,
+                    ref status);
+            resultReceived = true;
+            ThrowIfNativeError(result);
+            return ReadStatus(status, requireProof: false);
+        }
+        finally
+        {
+            NativeMethods.TransactionStatusFree(ref status);
+            if (resultReceived)
+            {
+                NativeMethods.ResultFree(ref result);
+            }
+            Marshal.FreeHGlobal(transactionPointer);
+        }
+    }
+
+    private static NativeTransactionStatusV1 CreateNativeStatus()
+    {
+        return new NativeTransactionStatusV1
+        {
+            AbiVersion = AbiVersion,
+            StructSize = (nuint)Marshal.SizeOf<NativeTransactionStatusV1>(),
+        };
+    }
+
+    private static DesktopUpdaterInstallTransactionStatus ReadStatus(
+        NativeTransactionStatusV1 status,
+        bool requireProof)
+    {
+        if (status.AbiVersion != AbiVersion ||
+            status.StructSize < (nuint)Marshal.SizeOf<NativeTransactionStatusV1>() ||
+            !Enum.IsDefined(
+                typeof(DesktopUpdaterInstallTransactionState),
+                (int)status.State) ||
+            !Enum.IsDefined(
+                typeof(DesktopUpdaterInstallTransactionResultCode),
+                (int)status.ResultCode))
+        {
+            throw new DesktopUpdaterException(
+                "The native helper returned an invalid status ABI.");
+        }
+        var transactionId = ReadUtf8(status.TransactionIdUtf8) ?? "";
+        var detail = ReadUtf8(status.DetailUtf8) ?? "";
+        var responseDigest = ReadUtf8(status.ResponseDigestSha256Utf8) ?? "";
+        var endpointIdentity =
+            ReadUtf8(status.HelperEndpointIdentitySha256Utf8) ?? "";
+        if (!Guid.TryParseExact(transactionId, "D", out _) ||
+            (requireProof &&
+             (!IsLowercaseSha256(responseDigest) ||
+              !IsLowercaseSha256(endpointIdentity))))
+        {
+            throw new DesktopUpdaterException(
+                "The native helper returned an invalid transaction response.");
+        }
+        return new DesktopUpdaterInstallTransactionStatus(
+            transactionId,
+            (DesktopUpdaterInstallTransactionState)status.State,
+            (DesktopUpdaterInstallTransactionResultCode)status.ResultCode,
+            detail,
+            responseDigest,
+            endpointIdentity);
+    }
+
+    private static bool IsLowercaseSha256(string value)
+    {
+        if (value.Length != 64)
+        {
+            return false;
+        }
+        foreach (var character in value)
+        {
+            if (!((character >= '0' && character <= '9') ||
+                  (character >= 'a' && character <= 'f')))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void ThrowIfNativeError(NativeResultV1 result)
+    {
+        if (result.Ok != 0)
+        {
+            return;
+        }
+        var message = result.ErrorMessageUtf8 == IntPtr.Zero
+            ? "The native desktop updater failed without an error message."
+            : ReadUtf8(result.ErrorMessageUtf8)
+                ?? "The native desktop updater returned an invalid error message.";
+        throw new DesktopUpdaterException(message);
+    }
+
+    internal static void ReleaseReservationHandle(IntPtr handle)
+    {
+        NativeMethods.ReservationRelease(handle);
+    }
+
     private static string? ReadUtf8(IntPtr value)
     {
         if (value == IntPtr.Zero)
@@ -436,6 +850,19 @@ public static class DesktopUpdaterNative
         public IntPtr ErrorMessageUtf8;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeTransactionStatusV1
+    {
+        public uint AbiVersion;
+        public nuint StructSize;
+        public uint State;
+        public uint ResultCode;
+        public IntPtr TransactionIdUtf8;
+        public IntPtr DetailUtf8;
+        public IntPtr ResponseDigestSha256Utf8;
+        public IntPtr HelperEndpointIdentitySha256Utf8;
+    }
+
     private static class NativeMethods
     {
         [DllImport(
@@ -445,6 +872,67 @@ public static class DesktopUpdaterNative
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeResultV1 ScheduleInstallAndRelaunch(
             ref NativeInstallRequestV1 request);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_prepare_install_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeResultV1 PrepareInstall(
+            ref NativeInstallRequestV1 request,
+            out IntPtr reservation,
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_commit_after_exit_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeResultV1 CommitAfterExit(
+            DesktopUpdaterReservationSafeHandle reservation,
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_cancel_reservation_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeResultV1 CancelReservation(
+            DesktopUpdaterReservationSafeHandle reservation,
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_query_transaction_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeResultV1 QueryTransaction(
+            IntPtr transactionId,
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_recover_pending_install_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeResultV1 RecoverPendingInstall(
+            IntPtr transactionId,
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_transaction_status_free_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void TransactionStatusFree(
+            ref NativeTransactionStatusV1 status);
+
+        [DllImport(
+            "desktop_updater_native",
+            EntryPoint = "desktop_updater_reservation_release_v1",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void ReservationRelease(IntPtr reservation);
 
         [DllImport(
             "desktop_updater_native",

@@ -1,5 +1,14 @@
 using DesktopUpdater.Native;
 
+const string startupTransactionId =
+    "00000000-0000-4000-8000-000000000012";
+var startupStatus = DesktopUpdaterNative.QueryTransaction(startupTransactionId);
+if (startupStatus.ResultCode ==
+    DesktopUpdaterInstallTransactionResultCode.RecoveryRequired)
+{
+    _ = DesktopUpdaterNative.RecoverPendingInstall(startupTransactionId);
+}
+
 var missingStagingPath = Path.Combine(
     Path.GetTempPath(),
     $"desktop-updater-consumer-missing-{Guid.NewGuid():N}");

@@ -5,6 +5,22 @@ int main() {
   if (DESKTOP_UPDATER_NATIVE_VERSION_STRING[0] == '\0') {
     return 1;
   }
+  const std::string transaction_id =
+      "00000000-0000-4000-8000-000000000012";
+  const auto queried =
+      desktop_updater::native::QueryTransaction(transaction_id);
+  if (queried.result_code != desktop_updater::native::
+                                 InstallTransactionResultCode::
+                                     kEndpointUnavailable) {
+    return 1;
+  }
+  const auto recovered =
+      desktop_updater::native::RecoverPendingInstall(transaction_id);
+  if (recovered.result_code != desktop_updater::native::
+                                   InstallTransactionResultCode::
+                                       kEndpointUnavailable) {
+    return 1;
+  }
   const desktop_updater::native::InstallRequest request = {
       desktop_updater::native::LinuxInstallOperation::kInstall,
       "/tmp/desktop_updater_consumer_staging",

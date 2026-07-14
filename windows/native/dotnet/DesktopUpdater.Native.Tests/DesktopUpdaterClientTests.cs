@@ -50,6 +50,36 @@ public sealed class DesktopUpdaterClientTests
     }
 
     [Fact]
+    public void InstallClientExposesDisposableReservationAndRecoveryFlow()
+    {
+        foreach (var operation in new[]
+        {
+            "PrepareInstall",
+            "CommitAfterExit",
+            "CancelReservation",
+            "QueryTransaction",
+            "RecoverPendingInstall",
+        })
+        {
+            Assert.NotNull(typeof(DesktopUpdaterClient).GetMethod(operation));
+            Assert.NotNull(typeof(DesktopUpdaterNative).GetMethod(operation));
+        }
+        Assert.True(typeof(IDisposable).IsAssignableFrom(
+            typeof(DesktopUpdaterInstallReservation)));
+        Assert.True(typeof(SafeHandle).IsAssignableFrom(
+            typeof(DesktopUpdaterInstallReservation)
+                .Assembly
+                .GetType(
+                    "DesktopUpdater.Native.DesktopUpdaterReservationSafeHandle")));
+        Assert.Equal(
+            8,
+            Enum.GetValues<DesktopUpdaterInstallTransactionState>().Length);
+        Assert.Equal(
+            8,
+            Enum.GetValues<DesktopUpdaterInstallTransactionResultCode>().Length);
+    }
+
+    [Fact]
     public void NativeRuntimeUsesIsolatedOneShotLifecycleState()
     {
         var source = File.ReadAllText(FindRepositoryFile(
