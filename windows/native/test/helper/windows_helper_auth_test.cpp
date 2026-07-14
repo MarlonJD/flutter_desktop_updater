@@ -72,6 +72,19 @@ TEST(WindowsHelperAuth, RejectsPortableElevationAndUnsealedPolicy) {
       WindowsHelperPolicy::PortableElevationErrorForTesting());
 }
 
+TEST(WindowsHelperAuth, RetainsCompleteSealedAuthorizationContext) {
+  const WindowsHelperPolicy policy = TestPolicy();
+  EXPECT_EQ("com.example.desktop-updater", policy.policy_id());
+  EXPECT_EQ(1, policy.minimum_helper_protocol_version());
+  EXPECT_FALSE(policy.release_root_public_keys().empty());
+  EXPECT_TRUE(policy.AllowsRequest(
+      1, "applicationDirectory", "directoryReplace", "platformDirectory"));
+  EXPECT_FALSE(policy.AllowsRequest(
+      1, "applicationDirectory", "verifiedInstallerHandoff", "windowsInno"));
+  EXPECT_FALSE(policy.AllowsRequest(
+      2, "applicationDirectory", "directoryReplace", "platformDirectory"));
+}
+
 TEST(WindowsHelperAuth, PipeNameAndPeerAreBoundToOneNonceAndToken) {
   const std::string nonce(43, 'A');
   const std::wstring pipe_name = DerivePipeName(nonce);

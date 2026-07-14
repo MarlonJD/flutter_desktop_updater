@@ -47,13 +47,24 @@ std::wstring Utf8ToWide(const std::string& value) {
   return result;
 }
 
-void ValidatePrivilegePolicy(const std::string& application_package_id,
+void ValidatePrivilegePolicy(const std::string& policy_id,
+                             const std::string& application_package_id,
+                             const std::string& helper_service_id,
                              const std::string& application_publisher,
                              const std::string& helper_publisher,
                              const std::string& helper_sha256,
-                             const std::vector<std::wstring>& roots) {
-  if (application_package_id.empty() || application_publisher.empty() ||
-      helper_publisher.empty() || !IsSha256(helper_sha256)) {
+                             const std::vector<std::wstring>& roots,
+                             const std::vector<std::string>& target_classes,
+                             const std::vector<WindowsReleaseRootPublicKey>&
+                                 release_root_public_keys,
+                             const std::vector<WindowsAllowedInstallStrategy>&
+                                 allowed_strategies,
+                             std::int64_t minimum_helper_protocol_version) {
+  if (policy_id.empty() || application_package_id.empty() ||
+      helper_service_id.empty() || application_publisher.empty() ||
+      helper_publisher.empty() || !IsSha256(helper_sha256) ||
+      target_classes.empty() || release_root_public_keys.empty() ||
+      allowed_strategies.empty() || minimum_helper_protocol_version != 1) {
     throw WindowsHelperPolicyError(
         WindowsHelperPolicyError::Code::kInvalidPolicy,
         "Windows privileged policy requires exact publishers and helper digest");
@@ -81,19 +92,34 @@ WindowsHelperPolicyError::WindowsHelperPolicyError(
     : std::runtime_error(detail), code_(code) {}
 
 WindowsHelperPolicy::WindowsHelperPolicy(
+    std::string policy_id,
     std::string application_package_id,
+    std::string helper_service_id,
     std::string application_publisher,
     std::string helper_publisher,
     std::string helper_sha256,
-    std::vector<std::wstring> allowed_install_roots)
-    : application_package_id_(std::move(application_package_id)),
+    std::vector<std::wstring> allowed_install_roots,
+    std::vector<std::string> allowed_target_classes,
+    std::vector<WindowsReleaseRootPublicKey> release_root_public_keys,
+    std::vector<WindowsAllowedInstallStrategy> allowed_strategies,
+    std::int64_t minimum_helper_protocol_version)
+    : policy_id_(std::move(policy_id)),
+      application_package_id_(std::move(application_package_id)),
+      helper_service_id_(std::move(helper_service_id)),
       application_publisher_(std::move(application_publisher)),
       helper_publisher_(std::move(helper_publisher)),
       helper_sha256_(std::move(helper_sha256)),
-      allowed_install_roots_(std::move(allowed_install_roots)) {
-  ValidatePrivilegePolicy(application_package_id_, application_publisher_,
-                          helper_publisher_, helper_sha256_,
-                          allowed_install_roots_);
+      allowed_install_roots_(std::move(allowed_install_roots)),
+      allowed_target_classes_(std::move(allowed_target_classes)),
+      release_root_public_keys_(std::move(release_root_public_keys)),
+      allowed_strategies_(std::move(allowed_strategies)),
+      minimum_helper_protocol_version_(minimum_helper_protocol_version) {
+  ValidatePrivilegePolicy(
+      policy_id_, application_package_id_, helper_service_id_,
+      application_publisher_, helper_publisher_, helper_sha256_,
+      allowed_install_roots_, allowed_target_classes_,
+      release_root_public_keys_, allowed_strategies_,
+      minimum_helper_protocol_version_);
 }
 
 WindowsHelperPolicy WindowsHelperPolicy::Load(
@@ -120,11 +146,25 @@ WindowsHelperPolicy WindowsHelperPolicy::Load(
   for (const std::string& root : parsed.allowed_install_roots) {
     roots.push_back(Utf8ToWide(root));
   }
+  std::vector<WindowsReleaseRootPublicKey> release_root_public_keys;
+  release_root_public_keys.reserve(parsed.release_root_public_keys.size());
+  for (const auto& key : parsed.release_root_public_keys) {
+    release_root_public_keys.push_back(
+        {key.key_id, key.algorithm, key.public_key_base64});
+  }
+  std::vector<WindowsAllowedInstallStrategy> allowed_strategies;
+  allowed_strategies.reserve(parsed.allowed_strategies.size());
+  for (const auto& strategy : parsed.allowed_strategies) {
+    allowed_strategies.push_back({strategy.strategy, strategy.provider});
+  }
   return WindowsHelperPolicy(
-      parsed.application_package_id,
+      parsed.policy_id, parsed.application_package_id,
+      parsed.helper_service_id,
       parsed.allowed_application_signer.value,
       parsed.allowed_helper_signer.value, sealed_helper_sha256,
-      std::move(roots));
+      std::move(roots), parsed.allowed_target_classes,
+      std::move(release_root_public_keys), std::move(allowed_strategies),
+      parsed.minimum_helper_protocol_version);
 }
 
 WindowsHelperPolicy WindowsHelperPolicy::ForTesting(
@@ -134,9 +174,33 @@ WindowsHelperPolicy WindowsHelperPolicy::ForTesting(
     std::string helper_sha256,
     std::vector<std::wstring> allowed_install_roots) {
   return WindowsHelperPolicy(
-      std::move(application_package_id), std::move(application_publisher),
-      std::move(helper_publisher), std::move(helper_sha256),
-      std::move(allowed_install_roots));
+      "com.example.desktop-updater", std::move(application_package_id),
+      "com.example.desktop-updater.helper",
+      std::move(application_publisher), std::move(helper_publisher),
+      std::move(helper_sha256), std::move(allowed_install_roots),
+      {"applicationDirectory"},
+      {{"test-release-root", "ed25519",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}},
+      {{"directoryReplace", "platformDirectory"}}, 1);
+}
+
+bool WindowsHelperPolicy::AllowsRequest(
+    std::int64_t protocol_version,
+    const std::string& target_class,
+    const std::string& strategy,
+    const std::string& provider) const {
+  if (protocol_version != 1 ||
+      protocol_version < minimum_helper_protocol_version_ ||
+      std::find(allowed_target_classes_.begin(),
+                allowed_target_classes_.end(), target_class) ==
+          allowed_target_classes_.end()) {
+    return false;
+  }
+  return std::any_of(
+      allowed_strategies_.begin(), allowed_strategies_.end(),
+      [&](const WindowsAllowedInstallStrategy& allowed) {
+        return allowed.strategy == strategy && allowed.provider == provider;
+      });
 }
 
 WindowsHelperPolicyError::Code

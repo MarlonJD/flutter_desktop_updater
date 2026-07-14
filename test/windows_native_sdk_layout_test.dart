@@ -254,6 +254,11 @@ void main() {
     expect(policy, contains("ParseHelperPolicyV1"));
     expect(policy, contains("authenticodePublisher"));
     expect(policy, contains("portableElevationRejected"));
+    expect(policy, contains("release_root_public_keys"));
+    expect(policy, contains("allowed_target_classes"));
+    expect(policy, contains("allowed_strategies"));
+    expect(policy, contains("minimum_helper_protocol_version"));
+    expect(policy, contains("AllowsRequest"));
     expect(authenticode, contains("WinVerifyTrust"));
     expect(authenticode, contains("WTD_REVOKE_WHOLECHAIN"));
     expect(authenticode, contains("GetFileInformationByHandleEx"));
