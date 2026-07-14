@@ -55,6 +55,16 @@ enum HelperProtocolValidation {
             $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
         }
     }
+
+    static func isDottedIdentifier(_ value: String) -> Bool {
+        guard let range = value.range(
+            of: #"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"#,
+            options: .regularExpression
+        ) else {
+            return false
+        }
+        return range == value.startIndex ..< value.endIndex
+    }
 }
 
 enum HelperSHA256 {

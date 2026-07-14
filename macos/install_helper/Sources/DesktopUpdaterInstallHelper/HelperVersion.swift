@@ -11,6 +11,7 @@ enum HelperCommand: Equatable {
     case version
     case testParseProtocol
     case oneShotService
+    case oneShotRecovery
     case privilegedService
 
     static func parse(arguments: [String]) throws -> HelperCommand {
@@ -21,6 +22,8 @@ enum HelperCommand: Equatable {
             return .testParseProtocol
         case ["--one-shot-service"]:
             return .oneShotService
+        case ["--one-shot-recovery"]:
+            return .oneShotRecovery
         case []:
             return .privilegedService
         default:
@@ -31,6 +34,7 @@ enum HelperCommand: Equatable {
     func execute(
         protocolInput: Data,
         oneShotServiceRuntime: (any MacOneShotServiceRunning)? = nil,
+        oneShotRecoveryRuntime: (any MacOneShotServiceRunning)? = nil,
         privilegedServiceRuntime: any MacPrivilegedServiceRunning
     ) throws -> String? {
         switch self {
@@ -53,6 +57,12 @@ enum HelperCommand: Equatable {
             }
             try oneShotServiceRuntime.run()
             return nil
+        case .oneShotRecovery:
+            guard let oneShotRecoveryRuntime else {
+                throw HelperBootstrapError.oneShotRecoveryUnavailable
+            }
+            try oneShotRecoveryRuntime.run()
+            return nil
         case .privilegedService:
             try privilegedServiceRuntime.run()
             return nil
@@ -64,4 +74,5 @@ enum HelperBootstrapError: Error, Equatable {
     case unsupportedArguments
     case invalidTestProtocol
     case oneShotServiceUnavailable
+    case oneShotRecoveryUnavailable
 }

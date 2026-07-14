@@ -215,7 +215,7 @@ final class SystemMacStageInstallEvidenceInspector:
         let executableSHA256 = macPrivilegeSHA256(
             try Data(contentsOf: executableURL, options: [.mappedIfSafe])
         )
-        let bundleTreeSHA256 = try treeSHA256(stageURL)
+        let bundleTreeSHA256 = try macAuthorizedTreeSHA256(stageURL)
         let verifier = MacAuthorizedBundlePayloadVerifier(
             expectation: MacAuthorizedBundlePayloadExpectation(
                 packageIdentifier: request.packageID,
@@ -329,11 +329,12 @@ private final class MacAuthorizedBundlePayloadVerifier:
                 == expectation.executableSHA256 else {
             throw MacPayloadVerificationError.executableMismatch
         }
-        guard try treeSHA256(canonical) == expectation.bundleTreeSHA256
+        guard try macAuthorizedTreeSHA256(canonical)
+                == expectation.bundleTreeSHA256
         else {
             throw MacPayloadVerificationError.invalidBundle
         }
-        try verifySignature(
+        try macVerifyBundleSignature(
             bundleURL: canonical,
             requirement: expectation.designatedRequirement
         )
@@ -494,7 +495,7 @@ private func realURL(_ url: URL) throws -> URL {
     return URL(fileURLWithPath: String(cString: buffer))
 }
 
-private func treeSHA256(_ rootURL: URL) throws -> String {
+func macAuthorizedTreeSHA256(_ rootURL: URL) throws -> String {
     let entries = try inventory(rootURL, excludingMarker: false)
     let object: [[String: Any]] = entries.map { entry in
         var value: [String: Any] = [
@@ -513,7 +514,10 @@ private func treeSHA256(_ rootURL: URL) throws -> String {
     )
 }
 
-private func verifySignature(bundleURL: URL, requirement: String) throws {
+func macVerifyBundleSignature(
+    bundleURL: URL,
+    requirement: String
+) throws {
     var code: SecStaticCode?
     var requirementObject: SecRequirement?
     guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &code)

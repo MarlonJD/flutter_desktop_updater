@@ -23,6 +23,10 @@ final class HelperVersionTests: XCTestCase {
             .oneShotService
         )
         XCTAssertEqual(
+            try HelperCommand.parse(arguments: ["--one-shot-recovery"]),
+            .oneShotRecovery
+        )
+        XCTAssertEqual(
             try HelperCommand.parse(arguments: []),
             .privilegedService
         )
@@ -44,6 +48,11 @@ final class HelperVersionTests: XCTestCase {
         XCTAssertThrowsError(
             try HelperCommand.parse(
                 arguments: ["--one-shot-service", "/tmp/attacker"]
+            )
+        )
+        XCTAssertThrowsError(
+            try HelperCommand.parse(
+                arguments: ["--one-shot-recovery", "/tmp/attacker"]
             )
         )
     }

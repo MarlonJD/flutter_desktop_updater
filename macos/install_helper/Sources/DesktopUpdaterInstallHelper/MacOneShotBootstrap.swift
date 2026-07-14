@@ -23,13 +23,107 @@ final class SystemMacOneShotServiceRuntime: MacOneShotServiceRunning {
     }
 }
 
+final class SystemMacPersistentRecoveryServiceRuntime:
+    MacOneShotServiceRunning
+{
+    let helperEndpointIdentitySHA256: String
+    private let runtime: MacPersistentRecoveryWireRuntime
+
+    init(
+        helperEndpointIdentitySHA256: String,
+        runtime: MacPersistentRecoveryWireRuntime
+    ) {
+        self.helperEndpointIdentitySHA256 = helperEndpointIdentitySHA256
+        self.runtime = runtime
+    }
+
+    func run() throws {
+        try runtime.run()
+    }
+}
+
 enum MacOneShotBootstrap {
+    private struct AuthenticatedHelper {
+        let policy: MacSealedInstallPolicyV1
+        let endpointIdentitySHA256: String
+    }
+
     static func makeRuntime(
         infoDictionary: [String: Any]? = Bundle.main.infoDictionary,
         executableURL: URL? = Bundle.main.executableURL,
         identityChecker: any MacSignedExecutableIdentityChecking =
             SecurityMacSignedExecutableIdentityChecker()
     ) throws -> SystemMacOneShotServiceRuntime {
+        let helper = try authenticateHelper(
+            infoDictionary: infoDictionary,
+            executableURL: executableURL,
+            identityChecker: identityChecker
+        )
+        let validator = MacOneShotInstallRequestValidator(
+            parentProcessIdentifier: { Darwin.getppid() },
+            callerInspector: SystemMacCallerInstallEvidenceInspector(),
+            stageInspector: SystemMacStageInstallEvidenceInspector()
+        )
+        let authorizer = SealedMacOneShotInstallAuthorizer(
+            policy: helper.policy,
+            helperEndpointIdentitySHA256:
+                helper.endpointIdentitySHA256,
+            requestValidator: validator
+        )
+        let session = MacOneShotInstallSession(
+            authorizer: authorizer,
+            readyTokenGenerator: secureReadyToken,
+            nowUnixMilliseconds: unixMilliseconds,
+            reservationLifetimeMilliseconds: 300_000
+        )
+        return SystemMacOneShotServiceRuntime(
+            helperEndpointIdentitySHA256:
+                helper.endpointIdentitySHA256,
+            runtime: MacOneShotServiceRuntime(
+                session: session,
+                callerMonitorFactory: SystemMacCallerExitMonitorFactory()
+            ),
+            channel: MacLengthPrefixedFileHandleChannel(
+                input: .standardInput,
+                output: .standardOutput
+            )
+        )
+    }
+
+    static func makeRecoveryRuntime(
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary,
+        executableURL: URL? = Bundle.main.executableURL,
+        identityChecker: any MacSignedExecutableIdentityChecking =
+            SecurityMacSignedExecutableIdentityChecker()
+    ) throws -> SystemMacPersistentRecoveryServiceRuntime {
+        let helper = try authenticateHelper(
+            infoDictionary: infoDictionary,
+            executableURL: executableURL,
+            identityChecker: identityChecker
+        )
+        let service = MacPersistentRecoveryService(
+            policy: helper.policy,
+            callerAuthenticator: SystemMacRecoveryCallerAuthenticator(),
+            verifierFactory: SystemMacRecoveryPayloadVerifierFactory()
+        )
+        return SystemMacPersistentRecoveryServiceRuntime(
+            helperEndpointIdentitySHA256:
+                helper.endpointIdentitySHA256,
+            runtime: MacPersistentRecoveryWireRuntime(
+                service: service,
+                channel: MacLengthPrefixedFileHandleChannel(
+                    input: .standardInput,
+                    output: .standardOutput
+                )
+            )
+        )
+    }
+
+    private static func authenticateHelper(
+        infoDictionary: [String: Any]?,
+        executableURL: URL?,
+        identityChecker: any MacSignedExecutableIdentityChecking
+    ) throws -> AuthenticatedHelper {
         let policy = try MacSealedInstallPolicyV1.load(
             infoDictionary: infoDictionary ?? [:]
         )
@@ -65,32 +159,9 @@ enum MacOneShotBootstrap {
         } catch {
             throw MacOneShotAuthorizationError.invalidHelperIdentity
         }
-        let validator = MacOneShotInstallRequestValidator(
-            parentProcessIdentifier: { Darwin.getppid() },
-            callerInspector: SystemMacCallerInstallEvidenceInspector(),
-            stageInspector: SystemMacStageInstallEvidenceInspector()
-        )
-        let authorizer = SealedMacOneShotInstallAuthorizer(
+        return AuthenticatedHelper(
             policy: policy,
-            helperEndpointIdentitySHA256: endpointIdentity,
-            requestValidator: validator
-        )
-        let session = MacOneShotInstallSession(
-            authorizer: authorizer,
-            readyTokenGenerator: secureReadyToken,
-            nowUnixMilliseconds: unixMilliseconds,
-            reservationLifetimeMilliseconds: 300_000
-        )
-        return SystemMacOneShotServiceRuntime(
-            helperEndpointIdentitySHA256: endpointIdentity,
-            runtime: MacOneShotServiceRuntime(
-                session: session,
-                callerMonitorFactory: SystemMacCallerExitMonitorFactory()
-            ),
-            channel: MacLengthPrefixedFileHandleChannel(
-                input: .standardInput,
-                output: .standardOutput
-            )
+            endpointIdentitySHA256: endpointIdentity
         )
     }
 

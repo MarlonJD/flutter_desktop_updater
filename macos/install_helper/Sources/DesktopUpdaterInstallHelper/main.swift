@@ -11,9 +11,13 @@ do {
     let oneShotRuntime = command == .oneShotService
         ? try MacOneShotBootstrap.makeRuntime()
         : nil
+    let oneShotRecoveryRuntime = command == .oneShotRecovery
+        ? try MacOneShotBootstrap.makeRecoveryRuntime()
+        : nil
     if let output = try command.execute(
         protocolInput: input,
         oneShotServiceRuntime: oneShotRuntime,
+        oneShotRecoveryRuntime: oneShotRecoveryRuntime,
         privilegedServiceRuntime: SystemMacPrivilegedServiceRuntime()
     ) {
         print(output)
@@ -27,6 +31,8 @@ do {
         code = "invalidTestProtocol"
     case .oneShotServiceUnavailable:
         code = "oneShotServiceUnavailable"
+    case .oneShotRecoveryUnavailable:
+        code = "oneShotRecoveryUnavailable"
     }
     FileHandle.standardError.write(Data("\(code)\n".utf8))
     Darwin.exit(64)

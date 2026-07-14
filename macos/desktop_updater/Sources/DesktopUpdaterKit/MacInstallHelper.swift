@@ -57,6 +57,16 @@ private enum HelperProtocolValidation {
             $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
         }
     }
+
+    static func isDottedIdentifier(_ value: String) -> Bool {
+        guard let range = value.range(
+            of: #"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"#,
+            options: .regularExpression
+        ) else {
+            return false
+        }
+        return range == value.startIndex ..< value.endIndex
+    }
 }
 
 public enum InstallTransactionState: Int {
@@ -446,6 +456,7 @@ final class PackagedMacInstallHelperTransport:
     }
 
     private let helperURL: URL
+    private let policyID: String?
     private let launcher: any MacOneShotProcessLaunching
     private let authenticator: any MacOneShotEndpointAuthenticating
     private let lock = NSLock()
@@ -455,12 +466,16 @@ final class PackagedMacInstallHelperTransport:
         helperURL: URL = Bundle.main.bundleURL.appendingPathComponent(
             "Contents/Helpers/DesktopUpdaterInstallHelper"
         ),
+        policyID: String? = Bundle.main.infoDictionary?[
+            "DesktopUpdaterInstallPolicyID"
+        ] as? String,
         launcher: any MacOneShotProcessLaunching =
             ProcessMacOneShotProcessLauncher(),
         authenticator: any MacOneShotEndpointAuthenticating =
             SystemMacOneShotEndpointAuthenticator()
     ) {
         self.helperURL = helperURL.standardizedFileURL
+        self.policyID = policyID
         self.launcher = launcher
         self.authenticator = authenticator
     }
@@ -596,15 +611,206 @@ final class PackagedMacInstallHelperTransport:
     }
 
     func queryTransaction(
-        transactionID _: String
+        transactionID: String
     ) throws -> InstallTransactionStatus {
-        throw MacInstallClientError.endpointUnavailable
+        let (response, endpoint) = try persistentRecoveryExchange(
+            operation: "queryTransaction",
+            transactionID: transactionID
+        )
+        return try parseTransactionStatus(
+            response,
+            transactionID: transactionID,
+            endpointIdentitySHA256: endpoint
+        )
     }
 
     func recoverPendingInstall(
-        transactionID _: String
+        transactionID: String
     ) throws -> InstallTransactionStatus {
-        throw MacInstallClientError.endpointUnavailable
+        let (response, endpoint) = try persistentRecoveryExchange(
+            operation: "recoverPendingInstall",
+            transactionID: transactionID
+        )
+        return try parseRecoveryResult(
+            response,
+            transactionID: transactionID,
+            endpointIdentitySHA256: endpoint
+        )
+    }
+
+    private func persistentRecoveryExchange(
+        operation: String,
+        transactionID: String
+    ) throws -> (Data, String) {
+        guard let policyID,
+              HelperProtocolValidation.isDottedIdentifier(policyID),
+              ["queryTransaction", "recoverPendingInstall"]
+                .contains(operation) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        let expectedEndpoint = try authenticator.authenticate(
+            executableURL: helperURL,
+            processIdentifier: nil
+        )
+        let channel = try launcher.launch(
+            executableURL: helperURL,
+            arguments: ["--one-shot-recovery"]
+        )
+        do {
+            let runningEndpoint = try authenticator.authenticate(
+                executableURL: helperURL,
+                processIdentifier: channel.processIdentifier
+            )
+            guard runningEndpoint == expectedEndpoint,
+                  HelperProtocolValidation.isSHA256(runningEndpoint) else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
+            try channel.writeFrame(
+                try canonicalData([
+                    "operation": operation,
+                    "policyId": policyID,
+                    "protocolVersion": 1,
+                    "transactionId": transactionID,
+                ])
+            )
+            let response = try channel.readFrame()
+            channel.closeInput()
+            return (response, runningEndpoint)
+        } catch {
+            channel.closeInput()
+            throw error
+        }
+    }
+
+    private func parseTransactionStatus(
+        _ data: Data,
+        transactionID: String,
+        endpointIdentitySHA256: String
+    ) throws -> InstallTransactionStatus {
+        let object = try canonicalObject(data)
+        guard Set(object.keys) == [
+            "protocolVersion", "transactionId", "state", "resultCode",
+            "journalSha256",
+        ],
+            exactInteger(object["protocolVersion"]) == 1,
+            object["transactionId"] as? String == transactionID,
+            let stateText = object["state"] as? String,
+            let state = transactionState(stateText),
+            let resultText = object["resultCode"] as? String,
+            let resultCode = transactionResultCode(resultText),
+            validStatusCombination(stateText, resultText),
+            let journalSHA256 = object["journalSha256"] as? String,
+            HelperProtocolValidation.isSHA256(journalSHA256) else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return InstallTransactionStatus(
+            transactionID: transactionID,
+            state: state,
+            resultCode: resultCode,
+            detail: "",
+            responseDigestSHA256: journalSHA256,
+            helperEndpointIdentitySHA256: endpointIdentitySHA256
+        )
+    }
+
+    private func parseRecoveryResult(
+        _ data: Data,
+        transactionID: String,
+        endpointIdentitySHA256: String
+    ) throws -> InstallTransactionStatus {
+        let object = try canonicalObject(data)
+        guard Set(object.keys) == [
+            "protocolVersion", "transactionId", "resultCode",
+            "verifiedOutcome", "journalSha256",
+        ],
+            exactInteger(object["protocolVersion"]) == 1,
+            object["transactionId"] as? String == transactionID,
+            let result = object["resultCode"] as? String,
+            let outcome = object["verifiedOutcome"] as? String,
+            let mapped = recoveryStatus(result: result, outcome: outcome),
+            let journalSHA256 = object["journalSha256"] as? String,
+            HelperProtocolValidation.isSHA256(journalSHA256) else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return InstallTransactionStatus(
+            transactionID: transactionID,
+            state: mapped.0,
+            resultCode: mapped.1,
+            detail: outcome,
+            responseDigestSHA256: journalSHA256,
+            helperEndpointIdentitySHA256: endpointIdentitySHA256
+        )
+    }
+
+    private func transactionState(_ value: String)
+        -> InstallTransactionState?
+    {
+        switch value {
+        case "prepared":
+            return .prepared
+        case "backupCreated", "targetActivated", "managerStarted",
+             "verificationPending":
+            return .commitAccepted
+        case "completed":
+            return .completed
+        case "rolledBack":
+            return .rolledBack
+        case "manualActionRequired":
+            return .manualActionRequired
+        default:
+            return nil
+        }
+    }
+
+    private func transactionResultCode(_ value: String)
+        -> InstallTransactionResultCode?
+    {
+        switch value {
+        case "completed", "rolledBack":
+            return .succeeded
+        case "recoveryRequired", "manualActionRequired":
+            return .recoveryRequired
+        default:
+            return nil
+        }
+    }
+
+    private func validStatusCombination(
+        _ state: String,
+        _ result: String
+    ) -> Bool {
+        switch (state, result) {
+        case ("completed", "completed"),
+             ("rolledBack", "rolledBack"),
+             ("manualActionRequired", "manualActionRequired"):
+            return true
+        case ("prepared", "recoveryRequired"),
+             ("backupCreated", "recoveryRequired"),
+             ("targetActivated", "recoveryRequired"),
+             ("managerStarted", "recoveryRequired"),
+             ("verificationPending", "recoveryRequired"):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func recoveryStatus(
+        result: String,
+        outcome: String
+    ) -> (InstallTransactionState, InstallTransactionResultCode)? {
+        switch (result, outcome) {
+        case ("completed", "newTarget"), ("completed", "none"):
+            return (.completed, .succeeded)
+        case ("rolledBack", "oldTarget"):
+            return (.rolledBack, .succeeded)
+        case ("recoveryRequired", "none"):
+            return (.prepared, .recoveryRequired)
+        case ("manualActionRequired", "none"):
+            return (.manualActionRequired, .recoveryRequired)
+        default:
+            return nil
+        }
     }
 
     private func takeSession(

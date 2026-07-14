@@ -168,6 +168,94 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         }
         XCTAssertTrue(session.didCloseInput)
     }
+
+    func testQueryUsesAuthenticatedPersistentRecoverySession() throws {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let session = RecordingMacOneShotClientSession(
+            responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: "prepared",
+                    resultCode: "recoveryRequired"
+                ),
+            ]
+        )
+        let launcher = RecordingMacOneShotProcessLauncher(session: session)
+        let authenticator = RecordingEndpointAuthenticator()
+        let helper = URL(fileURLWithPath: "/fixed/helper")
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: helper,
+            policyID: "com.example.desktop-updater.test",
+            launcher: launcher,
+            authenticator: authenticator
+        )
+
+        let status = try transport.queryTransaction(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(launcher.executableURL, helper)
+        XCTAssertEqual(launcher.arguments, ["--one-shot-recovery"])
+        XCTAssertEqual(authenticator.processIdentifiers.count, 2)
+        XCTAssertNil(authenticator.processIdentifiers[0])
+        XCTAssertEqual(authenticator.processIdentifiers[1], 4_242)
+        let request = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: session.requests[0])
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            Set(request.keys),
+            ["operation", "policyId", "protocolVersion", "transactionId"]
+        )
+        XCTAssertEqual(request["operation"] as? String, "queryTransaction")
+        XCTAssertEqual(
+            request["policyId"] as? String,
+            "com.example.desktop-updater.test"
+        )
+        XCTAssertEqual(status.state, .prepared)
+        XCTAssertEqual(status.resultCode, .recoveryRequired)
+        XCTAssertEqual(
+            status.helperEndpointIdentitySHA256,
+            String(repeating: "c", count: 64)
+        )
+        XCTAssertTrue(session.didCloseInput)
+    }
+
+    func testRecoveryMapsVerifiedRollbackFromAuthenticatedHelper() throws {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let session = RecordingMacOneShotClientSession(
+            responses: [recoveryData(transactionID: transactionID)]
+        )
+        let launcher = RecordingMacOneShotProcessLauncher(session: session)
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: launcher,
+            authenticator: RecordingEndpointAuthenticator()
+        )
+
+        let status = try transport.recoverPendingInstall(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(launcher.arguments, ["--one-shot-recovery"])
+        let request = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: session.requests[0])
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            request["operation"] as? String,
+            "recoverPendingInstall"
+        )
+        XCTAssertEqual(status.state, .rolledBack)
+        XCTAssertEqual(status.resultCode, .succeeded)
+        XCTAssertEqual(status.detail, "oldTarget")
+        XCTAssertEqual(
+            status.responseDigestSHA256,
+            String(repeating: "b", count: 64)
+        )
+        XCTAssertTrue(session.didCloseInput)
+    }
 }
 
 private final class RecordingEndpointAuthenticator:
@@ -259,6 +347,23 @@ private func recoveryData(transactionID: String) -> Data {
             "transactionId": transactionID,
             "resultCode": "rolledBack",
             "verifiedOutcome": "oldTarget",
+            "journalSha256": String(repeating: "b", count: 64),
+        ],
+        options: [.sortedKeys]
+    )
+}
+
+private func statusData(
+    transactionID: String,
+    state: String,
+    resultCode: String
+) -> Data {
+    try! JSONSerialization.data(
+        withJSONObject: [
+            "protocolVersion": 1,
+            "transactionId": transactionID,
+            "state": state,
+            "resultCode": resultCode,
             "journalSha256": String(repeating: "b", count: 64),
         ],
         options: [.sortedKeys]

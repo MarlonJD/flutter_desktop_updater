@@ -58,6 +58,35 @@ final class MacOneShotBootstrapTests: XCTestCase {
             )
         }
     }
+
+    func testBuildsAuthenticatedPersistentRecoveryRuntimeFromEmbeddedPolicy()
+        throws
+    {
+        let fixture = try MacOneShotBootstrapFixture()
+        defer { fixture.remove() }
+        let checker = BootstrapIdentityChecker(
+            identity: MacSignedExecutableIdentity(
+                bundleIdentifier: fixture.helperServiceID,
+                teamIdentifier: "TEAM123456",
+                designatedRequirement: fixture.helperRequirement,
+                sha256: "",
+                isSignatureValid: true
+            )
+        )
+
+        let runtime = try MacOneShotBootstrap.makeRecoveryRuntime(
+            infoDictionary: fixture.infoDictionary,
+            executableURL: fixture.executableURL,
+            identityChecker: checker
+        )
+
+        XCTAssertEqual(
+            runtime.helperEndpointIdentitySHA256,
+            macPrivilegeSHA256(fixture.executableData)
+        )
+        XCTAssertEqual(checker.inspectedURL, fixture.executableURL)
+        XCTAssertEqual(checker.requirement, fixture.helperRequirement)
+    }
 }
 
 private final class BootstrapIdentityChecker:
