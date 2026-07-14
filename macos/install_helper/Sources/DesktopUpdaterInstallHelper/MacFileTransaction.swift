@@ -128,6 +128,7 @@ final class MacFileTransaction {
 
     let paths: MacTransactionPaths
     private let directory: MacTransactionDirectory
+    private let stageDirectory: MacTransactionDirectory
     private let stageURL: URL
     private let stageName: String
     private let ownerProcessIdentifier: Int32
@@ -141,6 +142,7 @@ final class MacFileTransaction {
     private let targetLock: MacTargetLock
     private let lifecycleLock = NSLock()
     private var lifecycle = Lifecycle.reserved
+    private var preparedIdentity: MacFileIdentity?
 
     init(
         targetURL: URL,
@@ -156,9 +158,9 @@ final class MacFileTransaction {
         let stage = stageURL.standardizedFileURL
         let targetParent = target.deletingLastPathComponent()
         let stageParent = stage.deletingLastPathComponent()
-        guard targetParent.resolvingSymlinksInPath()
-            == stageParent.resolvingSymlinksInPath(),
-            stage.lastPathComponent != target.lastPathComponent else {
+        guard stage.lastPathComponent != target.lastPathComponent
+            || targetParent.resolvingSymlinksInPath()
+                != stageParent.resolvingSymlinksInPath() else {
             throw MacFileTransactionError.invalidPathOrTransaction
         }
         paths = try MacTransactionPaths(
@@ -166,6 +168,7 @@ final class MacFileTransaction {
             transactionID: transactionID
         )
         directory = try MacTransactionDirectory(url: targetParent)
+        stageDirectory = try MacTransactionDirectory(url: stageParent)
         self.stageURL = stage
         stageName = stage.lastPathComponent
         self.ownerProcessIdentifier = ownerProcessIdentifier
@@ -183,7 +186,7 @@ final class MacFileTransaction {
             rejectSymbolicLink: true
         )
         retainedStage = try MacRetainedFileObject(
-            directory: directory,
+            directory: stageDirectory,
             name: stageName
         )
         initialStageIdentity = retainedStage.identity
@@ -214,7 +217,20 @@ final class MacFileTransaction {
         try transition(from: .reserved, to: .preparing)
         do {
             try validateStageBeforeMutation()
-            try store.persist(initialJournal())
+            try copyStageToPreparedSibling()
+            let copiedIdentity = try directory.identity(
+                name: paths.preparedName,
+                rejectSymbolicLink: true
+            )
+            guard try verifier.verifyPayload(
+                at: directory.url.appendingPathComponent(
+                    paths.preparedName
+                )
+            ) == expectedPayloadIdentity else {
+                throw MacFileTransactionError.stagePayloadChanged
+            }
+            preparedIdentity = copiedIdentity
+            try store.persist(initialJournal(stageIdentity: copiedIdentity))
             let digest = try store.sha256()
             setLifecycle(.prepared)
             return digest
@@ -222,6 +238,7 @@ final class MacFileTransaction {
             if directory.exists(name: paths.journalName) {
                 setLifecycle(.recoveryRequired)
             } else {
+                try? removePreparedSiblingIfPresent()
                 try? targetLock.release()
                 setLifecycle(.cancelled)
             }
@@ -232,8 +249,14 @@ final class MacFileTransaction {
     func cancelPrepared() throws {
         try transition(from: .prepared, to: .preparing)
         do {
-            _ = try loadPreparedJournal()
+            let journal = try loadPreparedJournal()
             try directory.validatePathIdentity()
+            if directory.exists(name: paths.preparedName) {
+                try directory.removeTree(
+                    name: paths.preparedName,
+                    expectedIdentity: journal.stageIdentity
+                )
+            }
             try store.remove()
             try targetLock.release()
             setLifecycle(.cancelled)
@@ -253,23 +276,19 @@ final class MacFileTransaction {
         }
         try transition(from: .prepared, to: .executing)
         do {
-            try validateStageBeforeMutation()
             var journal = try loadPreparedJournal()
             guard try directory.identity(
-                name: stageName,
+                name: paths.preparedName,
                 rejectSymbolicLink: true
-            ) == initialStageIdentity,
-                try verifier.verifyPayload(at: stageURL)
+            ) == journal.stageIdentity,
+                try verifier.verifyPayload(
+                    at: directory.url.appendingPathComponent(
+                        paths.preparedName
+                    )
+                )
                     == expectedPayloadIdentity else {
                 throw MacFileTransactionError.stagePayloadChanged
             }
-            try durableRename(
-                from: stageName,
-                to: paths.preparedName,
-                before: .beforeStageRename,
-                beforeSync: .afterStageRenameBeforeDirectorySync,
-                after: .afterStageRename
-            )
 
             try directory.validatePathIdentity()
             guard try directory.identity(
@@ -291,7 +310,7 @@ final class MacFileTransaction {
             guard try directory.identity(
                 name: paths.preparedName,
                 rejectSymbolicLink: true
-            ) == initialStageIdentity,
+            ) == journal.stageIdentity,
                 try verifier.verifyPayload(
                     at: directory.url.appendingPathComponent(
                         paths.preparedName
@@ -322,6 +341,10 @@ final class MacFileTransaction {
             )
             try store.remove()
             try targetLock.release()
+            try? stageDirectory.removeTree(
+                name: stageName,
+                expectedIdentity: initialStageIdentity
+            )
             setLifecycle(.completed)
             return .completed
         } catch {
@@ -356,25 +379,28 @@ final class MacFileTransaction {
         try faultInjector.hit(after)
     }
 
-    private func initialJournal() -> MacTransactionJournal {
+    private func initialJournal(
+        stageIdentity: MacFileIdentity
+    ) -> MacTransactionJournal {
         MacTransactionJournal(
             transactionID: paths.transactionID,
             ownerProcessIdentifier: ownerProcessIdentifier,
             targetName: paths.targetName,
-            originalStageName: stageName,
+            originalStageName: paths.preparedName,
             preparedName: paths.preparedName,
             backupName: paths.backupName,
             parentIdentity: directory.identity,
             targetIdentity: targetIdentity,
-            stageIdentity: initialStageIdentity,
+            stageIdentity: stageIdentity,
             expectedPayloadIdentity: expectedPayloadIdentity,
             state: .prepared
         )
     }
 
     private func loadPreparedJournal() throws -> MacTransactionJournal {
-        guard let journal = try store.load(),
-              journal == initialJournal() else {
+        guard let preparedIdentity,
+              let journal = try store.load(),
+              journal == initialJournal(stageIdentity: preparedIdentity) else {
             throw MacFileTransactionError.invalidState
         }
         return journal
@@ -382,7 +408,8 @@ final class MacFileTransaction {
 
     private func validateStageBeforeMutation() throws {
         try directory.validatePathIdentity()
-        guard try directory.identity(
+        try stageDirectory.validatePathIdentity()
+        guard try stageDirectory.identity(
             name: stageName,
             rejectSymbolicLink: true
         ) == initialStageIdentity else {
@@ -392,6 +419,43 @@ final class MacFileTransaction {
             == expectedPayloadIdentity else {
             throw MacFileTransactionError.stagePayloadChanged
         }
+    }
+
+    private func copyStageToPreparedSibling() throws {
+        try faultInjector.hit(.beforeStageRename)
+        try directory.validatePathIdentity()
+        try stageDirectory.validatePathIdentity()
+        let destination = directory.url.appendingPathComponent(
+            paths.preparedName
+        )
+        let flags = copyfile_flags_t(
+            COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_EXCL
+                | COPYFILE_NOFOLLOW
+        )
+        guard stageURL.path.withCString({ source in
+            destination.path.withCString { target in
+                copyfile(source, target, nil, flags)
+            }
+        }) == 0 else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        try faultInjector.hit(.afterStageRenameBeforeDirectorySync)
+        try directory.sync()
+        try faultInjector.hit(.afterStageRename)
+        try directory.validatePathIdentity()
+        try stageDirectory.validatePathIdentity()
+    }
+
+    private func removePreparedSiblingIfPresent() throws {
+        guard directory.exists(name: paths.preparedName) else { return }
+        let identity = try directory.identity(
+            name: paths.preparedName,
+            rejectSymbolicLink: true
+        )
+        try directory.removeTree(
+            name: paths.preparedName,
+            expectedIdentity: identity
+        )
     }
 
     private func transition(

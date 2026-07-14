@@ -76,6 +76,20 @@ final class MacRecoveryService {
             guard let loaded = try store.load() else {
                 if try lockOwner(directory, paths: paths)
                     == paths.transactionID {
+                    if directory.exists(name: paths.preparedName) {
+                        let identity = try recoveryIdentity(
+                            directory,
+                            name: paths.preparedName
+                        )
+                        do {
+                            try directory.removeTree(
+                                name: paths.preparedName,
+                                expectedIdentity: identity
+                            )
+                        } catch {
+                            throw MacRecoveryError.filesystemOperationFailed
+                        }
+                    }
                     try releaseLock(directory, paths: paths)
                     return .recovered
                 }

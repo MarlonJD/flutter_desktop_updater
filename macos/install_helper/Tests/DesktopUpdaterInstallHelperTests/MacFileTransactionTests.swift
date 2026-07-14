@@ -29,6 +29,33 @@ final class MacFileTransactionTests: XCTestCase {
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
     }
 
+    func testExternalSameVolumeStageIsPreparedWithoutMutatingItsSource()
+        throws
+    {
+        let fixture = try MacTransactionFixture(externalStage: true)
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+
+        _ = try transaction.prepare()
+
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixture.rootURL.appendingPathComponent(
+                    transaction.paths.preparedName
+                ).path
+            )
+        )
+
+        XCTAssertEqual(try transaction.execute(), .completed)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageURL.path)
+        )
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
     func testSecondTransactionCannotReserveTheSameTargetBeforeMutation()
         throws
     {
@@ -71,6 +98,8 @@ final class MacFileTransactionTests: XCTestCase {
             [
                 ".Example.app.desktop-updater-\(fixture.transactionID)"
                     + ".journal.json",
+                ".Example.app.desktop-updater-\(fixture.transactionID)"
+                    + ".prepared",
                 ".Example.app.desktop-updater-lock",
             ]
         )

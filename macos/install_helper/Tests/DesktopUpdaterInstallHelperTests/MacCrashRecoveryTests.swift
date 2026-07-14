@@ -18,7 +18,11 @@ final class MacCrashRecoveryTests: XCTestCase {
             )
             XCTAssertEqual(
                 try fixture.version(at: fixture.targetURL),
-                point == .beforePreparedJournalFlush ? "old" : "new",
+                [
+                    MacTransactionFaultPoint.beforeStageRename,
+                    .afterStageRename,
+                    .beforePreparedJournalFlush,
+                ].contains(point) ? "old" : "new",
                 "fault \(point)"
             )
             XCTAssertEqual(
@@ -156,21 +160,32 @@ final class MacTransactionFixture {
     let rootURL: URL
     let targetURL: URL
     let stageURL: URL
+    private let stageRootURL: URL
     let verifier = FixturePayloadVerifier()
 
-    init() throws {
+    init(externalStage: Bool = false) throws {
         rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         targetURL = rootURL.appendingPathComponent(
             "Example.app",
             isDirectory: true
         )
-        stageURL = rootURL.appendingPathComponent(
+        stageRootURL = externalStage
+            ? FileManager.default.temporaryDirectory.appendingPathComponent(
+                UUID().uuidString,
+                isDirectory: true
+            )
+            : rootURL
+        stageURL = stageRootURL.appendingPathComponent(
             "Stage.app",
             isDirectory: true
         )
         try FileManager.default.createDirectory(
             at: targetURL,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: stageRootURL,
             withIntermediateDirectories: true
         )
         try FileManager.default.createDirectory(
@@ -235,6 +250,9 @@ final class MacTransactionFixture {
 
     func remove() {
         try? FileManager.default.removeItem(at: rootURL)
+        if stageRootURL != rootURL {
+            try? FileManager.default.removeItem(at: stageRootURL)
+        }
     }
 }
 
