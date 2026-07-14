@@ -10,6 +10,7 @@ enum HelperVersion {
 enum HelperCommand: Equatable {
     case version
     case testParseProtocol
+    case privilegedService
 
     static func parse(arguments: [String]) throws -> HelperCommand {
         switch arguments {
@@ -17,8 +18,27 @@ enum HelperCommand: Equatable {
             return .version
         case ["--test-parse-protocol"]:
             return .testParseProtocol
+        case []:
+            return .privilegedService
         default:
             throw HelperBootstrapError.unsupportedArguments
+        }
+    }
+
+    func execute(
+        protocolInput: Data,
+        privilegedServiceRuntime: any MacPrivilegedServiceRunning
+    ) throws -> String? {
+        switch self {
+        case .version:
+            return HelperVersion.displayString
+        case .testParseProtocol:
+            let envelope = try TestProtocolEnvelope.parse(protocolInput)
+            return "valid schema=\(envelope.schemaVersion) "
+                + "protocol=\(envelope.protocolVersion)"
+        case .privilegedService:
+            try privilegedServiceRuntime.run()
+            return nil
         }
     }
 }

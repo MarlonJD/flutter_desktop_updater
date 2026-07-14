@@ -12,16 +12,30 @@ final class HelperVersionTests: XCTestCase {
         )
     }
 
-    func testOnlyVersionAndTestProtocolCommandsAreAccepted() throws {
+    func testOnlyFixedBootstrapCommandsAreAccepted() throws {
         XCTAssertEqual(try HelperCommand.parse(arguments: ["--version"]), .version)
         XCTAssertEqual(
             try HelperCommand.parse(arguments: ["--test-parse-protocol"]),
             .testParseProtocol
         )
-        XCTAssertThrowsError(try HelperCommand.parse(arguments: []))
+        XCTAssertEqual(
+            try HelperCommand.parse(arguments: []),
+            .privilegedService
+        )
         XCTAssertThrowsError(try HelperCommand.parse(arguments: ["--help"]))
         XCTAssertThrowsError(
             try HelperCommand.parse(arguments: ["--version", "--test-parse-protocol"])
+        )
+        XCTAssertThrowsError(
+            try HelperCommand.parse(
+                arguments: [
+                    "--privileged-service",
+                    "com.attacker.helper",
+                ]
+            )
+        )
+        XCTAssertThrowsError(
+            try HelperCommand.parse(arguments: ["--privileged-service"])
         )
     }
 

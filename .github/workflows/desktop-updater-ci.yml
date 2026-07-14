@@ -531,6 +531,15 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
+      - name: Validate macOS install helper configuration
+        run: |
+          plutil -lint macos/install_helper/Configuration/Helper-Info.plist
+          plutil -lint macos/install_helper/Configuration/Helper-Launchd.plist
+          plutil -lint macos/install_helper/Configuration/App-SMPrivilegedExecutables.plist
+      - name: Run macOS install helper tests
+        run: swift test --package-path macos/install_helper
+      - name: Run unprivileged macOS install helper smoke
+        run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
       - name: Typecheck macOS 10.14 CocoaPods fallback source set
         run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
       - name: Run DesktopUpdaterKit SwiftPM tests
@@ -712,6 +721,13 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --keychain "$DESKTOP_UPDATER_MACOS_KEYCHAIN"
           echo "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=$DESKTOP_UPDATER_MACOS_NOTARY_PROFILE" >> "$GITHUB_ENV"
+      - name: Run signed SMJobBless install helper smoke
+        if: vars.DESKTOP_UPDATER_RUN_SMJOBBLESS_E2E == '1'
+        env:
+          DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_APP }}
+          DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SMOKE_HOST }}
+          DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID: ${{ vars.DESKTOP_UPDATER_SMJOBBLESS_SERVICE_ID }}
+        run: dart run tool/macos_install_helper_smoke.dart --mode privileged
       - name: Run notarized release publish smoke
         if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
         working-directory: example
