@@ -85,6 +85,7 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/helper_policy_windows.cpp
   src/helper/helper_authenticode.cpp
   src/helper/named_pipe_transport.cpp
+  src/helper/windows_helper_bootstrap.cpp
   src/helper/windows_install_authorizer.cpp
   src/helper/windows_one_shot_transport.cpp
   src/helper/windows_reservation.cpp

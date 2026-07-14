@@ -419,6 +419,29 @@ void main() {
     expect(tests, contains("RetainsCompleteSealedPolicy"));
     expect(tests, contains("RejectsExecutableInventoryDrift"));
   });
+
+  test("Windows elevated helper boots a protected one-shot service", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final bootstrap = readRequiredFile(
+      "windows/native/src/helper/windows_helper_bootstrap.cpp",
+    );
+    final pipe = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.cpp",
+    );
+
+    expect(cmake, contains("windows_helper_bootstrap.cpp"));
+    expect(main, contains("LoadWindowsHelperBootstrap"));
+    expect(main, contains("WindowsNativeInstallAuthorizer"));
+    expect(main, contains("RunWindowsOneShotPipeSession"));
+    expect(main, contains("SecureWindowsReadyToken"));
+    expect(bootstrap, contains("desktop_updater_helper_policy.json"));
+    expect(bootstrap, contains("GetSecurityInfo"));
+    expect(bootstrap, contains("AccessCheck"));
+    expect(bootstrap, contains("VerifyWindowsExecutableStillMatches"));
+    expect(pipe, contains("WindowsElevatedPipeSessionRunner"));
+    expect(pipe, contains("FILE_FLAG_OVERLAPPED"));
+  });
 }
 
 String readRequiredFile(String path) {

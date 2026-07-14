@@ -5,6 +5,7 @@
 #include "helper_authenticode.h"
 #include "helper_policy_windows.h"
 #include "named_pipe_transport.h"
+#include "windows_helper_bootstrap.h"
 
 namespace desktop_updater::helper {
 namespace {
@@ -113,6 +114,18 @@ TEST(WindowsHelperAuth, UacCancellationAndTimeoutRemainPreMutation) {
             ClassifyElevationResult(ERROR_CANCELLED, false));
   EXPECT_EQ(ElevationLaunchResult::kTimedOut,
             ClassifyElevationResult(WAIT_TIMEOUT, true));
+}
+
+TEST(WindowsHelperAuth, GeneratesUnpredictableReadyTokenShape) {
+  const std::string first = SecureWindowsReadyToken();
+  const std::string second = SecureWindowsReadyToken();
+  EXPECT_EQ(43U, first.size());
+  EXPECT_EQ(43U, second.size());
+  EXPECT_NE(first, second);
+  EXPECT_EQ(std::string::npos, first.find_first_not_of(
+                                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                   "abcdefghijklmnopqrstuvwxyz"
+                                   "0123456789-_"));
 }
 
 }  // namespace

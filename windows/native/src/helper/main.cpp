@@ -5,6 +5,9 @@
 #include <string>
 
 #include "named_pipe_transport.h"
+#include "windows_helper_bootstrap.h"
+#include "windows_install_authorizer.h"
+#include "windows_one_shot_transport.h"
 
 namespace {
 
@@ -39,8 +42,21 @@ int Run(int argument_count, wchar_t** arguments) {
   const std::string nonce(wide_nonce.begin(), wide_nonce.end());
   try {
     return desktop_updater::helper::ConnectElevatedHelperToCallerPipe(
-        pipe_name, nonce, 30'000);
-  } catch (const desktop_updater::helper::NamedPipeTransportError&) {
+        pipe_name, nonce, 30'000,
+        [](HANDLE pipe, DWORD caller_process_id) {
+          auto bootstrap =
+              desktop_updater::helper::LoadWindowsHelperBootstrap(
+                  caller_process_id);
+          desktop_updater::helper::WindowsNativeInstallAuthorizer authorizer(
+              bootstrap.policy());
+          desktop_updater::helper::RunWindowsOneShotPipeSession(
+              pipe, caller_process_id, bootstrap.policy(), authorizer,
+              desktop_updater::helper::SecureWindowsReadyToken,
+              desktop_updater::helper::WindowsHelperSha256Hex,
+              desktop_updater::helper::WindowsHelperNowUnixMilliseconds,
+              300'000, 30'000);
+        });
+  } catch (const std::exception&) {
     return ERROR_ACCESS_DENIED;
   }
 }

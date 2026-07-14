@@ -121,7 +121,7 @@ ScopedHandle CreateCallerPipe(const std::wstring& pipe_name,
   HANDLE pipe = CreateNamedPipeW(
       pipe_name.c_str(),
       PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
-      PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT |
+      PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT |
           PIPE_REJECT_REMOTE_CLIENTS,
       1, 4096, 4096, 0, &attributes);
   if (pipe == INVALID_HANDLE_VALUE) {
@@ -284,7 +284,12 @@ ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
 
 int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
                                       const std::string& nonce,
-                                      DWORD timeout_millis) {
+                                      DWORD timeout_millis,
+                                      const WindowsElevatedPipeSessionRunner&
+                                          session_runner) {
+  if (!session_runner) {
+    throw NamedPipeTransportError("one-shot session runner is required");
+  }
   if (pipe_name != DerivePipeName(nonce)) {
     throw NamedPipeTransportError("pipe locator is not nonce-derived");
   }
@@ -293,7 +298,7 @@ int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
   }
   ScopedHandle pipe(CreateFileW(
       pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr));
   if (pipe.get() == INVALID_HANDLE_VALUE) {
     throw NamedPipeTransportError("helper cannot connect to caller pipe");
   }
@@ -307,32 +312,7 @@ int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
       ProcessUserSid(caller_process.get()).empty()) {
     throw NamedPipeTransportError("caller process/token validation failed");
   }
-  DWORD request_length = 0;
-  ReadExact(pipe.get(), &request_length, sizeof(request_length));
-  if (request_length == 0 || request_length > 1024 * 1024) {
-    throw NamedPipeTransportError("canonical request size rejected");
-  }
-  std::string canonical_request(request_length, '\0');
-  ReadExact(pipe.get(), canonical_request.data(), request_length);
-  try {
-    const auto parsed =
-        desktop_updater::runtime::internal::ParseJson(canonical_request);
-    if (desktop_updater::runtime::internal::EncodeCanonicalJson(parsed) !=
-        canonical_request) {
-      throw NamedPipeTransportError("request is not canonical JSON");
-    }
-  } catch (const desktop_updater::runtime::internal::JsonError&) {
-    throw NamedPipeTransportError("request is not valid canonical JSON");
-  }
-  // Task 7 authenticates and reserves authority only. Task 8 consumes this
-  // canonical request for the handle-relative transaction.
-  const std::string response = "AUTHENTICATED " + nonce;
-  DWORD written = 0;
-  if (!WriteFile(pipe.get(), response.data(),
-                 static_cast<DWORD>(response.size()), &written, nullptr) ||
-      written != response.size() || !FlushFileBuffers(pipe.get())) {
-    throw NamedPipeTransportError("helper handshake write failed");
-  }
+  session_runner(pipe.get(), server_pid);
   return ERROR_SUCCESS;
 }
 

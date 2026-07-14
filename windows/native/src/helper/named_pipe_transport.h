@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 
@@ -24,6 +25,9 @@ struct PeerBinding {
   std::wstring user_sid;
   std::string nonce;
 };
+
+using WindowsElevatedPipeSessionRunner =
+    std::function<void(HANDLE pipe, DWORD caller_process_id)>;
 
 enum class ElevationLaunchResult {
   kLaunched,
@@ -51,7 +55,9 @@ ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
 
 int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
                                       const std::string& nonce,
-                                      DWORD timeout_millis);
+                                      DWORD timeout_millis,
+                                      const WindowsElevatedPipeSessionRunner&
+                                          session_runner);
 
 }  // namespace desktop_updater::helper
 
