@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MarlonJD/flutter_desktop_updater/schemas/native-install-helper-policy-v1.schema.json",
+  "title": "HelperPolicyV1",
+  "description": "Build- or installer-sealed authority for native install helpers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policyVersion",
+    "policyId",
+    "applicationPackageId",
+    "helperServiceId",
+    "allowedApplicationSigner",
+    "allowedHelperSigner",
+    "allowedTargetClasses",
+    "allowedInstallRoots",
+    "releaseRootPublicKeys",
+    "allowedStrategies",
+    "minimumHelperProtocolVersion"
+  ],
+  "properties": {
+    "policyVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "policyId": {
+      "$ref": "#/$defs/dottedIdentifier"
+    },
+    "applicationPackageId": {
+      "$ref": "#/$defs/dottedIdentifier"
+    },
+    "helperServiceId": {
+      "$ref": "#/$defs/dottedIdentifier"
+    },
+    "allowedApplicationSigner": {
+      "$ref": "#/$defs/signer"
+    },
+    "allowedHelperSigner": {
+      "$ref": "#/$defs/signer"
+    },
+    "allowedTargetClasses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "sameUserWritable",
+          "applicationBundle",
+          "applicationDirectory",
+          "singleExecutable",
+          "protectedApplication",
+          "systemPackage",
+          "externalManaged"
+        ]
+      }
+    },
+    "allowedInstallRoots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "releaseRootPublicKeys": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/releaseRootPublicKey"
+      }
+    },
+    "allowedStrategies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/allowedStrategy"
+      }
+    },
+    "minimumHelperProtocolVersion": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$defs": {
+    "dottedIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "appleDesignatedRequirement",
+            "authenticodePublisher",
+            "sha256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sha256"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "releaseRootPublicKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "algorithm",
+        "publicKeyBase64"
+      ],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "publicKeyBase64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        }
+      }
+    },
+    "allowedStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "provider"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "directoryReplace",
+            "singleFileReplace",
+            "verifiedInstallerHandoff",
+            "systemPackageTransaction",
+            "externalManagedRefresh"
+          ]
+        },
+        "provider": {
+          "enum": [
+            "platformDirectory",
+            "platformFile",
+            "macosInstaller",
+            "windowsInno",
+            "apt",
+            "dnf",
+            "flatpak",
+            "snap"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "directoryReplace"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "provider": {
+                "const": "platformDirectory"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "singleFileReplace"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "provider": {
+                "const": "platformFile"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "verifiedInstallerHandoff"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "provider": {
+                "enum": [
+                  "macosInstaller",
+                  "windowsInno"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "systemPackageTransaction"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "provider": {
+                "enum": [
+                  "apt",
+                  "dnf"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "externalManagedRefresh"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "provider": {
+                "enum": [
+                  "flatpak",
+                  "snap"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

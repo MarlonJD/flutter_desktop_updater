@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.14)
 if(POLICY CMP0091)
   cmake_policy(SET CMP0091 NEW)
 endif()
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 project(desktop_updater_native VERSION 2.7.0 LANGUAGES CXX)
@@ -17,6 +20,7 @@ set(DESKTOP_UPDATER_RUNTIME_COMMON_DIR
 set(NATIVE_SOURCES
   src/desktop_updater_native.cpp
   src/desktop_updater_native_c.cpp
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
 )
 
@@ -174,10 +178,15 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   endif()
 
   add_executable(desktop_updater_native_test
-    test/desktop_updater_native_c_test.cpp)
+    test/desktop_updater_native_c_test.cpp
+    ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy_fixture_tests.cc)
   target_compile_features(desktop_updater_native_test PRIVATE cxx_std_17)
   target_include_directories(desktop_updater_native_test
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+  target_compile_definitions(desktop_updater_native_test PRIVATE
+    DESKTOP_UPDATER_POLICY_FIXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/compat/native-install-helper/v1/policy-cases.json\")
   target_link_libraries(desktop_updater_native_test
     PRIVATE desktop_updater_native_static GTest::gtest_main)
 

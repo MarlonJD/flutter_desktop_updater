@@ -1,0 +1,726 @@
+{
+  "cases": [
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"sha256\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"allowedHelperSigner\":{\"kind\":\"sha256\",\"value\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"allowedInstallRoots\":[],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"platformFile\",\"strategy\":\"singleFileReplace\"}],\"allowedTargetClasses\":[\"sameUserWritable\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.portable\",\"policyVersion\":1,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\"}]}",
+      "canonicalSha256": "99b18f06fc11f18ad34b7cad9d10408ae0726679b20e44a84c518f886db0cf10",
+      "expectedFailure": null,
+      "expectedPackageId": "com.example.app",
+      "expectedValid": true,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "valid portable policy",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "allowedHelperSigner": {
+          "kind": "sha256",
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "allowedInstallRoots": [],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "platformFile",
+            "strategy": "singleFileReplace"
+          }
+        ],
+        "allowedTargetClasses": [
+          "sameUserWritable"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.portable",
+        "policyVersion": 1,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "15d2d21582e931463c5e55a853f5757dcb33f047bad24fd6439f433e2bc94a75",
+      "expectedFailure": null,
+      "expectedPackageId": "com.example.app",
+      "expectedValid": true,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "valid privileged policy",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "15d2d21582e931463c5e55a853f5757dcb33f047bad24fd6439f433e2bc94a75",
+      "expectedFailure": "applicationPackageIdMismatch",
+      "expectedPackageId": "com.example.other",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "wrong package ID",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"recursiveCopy\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "4c0d7d7fe4738c9de7559f583a73e0852d16f005685332bb488775d8591886dd",
+      "expectedFailure": "unknownStrategy",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "unknown strategy",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "recursiveCopy"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "491916c11db4b3093149e5a2df77f96ee2248ee92b98fd136c21956a3c751a4a",
+      "expectedFailure": "rootFilesystemAuthorization",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "root filesystem authorization",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "1b367510295b9bba8ce9e5c8007d6a4899c118e3076bb804b8b883840938ca9a",
+      "expectedFailure": "relativeInstallRoot",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "relative install root",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"callerReleaseRootPublicKeys\":[\"attacker\"],\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "db2c4b8a7369c7a05322ca8ad99d4d0a63f8ec3f9dd177638a1d54ef7775f4fe",
+      "expectedFailure": "unknownField:callerReleaseRootPublicKeys",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "caller-added release key authority",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "callerReleaseRootPublicKeys": [
+          "attacker"
+        ],
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":2,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "6fba8609bf1c874312389d5e6153da222b3c61a366bb0abcbf329caa71c165f8",
+      "expectedFailure": "policyRollback",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 3,
+      "name": "policy rollback",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 2,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"*\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "a98679f08ec752c7878d529d527bd782344d9c885b4c3796f3ac80f847b78df7",
+      "expectedFailure": "wildcardSigner",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "invalid signer",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "*"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"},{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=\"}]}",
+      "canonicalSha256": "cda46cc541f31f74c3156accb1c105a958d7d3898fa28347c231261edf86df5d",
+      "expectedFailure": "duplicateReleaseKeyId",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "duplicate release key ID",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          },
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":0,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "d8c46edb2101b42ba9a82e77e82b955cec01790d4bb98c481ce452aebd4ecaab",
+      "expectedFailure": "invalidInteger:minimumHelperProtocolVersion",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "protocol downgrade",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 0,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"sha256\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"allowedHelperSigner\":{\"kind\":\"sha256\",\"value\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"allowedInstallRoots\":[],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"platformFile\",\"strategy\":\"singleFileReplace\"}],\"allowedTargetClasses\":[\"sameUserWritable\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.portable\",\"policyVersion\":1,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\"}]}",
+      "canonicalSha256": "6d928bdac1893a66d32f31d2ae883ae5953d93c395bb0e4a80e345c87430940b",
+      "expectedFailure": "portablePolicyRequestsElevation",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "portable policy requests elevation",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "allowedHelperSigner": {
+          "kind": "sha256",
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "allowedInstallRoots": [],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "platformFile",
+            "strategy": "singleFileReplace"
+          }
+        ],
+        "allowedTargetClasses": [
+          "sameUserWritable",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.portable",
+        "policyVersion": 1,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"strategy\":\"externalManagedRefresh\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "04aecc901128dfc12db88af9215f226a709e5678fb38fd2b381f54bb11859f0b",
+      "expectedFailure": "missingField:allowedStrategies.provider",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "external refresh without named provider",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "strategy": "externalManagedRefresh"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"\"}]}",
+      "canonicalSha256": "889b244e29d500dc8e763535d365990fbe3be9c516275cbf39e6e5a147416e4d",
+      "expectedFailure": "emptyReleaseRootPublicKey",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "empty release root key",
+      "policy": {
+        "allowedApplicationSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": ""
+          }
+        ]
+      }
+    },
+    {
+      "canonicalJson": "{\"allowedApplicationSigner\":{\"allowedInstallRoots\":[\"/Applications\"],\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.app and anchor apple generic\"},\"allowedHelperSigner\":{\"kind\":\"appleDesignatedRequirement\",\"value\":\"identifier com.example.desktop-updater.helper and anchor apple generic\"},\"allowedInstallRoots\":[\"/Applications\"],\"allowedStrategies\":[{\"provider\":\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":\"macosInstaller\",\"strategy\":\"verifiedInstallerHandoff\"}],\"allowedTargetClasses\":[\"applicationBundle\",\"protectedApplication\"],\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,\"policyId\":\"com.example.desktop-updater.privileged\",\"policyVersion\":3,\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":\"stable-2026\",\"publicKeyBase64\":\"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\"}]}",
+      "canonicalSha256": "15a278fb4ae191b632d347b4ce0b90a2dd8589a84773f1bd308693e1d41d8abd",
+      "expectedFailure": "unknownField:allowedApplicationSigner.allowedInstallRoots",
+      "expectedPackageId": "com.example.app",
+      "expectedValid": false,
+      "minimumAcceptedPolicyVersion": 1,
+      "name": "unknown signer authority field",
+      "policy": {
+        "allowedApplicationSigner": {
+          "allowedInstallRoots": [
+            "/Applications"
+          ],
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.app and anchor apple generic"
+        },
+        "allowedHelperSigner": {
+          "kind": "appleDesignatedRequirement",
+          "value": "identifier com.example.desktop-updater.helper and anchor apple generic"
+        },
+        "allowedInstallRoots": [
+          "/Applications"
+        ],
+        "allowedStrategies": [
+          {
+            "provider": "platformDirectory",
+            "strategy": "directoryReplace"
+          },
+          {
+            "provider": "macosInstaller",
+            "strategy": "verifiedInstallerHandoff"
+          }
+        ],
+        "allowedTargetClasses": [
+          "applicationBundle",
+          "protectedApplication"
+        ],
+        "applicationPackageId": "com.example.app",
+        "helperServiceId": "com.example.desktop-updater.helper",
+        "minimumHelperProtocolVersion": 1,
+        "policyId": "com.example.desktop-updater.privileged",
+        "policyVersion": 3,
+        "releaseRootPublicKeys": [
+          {
+            "algorithm": "ed25519",
+            "keyId": "stable-2026",
+            "publicKeyBase64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          }
+        ]
+      }
+    }
+  ],
+  "schemaVersion": 1
+}
