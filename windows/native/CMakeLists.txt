@@ -62,6 +62,35 @@ set_target_properties(desktop_updater_native PROPERTIES
   WINDOWS_EXPORT_ALL_SYMBOLS ON
   OUTPUT_NAME desktop_updater_native)
 
+set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
+  src/helper/helper_policy_windows.cpp
+  src/helper/helper_authenticode.cpp
+  src/helper/named_pipe_transport.cpp
+  src/helper/windows_reservation.cpp
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
+add_library(desktop_updater_install_helper_support STATIC
+  ${DESKTOP_UPDATER_INSTALL_HELPER_SOURCES})
+target_compile_features(desktop_updater_install_helper_support
+  PUBLIC cxx_std_17)
+target_compile_definitions(desktop_updater_install_helper_support
+  PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_include_directories(desktop_updater_install_helper_support
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/helper
+  PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+target_link_libraries(desktop_updater_install_helper_support
+  PUBLIC Wintrust Crypt32 Advapi32 Shell32 Bcrypt)
+
+add_executable(desktop_updater_install_helper WIN32
+  src/helper/main.cpp)
+target_compile_features(desktop_updater_install_helper PRIVATE cxx_std_17)
+target_compile_definitions(desktop_updater_install_helper
+  PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(desktop_updater_install_helper
+  PRIVATE desktop_updater_install_helper_support)
+set_target_properties(desktop_updater_install_helper PROPERTIES
+  OUTPUT_NAME desktop_updater_install_helper)
+
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
@@ -134,6 +163,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(TARGETS desktop_updater_install_helper
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     install(TARGETS desktop_updater_runtime
       EXPORT desktop_updater_nativeTargets
@@ -195,6 +226,24 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(desktop_updater_native_test)
+
+  add_executable(windows_helper_auth
+    test/helper/windows_helper_auth_test.cpp)
+  target_compile_features(windows_helper_auth PRIVATE cxx_std_17)
+  target_compile_definitions(windows_helper_auth
+    PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(windows_helper_auth
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_helper_auth)
+
+  add_executable(windows_helper_reservation
+    test/helper/windows_helper_reservation_test.cpp)
+  target_compile_features(windows_helper_reservation PRIVATE cxx_std_17)
+  target_compile_definitions(windows_helper_reservation
+    PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(windows_helper_reservation
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_helper_reservation)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

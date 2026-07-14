@@ -188,6 +188,58 @@ void main() {
       ),
     );
   });
+
+  test("Windows install helper has a fixed authenticated reservation surface",
+      () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final policy = readRequiredFile(
+      "windows/native/src/helper/helper_policy_windows.cpp",
+    );
+    final authenticode = readRequiredFile(
+      "windows/native/src/helper/helper_authenticode.cpp",
+    );
+    final pipe = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.cpp",
+    );
+    final reservation = readRequiredFile(
+      "windows/native/src/helper/windows_reservation.cpp",
+    );
+
+    expect(cmake, contains("desktop_updater_install_helper"));
+    expect(cmake, contains("Wintrust Crypt32 Advapi32 Shell32 Bcrypt"));
+    expect(cmake, contains("windows_helper_auth"));
+    expect(cmake, contains("windows_helper_reservation"));
+    expect(cmake, contains(r"RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}"));
+    expect(main, contains("wWinMain"));
+    expect(main, isNot(contains("powershell")));
+    expect(main, isNot(contains("cmd.exe")));
+
+    expect(policy, contains("ParseHelperPolicyV1"));
+    expect(policy, contains("authenticodePublisher"));
+    expect(policy, contains("portableElevationRejected"));
+    expect(authenticode, contains("WinVerifyTrust"));
+    expect(authenticode, contains("WTD_REVOKE_WHOLECHAIN"));
+    expect(authenticode, contains("GetFileInformationByHandleEx"));
+    expect(authenticode, contains("installerProtectedLocation"));
+    expect(pipe, contains(r"\\\\.\\pipe\\desktop-updater-"));
+    expect(pipe, contains("PIPE_REJECT_REMOTE_CLIENTS"));
+    expect(
+      pipe,
+      contains("ConvertStringSecurityDescriptorToSecurityDescriptorW"),
+    );
+    expect(pipe, contains("GetNamedPipeClientProcessId"));
+    expect(pipe, contains("OpenProcessToken"));
+    expect(pipe, contains("nonceReuse"));
+    expect(pipe, contains("canonical_request"));
+    expect(pipe, contains('L"runas"'));
+    expect(pipe, contains("ShellExecuteExW"));
+    expect(reservation, contains("FILE_FLAG_OPEN_REPARSE_POINT"));
+    expect(reservation, contains("FlushFileBuffers"));
+    expect(reservation, contains("journalDurableBeforeReadyToken"));
+    expect(reservation, contains("targetLock"));
+    expect(reservation, contains("caller_process"));
+  });
 }
 
 String readRequiredFile(String path) {
