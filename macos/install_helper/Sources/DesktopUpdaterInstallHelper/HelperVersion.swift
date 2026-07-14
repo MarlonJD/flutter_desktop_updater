@@ -33,50 +33,20 @@ enum HelperCommand: Equatable {
         case .version:
             return HelperVersion.displayString
         case .testParseProtocol:
-            let envelope = try TestProtocolEnvelope.parse(protocolInput)
-            return "valid schema=\(envelope.schemaVersion) "
-                + "protocol=\(envelope.protocolVersion)"
+            do {
+                let request = try NativeInstallTransactionRequestV1.parse(
+                    protocolInput
+                )
+                return "valid schema=\(request.schemaVersion) "
+                    + "protocol=\(request.protocolVersion) "
+                    + "transaction=\(request.transactionID)"
+            } catch {
+                throw HelperBootstrapError.invalidTestProtocol
+            }
         case .privilegedService:
             try privilegedServiceRuntime.run()
             return nil
         }
-    }
-}
-
-struct TestProtocolEnvelope: Equatable {
-    let schemaVersion: Int
-    let protocolVersion: Int
-
-    static func parse(_ data: Data) throws -> TestProtocolEnvelope {
-        let value: Any
-        do {
-            value = try JSONSerialization.jsonObject(with: data)
-        } catch {
-            throw HelperBootstrapError.invalidTestProtocol
-        }
-        guard let object = value as? [String: Any],
-              object.count == 2,
-              let schemaVersion = integer(object["schemaVersion"]),
-              let protocolVersion = integer(object["protocolVersion"]),
-              schemaVersion == 1,
-              protocolVersion == HelperVersion.protocolVersion else {
-            throw HelperBootstrapError.invalidTestProtocol
-        }
-        return TestProtocolEnvelope(
-            schemaVersion: schemaVersion,
-            protocolVersion: protocolVersion
-        )
-    }
-
-    private static func integer(_ value: Any?) -> Int? {
-        guard let number = value as? NSNumber else {
-            return nil
-        }
-        let type = String(cString: number.objCType)
-        guard !["c", "f", "d"].contains(type) else {
-            return nil
-        }
-        return number.intValue
     }
 }
 

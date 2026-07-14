@@ -37,10 +37,22 @@ Future<void> _runUnprivileged() async {
     ],
     workingDirectory: root.path,
   );
+  await _runChecked(
+    "swift",
+    [
+      "test",
+      "--package-path",
+      "macos/install_helper",
+      "--filter",
+      "HelperVersionTests.testBuiltHelperExecutableParsesCanonicalRequest",
+    ],
+    workingDirectory: root.path,
+  );
   stdout.writeln(
     jsonEncode({
       "schemaVersion": 1,
       "mode": "unprivileged",
+      "canonicalProtocolParsed": true,
       "recoverableSwapExecuted": true,
     }),
   );

@@ -11,7 +11,9 @@ void main() {
       "$helperRoot/Package.swift",
       "$helperRoot/Sources/DesktopUpdaterInstallHelper/main.swift",
       "$helperRoot/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift",
+      "$helperRoot/Sources/DesktopUpdaterInstallHelper/NativeInstallRequest.swift",
       "$helperRoot/Tests/DesktopUpdaterInstallHelperTests/HelperVersionTests.swift",
+      "$helperRoot/Tests/DesktopUpdaterInstallHelperTests/NativeInstallRequestTests.swift",
       "$kitRoot/Sources/DesktopUpdaterKit/InstallHelper/EmbeddedHelperLocator.swift",
       "$kitRoot/Tests/DesktopUpdaterKitTests/EmbeddedHelperLayoutTests.swift",
     ]) {
@@ -39,13 +41,16 @@ void main() {
     expect(manifest, isNot(contains("Flutter")));
   });
 
-  test("helper initially exposes only version and test protocol parsing", () {
+  test("helper diagnostic mode uses the strict protocol parser", () {
     final sources = <String>[
       _source(
         "$helperRoot/Sources/DesktopUpdaterInstallHelper/main.swift",
       ),
       _source(
         "$helperRoot/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift",
+      ),
+      _source(
+        "$helperRoot/Sources/DesktopUpdaterInstallHelper/NativeInstallRequest.swift",
       ),
     ].join("\n");
     expect(sources, contains('"--version"'));

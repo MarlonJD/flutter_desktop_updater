@@ -39,20 +39,97 @@ final class HelperVersionTests: XCTestCase {
         )
     }
 
-    func testProtocolParseModeAcceptsOnlyAVersionOneObject() throws {
-        let valid = Data(#"{"schemaVersion":1,"protocolVersion":1}"#.utf8)
+    func testProtocolParseModeUsesTheCanonicalVersionOneRequestParser() throws {
+        let fixture = try helperProtocolFixtureObject("valid-requests.json")
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+        let first = try XCTUnwrap(cases.first)
+        let request = try XCTUnwrap(first["request"])
+        let valid = try JSONSerialization.data(
+            withJSONObject: request,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
         XCTAssertEqual(
-            try TestProtocolEnvelope.parse(valid),
-            TestProtocolEnvelope(schemaVersion: 1, protocolVersion: 1)
+            try HelperCommand.testParseProtocol.execute(
+                protocolInput: valid,
+                privilegedServiceRuntime: TestPrivilegedServiceRuntime()
+            ),
+            "valid schema=1 protocol=1 "
+                + "transaction=00000000-0000-4000-8000-000000000001"
         )
 
         for invalid in [
             Data("[]".utf8),
+            Data(#"{"schemaVersion":1,"protocolVersion":1}"#.utf8),
             Data(#"{"schemaVersion":2,"protocolVersion":1}"#.utf8),
             Data(#"{"schemaVersion":1,"protocolVersion":0}"#.utf8),
             Data("not-json".utf8),
         ] {
-            XCTAssertThrowsError(try TestProtocolEnvelope.parse(invalid))
+            XCTAssertThrowsError(
+                try HelperCommand.testParseProtocol.execute(
+                    protocolInput: invalid,
+                    privilegedServiceRuntime: TestPrivilegedServiceRuntime()
+                )
+            )
         }
     }
+
+    func testBuiltHelperExecutableParsesCanonicalRequest() throws {
+        let fixture = try helperProtocolFixtureObject("valid-requests.json")
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+        let request = try XCTUnwrap(try XCTUnwrap(cases.first)["request"])
+        let input = try JSONSerialization.data(
+            withJSONObject: request,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        let helper = Bundle(for: Self.self).bundleURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("DesktopUpdaterInstallHelper")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
+
+        let process = Process()
+        let standardInput = Pipe()
+        let standardOutput = Pipe()
+        process.executableURL = helper
+        process.arguments = ["--test-parse-protocol"]
+        process.standardInput = standardInput
+        process.standardOutput = standardOutput
+        try process.run()
+        try standardInput.fileHandleForWriting.write(contentsOf: input)
+        try standardInput.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        XCTAssertEqual(
+            String(
+                decoding: standardOutput.fileHandleForReading
+                    .readDataToEndOfFile(),
+                as: UTF8.self
+            ),
+            "valid schema=1 protocol=1 "
+                + "transaction=00000000-0000-4000-8000-000000000001\n"
+        )
+    }
+}
+
+private final class TestPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
+    func run() throws {}
+}
+
+private func helperProtocolFixtureObject(_ name: String) throws
+    -> [String: Any]
+{
+    var candidate = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while candidate.path != "/" {
+        let file = candidate
+            .appendingPathComponent("fixtures/compat/native-install-helper/v1")
+            .appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: file.path) {
+            return try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: file))
+                    as? [String: Any]
+            )
+        }
+        candidate.deleteLastPathComponent()
+    }
+    throw CocoaError(.fileNoSuchFile)
 }
