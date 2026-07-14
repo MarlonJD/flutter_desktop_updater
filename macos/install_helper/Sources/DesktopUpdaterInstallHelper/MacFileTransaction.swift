@@ -136,6 +136,7 @@ final class MacFileTransaction {
     private let ownerProcessIdentifier: Int32
     private let expectedPayloadIdentity: MacVerifiedPayloadIdentity
     private let verifier: any MacInstallPayloadVerifying
+    private let preservedTargetOwnership: MacFileOwnership?
     private let faultInjector: any MacTransactionFaultInjecting
     private let store: DurableTransactionJournalStore
     private let commitAuthorizationStore: MacCommitAuthorizationStore
@@ -154,6 +155,7 @@ final class MacFileTransaction {
         ownerProcessIdentifier: Int32,
         expectedPayloadIdentity: MacVerifiedPayloadIdentity,
         verifier: any MacInstallPayloadVerifying,
+        preserveTargetOwnership: Bool = false,
         faultInjector: any MacTransactionFaultInjecting =
             NoMacTransactionFaultInjector()
     ) throws {
@@ -192,6 +194,12 @@ final class MacFileTransaction {
             name: paths.targetName,
             rejectSymbolicLink: true
         )
+        preservedTargetOwnership = preserveTargetOwnership
+            ? MacFileOwnership(
+                userIdentifier: targetIdentity.userIdentifier,
+                groupIdentifier: targetIdentity.groupIdentifier
+            )
+            : nil
         retainedStage = try MacRetainedFileObject(
             directory: stageDirectory,
             name: stageName
@@ -448,8 +456,11 @@ final class MacFileTransaction {
         let destination = directory.url.appendingPathComponent(
             paths.preparedName
         )
+        let contentFlags = preservedTargetOwnership == nil
+            ? COPYFILE_ALL
+            : COPYFILE_STAT | COPYFILE_XATTR | COPYFILE_DATA
         let flags = copyfile_flags_t(
-            COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_EXCL
+            contentFlags | COPYFILE_RECURSIVE | COPYFILE_EXCL
                 | COPYFILE_NOFOLLOW
         )
         guard stageURL.path.withCString({ source in
@@ -458,6 +469,12 @@ final class MacFileTransaction {
             }
         }) == 0 else {
             throw MacFileTransactionError.filesystemOperationFailed
+        }
+        if let preservedTargetOwnership {
+            try directory.normalizeTreeOwnership(
+                name: paths.preparedName,
+                ownership: preservedTargetOwnership
+            )
         }
         try faultInjector.hit(.afterStageRenameBeforeDirectorySync)
         try directory.sync()
@@ -507,6 +524,11 @@ final class MacFileTransaction {
             try? targetLock.release()
         }
     }
+}
+
+struct MacFileOwnership: Equatable {
+    let userIdentifier: uid_t
+    let groupIdentifier: gid_t
 }
 
 final class MacTargetLock {
@@ -637,7 +659,9 @@ final class MacTargetLock {
         return MacFileIdentity(
             device: UInt64(value.st_dev),
             inode: UInt64(value.st_ino),
-            mode: UInt16(value.st_mode & mode_t(UInt16.max))
+            mode: UInt16(value.st_mode & mode_t(UInt16.max)),
+            userIdentifier: value.st_uid,
+            groupIdentifier: value.st_gid
         )
     }
 
@@ -699,7 +723,9 @@ final class MacRetainedFileObject {
         identity = MacFileIdentity(
             device: UInt64(value.st_dev),
             inode: UInt64(value.st_ino),
-            mode: UInt16(value.st_mode & mode_t(UInt16.max))
+            mode: UInt16(value.st_mode & mode_t(UInt16.max)),
+            userIdentifier: value.st_uid,
+            groupIdentifier: value.st_gid
         )
         guard !identity.isSymbolicLink else {
             _ = Darwin.close(descriptor)
@@ -841,6 +867,103 @@ final class MacTransactionDirectory {
         try sync()
     }
 
+    func normalizeTreeOwnership(
+        name: String,
+        ownership: MacFileOwnership
+    ) throws {
+        try validatePathIdentity()
+        let initialIdentity = try identity(
+            name: name,
+            rejectSymbolicLink: true
+        )
+        let rootDescriptor = name.withCString {
+            Darwin.openat(
+                fileDescriptor,
+                $0,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard rootDescriptor >= 0 else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        defer { _ = Darwin.close(rootDescriptor) }
+        var rootStatus = stat()
+        guard Darwin.fstat(rootDescriptor, &rootStatus) == 0,
+              Self.from(rootStatus) == initialIdentity else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        let rootMode = rootStatus.st_mode & mode_t(0o7777)
+        guard Darwin.fchown(
+            rootDescriptor,
+            Darwin.geteuid(),
+            Darwin.getegid()
+        ) == 0,
+            Darwin.fchmod(rootDescriptor, mode_t(0o700)) == 0
+        else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+
+        let rootURL = URL(
+            fileURLWithPath: try Self.canonicalPath(
+                url.appendingPathComponent(name, isDirectory: true)
+            ),
+            isDirectory: true
+        )
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: nil,
+            options: []
+        ) else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        let rootPrefix = rootURL.path.hasSuffix("/")
+            ? rootURL.path : rootURL.path + "/"
+        for case let entryURL as URL in enumerator {
+            guard entryURL.path.hasPrefix(rootPrefix) else {
+                throw MacFileTransactionError.filesystemOperationFailed
+            }
+            var entryStatus = stat()
+            guard entryURL.path.withCString({
+                Darwin.lstat($0, &entryStatus)
+            }) == 0 else {
+                throw MacFileTransactionError.filesystemOperationFailed
+            }
+            let type = entryStatus.st_mode & mode_t(S_IFMT)
+            guard type == mode_t(S_IFDIR)
+                || type == mode_t(S_IFREG)
+                || type == mode_t(S_IFLNK) else {
+                throw MacFileTransactionError.filesystemOperationFailed
+            }
+            let entryMode = entryStatus.st_mode & mode_t(0o7777)
+            guard entryURL.path.withCString({
+                Darwin.lchown(
+                    $0,
+                    ownership.userIdentifier,
+                    ownership.groupIdentifier
+                )
+            }) == 0 else {
+                throw MacFileTransactionError.filesystemOperationFailed
+            }
+            if type != mode_t(S_IFLNK) {
+                guard entryURL.path.withCString({
+                    Darwin.chmod($0, entryMode)
+                }) == 0 else {
+                    throw MacFileTransactionError.filesystemOperationFailed
+                }
+            }
+        }
+        guard Darwin.fchown(
+            rootDescriptor,
+            ownership.userIdentifier,
+            ownership.groupIdentifier
+        ) == 0,
+            Darwin.fchmod(rootDescriptor, rootMode) == 0
+        else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        try validatePathIdentity()
+    }
+
     private static func identity(descriptor: Int32) throws -> MacFileIdentity {
         var value = stat()
         guard Darwin.fstat(descriptor, &value) == 0 else {
@@ -849,11 +972,22 @@ final class MacTransactionDirectory {
         return from(value)
     }
 
+    private static func canonicalPath(_ url: URL) throws -> String {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard url.path.withCString({ Darwin.realpath($0, &buffer) })
+            != nil else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        return String(cString: buffer)
+    }
+
     private static func from(_ value: stat) -> MacFileIdentity {
         MacFileIdentity(
             device: UInt64(value.st_dev),
             inode: UInt64(value.st_ino),
-            mode: UInt16(value.st_mode & mode_t(UInt16.max))
+            mode: UInt16(value.st_mode & mode_t(UInt16.max)),
+            userIdentifier: value.st_uid,
+            groupIdentifier: value.st_gid
         )
     }
 }

@@ -52,10 +52,9 @@ void main() {
     expect(mac, contains("prepareInstall"));
     expect(mac, contains("commitAfterExit"));
     expect(mac, isNot(contains("scheduleInstallAndRelaunch")));
-    expect(
-      mac.indexOf("commitAfterExit"),
-      lessThan(mac.indexOf("result(nil)")),
-    );
+    final macCommit = mac.indexOf("commitAfterExit");
+    expect(macCommit, isNonNegative);
+    expect(macCommit, lessThan(mac.indexOf("result(nil)", macCommit)));
 
     final windows = File(pluginSources[1]).readAsStringSync();
     expect(

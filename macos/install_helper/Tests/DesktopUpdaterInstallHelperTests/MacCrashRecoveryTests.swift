@@ -242,6 +242,7 @@ final class MacTransactionFixture {
     func makeTransaction(
         transactionID: String? = nil,
         ownerProcessIdentifier: Int32 = 999_999,
+        preserveTargetOwnership: Bool = false,
         faultInjector: any MacTransactionFaultInjecting =
             NoMacTransactionFaultInjector()
     ) throws -> MacFileTransaction {
@@ -252,6 +253,7 @@ final class MacTransactionFixture {
             ownerProcessIdentifier: ownerProcessIdentifier,
             expectedPayloadIdentity: verifier.identity(forVersion: "new"),
             verifier: verifier,
+            preserveTargetOwnership: preserveTargetOwnership,
             faultInjector: faultInjector
         )
     }

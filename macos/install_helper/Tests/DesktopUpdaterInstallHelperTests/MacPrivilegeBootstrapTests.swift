@@ -15,7 +15,7 @@ final class MacPrivilegeBootstrapTests: XCTestCase {
         XCTAssertEqual(runtime.runCount, 1)
     }
 
-    func testPackageEmbedsBothSMJobBlessMetadataSections() throws {
+    func testPackageEmbedsOnlyTheHelperPolicyInfoSection() throws {
         let package = try String(
             contentsOf: helperPackageRoot()
                 .appendingPathComponent("Package.swift"),
@@ -24,11 +24,10 @@ final class MacPrivilegeBootstrapTests: XCTestCase {
 
         XCTAssertTrue(package.contains("__info_plist"))
         XCTAssertTrue(package.contains("Configuration/Helper-Info.plist"))
-        XCTAssertTrue(package.contains("__launchd_plist"))
-        XCTAssertTrue(package.contains("Configuration/Helper-Launchd.plist"))
+        XCTAssertFalse(package.contains("__launchd_plist"))
     }
 
-    func testLaunchdLetsServiceManagementSetTheFixedProgramArgument() throws {
+    func testLaunchdUsesTheFixedBundledProgram() throws {
         let data = try Data(
             contentsOf: helperPackageRoot()
                 .appendingPathComponent(
@@ -44,12 +43,11 @@ final class MacPrivilegeBootstrapTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            object["ProgramArguments"] as? [String],
-            [
-                "/Library/PrivilegedHelperTools/"
-                    + "com.example.desktop-updater.helper",
-            ]
+            object["BundleProgram"] as? String,
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
         )
+        XCTAssertNil(object["Program"])
+        XCTAssertNil(object["ProgramArguments"])
     }
 
     func testPrivilegedRuntimeRejectsNonRootBeforeStartingXPC() {

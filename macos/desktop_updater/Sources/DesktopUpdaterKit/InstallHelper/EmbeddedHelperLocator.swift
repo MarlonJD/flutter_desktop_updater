@@ -8,7 +8,9 @@ public struct EmbeddedHelperLocator {
     public static let oneShotRelativePath =
         "Contents/Helpers/DesktopUpdaterInstallHelper"
     public static let privilegedRelativeDirectory =
-        "Contents/Library/LaunchServices"
+        "Contents/Helpers"
+    public static let launchDaemonRelativeDirectory =
+        "Contents/Library/LaunchDaemons"
 
     private let applicationBundleURL: URL
 
@@ -29,12 +31,24 @@ public struct EmbeddedHelperLocator {
         guard Self.isValidServiceIdentifier(serviceIdentifier) else {
             throw EmbeddedHelperLocatorError.invalidServiceIdentifier
         }
+        return oneShotHelperURL
+    }
+
+    public func launchDaemonPlistURL(
+        serviceIdentifier: String
+    ) throws -> URL {
+        guard Self.isValidServiceIdentifier(serviceIdentifier) else {
+            throw EmbeddedHelperLocatorError.invalidServiceIdentifier
+        }
         return applicationBundleURL
             .appendingPathComponent(
-                Self.privilegedRelativeDirectory,
+                Self.launchDaemonRelativeDirectory,
                 isDirectory: true
             )
-            .appendingPathComponent(serviceIdentifier, isDirectory: false)
+            .appendingPathComponent(
+                "\(serviceIdentifier).plist",
+                isDirectory: false
+            )
     }
 
     private static func isValidServiceIdentifier(_ value: String) -> Bool {

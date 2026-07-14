@@ -42,9 +42,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             infoDictionary: [
                 "DesktopUpdaterInstallHelperServiceID":
                     "com.example.desktop-updater.helper",
-                "SMPrivilegedExecutables": [
-                    "com.example.desktop-updater.helper": requirement,
-                ],
+                "DesktopUpdaterInstallHelperRequirement": requirement,
             ]
         )
 
@@ -59,6 +57,141 @@ final class MacPackagedHelperTransportTests: XCTestCase {
 
         XCTAssertEqual(runningIdentity, staticIdentity)
         XCTAssertEqual(runningIdentity.count, 64)
+    }
+
+    func testSystemInstallerRegistersModernBundledLaunchDaemon() throws {
+        let fixture = try ModernLaunchDaemonFixture()
+        defer { fixture.remove() }
+        let registrar = RecordingMacPrivilegedServiceRegistrar(
+            statuses: [.notRegistered, .enabled]
+        )
+        let authenticator = RecordingEndpointAuthenticator()
+        let installer = SystemMacPrivilegedHelperInstaller(
+            applicationBundleURL: fixture.applicationURL,
+            oneShotHelperURL: fixture.helperURL,
+            infoDictionary: fixture.infoDictionary,
+            authenticator: authenticator,
+            registrar: registrar
+        )
+
+        try installer.install()
+
+        XCTAssertEqual(
+            registrar.statusPlistNames,
+            [fixture.plistName, fixture.plistName]
+        )
+        XCTAssertEqual(registrar.registeredPlistNames, [fixture.plistName])
+        XCTAssertEqual(authenticator.processIdentifiers.count, 1)
+        XCTAssertNil(authenticator.processIdentifiers[0])
+    }
+
+    func testSystemInstallerRegistersWhenInitialStatusIsNotFound() throws {
+        let fixture = try ModernLaunchDaemonFixture()
+        defer { fixture.remove() }
+        let registrar = RecordingMacPrivilegedServiceRegistrar(
+            statuses: [.notFound, .enabled]
+        )
+        let installer = SystemMacPrivilegedHelperInstaller(
+            applicationBundleURL: fixture.applicationURL,
+            oneShotHelperURL: fixture.helperURL,
+            infoDictionary: fixture.infoDictionary,
+            authenticator: RecordingEndpointAuthenticator(),
+            registrar: registrar
+        )
+
+        try installer.install()
+
+        XCTAssertEqual(registrar.registeredPlistNames, [fixture.plistName])
+    }
+
+    func testSystemInstallerRefreshesEnabledDaemonRegistration() throws {
+        let fixture = try ModernLaunchDaemonFixture()
+        defer { fixture.remove() }
+        let registrar = RecordingMacPrivilegedServiceRegistrar(
+            statuses: [.enabled, .enabled]
+        )
+        let installer = SystemMacPrivilegedHelperInstaller(
+            applicationBundleURL: fixture.applicationURL,
+            oneShotHelperURL: fixture.helperURL,
+            infoDictionary: fixture.infoDictionary,
+            authenticator: RecordingEndpointAuthenticator(),
+            registrar: registrar
+        )
+
+        try installer.install()
+
+        XCTAssertEqual(registrar.unregisteredPlistNames, [fixture.plistName])
+        XCTAssertEqual(registrar.registeredPlistNames, [fixture.plistName])
+        XCTAssertEqual(
+            registrar.statusPlistNames,
+            [fixture.plistName, fixture.plistName]
+        )
+    }
+
+    func testAppServiceUnregistrationWaitsForCompletion() throws {
+        let waiter = MacAppServiceUnregistrationWaiter()
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+
+        try waiter.wait(timeout: .now() + 1) { completion in
+            DispatchQueue.global().asyncAfter(
+                deadline: .now() + .milliseconds(25)
+            ) {
+                completion(nil)
+            }
+        }
+
+        let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
+        XCTAssertGreaterThanOrEqual(elapsed, 20_000_000)
+    }
+
+    func testSystemInstallerReportsWhenAdminApprovalIsRequired()
+        throws
+    {
+        let fixture = try ModernLaunchDaemonFixture()
+        defer { fixture.remove() }
+        let registrar = RecordingMacPrivilegedServiceRegistrar(
+            statuses: [.requiresApproval]
+        )
+        let installer = SystemMacPrivilegedHelperInstaller(
+            applicationBundleURL: fixture.applicationURL,
+            oneShotHelperURL: fixture.helperURL,
+            infoDictionary: fixture.infoDictionary,
+            authenticator: RecordingEndpointAuthenticator(),
+            registrar: registrar
+        )
+
+        XCTAssertThrowsError(try installer.install()) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .privilegedHelperApprovalRequired
+            )
+        }
+        XCTAssertTrue(registrar.registeredPlistNames.isEmpty)
+    }
+
+    func testSystemInstallerReportsApprovalRequiredAfterRegistration()
+        throws
+    {
+        let fixture = try ModernLaunchDaemonFixture()
+        defer { fixture.remove() }
+        let registrar = RecordingMacPrivilegedServiceRegistrar(
+            statuses: [.notRegistered, .requiresApproval]
+        )
+        let installer = SystemMacPrivilegedHelperInstaller(
+            applicationBundleURL: fixture.applicationURL,
+            oneShotHelperURL: fixture.helperURL,
+            infoDictionary: fixture.infoDictionary,
+            authenticator: RecordingEndpointAuthenticator(),
+            registrar: registrar
+        )
+
+        XCTAssertThrowsError(try installer.install()) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .privilegedHelperApprovalRequired
+            )
+        }
+        XCTAssertEqual(registrar.registeredPlistNames, [fixture.plistName])
     }
 
     func testPrepareAndCommitUseOneFixedFramedProcessSession() throws {
@@ -336,6 +469,98 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(status.resultCode, .succeeded)
     }
 
+    func testForcedPersistentPrivilegeUsesInstalledXPCFromFreshTransport()
+        throws
+    {
+        let queryTransactionID =
+            "00000000-0000-4000-8000-000000000099"
+        let recoveryTransactionID =
+            "00000000-0000-4000-8000-000000000100"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [
+                statusData(
+                    transactionID: queryTransactionID,
+                    state: "prepared",
+                    resultCode: "recoveryRequired"
+                ),
+                recoveryData(transactionID: recoveryTransactionID),
+            ]
+        )
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true
+        )
+
+        let query = try transport.queryTransaction(
+            transactionID: queryTransactionID
+        )
+        let recovery = try transport.recoverPendingInstall(
+            transactionID: recoveryTransactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(
+            privileged.operations,
+            ["queryTransaction", "recoverPendingInstall"]
+        )
+        XCTAssertEqual(query.state, .prepared)
+        XCTAssertEqual(query.resultCode, .recoveryRequired)
+        XCTAssertEqual(recovery.state, .rolledBack)
+        XCTAssertEqual(recovery.resultCode, .succeeded)
+    }
+
+    func testForcedPersistentQueryInstallsUnavailableXPCFromFreshTransport()
+        throws
+    {
+        let transactionID =
+            "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: "prepared",
+                    resultCode: "recoveryRequired"
+                ),
+            ]
+        )
+        let installer = RecordingPrivilegedHelperInstaller {
+            privileged.isInstalled = true
+        }
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true
+        )
+
+        let query = try transport.queryTransaction(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(privileged.operations, ["queryTransaction"])
+        XCTAssertEqual(query.state, .prepared)
+        XCTAssertEqual(query.resultCode, .recoveryRequired)
+    }
+
     func testPrivilegeSelectionUsesTargetClassAndParentPermissions()
         throws
     {
@@ -364,6 +589,30 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             )
         )
     }
+
+    func testApplicationsRootUsesActualParentWriteAccess() {
+        XCTAssertEqual(
+            SystemMacInstallRequestEvidenceBuilder.targetClass(
+                for: URL(fileURLWithPath: "/Applications/Example.app"),
+                isWritableDirectory: { $0 == "/Applications" }
+            ),
+            "applicationBundle"
+        )
+        XCTAssertEqual(
+            SystemMacInstallRequestEvidenceBuilder.targetClass(
+                for: URL(fileURLWithPath: "/Applications/Example.app"),
+                isWritableDirectory: { _ in false }
+            ),
+            "protectedApplication"
+        )
+        XCTAssertEqual(
+            SystemMacInstallRequestEvidenceBuilder.targetClass(
+                for: URL(fileURLWithPath: "/tmp/Example.app"),
+                isWritableDirectory: { _ in false }
+            ),
+            "applicationBundle"
+        )
+    }
 }
 
 private final class RecordingPrivilegedHelperInstaller:
@@ -379,6 +628,37 @@ private final class RecordingPrivilegedHelperInstaller:
     func install() throws {
         installCount += 1
         onInstall()
+    }
+}
+
+private final class RecordingMacPrivilegedServiceRegistrar:
+    MacPrivilegedServiceRegistering
+{
+    private var statuses: [MacPrivilegedServiceRegistrationStatus]
+    private(set) var statusPlistNames: [String] = []
+    private(set) var registeredPlistNames: [String] = []
+    private(set) var unregisteredPlistNames: [String] = []
+
+    init(statuses: [MacPrivilegedServiceRegistrationStatus]) {
+        self.statuses = statuses
+    }
+
+    func status(
+        plistName: String
+    ) throws -> MacPrivilegedServiceRegistrationStatus {
+        statusPlistNames.append(plistName)
+        guard !statuses.isEmpty else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        return statuses.removeFirst()
+    }
+
+    func register(plistName: String) throws {
+        registeredPlistNames.append(plistName)
+    }
+
+    func unregister(plistName: String) throws {
+        unregisteredPlistNames.append(plistName)
     }
 }
 
@@ -544,4 +824,63 @@ private func targetRequestData(
         ],
         options: [.sortedKeys]
     )
+}
+
+private final class ModernLaunchDaemonFixture {
+    let rootURL: URL
+    let applicationURL: URL
+    let helperURL: URL
+    let plistName = "com.example.desktop-updater.helper.plist"
+    let infoDictionary: [String: Any] = [
+        "DesktopUpdaterInstallHelperServiceID":
+            "com.example.desktop-updater.helper",
+        "DesktopUpdaterInstallHelperRequirement":
+            "identifier com.example.desktop-updater.helper "
+                + "and anchor apple generic",
+        "DesktopUpdaterInstallHelperLaunchDaemonPlistName":
+            "com.example.desktop-updater.helper.plist",
+    ]
+
+    init() throws {
+        rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString,
+            isDirectory: true
+        )
+        applicationURL = rootURL.appendingPathComponent(
+            "Example.app",
+            isDirectory: true
+        )
+        helperURL = applicationURL.appendingPathComponent(
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
+        )
+        let launchDaemonURL = applicationURL.appendingPathComponent(
+            "Contents/Library/LaunchDaemons/\(plistName)"
+        )
+        try FileManager.default.createDirectory(
+            at: helperURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: launchDaemonURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("signed helper".utf8).write(to: helperURL)
+        let launchDaemon: [String: Any] = [
+            "Label": "com.example.desktop-updater.helper",
+            "BundleProgram":
+                "Contents/Helpers/DesktopUpdaterInstallHelper",
+            "MachServices": [
+                "com.example.desktop-updater.helper": true,
+            ],
+        ]
+        try PropertyListSerialization.data(
+            fromPropertyList: launchDaemon,
+            format: .xml,
+            options: 0
+        ).write(to: launchDaemonURL)
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
 }

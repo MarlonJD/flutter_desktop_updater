@@ -169,6 +169,7 @@ public final class MacInstallReservation {
 
 public enum MacInstallClientError: Error, Equatable {
     case endpointUnavailable
+    case privilegedHelperApprovalRequired
     case invalidTransactionID
     case invalidReservationResponse
     case inactiveReservation
@@ -255,9 +256,9 @@ final class SystemMacOneShotEndpointAuthenticator:
         guard let serviceID = infoDictionary[
             "DesktopUpdaterInstallHelperServiceID"
         ] as? String,
-            let executables = infoDictionary["SMPrivilegedExecutables"]
-                as? [String: String],
-            let requirementText = executables[serviceID],
+            let requirementText = infoDictionary[
+                "DesktopUpdaterInstallHelperRequirement"
+            ] as? String,
             !requirementText.isEmpty else {
             throw MacInstallClientError.endpointUnavailable
         }
@@ -366,6 +367,91 @@ final class SystemMacOneShotEndpointAuthenticator:
     }
 }
 
+enum MacPrivilegedServiceRegistrationStatus: Equatable {
+    case notRegistered
+    case enabled
+    case requiresApproval
+    case notFound
+}
+
+protocol MacPrivilegedServiceRegistering: AnyObject {
+    func status(
+        plistName: String
+    ) throws -> MacPrivilegedServiceRegistrationStatus
+
+    func register(plistName: String) throws
+
+    func unregister(plistName: String) throws
+}
+
+struct MacAppServiceUnregistrationWaiter {
+    func wait(
+        timeout: DispatchTime = .now() + 10,
+        start: (@escaping (Error?) -> Void) -> Void
+    ) throws {
+        let completion = DispatchSemaphore(value: 0)
+        var unregisterError: Error?
+        start { error in
+            unregisterError = error
+            completion.signal()
+        }
+        guard completion.wait(timeout: timeout) == .success,
+              unregisterError == nil else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+    }
+}
+
+final class SystemMacAppServiceRegistrar: MacPrivilegedServiceRegistering {
+    func status(
+        plistName: String
+    ) throws -> MacPrivilegedServiceRegistrationStatus {
+        guard #available(macOS 13.0, *) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        switch SMAppService.daemon(plistName: plistName).status {
+        case .notRegistered:
+            return .notRegistered
+        case .enabled:
+            return .enabled
+        case .requiresApproval:
+            return .requiresApproval
+        case .notFound:
+            return .notFound
+        @unknown default:
+            return .notFound
+        }
+    }
+
+    func register(plistName: String) throws {
+        guard #available(macOS 13.0, *) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        let service = SMAppService.daemon(plistName: plistName)
+        do {
+            try service.register()
+        } catch {
+            if service.status == .requiresApproval
+                || (error as NSError).code
+                    == Int(kSMErrorLaunchDeniedByUser) {
+                throw MacInstallClientError
+                    .privilegedHelperApprovalRequired
+            }
+            throw MacInstallClientError.endpointUnavailable
+        }
+    }
+
+    func unregister(plistName: String) throws {
+        guard #available(macOS 13.0, *) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        let service = SMAppService.daemon(plistName: plistName)
+        try MacAppServiceUnregistrationWaiter().wait { completion in
+            service.unregister(completionHandler: completion)
+        }
+    }
+}
+
 final class SystemMacPrivilegedHelperInstaller:
     MacPrivilegedHelperInstalling
 {
@@ -373,117 +459,102 @@ final class SystemMacPrivilegedHelperInstaller:
     private let oneShotHelperURL: URL
     private let infoDictionary: [String: Any]
     private let authenticator: any MacOneShotEndpointAuthenticating
+    private let registrar: any MacPrivilegedServiceRegistering
 
     init(
         applicationBundleURL: URL = Bundle.main.bundleURL,
         oneShotHelperURL: URL,
         infoDictionary: [String: Any]? = Bundle.main.infoDictionary,
-        authenticator: any MacOneShotEndpointAuthenticating
+        authenticator: any MacOneShotEndpointAuthenticating,
+        registrar: any MacPrivilegedServiceRegistering =
+            SystemMacAppServiceRegistrar()
     ) {
         self.applicationBundleURL =
             applicationBundleURL.standardizedFileURL
         self.oneShotHelperURL = oneShotHelperURL.standardizedFileURL
         self.infoDictionary = infoDictionary ?? [:]
         self.authenticator = authenticator
+        self.registrar = registrar
     }
 
     func install() throws {
+        guard #available(macOS 13.0, *) else {
+            throw MacInstallClientError.endpointUnavailable
+        }
         guard let serviceID = infoDictionary[
             "DesktopUpdaterInstallHelperServiceID"
         ] as? String,
             HelperProtocolValidation.isDottedIdentifier(serviceID),
-            let executables = infoDictionary["SMPrivilegedExecutables"]
-                as? [String: String],
-            Set(executables.keys) == [serviceID] else {
+            let helperRequirement = infoDictionary[
+                "DesktopUpdaterInstallHelperRequirement"
+            ] as? String,
+            !helperRequirement.isEmpty,
+            let plistName = infoDictionary[
+                "DesktopUpdaterInstallHelperLaunchDaemonPlistName"
+            ] as? String,
+            plistName == "\(serviceID).plist" else {
             throw MacInstallClientError.endpointUnavailable
         }
-        let privilegedURL = applicationBundleURL.appendingPathComponent(
-            "Contents/Library/LaunchServices/\(serviceID)"
+        let launchDaemonURL = applicationBundleURL.appendingPathComponent(
+            "Contents/Library/LaunchDaemons/\(plistName)"
         ).standardizedFileURL
-        guard privilegedURL.deletingLastPathComponent()
+        guard launchDaemonURL.deletingLastPathComponent()
             == applicationBundleURL.appendingPathComponent(
-                "Contents/Library/LaunchServices"
+                "Contents/Library/LaunchDaemons"
             ).standardizedFileURL else {
             throw MacInstallClientError.endpointUnavailable
         }
-        let oneShotIdentity = try authenticator.authenticate(
-            executableURL: oneShotHelperURL,
-            processIdentifier: nil
-        )
-        let privilegedIdentity = try authenticator.authenticate(
-            executableURL: privilegedURL,
-            processIdentifier: nil
-        )
-        let oneShotBytes: Data
-        let privilegedBytes: Data
+        let launchDaemon: [String: Any]
         do {
-            oneShotBytes = try Data(
-                contentsOf: oneShotHelperURL,
-                options: [.mappedIfSafe]
+            let value = try PropertyListSerialization.propertyList(
+                from: Data(contentsOf: launchDaemonURL),
+                options: [],
+                format: nil
             )
-            privilegedBytes = try Data(
-                contentsOf: privilegedURL,
-                options: [.mappedIfSafe]
-            )
+            guard let dictionary = value as? [String: Any] else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            launchDaemon = dictionary
+        } catch let error as MacInstallClientError {
+            throw error
         } catch {
             throw MacInstallClientError.endpointUnavailable
         }
-        guard !oneShotBytes.isEmpty,
-              oneShotBytes == privilegedBytes,
-              oneShotIdentity == privilegedIdentity,
-              HelperProtocolValidation.isSHA256(oneShotIdentity) else {
+        guard launchDaemon["Label"] as? String == serviceID,
+              launchDaemon["BundleProgram"] as? String
+                == "Contents/Helpers/DesktopUpdaterInstallHelper",
+              launchDaemon["Program"] == nil,
+              launchDaemon["ProgramArguments"] == nil,
+              launchDaemon["MachServices"] as? [String: Bool]
+                == [serviceID: true] else {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        let helperIdentity = try authenticator.authenticate(
+            executableURL: oneShotHelperURL,
+            processIdentifier: nil
+        )
+        guard HelperProtocolValidation.isSHA256(helperIdentity) else {
             throw MacInstallClientError.endpointUnavailable
         }
 
-        var authorization: AuthorizationRef?
-        let createStatus = AuthorizationCreate(
-            nil,
-            nil,
-            [],
-            &authorization
-        )
-        guard createStatus == errAuthorizationSuccess,
-              let authorization else {
-            throw MacInstallClientError.endpointUnavailable
+        switch try registrar.status(plistName: plistName) {
+        case .enabled:
+            try registrar.unregister(plistName: plistName)
+            try registrar.register(plistName: plistName)
+        case .notRegistered, .notFound:
+            try registrar.register(plistName: plistName)
+        case .requiresApproval:
+            throw MacInstallClientError.privilegedHelperApprovalRequired
         }
-        defer { AuthorizationFree(authorization, []) }
-        let rightStatus = kSMRightBlessPrivilegedHelper.withCString {
-            rightName in
-            var item = AuthorizationItem(
-                name: rightName,
-                valueLength: 0,
-                value: nil,
-                flags: 0
-            )
-            return withUnsafeMutablePointer(to: &item) { itemPointer in
-                var rights = AuthorizationRights(
-                    count: 1,
-                    items: itemPointer
-                )
-                return AuthorizationCopyRights(
-                    authorization,
-                    &rights,
-                    nil,
-                    [.interactionAllowed, .extendRights, .preAuthorize],
-                    nil
-                )
-            }
-        }
-        guard rightStatus == errAuthorizationSuccess else {
-            throw MacInstallClientError.endpointUnavailable
-        }
-        var blessError: Unmanaged<CFError>?
-        guard SMJobBless(
-            kSMDomainSystemLaunchd,
-            serviceID as CFString,
-            authorization,
-            &blessError
-        ) else {
-            _ = blessError?.takeRetainedValue()
+        switch try registrar.status(plistName: plistName) {
+        case .enabled:
+            return
+        case .requiresApproval:
+            throw MacInstallClientError.privilegedHelperApprovalRequired
+        case .notRegistered, .notFound:
             throw MacInstallClientError.endpointUnavailable
         }
     }
-
 }
 
 final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
@@ -495,14 +566,14 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         let identifier = info[
             "DesktopUpdaterInstallHelperServiceID"
         ] as? String
-        let executables = info["SMPrivilegedExecutables"]
-            as? [String: String]
         serviceID = identifier ?? ""
-        helperRequirement = identifier.flatMap { executables?[$0] } ?? ""
+        helperRequirement = info[
+            "DesktopUpdaterInstallHelperRequirement"
+        ] as? String ?? ""
     }
 
     func validateEndpoint() throws -> String {
-        guard #available(macOS 12.0, *) else {
+        guard #available(macOS 13.0, *) else {
             throw MacInstallClientError.endpointUnavailable
         }
         let reply = try send(operation: "health", payload: nil)
@@ -518,7 +589,7 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         operation: String,
         payload: Data
     ) throws -> (payload: Data, endpointIdentitySHA256: String) {
-        guard #available(macOS 12.0, *),
+        guard #available(macOS 13.0, *),
               [
                   "prepareInstall", "commitAfterExit",
                   "cancelReservation", "queryTransaction",
@@ -542,7 +613,7 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         )
     }
 
-    @available(macOS 12.0, *)
+    @available(macOS 13.0, *)
     private func send(
         operation: String,
         payload: Data?
@@ -727,6 +798,7 @@ final class PackagedMacInstallHelperTransport:
     private let privilegedInstaller: any MacPrivilegedHelperInstalling
     private let privilegedExchange: any MacPrivilegedXPCExchanging
     private let privilegeRequired: (Data) throws -> Bool
+    private let forcePrivilegedPersistentOperations: Bool
     private let lock = NSLock()
     private var sessions: [String: ActiveSession] = [:]
     private var privilegedTransactions: Set<String> = []
@@ -745,7 +817,8 @@ final class PackagedMacInstallHelperTransport:
         privilegedInstaller: (any MacPrivilegedHelperInstalling)? = nil,
         privilegedExchange: (any MacPrivilegedXPCExchanging)? = nil,
         privilegeRequired: @escaping (Data) throws -> Bool =
-            PackagedMacInstallHelperTransport.defaultPrivilegeRequired
+            PackagedMacInstallHelperTransport.defaultPrivilegeRequired,
+        forcePrivilegedPersistentOperations: Bool = false
     ) {
         self.helperURL = helperURL.standardizedFileURL
         self.policyID = policyID
@@ -759,6 +832,8 @@ final class PackagedMacInstallHelperTransport:
         self.privilegedExchange = privilegedExchange
             ?? SystemMacPrivilegedXPCExchange()
         self.privilegeRequired = privilegeRequired
+        self.forcePrivilegedPersistentOperations =
+            forcePrivilegedPersistentOperations
     }
 
     func validateEndpoint() throws {
@@ -949,12 +1024,13 @@ final class PackagedMacInstallHelperTransport:
     func queryTransaction(
         transactionID: String
     ) throws -> InstallTransactionStatus {
-        if usesPrivilegedTransport(transactionID) {
+        if forcePrivilegedPersistentOperations
+            || usesPrivilegedTransport(transactionID) {
             return try persistentPrivilegedStatus(
                 operation: "queryTransaction",
                 transactionID: transactionID,
                 isRecovery: false,
-                allowInstallation: false
+                allowInstallation: forcePrivilegedPersistentOperations
             )
         }
         do {
@@ -984,7 +1060,8 @@ final class PackagedMacInstallHelperTransport:
     func recoverPendingInstall(
         transactionID: String
     ) throws -> InstallTransactionStatus {
-        if usesPrivilegedTransport(transactionID) {
+        if forcePrivilegedPersistentOperations
+            || usesPrivilegedTransport(transactionID) {
             return try persistentPrivilegedStatus(
                 operation: "recoverPendingInstall",
                 transactionID: transactionID,
@@ -1473,6 +1550,23 @@ public struct MacInstallHelper {
         }
         evidenceBuilder = SystemMacInstallRequestEvidenceBuilder()
         transport = PackagedMacInstallHelperTransport()
+    }
+
+    @_spi(DesktopUpdaterSmoke)
+    public static func smAppServiceSmokeHost() -> MacInstallHelper {
+        MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier:
+                        ProcessInfo.processInfo.processIdentifier,
+                    bundleURL: Bundle.main.bundleURL
+                )
+            },
+            transport: PackagedMacInstallHelperTransport(
+                privilegeRequired: { _ in true },
+                forcePrivilegedPersistentOperations: true
+            )
+        )
     }
 
     init(targetResolver: @escaping MacInstallTargetResolver) {

@@ -68,6 +68,73 @@ final class StageProvenanceTests: XCTestCase {
         )
     }
 
+    func testInventoryIncludesVersionedFrameworkContentsAfterSymlink() throws {
+        let parent = temporaryDirectory("stage-versioned-framework")
+        try FileManager.default.createDirectory(
+            at: parent,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let nonce = UUID(uuidString: "323E4567-E89B-42D3-A456-426614174000")!
+        let stage = try StageProvenance.createOwnedStage(
+            parent: parent,
+            nonce: nonce
+        )
+        let framework = stage.appendingPathComponent(
+            "Example.app/Contents/Frameworks/Example.framework"
+        )
+        let versions = framework.appendingPathComponent("Versions")
+        try FileManager.default.createDirectory(
+            at: versions,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: versions.appendingPathComponent("Current").path,
+            withDestinationPath: "A"
+        )
+        let resources = versions.appendingPathComponent("A/Resources")
+        try FileManager.default.createDirectory(
+            at: resources,
+            withIntermediateDirectories: true
+        )
+        try Data("binary".utf8).write(
+            to: versions.appendingPathComponent("A/Example")
+        )
+        try Data("metadata".utf8).write(
+            to: resources.appendingPathComponent("Info.plist")
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: framework.appendingPathComponent("Example").path,
+            withDestinationPath: "Versions/Current/Example"
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: framework.appendingPathComponent("Resources").path,
+            withDestinationPath: "Versions/Current/Resources"
+        )
+
+        let state = try StageProvenance.write(
+            stageRoot: stage,
+            nonce: nonce.uuidString.lowercased(),
+            packageID: "com.example.app",
+            descriptorSHA256: String(repeating: "1", count: 64),
+            artifactSHA256: String(repeating: "2", count: 64)
+        )
+
+        XCTAssertTrue(
+            state.marker.entries.contains {
+                $0.path.hasSuffix(
+                    "Example.framework/Versions/A/Resources/Info.plist"
+                )
+            }
+        )
+        XCTAssertNoThrow(
+            try StageProvenance.verify(
+                stageRoot: stage,
+                expectedMarkerSHA256: state.markerSHA256
+            )
+        )
+    }
+
     func testMarkerInventoryRejectsFileAndSymlinkTampering() throws {
         let parent = temporaryDirectory("stage-provenance")
         try FileManager.default.createDirectory(

@@ -66,7 +66,7 @@ final class SystemMacCallerInstallEvidenceInspector:
             == executableURL.resolvingSymlinksInPath().path else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }
-        try validateCodeSignature(
+        let signerIdentity = try validateCodeSignature(
             at: canonicalTarget,
             requirement: applicationRequirement,
             packageID: packageID
@@ -86,7 +86,7 @@ final class SystemMacCallerInstallEvidenceInspector:
             processIdentifier: processIdentifier,
             processStartIdentity: try processStartIdentity(pid: pid),
             executableSHA256: executableSHA256,
-            signerIdentity: applicationRequirement,
+            signerIdentity: signerIdentity,
             packageID: packageID,
             targetURL: canonicalTarget,
             currentVersion: version,
@@ -128,7 +128,7 @@ final class SystemMacCallerInstallEvidenceInspector:
         at bundleURL: URL,
         requirement: String,
         packageID: String
-    ) throws {
+    ) throws -> String {
         var code: SecStaticCode?
         var requirementObject: SecRequirement?
         guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &code)
@@ -144,7 +144,7 @@ final class SystemMacCallerInstallEvidenceInspector:
                 code,
                 SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
                 requirementObject
-            ) == errSecSuccess else {
+        ) == errSecSuccess else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }
         var information: CFDictionary?
@@ -158,6 +158,25 @@ final class SystemMacCallerInstallEvidenceInspector:
                 == packageID else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }
+        var designatedRequirement: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(
+            code,
+            [],
+            &designatedRequirement
+        ) == errSecSuccess,
+            let designatedRequirement else {
+            throw MacOneShotAuthorizationError.callerAuthenticationFailed
+        }
+        var designatedRequirementText: CFString?
+        guard SecRequirementCopyString(
+            designatedRequirement,
+            [],
+            &designatedRequirementText
+        ) == errSecSuccess,
+            let designatedRequirementText else {
+            throw MacOneShotAuthorizationError.callerAuthenticationFailed
+        }
+        return designatedRequirementText as String
     }
 }
 
@@ -239,8 +258,6 @@ final class MacOneShotInstallRequestValidator:
                 == request.caller.processStartIdentity,
               caller.executableSHA256 == request.caller.executableSHA256,
               caller.signerIdentity == request.caller.signerIdentity,
-              caller.signerIdentity
-                == policy.allowedApplicationSigner.value,
               caller.packageID == request.packageID,
               caller.packageID == policy.applicationPackageID,
               caller.targetURL.standardizedFileURL == targetURL,
@@ -279,16 +296,19 @@ final class SealedMacOneShotInstallAuthorizer:
     let helperEndpointIdentitySHA256: String
     private let policy: MacSealedInstallPolicyV1
     private let requestValidator: any MacOneShotInstallRequestValidating
+    private let preserveTargetOwnership: Bool
 
     init(
         policy: MacSealedInstallPolicyV1,
         helperEndpointIdentitySHA256: String,
-        requestValidator: any MacOneShotInstallRequestValidating
+        requestValidator: any MacOneShotInstallRequestValidating,
+        preserveTargetOwnership: Bool = false
     ) {
         self.policy = policy
         self.helperEndpointIdentitySHA256 =
             helperEndpointIdentitySHA256
         self.requestValidator = requestValidator
+        self.preserveTargetOwnership = preserveTargetOwnership
     }
 
     func authorize(
@@ -314,7 +334,8 @@ final class SealedMacOneShotInstallAuthorizer:
             ownerProcessIdentifier:
                 Int32(request.caller.processIdentifier),
             expectedPayloadIdentity: stage.payloadIdentity,
-            verifier: stage.verifier
+            verifier: stage.verifier,
+            preserveTargetOwnership: preserveTargetOwnership
         )
     }
 }

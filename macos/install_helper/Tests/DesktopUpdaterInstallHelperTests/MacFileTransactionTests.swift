@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import DesktopUpdaterInstallHelper
@@ -208,6 +209,62 @@ final class MacFileTransactionTests: XCTestCase {
         )
     }
 
+    func testRejectsTargetOwnershipChangeBeforeMutation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        let currentGroup = try groupIdentifier(at: fixture.targetURL)
+        guard let alternateGroup = supplementaryGroup(
+            excluding: currentGroup
+        ) else {
+            throw XCTSkip("No alternate supplementary group is available.")
+        }
+        XCTAssertEqual(
+            fixture.targetURL.path.withCString {
+                Darwin.chown($0, uid_t.max, alternateGroup)
+            },
+            0
+        )
+
+        XCTAssertThrowsError(try transaction.execute()) { error in
+            XCTAssertEqual(
+                error as? MacFileTransactionError,
+                .targetIdentityChanged
+            )
+        }
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+    }
+
+    func testPrivilegedCopyPreservesTargetOwnershipRecursively() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let stageGroup = try groupIdentifier(at: fixture.stageURL)
+        guard let targetGroup = supplementaryGroup(excluding: stageGroup) else {
+            throw XCTSkip("No alternate supplementary group is available.")
+        }
+        XCTAssertEqual(
+            fixture.targetURL.path.withCString {
+                Darwin.chown($0, uid_t.max, targetGroup)
+            },
+            0
+        )
+        let targetOwner = try userIdentifier(at: fixture.targetURL)
+        let transaction = try fixture.makeTransaction(
+            preserveTargetOwnership: true
+        )
+
+        _ = try transaction.prepare()
+        XCTAssertEqual(try transaction.execute(), .completed)
+
+        XCTAssertEqual(try userIdentifier(at: fixture.targetURL), targetOwner)
+        XCTAssertEqual(try groupIdentifier(at: fixture.targetURL), targetGroup)
+        let installedFile = fixture.targetURL.appendingPathComponent(
+            "version.txt"
+        )
+        XCTAssertEqual(try userIdentifier(at: installedFile), targetOwner)
+        XCTAssertEqual(try groupIdentifier(at: installedFile), targetGroup)
+    }
+
     func testRejectsCrossVolumeStage() {
         XCTAssertThrowsError(
             try MacFileTransaction.validateSameVolume(
@@ -335,4 +392,28 @@ final class MacFileTransactionTests: XCTestCase {
             )
         }
     }
+}
+
+private func groupIdentifier(at url: URL) throws -> gid_t {
+    var value = stat()
+    guard url.path.withCString({ Darwin.lstat($0, &value) }) == 0 else {
+        throw MacFileTransactionError.filesystemOperationFailed
+    }
+    return value.st_gid
+}
+
+private func userIdentifier(at url: URL) throws -> uid_t {
+    var value = stat()
+    guard url.path.withCString({ Darwin.lstat($0, &value) }) == 0 else {
+        throw MacFileTransactionError.filesystemOperationFailed
+    }
+    return value.st_uid
+}
+
+private func supplementaryGroup(excluding current: gid_t) -> gid_t? {
+    let count = Darwin.getgroups(0, nil)
+    guard count > 0 else { return nil }
+    var groups = [gid_t](repeating: 0, count: Int(count))
+    guard Darwin.getgroups(count, &groups) == count else { return nil }
+    return groups.first { $0 != current }
 }

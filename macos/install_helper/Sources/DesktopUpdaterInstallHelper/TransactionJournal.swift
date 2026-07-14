@@ -12,6 +12,8 @@ struct MacFileIdentity: Codable, Equatable {
     let device: UInt64
     let inode: UInt64
     let mode: UInt16
+    let userIdentifier: UInt32
+    let groupIdentifier: UInt32
 
     var isSymbolicLink: Bool {
         (mode & UInt16(S_IFMT)) == UInt16(S_IFLNK)
@@ -80,15 +82,24 @@ struct MacTransactionJournal: Codable, Equatable {
               ],
               exactKeys(
                   object["parentIdentity"],
-                  expected: ["device", "inode", "mode"]
+                  expected: [
+                      "device", "inode", "mode", "userIdentifier",
+                      "groupIdentifier",
+                  ]
               ),
               exactKeys(
                   object["targetIdentity"],
-                  expected: ["device", "inode", "mode"]
+                  expected: [
+                      "device", "inode", "mode", "userIdentifier",
+                      "groupIdentifier",
+                  ]
               ),
               exactKeys(
                   object["stageIdentity"],
-                  expected: ["device", "inode", "mode"]
+                  expected: [
+                      "device", "inode", "mode", "userIdentifier",
+                      "groupIdentifier",
+                  ]
               ),
               exactKeys(
                   object["expectedPayloadIdentity"],

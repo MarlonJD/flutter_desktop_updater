@@ -349,11 +349,11 @@
 			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Helpers/DesktopUpdaterInstallHelper",
-				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Library/LaunchServices/net.monolib.updater.helper",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Library/LaunchDaemons/net.monolib.updater.helper.plist",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"05247eb6b09f8e88751b2299567fad350a48e9bb7310a53e76a7fdab81ee0be3\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
+			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"c41fab5fdc0d488787769ae4c48e38cc0882e5ef0287b9eee2017880cab7659d\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -684,6 +684,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;

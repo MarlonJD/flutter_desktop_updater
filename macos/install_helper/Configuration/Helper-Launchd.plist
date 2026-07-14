@@ -9,9 +9,7 @@
     <key>com.example.desktop-updater.helper</key>
     <true/>
   </dict>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Library/PrivilegedHelperTools/com.example.desktop-updater.helper</string>
-  </array>
+  <key>BundleProgram</key>
+  <string>Contents/Helpers/DesktopUpdaterInstallHelper</string>
 </dict>
 </plist>

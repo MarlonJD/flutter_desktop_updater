@@ -7,10 +7,6 @@ fail() {
   exit 1
 }
 
-escape_plist_buddy_string() {
-  /usr/bin/printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g'
-}
-
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 target_build_dir=${TARGET_BUILD_DIR:?TARGET_BUILD_DIR is required}
 contents_folder_path=${CONTENTS_FOLDER_PATH:?CONTENTS_FOLDER_PATH is required}
@@ -55,10 +51,7 @@ policy_id=$(/usr/bin/plutil -extract policyId raw -o - "$policy_plist")
 helper_id=$(/usr/bin/plutil -extract helperServiceId raw -o - "$policy_plist")
 application_signer_kind=$(/usr/bin/plutil -extract allowedApplicationSigner.kind raw -o - "$policy_plist")
 helper_signer_kind=$(/usr/bin/plutil -extract allowedHelperSigner.kind raw -o - "$policy_plist")
-application_requirement=$(/usr/bin/plutil -extract allowedApplicationSigner.value raw -o - "$policy_plist")
 helper_requirement=$(/usr/bin/plutil -extract allowedHelperSigner.value raw -o - "$policy_plist")
-application_requirement_for_plist_buddy=$(escape_plist_buddy_string "$application_requirement")
-helper_requirement_for_plist_buddy=$(escape_plist_buddy_string "$helper_requirement")
 host_application_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app_info")
 
 [ "$application_signer_kind" = "appleDesignatedRequirement" ] || \
@@ -76,23 +69,22 @@ policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 /usr/bin/plutil -replace CFBundleIdentifier -string "$helper_id" "$helper_info"
 /usr/bin/plutil -replace DesktopUpdaterSealedPolicy -data "$policy_base64" "$helper_info"
 /usr/bin/plutil -replace DesktopUpdaterSealedPolicySHA256 -string "$policy_sha256" "$helper_info"
-/usr/libexec/PlistBuddy -c "Delete :SMAuthorizedClients" "$helper_info" >/dev/null 2>&1 || true
-/usr/libexec/PlistBuddy -c "Add :SMAuthorizedClients array" "$helper_info"
-/usr/libexec/PlistBuddy -c "Add :SMAuthorizedClients:0 string $application_requirement_for_plist_buddy" "$helper_info"
 
 /usr/bin/plutil -replace Label -string "$helper_id" "$helper_launchd"
 /usr/libexec/PlistBuddy -c "Delete :MachServices" "$helper_launchd" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :MachServices dict" "$helper_launchd"
 /usr/libexec/PlistBuddy -c "Add :MachServices:$helper_id bool true" "$helper_launchd"
-/usr/bin/plutil -replace ProgramArguments.0 -string "/Library/PrivilegedHelperTools/$helper_id" "$helper_launchd"
+/usr/bin/plutil -replace BundleProgram -string "Contents/Helpers/DesktopUpdaterInstallHelper" "$helper_launchd"
 
-/usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables dict" "$app_info" >/dev/null 2>&1 || true
 /usr/bin/plutil -replace DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info" 2>/dev/null || \
   /usr/bin/plutil -insert DesktopUpdaterInstallPolicyID -string "$policy_id" "$app_info"
 /usr/bin/plutil -replace DesktopUpdaterInstallHelperServiceID -string "$helper_id" "$app_info" 2>/dev/null || \
   /usr/bin/plutil -insert DesktopUpdaterInstallHelperServiceID -string "$helper_id" "$app_info"
-/usr/libexec/PlistBuddy -c "Delete :SMPrivilegedExecutables:$helper_id" "$app_info" >/dev/null 2>&1 || true
-/usr/libexec/PlistBuddy -c "Add :SMPrivilegedExecutables:$helper_id string $helper_requirement_for_plist_buddy" "$app_info"
+/usr/bin/plutil -replace DesktopUpdaterInstallHelperRequirement -string "$helper_requirement" "$app_info" 2>/dev/null || \
+  /usr/bin/plutil -insert DesktopUpdaterInstallHelperRequirement -string "$helper_requirement" "$app_info"
+launch_daemon_plist_name="$helper_id.plist"
+/usr/bin/plutil -replace DesktopUpdaterInstallHelperLaunchDaemonPlistName -string "$launch_daemon_plist_name" "$app_info" 2>/dev/null || \
+  /usr/bin/plutil -insert DesktopUpdaterInstallHelperLaunchDaemonPlistName -string "$launch_daemon_plist_name" "$app_info"
 
 helper_info_sha256=$(/usr/bin/shasum -a 256 "$helper_info" | /usr/bin/awk '{print $1}')
 helper_launchd_sha256=$(/usr/bin/shasum -a 256 "$helper_launchd" | /usr/bin/awk '{print $1}')
@@ -103,11 +95,9 @@ arch_outputs=""
 for arch in $archs; do
   scratch="$work/build-$arch-$helper_info_sha256-$helper_launchd_sha256"
   DESKTOP_UPDATER_HELPER_INFO_PLIST="$helper_info" \
-  DESKTOP_UPDATER_HELPER_LAUNCHD_PLIST="$helper_launchd" \
     /usr/bin/swift build --disable-sandbox --package-path "$script_dir" -c release \
       --arch "$arch" --scratch-path "$scratch"
   bin_path=$(DESKTOP_UPDATER_HELPER_INFO_PLIST="$helper_info" \
-    DESKTOP_UPDATER_HELPER_LAUNCHD_PLIST="$helper_launchd" \
     /usr/bin/swift build --disable-sandbox --package-path "$script_dir" -c release \
       --arch "$arch" --scratch-path "$scratch" --show-bin-path)
   arch_helper="$work/DesktopUpdaterInstallHelper.$arch"
@@ -137,13 +127,13 @@ else
 fi
 
 one_shot="$app_bundle/Contents/Helpers/DesktopUpdaterInstallHelper"
-privileged="$app_bundle/Contents/Library/LaunchServices/$helper_id"
-mkdir -p "$(dirname "$one_shot")" "$(dirname "$privileged")"
+launch_daemon="$app_bundle/Contents/Library/LaunchDaemons/$launch_daemon_plist_name"
+mkdir -p "$(dirname "$one_shot")" "$(dirname "$launch_daemon")"
 /usr/bin/install -m 0755 "$signed_helper" "$one_shot"
-/usr/bin/install -m 0755 "$signed_helper" "$privileged"
+/usr/bin/install -m 0644 "$helper_launchd" "$launch_daemon"
 
 "$script_dir/verify_install_helper_layout.sh" \
-  "$app_bundle" "$helper_id" "$application_requirement" \
-  "$helper_requirement" "$helper_info" "$canonical_policy"
+  "$app_bundle" "$helper_id" "$helper_requirement" \
+  "$helper_info" "$canonical_policy"
 
 touch "$work/embed-complete.stamp"

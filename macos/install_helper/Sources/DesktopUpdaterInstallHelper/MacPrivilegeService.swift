@@ -3,7 +3,6 @@ import Darwin
 import Dispatch
 import Foundation
 import Security
-import ServiceManagement
 import XPC
 
 struct MacSignedExecutableIdentity: Equatable {
@@ -24,16 +23,6 @@ protocol MacSignedExecutableIdentityChecking: AnyObject {
         auditToken: Data,
         requirement: String
     ) throws -> MacSignedExecutableIdentity
-}
-
-protocol MacPrivilegeInstalling: AnyObject {
-    func install(serviceIdentifier: String) throws
-}
-
-enum MacPrivilegeInstallError: Error, Equatable {
-    case authorizationCancelled
-    case authorizationFailed(OSStatus)
-    case invalidBlessing
 }
 
 enum MacPrivilegeError: Error, Equatable {
@@ -127,9 +116,7 @@ struct MacPrivilegeConfiguration: Equatable {
             expectedSHA256: digest
         )
         guard info["CFBundleIdentifier"] as? String
-            == configuration.serviceIdentifier,
-            info["SMAuthorizedClients"] as? [String]
-                == [configuration.applicationRequirement] else {
+            == configuration.serviceIdentifier else {
             throw MacPrivilegeError.invalidConfiguration
         }
         return configuration
@@ -142,24 +129,15 @@ struct MacPrivilegeConfiguration: Equatable {
         let launchd = try dictionary(
             at: directory.appendingPathComponent("Helper-Launchd.plist")
         )
-        let application = try dictionary(
-            at: directory.appendingPathComponent(
-                "App-SMPrivilegedExecutables.plist"
-            )
-        )
         guard helper["CFBundleIdentifier"] as? String == serviceIdentifier,
-              helper["SMAuthorizedClients"] as? [String]
-                == [applicationRequirement],
               launchd["Label"] as? String == serviceIdentifier,
               let machServices = launchd["MachServices"]
                 as? [String: Bool],
               machServices == [serviceIdentifier: true],
-              let arguments = launchd["ProgramArguments"] as? [String],
-              arguments == [
-                  "/Library/PrivilegedHelperTools/\(serviceIdentifier)"
-              ],
-              application as? [String: String]
-                == [serviceIdentifier: helperRequirement] else {
+              launchd["BundleProgram"] as? String
+                == "Contents/Helpers/DesktopUpdaterInstallHelper",
+              launchd["Program"] == nil,
+              launchd["ProgramArguments"] == nil else {
             throw MacPrivilegeError.invalidConfiguration
         }
     }
@@ -285,9 +263,11 @@ final class MacPrivilegedTransactionHandler {
         (Int32) throws -> any MacPrivilegedInstallSessionServing
     private let monitorFactory: any MacCallerExitMonitorCreating
     private let recoveryHandler: any MacPrivilegedRecoveryRequestHandling
+    private let terminateWhenIdle: () -> Void
     private let lock = NSLock()
     private var preparing: Set<String> = []
     private var pending: [String: PendingTransaction] = [:]
+    private var restartRequested = false
 
     init(
         helperEndpointIdentitySHA256: String = String(
@@ -297,13 +277,15 @@ final class MacPrivilegedTransactionHandler {
         sessionFactory: @escaping
             (Int32) throws -> any MacPrivilegedInstallSessionServing,
         monitorFactory: any MacCallerExitMonitorCreating,
-        recoveryHandler: any MacPrivilegedRecoveryRequestHandling
+        recoveryHandler: any MacPrivilegedRecoveryRequestHandling,
+        terminateWhenIdle: @escaping () -> Void = {}
     ) {
         self.helperEndpointIdentitySHA256 =
             helperEndpointIdentitySHA256
         self.sessionFactory = sessionFactory
         self.monitorFactory = monitorFactory
         self.recoveryHandler = recoveryHandler
+        self.terminateWhenIdle = terminateWhenIdle
     }
 
     convenience init(
@@ -333,7 +315,8 @@ final class MacPrivilegedTransactionHandler {
                     policy: policy,
                     helperEndpointIdentitySHA256:
                         helperEndpointIdentitySHA256,
-                    requestValidator: validator
+                    requestValidator: validator,
+                    preserveTargetOwnership: true
                 )
                 return MacOneShotInstallSession(
                     authorizer: authorizer,
@@ -347,7 +330,8 @@ final class MacPrivilegedTransactionHandler {
             monitorFactory: SystemMacCallerExitMonitorFactory(),
             recoveryHandler: MacPersistentRecoveryRequestHandler(
                 service: recovery
-            )
+            ),
+            terminateWhenIdle: { Darwin.exit(EXIT_SUCCESS) }
         )
     }
 
@@ -441,9 +425,7 @@ final class MacPrivilegedTransactionHandler {
                 completeAfterReply: nil
             )
         } catch {
-            lock.lock()
-            preparing.remove(request.transactionID)
-            lock.unlock()
+            finishPreparing(request.transactionID)
             throw error
         }
     }
@@ -470,7 +452,7 @@ final class MacPrivilegedTransactionHandler {
                     command.helperEndpointIdentitySHA256
             )
         } catch {
-            remove(transaction)
+            finish(transaction, installedReplacement: false)
             throw error
         }
         return MacPrivilegedTransactionResponse(
@@ -479,7 +461,6 @@ final class MacPrivilegedTransactionHandler {
                 helperEndpointIdentitySHA256,
             completeAfterReply: { [weak self, weak transaction] in
                 guard let self, let transaction else { return }
-                defer { self.remove(transaction) }
                 do {
                     try transaction.monitor.waitForExit(
                         expiresAtUnixMilliseconds:
@@ -487,9 +468,17 @@ final class MacPrivilegedTransactionHandler {
                             .expiresAtUnixMilliseconds
                     )
                     _ = try transaction.session.executeAfterCallerExit()
+                    self.finish(
+                        transaction,
+                        installedReplacement: true
+                    )
                 } catch {
                     _ = try? transaction.session
                         .cancelCommitAwaitingCallerExit()
+                    self.finish(
+                        transaction,
+                        installedReplacement: false
+                    )
                     throw error
                 }
             }
@@ -509,7 +498,7 @@ final class MacPrivilegedTransactionHandler {
             peerProcessIdentifier: peerProcessIdentifier,
             acceptingCommit: false
         )
-        defer { remove(transaction) }
+        defer { finish(transaction, installedReplacement: false) }
         _ = try transaction.session.cancel(
             transactionID: command.transactionID,
             readyToken: command.readyToken,
@@ -553,7 +542,10 @@ final class MacPrivilegedTransactionHandler {
         return transaction
     }
 
-    private func remove(_ transaction: PendingTransaction) {
+    private func finish(
+        _ transaction: PendingTransaction,
+        installedReplacement: Bool
+    ) {
         lock.lock()
         if pending[transaction.reservation.transactionID]
             === transaction {
@@ -561,7 +553,32 @@ final class MacPrivilegedTransactionHandler {
                 forKey: transaction.reservation.transactionID
             )
         }
+        if installedReplacement {
+            restartRequested = true
+        }
+        let shouldTerminate = restartRequested
+            && pending.isEmpty && preparing.isEmpty
+        if shouldTerminate {
+            restartRequested = false
+        }
         lock.unlock()
+        if shouldTerminate {
+            terminateWhenIdle()
+        }
+    }
+
+    private func finishPreparing(_ transactionID: String) {
+        lock.lock()
+        preparing.remove(transactionID)
+        let shouldTerminate = restartRequested
+            && pending.isEmpty && preparing.isEmpty
+        if shouldTerminate {
+            restartRequested = false
+        }
+        lock.unlock()
+        if shouldTerminate {
+            terminateWhenIdle()
+        }
     }
 
     private static func secureReadyToken() throws -> String {
@@ -767,96 +784,16 @@ final class MacPrivilegeService {
     private let configuration: MacPrivilegeConfiguration
     private let applicationBundleURL: URL
     private let identityChecker: any MacSignedExecutableIdentityChecking
-    private let installer: any MacPrivilegeInstalling
 
     init(
         configuration: MacPrivilegeConfiguration,
         applicationBundleURL: URL,
         identityChecker: any MacSignedExecutableIdentityChecking =
-            SecurityMacSignedExecutableIdentityChecker(),
-        installer: any MacPrivilegeInstalling = SMJobBlessPrivilegeInstaller()
+            SecurityMacSignedExecutableIdentityChecker()
     ) {
         self.configuration = configuration
         self.applicationBundleURL = applicationBundleURL.standardizedFileURL
         self.identityChecker = identityChecker
-        self.installer = installer
-    }
-
-    func installPrivilegedHelper() throws {
-        let oneShotURL = applicationBundleURL.appendingPathComponent(
-            "Contents/Helpers/DesktopUpdaterInstallHelper"
-        )
-        let privilegedURL = applicationBundleURL.appendingPathComponent(
-            "Contents/Library/LaunchServices/"
-                + configuration.serviceIdentifier
-        )
-        guard oneShotURL.deletingLastPathComponent().standardizedFileURL
-            == applicationBundleURL.appendingPathComponent(
-                "Contents/Helpers"
-            ).standardizedFileURL,
-            privilegedURL.deletingLastPathComponent().standardizedFileURL
-                == applicationBundleURL.appendingPathComponent(
-                    "Contents/Library/LaunchServices"
-                ).standardizedFileURL else {
-            throw MacPrivilegeError.invalidNestedHelperLocation
-        }
-
-        let oneShotBytes: Data
-        let privilegedBytes: Data
-        do {
-            oneShotBytes = try Data(
-                contentsOf: oneShotURL,
-                options: [.mappedIfSafe]
-            )
-            privilegedBytes = try Data(
-                contentsOf: privilegedURL,
-                options: [.mappedIfSafe]
-            )
-        } catch {
-            throw MacPrivilegeError.invalidNestedHelperLocation
-        }
-        guard !oneShotBytes.isEmpty,
-              oneShotBytes == privilegedBytes else {
-            throw MacPrivilegeError.nestedPayloadMismatch
-        }
-
-        let application = try identityChecker.identity(
-            at: applicationBundleURL,
-            requirement: configuration.applicationRequirement
-        )
-        let oneShot = try identityChecker.identity(
-            at: oneShotURL,
-            requirement: configuration.helperRequirement
-        )
-        let privileged = try identityChecker.identity(
-            at: privilegedURL,
-            requirement: configuration.helperRequirement
-        )
-        let byteDigest = macPrivilegeSHA256(oneShotBytes)
-        guard application.isSignatureValid,
-              oneShot.isSignatureValid,
-              privileged.isSignatureValid,
-              application.bundleIdentifier
-                == configuration.applicationBundleIdentifier,
-              oneShot.bundleIdentifier == configuration.serviceIdentifier,
-              privileged.bundleIdentifier
-                == configuration.serviceIdentifier,
-              !application.teamIdentifier.isEmpty,
-              application.teamIdentifier == oneShot.teamIdentifier,
-              application.teamIdentifier == privileged.teamIdentifier,
-              application.designatedRequirement
-                == configuration.applicationRequirement,
-              oneShot.designatedRequirement
-                == configuration.helperRequirement,
-              privileged.designatedRequirement
-                == configuration.helperRequirement,
-              oneShot.sha256 == privileged.sha256,
-              oneShot.sha256 == byteDigest else {
-            throw MacPrivilegeError.signedIdentityMismatch
-        }
-        try installer.install(
-            serviceIdentifier: configuration.serviceIdentifier
-        )
     }
 
     func authenticatePrivilegedPeer(
@@ -1013,61 +950,6 @@ final class SecurityMacSignedExecutableIdentityChecker:
             sha256: sha256,
             isSignatureValid: true
         )
-    }
-}
-
-final class SMJobBlessPrivilegeInstaller: MacPrivilegeInstalling {
-    func install(serviceIdentifier: String) throws {
-        var authorization: AuthorizationRef?
-        let createStatus = AuthorizationCreate(nil, nil, [], &authorization)
-        guard createStatus == errAuthorizationSuccess,
-              let authorization else {
-            throw MacPrivilegeInstallError.authorizationFailed(createStatus)
-        }
-        defer { AuthorizationFree(authorization, []) }
-
-        let status = kSMRightBlessPrivilegedHelper.withCString { rightName in
-            var item = AuthorizationItem(
-                name: rightName,
-                valueLength: 0,
-                value: nil,
-                flags: 0
-            )
-            return withUnsafeMutablePointer(to: &item) { itemPointer in
-                var rights = AuthorizationRights(
-                    count: 1,
-                    items: itemPointer
-                )
-                return AuthorizationCopyRights(
-                    authorization,
-                    &rights,
-                    nil,
-                    [
-                        .interactionAllowed,
-                        .extendRights,
-                        .preAuthorize,
-                    ],
-                    nil
-                )
-            }
-        }
-        if status == errAuthorizationCanceled {
-            throw MacPrivilegeInstallError.authorizationCancelled
-        }
-        guard status == errAuthorizationSuccess else {
-            throw MacPrivilegeInstallError.authorizationFailed(status)
-        }
-
-        var error: Unmanaged<CFError>?
-        guard SMJobBless(
-            kSMDomainSystemLaunchd,
-            serviceIdentifier as CFString,
-            authorization,
-            &error
-        ) else {
-            _ = error?.takeRetainedValue()
-            throw MacPrivilegeInstallError.invalidBlessing
-        }
     }
 }
 

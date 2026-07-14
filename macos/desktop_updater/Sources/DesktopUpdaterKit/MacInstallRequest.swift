@@ -120,7 +120,7 @@ struct SystemMacInstallRequestEvidenceBuilder:
             processStartIdentity: startIdentity,
             executableSHA256: executableSHA256,
             signerIdentity: signerIdentity,
-            targetClass: "applicationBundle",
+            targetClass: Self.targetClass(for: target.bundleURL),
             executableRelativePath: executableRelativePath,
             currentVersion: version,
             currentBuildNumber: buildNumber,
@@ -128,6 +128,19 @@ struct SystemMacInstallRequestEvidenceBuilder:
             targetIdentityProofSHA256: executableSHA256,
             requestNonce: try requestNonce()
         )
+    }
+
+    static func targetClass(
+        for bundleURL: URL,
+        isWritableDirectory: (String) -> Bool = {
+            FileManager.default.isWritableFile(atPath: $0)
+        }
+    ) -> String {
+        let parent = bundleURL.standardizedFileURL
+            .deletingLastPathComponent()
+        return parent.path == "/Applications"
+            && !isWritableDirectory(parent.path)
+            ? "protectedApplication" : "applicationBundle"
     }
 
     private func processStartIdentity(_ processIdentifier: Int32) throws
@@ -389,7 +402,6 @@ public enum StageProvenance {
             if relative == stageProvenanceFileName { continue }
             let values = try entry.resourceValues(forKeys: Set(keys))
             if values.isSymbolicLink == true {
-                enumerator.skipDescendants()
                 let target = try FileManager.default.destinationOfSymbolicLink(
                     atPath: entry.path
                 ).replacingOccurrences(of: "\\", with: "/")

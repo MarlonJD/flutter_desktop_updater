@@ -84,12 +84,10 @@ void main() {
         '"Contents/Helpers/DesktopUpdaterInstallHelper"',
       ),
     );
-    expect(
-      source,
-      contains('"Contents/Library/LaunchServices"'),
-    );
+    expect(source, contains('"Contents/Library/LaunchDaemons"'));
     expect(source, contains("oneShotHelperURL"));
     expect(source, contains("privilegedHelperURL"));
+    expect(source, contains("launchDaemonPlistURL"));
     expect(source, contains("invalidServiceIdentifier"));
     for (final forbidden in <String>[
       "PATH",
@@ -120,6 +118,15 @@ void main() {
       );
       expect(manifest, isNot(contains("DesktopUpdaterInstallHelper")));
     }
+  });
+
+  test("macOS approval requirement is a stable Flutter error and action", () {
+    final plugin = _source(
+      "$kitRoot/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    );
+    expect(plugin, contains('case "openMacOSBackgroundItemsSettings"'));
+    expect(plugin, contains("SMAppService.openSystemSettingsLoginItems()"));
+    expect(plugin, contains('code: "PrivilegedHelperApprovalRequired"'));
   });
 }
 

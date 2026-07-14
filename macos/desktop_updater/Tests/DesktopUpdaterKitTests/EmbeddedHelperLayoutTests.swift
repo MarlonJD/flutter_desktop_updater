@@ -17,7 +17,7 @@ final class EmbeddedHelperLayoutTests: XCTestCase {
         )
     }
 
-    func testPrivilegedPayloadUsesTheFixedLaunchServicesDirectory() throws {
+    func testPrivilegedDaemonReusesTheFixedBundledProgram() throws {
         let bundle = URL(fileURLWithPath: "/Applications/Example.app")
         let locator = EmbeddedHelperLocator(applicationBundleURL: bundle)
 
@@ -25,8 +25,14 @@ final class EmbeddedHelperLayoutTests: XCTestCase {
             try locator.privilegedHelperURL(
                 serviceIdentifier: "com.example.desktop-updater.helper"
             ).path,
-            "/Applications/Example.app/Contents/Library/LaunchServices/"
-                + "com.example.desktop-updater.helper"
+            locator.oneShotHelperURL.path
+        )
+        XCTAssertEqual(
+            try locator.launchDaemonPlistURL(
+                serviceIdentifier: "com.example.desktop-updater.helper"
+            ).path,
+            "/Applications/Example.app/Contents/Library/LaunchDaemons/"
+                + "com.example.desktop-updater.helper.plist"
         )
     }
 
@@ -50,6 +56,9 @@ final class EmbeddedHelperLayoutTests: XCTestCase {
                     .invalidServiceIdentifier
                 )
             }
+            XCTAssertThrowsError(
+                try locator.launchDaemonPlistURL(serviceIdentifier: invalid)
+            )
         }
     }
 }

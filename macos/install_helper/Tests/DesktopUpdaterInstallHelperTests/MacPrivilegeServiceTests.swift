@@ -3,7 +3,7 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class MacPrivilegeServiceTests: XCTestCase {
-    func testConfigurationPlistsMatchReciprocalRequirementsAndMachLabel()
+    func testConfigurationPlistsMatchBundledDaemonAndMachLabel()
         throws
     {
         let configuration = try sealedPrivilegeConfiguration()
@@ -66,47 +66,6 @@ final class MacPrivilegeServiceTests: XCTestCase {
         }
     }
 
-    func testBlessesOnlyIdenticalFixedNestedPayloads() throws {
-        let fixture = try PrivilegeFixture()
-        defer { fixture.remove() }
-
-        try fixture.service.installPrivilegedHelper()
-
-        XCTAssertEqual(
-            fixture.installer.installedLabels,
-            ["com.example.desktop-updater.helper"]
-        )
-        XCTAssertEqual(
-            fixture.checker.checkedURLs.map(\.path),
-            [
-                fixture.applicationURL.path,
-                fixture.oneShotURL.path,
-                fixture.privilegedURL.path,
-            ]
-        )
-    }
-
-    func testRejectsWrongTeamUnsignedNestedHelperAndPayloadMismatch() throws {
-        let mutations: [(String, (PrivilegeFixture) throws -> Void)] = [
-            ("wrong team", { $0.checker.privilegedIdentity.teamIdentifier = "ATTACKER" }),
-            ("unsigned helper", { $0.checker.privilegedIdentity.isSignatureValid = false }),
-            ("payload mismatch", {
-                try Data("different".utf8).write(to: $0.privilegedURL)
-            }),
-        ]
-
-        for (name, mutate) in mutations {
-            let fixture = try PrivilegeFixture()
-            defer { fixture.remove() }
-            try mutate(fixture)
-            XCTAssertThrowsError(
-                try fixture.service.installPrivilegedHelper(),
-                name
-            )
-            XCTAssertTrue(fixture.installer.installedLabels.isEmpty)
-        }
-    }
-
     func testRejectsSpoofedXPCAuditToken() throws {
         let fixture = try PrivilegeFixture()
         defer { fixture.remove() }
@@ -138,28 +97,13 @@ final class MacPrivilegeServiceTests: XCTestCase {
         XCTAssertEqual(fixture.checker.runningAuditTokens, [token])
     }
 
-    func testInvalidBlessingAndAuthorizationCancellationFailClosed() throws {
-        for failure in [
-            MacPrivilegeInstallError.invalidBlessing,
-            .authorizationCancelled,
-        ] {
-            let fixture = try PrivilegeFixture(installerFailure: failure)
-            defer { fixture.remove() }
-
-            XCTAssertThrowsError(
-                try fixture.service.installPrivilegedHelper()
-            ) { error in
-                XCTAssertEqual(error as? MacPrivilegeInstallError, failure)
-            }
-        }
-    }
-
     func testPrivilegedHandlerBindsPeerAndMutatesOnlyAfterCommitReply()
         throws
     {
         let request = try privilegedValidRequestData()
         let session = RecordingPrivilegedInstallSession()
         let monitor = RecordingPrivilegedCallerExitMonitor()
+        var terminationCount = 0
         let handler = MacPrivilegedTransactionHandler(
             sessionFactory: { processIdentifier in
                 XCTAssertEqual(processIdentifier, 4_243)
@@ -168,7 +112,8 @@ final class MacPrivilegeServiceTests: XCTestCase {
             monitorFactory: RecordingPrivilegedMonitorFactory(
                 monitor: monitor
             ),
-            recoveryHandler: RecordingPrivilegedRecoveryHandler()
+            recoveryHandler: RecordingPrivilegedRecoveryHandler(),
+            terminateWhenIdle: { terminationCount += 1 }
         )
 
         XCTAssertThrowsError(
@@ -204,6 +149,7 @@ final class MacPrivilegeServiceTests: XCTestCase {
         try XCTUnwrap(committed.completeAfterReply)()
         XCTAssertTrue(monitor.didWait)
         XCTAssertTrue(session.didExecute)
+        XCTAssertEqual(terminationCount, 1)
     }
 
     func testPrivilegedHandlerRoutesCanonicalQueryAndRecovery() throws {
@@ -437,43 +383,16 @@ private func privilegedCommandData(
 private final class PrivilegeFixture {
     let rootURL: URL
     let applicationURL: URL
-    let oneShotURL: URL
-    let privilegedURL: URL
     let checker: FixturePrivilegeIdentityChecker
-    let installer: FixturePrivilegeInstaller
     let service: MacPrivilegeService
 
-    init(installerFailure: MacPrivilegeInstallError? = nil) throws {
+    init() throws {
         rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         applicationURL = rootURL.appendingPathComponent("Example.app")
-        oneShotURL = applicationURL.appendingPathComponent(
-            "Contents/Helpers/DesktopUpdaterInstallHelper"
-        )
-        privilegedURL = applicationURL.appendingPathComponent(
-            "Contents/Library/LaunchServices/"
-                + "com.example.desktop-updater.helper"
-        )
         try FileManager.default.createDirectory(
-            at: oneShotURL.deletingLastPathComponent(),
+            at: applicationURL,
             withIntermediateDirectories: true
-        )
-        try FileManager.default.createDirectory(
-            at: privilegedURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let bytes = Data("identical signed helper".utf8)
-        try bytes.write(to: oneShotURL)
-        try bytes.write(to: privilegedURL)
-
-        let identity = MacSignedExecutableIdentity(
-            bundleIdentifier: "com.example.desktop-updater.helper",
-            teamIdentifier: "EXAMPLETEAM",
-            designatedRequirement:
-                "identifier com.example.desktop-updater.helper "
-                + "and anchor apple generic",
-            sha256: macPrivilegeSHA256(bytes),
-            isSignatureValid: true
         )
         let applicationIdentity = MacSignedExecutableIdentity(
             bundleIdentifier: "com.example.app",
@@ -484,16 +403,12 @@ private final class PrivilegeFixture {
             isSignatureValid: true
         )
         checker = FixturePrivilegeIdentityChecker(
-            applicationIdentity: applicationIdentity,
-            oneShotIdentity: identity,
-            privilegedIdentity: identity
+            applicationIdentity: applicationIdentity
         )
-        installer = FixturePrivilegeInstaller(failure: installerFailure)
         service = MacPrivilegeService(
             configuration: try sealedPrivilegeConfiguration(),
             applicationBundleURL: applicationURL,
-            identityChecker: checker,
-            installer: installer
+            identityChecker: checker
         )
     }
 
@@ -505,20 +420,14 @@ private final class PrivilegeFixture {
 private final class FixturePrivilegeIdentityChecker:
     MacSignedExecutableIdentityChecking
 {
-    var oneShotIdentity: MacSignedExecutableIdentity
-    var privilegedIdentity: MacSignedExecutableIdentity
     var applicationIdentity: MacSignedExecutableIdentity
     var checkedURLs: [URL] = []
     var runningAuditTokens: [Data] = []
 
     init(
-        applicationIdentity: MacSignedExecutableIdentity,
-        oneShotIdentity: MacSignedExecutableIdentity,
-        privilegedIdentity: MacSignedExecutableIdentity
+        applicationIdentity: MacSignedExecutableIdentity
     ) {
         self.applicationIdentity = applicationIdentity
-        self.oneShotIdentity = oneShotIdentity
-        self.privilegedIdentity = privilegedIdentity
     }
 
     func identity(
@@ -526,13 +435,7 @@ private final class FixturePrivilegeIdentityChecker:
         requirement _: String
     ) throws -> MacSignedExecutableIdentity {
         checkedURLs.append(url)
-        if url.path.hasSuffix("Example.app") {
-            return applicationIdentity
-        }
-        if url.lastPathComponent == "DesktopUpdaterInstallHelper" {
-            return oneShotIdentity
-        }
-        return privilegedIdentity
+        return applicationIdentity
     }
 
     func runningIdentity(
@@ -541,22 +444,6 @@ private final class FixturePrivilegeIdentityChecker:
     ) throws -> MacSignedExecutableIdentity {
         runningAuditTokens.append(auditToken)
         return applicationIdentity
-    }
-}
-
-private final class FixturePrivilegeInstaller: MacPrivilegeInstalling {
-    var installedLabels: [String] = []
-    let failure: MacPrivilegeInstallError?
-
-    init(failure: MacPrivilegeInstallError?) {
-        self.failure = failure
-    }
-
-    func install(serviceIdentifier: String) throws {
-        if let failure {
-            throw failure
-        }
-        installedLabels.append(serviceIdentifier)
     }
 }
 

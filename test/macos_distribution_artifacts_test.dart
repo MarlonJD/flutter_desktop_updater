@@ -25,21 +25,28 @@ void main() {
     expect(embed, contains("DesktopUpdaterSealedPolicySHA256"));
     expect(embed, contains("DesktopUpdaterInstallPolicyID"));
     expect(embed, contains("DesktopUpdaterInstallHelperServiceID"));
-    expect(embed, contains("SMPrivilegedExecutables"));
-    expect(embed, contains("SMAuthorizedClients"));
-    expect(embed, contains("escape_plist_buddy_string"));
-    expect(embed, contains("application_requirement_for_plist_buddy"));
-    expect(embed, contains("helper_requirement_for_plist_buddy"));
+    expect(embed, contains("DesktopUpdaterInstallHelperRequirement"));
+    expect(embed, contains("DesktopUpdaterInstallHelperLaunchDaemonPlistName"));
+    expect(embed, contains("BundleProgram"));
+    expect(embed, isNot(contains("SMPrivilegedExecutables")));
+    expect(embed, isNot(contains("SMAuthorizedClients")));
+    expect(embed, isNot(contains("SMJobBless")));
     expect(embed, contains("Contents/Helpers/DesktopUpdaterInstallHelper"));
-    expect(embed, contains("Contents/Library/LaunchServices"));
+    expect(embed, contains("Contents/Library/LaunchDaemons"));
     expect(embed, contains("codesign"));
     expect(embed, contains("verify_install_helper_layout.sh"));
 
-    expect(verify, contains("cmp -s"));
     expect(verify, contains("codesign --verify --strict"));
     expect(verify, contains("codesign -d -r-"));
-    expect(verify, contains("SMPrivilegedExecutables"));
-    expect(verify, contains("SMAuthorizedClients"));
+    expect(verify, contains("lipo -archs"));
+    expect(verify, contains('otool -arch "\$arch"'));
+    expect(verify, contains("PlistBuddy"));
+    expect(verify, contains('Print :MachServices:\$helper_id'));
+    expect(verify, contains("BundleProgram"));
+    expect(verify, contains("Contents/Library/LaunchDaemons"));
+    expect(verify, isNot(contains("SMPrivilegedExecutables")));
+    expect(verify, isNot(contains("SMAuthorizedClients")));
+    expect(verify, isNot(contains("SMJobBless")));
     expect(verify, contains("DesktopUpdaterSealedPolicy"));
     expect(verify, contains("DesktopUpdaterInstallHelperServiceID"));
 
@@ -48,6 +55,7 @@ void main() {
     expect(package, contains('.library(name: "DesktopUpdaterKit"'));
     expect(project, contains("Embed Desktop Updater Install Helper"));
     expect(project, contains("embed_install_helper.sh"));
+    expect(project, contains("CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;"));
   });
 
   test("exposes top-level DMG helper surface with injected runner", () async {

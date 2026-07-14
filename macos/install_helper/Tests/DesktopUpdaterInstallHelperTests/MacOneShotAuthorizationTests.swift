@@ -28,7 +28,10 @@ final class MacOneShotAuthorizationTests: XCTestCase {
         XCTAssertTrue(evidence.processStartIdentity.hasPrefix("macos:"))
         XCTAssertEqual(evidence.executableSHA256.count, 64)
         XCTAssertEqual(evidence.packageID, "com.example.app")
-        XCTAssertEqual(evidence.signerIdentity, "identifier com.example.app")
+        XCTAssertEqual(
+            evidence.signerIdentity,
+            #"identifier "com.example.app""#
+        )
         XCTAssertEqual(
             evidence.targetURL.standardizedFileURL.path,
             fixture.bundleURL.standardizedFileURL.path
@@ -106,6 +109,54 @@ final class MacOneShotAuthorizationTests: XCTestCase {
                 ".Example.app.desktop-updater-lock",
             ]
         )
+    }
+
+    func testValidatorAcceptsActualDesignatedRequirementThatSatisfiedPolicy()
+        throws
+    {
+        let fixture = try MacTransactionFixture(externalStage: true)
+        defer { fixture.remove() }
+        let policy = testPolicy(installRoot: fixture.rootURL.path)
+        let actualRequirement =
+            "identifier com.example.app and anchor apple generic"
+        let request = try authorizationRequest(
+            targetURL: fixture.targetURL,
+            stageURL: fixture.stageURL,
+            policy: policy,
+            callerSignerIdentity: actualRequirement
+        )
+        let caller = RecordingMacCallerEvidenceInspector(
+            evidence: MacCallerInstallEvidence(
+                processIdentifier: request.caller.processIdentifier,
+                processStartIdentity: request.caller.processStartIdentity,
+                executableSHA256: request.caller.executableSHA256,
+                signerIdentity: actualRequirement,
+                packageID: request.packageID,
+                targetURL: fixture.targetURL,
+                currentVersion: request.currentIdentity.version,
+                currentBuildNumber: request.currentIdentity.buildNumber,
+                currentPackageIdentitySHA256:
+                    request.currentIdentity.packageIdentitySHA256,
+                targetIdentityProofSHA256:
+                    request.target.identityProofSHA256
+            )
+        )
+        let validator = MacOneShotInstallRequestValidator(
+            parentProcessIdentifier: {
+                Int32(request.caller.processIdentifier)
+            },
+            callerInspector: caller,
+            stageInspector: RecordingMacStageEvidenceInspector(
+                evidence: MacStageInstallEvidence(
+                    stageURL: fixture.stageURL,
+                    payloadIdentity:
+                        fixture.verifier.identity(forVersion: "new"),
+                    verifier: fixture.verifier
+                )
+            )
+        )
+
+        _ = try validator.validate(request, policy: policy)
     }
 
     func testRejectsParentPidOrAnyCallerEvidenceMismatchBeforeLock() throws {
@@ -654,7 +705,8 @@ private func testPolicy(
 private func authorizationRequest(
     targetURL: URL,
     stageURL: URL,
-    policy: MacSealedInstallPolicyV1
+    policy: MacSealedInstallPolicyV1,
+    callerSignerIdentity: String? = nil
 ) throws -> NativeInstallTransactionRequestV1 {
     var candidate = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     while candidate.path != "/" {
@@ -683,8 +735,8 @@ private func authorizationRequest(
             var caller = try XCTUnwrap(
                 request["caller"] as? [String: Any]
             )
-            caller["signerIdentity"] =
-                policy.allowedApplicationSigner.value
+            caller["signerIdentity"] = callerSignerIdentity
+                ?? policy.allowedApplicationSigner.value
             request["caller"] = caller
             var stage = try XCTUnwrap(request["stage"] as? [String: Any])
             stage["pathHint"] = stageURL.path
