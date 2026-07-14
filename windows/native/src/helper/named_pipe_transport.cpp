@@ -3,13 +3,17 @@
 #include <sddl.h>
 #include <shellapi.h>
 
-#include <array>
+#include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <set>
+#include <utility>
 #include <vector>
 
-#include "json_value.h"
+#include "native_install_request.h"
+#include "native_install_wire.h"
+#include "windows_one_shot_transport.h"
 
 namespace desktop_updater::helper {
 namespace {
@@ -21,6 +25,11 @@ class ScopedHandle {
   ~ScopedHandle() { Reset(); }
   ScopedHandle(const ScopedHandle&) = delete;
   ScopedHandle& operator=(const ScopedHandle&) = delete;
+  ScopedHandle(ScopedHandle&& other) noexcept : handle_(other.release()) {}
+  ScopedHandle& operator=(ScopedHandle&& other) noexcept {
+    if (this != &other) Reset(other.release());
+    return *this;
+  }
   HANDLE get() const { return handle_; }
   HANDLE release() {
     HANDLE result = handle_;
@@ -158,19 +167,10 @@ void ConsumeNonceOnce(const std::string& nonce) {
   }
 }
 
-void WriteExact(HANDLE pipe, const void* bytes, DWORD length) {
-  DWORD written = 0;
-  if (!WriteFile(pipe, bytes, length, &written, nullptr) || written != length) {
-    throw NamedPipeTransportError("canonical request write failed");
-  }
-}
-
-void ReadExact(HANDLE pipe, void* bytes, DWORD length) {
-  DWORD received = 0;
-  if (!ReadFile(pipe, bytes, length, &received, nullptr) ||
-      received != length) {
-    throw NamedPipeTransportError("canonical request read failed");
-  }
+std::int64_t NowUnixMilliseconds() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
 }
 
 }  // namespace
@@ -203,24 +203,136 @@ ElevationLaunchResult ClassifyElevationResult(DWORD error,
                                 : ElevationLaunchResult::kFailed;
 }
 
-ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
+struct WindowsElevatedHelperClientSession::Impl {
+  enum class State {
+    kPrepared,
+    kCommitAccepted,
+    kCancelled,
+  };
+
+  Impl(ScopedHandle pipe_value,
+       ScopedHandle helper_process_value,
+       std::filesystem::path helper_path_value,
+       VerifiedWindowsExecutable helper_identity_value,
+       desktop_updater::runtime::internal::NativeInstallReservationV1
+           reservation_value,
+       std::int64_t startup_deadline_unix_milliseconds)
+      : pipe(std::move(pipe_value)),
+        helper_process(std::move(helper_process_value)),
+        helper_path(std::move(helper_path_value)),
+        helper_identity(std::move(helper_identity_value)),
+        reservation(std::move(reservation_value)),
+        channel(pipe.get(), helper_process.get(),
+                startup_deadline_unix_milliseconds) {}
+
+  ScopedHandle pipe;
+  ScopedHandle helper_process;
+  std::filesystem::path helper_path;
+  VerifiedWindowsExecutable helper_identity;
+  desktop_updater::runtime::internal::NativeInstallReservationV1 reservation;
+  WindowsOneShotPipeChannel channel;
+  State state = State::kPrepared;
+};
+
+WindowsElevatedHelperClientSession::WindowsElevatedHelperClientSession(
+    std::unique_ptr<Impl> impl)
+    : impl_(std::move(impl)) {}
+
+WindowsElevatedHelperClientSession::~WindowsElevatedHelperClientSession() {
+  if (impl_ != nullptr && impl_->state == Impl::State::kPrepared) {
+    try {
+      (void)CancelReservation();
+    } catch (...) {
+    }
+  }
+}
+
+const desktop_updater::runtime::internal::NativeInstallReservationV1&
+WindowsElevatedHelperClientSession::reservation() const {
+  if (impl_ == nullptr) {
+    throw NamedPipeTransportError("elevated helper session is unavailable");
+  }
+  return impl_->reservation;
+}
+
+desktop_updater::runtime::internal::NativeInstallReservationV1
+WindowsElevatedHelperClientSession::CommitAfterExit() {
+  using desktop_updater::runtime::internal::EncodeNativeInstallWireCommandV1;
+  using desktop_updater::runtime::internal::NativeInstallWireCommandV1;
+  using desktop_updater::runtime::internal::ParseNativeInstallReservationV1;
+  if (impl_ == nullptr || impl_->state != Impl::State::kPrepared) {
+    throw NamedPipeTransportError("elevated helper session is not prepared");
+  }
+  const auto& reservation = impl_->reservation;
+  const NativeInstallWireCommandV1 command{
+      "commitAfterExit",
+      reservation.protocol_version,
+      reservation.transaction_id,
+      reservation.ready_token,
+      reservation.journal_sha256,
+      reservation.helper_endpoint_identity_sha256};
+  impl_->channel.WriteFrame(EncodeNativeInstallWireCommandV1(command));
+  const auto acknowledged = ParseNativeInstallReservationV1(
+      impl_->channel.ReadFrameUntil(
+          reservation.expires_at_unix_milliseconds));
+  if (!(acknowledged == reservation) ||
+      !VerifyWindowsExecutableStillMatches(impl_->helper_path,
+                                           impl_->helper_identity)) {
+    throw NamedPipeTransportError(
+        "helper commit acknowledgement binding changed");
+  }
+  impl_->state = Impl::State::kCommitAccepted;
+  return acknowledged;
+}
+
+desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
+WindowsElevatedHelperClientSession::CancelReservation() {
+  using desktop_updater::runtime::internal::EncodeNativeInstallWireCommandV1;
+  using desktop_updater::runtime::internal::NativeInstallWireCommandV1;
+  using desktop_updater::runtime::internal::ParseNativeInstallRecoveryResultV1;
+  if (impl_ == nullptr || impl_->state != Impl::State::kPrepared) {
+    throw NamedPipeTransportError("elevated helper session is not prepared");
+  }
+  const auto& reservation = impl_->reservation;
+  const NativeInstallWireCommandV1 command{
+      "cancelReservation",
+      reservation.protocol_version,
+      reservation.transaction_id,
+      reservation.ready_token,
+      reservation.journal_sha256,
+      reservation.helper_endpoint_identity_sha256};
+  impl_->channel.WriteFrame(EncodeNativeInstallWireCommandV1(command));
+  const auto result = ParseNativeInstallRecoveryResultV1(
+      impl_->channel.ReadFrameUntil(
+          reservation.expires_at_unix_milliseconds));
+  if (result.transaction_id != reservation.transaction_id ||
+      result.journal_sha256 != reservation.journal_sha256 ||
+      result.result_code != "rolledBack" ||
+      result.verified_outcome != "oldTarget" ||
+      !VerifyWindowsExecutableStillMatches(impl_->helper_path,
+                                           impl_->helper_identity)) {
+    throw NamedPipeTransportError("helper cancellation binding changed");
+  }
+  impl_->state = Impl::State::kCancelled;
+  return result;
+}
+
+WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
     const std::filesystem::path& fixed_helper_path,
     const WindowsHelperPolicy& policy,
     const std::string& nonce,
     const std::string& canonical_request,
     DWORD timeout_millis) {
-  if (canonical_request.empty() || canonical_request.size() > 1024 * 1024) {
-    throw NamedPipeTransportError("canonical request size rejected");
-  }
-  try {
-    const auto parsed =
-        desktop_updater::runtime::internal::ParseJson(canonical_request);
-    if (desktop_updater::runtime::internal::EncodeCanonicalJson(parsed) !=
-        canonical_request) {
-      throw NamedPipeTransportError("request is not canonical JSON");
-    }
-  } catch (const desktop_updater::runtime::internal::JsonError&) {
-    throw NamedPipeTransportError("request is not valid canonical JSON");
+  using desktop_updater::runtime::internal::ParseNativeInstallTransactionRequestV1;
+  const auto request =
+      ParseNativeInstallTransactionRequestV1(canonical_request);
+  if (request.request_nonce != nonce || request.policy_id != policy.policy_id() ||
+      request.package_id != policy.application_package_id() ||
+      !policy.AllowsRequest(request.protocol_version,
+                            request.target.target_class, request.strategy,
+                            request.provider)) {
+    throw NamedPipeTransportError(
+        "canonical request is not bound to sealed helper policy");
   }
   ConsumeNonceOnce(nonce);
   const VerifiedWindowsExecutable identity =
@@ -240,11 +352,11 @@ ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
   launch.lpParameters = parameters.c_str();
   launch.nShow = SW_HIDE;
   if (!ShellExecuteExW(&launch)) {
-    return ClassifyElevationResult(GetLastError(), false);
+    return {ClassifyElevationResult(GetLastError(), false), nullptr};
   }
   ScopedHandle helper_process(launch.hProcess);
   if (!ConnectWithTimeout(pipe.get(), timeout_millis)) {
-    return ElevationLaunchResult::kTimedOut;
+    return {ElevationLaunchResult::kTimedOut, nullptr};
   }
 
   ULONG peer_pid = 0;
@@ -261,25 +373,30 @@ ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
   ValidatePeerBinding(expected, peer_pid, ProcessUserSid(peer_process.get()),
                       nonce);
 
-  const DWORD request_length = static_cast<DWORD>(canonical_request.size());
-  WriteExact(pipe.get(), &request_length, sizeof(request_length));
-  WriteExact(pipe.get(), canonical_request.data(), request_length);
-  if (!FlushFileBuffers(pipe.get())) {
-    throw NamedPipeTransportError("canonical request flush failed");
+  const std::int64_t now = NowUnixMilliseconds();
+  if (timeout_millis == 0 ||
+      now > std::numeric_limits<std::int64_t>::max() - timeout_millis) {
+    throw NamedPipeTransportError("helper startup deadline overflow");
   }
-
-  std::array<char, 128> response{};
-  DWORD received = 0;
-  if (!ReadFile(pipe.get(), response.data(),
-                static_cast<DWORD>(response.size()), &received, nullptr)) {
-    throw NamedPipeTransportError("helper handshake read failed");
-  }
-  const std::string expected_response = "AUTHENTICATED " + nonce;
-  if (std::string(response.data(), received) != expected_response ||
+  const std::int64_t deadline = now + timeout_millis;
+  WindowsOneShotPipeChannel channel(pipe.get(), helper_process.get(), deadline);
+  channel.WriteFrame(canonical_request);
+  const auto reservation =
+      desktop_updater::runtime::internal::ParseNativeInstallReservationV1(
+          channel.ReadFrameUntil(deadline));
+  if (reservation.transaction_id != request.transaction_id ||
+      reservation.helper_endpoint_identity_sha256 != identity.sha256 ||
+      reservation.helper_endpoint_identity_sha256 != policy.helper_sha256() ||
+      reservation.expires_at_unix_milliseconds <= NowUnixMilliseconds() ||
       !VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
-    throw NamedPipeTransportError("helper handshake or identity changed");
+    throw NamedPipeTransportError("helper reservation binding changed");
   }
-  return ElevationLaunchResult::kLaunched;
+  auto impl = std::make_unique<WindowsElevatedHelperClientSession::Impl>(
+      std::move(pipe), std::move(helper_process), fixed_helper_path, identity,
+      reservation, deadline);
+  return {ElevationLaunchResult::kLaunched,
+          std::unique_ptr<WindowsElevatedHelperClientSession>(
+              new WindowsElevatedHelperClientSession(std::move(impl)))};
 }
 
 int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,

@@ -6,11 +6,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
 #include "helper_authenticode.h"
 #include "helper_policy_windows.h"
+#include "native_install_wire.h"
 
 namespace desktop_updater::helper {
 
@@ -36,6 +38,45 @@ enum class ElevationLaunchResult {
   kFailed,
 };
 
+class WindowsElevatedHelperClientSession {
+ public:
+  ~WindowsElevatedHelperClientSession();
+  WindowsElevatedHelperClientSession(
+      WindowsElevatedHelperClientSession&& other) = delete;
+  WindowsElevatedHelperClientSession& operator=(
+      WindowsElevatedHelperClientSession&& other) = delete;
+  WindowsElevatedHelperClientSession(
+      const WindowsElevatedHelperClientSession&) = delete;
+  WindowsElevatedHelperClientSession& operator=(
+      const WindowsElevatedHelperClientSession&) = delete;
+
+  const desktop_updater::runtime::internal::NativeInstallReservationV1&
+  reservation() const;
+  desktop_updater::runtime::internal::NativeInstallReservationV1
+  CommitAfterExit();
+  desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
+  CancelReservation();
+
+ private:
+  struct Impl;
+  explicit WindowsElevatedHelperClientSession(std::unique_ptr<Impl> impl);
+
+  std::unique_ptr<Impl> impl_;
+
+  friend struct WindowsElevatedHelperLaunch;
+  friend WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
+      const std::filesystem::path& fixed_helper_path,
+      const WindowsHelperPolicy& policy,
+      const std::string& nonce,
+      const std::string& canonical_request,
+      DWORD timeout_millis);
+};
+
+struct WindowsElevatedHelperLaunch {
+  ElevationLaunchResult result = ElevationLaunchResult::kFailed;
+  std::unique_ptr<WindowsElevatedHelperClientSession> session;
+};
+
 std::wstring DerivePipeName(const std::string& nonce);
 
 void ValidatePeerBinding(const PeerBinding& binding,
@@ -46,7 +87,7 @@ void ValidatePeerBinding(const PeerBinding& binding,
 ElevationLaunchResult ClassifyElevationResult(DWORD error,
                                               bool wait_timed_out);
 
-ElevationLaunchResult LaunchAuthenticatedElevatedHelper(
+WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
     const std::filesystem::path& fixed_helper_path,
     const WindowsHelperPolicy& policy,
     const std::string& nonce,

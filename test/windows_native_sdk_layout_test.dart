@@ -442,6 +442,25 @@ void main() {
     expect(pipe, contains("WindowsElevatedPipeSessionRunner"));
     expect(pipe, contains("FILE_FLAG_OVERLAPPED"));
   });
+
+  test("Windows client validates canonical reservation and commit ACK", () {
+    final header = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.h",
+    );
+    final source = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.cpp",
+    );
+
+    expect(header, contains("WindowsElevatedHelperClientSession"));
+    expect(header, contains("WindowsElevatedHelperLaunch"));
+    expect(header, contains("CommitAfterExit"));
+    expect(header, contains("CancelReservation"));
+    expect(source, contains("ParseNativeInstallReservationV1"));
+    expect(source, contains("ParseNativeInstallRecoveryResultV1"));
+    expect(source, contains("helper_endpoint_identity_sha256"));
+    expect(source, contains("VerifyWindowsExecutableStillMatches"));
+    expect(source, isNot(contains('"AUTHENTICATED "')));
+  });
 }
 
 String readRequiredFile(String path) {
