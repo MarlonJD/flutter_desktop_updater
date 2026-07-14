@@ -8,8 +8,12 @@ do {
     let input = command == .testParseProtocol
         ? FileHandle.standardInput.readDataToEndOfFile()
         : Data()
+    let oneShotRuntime = command == .oneShotService
+        ? try MacOneShotBootstrap.makeRuntime()
+        : nil
     if let output = try command.execute(
         protocolInput: input,
+        oneShotServiceRuntime: oneShotRuntime,
         privilegedServiceRuntime: SystemMacPrivilegedServiceRuntime()
     ) {
         print(output)
@@ -21,6 +25,8 @@ do {
         code = "unsupportedArguments"
     case .invalidTestProtocol:
         code = "invalidTestProtocol"
+    case .oneShotServiceUnavailable:
+        code = "oneShotServiceUnavailable"
     }
     FileHandle.standardError.write(Data("\(code)\n".utf8))
     Darwin.exit(64)

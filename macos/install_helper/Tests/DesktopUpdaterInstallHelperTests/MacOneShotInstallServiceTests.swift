@@ -146,11 +146,7 @@ final class MacOneShotInstallServiceTests: XCTestCase {
         let monitorFactory = RecordingCallerMonitorFactory {
             XCTAssertEqual(channel.outputs.count, 2)
             XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
-            let accepted = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: channel.outputs[1])
-                    as? [String: Any]
-            )
-            XCTAssertEqual(accepted["state"] as? String, "commitAccepted")
+            XCTAssertEqual(channel.outputs[1], channel.outputs[0])
         }
         let runtime = MacOneShotServiceRuntime(
             session: session,
@@ -162,6 +158,48 @@ final class MacOneShotInstallServiceTests: XCTestCase {
         XCTAssertEqual(monitorFactory.processIdentifier, 4_243)
         XCTAssertTrue(monitorFactory.didWait)
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testWireRuntimeReturnsCanonicalRollbackForCancellation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let channel = RecordingOneShotWireChannel(
+            requestData: try canonicalRequestData(),
+            operation: "cancelReservation"
+        )
+        let monitorFactory = RecordingCallerMonitorFactory {}
+        let runtime = MacOneShotServiceRuntime(
+            session: MacOneShotInstallSession(
+                authorizer: FixtureOneShotAuthorizer(
+                    transaction: try fixture.makeTransaction()
+                ),
+                readyTokenGenerator: {
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                },
+                nowUnixMilliseconds: { 1_000 },
+                reservationLifetimeMilliseconds: 60_000
+            ),
+            callerMonitorFactory: monitorFactory
+        )
+
+        try runtime.run(channel: channel)
+
+        let rollback = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: channel.outputs[1])
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            Set(rollback.keys),
+            [
+                "protocolVersion", "transactionId", "resultCode",
+                "verifiedOutcome", "journalSha256",
+            ]
+        )
+        XCTAssertEqual(rollback["resultCode"] as? String, "rolledBack")
+        XCTAssertEqual(rollback["verifiedOutcome"] as? String, "oldTarget")
+        XCTAssertFalse(monitorFactory.didWait)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
     }
 
@@ -248,11 +286,16 @@ private final class FixtureOneShotAuthorizer: MacOneShotInstallAuthorizing {
 
 private final class RecordingOneShotWireChannel: MacOneShotWireChannel {
     private let requestData: Data
+    private let operation: String
     private var readCount = 0
     private(set) var outputs: [Data] = []
 
-    init(requestData: Data) {
+    init(
+        requestData: Data,
+        operation: String = "commitAfterExit"
+    ) {
         self.requestData = requestData
+        self.operation = operation
     }
 
     func readFrame() throws -> Data {
@@ -264,7 +307,7 @@ private final class RecordingOneShotWireChannel: MacOneShotWireChannel {
         )
         return try JSONSerialization.data(
             withJSONObject: [
-                "operation": "commitAfterExit",
+                "operation": operation,
                 "protocolVersion": 1,
                 "transactionId": reservation["transactionId"] as Any,
                 "readyToken": reservation["readyToken"] as Any,

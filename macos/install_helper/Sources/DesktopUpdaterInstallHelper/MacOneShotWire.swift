@@ -1,6 +1,10 @@
 import CoreFoundation
 import Foundation
 
+protocol MacOneShotServiceRunning: AnyObject {
+    func run() throws
+}
+
 protocol MacOneShotWireChannel: AnyObject {
     func readFrame() throws -> Data
     func writeFrame(_ data: Data) throws
@@ -100,7 +104,7 @@ final class MacOneShotServiceRuntime {
             )
             switch command.operation {
             case "commitAfterExit":
-                let accepted = try session.acceptCommit(
+                _ = try session.acceptCommit(
                     transactionID: command.transactionID,
                     readyToken: command.readyToken,
                     journalSHA256: command.journalSHA256,
@@ -108,7 +112,7 @@ final class MacOneShotServiceRuntime {
                         command.helperEndpointIdentitySHA256
                 )
                 do {
-                    try channel.writeFrame(try encode(accepted))
+                    try channel.writeFrame(try encode(reservation))
                     try monitor.waitForExit(
                         expiresAtUnixMilliseconds:
                             reservation.expiresAtUnixMilliseconds
@@ -119,14 +123,16 @@ final class MacOneShotServiceRuntime {
                 }
                 _ = try session.executeAfterCallerExit()
             case "cancelReservation":
-                let cancelled = try session.cancel(
+                _ = try session.cancel(
                     transactionID: command.transactionID,
                     readyToken: command.readyToken,
                     journalSHA256: command.journalSHA256,
                     helperEndpointIdentitySHA256:
                         command.helperEndpointIdentitySHA256
                 )
-                try channel.writeFrame(try encode(cancelled))
+                try channel.writeFrame(
+                    try encodeCancellation(reservation)
+                )
             default:
                 throw MacOneShotWireError.unsupportedOperation
             }
@@ -158,18 +164,16 @@ final class MacOneShotServiceRuntime {
         )
     }
 
-    private func encode(_ value: MacOneShotTransactionStatusV1) throws
-        -> Data
-    {
+    private func encodeCancellation(
+        _ value: MacOneShotReservationV1
+    ) throws -> Data {
         try JSONSerialization.data(
             withJSONObject: [
                 "protocolVersion": value.protocolVersion,
                 "transactionId": value.transactionID,
-                "state": value.state,
-                "resultCode": value.resultCode,
+                "resultCode": "rolledBack",
+                "verifiedOutcome": "oldTarget",
                 "journalSha256": value.journalSHA256,
-                "helperEndpointIdentitySha256":
-                    value.helperEndpointIdentitySHA256,
             ],
             options: [.sortedKeys]
         )

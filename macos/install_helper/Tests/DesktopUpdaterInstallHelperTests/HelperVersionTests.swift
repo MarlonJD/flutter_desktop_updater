@@ -19,6 +19,10 @@ final class HelperVersionTests: XCTestCase {
             .testParseProtocol
         )
         XCTAssertEqual(
+            try HelperCommand.parse(arguments: ["--one-shot-service"]),
+            .oneShotService
+        )
+        XCTAssertEqual(
             try HelperCommand.parse(arguments: []),
             .privilegedService
         )
@@ -37,6 +41,27 @@ final class HelperVersionTests: XCTestCase {
         XCTAssertThrowsError(
             try HelperCommand.parse(arguments: ["--privileged-service"])
         )
+        XCTAssertThrowsError(
+            try HelperCommand.parse(
+                arguments: ["--one-shot-service", "/tmp/attacker"]
+            )
+        )
+    }
+
+    func testOneShotCommandRunsOnlyTheInjectedWireRuntime() throws {
+        let oneShot = TestOneShotServiceRuntime()
+        let privileged = TestPrivilegedServiceRuntime()
+
+        XCTAssertNil(
+            try HelperCommand.oneShotService.execute(
+                protocolInput: Data(),
+                oneShotServiceRuntime: oneShot,
+                privilegedServiceRuntime: privileged
+            )
+        )
+
+        XCTAssertTrue(oneShot.didRun)
+        XCTAssertFalse(privileged.didRun)
     }
 
     func testProtocolParseModeUsesTheCanonicalVersionOneRequestParser() throws {
@@ -51,6 +76,7 @@ final class HelperVersionTests: XCTestCase {
         XCTAssertEqual(
             try HelperCommand.testParseProtocol.execute(
                 protocolInput: valid,
+                oneShotServiceRuntime: TestOneShotServiceRuntime(),
                 privilegedServiceRuntime: TestPrivilegedServiceRuntime()
             ),
             "valid schema=1 protocol=1 "
@@ -67,6 +93,7 @@ final class HelperVersionTests: XCTestCase {
             XCTAssertThrowsError(
                 try HelperCommand.testParseProtocol.execute(
                     protocolInput: invalid,
+                    oneShotServiceRuntime: TestOneShotServiceRuntime(),
                     privilegedServiceRuntime: TestPrivilegedServiceRuntime()
                 )
             )
@@ -112,7 +139,19 @@ final class HelperVersionTests: XCTestCase {
 }
 
 private final class TestPrivilegedServiceRuntime: MacPrivilegedServiceRunning {
-    func run() throws {}
+    private(set) var didRun = false
+
+    func run() throws {
+        didRun = true
+    }
+}
+
+private final class TestOneShotServiceRuntime: MacOneShotServiceRunning {
+    private(set) var didRun = false
+
+    func run() throws {
+        didRun = true
+    }
 }
 
 private func helperProtocolFixtureObject(_ name: String) throws
