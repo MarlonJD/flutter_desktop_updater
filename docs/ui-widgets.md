@@ -122,7 +122,18 @@ wrapper widgets handle placement.
   update active, hide "Not now", and show "Save first" plus "Restart" so users
   can save unsaved work without skipping the required update.
 - `UpdateFailed`: shows a retry action and, when a diagnostics report exists,
-  a "View report" action.
+  a "View report" action. When macOS reports
+  `PrivilegedHelperApprovalRequired`, the stock card and dialog instead explain
+  that background-item permission is required, show `Open settings`, and show
+  `Try again` for the retained staged update.
+
+Writable macOS targets stay on the unprivileged helper path, so this approval UI
+appears only when the target actually requires the `SMAppService` root daemon.
+It is a first-enable or revoked-approval recovery UI, not a prompt that should
+appear for every update; an already enabled daemon is reused.
+Custom UI can use `isMacOSPrivilegedHelperApprovalRequiredError(state.error)`
+and call `controller.openMacOSBackgroundItemsSettings()` to provide the same
+recovery action.
 
 ## Release Notes Patterns
 

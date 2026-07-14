@@ -30,6 +30,20 @@ void main() {
     expect(await platform.getCurrentVersion(), "42");
   });
 
+  test("openMacOSBackgroundItemsSettings forwards the native action", () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return null;
+    });
+
+    await platform.openMacOSBackgroundItemsSettings();
+
+    expect(capturedCall.method, "openMacOSBackgroundItemsSettings");
+    expect(capturedCall.arguments, isNull);
+  });
+
   test("getCurrentVersionInfo returns structured version data separately",
       () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

@@ -22,6 +22,7 @@ export "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 export "package:desktop_updater/src/localization.dart";
 export "package:desktop_updater/src/macos_install_location.dart";
+export "package:desktop_updater/src/macos_privileged_helper_approval.dart";
 export "package:desktop_updater/src/manual_update_check_result.dart";
 export "package:desktop_updater/src/version_info.dart" show DesktopVersionInfo;
 export "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
@@ -136,6 +137,11 @@ class DesktopUpdater {
     return DesktopUpdaterPlatform.instance.moveMacOSAppToApplications(
       replaceExisting: replaceExisting,
     );
+  }
+
+  /// Opens macOS Background Items settings for privileged helper approval.
+  Future<void> openMacOSBackgroundItemsSettings() {
+    return DesktopUpdaterPlatform.instance.openMacOSBackgroundItemsSettings();
   }
 
   /// Returns the structured current app version.

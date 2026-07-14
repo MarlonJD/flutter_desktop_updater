@@ -86,6 +86,13 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
       "moveMacOSAppToApplications() has not been implemented.",
     );
   }
+
+  /// Opens the macOS Background Items settings for helper approval.
+  Future<void> openMacOSBackgroundItemsSettings() {
+    throw UnimplementedError(
+      "openMacOSBackgroundItemsSettings() has not been implemented.",
+    );
+  }
 }
 
 /// Internal install-context handoff that preserves old platform implementers.

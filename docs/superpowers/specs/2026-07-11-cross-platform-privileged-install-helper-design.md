@@ -323,12 +323,13 @@ The build produces a macOS 10.14-compatible
 - The helper is embedded under `Contents/Helpers`, signed before the outer app,
   and verified as nested code.
 - Writable targets use a signed unprivileged one-shot mode.
-- Privileged targets use the same helper through `SMJobBless` and a
-  package-unique Mach service/XPC endpoint.
+- Privileged targets use the same bundled helper through
+  `SMAppService.daemon(plistName:)` and a package-unique Mach service/XPC
+  endpoint on macOS 13 and later.
 - The client and helper validate audit tokens, Team ID, bundle ID, designated
   requirements, helper policy, protocol version, and transaction nonce.
 - Release acceptance requires hardened runtime, helper/app signing,
-  notarization, and actual blessed-helper execution.
+  notarization, admin approval, and actual root-daemon execution.
 
 ### Windows
 

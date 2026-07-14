@@ -34,6 +34,40 @@ Do not document a package-owned log path for users. Pick an app-owned support
 directory, create it before update handoff, show that path in your own Settings
 or support UI, and own retention, rotation, encryption, and upload consent.
 
+## macOS Privileged Helper Approval
+
+macOS updates use the bundled helper without elevation when the target parent
+is writable. That unprivileged path does not register a background item. A
+protected target uses the signed `SMAppService` daemon on macOS 13 or later and
+fails before mutation until an administrator approves it in System Settings.
+Approval is a protected-target setup gate, not an expected prompt for every
+ordinary update. The updater reuses an enabled daemon. When ServiceManagement
+requires a daemon refresh, it waits for asynchronous unregistration to finish
+before registering again so an existing approval is preserved. If the user or
+an administrator revoked approval, macOS requires explicit approval again and
+the updater reports the same stable error without mutating the target.
+
+The MethodChannel reports this gate as a `PlatformException` with the stable
+code `PrivilegedHelperApprovalRequired`. Custom UI can distinguish it without
+matching localized text:
+
+```dart
+try {
+  await controller.restartApp();
+} on Object catch (error) {
+  if (isMacOSPrivilegedHelperApprovalRequiredError(error)) {
+    await controller.openMacOSBackgroundItemsSettings();
+    return;
+  }
+  rethrow;
+}
+```
+
+`openMacOSBackgroundItemsSettings` opens System Settings > General > Login
+Items & Extensions. It does not grant approval itself. Ask the user to enable
+the app, return to the update UI, and retry the same staged update. Other
+install failures keep their existing error codes and diagnostics behavior.
+
 ## Dart Lifecycle Log
 
 `UpdateDiagnosticsRecorder` records bounded entries in memory. If you also pass

@@ -380,27 +380,59 @@ class UpdateDialogWidget extends StatelessWidget {
             builder: (context, child) {
               final state = notifier.state;
               if (state is UpdateFailed) {
+                final approvalRequired =
+                    isMacOSPrivilegedHelperApprovalRequiredError(state.error);
                 return AlertDialog(
                   backgroundColor: backgroundColor,
                   iconColor: iconColor,
                   shadowColor: shadowColor,
                   title: Text(
-                    "Update failed",
+                    approvalRequired
+                        ? "Administrator approval required"
+                        : "Update failed",
                     style: TextStyle(color: textColor),
                   ),
                   content: Text(
-                    "Please try again later.",
+                    approvalRequired
+                        ? "Allow this app to run in the background in System "
+                            "Settings > General > Login Items & Extensions, "
+                            "then try the update again."
+                        : "Please try again later.",
                     style: TextStyle(color: textColor),
                   ),
                   actions: [
-                    TextButton.icon(
-                      icon: Icon(Icons.refresh, color: buttonIconColor),
-                      label: Text(
-                        "Check again",
-                        style: TextStyle(color: buttonTextColor),
+                    if (approvalRequired) ...[
+                      TextButton.icon(
+                        icon: Icon(Icons.settings, color: buttonIconColor),
+                        label: Text(
+                          "Open settings",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          unawaited(
+                            notifier.openMacOSBackgroundItemsSettings(),
+                          );
+                        },
                       ),
-                      onPressed: notifier.checkVersion,
-                    ),
+                      TextButton.icon(
+                        icon: Icon(Icons.refresh, color: buttonIconColor),
+                        label: Text(
+                          "Try again",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          unawaited(notifier.restartApp());
+                        },
+                      ),
+                    ] else
+                      TextButton.icon(
+                        icon: Icon(Icons.refresh, color: buttonIconColor),
+                        label: Text(
+                          "Check again",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: notifier.checkVersion,
+                      ),
                     if (state.report != null)
                       TextButton.icon(
                         icon: Icon(

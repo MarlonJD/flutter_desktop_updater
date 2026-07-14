@@ -717,6 +717,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
   }
 
+  /// Opens macOS Background Items settings for privileged helper approval.
+  Future<void> openMacOSBackgroundItemsSettings() {
+    return DesktopUpdaterPlatform.instance.openMacOSBackgroundItemsSettings();
+  }
+
   /// Hands the staged update to the native installer or restart helper.
   Future<void> restartApp() async {
     final stagingPath = _stagingPath;

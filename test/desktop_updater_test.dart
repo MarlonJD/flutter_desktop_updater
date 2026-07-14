@@ -71,6 +71,9 @@ class MockDesktopUpdaterPlatform
     lastReplaceExisting = replaceExisting;
     return Future.value();
   }
+
+  @override
+  Future<void> openMacOSBackgroundItemsSettings() => Future.value();
 }
 
 class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {

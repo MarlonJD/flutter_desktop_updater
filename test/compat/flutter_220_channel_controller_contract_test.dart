@@ -121,5 +121,8 @@ class _ReleasedPlatformImplementation
       Future.value();
 
   @override
+  Future<void> openMacOSBackgroundItemsSettings() => Future.value();
+
+  @override
   Future<void> restartApp() => Future.value();
 }

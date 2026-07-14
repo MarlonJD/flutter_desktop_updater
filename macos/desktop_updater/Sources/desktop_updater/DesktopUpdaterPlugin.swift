@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import ServiceManagement
 #if canImport(DesktopUpdaterKit)
 import DesktopUpdaterKit
 #endif
@@ -77,6 +78,19 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 replaceExisting: replaceExisting,
                 result: result
             )
+        case "openMacOSBackgroundItemsSettings":
+            guard #available(macOS 13.0, *) else {
+                result(
+                    FlutterError(
+                        code: "Unsupported",
+                        message: "Background item settings require macOS 13 or later.",
+                        details: nil
+                    )
+                )
+                return
+            }
+            SMAppService.openSystemSettingsLoginItems()
+            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -158,6 +172,21 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 NSApplication.shared.terminate(nil)
             }
         } catch {
+            if error as? MacInstallClientError ==
+                .privilegedHelperApprovalRequired
+            {
+                result(
+                    FlutterError(
+                        code: "PrivilegedHelperApprovalRequired",
+                        message: "Administrator approval is required before installing this update.",
+                        details: [
+                            "action": "openMacOSBackgroundItemsSettings",
+                            "settingsPath": "System Settings > General > Login Items & Extensions",
+                        ]
+                    )
+                )
+                return
+            }
             let validationMessages = [
                 "Staged macOS update directory does not exist.",
                 "Staged macOS update must be a real .app directory, not a symlink.",

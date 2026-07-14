@@ -68,10 +68,10 @@ target-host gates described below pass.
 
 Each retail application must provision these policy-bound artifacts:
 
-- macOS: `Contents/Helpers/DesktopUpdaterInstallHelper`, the byte-identical
-  privileged payload in `Contents/Library/LaunchServices`, reciprocal
-  SMJobBless requirements, and the helper's sealed policy metadata. Nested code
-  is signed before the outer app.
+- macOS: `Contents/Helpers/DesktopUpdaterInstallHelper`, its plist in
+  `Contents/Library/LaunchDaemons`, SMAppService registration metadata, and the
+  helper's sealed policy. The same signed executable serves one-shot and root
+  daemon modes; nested code is signed before the outer app.
 - Windows: `desktop_updater_install_helper.exe` beside the packaged native
   DLLs for discovery, plus an installer-owned, Authenticode-verified copy in a
   protected location for UAC use. The sealed policy binds the application,
@@ -135,6 +135,14 @@ and `Bundle.main` target internally, so callers cannot select another process
 or application bundle. `DesktopUpdaterVersion.string` exposes the helper
 package version.
 
+Writable targets use the packaged one-shot helper and do not register a
+background item. A protected target uses the root `SMAppService` daemon on
+macOS 13 or later. The application should present the stable
+`PrivilegedHelperApprovalRequired` error and settings action only for first
+enable or revoked consent. Enabled services are reused; a required service
+refresh waits for asynchronous unregistration to complete before
+re-registration so existing administrator approval is preserved.
+
 Flutter macOS hosts invoke `macos/install_helper/embed_install_helper.sh` from
 their final app target after Flutter assembly. The CocoaPods fallback preserves
 the tooling in its sandbox without adding helper sources to the pod's exact
@@ -146,13 +154,13 @@ the invocation. Set `DESKTOP_UPDATER_HELPER_INFO_TEMPLATE` and
 `DESKTOP_UPDATER_SEALED_POLICY_PATH` to consumer-owned metadata, and set
 `DESKTOP_UPDATER_SEALED_POLICY_SHA256` to the digest emitted by the canonical
 policy generator. The policy must
-bind the actual app bundle identifier, helper service identifier, and reciprocal
-Apple designated requirements. The tool always builds the helper with SwiftPM's
-Release configuration into DerivedData, signs it once, copies the same signed
-bytes to `Contents/Helpers/DesktopUpdaterInstallHelper` and
-`Contents/Library/LaunchServices/<helper-service-id>`, and validates the layout
-before Xcode signs the outer app. Missing policy, requirement, identity, or
-signing metadata fails the host build.
+bind the actual app bundle identifier, helper service identifier, and Apple
+designated requirements. The tool always builds the helper with SwiftPM's
+Release configuration into DerivedData, signs it once, copies it to
+`Contents/Helpers/DesktopUpdaterInstallHelper`, embeds a `BundleProgram` plist
+at `Contents/Library/LaunchDaemons/<helper-service-id>.plist`, and validates the
+layout before Xcode signs the outer app. Missing policy, requirement, identity,
+or signing metadata fails the host build.
 
 The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback

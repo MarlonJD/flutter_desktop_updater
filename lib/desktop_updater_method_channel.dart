@@ -168,6 +168,13 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     );
   }
 
+  @override
+  Future<void> openMacOSBackgroundItemsSettings() async {
+    await methodChannel.invokeMethod<void>(
+      "openMacOSBackgroundItemsSettings",
+    );
+  }
+
   /// Returns structured native version metadata for update checks.
   Future<Map<String, String?>?> getCurrentVersionInfo() async {
     final versionInfo = await methodChannel.invokeMapMethod<String, String?>(

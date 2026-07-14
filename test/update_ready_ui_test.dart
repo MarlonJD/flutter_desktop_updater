@@ -1,5 +1,6 @@
 import "package:desktop_updater/desktop_updater.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
@@ -288,6 +289,39 @@ void main() {
     expect(find.text("Update failed"), findsOneWidget);
   });
 
+  testWidgets(
+    "privileged helper approval failure explains permission and opens settings",
+    (tester) async {
+      final controller = _ReadyUiTestController()..showApprovalRequired();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DesktopUpdateDirectCard(controller: controller),
+          ),
+        ),
+      );
+
+      expect(
+        find.text(
+          "Allow this app to run in the background in System Settings > "
+          "General > Login Items & Extensions, then try the update again.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text("Open settings"), findsOneWidget);
+      expect(find.text("Try again"), findsOneWidget);
+
+      await tester.tap(find.text("Open settings"));
+      await tester.pump();
+      expect(controller.openSettingsCallCount, 1);
+
+      await tester.tap(find.text("Try again"));
+      await tester.pump();
+      expect(controller.restartAppCallCount, 1);
+    },
+  );
+
   testWidgets("error icon has a Tooltip with a non-empty message", (
     tester,
   ) async {
@@ -483,6 +517,8 @@ class _ReadyUiTestController extends DesktopUpdaterController {
 
   bool _skipUpdate = false;
   UpdateState _state = const UpdateIdle();
+  int openSettingsCallCount = 0;
+  int restartAppCallCount = 0;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
     schemaVersion: 3,
@@ -589,6 +625,17 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     notifyListeners();
   }
 
+  void showApprovalRequired() {
+    _state = UpdateFailed(
+      PlatformException(
+        code: "PrivilegedHelperApprovalRequired",
+        message: "Administrator approval is required.",
+      ),
+      report: _testReport(),
+    );
+    notifyListeners();
+  }
+
   @override
   Future<void> downloadUpdate() async {
     showDownloadingUpdate(
@@ -601,6 +648,16 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   Future<void> makeSkipUpdate() async {
     _skipUpdate = true;
     notifyListeners();
+  }
+
+  @override
+  Future<void> openMacOSBackgroundItemsSettings() async {
+    openSettingsCallCount += 1;
+  }
+
+  @override
+  Future<void> restartApp() async {
+    restartAppCallCount += 1;
   }
 }
 
