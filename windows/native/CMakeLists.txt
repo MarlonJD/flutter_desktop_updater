@@ -85,6 +85,7 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/helper_policy_windows.cpp
   src/helper/helper_authenticode.cpp
   src/helper/named_pipe_transport.cpp
+  src/helper/windows_one_shot_transport.cpp
   src/helper/windows_reservation.cpp
   src/helper/windows_transaction_journal.cpp
   src/helper/windows_file_transaction.cpp
@@ -297,6 +298,20 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(windows_helper_reservation
     PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
   gtest_discover_tests(windows_helper_reservation)
+
+  add_executable(windows_one_shot_transport
+    test/helper/windows_one_shot_transport_test.cpp)
+  target_compile_features(windows_one_shot_transport PRIVATE cxx_std_17)
+  target_compile_definitions(windows_one_shot_transport
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_one_shot_transport PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_one_shot_transport
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_one_shot_transport)
 
   add_executable(windows_transaction
     test/helper/windows_transaction_test.cpp)

@@ -362,6 +362,36 @@ void main() {
       ),
     );
   });
+
+  test("Windows one-shot pipe adapter binds canonical frames and caller exit",
+      () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final header = readRequiredFile(
+      "windows/native/src/helper/windows_one_shot_transport.h",
+    );
+    final source = readRequiredFile(
+      "windows/native/src/helper/windows_one_shot_transport.cpp",
+    );
+    final tests = readRequiredFile(
+      "windows/native/test/helper/windows_one_shot_transport_test.cpp",
+    );
+
+    expect(cmake, contains("windows_one_shot_transport.cpp"));
+    expect(cmake, contains("windows_one_shot_transport_test.cpp"));
+    expect(header, contains("NativeInstallWireChannelV1"));
+    expect(header, contains("NativeInstallCallerExitMonitorFactoryV1"));
+    expect(header, contains("RunWindowsOneShotPipeSession"));
+    expect(source, contains("ReadFrameUntil"));
+    expect(source, contains("WaitForMultipleObjects"));
+    expect(source, contains("GetProcessTimes"));
+    expect(source, contains("VerifyWindowsExecutableStillMatches"));
+    expect(source, contains("caller.executable_sha256"));
+    expect(source, contains("caller.signer_identity"));
+    expect(source, contains("caller.package_id"));
+    expect(source, contains("NativeInstallOneShotServiceRuntimeV1"));
+    expect(tests, contains("RejectsCallerIdentityDrift"));
+    expect(tests, contains("RejectsInvalidFrameBounds"));
+  });
 }
 
 String readRequiredFile(String path) {
