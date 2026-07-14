@@ -284,24 +284,26 @@ void main() {
     expect(cmake, contains("desktop_updater::native"));
   });
 
-  test("native helper scripts use nonce names and exclusive creation", () {
+  test("native helpers use transaction names and exclusive state creation", () {
     final macos = readRequiredFile(
-      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/HelperServer.swift",
     );
     final windows = readRequiredFile(
-      "windows/native/src/desktop_updater_native.cpp",
+      "windows/native/src/helper/windows_reservation.cpp",
     );
     final linux = readRequiredFile(
-      "linux/native/src/desktop_updater_native.cc",
+      "linux/native/src/helper/linux_reservation.cc",
     );
 
-    expect(macos, contains(r"desktop_updater_\(nonce.uuidString).command"));
-    expect(macos, contains(".withoutOverwriting"));
+    expect(macos,
+        contains(r".desktop-updater-journal-\(request.transactionID).json"));
+    expect(macos, contains("O_CREAT | O_EXCL | O_NOFOLLOW"));
     expect(windows, contains("CREATE_NEW"));
-    expect(windows, contains("desktop_updater_"));
-    expect(windows, contains("CreateUuidNonce"));
+    expect(windows, contains(".desktop-updater-"));
+    expect(windows, contains("request.transaction_id"));
     expect(linux, contains("O_CREAT | O_EXCL"));
-    expect(linux, contains("CreateUuidNonce"));
+    expect(linux, contains(".desktop-updater-"));
+    expect(linux, contains("request.transaction_id"));
   });
 
   test("native lifecycle races have registered behavioral tests", () {

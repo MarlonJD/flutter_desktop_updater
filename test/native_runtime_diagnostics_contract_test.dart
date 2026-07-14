@@ -40,20 +40,18 @@ void main() {
     expect(linuxCMake, contains("diagnostics_fixture_tests.cc"));
   });
 
-  test("every canonical helper event remains emitted by native helpers", () {
+  test("every canonical legacy helper event remains represented natively", () {
     final events = (fixture("helper-events.json")["events"] as List<dynamic>)
         .cast<String>();
-    final helpers = [
+    final diagnosticImplementations = [
       readFile(
-        "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
-      ),
-      readFile("windows/native/src/desktop_updater_native.cpp"),
-      readFile("linux/native/src/desktop_updater_native.cc"),
+          "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift"),
+      readFile("native_runtime/cpp/diagnostics.cc"),
     ];
 
-    for (final helper in helpers) {
+    for (final implementation in diagnosticImplementations) {
       for (final event in events) {
-        expect(helper, contains(event), reason: event);
+        expect(implementation, contains(event), reason: event);
       }
     }
   });
