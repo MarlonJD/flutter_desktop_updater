@@ -1,6 +1,9 @@
 prefix=${pcfiledir}/@DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR@
 libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+helper=${prefix}/@CMAKE_INSTALL_LIBEXECDIR@/desktop-updater-helper
+policy_dir=/etc/desktop-updater/policies
+polkit_action=com.desktopupdater.install
 
 Name: desktop_updater_native
 Description: Flutter-free Linux desktop updater install helper

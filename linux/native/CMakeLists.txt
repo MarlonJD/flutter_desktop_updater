@@ -11,6 +11,8 @@ option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
 option(DESKTOP_UPDATER_NATIVE_RUNTIME
   "Build the preview non-Flutter update runtime" OFF)
 
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
 if(DESKTOP_UPDATER_NATIVE_RUNTIME AND CMAKE_VERSION VERSION_LESS "3.12")
   message(FATAL_ERROR "The native runtime requires CMake 3.12 or later")
 endif()
@@ -35,10 +37,50 @@ set_target_properties(desktop_updater_native PROPERTIES
   EXPORT_NAME native
   POSITION_INDEPENDENT_CODE ON)
 
+add_library(desktop_updater_linux_helper_support STATIC
+  src/helper/linux_helper_policy.cc
+  src/helper/unix_socket_transport.cc
+  src/helper/linux_reservation.cc)
+target_compile_features(desktop_updater_linux_helper_support PUBLIC cxx_std_17)
+target_compile_definitions(desktop_updater_linux_helper_support
+  PRIVATE _GNU_SOURCE)
+target_include_directories(desktop_updater_linux_helper_support
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/helper
+  PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+target_link_libraries(desktop_updater_linux_helper_support
+  PUBLIC desktop_updater_native OpenSSL::Crypto)
+
+add_executable(desktop-updater-helper src/helper/main.cc)
+target_compile_features(desktop-updater-helper PRIVATE cxx_std_17)
+target_compile_definitions(desktop-updater-helper PRIVATE _GNU_SOURCE)
+target_include_directories(desktop-updater-helper
+  PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+target_link_libraries(desktop-updater-helper
+  PRIVATE desktop_updater_linux_helper_support)
+
+set(DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID
+  "com.desktopupdater.default" CACHE STRING
+  "Package ID for the installed sealed helper policy")
+set(DESKTOP_UPDATER_HELPER_SHA256
+  "0000000000000000000000000000000000000000000000000000000000000000"
+  CACHE STRING "Installer-sealed desktop-updater-helper SHA-256")
+set(DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON "" CACHE STRING
+  "Escaped canonical helper policy JSON supplied by packaging")
+set(DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256
+  "0000000000000000000000000000000000000000000000000000000000000000"
+  CACHE STRING "SHA-256 of the canonical helper policy JSON")
+configure_file(
+  polkit/com.desktopupdater.install.policy.in
+  ${CMAKE_CURRENT_BINARY_DIR}/com.desktopupdater.install.policy
+  @ONLY)
+configure_file(
+  policy/helper-policy.json.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID}.json
+  @ONLY)
+
 if(DESKTOP_UPDATER_NATIVE_RUNTIME)
   enable_language(C)
   find_package(CURL REQUIRED)
-  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   find_package(Threads REQUIRED)
   set(DESKTOP_UPDATER_MONOCYPHER_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/monocypher/src)
@@ -86,6 +128,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   install(TARGETS desktop_updater_native
     EXPORT desktop_updater_nativeTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(TARGETS desktop-updater-helper
+    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/com.desktopupdater.install.policy
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions)
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/${DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID}.json
+    DESTINATION /etc/desktop-updater/policies)
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     install(TARGETS desktop_updater_runtime
       EXPORT desktop_updater_nativeTargets
@@ -158,6 +207,22 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(desktop_updater_native_test)
+
+  add_executable(linux_helper_auth
+    test/helper/linux_helper_auth_test.cc)
+  target_compile_features(linux_helper_auth PRIVATE cxx_std_17)
+  target_compile_definitions(linux_helper_auth PRIVATE _GNU_SOURCE)
+  target_link_libraries(linux_helper_auth
+    PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
+  gtest_discover_tests(linux_helper_auth)
+
+  add_executable(linux_helper_reservation
+    test/helper/linux_helper_reservation_test.cc)
+  target_compile_features(linux_helper_reservation PRIVATE cxx_std_17)
+  target_compile_definitions(linux_helper_reservation PRIVATE _GNU_SOURCE)
+  target_link_libraries(linux_helper_reservation
+    PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
+  gtest_discover_tests(linux_helper_reservation)
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

@@ -1,0 +1,7 @@
+{
+  "applicationPackageId": "@DESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID@",
+  "brokerPath": "/usr/libexec/desktop-updater-helper",
+  "canonicalPolicyJson": "@DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON@",
+  "canonicalPolicySha256": "@DESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256@",
+  "helperSha256": "@DESKTOP_UPDATER_HELPER_SHA256@"
+}

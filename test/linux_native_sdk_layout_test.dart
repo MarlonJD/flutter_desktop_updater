@@ -206,6 +206,58 @@ void main() {
     expect(exampleCmake, contains("enable_testing()"));
     expect(workflow, isNot(contains("desktop_updater_native.so")));
   });
+
+  test("Linux install helper has a sealed broker reservation surface", () {
+    final cmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final main = readRequiredFile("linux/native/src/helper/main.cc");
+    final policy = readRequiredFile(
+      "linux/native/src/helper/linux_helper_policy.cc",
+    );
+    final transport = readRequiredFile(
+      "linux/native/src/helper/unix_socket_transport.cc",
+    );
+    final reservation = readRequiredFile(
+      "linux/native/src/helper/linux_reservation.cc",
+    );
+    final polkit = readRequiredFile(
+      "linux/native/polkit/com.desktopupdater.install.policy.in",
+    );
+    final policyTemplate = readRequiredFile(
+      "linux/native/policy/helper-policy.json.in",
+    );
+    final pkgConfig = readRequiredFile(
+      "linux/native/cmake/desktop_updater_native.pc.in",
+    );
+
+    expect(cmake, contains("desktop-updater-helper"));
+    expect(cmake, contains(r"${CMAKE_INSTALL_LIBEXECDIR}"));
+    expect(cmake, contains("desktop-updater/policies"));
+    expect(cmake, contains("linux_helper_auth"));
+    expect(cmake, contains("linux_helper_reservation"));
+    expect(main, contains("geteuid"));
+    expect(main, contains('"--socket"'));
+    expect(main, contains('"--nonce"'));
+    expect(main, isNot(contains('"--target"')));
+    expect(main, isNot(contains('"--command"')));
+    expect(policy, contains("ParseHelperPolicyV1"));
+    expect(policy, contains("st_uid != 0"));
+    expect(policy, contains("S_IWGRP | S_IWOTH"));
+    expect(policy, contains("helperSha256"));
+    expect(transport, contains("SO_PEERCRED"));
+    expect(transport, contains("pidfd_open"));
+    expect(transport, contains("/proc/"));
+    expect(transport, contains("/usr/bin/pkexec"));
+    expect(transport, contains("canonical_request"));
+    expect(reservation, contains("O_PATH | O_DIRECTORY | O_NOFOLLOW"));
+    expect(reservation, contains("openat"));
+    expect(reservation, contains("fsync"));
+    expect(reservation, contains("readyTokenAfterDurableJournal"));
+    expect(polkit, contains("com.desktopupdater.install"));
+    expect(policyTemplate, contains('"applicationPackageId"'));
+    expect(policyTemplate, contains('"helperSha256"'));
+    expect(pkgConfig, contains(r"helper=${prefix}"));
+    expect(pkgConfig, contains("policy_dir=/etc/desktop-updater/policies"));
+  });
 }
 
 String readRequiredFile(String path) {
