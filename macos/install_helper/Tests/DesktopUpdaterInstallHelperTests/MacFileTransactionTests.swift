@@ -56,6 +56,63 @@ final class MacFileTransactionTests: XCTestCase {
         }
     }
 
+    func testPreparePersistsJournalWithoutMutatingTargetOrStage() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+
+        let journalSHA256 = try transaction.prepare()
+
+        XCTAssertEqual(journalSHA256.count, 64)
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
+        XCTAssertEqual(
+            try fixture.transactionArtifacts(),
+            [
+                ".Example.app.desktop-updater-\(fixture.transactionID)"
+                    + ".journal.json",
+                ".Example.app.desktop-updater-lock",
+            ]
+        )
+        XCTAssertThrowsError(try transaction.prepare()) { error in
+            XCTAssertEqual(
+                error as? MacFileTransactionError,
+                .invalidState
+            )
+        }
+    }
+
+    func testPreparedTransactionCommitsUsingTheDurableReservation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+
+        XCTAssertEqual(try transaction.execute(), .completed)
+
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
+    func testCancelRemovesOnlyPreparedDurableStateWithoutMutation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+
+        try transaction.cancelPrepared()
+
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.version(at: fixture.stageURL), "new")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+        XCTAssertThrowsError(try transaction.execute()) { error in
+            XCTAssertEqual(
+                error as? MacFileTransactionError,
+                .invalidState
+            )
+        }
+    }
+
     func testRejectsSymlinkReplacementBeforeMutation() throws {
         let fixture = try MacTransactionFixture()
         defer { fixture.remove() }

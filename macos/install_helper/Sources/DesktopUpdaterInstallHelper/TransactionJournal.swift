@@ -237,6 +237,21 @@ final class DurableTransactionJournalStore {
         try syncDirectory()
     }
 
+    func sha256() throws -> String {
+        let descriptor = paths.journalName.withCString {
+            Darwin.openat(
+                directory.fileDescriptor,
+                $0,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard descriptor >= 0 else {
+            throw TransactionJournalError.invalidJournal
+        }
+        defer { _ = Darwin.close(descriptor) }
+        return macPayloadSHA256(try readAll(from: descriptor))
+    }
+
     private func faultPoints(
         for state: MacTransactionState
     ) -> (

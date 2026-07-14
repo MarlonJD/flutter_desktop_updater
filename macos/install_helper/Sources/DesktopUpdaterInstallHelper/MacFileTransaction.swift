@@ -103,6 +103,7 @@ enum MacFileTransactionResult: Equatable {
 
 enum MacFileTransactionError: Error, Equatable {
     case invalidPathOrTransaction
+    case invalidState
     case targetParentChanged
     case stageIdentityChanged
     case stagePayloadChanged
@@ -115,6 +116,16 @@ enum MacFileTransactionError: Error, Equatable {
 }
 
 final class MacFileTransaction {
+    private enum Lifecycle {
+        case reserved
+        case preparing
+        case prepared
+        case executing
+        case completed
+        case cancelled
+        case recoveryRequired
+    }
+
     let paths: MacTransactionPaths
     private let directory: MacTransactionDirectory
     private let stageURL: URL
@@ -128,6 +139,8 @@ final class MacFileTransaction {
     private let initialStageIdentity: MacFileIdentity
     private let targetIdentity: MacFileIdentity
     private let targetLock: MacTargetLock
+    private let lifecycleLock = NSLock()
+    private var lifecycle = Lifecycle.reserved
 
     init(
         targetURL: URL,
@@ -197,34 +210,51 @@ final class MacFileTransaction {
         )
     }
 
-    func execute() throws -> MacFileTransactionResult {
+    func prepare() throws -> String {
+        try transition(from: .reserved, to: .preparing)
         do {
-            try directory.validatePathIdentity()
-            guard try directory.identity(
-                name: stageName,
-                rejectSymbolicLink: true
-            ) == initialStageIdentity else {
-                throw MacFileTransactionError.stageIdentityChanged
+            try validateStageBeforeMutation()
+            try store.persist(initialJournal())
+            let digest = try store.sha256()
+            setLifecycle(.prepared)
+            return digest
+        } catch {
+            if directory.exists(name: paths.journalName) {
+                setLifecycle(.recoveryRequired)
+            } else {
+                try? targetLock.release()
+                setLifecycle(.cancelled)
             }
-            guard try verifier.verifyPayload(at: stageURL)
-                == expectedPayloadIdentity else {
-                throw MacFileTransactionError.stagePayloadChanged
-            }
+            throw error
+        }
+    }
 
-            var journal = MacTransactionJournal(
-                transactionID: paths.transactionID,
-                ownerProcessIdentifier: ownerProcessIdentifier,
-                targetName: paths.targetName,
-                originalStageName: stageName,
-                preparedName: paths.preparedName,
-                backupName: paths.backupName,
-                parentIdentity: directory.identity,
-                targetIdentity: targetIdentity,
-                stageIdentity: initialStageIdentity,
-                expectedPayloadIdentity: expectedPayloadIdentity,
-                state: .prepared
+    func cancelPrepared() throws {
+        try transition(from: .prepared, to: .preparing)
+        do {
+            _ = try loadPreparedJournal()
+            try directory.validatePathIdentity()
+            try store.remove()
+            try targetLock.release()
+            setLifecycle(.cancelled)
+        } catch {
+            setLifecycle(
+                directory.exists(name: paths.journalName)
+                    ? .recoveryRequired
+                    : .cancelled
             )
-            try store.persist(journal)
+            throw error
+        }
+    }
+
+    func execute() throws -> MacFileTransactionResult {
+        if currentLifecycle() == .reserved {
+            _ = try prepare()
+        }
+        try transition(from: .prepared, to: .executing)
+        do {
+            try validateStageBeforeMutation()
+            var journal = try loadPreparedJournal()
             guard try directory.identity(
                 name: stageName,
                 rejectSymbolicLink: true
@@ -292,11 +322,13 @@ final class MacFileTransaction {
             )
             try store.remove()
             try targetLock.release()
+            setLifecycle(.completed)
             return .completed
         } catch {
             if !directory.exists(name: paths.journalName) {
                 try? targetLock.release()
             }
+            setLifecycle(.recoveryRequired)
             throw error
         }
     }
@@ -322,6 +354,68 @@ final class MacFileTransaction {
         try faultInjector.hit(beforeSync)
         try directory.sync()
         try faultInjector.hit(after)
+    }
+
+    private func initialJournal() -> MacTransactionJournal {
+        MacTransactionJournal(
+            transactionID: paths.transactionID,
+            ownerProcessIdentifier: ownerProcessIdentifier,
+            targetName: paths.targetName,
+            originalStageName: stageName,
+            preparedName: paths.preparedName,
+            backupName: paths.backupName,
+            parentIdentity: directory.identity,
+            targetIdentity: targetIdentity,
+            stageIdentity: initialStageIdentity,
+            expectedPayloadIdentity: expectedPayloadIdentity,
+            state: .prepared
+        )
+    }
+
+    private func loadPreparedJournal() throws -> MacTransactionJournal {
+        guard let journal = try store.load(),
+              journal == initialJournal() else {
+            throw MacFileTransactionError.invalidState
+        }
+        return journal
+    }
+
+    private func validateStageBeforeMutation() throws {
+        try directory.validatePathIdentity()
+        guard try directory.identity(
+            name: stageName,
+            rejectSymbolicLink: true
+        ) == initialStageIdentity else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        guard try verifier.verifyPayload(at: stageURL)
+            == expectedPayloadIdentity else {
+            throw MacFileTransactionError.stagePayloadChanged
+        }
+    }
+
+    private func transition(
+        from expected: Lifecycle,
+        to next: Lifecycle
+    ) throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard lifecycle == expected else {
+            throw MacFileTransactionError.invalidState
+        }
+        lifecycle = next
+    }
+
+    private func setLifecycle(_ value: Lifecycle) {
+        lifecycleLock.lock()
+        lifecycle = value
+        lifecycleLock.unlock()
+    }
+
+    private func currentLifecycle() -> Lifecycle {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        return lifecycle
     }
 
     deinit {
