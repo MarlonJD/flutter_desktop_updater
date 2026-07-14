@@ -352,7 +352,7 @@ void main() {
     expect(
       workflow,
       contains(
-        r'$filter = "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)"',
+        r'$filter = "(WindowsHelperAuth|WindowsOneShotTransport|WindowsInstallAuthorizer|WindowsFileTransaction|WindowsCrashRecovery)"',
       ),
     );
     expect(
@@ -391,6 +391,33 @@ void main() {
     expect(source, contains("NativeInstallOneShotServiceRuntimeV1"));
     expect(tests, contains("RejectsCallerIdentityDrift"));
     expect(tests, contains("RejectsInvalidFrameBounds"));
+  });
+
+  test("Windows helper authorizes signed staged directory transactions", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final header = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.h",
+    );
+    final source = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+    final tests = readRequiredFile(
+      "windows/native/test/helper/windows_install_authorizer_test.cpp",
+    );
+
+    expect(cmake, contains("windows_install_authorizer.cpp"));
+    expect(cmake, contains("windows_install_authorizer_test.cpp"));
+    expect(header, contains("NativeInstallRequestAuthorizerV1"));
+    expect(source, contains("AuthorizeNativeInstallTransactionRequestV1"));
+    expect(source, contains("VerifyStageProvenance"));
+    expect(source, contains(".desktop_updater_release_manifest.json"));
+    expect(source, contains(".desktop_updater_install_identity.json"));
+    expect(source, contains("AuthenticodeWindowsPayloadVerifier"));
+    expect(source, contains("WindowsFileTransaction"));
+    expect(source, contains("PrepareDurableJournal"));
+    expect(source, contains("WindowsRelaunchService"));
+    expect(tests, contains("RetainsCompleteSealedPolicy"));
+    expect(tests, contains("RejectsExecutableInventoryDrift"));
   });
 }
 

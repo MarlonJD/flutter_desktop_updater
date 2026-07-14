@@ -85,6 +85,7 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/helper_policy_windows.cpp
   src/helper/helper_authenticode.cpp
   src/helper/named_pipe_transport.cpp
+  src/helper/windows_install_authorizer.cpp
   src/helper/windows_one_shot_transport.cpp
   src/helper/windows_reservation.cpp
   src/helper/windows_transaction_journal.cpp
@@ -96,7 +97,8 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_request.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_session.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/native_install_wire.cc
-  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc
+  ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/stage_provenance.cc)
 add_library(desktop_updater_install_helper_support STATIC
   ${DESKTOP_UPDATER_INSTALL_HELPER_SOURCES})
 target_compile_features(desktop_updater_install_helper_support
@@ -312,6 +314,20 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(windows_one_shot_transport
     PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
   gtest_discover_tests(windows_one_shot_transport)
+
+  add_executable(windows_install_authorizer
+    test/helper/windows_install_authorizer_test.cpp)
+  target_compile_features(windows_install_authorizer PRIVATE cxx_std_17)
+  target_compile_definitions(windows_install_authorizer
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_install_authorizer PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_install_authorizer
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_install_authorizer)
 
   add_executable(windows_transaction
     test/helper/windows_transaction_test.cpp)

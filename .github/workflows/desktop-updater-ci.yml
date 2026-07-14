@@ -135,7 +135,7 @@ jobs:
       - name: Run Windows helper trust, pipe, transaction, and crash recovery tests
         shell: pwsh
         run: |
-          $filter = "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)"
+          $filter = "(WindowsHelperAuth|WindowsOneShotTransport|WindowsInstallAuthorizer|WindowsFileTransaction|WindowsCrashRecovery)"
           ctest --test-dir windows/native/build -C Release -R $filter --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $inventory = & ctest --test-dir windows/native/build -C Release -N -R $filter 2>&1
