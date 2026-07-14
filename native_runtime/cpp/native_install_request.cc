@@ -508,6 +508,86 @@ NativeInstallTransactionRequestV1 ParseNativeInstallTransactionRequestV1(
   }
 }
 
+std::string EncodeCanonicalNativeInstallTransactionRequestV1(
+    const NativeInstallTransactionRequestV1& request) {
+  JsonValue::Object target;
+  target.emplace("class", JsonValue(request.target.target_class));
+  target.emplace("pathHint", JsonValue(request.target.path_hint));
+  target.emplace("targetNameHint",
+                 JsonValue(request.target.target_name_hint));
+  target.emplace("executableRelativePath",
+                 JsonValue(request.target.executable_relative_path));
+  target.emplace("identityProofSha256",
+                 JsonValue(request.target.identity_proof_sha256));
+
+  const auto encode_identity = [](const NativeInstallVersionIdentityV1& value) {
+    JsonValue::Object identity;
+    identity.emplace("version", JsonValue(value.version));
+    identity.emplace("buildNumber", JsonValue(value.build_number));
+    identity.emplace("packageIdentitySha256",
+                     JsonValue(value.package_identity_sha256));
+    return JsonValue(std::move(identity));
+  };
+
+  JsonValue::Object stage;
+  stage.emplace("pathHint", JsonValue(request.stage.path_hint));
+  stage.emplace("ownershipNonce", JsonValue(request.stage.ownership_nonce));
+  stage.emplace("provenanceSha256",
+                JsonValue(request.stage.provenance_sha256));
+  stage.emplace("artifactSha256", JsonValue(request.stage.artifact_sha256));
+  stage.emplace("artifactLength", JsonValue(request.stage.artifact_length));
+
+  JsonValue::Object descriptor;
+  descriptor.emplace("canonicalSha256",
+                     JsonValue(request.signed_descriptor.canonical_sha256));
+  descriptor.emplace("signatureAlgorithm",
+                     JsonValue(request.signed_descriptor.signature_algorithm));
+  descriptor.emplace("keyId", JsonValue(request.signed_descriptor.key_id));
+  descriptor.emplace("signatureBase64",
+                     JsonValue(request.signed_descriptor.signature_base64));
+
+  JsonValue::Object caller;
+  caller.emplace("processId", JsonValue(request.caller.process_id));
+  caller.emplace("processStartIdentity",
+                 JsonValue(request.caller.process_start_identity));
+  caller.emplace("executableSha256",
+                 JsonValue(request.caller.executable_sha256));
+  caller.emplace("packageId", JsonValue(request.caller.package_id));
+  caller.emplace("signerIdentity",
+                 JsonValue(request.caller.signer_identity));
+
+  JsonValue::Object root;
+  root.emplace("schemaVersion", JsonValue(request.schema_version));
+  root.emplace("protocolVersion", JsonValue(request.protocol_version));
+  root.emplace("transactionId", JsonValue(request.transaction_id));
+  root.emplace("policyId", JsonValue(request.policy_id));
+  root.emplace("packageId", JsonValue(request.package_id));
+  root.emplace("strategy", JsonValue(request.strategy));
+  root.emplace("provider", JsonValue(request.provider));
+  root.emplace("target", JsonValue(std::move(target)));
+  root.emplace("currentIdentity", encode_identity(request.current_identity));
+  root.emplace("desiredIdentity", encode_identity(request.desired_identity));
+  root.emplace("stage", JsonValue(std::move(stage)));
+  root.emplace("signedDescriptor", JsonValue(std::move(descriptor)));
+  root.emplace("caller", JsonValue(std::move(caller)));
+  root.emplace("requestNonce", JsonValue(request.request_nonce));
+  if (request.diagnostics_destination.present) {
+    JsonValue::Object diagnostics;
+    diagnostics.emplace("kind",
+                        JsonValue(request.diagnostics_destination.kind));
+    if (!request.diagnostics_destination.stream.empty()) {
+      diagnostics.emplace("stream",
+                          JsonValue(request.diagnostics_destination.stream));
+    }
+    root.emplace("diagnosticsDestination",
+                 JsonValue(std::move(diagnostics)));
+  }
+  const std::string canonical =
+      EncodeCanonicalJson(JsonValue(std::move(root)));
+  (void)ParseNativeInstallTransactionRequestV1(canonical);
+  return canonical;
+}
+
 }  // namespace internal
 }  // namespace runtime
 }  // namespace desktop_updater

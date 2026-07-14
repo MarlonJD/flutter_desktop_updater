@@ -45,6 +45,19 @@ TEST(native_install_request, AcceptsEveryCanonicalV1Fixture) {
   EXPECT_EQ(5u, count);
 }
 
+TEST(native_install_request, CanonicalEncoderRoundTripsEveryV1Fixture) {
+  const JsonValue fixture =
+      ParseJson(ReadFixture(DESKTOP_UPDATER_VALID_REQUEST_FIXTURE_PATH));
+  for (const JsonValue& entry : fixture.at("cases").array()) {
+    const std::string canonical = EncodeCanonicalJson(entry.at("request"));
+    const NativeInstallTransactionRequestV1 request =
+        ParseNativeInstallTransactionRequestV1(canonical);
+    EXPECT_EQ(canonical,
+              EncodeCanonicalNativeInstallTransactionRequestV1(request))
+        << entry.at("name").string();
+  }
+}
+
 TEST(native_install_request, RejectsAuthorityAndBindingDrift) {
   const JsonValue fixture =
       ParseJson(ReadFixture(DESKTOP_UPDATER_VALID_REQUEST_FIXTURE_PATH));

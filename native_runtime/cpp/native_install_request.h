@@ -82,6 +82,8 @@ struct NativeInstallTransactionRequestV1 {
 
 NativeInstallTransactionRequestV1 ParseNativeInstallTransactionRequestV1(
     const std::string& canonical_json);
+std::string EncodeCanonicalNativeInstallTransactionRequestV1(
+    const NativeInstallTransactionRequestV1& request);
 
 }  // namespace internal
 }  // namespace runtime
