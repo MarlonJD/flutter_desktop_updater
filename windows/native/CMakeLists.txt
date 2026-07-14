@@ -63,6 +63,7 @@ set_target_properties(desktop_updater_native PROPERTIES
   OUTPUT_NAME desktop_updater_native)
 
 set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
+  src/helper/install_strategy.cpp
   src/helper/helper_policy_windows.cpp
   src/helper/helper_authenticode.cpp
   src/helper/named_pipe_transport.cpp
@@ -71,6 +72,7 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/windows_file_transaction.cpp
   src/helper/windows_recovery_service.cpp
   src/helper/windows_relaunch_service.cpp
+  src/helper/verified_installer_handoff.cpp
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_policy.cc
   ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/json_value.cc)
 add_library(desktop_updater_install_helper_support STATIC
@@ -281,6 +283,21 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(windows_crash_recovery
     PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
   gtest_discover_tests(windows_crash_recovery)
+
+  add_executable(windows_install_strategy
+    test/helper/windows_install_strategy_test.cpp)
+  target_compile_features(windows_install_strategy PRIVATE cxx_std_17)
+  target_compile_definitions(windows_install_strategy
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_install_strategy PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_install_strategy
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_install_strategy
+    TEST_PREFIX "windows_install_strategy.")
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test

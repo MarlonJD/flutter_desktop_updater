@@ -38,6 +38,8 @@ set_target_properties(desktop_updater_native PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 
 add_library(desktop_updater_linux_helper_support STATIC
+  src/helper/external_managed_refresh.cc
+  src/helper/install_strategy.cc
   src/helper/linux_helper_policy.cc
   src/helper/linux_file_transaction.cc
   src/helper/linux_mount_guard.cc
@@ -46,6 +48,9 @@ add_library(desktop_updater_linux_helper_support STATIC
   src/helper/unix_socket_transport.cc
   src/helper/linux_reservation.cc
   src/helper/linux_transaction_journal.cc)
+target_sources(desktop_updater_linux_helper_support PRIVATE
+  src/helper/single_file_replace.cc
+  src/helper/system_package_transaction.cc)
 target_compile_features(desktop_updater_linux_helper_support PUBLIC cxx_std_17)
 target_compile_definitions(desktop_updater_linux_helper_support
   PRIVATE _GNU_SOURCE)
@@ -245,6 +250,15 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
   gtest_discover_tests(linux_crash_recovery
     TEST_PREFIX "linux_crash_recovery.")
+
+  add_executable(linux_install_strategy
+    test/helper/linux_install_strategy_test.cc)
+  target_compile_features(linux_install_strategy PRIVATE cxx_std_17)
+  target_compile_definitions(linux_install_strategy PRIVATE _GNU_SOURCE)
+  target_link_libraries(linux_install_strategy
+    PRIVATE desktop_updater_linux_helper_support GTest::gtest_main)
+  gtest_discover_tests(linux_install_strategy
+    TEST_PREFIX "linux_install_strategy.")
 
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     add_executable(desktop_updater_runtime_lifecycle_test
