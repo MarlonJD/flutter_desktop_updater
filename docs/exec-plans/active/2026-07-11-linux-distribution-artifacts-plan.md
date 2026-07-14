@@ -26,7 +26,7 @@ GoogleTest, and GitHub Actions.
 
 ## Execution Status
 
-`blocked` as of 2026-07-14. The hard prerequisite check found 13 unchecked
+`blocked` as of 2026-07-14. The hard prerequisite check found 12 unchecked
 steps in the privileged-helper plan, including target-host/elevation gates and
 Task 16's final validation steps. Its fresh adversarial review also records one
 validated P0 and three validated P1 findings, reports Task 6 open, and retains

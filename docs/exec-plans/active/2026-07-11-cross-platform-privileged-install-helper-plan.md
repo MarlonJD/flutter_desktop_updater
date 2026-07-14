@@ -1731,7 +1731,7 @@ after durable ownership exists; it must not generate a script.
   complete if a required P0/P1, secretless lane, or target-host safety gate is
   missing.
 
-- [ ] **Step 6: Commit only the final evidence update**
+- [x] **Step 6: Commit only the final evidence update**
 
   ```sh
   git add docs/exec-plans/active/2026-07-11-cross-platform-privileged-install-helper-plan.md docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md
@@ -1836,11 +1836,12 @@ after durable ownership exists; it must not generate a script.
   were unavailable. This review reduces omission risk but cannot guarantee
   that no additional defect remains.
 - Validated P0/P1 remaining: `1 P0 and 3 P1`. Task 6 is not closed. Task 16
-  Steps 1, 2, and 6 plus the plan-level readiness gate remain open; the earlier
+  Steps 1 and 2 plus the plan-level readiness gate remain open; the earlier
   Task 12-15 construction commits do not establish a working handoff.
 - Runtime status: `candidate-only`.
 - PR #65 merge readiness: `blocked / not merge-ready`.
-- Commit: `not run`.
+- Commit: `verified locally` —
+  `720b313 docs: record native helper verification`.
 
 ---
 
