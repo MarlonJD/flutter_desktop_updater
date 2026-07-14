@@ -51,6 +51,9 @@ struct RuntimeState {
   bool cancelled = false;
   std::int64_t monitored_process_id = 0;
   std::string monitored_process_start_identity;
+  std::string monitored_executable_sha256;
+  std::string monitored_package_id;
+  std::string monitored_signer_identity;
 };
 
 class RuntimeTransaction final : public NativeInstallPreparedTransactionV1 {
@@ -123,10 +126,13 @@ class RuntimeMonitorFactory final
       : state_(std::move(state)), wait_(std::move(wait)) {}
 
   std::unique_ptr<NativeInstallCallerExitMonitorV1> Create(
-      std::int64_t process_id,
-      const std::string& process_start_identity) override {
-    state_->monitored_process_id = process_id;
-    state_->monitored_process_start_identity = process_start_identity;
+      const NativeInstallCallerV1& caller) override {
+    state_->monitored_process_id = caller.process_id;
+    state_->monitored_process_start_identity =
+        caller.process_start_identity;
+    state_->monitored_executable_sha256 = caller.executable_sha256;
+    state_->monitored_package_id = caller.package_id;
+    state_->monitored_signer_identity = caller.signer_identity;
     return std::make_unique<RuntimeMonitor>(state_, wait_);
   }
 
@@ -201,6 +207,9 @@ TEST(native_install_service_runtime,
 
   EXPECT_EQ(4242, state->monitored_process_id);
   EXPECT_EQ("windows:123", state->monitored_process_start_identity);
+  EXPECT_EQ(std::string(64, 'a'), state->monitored_executable_sha256);
+  EXPECT_EQ("com.example.app", state->monitored_package_id);
+  EXPECT_EQ("Example Publisher", state->monitored_signer_identity);
   EXPECT_EQ(301000, channel.command_deadline());
   EXPECT_TRUE(state->prepared);
   EXPECT_TRUE(state->waited);

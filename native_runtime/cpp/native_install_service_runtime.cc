@@ -21,9 +21,7 @@ void NativeInstallOneShotServiceRuntimeV1::Run(
   const NativeInstallTransactionRequestV1 request =
       ParseNativeInstallTransactionRequestV1(canonical_request);
   std::unique_ptr<NativeInstallCallerExitMonitorV1> caller_monitor =
-      caller_monitor_factory_.Create(
-          request.caller.process_id,
-          request.caller.process_start_identity);
+      caller_monitor_factory_.Create(request.caller);
   if (caller_monitor == nullptr) {
     throw NativeInstallSessionError("caller exit monitor is unavailable");
   }

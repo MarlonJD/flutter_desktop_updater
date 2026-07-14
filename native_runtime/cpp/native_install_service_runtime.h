@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "native_install_request.h"
 #include "native_install_session.h"
 
 namespace desktop_updater {
@@ -31,8 +32,7 @@ class NativeInstallCallerExitMonitorFactoryV1 {
  public:
   virtual ~NativeInstallCallerExitMonitorFactoryV1() = default;
   virtual std::unique_ptr<NativeInstallCallerExitMonitorV1> Create(
-      std::int64_t process_id,
-      const std::string& process_start_identity) = 0;
+      const NativeInstallCallerV1& caller) = 0;
 };
 
 class NativeInstallOneShotServiceRuntimeV1 {
