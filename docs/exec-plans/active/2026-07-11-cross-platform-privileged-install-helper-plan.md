@@ -1665,7 +1665,7 @@ after durable ownership exists; it must not generate a script.
   workflow's JSON escaping produced valid nested JSON and a matching canonical
   policy SHA-256. Native CMake rendering was not run because `cmake` is not
   installed on this macOS host.
-- Commit: `not run`
+- Commit: `verified locally` — `d0ab8b1 ci: verify native install helper recovery`.
 
 ---
 
@@ -1705,12 +1705,12 @@ after durable ownership exists; it must not generate a script.
   package inventory, crash, mount/reparse, and elevation lanes on their target
   hosts.
 
-- [ ] **Step 3: Run `superpowers:verification-before-completion`**
+- [x] **Step 3: Run `superpowers:verification-before-completion`**
 
   Follow the skill against fresh outputs. Do not claim completion from prior
   task logs, source inspection, or an agent summary.
 
-- [ ] **Step 4: Run fresh `killcritic-complete-review`**
+- [x] **Step 4: Run fresh `killcritic-complete-review`**
 
   Review four explicit tracks:
 
@@ -1723,7 +1723,7 @@ after durable ownership exists; it must not generate a script.
   add a regression test first, re-run the affected platform lane, and create a
   separate Conventional Commit for each independently verified fix.
 
-- [ ] **Step 5: Record final literal evidence and readiness**
+- [x] **Step 5: Record final literal evidence and readiness**
 
   Mark unavailable credential or target-host gates `not run` or `blocked` with
   the reason. State whether Task 6 is closed, whether the runtime is still
@@ -1740,17 +1740,107 @@ after durable ownership exists; it must not generate a script.
 
 **Evidence:**
 
-- Complete Dart/Flutter ladder: `not run`
-- Complete macOS ladder: `not run`
-- Complete Windows ladder: `not run`
-- Complete Linux ladder: `not run`
-- Credential-gated lanes: `not run`
-- Verification-before-completion: `not run`
-- Fresh killcritic review: `not run`
-- Validated P0/P1 remaining: `not run`
-- Runtime status: `candidate-only`
-- PR #65 merge readiness: `blocked`
-- Commit: `not run`
+- Complete Dart/Flutter ladder: `verified locally` on macOS 26.5.2 arm64.
+  Both native fixture generators ran, helper fixtures and policy fixtures were
+  current, and the fixture directories had no diff. Final
+  `dart format --set-exit-if-changed .` checked 226 files with 0 changes;
+  `flutter analyze --no-fatal-infos` exited 0 with info-only diagnostics; the
+  final `flutter test --no-pub` passed 689 tests with 3 explicit opt-in skips;
+  and `dart pub publish --dry-run` exited 0 with 0 warnings and 1
+  prior-version hint. The first full Flutter run exposed three stale
+  script-source assertions after script removal. They were converted to the
+  native transaction/diagnostics boundaries under TDD and committed as
+  `7247037 test: align native helper source contracts` before the green rerun.
+- Complete macOS ladder: `blocked`. A clean
+  `swift test --package-path macos/install_helper` passed 38/38 and a clean
+  root `swift test` passed 62/62. The exact five-source CocoaPods macOS 10.14
+  typecheck and external Swift consumer both exited 0. A Flutter macOS debug
+  host built successfully and contained byte-identical helper payloads at the
+  two fixed nested locations with hardened-runtime flags. Strict outer-app
+  verification failed with `CSSMERR_TP_NOT_TRUSTED`, and
+  `security find-identity -v -p codesigning` found 0 valid identities.
+  `swift test --package-path macos/desktop_updater` remains blocked because the
+  repository's `macos/FlutterFramework` path is absent. Signed SMJobBless/XPC,
+  privileged mutation, crash recovery, and notarization were not run.
+- Complete Windows ladder: `not run` on a Windows target host. The local
+  managed suite built both projects and passed 12/13 tests with .NET major
+  roll-forward; its only failure was the expected inability to load a Windows
+  `desktop_updater_native` DLL on macOS. Windows CMake/CTest, Flutter plugin,
+  installed CMake/NuGet, real DLL/helper handoff, UAC cancellation, reparse,
+  abrupt-crash, Authenticode, and retail inventory lanes remain not run.
+- Complete Linux ladder: `blocked`. The unprivileged portion was
+  `verified locally` in a `gcc:14-bookworm` container. A clean Release build
+  discovered 37 CTests,
+  passed 36, and explicitly skipped the bind-mount test because the container
+  lacked that privilege. The installed CMake consumer passed 1/1, the
+  independently compiled pkg-config consumer exited 0, the installed helper
+  version probe exited 0, and the installed inventory showed the helper as
+  root-owned mode 0755. The privileged mount namespace and installed
+  polkit/root-broker handoff, mutation, crash recovery, and package-provider
+  lanes were not run.
+- Credential-gated lanes: `not run`. There is no current-head Developer ID,
+  notarization, Authenticode/UAC, or installed polkit evidence.
+- Verification-before-completion: `verified locally` against the fresh outputs
+  above. Passing unit/contract tests are not treated as production handoff
+  proof, and missing target-host or credential gates remain literal.
+- Fresh killcritic review: `BLOCK / NO-GO`. The repository inventory covered
+  837 files and reported 54 checked and 16 unchecked plan items. Four complete
+  passes covered safety/trust, build/embed/retail consumers,
+  protocol/schema/ABI/Flutter compatibility, and CI/release truth, followed by
+  a reverse traversal from artifacts and smoke claims back to production
+  endpoints and mutation authorities.
+- P0 — production helper handoff is disconnected on every platform. The public
+  macOS transport in `MacInstallHelper.swift` throws `endpointUnavailable` for
+  every operation while the privileged XPC server accepts only `health`.
+  Windows `PrepareInstall` and all transaction queries return the packaged
+  endpoint unavailable result; its elevated helper only authenticates the
+  named pipe and explicitly stops before consuming the request. Linux has the
+  same unconditional client result; its helper creates an in-process
+  reservation, but no client launches that session and no production path
+  invokes `LinuxFileTransaction` or `LinuxRecoveryService`. The macOS and
+  Windows file transaction/recovery implementations are likewise reachable
+  only from tests. Therefore Flutter and Flutter-free installs cannot obtain a
+  durable reservation, mutate a target, or recover a transaction.
+- P1 — the helper wire representations are not one implemented protocol. The
+  canonical v1 fixtures require transaction, package, policy, nonce, identity,
+  signed-descriptor, strategy, and diagnostics fields. The three public
+  clients serialize smaller platform-specific envelopes, while the Linux
+  helper parses a third ad hoc shape and the Windows/macOS servers do not parse
+  install operations. No end-to-end schema validator currently joins these
+  boundaries.
+- P1 — current smoke lanes can be false green. Windows elevated and Linux
+  root-broker smoke stop at `--version`; Linux unprivileged smoke also stops at
+  the version probe. The macOS privileged wrapper trusts JSON emitted by an
+  externally supplied host, while the repository XPC service itself supports
+  only `health`. None of these repository-owned lanes proves prepare, commit,
+  mutation, recovery, or query through the packaged production client.
+- P1 — protocol-v1 helper diagnostics are fixture-only. The stable events in
+  `fixtures/compat/native-install-helper/v1/diagnostic-results.json` do not
+  occur in the standalone helper implementations, and caller-provided
+  diagnostics destinations are serialized without a helper-owned redacted
+  writer. The retained legacy runtime event enum remains covered separately.
+- Sound areas: canonical fixture generation and strict policy parsing,
+  fail-closed endpoint behavior, isolated fd/handle-relative transaction and
+  crash-recovery algorithms, stage provenance checks, public Dart/MethodChannel
+  compatibility, C ABI sizing/ownership contracts, helper retail layout rules,
+  and candidate-only documentation all had supporting local evidence. These
+  do not make the disconnected production graph usable.
+- Modification statement: the review changed only the three stale source
+  contract tests and the evidence ledgers. No P0/P1 implementation was changed
+  because a safe fix requires completing and target-host testing the entire
+  client transport, authenticated server protocol, durable reservation,
+  mutation, query/recovery, diagnostics, and relaunch graph on all three
+  platforms; a partial local shim would create a privileged false positive.
+- Coverage limitation: Windows, privileged Linux, signed SMJobBless/XPC,
+  Authenticode, notarization, real-device/retail elevation, and current-head CI
+  were unavailable. This review reduces omission risk but cannot guarantee
+  that no additional defect remains.
+- Validated P0/P1 remaining: `1 P0 and 3 P1`. Task 6 is not closed. Task 16
+  Steps 1, 2, and 6 plus the plan-level readiness gate remain open; the earlier
+  Task 12-15 construction commits do not establish a working handoff.
+- Runtime status: `candidate-only`.
+- PR #65 merge readiness: `blocked / not merge-ready`.
+- Commit: `not run`.
 
 ---
 

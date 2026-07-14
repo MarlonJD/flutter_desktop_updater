@@ -2556,6 +2556,34 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   the validation-to-mutation interval. Verdict: `BLOCK / NO-GO`; runtime status:
   `candidate-only`; PR #65: not merge-ready.
 
+### Privileged-helper Task 16 review follow-up on 2026-07-14
+
+- The new helper implementation has isolated reservation, transaction,
+  strategy, recovery, relaunch, trust, and packaging components, but the fresh
+  production call-graph review found that they are not joined into an install
+  endpoint. The macOS packaged transport throws `endpointUnavailable` for all
+  operations and its XPC server accepts only `health`; Windows public clients
+  return `endpointUnavailable` and the elevated process stops after a named
+  pipe authentication handshake; Linux public clients also return
+  `endpointUnavailable`, while the helper's in-process reservation never
+  invokes file transaction or recovery code. This is a validated P0, not
+  closure evidence for Task 6.
+- The canonical helper protocol fixtures and the three serialized/parsed wire
+  shapes are not connected by one production validator. Current helper smokes
+  can pass at a version probe or externally asserted JSON without exercising
+  prepare, commit, mutation, query, or recovery. The protocol-v1 diagnostic
+  event set remains fixture-only. These are three validated P1 findings.
+- Fresh local evidence remains useful but scoped: the final Flutter suite
+  passed 689 tests with 3 explicit skips; macOS helper tests passed 38/38 and
+  root SwiftPM passed 62/62; an unprivileged Linux container passed 36/37 CTests
+  with the bind-mount test explicitly skipped, then passed installed CMake 1/1
+  and pkg-config consumers. Windows target-host, privileged Linux, signed
+  SMJobBless/XPC, Authenticode/UAC, notarization, and current-head CI remain
+  `not run` or `blocked`.
+- Task 6 therefore remains open. The runtime remains `candidate-only`; PR #65
+  remains `blocked / not merge-ready`. The privileged-helper plan contains the
+  full fresh coverage ledger and `BLOCK / NO-GO` report.
+
 ## Final Acceptance Checklist
 
 - [ ] No caller-provided parent can be recursively deleted.
