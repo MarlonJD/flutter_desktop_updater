@@ -1790,7 +1790,9 @@ after durable ownership exists; it must not generate a script.
   reached package validation and exited 65 only because the intended tracked
   deletion and 46 other task files were still uncommitted; it reported no
   package-content error beyond those dirty-tree warnings and the existing
-  prior-version hint. A clean post-commit dry run remains part of Step 2.
+  prior-version hint. After the task changes were committed, the clean
+  `dart pub publish --dry-run` exited 0 with 0 warnings and the same single
+  prior-version hint.
 - Complete macOS helper ladder: `verified locally`. The privileged helper and
   repo-context DesktopUpdaterKit suites each passed 82/82, and the signed
   SMAppService transport subset passed 18/18. The exact five-source CocoaPods
@@ -1890,7 +1892,8 @@ after durable ownership exists; it must not generate a script.
 - PR #65 merge readiness: `blocked / not merge-ready`.
 - Linux distribution follow-on: `not started`; its prerequisite helper plan is
   still blocked by the remaining Windows/Linux production graph.
-- Commit: `pending` until the final evidence update is committed.
+- Commit: `verified locally` —
+  `39e79dc docs: record native helper verification`.
 
 ---
 

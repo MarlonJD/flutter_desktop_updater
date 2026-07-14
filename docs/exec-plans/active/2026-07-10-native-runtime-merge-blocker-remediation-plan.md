@@ -2575,8 +2575,9 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   passed 18/18; and a fresh Linux Release build passed 57/58 CTests with the
   bind-mount test explicitly skipped before that exact test passed 1/1 in a
   separate privileged container. Installed CMake and pkg-config consumers ran
-  successfully. Windows target-host, installed Linux polkit/root-broker, and
-  current-head CI remain `not run`.
+  successfully. A clean `dart pub publish --dry-run` exited 0 with 0 warnings
+  and the existing single prior-version hint. Windows target-host, installed
+  Linux polkit/root-broker, and current-head CI remain `not run`.
 - The macOS Task 6 slice is closed with the notarized target-host evidence
   below. The cross-platform plan remains open, the runtime remains
   `candidate-only`, and PR #65 remains `blocked / not merge-ready`.
