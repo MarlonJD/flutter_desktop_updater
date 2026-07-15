@@ -2,7 +2,7 @@ import Cocoa
 import Darwin
 import FlutterMacOS
 import ServiceManagement
-import desktop_updater
+@_spi(DesktopUpdaterSmoke) import desktop_updater
 #if canImport(DesktopUpdaterKit)
 @_spi(DesktopUpdaterSmoke) import DesktopUpdaterKit
 #endif

@@ -59,6 +59,17 @@ void main() {
     expect(podspec, isNot(contains("EmbeddedHelperLocator.swift")));
   });
 
+  test("CocoaPods smoke host imports the plugin module SPI", () {
+    final host = File(
+      "example/macos/Runner/AppDelegate.swift",
+    ).readAsStringSync();
+
+    expect(
+      host,
+      contains("@_spi(DesktopUpdaterSmoke) import desktop_updater"),
+    );
+  });
+
   test("CI gates are structurally bound to the macOS jobs", () {
     final valid = File(
       ".github/workflows/desktop-updater-ci.yml",
