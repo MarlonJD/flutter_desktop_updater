@@ -918,7 +918,12 @@ terminal alternatives: rolledBack | manualActionRequired
   yield `manualActionRequired` with no cleanup. Delete backup only after the
   activated target's package identity, executable-relative proof, stage
   provenance, artifact digest, and Authenticode signer pass. Relaunch only that
-  verified executable.
+  verified executable. Keep durable install recovery distinct from process
+  launch: Windows relaunch is a best-effort at-most-once attempt, not an
+  exactly-once guarantee. Persist pending, attempting, launched, and failed
+  relaunch states; never report relaunch success before the verified launcher
+  returns and the launched state is durable, and never retry an outcome-unknown
+  consumed attempt.
 
 - [ ] **Step 4: Run Windows crash/elevation smoke and commit**
 
@@ -1742,12 +1747,12 @@ after durable ownership exists; it must not generate a script.
   package inventory, crash, mount/reparse, and elevation lanes on their target
   hosts.
 
-- [x] **Step 3: Run `superpowers:verification-before-completion`**
+- [ ] **Step 3: Run `superpowers:verification-before-completion`**
 
   Follow the skill against fresh outputs. Do not claim completion from prior
   task logs, source inspection, or an agent summary.
 
-- [x] **Step 4: Run fresh `killcritic-complete-review`**
+- [ ] **Step 4: Run fresh `killcritic-complete-review`**
 
   Review four explicit tracks:
 
@@ -1760,7 +1765,7 @@ after durable ownership exists; it must not generate a script.
   add a regression test first, re-run the affected platform lane, and create a
   separate Conventional Commit for each independently verified fix.
 
-- [x] **Step 5: Record final literal evidence and readiness**
+- [ ] **Step 5: Record final literal evidence and readiness**
 
   Mark unavailable credential or target-host gates `not run` or `blocked` with
   the reason. State whether Task 6 is closed, whether the runtime is still
@@ -1768,7 +1773,7 @@ after durable ownership exists; it must not generate a script.
   complete if a required P0/P1, secretless lane, or target-host safety gate is
   missing.
 
-- [x] **Step 6: Commit only the final evidence update**
+- [ ] **Step 6: Commit only the final evidence update**
 
   ```sh
   git add docs/exec-plans/active/2026-07-11-cross-platform-privileged-install-helper-plan.md docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md
