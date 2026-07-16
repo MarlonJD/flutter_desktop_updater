@@ -304,7 +304,61 @@ void main() {
     expect(lane, isNot(contains("Expected PKG strategy rejection")));
   });
 
-  test("Linux ZIP smoke binds install root to the executable parent", () {
+  test("self-hosted macOS lane proves preapproved PKG install and recovery",
+      () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final recoveryStart = workflow.indexOf(
+      "- name: Run signed bundled SMAppService daemon and XPC recovery smoke",
+    );
+    final pkgStart = workflow.indexOf(
+      "- name: Run preapproved signed PKG target-host smoke",
+      recoveryStart,
+    );
+    final pkgEnd = workflow.indexOf(
+      "- name: Upload macOS SMAppService target-host evidence",
+      pkgStart,
+    );
+
+    expect(recoveryStart, greaterThanOrEqualTo(0));
+    expect(pkgStart, greaterThan(recoveryStart));
+    expect(pkgEnd, greaterThan(pkgStart));
+    final recovery = workflow.substring(recoveryStart, pkgStart);
+    final pkg = workflow.substring(pkgStart, pkgEnd);
+    expect(recovery,
+        contains("macos_install_helper_smoke.dart --mode privileged"));
+    expect(recovery, contains("macos-smappservice-recovery.jsonl"));
+    expect(pkg, contains("DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP"));
+    expect(pkg, contains("DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT"));
+    expect(pkg, contains("DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID"));
+    expect(pkg, contains("native_runtime_smoke_server.dart"));
+    expect(pkg, contains("--artifact-kind pkgInstaller"));
+    expect(pkg, contains(r'test "$executable" = MacOSRuntimeCompile'));
+    expect(pkg, contains(r'"$app/Contents/MacOS/$executable"'));
+    expect(pkg, contains("--expected-team-identifier"));
+    expect(pkg, contains("pkgutil --pkg-info-plist"));
+    expect(pkg, contains(r'post_info="$app/Contents/Info.plist"'));
+    expect(pkg, contains("post_package_id="));
+    expect(pkg, contains("post_executable="));
+    expect(pkg, contains("post_service_id="));
+    expect(pkg, contains(r'test "$post_package_id" = "$package_id"'));
+    expect(pkg, contains(r'test "$post_executable" = "$executable"'));
+    expect(pkg, contains(r'test "$post_service_id" = "$service_id"'));
+    expect(pkg, contains(r'post_helper="$app/Contents/Helpers/'));
+    expect(
+        pkg, contains(r'post_launchd="$app/Contents/Library/LaunchDaemons/'));
+    expect(pkg,
+        contains(r'codesign --verify --strict --verbose=2 "$post_helper"'));
+    expect(pkg, contains(r'test "$post_helper_team_id" = "$team_id"'));
+    expect(pkg, contains(r'launchctl print "system/$post_service_id"'));
+    expect(pkg, contains("installedHelperVerified=true"));
+    expect(pkg, contains("macos-smappservice-pkg.txt"));
+    expect(
+      pkg,
+      isNot(contains("--expect-helper-approval-required")),
+    );
+  });
+
+  test("Linux ZIP smoke packages the executable helper and sealed policy", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final start = workflow.indexOf("- name: Linux native runtime ZIP smoke");
     final end = workflow.indexOf("- name: Enable Linux desktop", start);
@@ -330,6 +384,55 @@ void main() {
     );
     expect(lane, contains('"packageId":"com.example.native-runtime-smoke"'));
     expect(lane, contains("--executable-relative-path runtime_compile"));
+    expect(
+      lane,
+      contains(
+        r'helper_source="$PWD/linux/native/install/libexec/desktop-updater-helper"',
+      ),
+    );
+    expect(
+      lane,
+      contains(
+          r'install -m 0755 "$helper_source" "$root/desktop-updater-helper"'),
+    );
+    expect(
+      lane,
+      contains("--canonical-portable-consumer-policy"),
+    );
+    expect(
+      lane,
+      contains(r'> "$root/desktop-updater-helper.policy.json"'),
+    );
+    expect(
+      lane,
+      contains(
+          r'''for root in "$smoke_root/install" "$smoke_root/payload"; do'''),
+    );
+    expect(
+        lane,
+        contains(
+            r'''test "$(stat -c '%a' "$root/desktop-updater-helper")" = 755'''));
+    expect(
+        lane,
+        contains(
+            r'''test "$(stat -c '%a' "$root/desktop-updater-helper.policy.json")" = 600'''));
+    expect(
+      lane,
+      contains(
+        r'''test "$(stat -c '%u:%g' "$root/desktop-updater-helper")" = "$(id -u):$(id -g)"''',
+      ),
+    );
+    expect(
+      lane.indexOf(r'> "$root/desktop-updater-helper.policy.json"'),
+      lessThan(lane.indexOf("zip -qr")),
+    );
+    expect(lane,
+        contains(r'test -x "$smoke_root/install/desktop-updater-helper"'));
+    expect(
+      lane,
+      contains(
+          r'test -f "$smoke_root/install/desktop-updater-helper.policy.json"'),
+    );
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });
 

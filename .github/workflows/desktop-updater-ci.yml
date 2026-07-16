@@ -131,7 +131,23 @@ jobs:
       - name: Configure standalone Windows native SDK tests
         run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Windows native SDK tests
-        run: cmake --build windows/native/build --config Release
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "windows-native-sdk-build.log"
+          cmake --build windows/native/build --config Release 2>&1 |
+            Tee-Object -FilePath $log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            $detail = (Get-Content -LiteralPath $log -Tail 60 -ErrorAction SilentlyContinue) -join "`n"
+            $detail = [regex]::Replace($detail, '\x1B\[[0-?]*[ -/]*[@-~]', '')
+            $detail = [regex]::Replace($detail, '[^\x09\x0A\x0D\x20-\x7E]', '')
+            if ($detail.Length -gt 3500) {
+              $detail = $detail.Substring($detail.Length - 3500)
+            }
+            $detail = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows native SDK build failed::$detail"
+            exit $buildExit
+          }
       - name: Run Windows helper trust, pipe, transaction, and crash recovery tests
         shell: pwsh
         run: |
@@ -635,7 +651,22 @@ jobs:
           plutil -lint macos/install_helper/Configuration/Helper-Info.plist
           plutil -lint macos/install_helper/Configuration/Helper-Launchd.plist
       - name: Run macOS install helper tests
-        run: swift test --package-path macos/install_helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/macos-install-helper-tests.log"
+          set +e
+          swift test --package-path macos/install_helper 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            printf '::error title=macOS install helper tests failed::%s\n' "$detail"
+            exit "$status"
+          fi
       - name: Run macOS unprivileged crash recovery suite
         shell: bash
         run: |
@@ -770,7 +801,22 @@ jobs:
             macos/Runner.xcodeproj/project.pbxproj
       - name: Build macOS example
         working-directory: example
-        run: flutter build macos --debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/macos-flutter-build-${{ matrix.integration }}.log"
+          set +e
+          flutter build macos --debug 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            printf '::error title=macOS Flutter build failed::%s\n' "$detail"
+            exit "$status"
+          fi
       - name: Run macOS integration tests
         working-directory: example
         run: flutter test integration_test -d macos
@@ -1340,10 +1386,23 @@ jobs:
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
       - name: Run Linux unprivileged helper and crash recovery tests
+        shell: bash
         run: |
           set -euo pipefail
           filter='(LinuxHelperAuth|linux_transaction|linux_crash_recovery)'
-          ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error
+          log="$RUNNER_TEMP/linux-helper-recovery-tests.log"
+          set +e
+          ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            printf '::error title=Linux helper and recovery tests failed::%s\n' "$detail"
+            exit "$status"
+          fi
           test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
           test -n "$test_count"
           mkdir -p reports
@@ -1572,12 +1631,30 @@ jobs:
           fi
           smoke_root="$RUNNER_TEMP/native-runtime-linux-zip"
           ready_file="$smoke_root/ready.json"
+          package_id="com.example.native-runtime-smoke"
           rm -rf "$smoke_root"
           mkdir -p "$smoke_root/install" "$smoke_root/payload"
           consumer_bin="$PWD/example/native/linux-cmake-runtime/build/runtime_compile"
-          cp "$consumer_bin" "$smoke_root/install/runtime_compile"
-          cp "$consumer_bin" "$smoke_root/payload/runtime_compile"
-          chmod +x "$smoke_root/install/runtime_compile" "$smoke_root/payload/runtime_compile"
+          helper_source="$PWD/linux/native/install/libexec/desktop-updater-helper"
+          test -x "$helper_source"
+          for root in "$smoke_root/install" "$smoke_root/payload"; do
+            install -m 0755 "$consumer_bin" "$root/runtime_compile"
+            install -m 0755 "$helper_source" "$root/desktop-updater-helper"
+            caller_sha="$(sha256sum "$root/runtime_compile" | awk '{print $1}')"
+            helper_sha="$(sha256sum "$root/desktop-updater-helper" | awk '{print $1}')"
+            (
+              umask 077
+              linux/native/build/linux_polkit_e2e_fixture \
+                --canonical-portable-consumer-policy \
+                "$caller_sha" "$helper_sha" "$package_id" \
+                > "$root/desktop-updater-helper.policy.json"
+            )
+            test "$(stat -c '%a' "$root/runtime_compile")" = 755
+            test "$(stat -c '%a' "$root/desktop-updater-helper")" = 755
+            test "$(stat -c '%a' "$root/desktop-updater-helper.policy.json")" = 600
+            test "$(stat -c '%u:%g' "$root/desktop-updater-helper")" = "$(id -u):$(id -g)"
+            test "$(stat -c '%u:%g' "$root/desktop-updater-helper.policy.json")" = "$(id -u):$(id -g)"
+          done
           printf '2.7.0\n' > "$smoke_root/install/version.txt"
           printf '2.7.1\n' > "$smoke_root/payload/version.txt"
           printf '%s' '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}' > "$smoke_root/install/.desktop_updater_install_identity.json"
@@ -1587,7 +1664,7 @@ jobs:
             --artifact "$smoke_root/update.zip" \
             --artifact-kind zip \
             --platform linux \
-            --package-id com.example.native-runtime-smoke \
+            --package-id "$package_id" \
             --app-name NativeRuntimeSmoke \
             --ready-file "$ready_file" \
             --port 43892 > "$smoke_root/server.log" 2>&1 &
@@ -1615,7 +1692,7 @@ jobs:
             --verify-protected-root \
             --app-archive-url "$archive_url" \
             --public-key-hex "$public_key" \
-            --package-id com.example.native-runtime-smoke \
+            --package-id "$package_id" \
             --smoke-root "$smoke_root/runtime" \
             --install-root "$smoke_root/install" \
             --executable-relative-path runtime_compile \
@@ -1625,6 +1702,12 @@ jobs:
             sleep 0.25
           done
           test "$(tr -d '\r\n' < "$smoke_root/install/version.txt")" = "2.7.1"
+          test -x "$smoke_root/install/desktop-updater-helper"
+          test -f "$smoke_root/install/desktop-updater-helper.policy.json"
+          test "$(stat -c '%a' "$smoke_root/install/desktop-updater-helper")" = 755
+          test "$(stat -c '%a' "$smoke_root/install/desktop-updater-helper.policy.json")" = 600
+          test "$(stat -c '%u:%g' "$smoke_root/install/desktop-updater-helper")" = "$(id -u):$(id -g)"
+          test "$(stat -c '%u:%g' "$smoke_root/install/desktop-updater-helper.policy.json")" = "$(id -u):$(id -g)"
           test -d "$smoke_root/runtime/staging"
           test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
           grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"

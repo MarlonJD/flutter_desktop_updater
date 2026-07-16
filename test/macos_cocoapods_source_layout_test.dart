@@ -97,12 +97,9 @@ void main() {
         "",
       ),
       valid.replaceFirst(
-        _step(
-          "Build macOS example",
-          "flutter build macos --debug",
-          directory: "example",
-        ),
-        _step("Build macOS example", "flutter build macos --debug"),
+        "      - name: Build macOS example\n"
+            "        working-directory: example\n",
+        "      - name: Build macOS example\n",
       ),
       valid.replaceFirst(
         "        if: matrix.integration == 'cocoapods'\n"
@@ -328,15 +325,17 @@ List<String> _workflowErrors(String source) {
         directory: "example",
       ),
       _step(
-        "Build macOS example",
-        "flutter build macos --debug",
-        directory: "example",
-      ),
-      _step(
         "Run macOS integration tests",
         "flutter test integration_test -d macos",
         directory: "example",
       ),
+    ]);
+    _expectStepContains(errors, flutter, "Build macOS example", <String>[
+      "        working-directory: example",
+      "        shell: bash",
+      "        run: |",
+      "flutter build macos --debug",
+      "::error title=macOS Flutter build failed::",
     ]);
   }
   return errors;
@@ -372,6 +371,22 @@ void _expectSteps(List<String> errors, String job, List<String> expected) {
     if (actual.where((block) => block == step).length != 1) {
       errors.add("missing or changed step");
     }
+  }
+}
+
+void _expectStepContains(
+  List<String> errors,
+  String job,
+  String name,
+  List<String> fragments,
+) {
+  final blocks = _namedStepBlocks(job);
+  final prefix = "      - name: $name\n";
+  final matches = blocks?.where((block) => block.startsWith(prefix)).toList();
+  if (matches == null ||
+      matches.length != 1 ||
+      fragments.any((fragment) => !matches.single.contains(fragment))) {
+    errors.add("missing or changed step");
   }
 }
 
