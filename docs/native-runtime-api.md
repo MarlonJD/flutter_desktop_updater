@@ -115,8 +115,9 @@ try client.installAndRelaunch(
 ```
 
 Production ZIP and DMG staging rechecks the application bundle and publisher.
-`allowUnsignedUpdates` exists only as an explicit debug/test opt-in. PKG trust
-is never disabled by that opt-in.
+`allowUnsignedUpdates` can relax staging-only checks for a controlled test, but
+privileged installation rejects it. The install handoff requires signed
+descriptor authority and signed application code; PKG trust is never disabled.
 
 ### Windows .NET And C ABI
 

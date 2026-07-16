@@ -419,6 +419,99 @@ void main() {
     }
   });
 
+  test("restartApp rejects unsigned metadata before native handoff", () async {
+    final recoveryStore = _MemoryRecoveryStore();
+    var installCalls = 0;
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+      includeDescriptorSignature: false,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (_) {
+          installCalls += 1;
+        },
+      );
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("signed release.json descriptor"),
+          ),
+        ),
+      );
+
+      expect(installCalls, 0);
+      expect(
+        await recoveryStore.readPendingInstall(channel: "stable"),
+        isNull,
+      );
+      final failed = controller.state as UpdateFailed;
+      expect(failed.report, isNotNull);
+      expect(
+        failed.report!.entries.last.message,
+        contains("Install failed"),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("restartApp rejects the legacy macOS unsigned bypass", () async {
+    final recoveryStore = _MemoryRecoveryStore();
+    var installCalls = 0;
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (_) {
+          installCalls += 1;
+        },
+      );
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+        allowUnsignedMacOSUpdates: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            "message",
+            contains("privileged native installation"),
+          ),
+        ),
+      );
+
+      expect(installCalls, 0);
+      expect(
+        await recoveryStore.readPendingInstall(channel: "stable"),
+        isNull,
+      );
+      expect(controller.state, isA<UpdateFailed>());
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("restartApp forwards explicit native diagnostics log path", () async {
     late MethodCall capturedCall;
     final fixture = await _ControllerUpdateFixture.create(
@@ -1489,6 +1582,7 @@ class _ControllerUpdateFixture {
     required bool mandatory,
     bool validArtifact = false,
     bool supportPolicy = false,
+    bool includeDescriptorSignature = true,
     DateTime? enforcedAfter,
     bool freshInstall = false,
   }) async {
@@ -1561,6 +1655,12 @@ class _ControllerUpdateFixture {
               "length": await artifact.length(),
             },
             "install": {"strategy": "wholeDirectoryReplace"},
+            if (includeDescriptorSignature)
+              "signature": {
+                "algorithm": "ed25519",
+                "publicKeyId": "test-release",
+                "value": base64Encode(List<int>.filled(64, 0)),
+              },
             "minimumUpdaterVersion": "2.0.0",
             "generatedAt": DateTime.utc(2026, 6, 13).toIso8601String(),
           })}\n",

@@ -10,12 +10,12 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"));
-    expect(source, contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"));
     expect(
       source,
       contains("diagnosticsLogPath: _configuredHostedDiagnosticsLogPath()"),
     );
-    expect(source, contains("allowUnsignedMacOSUpdates:"));
+    expect(
+        source, isNot(contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS")));
     expect(source, contains("_runHostedSmokeTestCommand"));
     expect(source, contains("checkVersion()"));
     expect(source, contains("downloadUpdate()"));
@@ -30,15 +30,13 @@ void main() {
     expect(source, isNot(contains("Running on: 1.0.0+1")));
   });
 
-  test("direct smoke can explicitly allow unsigned macOS updates", () {
+  test("direct smoke does not expose the rejected macOS unsigned bypass", () {
     final source = File("example/lib/app.dart").readAsStringSync();
 
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(
-      source,
-      contains("allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS"),
-    );
+        source, isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")));
+    expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
+    expect(source, isNot(contains("allowUnsignedMacOSUpdates:")));
     expect(source, contains("diagnosticsLogPath: diagnosticsLogPath"));
   });
 }

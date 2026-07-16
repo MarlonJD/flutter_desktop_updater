@@ -45,13 +45,6 @@ class _HomePageState extends State<HomePage> {
   bool get _hostedSmokeEnabled =>
       Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE"] == "1";
 
-  bool get _hostedSmokeAllowUnsignedMacOS =>
-      Platform.environment["DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"] ==
-      "1";
-
-  bool get _directSmokeAllowUnsignedMacOS =>
-      Platform.environment["DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"] == "1";
-
   @override
   void initState() {
     super.initState();
@@ -61,7 +54,6 @@ class _HomePageState extends State<HomePage> {
       releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
       diagnosticsLogPath: _configuredHostedDiagnosticsLogPath(),
-      allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
       localization: const DesktopUpdateLocalization(
         updateAvailableText: "Update available",
         newVersionAvailableText: "{} {} is available",
@@ -225,7 +217,6 @@ class _HomePageState extends State<HomePage> {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     await DesktopUpdaterPlatform.instance.installUpdateWithContext(
       stagingPath: stagingPath,
-      allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS,
       diagnosticsLogPath: diagnosticsLogPath,
       packageId: packageId,
       stageProvenanceSha256: expectedProvenanceSha256,

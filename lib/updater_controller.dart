@@ -237,14 +237,15 @@ class DesktopUpdaterController extends ChangeNotifier {
   ///
   /// When null, the released 2.x unsigned-metadata compatibility behavior is
   /// preserved. Supplying a map requires valid signatures on both metadata
-  /// documents before release selection or artifact download.
+  /// documents before release selection or artifact download. Privileged
+  /// native installation still requires a signed release descriptor.
   final Map<String, String>? trustedReleasePublicKeys;
 
-  /// Allows macOS Release installs to bypass native signing, Gatekeeper,
-  /// stapler, and Team ID checks.
+  /// Legacy compatibility flag for the former unsigned macOS install path.
   ///
-  /// Keep this false for public macOS distribution. When true, macOS still
-  /// requires a complete `.app` bundle with the same bundle identifier.
+  /// Privileged native installation rejects this flag because the sealed
+  /// helper trust policy requires signed release metadata and signed code.
+  /// Keep this false and publish signed, notarized macOS updates.
   final bool allowUnsignedMacOSUpdates;
 
   Uri? _appArchiveUrl;
@@ -762,6 +763,7 @@ class DesktopUpdaterController extends ChangeNotifier {
 
     String? transactionId;
     try {
+      _validateNativeInstallTrust();
       final candidateTransactionId =
           _isWindows ? _createInstallTransactionId() : null;
       transactionId = candidateTransactionId;
@@ -839,6 +841,27 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
       notifyListeners();
       rethrow;
+    }
+  }
+
+  void _validateNativeInstallTrust() {
+    if (allowUnsignedMacOSUpdates) {
+      throw UnsupportedError(
+        "allowUnsignedMacOSUpdates is incompatible with privileged native "
+        "installation. Publish a signed and notarized macOS update instead.",
+      );
+    }
+
+    final signature = _activeDescriptor?.signature;
+    if (signature == null ||
+        signature.algorithm != "ed25519" ||
+        signature.publicKeyId.trim().isEmpty ||
+        signature.value.trim().isEmpty) {
+      throw StateError(
+        "Privileged native installation requires a signed release.json "
+        "descriptor using Ed25519. Unsigned 2.x metadata remains supported "
+        "for update checks and downloads only.",
+      );
     }
   }
 

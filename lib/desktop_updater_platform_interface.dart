@@ -43,7 +43,7 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     /// Legacy-compatible list of files removed during install.
     List<String> removedFiles = const [],
 
-    /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
+    /// Legacy compatibility flag rejected by privileged macOS installation.
     bool allowUnsignedMacOSUpdates = false,
 
     /// Compatibility-only diagnostics path. Standalone helpers use their

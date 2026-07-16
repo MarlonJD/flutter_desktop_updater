@@ -326,7 +326,11 @@ final controller = DesktopUpdaterController(
 ```
 
 Leaving `trustedReleasePublicKeys` null preserves the released unsigned 2.x
-compatibility behavior; do not describe that mode as production-authenticated.
+compatibility behavior for update checks and downloads; do not describe that
+mode as production-authenticated. Privileged native installation still
+requires a signed `release.json` whose Ed25519 key is sealed into the native
+helper policy. An unsigned descriptor fails before native handoff and leaves no
+pending recovery marker.
 The low-level `DesktopUpdater.checkZipFirstUpdate` and
 `downloadZipFirstUpdate` methods accept the same key map, and callers must pass
 it to both operations.

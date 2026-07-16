@@ -162,13 +162,14 @@ try MacInstallHelper().scheduleInstallAndRelaunch(request)
 
 Create an updater-owned stage only after descriptor and artifact verification,
 then pass the resulting `MacVerifiedStage`. A staged request without complete
-provenance is rejected synchronously before helper launch. Production signing
-gates remain enabled unless `allowUnsignedUpdates` is explicitly enabled for a
-controlled debug/test flow. The helper rechecks stage inventory, bundle
-identity, and publisher trust before replacement. It derives the current PID
-and `Bundle.main` target internally, so callers cannot select another process
-or application bundle. `DesktopUpdaterVersion.string` exposes the helper
-package version.
+provenance is rejected synchronously before helper launch. Keep
+`allowUnsignedUpdates` false for install handoff. It can relax staging-only
+checks in controlled tests, but the privileged helper rejects an unsigned
+install request. The helper rechecks stage inventory, bundle identity, and
+publisher trust before replacement. It derives the current PID and
+`Bundle.main` target internally, so callers cannot select another process or
+application bundle. `DesktopUpdaterVersion.string` exposes the helper package
+version.
 
 Writable targets use the packaged one-shot helper and do not register a
 background item. A protected target uses the root `SMAppService` daemon on

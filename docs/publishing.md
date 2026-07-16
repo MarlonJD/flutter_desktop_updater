@@ -240,7 +240,9 @@ final controller = DesktopUpdaterController(
 Supplying `trustedReleasePublicKeys` requires valid Ed25519 signatures on the
 final `app-archive.json` and selected `release.json` before selection or
 artifact download. Leaving it null preserves the released unsigned 2.x
-compatibility behavior and is not production-authenticated. Key rotation can
+compatibility behavior for checks and downloads and is not
+production-authenticated. Privileged native installation still requires a
+signed descriptor whose key is sealed into the helper policy. Key rotation can
 temporarily pin both the old and new public key IDs in the same map.
 
 ## Update Policy Modes
@@ -658,9 +660,9 @@ Warnings to expect before production hardening:
 - Linux direct zip releases should sign `release.json` with an app-owned hook
   or another pinned descriptor signature policy before calling the flow
   production-trusted.
-- macOS unsigned/internal flows can use `allowUnsignedMacOSUpdates`, but
-  production direct distribution should sign, notarize, staple, and verify
-  Gatekeeper before packaging.
+- macOS privileged installation requires signed release metadata plus signed,
+  notarized, stapled, Gatekeeper-accepted application code. The legacy
+  `allowUnsignedMacOSUpdates` flag is rejected before helper handoff.
 
 4. Keep `pubspec.yaml` version current:
 
@@ -1251,10 +1253,10 @@ xcrun stapler validate Example.app
 codesign -dvvv --entitlements :- Example.app
 ```
 
-The runtime rejects unsigned macOS updates by default. Use
-`allowUnsignedMacOSUpdates: true` only for an intentional internal or
-user-controlled lane. That opt-out keeps release mechanics working, but it does
-not make the update production-trusted.
+The runtime rejects unsigned macOS installation. The legacy
+`allowUnsignedMacOSUpdates` parameter remains source-compatible, but setting it
+fails before privileged helper handoff. Internal unsigned artifacts may be used
+for staging-only tests; they cannot exercise the protected install path.
 
 Mac App Store or sandboxed apps should use the store update channel instead of
 this direct self-updater.
