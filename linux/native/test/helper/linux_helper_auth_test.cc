@@ -131,6 +131,34 @@ TEST(LinuxHelperAuth, BindsExactBrokerDigestAndPackagePolicy) {
 }
 
 TEST(LinuxHelperAuth,
+     AllowedRootTraversalRejectsIntermediateSymlinkBeforeOutsideMutation) {
+  ScopedRuntimeDirectory fixture;
+  const std::filesystem::path allowed_root = fixture.path() / "allowed";
+  const std::filesystem::path outside_root = fixture.path() / "outside";
+  const std::filesystem::path outside_parent = outside_root / "real-parent";
+  const std::filesystem::path redirect = allowed_root / "redirect";
+  const std::filesystem::path candidate_parent = redirect / "real-parent";
+  const std::filesystem::path outside_marker =
+      outside_parent / "escaped-mutation";
+  std::filesystem::create_directories(allowed_root);
+  std::filesystem::create_directories(outside_parent);
+  std::filesystem::create_directory_symlink(outside_root, redirect);
+
+  bool rejected = false;
+  try {
+    auto parent = OpenLinuxDirectory(candidate_parent.string());
+    auto marker = OpenLinuxRelativeNoFollow(
+        parent.get(), outside_marker.filename().string(),
+        O_CREAT | O_EXCL | O_WRONLY, 0600);
+  } catch (const LinuxMountGuardError&) {
+    rejected = true;
+  }
+
+  EXPECT_TRUE(rejected);
+  EXPECT_FALSE(std::filesystem::exists(outside_marker));
+}
+
+TEST(LinuxHelperAuth,
      ProtectedBrokerRejectsCopiedLauncherAtDifferentInstallTarget) {
   ScopedRuntimeDirectory fixture;
   const std::filesystem::path target = fixture.path() / "ProtectedTarget";

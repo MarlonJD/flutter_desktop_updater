@@ -51,6 +51,8 @@ struct LinuxFileIdentity {
 
 void ValidateLinuxLeaf(const std::string& leaf);
 UniqueLinuxFd OpenLinuxDirectory(const std::string& path);
+UniqueLinuxFd OpenLinuxDirectoryBeneath(int root,
+                                       const std::string& relative_path);
 UniqueLinuxFd OpenLinuxRelativeNoFollow(int parent,
                                        const std::string& leaf,
                                        int flags,

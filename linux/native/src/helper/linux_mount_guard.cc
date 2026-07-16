@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace desktop_updater::helper {
 namespace {
@@ -42,6 +43,68 @@ void RequireKnownMountId(std::uint64_t mount_id) {
     if (fields >> observed && observed == mount_id) return;
   }
   throw LinuxMountGuardError("descriptor mount ID is absent from mountinfo");
+}
+
+std::vector<std::string> PathComponents(const std::string& path,
+                                        bool absolute) {
+  if (path.empty() || path.find('\0') != std::string::npos ||
+      (absolute && path.front() != '/') ||
+      (!absolute && path.front() == '/')) {
+    throw LinuxMountGuardError("directory path rejected");
+  }
+  std::vector<std::string> components;
+  std::size_t start = absolute ? 1 : 0;
+  while (start < path.size()) {
+    const std::size_t end = path.find('/', start);
+    const std::string component =
+        path.substr(start, end == std::string::npos ? std::string::npos
+                                                   : end - start);
+    if (component.empty() || component == "." || component == "..") {
+      throw LinuxMountGuardError("directory path component rejected");
+    }
+    components.push_back(component);
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return components;
+}
+
+UniqueLinuxFd DuplicateDirectory(int fd) {
+  const int duplicate = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+  if (duplicate < 0) {
+    throw LinuxMountGuardError("directory descriptor duplication failed");
+  }
+  UniqueLinuxFd result(duplicate);
+  if (!ReadLinuxFileIdentity(result.get()).directory) {
+    throw LinuxMountGuardError("directory descriptor rejected");
+  }
+  return result;
+}
+
+UniqueLinuxFd OpenDirectoryComponents(int root,
+                                      const std::vector<std::string>& components,
+                                      bool reject_mount_change) {
+  UniqueLinuxFd current = DuplicateDirectory(root);
+  const LinuxFileIdentity root_identity = ReadLinuxFileIdentity(current.get());
+  for (const std::string& component : components) {
+    const int next = openat(current.get(), component.c_str(),
+                            O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (next < 0) {
+      throw LinuxMountGuardError("directory component pin failed");
+    }
+    UniqueLinuxFd retained(next);
+    const LinuxFileIdentity identity = ReadLinuxFileIdentity(retained.get());
+    if (!identity.directory) {
+      throw LinuxMountGuardError("pinned path component is not a directory");
+    }
+    if (reject_mount_change) {
+      ValidateLinuxMountRelationship(
+          root_identity, identity,
+          "directory traversal crossed a mount boundary");
+    }
+    current = std::move(retained);
+  }
+  return current;
 }
 
 }  // namespace
@@ -83,14 +146,20 @@ void ValidateLinuxLeaf(const std::string& leaf) {
 }
 
 UniqueLinuxFd OpenLinuxDirectory(const std::string& path) {
-  const int fd = open(path.c_str(), O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  if (fd < 0) throw LinuxMountGuardError("directory pin failed");
-  UniqueLinuxFd result(fd);
-  const auto identity = ReadLinuxFileIdentity(fd);
-  if (!identity.directory) {
-    throw LinuxMountGuardError("pinned parent is not a directory");
+  UniqueLinuxFd filesystem_root(
+      open("/", O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+  if (!filesystem_root.valid()) {
+    throw LinuxMountGuardError("filesystem root pin failed");
   }
-  return result;
+  return OpenDirectoryComponents(
+      filesystem_root.get(), PathComponents(path, true), false);
+}
+
+UniqueLinuxFd OpenLinuxDirectoryBeneath(int root,
+                                       const std::string& relative_path) {
+  if (relative_path == ".") return DuplicateDirectory(root);
+  return OpenDirectoryComponents(
+      root, PathComponents(relative_path, false), true);
 }
 
 UniqueLinuxFd OpenLinuxRelativeNoFollow(int parent,

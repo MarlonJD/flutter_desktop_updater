@@ -318,7 +318,17 @@ bool IsUnderRoot(const fs::path& candidate, const fs::path& root) {
       return false;
     }
   }
-  return true;
+  try {
+    auto root_directory = OpenLinuxDirectory(normalized_root.string());
+    const fs::path relative =
+        normalized_candidate.lexically_relative(normalized_root);
+    if (relative.empty()) return false;
+    auto retained = OpenLinuxDirectoryBeneath(
+        root_directory.get(), relative.generic_string());
+    return retained.valid();
+  } catch (const LinuxMountGuardError&) {
+    return false;
+  }
 }
 
 struct LoadedPolicy {
