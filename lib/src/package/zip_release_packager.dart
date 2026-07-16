@@ -64,6 +64,10 @@ class ZipReleasePackager implements ReleasePackager {
     final addsInstalledIdentity =
         request.platform == "windows" || request.platform == "linux";
     if (addsInstalledIdentity) {
+      await _rejectReservedUpdaterControlPlaneRoots(
+        request.input,
+        caseInsensitive: true,
+      );
       await _rejectReservedInstalledIdentityMarker(
         request.input,
         caseInsensitive: request.platform == "windows",
@@ -130,6 +134,40 @@ class ZipReleasePackager implements ReleasePackager {
 
 const String _installedIdentityMarkerName =
     ".desktop_updater_install_identity.json";
+const Set<String> _updaterControlPlaneRootNames = {
+  ".desktop_updater_artifact.zip",
+  ".desktop_updater_release_manifest.json",
+  ".desktop_updater_stage_provenance.json",
+};
+
+Future<void> _rejectReservedUpdaterControlPlaneRoots(
+  FileSystemEntity input, {
+  required bool caseInsensitive,
+}) async {
+  bool isReserved(String candidate) {
+    final normalized = caseInsensitive ? candidate.toLowerCase() : candidate;
+    return _updaterControlPlaneRootNames.contains(normalized);
+  }
+
+  if (input is File) {
+    if (isReserved(path.basename(input.path))) {
+      throw StateError(
+        "Package input uses a reserved updater control-plane file.",
+      );
+    }
+    return;
+  }
+  if (input is! Directory) {
+    return;
+  }
+  await for (final entity in input.list(followLinks: false)) {
+    if (isReserved(path.basename(entity.path))) {
+      throw StateError(
+        "Package input uses a reserved updater control-plane file.",
+      );
+    }
+  }
+}
 
 Future<void> _rejectReservedInstalledIdentityMarker(
   FileSystemEntity input, {

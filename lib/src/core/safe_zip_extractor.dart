@@ -7,6 +7,11 @@ import "package:desktop_updater/src/io/archive_path.dart";
 import "package:path/path.dart" as path;
 
 const _unixExecuteMask = 0x49; // Octal 0111.
+const _reservedUpdaterControlPlaneRoots = {
+  ".desktop_updater_artifact.zip",
+  ".desktop_updater_release_manifest.json",
+  ".desktop_updater_stage_provenance.json",
+};
 
 /// Extracts zip artifacts while rejecting unsafe paths and symlinks.
 class SafeZipExtractor {
@@ -188,6 +193,13 @@ void _validateDecodedArchive(
     final relativePath = normalizeArchivePath(entry.name);
     if (relativePath.isEmpty) {
       continue;
+    }
+    if (!relativePath.contains("/") &&
+        _reservedUpdaterControlPlaneRoots
+            .contains(relativePath.toLowerCase())) {
+      throw FormatException(
+        "ZIP entry uses a reserved updater control-plane file: ${entry.name}",
+      );
     }
     if (entry.isSymbolicLink && rejectSymlinks) {
       throw FormatException("ZIP entry is a symbolic link: ${entry.name}");

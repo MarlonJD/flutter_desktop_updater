@@ -1,5 +1,8 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/release_manifest.dart";
@@ -40,6 +43,27 @@ void main() {
       expect(
         File(path.join(staged.stagingPath, "app.txt")).readAsStringSync(),
         "version=2.0.0",
+      );
+      expect(
+        File(
+          path.join(staged.stagingPath, ".desktop_updater_artifact.zip"),
+        ).existsSync(),
+        isTrue,
+      );
+      final sidecar = File(
+        path.join(staged.stagingPath, stagedReleaseManifestFileName),
+      );
+      expect(sidecar.existsSync(), isTrue);
+      final sidecarJson = await sidecar.readAsString();
+      final sidecarMap = jsonDecode(sidecarJson) as Map<String, dynamic>;
+      expect(
+        sidecarJson,
+        jsonEncode(sortJsonValue(sidecarMap)),
+      );
+      expect(sidecarMap["version"], "2.0.0");
+      expect(
+        staged.stageProvenance.descriptorSha256,
+        sha256.convert(utf8.encode(sidecarJson)).toString(),
       );
     } finally {
       await server?.close();
@@ -85,7 +109,9 @@ void main() {
       );
 
       expect(sidecar.existsSync(), isTrue);
-      expect(await sidecar.readAsString(), contains('"schemaVersion": 3'));
+      final sidecarMap =
+          jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+      expect(sidecarMap["schemaVersion"], 3);
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);
@@ -122,7 +148,9 @@ void main() {
       );
 
       expect(sidecar.existsSync(), isTrue);
-      expect(await sidecar.readAsString(), contains('"version": "2.0.0"'));
+      final sidecarMap =
+          jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+      expect(sidecarMap["version"], "2.0.0");
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);

@@ -187,6 +187,54 @@ void main() {
     }
   });
 
+  test("Windows and Linux packagers reject reserved control-plane roots",
+      () async {
+    for (final platform in <String>["windows", "linux"]) {
+      for (final fileName in <String>[
+        ".desktop_updater_artifact.zip",
+        ".desktop_updater_release_manifest.json",
+        ".desktop_updater_stage_provenance.json",
+      ]) {
+        final tempDir = await Directory.systemTemp.createTemp("packager_");
+        try {
+          final input = await Directory(
+            path.join(tempDir.path, "input"),
+          ).create();
+          final reservedName = fileName.toUpperCase();
+          await File(path.join(input.path, reservedName)).writeAsString("x");
+
+          await expectLater(
+            const ZipReleasePackager().package(
+              ReleasePackageRequest(
+                input: input,
+                outputDirectory: Directory(path.join(tempDir.path, "out")),
+                packageId: "com.example.app",
+                appName: "Example",
+                version: "2.0.0",
+                platform: platform,
+                channel: "stable",
+                artifactUrl: Uri.parse(
+                  "https://cdn.example.com/Example.zip",
+                ),
+                installStrategy: "wholeDirectoryReplace",
+              ),
+            ),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                "message",
+                contains("reserved updater control-plane file"),
+              ),
+            ),
+            reason: "$platform $fileName",
+          );
+        } finally {
+          await tempDir.delete(recursive: true);
+        }
+      }
+    }
+  });
+
   test("macOS zip artifact filename strips .app but descriptor keeps it",
       () async {
     final tempDir = await Directory.systemTemp.createTemp("packager_");

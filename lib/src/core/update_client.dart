@@ -330,7 +330,7 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
         return await _finalizeStage(
           descriptor: descriptor,
@@ -361,7 +361,7 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
         return await _finalizeStage(
           descriptor: descriptor,
@@ -387,7 +387,7 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
         return await _finalizeStage(
           descriptor: descriptor,
@@ -420,13 +420,14 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
-      } else if (descriptor.platform == "windows") {
+      } else if (descriptor.platform == "windows" ||
+          descriptor.platform == "linux") {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
       }
 
