@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 
 enum MacTransactionState: String, Codable, CaseIterable {
+    case preparing
     case prepared
     case backupCreated
     case targetActivated
@@ -270,6 +271,11 @@ final class DurableTransactionJournalStore {
         after: MacTransactionFaultPoint
     ) {
         switch state {
+        case .preparing:
+            return (
+                .beforePreparingJournalFlush,
+                .afterPreparingJournalFlush
+            )
         case .prepared:
             return (
                 .beforePreparedJournalFlush,

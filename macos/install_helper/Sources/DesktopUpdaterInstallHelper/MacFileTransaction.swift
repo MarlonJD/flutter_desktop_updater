@@ -55,6 +55,8 @@ struct MacTransactionPaths: Equatable {
 }
 
 enum MacTransactionFaultPoint: String, CaseIterable {
+    case beforePreparingJournalFlush
+    case afterPreparingJournalFlush
     case beforePreparedJournalFlush
     case afterPreparedJournalFlush
     case beforeStageRename
@@ -168,65 +170,100 @@ final class MacFileTransaction {
                 != stageParent.resolvingSymlinksInPath() else {
             throw MacFileTransactionError.invalidPathOrTransaction
         }
-        paths = try MacTransactionPaths(
+        let transactionPaths = try MacTransactionPaths(
             targetName: target.lastPathComponent,
             transactionID: transactionID
         )
-        directory = try MacTransactionDirectory(url: targetParent)
-        stageDirectory = try MacTransactionDirectory(url: stageParent)
+        paths = transactionPaths
+        let transactionDirectory = try MacTransactionDirectory(
+            url: targetParent
+        )
+        directory = transactionDirectory
+        let transactionStageDirectory = try MacTransactionDirectory(
+            url: stageParent
+        )
+        stageDirectory = transactionStageDirectory
         self.stageURL = stage
         stageName = stage.lastPathComponent
         self.ownerProcessIdentifier = ownerProcessIdentifier
         self.expectedPayloadIdentity = expectedPayloadIdentity
         self.verifier = verifier
         self.faultInjector = faultInjector
-        store = DurableTransactionJournalStore(
-            directory: directory,
-            paths: paths,
+        let journalStore = DurableTransactionJournalStore(
+            directory: transactionDirectory,
+            paths: transactionPaths,
             faultInjector: faultInjector
         )
+        store = journalStore
         commitAuthorizationStore = MacCommitAuthorizationStore(
-            directory: directory,
-            paths: paths
+            directory: transactionDirectory,
+            paths: transactionPaths
         )
 
-        targetIdentity = try directory.identity(
-            name: paths.targetName,
+        let initialTargetIdentity = try transactionDirectory.identity(
+            name: transactionPaths.targetName,
             rejectSymbolicLink: true
         )
+        targetIdentity = initialTargetIdentity
         preservedTargetOwnership = preserveTargetOwnership
             ? MacFileOwnership(
-                userIdentifier: targetIdentity.userIdentifier,
-                groupIdentifier: targetIdentity.groupIdentifier
+                userIdentifier: initialTargetIdentity.userIdentifier,
+                groupIdentifier: initialTargetIdentity.groupIdentifier
             )
             : nil
-        retainedStage = try MacRetainedFileObject(
-            directory: stageDirectory,
-            name: stageName
+        let retainedStageObject = try MacRetainedFileObject(
+            directory: transactionStageDirectory,
+            name: stage.lastPathComponent
         )
-        initialStageIdentity = retainedStage.identity
+        retainedStage = retainedStageObject
+        let stageIdentity = retainedStageObject.identity
+        initialStageIdentity = stageIdentity
         try Self.validateSameVolume(
-            targetDevice: targetIdentity.device,
-            stageDevice: initialStageIdentity.device
+            targetDevice: initialTargetIdentity.device,
+            stageDevice: stageIdentity.device
         )
         guard try verifier.verifyPayload(at: stage)
             == expectedPayloadIdentity else {
             throw MacFileTransactionError.stagePayloadChanged
         }
         for name in [
-            paths.preparedName,
-            paths.backupName,
-            paths.journalName,
-            paths.journalName + ".next",
-            paths.commitAuthorizationName,
-        ] where directory.exists(name: name) {
+            transactionPaths.preparedName,
+            transactionPaths.backupName,
+            transactionPaths.journalName,
+            transactionPaths.journalName + ".next",
+            transactionPaths.commitAuthorizationName,
+        ] where transactionDirectory.exists(name: name) {
             throw MacFileTransactionError.derivedArtifactAlreadyExists
         }
-        targetLock = try MacTargetLock(
-            directory: directory,
-            name: paths.lockName,
-            transactionID: paths.transactionID
+        try journalStore.persist(
+            MacTransactionJournal(
+                transactionID: transactionPaths.transactionID,
+                ownerProcessIdentifier: ownerProcessIdentifier,
+                targetName: transactionPaths.targetName,
+                originalStageName: stage.lastPathComponent,
+                preparedName: transactionPaths.preparedName,
+                backupName: transactionPaths.backupName,
+                parentIdentity: transactionDirectory.identity,
+                targetIdentity: initialTargetIdentity,
+                stageIdentity: stageIdentity,
+                expectedPayloadIdentity: expectedPayloadIdentity,
+                state: .preparing
+            )
         )
+        do {
+            targetLock = try MacTargetLock(
+                directory: transactionDirectory,
+                name: transactionPaths.lockName,
+                transactionID: transactionPaths.transactionID
+            )
+        } catch {
+            do {
+                try journalStore.remove()
+            } catch {
+                throw MacFileTransactionError.filesystemOperationFailed
+            }
+            throw error
+        }
     }
 
     func prepare() throws -> String {

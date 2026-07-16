@@ -105,8 +105,9 @@ final class MacRecoveryService {
             throw MacRecoveryError.invalidJournal
         }
         try validate(journal, paths: paths)
-        guard try lockOwner(directory, paths: paths)
-            == paths.transactionID else {
+        let currentLockOwner = try lockOwner(directory, paths: paths)
+        guard currentLockOwner == nil
+            || currentLockOwner == paths.transactionID else {
             throw MacRecoveryError.inconsistentState
         }
         if processLivenessChecker.isProcessAlive(
@@ -117,6 +118,22 @@ final class MacRecoveryService {
 
         guard directory.identity == journal.parentIdentity else {
             throw MacRecoveryError.parentIdentityMismatch
+        }
+
+        if journal.state == .preparing {
+            try rollbackPreparingIntent(
+                journal: journal,
+                directory: directory,
+                store: store,
+                commitAuthorizationStore: commitAuthorizationStore,
+                paths: paths,
+                lockOwner: currentLockOwner
+            )
+            return .recovered
+        }
+
+        guard currentLockOwner == paths.transactionID else {
+            throw MacRecoveryError.inconsistentState
         }
 
         if journal.state == .prepared,
@@ -273,6 +290,45 @@ final class MacRecoveryService {
             throw MacRecoveryError.filesystemOperationFailed
         }
         try releaseLock(directory, paths: paths)
+    }
+
+    private func rollbackPreparingIntent(
+        journal: MacTransactionJournal,
+        directory: MacTransactionDirectory,
+        store: DurableTransactionJournalStore,
+        commitAuthorizationStore: MacCommitAuthorizationStore,
+        paths: MacTransactionPaths,
+        lockOwner: String?
+    ) throws {
+        guard directory.exists(name: paths.targetName),
+              try recoveryIdentity(directory, name: paths.targetName)
+                == journal.targetIdentity,
+              !directory.exists(name: paths.backupName) else {
+            throw MacRecoveryError.inconsistentState
+        }
+        if directory.exists(name: paths.preparedName) {
+            let identity = try recoveryIdentity(
+                directory,
+                name: paths.preparedName
+            )
+            do {
+                try directory.removeTree(
+                    name: paths.preparedName,
+                    expectedIdentity: identity
+                )
+            } catch {
+                throw MacRecoveryError.filesystemOperationFailed
+            }
+        }
+        do {
+            try commitAuthorizationStore.removeIfPresent()
+            try store.remove()
+        } catch {
+            throw MacRecoveryError.filesystemOperationFailed
+        }
+        if lockOwner == paths.transactionID {
+            try releaseLock(directory, paths: paths)
+        }
     }
 
     private func validate(

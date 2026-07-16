@@ -1,8 +1,109 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class MacPersistentRecoveryTests: XCTestCase {
+    func testPreparingTransactionIsDiscoverableAndRecoverable() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: fixture.rootURL.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: fixture.verifier
+            )
+        )
+
+        let status = try service.query(transactionID: fixture.transactionID)
+        XCTAssertEqual(status.state, "preparing")
+        XCTAssertEqual(status.resultCode, "recoveryRequired")
+
+        let result = try service.recover(
+            transactionID: fixture.transactionID
+        )
+        XCTAssertEqual(result.resultCode, "rolledBack")
+        XCTAssertEqual(result.verifiedOutcome, "oldTarget")
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+        withExtendedLifetime(transaction) {}
+    }
+
+    func testRealProcessDeathBeforePreparedJournalIsRecoverable() throws {
+        for point in [
+            MacTransactionFaultPoint.afterPreparingJournalFlush,
+            .beforeStageRename,
+            .beforePreparedJournalFlush,
+        ] {
+            let fixture = try MacTransactionFixture()
+            defer { fixture.remove() }
+            let process = Process()
+            let output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+            process.arguments = [
+                "xctest", "-XCTest",
+                "DesktopUpdaterInstallHelperTests."
+                    + "MacCrashProcessWorkerTests/"
+                    + "testCrashAtConfiguredPoint",
+                Bundle(for: MacCrashProcessWorkerTests.self).bundleURL.path,
+            ]
+            var environment = ProcessInfo.processInfo.environment
+            environment["DESKTOP_UPDATER_CRASH_ROOT"] = fixture.rootURL.path
+            environment["DESKTOP_UPDATER_CRASH_STAGE"] = fixture.stageURL.path
+            environment["DESKTOP_UPDATER_CRASH_TRANSACTION"] =
+                fixture.transactionID
+            environment["DESKTOP_UPDATER_CRASH_POINT"] = point.rawValue
+            process.environment = environment
+            process.standardOutput = output
+            process.standardError = output
+
+            try process.run()
+            process.waitUntilExit()
+            let processOutput = String(
+                decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            )
+            XCTAssertNotEqual(
+                process.terminationStatus,
+                0,
+                "worker did not die at \(point): \(processOutput)"
+            )
+
+            let service = MacPersistentRecoveryService(
+                policy: persistentRecoveryPolicy(
+                    root: fixture.rootURL.path
+                ),
+                callerAuthenticator:
+                    RecordingRecoveryCallerAuthenticator(),
+                verifierFactory: FixtureRecoveryVerifierFactory(
+                    verifier: fixture.verifier
+                )
+            )
+            XCTAssertEqual(
+                try service.query(transactionID: fixture.transactionID)
+                    .state,
+                "preparing",
+                "fault \(point)"
+            )
+            let result = try service.recover(
+                transactionID: fixture.transactionID
+            )
+            XCTAssertEqual(result.resultCode, "rolledBack", "fault \(point)")
+            XCTAssertEqual(result.verifiedOutcome, "oldTarget", "fault \(point)")
+            XCTAssertEqual(
+                try fixture.version(at: fixture.targetURL),
+                "old",
+                "fault \(point)"
+            )
+            XCTAssertEqual(
+                try fixture.transactionArtifacts(),
+                [],
+                "fault \(point)"
+            )
+        }
+    }
+
     func testUncommittedPreparationQueriesThenRollsBack() throws {
         let fixture = try MacTransactionFixture()
         defer { fixture.remove() }
@@ -94,6 +195,48 @@ final class MacPersistentRecoveryTests: XCTestCase {
             ]
         )
         XCTAssertEqual(object["state"] as? String, "prepared")
+    }
+}
+
+final class MacCrashProcessWorkerTests: XCTestCase {
+    func testCrashAtConfiguredPoint() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let root = environment["DESKTOP_UPDATER_CRASH_ROOT"],
+              let stage = environment["DESKTOP_UPDATER_CRASH_STAGE"],
+              let transactionID =
+                environment["DESKTOP_UPDATER_CRASH_TRANSACTION"],
+              let pointValue =
+                environment["DESKTOP_UPDATER_CRASH_POINT"],
+              let point = MacTransactionFaultPoint(rawValue: pointValue) else {
+            return
+        }
+        let verifier = FixturePayloadVerifier()
+        let transaction = try MacFileTransaction(
+            targetURL: URL(fileURLWithPath: root)
+                .appendingPathComponent("Example.app"),
+            stageURL: URL(fileURLWithPath: stage),
+            transactionID: transactionID,
+            ownerProcessIdentifier: 999_999,
+            expectedPayloadIdentity: verifier.identity(forVersion: "new"),
+            verifier: verifier,
+            faultInjector: KillingMacFaultInjector(point: point)
+        )
+        _ = try transaction.prepare()
+        XCTFail("configured crash point was not reached")
+    }
+}
+
+private final class KillingMacFaultInjector: MacTransactionFaultInjecting {
+    private let point: MacTransactionFaultPoint
+
+    init(point: MacTransactionFaultPoint) {
+        self.point = point
+    }
+
+    func hit(_ candidate: MacTransactionFaultPoint) throws {
+        guard candidate == point else { return }
+        _ = Darwin.kill(Darwin.getpid(), SIGKILL)
+        Darwin._exit(137)
     }
 }
 

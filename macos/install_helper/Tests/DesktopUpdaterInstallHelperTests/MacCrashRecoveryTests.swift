@@ -193,7 +193,11 @@ final class MacCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(try otherRecovery.recover(), .nothingToRecover)
         XCTAssertEqual(
             try fixture.transactionArtifacts(),
-            [".Example.app.desktop-updater-lock"]
+            [
+                ".Example.app.desktop-updater-"
+                    + "\(fixture.transactionID).journal.json",
+                ".Example.app.desktop-updater-lock",
+            ]
         )
         withExtendedLifetime(transaction) {}
     }
