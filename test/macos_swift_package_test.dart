@@ -269,8 +269,17 @@ List<String> _manifestErrors(
   }
 
   if (flutter) {
-    if (!product("desktop-updater", "desktop_updater")) {
+    final flutterProducts = products
+        .where(
+          (item) =>
+              _literal(item["name"]) == "desktop-updater" &&
+              _stringArray(item["targets"]).singleOrNull == "desktop_updater",
+        )
+        .toList();
+    if (flutterProducts.length != 1) {
       errors.add("missing Flutter product");
+    } else if (flutterProducts.single["type"]?.source.trim() != ".static") {
+      errors.add("Flutter product must be static");
     }
     final dependencies = _array(fields["dependencies"])
         .map((value) => _wholeCall(value, ".package"))

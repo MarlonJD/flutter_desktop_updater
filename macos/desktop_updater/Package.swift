@@ -19,7 +19,11 @@ let package = Package(
     ],
     products: [
         .library(name: "DesktopUpdaterKit", targets: ["DesktopUpdaterKit"]),
-        .library(name: "desktop-updater", targets: ["desktop_updater"])
+        .library(
+            name: "desktop-updater",
+            type: .static,
+            targets: ["desktop_updater"]
+        )
     ],
     dependencies: [
         .package(name: "FlutterFramework", path: "../FlutterFramework")
