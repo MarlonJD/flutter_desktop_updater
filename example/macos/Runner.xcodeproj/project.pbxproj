@@ -343,6 +343,7 @@
 				"$(PROJECT_DIR)/../../macos/install_helper/embed_install_helper.sh",
 				"$(PROJECT_DIR)/../../macos/install_helper/verify_install_helper_layout.sh",
 				"$(PROJECT_DIR)/Runner/DesktopUpdaterHelperPolicy.json",
+				"$(PROJECT_DIR)/Runner/DesktopUpdaterHelperPolicy-Debug.json",
 			);
 			name = "Embed Desktop Updater Install Helper";
 			outputFileListPaths = (
@@ -353,7 +354,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"c41fab5fdc0d488787769ae4c48e38cc0882e5ef0287b9eee2017880cab7659d\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
+			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"c41fab5fdc0d488787769ae4c48e38cc0882e5ef0287b9eee2017880cab7659d\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy-Debug.json\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256=\"8723563f4555f31b317e2a2d6b894ac58795828ce10c08e470e89e88a99e06b5\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

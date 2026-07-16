@@ -5,6 +5,45 @@ import "package:crypto/crypto.dart" as crypto;
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("ad hoc macOS builds seal identifier-only helper authority", () {
+    final debugPolicyFile = File(
+      "example/macos/Runner/DesktopUpdaterHelperPolicy-Debug.json",
+    );
+    expect(debugPolicyFile.existsSync(), isTrue);
+    if (!debugPolicyFile.existsSync()) {
+      return;
+    }
+    final policySource = debugPolicyFile.readAsStringSync();
+    final policy = jsonDecode(policySource) as Map<String, dynamic>;
+    final applicationSigner =
+        policy["allowedApplicationSigner"] as Map<String, dynamic>;
+    final helperSigner = policy["allowedHelperSigner"] as Map<String, dynamic>;
+    expect(
+      applicationSigner["value"],
+      "identifier net.monolib.updater",
+    );
+    expect(
+      helperSigner["value"],
+      "identifier net.monolib.updater.helper",
+    );
+    final canonicalPolicy = policySource.endsWith("\n")
+        ? policySource.substring(0, policySource.length - 1)
+        : policySource;
+    final policySHA256 =
+        crypto.sha256.convert(utf8.encode(canonicalPolicy)).toString();
+    final project = File(
+      "example/macos/Runner.xcodeproj/project.pbxproj",
+    ).readAsStringSync();
+    final embed = File(
+      "macos/install_helper/embed_install_helper.sh",
+    ).readAsStringSync();
+    expect(project, contains("DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH"));
+    expect(project, contains("DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256"));
+    expect(project, contains(policySHA256));
+    expect(embed, contains("DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH"));
+    expect(embed, contains("DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256"));
+  });
+
   test("privileged macOS smoke is repository-owned and two-phase", () {
     final host = File(
       "example/macos/Runner/AppDelegate.swift",

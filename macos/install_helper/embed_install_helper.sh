@@ -27,6 +27,16 @@ sealed_policy=${DESKTOP_UPDATER_SEALED_POLICY_PATH:?DESKTOP_UPDATER_SEALED_POLIC
 expected_policy_sha256=${DESKTOP_UPDATER_SEALED_POLICY_SHA256:?DESKTOP_UPDATER_SEALED_POLICY_SHA256 is required}
 code_sign_identity=${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}
 [ -n "$code_sign_identity" ] || fail "CODE_SIGN_IDENTITY is required"
+if [ "$code_sign_identity" = "-" ]; then
+  ad_hoc_policy=${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH:-}
+  ad_hoc_policy_sha256=${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256:-}
+  if [ -n "$ad_hoc_policy" ] || [ -n "$ad_hoc_policy_sha256" ]; then
+    [ -n "$ad_hoc_policy" ] && [ -n "$ad_hoc_policy_sha256" ] || \
+      fail "ad hoc sealed policy path and digest must be provided together"
+    sealed_policy=$ad_hoc_policy
+    expected_policy_sha256=$ad_hoc_policy_sha256
+  fi
+fi
 
 for required_file in "$app_info" "$info_template" "$sealed_policy"; do
   [ -f "$required_file" ] || fail "required metadata is missing: $required_file"
