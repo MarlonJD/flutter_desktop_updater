@@ -4,6 +4,7 @@
 #include <sys/types.h>
 
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -65,6 +66,14 @@ LinuxFileTransactionResult ExecuteLinuxSingleFileReplace(
 struct LinuxProviderCommand {
   std::string executable;
   std::vector<std::string> arguments;
+  std::string provider;
+  std::string package_id;
+  std::string expected_version_or_revision;
+  std::string expected_architecture;
+  std::string provider_scope;
+  std::string repository_or_remote_identity;
+  std::filesystem::path source_artifact_path;
+  std::string source_artifact_sha256;
 };
 
 enum class LinuxProviderTransactionState {
@@ -81,17 +90,99 @@ struct LinuxProviderTransaction {
   std::string transaction_identity;
   LinuxProviderTransactionState state =
       LinuxProviderTransactionState::kPrepared;
+  std::string expected_architecture;
+  std::string provider_scope;
+  std::string provider_authority;
+};
+
+struct LinuxProviderStateObservation {
+  LinuxProviderTransactionState state =
+      LinuxProviderTransactionState::kVerificationPending;
+  std::string transaction_identity;
+};
+
+struct LinuxProviderProcessResult {
+  int exit_code = -1;
+  std::string standard_output;
+  std::string transaction_identity;
+};
+
+class LinuxProviderProcessExecutor {
+ public:
+  virtual ~LinuxProviderProcessExecutor() = default;
+  virtual LinuxProviderProcessResult Run(
+      const std::string& executable,
+      const std::vector<std::string>& arguments) = 0;
+};
+
+class PosixLinuxProviderProcessExecutor final
+    : public LinuxProviderProcessExecutor {
+ public:
+  LinuxProviderProcessResult Run(
+      const std::string& executable,
+      const std::vector<std::string>& arguments) override;
 };
 
 class LinuxProviderRunner {
  public:
   virtual ~LinuxProviderRunner() = default;
   virtual std::string StartFixed(const LinuxProviderCommand& command) = 0;
-  virtual LinuxProviderTransactionState QueryInstalledState(
-      const std::string& provider,
-      const std::string& transaction_identity,
-      const std::string& package_id,
+  virtual LinuxProviderStateObservation QueryInstalledState(
+      const LinuxProviderTransaction& transaction,
       const std::string& expected_version_or_revision) = 0;
+};
+
+// Production runner for the fixed APT, DNF, Flatpak, and Snap templates. It
+// executes exact argv vectors directly (never through a shell), verifies a
+// local deb/rpm payload by retained identity and SHA-256 before invoking the
+// provider, and queries provider-owned installed state during recovery.
+class LinuxFixedProviderRunner final : public LinuxProviderRunner {
+ public:
+  explicit LinuxFixedProviderRunner(LinuxProviderProcessExecutor& executor);
+
+  std::string StartFixed(const LinuxProviderCommand& command) override;
+  LinuxProviderStateObservation QueryInstalledState(
+      const LinuxProviderTransaction& transaction,
+      const std::string& expected_version_or_revision) override;
+
+ private:
+  LinuxProviderProcessExecutor& executor_;
+};
+
+class LinuxProviderJournalError : public std::runtime_error {
+ public:
+  explicit LinuxProviderJournalError(const std::string& detail)
+      : std::runtime_error(detail) {}
+};
+
+struct LinuxProviderJournalRecord {
+  static constexpr std::int64_t kSchemaVersion = 1;
+
+  std::int64_t schema_version = kSchemaVersion;
+  std::string transaction_id;
+  LinuxProviderTransaction transaction;
+  std::string expected_version_or_revision;
+  std::string command_sha256;
+};
+
+class LinuxProviderJournal {
+ public:
+  LinuxProviderJournal(std::filesystem::path directory, uid_t uid, gid_t gid);
+  ~LinuxProviderJournal();
+  LinuxProviderJournal(const LinuxProviderJournal&) = delete;
+  LinuxProviderJournal& operator=(const LinuxProviderJournal&) = delete;
+
+  void Persist(const LinuxProviderJournalRecord& record) const;
+  std::optional<LinuxProviderJournalRecord> Load(
+      const std::string& transaction_id) const;
+
+ private:
+  std::filesystem::path directory_;
+  uid_t uid_ = 0;
+  gid_t gid_ = 0;
+  int directory_fd_ = -1;
+  std::uint64_t directory_device_ = 0;
+  std::uint64_t directory_inode_ = 0;
 };
 
 struct LinuxSystemPackageRequest {
@@ -102,10 +193,12 @@ struct LinuxSystemPackageRequest {
   std::string repository_identity;
   std::string source_artifact_sha256;
   std::vector<std::string> caller_arguments;
+  std::filesystem::path source_artifact_path;
 };
 
 LinuxProviderCommand BuildLinuxSystemPackageCommand(
     const LinuxSystemPackageRequest& request);
+std::string Sha256LinuxProviderCommand(const LinuxProviderCommand& command);
 LinuxProviderTransaction StartLinuxSystemPackageTransaction(
     const LinuxSystemPackageRequest& request,
     LinuxProviderRunner& runner);
@@ -113,6 +206,15 @@ LinuxProviderTransaction RecoverLinuxSystemPackageTransaction(
     LinuxProviderTransaction transaction,
     const std::string& expected_version,
     LinuxProviderRunner& runner);
+LinuxProviderTransaction StartDurableLinuxSystemPackageTransaction(
+    const std::string& transaction_id,
+    const LinuxSystemPackageRequest& request,
+    LinuxProviderRunner& runner,
+    LinuxProviderJournal& journal);
+LinuxProviderTransaction RecoverDurableLinuxSystemPackageTransaction(
+    const std::string& transaction_id,
+    LinuxProviderRunner& runner,
+    LinuxProviderJournal& journal);
 
 struct LinuxExternalRefreshRequest {
   std::string provider;
@@ -136,6 +238,15 @@ LinuxProviderTransaction RecoverLinuxExternalManagedRefresh(
     LinuxProviderTransaction transaction,
     const std::string& expected_revision,
     LinuxProviderRunner& runner);
+LinuxProviderTransaction StartDurableLinuxExternalManagedRefresh(
+    const std::string& transaction_id,
+    const LinuxExternalRefreshRequest& request,
+    LinuxProviderRunner& runner,
+    LinuxProviderJournal& journal);
+LinuxProviderTransaction RecoverDurableLinuxExternalManagedRefresh(
+    const std::string& transaction_id,
+    LinuxProviderRunner& runner,
+    LinuxProviderJournal& journal);
 
 }  // namespace desktop_updater::helper
 

@@ -13,6 +13,11 @@ WindowsHelperPolicy TestPolicy() {
       std::string(64, 'a'), {L"C:\\Program Files\\Example"});
 }
 
+WindowsHelperPolicy PortableTestPolicy() {
+  return WindowsHelperPolicy::ForPortableTesting(
+      "com.example.app", std::string(64, 'b'), std::string(64, 'a'));
+}
+
 desktop_updater::runtime::internal::NativeInstallCallerV1 Caller() {
   return {4242, WindowsProcessStartIdentityString(123),
           std::string(64, 'b'), "com.example.app",
@@ -56,6 +61,24 @@ TEST(WindowsOneShotTransport, RejectsInvalidFrameBounds) {
                WindowsOneShotTransportError);
   EXPECT_THROW(ValidateWindowsOneShotFrameLength(
                    kMaximumWindowsOneShotFrameLength + 1),
+               WindowsOneShotTransportError);
+}
+
+TEST(WindowsOneShotTransport, PortableCallerUsesExactSignedApplicationDigest) {
+  auto observed = Observed();
+  observed.executable.final_path = L"C:\\Users\\caller\\Example\\Example.exe";
+  observed.executable.installer_protected_location = false;
+  EXPECT_NO_THROW(ValidateWindowsCallerIdentity(
+      Caller(), observed, PortableTestPolicy()));
+
+  observed.executable.signature_valid = false;
+  EXPECT_THROW(ValidateWindowsCallerIdentity(
+                   Caller(), observed, PortableTestPolicy()),
+               WindowsOneShotTransportError);
+  observed = Observed();
+  observed.executable.sha256 = std::string(64, 'c');
+  EXPECT_THROW(ValidateWindowsCallerIdentity(
+                   Caller(), observed, PortableTestPolicy()),
                WindowsOneShotTransportError);
 }
 

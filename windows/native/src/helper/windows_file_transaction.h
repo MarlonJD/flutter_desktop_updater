@@ -5,7 +5,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -49,6 +51,13 @@ enum class WindowsFileTransactionResult {
   kCompleted,
 };
 
+struct WindowsTransactionTerminalCallbacks {
+  std::function<void()> before_completed_lock_release;
+  std::function<void()> after_completed_lock_release;
+  std::function<void()> before_rollback_lock_release;
+  std::function<void()> after_rollback_lock_release;
+};
+
 class WindowsFileTransaction {
  public:
   WindowsFileTransaction(
@@ -58,15 +67,35 @@ class WindowsFileTransaction {
       DWORD owner_process_id,
       WindowsVerifiedPayloadIdentity expected_payload_identity,
       WindowsInstallPayloadVerifier& verifier,
-      WindowsTransactionFaultInjector* fault_injector = nullptr);
+      WindowsTransactionFaultInjector* fault_injector = nullptr,
+      WindowsTransactionTerminalCallbacks terminal_callbacks = {},
+      std::optional<std::uint64_t> retained_owner_start_identity =
+          std::nullopt,
+      std::function<void(HANDLE)> durability_barrier = {});
+  WindowsFileTransaction(
+      const std::filesystem::path& target_path,
+      const std::filesystem::path& stage_path,
+      std::string transaction_id,
+      DWORD owner_process_id,
+      WindowsVerifiedPayloadIdentity expected_payload_identity,
+      WindowsInstallPayloadVerifier& verifier,
+      HANDLE pinned_parent,
+      HANDLE pinned_stage,
+      WindowsTransactionFaultInjector* fault_injector = nullptr,
+      WindowsTransactionTerminalCallbacks terminal_callbacks = {},
+      std::optional<std::uint64_t> retained_owner_start_identity =
+          std::nullopt,
+      std::function<void(HANDLE)> durability_barrier = {});
   ~WindowsFileTransaction();
   WindowsFileTransaction(const WindowsFileTransaction&) = delete;
   WindowsFileTransaction& operator=(const WindowsFileTransaction&) = delete;
 
   const WindowsTransactionPaths& paths() const { return paths_; }
+  std::string initial_journal_canonical() const;
   void Prepare();
   bool prepared() const { return prepared_; }
   std::string prepared_journal_canonical() const;
+  void MarkCommitAccepted();
   WindowsFileTransactionResult ExecutePrepared();
   void CancelPrepared();
   WindowsFileTransactionResult Execute();
@@ -87,7 +116,9 @@ class WindowsFileTransaction {
                      WindowsTransactionFaultPoint before,
                      WindowsTransactionFaultPoint before_directory_flush,
                      WindowsTransactionFaultPoint after);
-  void RemoveLockExact() noexcept;
+  void ReleaseLockExact();
+  void RemoveLockExactNoThrow() noexcept;
+  void FlushMetadata(HANDLE directory) const;
 
   std::filesystem::path parent_locator_;
   std::filesystem::path stage_parent_locator_;
@@ -99,6 +130,8 @@ class WindowsFileTransaction {
   WindowsInstallPayloadVerifier& verifier_;
   NoWindowsTransactionFaultInjector no_faults_;
   WindowsTransactionFaultInjector* fault_injector_;
+  WindowsTransactionTerminalCallbacks terminal_callbacks_;
+  std::function<void(HANDLE)> durability_barrier_;
   UniqueWindowsHandle parent_;
   UniqueWindowsHandle stage_parent_;
   UniqueWindowsHandle target_;
@@ -113,6 +146,7 @@ class WindowsFileTransaction {
   bool prepared_ = false;
   bool cancelled_ = false;
   bool journal_persisted_ = false;
+  bool commit_accepted_ = false;
   bool completed_ = false;
 };
 
@@ -120,6 +154,7 @@ std::vector<std::wstring> FindWindowsTransactionArtifacts(
     const std::filesystem::path& parent);
 
 std::uint64_t WindowsProcessStartIdentity(DWORD process_id);
+std::uint64_t WindowsProcessStartIdentity(HANDLE process);
 
 }  // namespace desktop_updater::helper
 

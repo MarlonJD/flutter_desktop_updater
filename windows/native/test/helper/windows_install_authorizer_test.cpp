@@ -50,21 +50,55 @@ TEST(WindowsInstallAuthorizer, RetainsCompleteSealedPolicy) {
 
 TEST(WindowsInstallAuthorizer, RejectsExecutableInventoryDrift) {
   const auto expected =
-      BuildWindowsExpectedPayloadIdentity(Request(), Marker(), TestPolicy());
+      BuildWindowsExpectedPayloadIdentity(Request(), Marker(),
+                                          std::string(64, 'f'), TestPolicy());
   EXPECT_EQ("com.example.app", expected.package_id);
   EXPECT_EQ("Example Software LLC", expected.authenticode_publisher);
   EXPECT_EQ(std::string(64, 'e'), expected.executable_sha256);
+  EXPECT_EQ(std::string(64, 'c'), expected.stage_provenance_sha256);
+  EXPECT_EQ(std::string(64, 'f'), expected.payload_seal_sha256);
+
+  EXPECT_THROW(BuildWindowsExpectedPayloadIdentity(
+                   Request(), Marker(), "caller-controlled", TestPolicy()),
+               desktop_updater::runtime::internal::
+                   NativeInstallAuthorizationError);
 
   auto marker = Marker();
   marker.entries[0].sha256 = "not-a-sha256";
   EXPECT_THROW(BuildWindowsExpectedPayloadIdentity(Request(), marker,
+                                                   std::string(64, 'f'),
                                                    TestPolicy()),
                desktop_updater::runtime::internal::
                    NativeInstallAuthorizationError);
   marker = Marker();
   marker.entries.clear();
   EXPECT_THROW(BuildWindowsExpectedPayloadIdentity(Request(), marker,
+                                                   std::string(64, 'f'),
                                                    TestPolicy()),
+               desktop_updater::runtime::internal::
+                   NativeInstallAuthorizationError);
+}
+
+TEST(WindowsInstallAuthorizer, PortableTargetMustBeExactWritableCallerRoot) {
+  EXPECT_NO_THROW(ValidatePortableWindowsTargetAuthorityFacts(
+      L"C:\\Users\\caller\\Example",
+      L"C:\\Users\\caller\\Example\\Example.exe", true, true));
+  EXPECT_THROW(ValidatePortableWindowsTargetAuthorityFacts(
+                   L"C:\\Users\\caller",
+                   L"C:\\Users\\caller\\Example\\Example.exe", true,
+                   true),
+               desktop_updater::runtime::internal::
+                   NativeInstallAuthorizationError);
+  EXPECT_THROW(ValidatePortableWindowsTargetAuthorityFacts(
+                   L"C:\\Users\\caller\\Example",
+                   L"C:\\Users\\caller\\Example\\Example.exe", false,
+                   true),
+               desktop_updater::runtime::internal::
+                   NativeInstallAuthorizationError);
+  EXPECT_THROW(ValidatePortableWindowsTargetAuthorityFacts(
+                   L"C:\\Users\\caller\\Example",
+                   L"C:\\Users\\caller\\Example\\Example.exe", true,
+                   false),
                desktop_updater::runtime::internal::
                    NativeInstallAuthorizationError);
 }

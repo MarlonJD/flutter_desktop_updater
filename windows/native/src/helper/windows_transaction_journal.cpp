@@ -45,6 +45,12 @@ using RtlNtStatusToDosErrorFunction = ULONG(WINAPI*)(NTSTATUS);
 const std::regex kTransactionId(
     "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 const std::regex kSha256("^[0-9a-f]{64}$");
+// FILE_INFO_BY_HANDLE_CLASS values are ABI-stable, but older MinGW headers
+// omit the two extended enum names while still exposing their structures.
+constexpr FILE_INFO_BY_HANDLE_CLASS kFileDispositionInfoExClass =
+    static_cast<FILE_INFO_BY_HANDLE_CLASS>(21);
+constexpr FILE_INFO_BY_HANDLE_CLASS kFileRenameInfoExClass =
+    static_cast<FILE_INFO_BY_HANDLE_CLASS>(22);
 
 NtCreateFileFunction ResolveNtCreateFile() {
   const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -183,6 +189,8 @@ JsonValue EncodePayload(const WindowsVerifiedPayloadIdentity& identity) {
   object.emplace("packageId", JsonValue(identity.package_id));
   object.emplace("packageIdentitySha256",
                  JsonValue(identity.package_identity_sha256));
+  object.emplace("payloadSealSha256",
+                 JsonValue(identity.payload_seal_sha256));
   object.emplace("stageProvenanceSha256",
                  JsonValue(identity.stage_provenance_sha256));
   return JsonValue(std::move(object));
@@ -231,7 +239,8 @@ WindowsVerifiedPayloadIdentity DecodePayload(const JsonValue& value) {
   RequireKeys(value,
               {"artifactSha256", "authenticodePublisher",
                "executableRelativePath", "executableSha256", "packageId",
-               "packageIdentitySha256", "stageProvenanceSha256"});
+               "packageIdentitySha256", "payloadSealSha256",
+               "stageProvenanceSha256"});
   WindowsVerifiedPayloadIdentity identity{
       value.at("packageId").string(),
       value.at("authenticodePublisher").string(),
@@ -240,6 +249,7 @@ WindowsVerifiedPayloadIdentity DecodePayload(const JsonValue& value) {
       value.at("artifactSha256").string(),
       Utf8ToWide(value.at("executableRelativePath").string()),
       value.at("executableSha256").string(),
+      value.at("payloadSealSha256").string(),
   };
   if (identity.package_id.empty() || identity.authenticode_publisher.empty() ||
       identity.executable_relative_path.empty()) {
@@ -251,6 +261,7 @@ WindowsVerifiedPayloadIdentity DecodePayload(const JsonValue& value) {
   ValidateSha(identity.stage_provenance_sha256);
   ValidateSha(identity.artifact_sha256);
   ValidateSha(identity.executable_sha256);
+  ValidateSha(identity.payload_seal_sha256);
   return identity;
 }
 
@@ -379,7 +390,8 @@ bool WindowsVerifiedPayloadIdentity::operator==(
          stage_provenance_sha256 == other.stage_provenance_sha256 &&
          artifact_sha256 == other.artifact_sha256 &&
          executable_relative_path == other.executable_relative_path &&
-         executable_sha256 == other.executable_sha256;
+         executable_sha256 == other.executable_sha256 &&
+         payload_seal_sha256 == other.payload_seal_sha256;
 }
 
 WindowsTransactionPaths WindowsTransactionPaths::Create(
@@ -401,6 +413,7 @@ WindowsTransactionPaths WindowsTransactionPaths::Create(
           prefix + L".backup",
           prefix + L".journal.json",
           prefix + L".journal.json.next",
+          prefix + L".lock.next",
           L"." + target_name + L".desktop-updater.lock"};
 }
 
@@ -408,6 +421,7 @@ std::vector<WindowsTransactionFaultPoint>
 WindowsTransactionCrashInjectionPoints() {
   return {
       WindowsTransactionFaultPoint::kBeforePreparedJournalFlush,
+      WindowsTransactionFaultPoint::kAfterJournalNextFlushBeforeRename,
       WindowsTransactionFaultPoint::kAfterPreparedJournalFlush,
       WindowsTransactionFaultPoint::kBeforeStageRename,
       WindowsTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush,
@@ -539,7 +553,8 @@ UniqueWindowsHandle OpenRelativeNoReparse(
     ULONG share_access,
     ULONG create_disposition,
     ULONG create_options,
-    ULONG file_attributes) {
+    ULONG file_attributes,
+    PSECURITY_DESCRIPTOR create_security_descriptor) {
   if (RootDirectory == nullptr || RootDirectory == INVALID_HANDLE_VALUE ||
       relative_path.empty() || relative_path.front() == L'\\' ||
       relative_path.front() == L'/' || relative_path.find(L':') !=
@@ -556,7 +571,7 @@ UniqueWindowsHandle OpenRelativeNoReparse(
   OBJECT_ATTRIBUTES attributes{};
   InitializeObjectAttributes(&attributes, &name,
                              OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
-                             RootDirectory, nullptr);
+                             RootDirectory, create_security_descriptor);
   IO_STATUS_BLOCK status_block{};
   HANDLE handle = INVALID_HANDLE_VALUE;
   const auto nt_create_file = ResolveNtCreateFile();
@@ -661,6 +676,62 @@ std::string ReadUtf8FileRelative(HANDLE parent,
   }
 }
 
+void WriteWindowsTransactionLockBinding(
+    HANDLE lock,
+    const std::string& transaction_id) {
+  if (lock == nullptr || lock == INVALID_HANDLE_VALUE ||
+      !std::regex_match(transaction_id, kTransactionId)) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kInvalidJournal,
+        "transaction lock binding is invalid");
+  }
+  LARGE_INTEGER beginning{};
+  DWORD written = 0;
+  if (!SetFilePointerEx(lock, beginning, nullptr, FILE_BEGIN) ||
+      !WriteFile(lock, transaction_id.data(),
+                 static_cast<DWORD>(transaction_id.size()), &written,
+                 nullptr) ||
+      written != transaction_id.size() || !SetEndOfFile(lock) ||
+      !FlushFileBuffers(lock)) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "transaction lock binding flush failed");
+  }
+}
+
+WindowsTransactionLockBindingState ClassifyWindowsTransactionLockBinding(
+    HANDLE lock,
+    const std::string& transaction_id) {
+  if (lock == nullptr || lock == INVALID_HANDLE_VALUE ||
+      !std::regex_match(transaction_id, kTransactionId)) {
+    return WindowsTransactionLockBindingState::kMalformed;
+  }
+  LARGE_INTEGER size{};
+  if (!GetFileSizeEx(lock, &size) ||
+      size.QuadPart != static_cast<LONGLONG>(transaction_id.size())) {
+    return WindowsTransactionLockBindingState::kMalformed;
+  }
+  LARGE_INTEGER beginning{};
+  std::string observed(transaction_id.size(), '\0');
+  DWORD read = 0;
+  if (!SetFilePointerEx(lock, beginning, nullptr, FILE_BEGIN) ||
+      !ReadFile(lock, observed.data(), static_cast<DWORD>(observed.size()),
+                &read, nullptr) ||
+      read != observed.size() || !std::regex_match(observed, kTransactionId)) {
+    return WindowsTransactionLockBindingState::kMalformed;
+  }
+  return observed == transaction_id
+             ? WindowsTransactionLockBindingState::kExact
+             : WindowsTransactionLockBindingState::kForeign;
+}
+
+bool WindowsTransactionLockBindingMatches(
+    HANDLE lock,
+    const std::string& transaction_id) {
+  return ClassifyWindowsTransactionLockBinding(lock, transaction_id) ==
+         WindowsTransactionLockBindingState::kExact;
+}
+
 void RenameHandleRelative(HANDLE source,
                           HANDLE RootDirectory,
                           const std::wstring& destination,
@@ -675,7 +746,8 @@ void RenameHandleRelative(HANDLE source,
   info->RootDirectory = RootDirectory;
   info->FileNameLength = name_bytes;
   std::memcpy(info->FileName, destination.data(), name_bytes);
-  if (SetFileInformationByHandle(source, FileRenameInfoEx, info,
+  if (SetFileInformationByHandle(
+          source, kFileRenameInfoExClass, info,
                                  static_cast<DWORD>(storage.size()))) {
     return;
   }
@@ -696,7 +768,8 @@ void DeleteHandleExact(HANDLE handle) {
   extended.Flags = FILE_DISPOSITION_FLAG_DELETE |
                    FILE_DISPOSITION_FLAG_POSIX_SEMANTICS |
                    FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE;
-  if (SetFileInformationByHandle(handle, FileDispositionInfoEx, &extended,
+  if (SetFileInformationByHandle(
+          handle, kFileDispositionInfoExClass, &extended,
                                  sizeof(extended))) {
     return;
   }
@@ -740,6 +813,209 @@ void FlushWindowsDirectory(HANDLE directory) {
   ThrowOpenError(error, "containing directory flush failed");
 }
 
+void FlushWindowsVolume(HANDLE directory) {
+  if (directory == nullptr || directory == INVALID_HANDLE_VALUE) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "volume durability barrier directory is invalid");
+  }
+  const DWORD required = GetFinalPathNameByHandleW(
+      directory, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (required == 0 || required > 32768) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "volume durability barrier path is unavailable");
+  }
+  std::wstring final_path(required, L'\0');
+  const DWORD written = GetFinalPathNameByHandleW(
+      directory, final_path.data(), required,
+      FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (written == 0 || written >= required) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "volume durability barrier path changed");
+  }
+  final_path.resize(written);
+  if (final_path.size() < 7 || final_path.rfind(L"\\\\?\\", 0) != 0 ||
+      final_path[5] != L':' || final_path[6] != L'\\') {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "volume durability barrier requires a local drive path");
+  }
+  const std::wstring volume_path =
+      L"\\\\.\\" + final_path.substr(4, 2);
+  UniqueWindowsHandle volume(CreateFileW(
+      volume_path.c_str(), GENERIC_READ | GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr));
+  if (!volume.valid() || !FlushFileBuffers(volume.get())) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "volume durability barrier failed");
+  }
+}
+
+namespace {
+
+enum class JournalCandidateState {
+  kMissing,
+  kValid,
+  kEmpty,
+  kInvalid,
+};
+
+struct JournalCandidate {
+  JournalCandidateState state = JournalCandidateState::kMissing;
+  UniqueWindowsHandle handle;
+  std::string canonical;
+  std::optional<WindowsTransactionJournal> journal;
+};
+
+std::string ReadJournalHandle(HANDLE file) {
+  LARGE_INTEGER beginning{};
+  if (!SetFilePointerEx(file, beginning, nullptr, FILE_BEGIN)) {
+    ThrowOpenError(GetLastError(), "journal candidate seek failed");
+  }
+  std::string result;
+  std::array<char, 4096> buffer{};
+  for (;;) {
+    DWORD read = 0;
+    if (!ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &read,
+                  nullptr)) {
+      ThrowOpenError(GetLastError(), "journal candidate read failed");
+    }
+    if (read == 0) return result;
+    if (result.size() + read > 64 * 1024) {
+      throw WindowsTransactionJournalError(
+          WindowsTransactionJournalError::Code::kInvalidJournal,
+          "journal candidate exceeds size limit");
+    }
+    result.append(buffer.data(), read);
+  }
+}
+
+JournalCandidate ProbeJournalCandidate(HANDLE parent,
+                                       const std::wstring& leaf,
+                                       bool exclusive_delete) {
+  JournalCandidate candidate;
+  if (!ExistsRelativeNoReparse(parent, leaf)) return candidate;
+  candidate.handle = OpenRelativeNoReparse(
+      parent, leaf,
+      GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE |
+          (exclusive_delete ? DELETE : static_cast<ACCESS_MASK>(0)),
+      exclusive_delete ? 0 : FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_OPEN,
+      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+  candidate.canonical = ReadJournalHandle(candidate.handle.get());
+  if (candidate.canonical.empty()) {
+    candidate.state = JournalCandidateState::kEmpty;
+    return candidate;
+  }
+  try {
+    candidate.journal =
+        WindowsTransactionJournal::DecodeStrict(candidate.canonical);
+    candidate.state = JournalCandidateState::kValid;
+  } catch (const WindowsTransactionJournalError&) {
+    candidate.state = JournalCandidateState::kInvalid;
+  }
+  return candidate;
+}
+
+bool JournalsShareImmutableAuthority(
+    const WindowsTransactionJournal& final,
+    const WindowsTransactionJournal& next) {
+  WindowsTransactionJournal normalized = next;
+  normalized.state = final.state;
+  return normalized.EncodeCanonical() == final.EncodeCanonical();
+}
+
+bool IsForwardJournalState(WindowsTransactionState final,
+                           WindowsTransactionState next) {
+  if (final == next) return true;
+  switch (final) {
+    case WindowsTransactionState::kPrepared:
+      return next == WindowsTransactionState::kBackupCreated;
+    case WindowsTransactionState::kBackupCreated:
+      return next == WindowsTransactionState::kTargetActivated;
+    case WindowsTransactionState::kTargetActivated:
+      return next == WindowsTransactionState::kCompleted;
+    case WindowsTransactionState::kCompleted:
+    case WindowsTransactionState::kManualActionRequired:
+      return false;
+  }
+  return false;
+}
+
+bool IsForwardJournal(const WindowsTransactionJournal& final,
+                      const WindowsTransactionJournal& next) {
+  return JournalsShareImmutableAuthority(final, next) &&
+         IsForwardJournalState(final.state, next.state);
+}
+
+std::vector<WindowsTransactionState> AllowedNextJournalStates(
+    WindowsTransactionState state) {
+  switch (state) {
+    case WindowsTransactionState::kPrepared:
+      return {WindowsTransactionState::kPrepared,
+              WindowsTransactionState::kBackupCreated};
+    case WindowsTransactionState::kBackupCreated:
+      return {WindowsTransactionState::kBackupCreated,
+              WindowsTransactionState::kTargetActivated};
+    case WindowsTransactionState::kTargetActivated:
+      return {WindowsTransactionState::kTargetActivated,
+              WindowsTransactionState::kCompleted};
+    case WindowsTransactionState::kCompleted:
+      return {WindowsTransactionState::kCompleted};
+    case WindowsTransactionState::kManualActionRequired:
+      return {WindowsTransactionState::kManualActionRequired};
+  }
+  return {};
+}
+
+bool IsExactAuthorizedJournalPrefix(const WindowsTransactionJournal& final,
+                                    const std::string& partial) {
+  if (partial.empty()) return true;
+  for (const auto state : AllowedNextJournalStates(final.state)) {
+    WindowsTransactionJournal candidate = final;
+    candidate.state = state;
+    const std::string canonical = candidate.EncodeCanonical();
+    if (partial.size() < canonical.size() &&
+        std::equal(partial.begin(), partial.end(), canonical.begin())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void DeleteJournalCandidate(HANDLE parent, JournalCandidate* candidate) {
+  DeleteHandleExact(candidate->handle.get());
+  candidate->handle.reset();
+  FlushWindowsDirectory(parent);
+}
+
+WindowsTransactionJournal PromoteJournalCandidate(
+    HANDLE parent,
+    const std::wstring& destination,
+    JournalCandidate* final,
+    JournalCandidate* next) {
+  const WindowsTransactionJournal promoted = *next->journal;
+  const std::string canonical = next->canonical;
+  final->handle.reset();
+  RenameHandleRelative(next->handle.get(), parent, destination,
+                       final->state != JournalCandidateState::kMissing);
+  next->handle.reset();
+  FlushWindowsDirectory(parent);
+  const JournalCandidate readback =
+      ProbeJournalCandidate(parent, destination, false);
+  if (readback.state != JournalCandidateState::kValid ||
+      readback.canonical != canonical) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "promoted journal readback changed");
+  }
+  return promoted;
+}
+
+}  // namespace
+
 DurableWindowsTransactionJournalStore::DurableWindowsTransactionJournalStore(
     HANDLE parent,
     WindowsTransactionPaths paths,
@@ -751,11 +1027,45 @@ DurableWindowsTransactionJournalStore::DurableWindowsTransactionJournalStore(
 
 std::optional<WindowsTransactionJournal>
 DurableWindowsTransactionJournalStore::Load() const {
-  if (!ExistsRelativeNoReparse(parent_, paths_.journal_name)) {
-    return std::nullopt;
+  auto final = ProbeJournalCandidate(parent_, paths_.journal_name, false);
+  auto next = ProbeJournalCandidate(parent_, paths_.journal_next_name, true);
+  if (final.state == JournalCandidateState::kEmpty ||
+      final.state == JournalCandidateState::kInvalid) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kInvalidJournal,
+        "durable journal is empty or corrupt");
   }
-  return WindowsTransactionJournal::DecodeStrict(
-      ReadUtf8FileRelative(parent_, paths_.journal_name, 64 * 1024));
+  if (next.state == JournalCandidateState::kMissing) {
+    if (final.state == JournalCandidateState::kMissing) return std::nullopt;
+    return final.journal;
+  }
+  if (final.state == JournalCandidateState::kMissing) {
+    if (next.state == JournalCandidateState::kEmpty) {
+      DeleteJournalCandidate(parent_, &next);
+      return std::nullopt;
+    }
+    if (next.state != JournalCandidateState::kValid ||
+        next.journal->state != WindowsTransactionState::kPrepared) {
+      throw WindowsTransactionJournalError(
+          WindowsTransactionJournalError::Code::kInvalidJournal,
+          "initial journal candidate is not authoritative");
+    }
+    return PromoteJournalCandidate(parent_, paths_.journal_name, &final,
+                                   &next);
+  }
+  if (next.state == JournalCandidateState::kEmpty ||
+      (next.state == JournalCandidateState::kInvalid &&
+       IsExactAuthorizedJournalPrefix(*final.journal, next.canonical))) {
+    DeleteJournalCandidate(parent_, &next);
+    return final.journal;
+  }
+  if (next.state != JournalCandidateState::kValid ||
+      !IsForwardJournal(*final.journal, *next.journal)) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kInvalidJournal,
+        "journal candidate is not a strict forward transition");
+  }
+  return PromoteJournalCandidate(parent_, paths_.journal_name, &final, &next);
 }
 
 std::pair<WindowsTransactionFaultPoint, WindowsTransactionFaultPoint>
@@ -788,6 +1098,14 @@ void DurableWindowsTransactionJournalStore::Persist(
   fault_injector_->Hit(points.first);
   fault_injector_->Hit(WindowsTransactionFaultPoint::kDiskFull);
   const std::string contents = journal.EncodeCanonical();
+  const auto current = Load();
+  if ((!current.has_value() &&
+       journal.state != WindowsTransactionState::kPrepared) ||
+      (current.has_value() && !IsForwardJournal(*current, journal))) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kInvalidJournal,
+        "journal persistence is not a strict forward transition");
+  }
   auto next = OpenRelativeNoReparse(
       parent_, paths_.journal_next_name,
       GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
@@ -800,6 +1118,8 @@ void DurableWindowsTransactionJournalStore::Persist(
   if (!FlushFileBuffers(next.get())) {
     ThrowOpenError(GetLastError(), "FlushFileBuffers journal failure");
   }
+  fault_injector_->Hit(
+      WindowsTransactionFaultPoint::kAfterJournalNextFlushBeforeRename);
   RenameHandleRelative(next.get(), parent_, paths_.journal_name, true);
   fault_injector_->Hit(WindowsTransactionFaultPoint::kDirectoryFlushFailure);
   FlushWindowsDirectory(parent_);

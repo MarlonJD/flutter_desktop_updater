@@ -4,6 +4,7 @@
 
 #include <aclapi.h>
 #include <bcrypt.h>
+#include <sddl.h>
 
 #include <algorithm>
 #include <array>
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -155,10 +157,76 @@ void RejectCallerWritableObject(HANDLE object,
   }
 }
 
+void ValidateInstallerProtectedObject(HANDLE object, const char* detail) {
+  PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
+  PACL dacl = nullptr;
+  PSID owner = nullptr;
+  const DWORD security = GetSecurityInfo(
+      object, SE_FILE_OBJECT,
+      OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+      &owner, nullptr, &dacl, nullptr, &raw_descriptor);
+  if (security != ERROR_SUCCESS || raw_descriptor == nullptr || dacl == nullptr) {
+    if (raw_descriptor != nullptr) LocalFree(raw_descriptor);
+    Fail(std::string(detail) + " protected DACL is unavailable");
+  }
+  std::unique_ptr<void, decltype(&LocalFree)> descriptor(raw_descriptor,
+                                                         LocalFree);
+  std::array<unsigned char, SECURITY_MAX_SID_SIZE> system_sid{};
+  std::array<unsigned char, SECURITY_MAX_SID_SIZE> administrators_sid{};
+  DWORD system_size = static_cast<DWORD>(system_sid.size());
+  DWORD administrators_size = static_cast<DWORD>(administrators_sid.size());
+  PSID trusted_installer_sid = nullptr;
+  std::unique_ptr<void, decltype(&LocalFree)> trusted_installer(
+      nullptr, LocalFree);
+  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, system_sid.data(),
+                          &system_size) ||
+      !CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr,
+                          administrators_sid.data(), &administrators_size) ||
+      !ConvertStringSidToSidW(
+          L"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
+          &trusted_installer_sid)) {
+    Fail(std::string(detail) + " trusted SID construction failed");
+  }
+  trusted_installer.reset(trusted_installer_sid);
+  auto trusted_writer = [&](PSID sid) {
+    return sid != nullptr &&
+           (EqualSid(sid, system_sid.data()) ||
+            EqualSid(sid, administrators_sid.data()) ||
+            EqualSid(sid, trusted_installer.get()));
+  };
+  SECURITY_DESCRIPTOR_CONTROL control = 0;
+  DWORD revision = 0;
+  if (!trusted_writer(owner) ||
+      !GetSecurityDescriptorControl(raw_descriptor, &control, &revision) ||
+      (control & SE_DACL_PROTECTED) == 0) {
+    Fail(std::string(detail) + " owner or DACL protection is invalid");
+  }
+  constexpr DWORD write_authority =
+      FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA |
+      FILE_WRITE_ATTRIBUTES | FILE_DELETE_CHILD | DELETE | WRITE_DAC |
+      WRITE_OWNER;
+  for (DWORD index = 0; index < dacl->AceCount; ++index) {
+    void* raw_ace = nullptr;
+    if (!GetAce(dacl, index, &raw_ace) || raw_ace == nullptr) {
+      Fail(std::string(detail) + " DACL is unreadable");
+    }
+    const auto* header = static_cast<const ACE_HEADER*>(raw_ace);
+    if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
+    if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) {
+      Fail(std::string(detail) + " DACL authority is unsupported");
+    }
+    const auto* ace = static_cast<const ACCESS_ALLOWED_ACE*>(raw_ace);
+    PSID sid = const_cast<DWORD*>(&ace->SidStart);
+    if ((ace->Mask & write_authority) != 0 && !trusted_writer(sid)) {
+      Fail(std::string(detail) + " grants untrusted write authority");
+    }
+  }
+}
+
 UniqueWindowsHandle OpenProtectedObject(
     const std::filesystem::path& path,
     bool directory,
-    DWORD caller_process_id,
+    const std::optional<DWORD>& caller_process_id,
     const char* detail) {
   const DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT |
                       (directory ? FILE_FLAG_BACKUP_SEMANTICS
@@ -174,7 +242,32 @@ UniqueWindowsHandle OpenProtectedObject(
        directory)) {
     Fail(std::string(detail) + " has unsafe filesystem metadata");
   }
-  RejectCallerWritableObject(object.get(), caller_process_id, detail);
+  ValidateInstallerProtectedObject(object.get(), detail);
+  if (caller_process_id.has_value()) {
+    RejectCallerWritableObject(object.get(), *caller_process_id, detail);
+  }
+  return object;
+}
+
+UniqueWindowsHandle OpenPortableObject(
+    const std::filesystem::path& path,
+    bool directory,
+    const char* detail) {
+  const DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT |
+                      (directory ? FILE_FLAG_BACKUP_SEMANTICS
+                                 : FILE_ATTRIBUTE_NORMAL);
+  UniqueWindowsHandle object(CreateFileW(
+      path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES | READ_CONTROL,
+      FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, flags,
+      nullptr));
+  if (!object.valid()) Fail(std::string(detail) + " is unavailable");
+  BY_HANDLE_FILE_INFORMATION information{};
+  if (!GetFileInformationByHandle(object.get(), &information) ||
+      (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+      (((information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) !=
+       directory)) {
+    Fail(std::string(detail) + " has unsafe filesystem metadata");
+  }
   return object;
 }
 
@@ -203,6 +296,18 @@ std::string EncodeBase64Url32(const std::array<unsigned char, 32>& bytes) {
 }  // namespace
 
 WindowsHelperBootstrap::WindowsHelperBootstrap(
+    WindowsHelperPolicy policy,
+    VerifiedWindowsExecutable helper_identity,
+    ProtectedWindowsHelperEndpointV1 endpoint,
+    UniqueWindowsHandle helper_file,
+    UniqueWindowsHandle policy_file)
+    : policy_(std::move(policy)),
+      helper_identity_(std::move(helper_identity)),
+      endpoint_(std::move(endpoint)),
+      helper_file_(std::move(helper_file)),
+      policy_file_(std::move(policy_file)) {}
+
+PortableWindowsHelperBootstrap::PortableWindowsHelperBootstrap(
     WindowsHelperPolicy policy,
     VerifiedWindowsExecutable helper_identity,
     UniqueWindowsHandle helper_file,
@@ -282,8 +387,10 @@ std::string SecureWindowsReadyToken() {
   return EncodeBase64Url32(bytes);
 }
 
-WindowsHelperBootstrap LoadWindowsHelperBootstrap(
-    DWORD caller_process_id) {
+WindowsHelperBootstrap LoadWindowsHelperBootstrapInternal(
+    const std::optional<DWORD>& caller_process_id,
+    const std::optional<std::string>& transaction_id,
+    bool registration) {
   const std::filesystem::path helper_path = CurrentExecutablePath();
   VerifiedWindowsExecutable helper_identity =
       VerifyWindowsExecutable(helper_path);
@@ -321,15 +428,123 @@ WindowsHelperBootstrap LoadWindowsHelperBootstrap(
   }
   const std::string application_package_id =
       policy_value.at("applicationPackageId").string();
+  const std::string policy_sha256 = WindowsHelperSha256Hex(policy_json);
+  ProtectedWindowsHelperEndpointV1 endpoint;
+  if (registration) {
+    endpoint = {
+        ProtectedWindowsHelperEndpointV1::kSchemaVersion,
+        policy_value.at("policyId").string(),
+        application_package_id,
+        policy_value.at("helperServiceId").string(),
+        helper_identity.final_path.lexically_normal(),
+        final_policy_path.lexically_normal(),
+        helper_identity.sha256,
+        policy_sha256,
+    };
+    (void)endpoint.EncodeCanonical();
+  } else {
+    const auto registered = transaction_id.has_value()
+                                ? LoadProtectedWindowsTransactionEndpoint(
+                                      *transaction_id)
+                                : LoadProtectedWindowsHelperEndpoint(
+                                      application_package_id,
+                                      helper_identity.final_path);
+    if (!registered.has_value()) {
+      Fail("registered protected helper endpoint is unavailable");
+    }
+    endpoint = *registered;
+    if (endpoint.package_id != application_package_id ||
+        endpoint.policy_id != policy_value.at("policyId").string() ||
+        endpoint.helper_service_id !=
+            policy_value.at("helperServiceId").string() ||
+        NormalizePath(endpoint.helper_path) !=
+            NormalizePath(helper_identity.final_path) ||
+        NormalizePath(endpoint.policy_path) !=
+            NormalizePath(final_policy_path) ||
+        endpoint.helper_sha256 != helper_identity.sha256 ||
+        endpoint.policy_sha256 != policy_sha256) {
+      Fail("registered protected helper endpoint binding changed");
+    }
+  }
   WindowsHelperPolicy policy = WindowsHelperPolicy::Load(
-      policy_json, WindowsHelperSha256Hex(policy_json),
-      application_package_id, helper_identity.sha256);
+      policy_json, endpoint.policy_sha256,
+      application_package_id, endpoint.helper_sha256);
   ValidateWindowsHelperIdentity(helper_identity, policy, true);
   if (!VerifyWindowsExecutableStillMatches(helper_path, helper_identity)) {
     Fail("helper executable changed after policy validation");
   }
   return WindowsHelperBootstrap(
-      std::move(policy), helper_identity, std::move(helper_file),
+      std::move(policy), helper_identity, std::move(endpoint),
+      std::move(helper_file),
+      std::move(policy_file));
+}
+
+WindowsHelperBootstrap LoadWindowsHelperBootstrap(
+    DWORD caller_process_id) {
+  return LoadWindowsHelperBootstrapInternal(caller_process_id, std::nullopt,
+                                            false);
+}
+
+WindowsHelperBootstrap LoadWindowsHelperBootstrapForRegistration() {
+  return LoadWindowsHelperBootstrapInternal(std::nullopt, std::nullopt, true);
+}
+
+WindowsHelperBootstrap LoadWindowsHelperBootstrapForAutonomousRecovery(
+    const std::string& transaction_id) {
+  return LoadWindowsHelperBootstrapInternal(std::nullopt, transaction_id,
+                                            false);
+}
+
+PortableWindowsHelperBootstrap LoadPortableWindowsHelperBootstrap(
+    DWORD caller_process_id) {
+  if (caller_process_id == 0) {
+    Fail("portable helper caller process ID is invalid");
+  }
+  UniqueWindowsHandle caller(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION |
+                                             SYNCHRONIZE,
+                                         FALSE, caller_process_id));
+  if (!caller.valid()) Fail("portable helper caller cannot be retained");
+
+  const std::filesystem::path helper_path = CurrentExecutablePath();
+  VerifiedWindowsExecutable helper_identity =
+      VerifyWindowsExecutable(helper_path);
+  UniqueWindowsHandle helper_file = OpenPortableObject(
+      helper_identity.final_path, false, "portable helper executable");
+  if (NormalizePath(FinalPath(helper_file.get())) !=
+      NormalizePath(helper_identity.final_path)) {
+    Fail("portable helper handle identity changed");
+  }
+
+  const std::filesystem::path policy_path =
+      helper_identity.final_path.parent_path() / kWindowsHelperPolicyName;
+  UniqueWindowsHandle policy_file = OpenPortableObject(
+      policy_path, false, "portable helper policy");
+  const std::filesystem::path final_policy_path = FinalPath(policy_file.get());
+  if (NormalizePath(final_policy_path.parent_path()) !=
+          NormalizePath(helper_identity.final_path.parent_path()) ||
+      _wcsicmp(final_policy_path.filename().c_str(),
+               kWindowsHelperPolicyName) != 0) {
+    Fail("portable helper policy is not adjacent to the helper");
+  }
+  const std::string policy_json = ReadPolicy(policy_file.get());
+  const JsonValue policy_value = ParseJson(policy_json);
+  if (EncodeCanonicalJson(policy_value) != policy_json) {
+    Fail("portable helper policy is not canonical JSON");
+  }
+  const std::string package_id =
+      policy_value.at("applicationPackageId").string();
+  WindowsHelperPolicy policy = WindowsHelperPolicy::Load(
+      policy_json, WindowsHelperSha256Hex(policy_json), package_id,
+      helper_identity.sha256);
+  if (!policy.is_portable()) {
+    Fail("portable helper policy grants unsupported authority");
+  }
+  ValidateWindowsHelperIdentity(helper_identity, policy, false);
+  if (!VerifyWindowsExecutableStillMatches(helper_path, helper_identity)) {
+    Fail("portable helper executable changed after policy validation");
+  }
+  return PortableWindowsHelperBootstrap(
+      std::move(policy), std::move(helper_identity), std::move(helper_file),
       std::move(policy_file));
 }
 

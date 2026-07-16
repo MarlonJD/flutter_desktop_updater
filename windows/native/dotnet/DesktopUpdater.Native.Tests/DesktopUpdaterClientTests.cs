@@ -59,11 +59,26 @@ public sealed class DesktopUpdaterClientTests
             "CancelReservation",
             "QueryTransaction",
             "RecoverPendingInstall",
+            "ResolvePendingInstallAfterExit",
         })
         {
-            Assert.NotNull(typeof(DesktopUpdaterClient).GetMethod(operation));
-            Assert.NotNull(typeof(DesktopUpdaterNative).GetMethod(operation));
+            Assert.Contains(
+                typeof(DesktopUpdaterClient).GetMethods(),
+                method => method.Name == operation);
+            Assert.Contains(
+                typeof(DesktopUpdaterNative).GetMethods(),
+                method => method.Name == operation);
         }
+        Assert.Contains(
+            typeof(DesktopUpdaterClient).GetMethods(),
+            method => method.Name == "PrepareInstall" &&
+                method.GetParameters().Length == 2 &&
+                method.GetParameters()[1].ParameterType == typeof(string));
+        Assert.Contains(
+            typeof(DesktopUpdaterNative).GetMethods(),
+            method => method.Name == "PrepareInstall" &&
+                method.GetParameters().Length == 2 &&
+                method.GetParameters()[1].ParameterType == typeof(string));
         Assert.True(typeof(IDisposable).IsAssignableFrom(
             typeof(DesktopUpdaterInstallReservation)));
         Assert.True(typeof(SafeHandle).IsAssignableFrom(
@@ -75,8 +90,54 @@ public sealed class DesktopUpdaterClientTests
             8,
             Enum.GetValues<DesktopUpdaterInstallTransactionState>().Length);
         Assert.Equal(
-            8,
+            9,
             Enum.GetValues<DesktopUpdaterInstallTransactionResultCode>().Length);
+    }
+
+    [Fact]
+    public void NativeV2EntryPointsAreExplicitlyVersioned()
+    {
+        var nativeMethods = typeof(DesktopUpdaterNative).GetNestedType(
+            "NativeMethods",
+            BindingFlags.NonPublic);
+        Assert.NotNull(nativeMethods);
+
+        var prepare = nativeMethods.GetMethod(
+            "PrepareInstallV2",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        var resolve = nativeMethods.GetMethod(
+            "ResolvePendingInstallAfterExit",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.Equal(
+            "desktop_updater_prepare_install_v2",
+            prepare?.GetCustomAttribute<DllImportAttribute>()?.EntryPoint);
+        Assert.Equal(
+            "desktop_updater_resolve_pending_install_after_exit_v1",
+            resolve?.GetCustomAttribute<DllImportAttribute>()?.EntryPoint);
+    }
+
+    [Fact]
+    public void ManagedPrepareInspectsV2OutcomeBeforeGenericFailure()
+    {
+        var source = File.ReadAllText(FindRepositoryFile(
+            "windows/native/dotnet/DesktopUpdater.Native/" +
+            "DesktopUpdaterNative.cs"));
+        var invoke = source.IndexOf(
+            "NativeMethods.PrepareInstallV2(",
+            StringComparison.Ordinal);
+        var recoveryOutcome = source.IndexOf(
+            "NativePrepareOutcomeV2.RecoveryRequired",
+            invoke,
+            StringComparison.Ordinal);
+        var genericFailure = source.IndexOf(
+            "if (result.Ok == 0)",
+            invoke,
+            StringComparison.Ordinal);
+
+        Assert.True(invoke >= 0);
+        Assert.True(recoveryOutcome > invoke);
+        Assert.True(genericFailure > recoveryOutcome);
     }
 
     [Fact]

@@ -277,6 +277,7 @@ windows:
     supportUrl: https://example.com/support
     updatesUrl: https://example.com/download
     privilegesRequired: admin
+    protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0
     architecturesAllowed: x64
     architecturesInstallIn64BitMode: x64
     setupIcon: windows/runner/resources/app_icon.ico
@@ -298,8 +299,89 @@ windows:
     expect(inno.appId, "com.example.app");
     expect(inno.publisher, "Example Inc.");
     expect(inno.privilegesRequired, "admin");
+    expect(
+      inno.protectedHelperInstallDir,
+      r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
+    );
     expect(inno.silentArgs, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
     expect(inno.authenticodeThumbprints.single, hasLength(64));
+  });
+
+  test("generated Inno config requires an admin protected helper directory",
+      () async {
+    for (final invalidConfig in <String>[
+      "",
+      "    protectedHelperInstallDir: helper",
+      "    protectedHelperInstallDir: C:\\Program Files\\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
+    ]) {
+      final privileges = invalidConfig.isEmpty ? "admin" : "lowest";
+      await expectLater(
+        ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    privilegesRequired: $privileges
+$invalidConfig
+"""),
+        throwsA(isA<FormatException>()),
+      );
+    }
+  });
+
+  test("generated admin Inno config rejects unsafe protected helper roots",
+      () async {
+    for (final installDir in <String>[
+      r"C:\Program Files",
+      r"C:\Windows",
+      r"C:\Windows\System32",
+      r"C:\Program Files\DesktopUpdater\Helpers\com.example.app",
+      r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app",
+      r"C:\Program Files\Nested\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
+    ]) {
+      await expectLater(
+        ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+    privilegesRequired: admin
+    protectedHelperInstallDir: ${installDir}
+"""),
+        throwsA(isA<FormatException>()),
+        reason: installDir,
+      );
+    }
+  });
+
+  test("custom Inno scripts retain responsibility for helper provisioning",
+      () async {
+    final root = await Directory.systemTemp.createTemp("inno_script_config_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    final script = File(path.join(root.path, "setup.iss"));
+    await script.writeAsString("[Setup]\nAppName=Example\n");
+
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: script
+    script: ${script.path}
+    privilegesRequired: lowest
+""");
+
+    expect(config.windows.installer.protectedHelperInstallDir, isNull);
+    expect(config.windows.installer.privilegesRequired, "lowest");
   });
 
   test("cli notarize flag enables configured macOS notarization", () async {

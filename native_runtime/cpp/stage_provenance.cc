@@ -468,15 +468,17 @@ struct CanonicalMarker {
   std::string bytes;
 };
 
-CanonicalMarker ReadCanonicalMarker(const std::filesystem::path& stage_root) {
+CanonicalMarker ReadCanonicalMarker(const std::filesystem::path& stage_root,
+                                    bool require_owned_stage_name = true) {
   const std::filesystem::path root =
       CanonicalStageDirectory(stage_root, "Stage root");
   const std::string bytes = ReadFile(root / kStageProvenanceFileName);
   const JsonValue parsed = ParseJson(bytes);
   StageProvenanceMarker marker = DecodeMarker(parsed);
   if (EncodeCanonicalJson(EncodeMarker(marker)) != bytes ||
-      PathToUTF8(root.filename()) !=
-          std::string(kOwnedStagePrefix) + marker.nonce) {
+      (require_owned_stage_name &&
+       PathToUTF8(root.filename()) !=
+           std::string(kOwnedStagePrefix) + marker.nonce)) {
     throw std::runtime_error(
         "Stage provenance marker is not canonical or nonce-bound.");
   }
@@ -589,6 +591,24 @@ StageProvenanceMarker VerifyStageProvenance(
     throw std::runtime_error("Staged update inventory changed.");
   }
   return state.marker;
+}
+
+StageProvenanceMarker VerifyRelocatedStageProvenance(
+    const std::filesystem::path& stage_root,
+    const std::string& expected_marker_sha256,
+    const StageSha256Function& sha256) {
+  if (!ValidSha256(expected_marker_sha256)) {
+    throw std::runtime_error("Expected stage provenance SHA-256 is invalid.");
+  }
+  const CanonicalMarker canonical =
+      ReadCanonicalMarker(stage_root, false);
+  const std::string marker_sha256 =
+      StageBytesToHex(sha256(canonical.bytes));
+  if (marker_sha256 != expected_marker_sha256 ||
+      !EqualEntries(canonical.marker.entries, Inventory(stage_root, sha256))) {
+    throw std::runtime_error("Relocated stage provenance changed.");
+  }
+  return canonical.marker;
 }
 
 void RemoveOwnedStage(const std::filesystem::path& parent_path,

@@ -30,12 +30,6 @@ bool ReadOptionalString(FlValue* args,
   return true;
 }
 
-desktop_updater::native::InstallRequest RestartRequest() {
-  desktop_updater::native::InstallRequest request;
-  request.operation = desktop_updater::native::LinuxInstallOperation::kRestart;
-  return request;
-}
-
 desktop_updater::native::InstallResult HandoffNativeInstall(
     const desktop_updater::native::InstallRequest& request) {
   desktop_updater::native::InstallReservation reservation;
@@ -78,6 +72,7 @@ const char* TransactionResultName(
     case Code::kAuthenticationFailed: return "authenticationFailed";
     case Code::kInvalidResponse: return "invalidResponse";
     case Code::kRecoveryRequired: return "recoveryRequired";
+    case Code::kRelaunchFailure: return "relaunchFailure";
     case Code::kNone: return "none";
   }
   return "none";
@@ -164,7 +159,7 @@ static void desktop_updater_plugin_handle_method_call(
   if (strcmp(method, "getPlatformVersion") == 0) {
     response = get_platform_version();
   } else if (strcmp(method, "restartApp") == 0) {
-    const auto result = HandoffNativeInstall(RestartRequest());
+    const auto result = desktop_updater::native::RestartCurrentApplication();
     if (!result.ok) {
       g_autoptr(FlValue) details = fl_value_new_string(result.error.c_str());
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(

@@ -252,7 +252,8 @@ std::shared_ptr<WindowsReservation> WindowsReservationStore::Prepare(
   if (raw_caller == nullptr) {
     throw WindowsReservationError("caller process authority open failed");
   }
-  auto caller = std::make_unique<OwnedHandle>(raw_caller);
+  auto caller =
+      std::make_unique<WindowsReservation::OwnedHandle>(raw_caller);
 
   const std::wstring target_key = NormalizePath(
       (request.target_parent / request.target_leaf).lexically_normal().wstring());
@@ -277,7 +278,7 @@ std::shared_ptr<WindowsReservation> WindowsReservationStore::Prepare(
   }
 
   auto targetLock = CreateOwnedFile(lock_path);
-  std::unique_ptr<OwnedHandle> journal;
+  std::unique_ptr<WindowsReservation::OwnedHandle> journal;
   std::string ready_token;
   try {
     journal = CreateOwnedFile(journal_path);

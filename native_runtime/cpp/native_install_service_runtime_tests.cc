@@ -46,6 +46,7 @@ NativeInstallTransactionRequestV1 Request() {
 
 struct RuntimeState {
   bool prepared = false;
+  bool commit_marked = false;
   bool waited = false;
   bool executed = false;
   bool cancelled = false;
@@ -70,6 +71,7 @@ class RuntimeTransaction final : public NativeInstallPreparedTransactionV1 {
     state_->prepared = true;
     return "canonical-journal";
   }
+  void MarkCommitAccepted() override { state_->commit_marked = true; }
   void ExecuteAfterCallerExit() override {
     if (!state_->waited) {
       throw std::runtime_error("mutation preceded caller exit");
@@ -171,6 +173,7 @@ class RuntimeChannel final : public NativeInstallWireChannelV1 {
 
   std::vector<std::string> outputs;
   std::int64_t command_deadline() const { return command_deadline_; }
+  int read_count() const { return read_count_; }
 
  private:
   std::string request_;
@@ -212,6 +215,7 @@ TEST(native_install_service_runtime,
   EXPECT_EQ("Example Publisher", state->monitored_signer_identity);
   EXPECT_EQ(301000, channel.command_deadline());
   EXPECT_TRUE(state->prepared);
+  EXPECT_TRUE(state->commit_marked);
   EXPECT_TRUE(state->waited);
   EXPECT_TRUE(state->executed);
   EXPECT_FALSE(state->cancelled);
@@ -256,6 +260,25 @@ TEST(native_install_service_runtime,
   EXPECT_TRUE(state->cancelled);
   EXPECT_FALSE(state->waited);
   EXPECT_FALSE(state->executed);
+}
+
+TEST(native_install_service_runtime,
+     DispatchesAnAlreadyAuthenticatedInitialRequestWithoutRereading) {
+  auto state = std::make_shared<RuntimeState>();
+  RuntimeAuthorizer authorizer(state);
+  auto session = Session(authorizer);
+  RuntimeChannel channel("must-not-be-read", "cancelReservation");
+  RuntimeMonitorFactory monitor_factory(state, [](std::int64_t) {});
+  NativeInstallOneShotServiceRuntimeV1 runtime(session, monitor_factory);
+
+  runtime.RunWithInitialRequest(
+      channel, EncodeCanonicalNativeInstallTransactionRequestV1(Request()));
+
+  EXPECT_EQ(0, channel.read_count());
+  ASSERT_EQ(2U, channel.outputs.size());
+  EXPECT_EQ(
+      "rolledBack",
+      ParseNativeInstallRecoveryResultV1(channel.outputs[1]).result_code);
 }
 
 }  // namespace

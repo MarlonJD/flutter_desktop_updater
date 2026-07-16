@@ -95,14 +95,24 @@ void main() {
     }
     expect(windowsHeader, contains("enum class InstallTransactionState"));
     expect(windowsHeader, contains("enum class InstallTransactionResultCode"));
+    expect(windowsHeader, contains("kRelaunchFailure = 8"));
     expect(windowsCHeader, contains("desktop_updater_reservation_handle_v1"));
     expect(windowsCHeader, contains("desktop_updater_prepare_install_v1"));
+    expect(windowsCHeader, contains("desktop_updater_prepare_install_v2"));
     expect(windowsCHeader, contains("desktop_updater_commit_after_exit_v1"));
     expect(windowsCHeader, contains("desktop_updater_query_transaction_v1"));
     expect(
         windowsCHeader, contains("desktop_updater_recover_pending_install_v1"));
+    expect(
+      windowsCHeader,
+      contains("desktop_updater_resolve_pending_install_after_exit_v1"),
+    );
     expect(windowsCHeader, contains("desktop_updater_reservation_release_v1"));
     expect(windowsCHeader, contains("desktop_updater_transaction_status_v1"));
+    expect(
+      windowsCHeader,
+      contains("DESKTOP_UPDATER_TRANSACTION_RESULT_RELAUNCH_FAILURE = 8"),
+    );
     expect(
       windowsNative,
       contains(
@@ -121,9 +131,13 @@ void main() {
     );
     expect(dotnetNative,
         contains("sealed class DesktopUpdaterInstallReservation"));
+    expect(dotnetNative, contains("RelaunchFailure = 8"));
     expect(dotnetNative, contains("SafeHandle"));
     expect(dotnetNative, contains("protected override bool ReleaseHandle()"));
     expect(dotnetNative, contains("public void Dispose()"));
+    expect(dotnetNative, contains("PrepareInstall("));
+    expect(dotnetNative, contains("string transactionId"));
+    expect(dotnetNative, contains("ResolvePendingInstallAfterExit"));
     expect(windowsConsumer, contains("QueryTransaction"));
     expect(windowsConsumer, contains("RecoverPendingInstall"));
     expect(dotnetConsumer, contains("QueryTransaction"));
@@ -140,6 +154,9 @@ void main() {
     }
     expect(linuxHeader, contains("enum class InstallTransactionState"));
     expect(linuxHeader, contains("enum class InstallTransactionResultCode"));
+    expect(linuxHeader, contains("kRelaunchFailure = 8"));
+    expect(linuxHeader, isNot(contains("helper_executable_path")));
+    expect(linuxHeader, isNot(contains("std::string policy_id")));
     expect(
       linuxNative,
       contains(
@@ -155,6 +172,8 @@ void main() {
     expect(docs, contains("Contents/Helpers/DesktopUpdaterInstallHelper"));
     expect(docs, contains("desktop_updater_install_helper.exe"));
     expect(docs, contains("/usr/libexec/desktop-updater-helper"));
+    expect(docs, contains("resolvePendingInstallAfterExit"));
+    expect(docs, contains("exit immediately"));
     expect(docs, contains("candidate-only"));
   });
 
@@ -201,6 +220,63 @@ void main() {
         contains("DESKTOP_UPDATER_NATIVE_VERSION_STRING"),
       );
     }
+  });
+
+  test("installed Linux consumers exercise the relocated helper endpoint", () {
+    final consumer = readRequiredFile(
+      "example/native/linux-cmake/main.cpp",
+    );
+    final consumerCmake = readRequiredFile(
+      "example/native/linux-cmake/CMakeLists.txt",
+    );
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
+
+    expect(consumer, contains("PrepareInstall(request, &reservation)"));
+    expect(consumer, contains("CommitAfterExit(reservation)"));
+    expect(
+      consumer,
+      matches(
+        RegExp(
+          r"QueryTransaction\(\s*reservation\.transaction_id\)",
+          multiLine: true,
+        ),
+      ),
+    );
+    expect(consumer, contains("InstallTransactionState::kPrepared"));
+    expect(
+      consumer,
+      matches(
+        RegExp(
+          r"InstallTransactionResultCode::\s*kRecoveryRequired",
+          multiLine: true,
+        ),
+      ),
+    );
+    expect(consumer, contains("kEndpointUnavailable"));
+    expect(
+      consumerCmake,
+      contains("desktop_updater_native_HELPER_EXECUTABLE"),
+    );
+    expect(
+      consumerCmake,
+      contains("install(TARGETS consumer RUNTIME DESTINATION bin)"),
+    );
+    expect(workflow, contains("linux/native/install-pkg-consumer"));
+    expect(workflow, contains("linux/native/install-multiarch-consumer"));
+    expect(workflow, contains("linux/native/install-cmake-consumer"));
+    expect(workflow, contains(r'"$prefix/bin/linux_installed_consumer"'));
+    expect(workflow, contains(r'helper="$(realpath "$(PKG_CONFIG_PATH='));
+    expect(workflow, contains("--exchange"));
+    expect(workflow, contains(r'runtime="/tmp/du-${UID}-pkg"'));
+    expect(workflow, contains(r'runtime="/tmp/du-${UID}-multi"'));
+    expect(workflow, contains(r'runtime="/tmp/du-${UID}-cmake"'));
+    expect(
+      workflow,
+      isNot(contains(r'mkdir -m 0700 "$prefix/runtime"')),
+      reason: "sockaddr_un requires a short XDG_RUNTIME_DIR",
+    );
   });
 
   test("installed Linux runtime consumer resolves exported thread dependency",
@@ -379,6 +455,11 @@ void main() {
     expect(ignoredPaths, isNot(contains("macos/")));
     expect(ignoredPaths, isNot(contains("windows/")));
     expect(ignoredPaths, isNot(contains("linux/")));
+    expect(
+      ignoredPaths,
+      contains("script/"),
+      reason: "local Codex/Xcode run entrypoints are not package runtime API",
+    );
     expect(workflow, contains("dart pub publish --dry-run"));
     expect(publishedDocs, contains("downloadVerifyAndStage"));
     expect(publishedDocs, contains("checkForUpdate"));

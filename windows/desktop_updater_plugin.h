@@ -22,6 +22,8 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
     const std::wstring& product_version,
     std::wstring* build_number);
 
+bool IsCanonicalInstallTransactionId(const std::string& transaction_id);
+
 bool IsAcceptedInstallHandoff(
     const native::InstallReservation& reservation,
     const native::InstallTransactionStatus& status);

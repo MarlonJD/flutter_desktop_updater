@@ -160,7 +160,8 @@ void main() {
       "Run Linux privileged mount namespace rejection test",
       "Run signed bundled SMAppService daemon and XPC recovery smoke",
       "Run Authenticode and interactive UAC helper smoke",
-      "Run installed polkit root broker smoke",
+      "Run installed broker static audit",
+      "Run real non-root polkit broker E2E",
     ]) {
       expect(workflow, contains("- name: $lane"), reason: lane);
     }
@@ -184,6 +185,22 @@ void main() {
     expect(workflow, contains("native-helper-test-counts"));
     expect(workflow, contains("helper-test-counts"));
     expect(workflow, isNot(contains("helper-raw-diagnostics")));
+    expect(
+      workflow,
+      contains("RejectsBindMountAndMountIdChange"),
+    );
+    expect(
+      workflow,
+      contains("CleanupRejectsNestedBindMountBeforeDeletingBackingData"),
+    );
+    expect(
+      workflow,
+      contains("if grep -q 'Skipped'"),
+    );
+    expect(
+      workflow,
+      contains(r'test "$test_count" -ge 2'),
+    );
   });
 
   test("Linux polkit lane seals canonical policy bytes safely", () {

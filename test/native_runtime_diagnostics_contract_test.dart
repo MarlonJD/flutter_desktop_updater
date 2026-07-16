@@ -47,6 +47,9 @@ void main() {
       readFile(
           "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift"),
       readFile("native_runtime/cpp/diagnostics.cc"),
+      readFile(
+        "windows/native/src/helper/windows_helper_diagnostics.cpp",
+      ),
     ];
 
     for (final implementation in diagnosticImplementations) {

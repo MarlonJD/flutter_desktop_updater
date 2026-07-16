@@ -16,6 +16,7 @@ using desktop_updater::runtime::internal::HelperPolicyV1;
 using desktop_updater::runtime::internal::ParseHelperPolicyV1;
 
 constexpr char authenticodePublisher[] = "authenticodePublisher";
+constexpr char sha256Signer[] = "sha256";
 constexpr char portableElevationRejected[] = "portableElevationRejected";
 
 bool IsSha256(const std::string& value) {
@@ -47,22 +48,31 @@ std::wstring Utf8ToWide(const std::string& value) {
   return result;
 }
 
-void ValidatePrivilegePolicy(const std::string& policy_id,
-                             const std::string& application_package_id,
-                             const std::string& helper_service_id,
-                             const std::string& application_publisher,
-                             const std::string& helper_publisher,
-                             const std::string& helper_sha256,
-                             const std::vector<std::wstring>& roots,
-                             const std::vector<std::string>& target_classes,
-                             const std::vector<WindowsReleaseRootPublicKey>&
-                                 release_root_public_keys,
-                             const std::vector<WindowsAllowedInstallStrategy>&
-                                 allowed_strategies,
-                             std::int64_t minimum_helper_protocol_version) {
+bool IsPortableStrategy(const WindowsAllowedInstallStrategy& value) {
+  return (value.strategy == "directoryReplace" &&
+          value.provider == "platformDirectory") ||
+         (value.strategy == "singleFileReplace" &&
+          value.provider == "platformFile");
+}
+
+bool ValidatePolicy(const std::string& policy_id,
+                    const std::string& application_package_id,
+                    const std::string& helper_service_id,
+                    const std::string& application_signer_kind,
+                    const std::string& application_signer_identity,
+                    const std::string& helper_signer_kind,
+                    const std::string& helper_signer_identity,
+                    const std::string& helper_sha256,
+                    const std::vector<std::wstring>& roots,
+                    const std::vector<std::string>& target_classes,
+                    const std::vector<WindowsReleaseRootPublicKey>&
+                        release_root_public_keys,
+                    const std::vector<WindowsAllowedInstallStrategy>&
+                        allowed_strategies,
+                    std::int64_t minimum_helper_protocol_version) {
   if (policy_id.empty() || application_package_id.empty() ||
-      helper_service_id.empty() || application_publisher.empty() ||
-      helper_publisher.empty() || !IsSha256(helper_sha256) ||
+      helper_service_id.empty() || application_signer_identity.empty() ||
+      helper_signer_identity.empty() || !IsSha256(helper_sha256) ||
       target_classes.empty() || release_root_public_keys.empty() ||
       allowed_strategies.empty() || minimum_helper_protocol_version != 1) {
     throw WindowsHelperPolicyError(
@@ -70,6 +80,23 @@ void ValidatePrivilegePolicy(const std::string& policy_id,
         "Windows privileged policy requires exact publishers and helper digest");
   }
   if (roots.empty()) {
+    if (application_signer_kind != sha256Signer ||
+        helper_signer_kind != sha256Signer ||
+        !IsSha256(application_signer_identity) ||
+        !IsSha256(helper_signer_identity) ||
+        helper_signer_identity != helper_sha256 ||
+        target_classes.size() != 1 ||
+        target_classes.front() != "sameUserWritable" ||
+        !std::all_of(allowed_strategies.begin(), allowed_strategies.end(),
+                     IsPortableStrategy)) {
+      throw WindowsHelperPolicyError(
+          WindowsHelperPolicyError::Code::kPortableElevationRejected,
+          portableElevationRejected);
+    }
+    return true;
+  }
+  if (application_signer_kind != authenticodePublisher ||
+      helper_signer_kind != authenticodePublisher) {
     throw WindowsHelperPolicyError(
         WindowsHelperPolicyError::Code::kPortableElevationRejected,
         portableElevationRejected);
@@ -82,6 +109,7 @@ void ValidatePrivilegePolicy(const std::string& policy_id,
           "install roots must be fixed absolute Windows paths");
     }
   }
+  return false;
 }
 
 }  // namespace
@@ -95,8 +123,10 @@ WindowsHelperPolicy::WindowsHelperPolicy(
     std::string policy_id,
     std::string application_package_id,
     std::string helper_service_id,
-    std::string application_publisher,
-    std::string helper_publisher,
+    std::string application_signer_kind,
+    std::string application_signer_identity,
+    std::string helper_signer_kind,
+    std::string helper_signer_identity,
     std::string helper_sha256,
     std::vector<std::wstring> allowed_install_roots,
     std::vector<std::string> allowed_target_classes,
@@ -106,17 +136,20 @@ WindowsHelperPolicy::WindowsHelperPolicy(
     : policy_id_(std::move(policy_id)),
       application_package_id_(std::move(application_package_id)),
       helper_service_id_(std::move(helper_service_id)),
-      application_publisher_(std::move(application_publisher)),
-      helper_publisher_(std::move(helper_publisher)),
+      application_signer_kind_(std::move(application_signer_kind)),
+      application_signer_identity_(std::move(application_signer_identity)),
+      helper_signer_kind_(std::move(helper_signer_kind)),
+      helper_signer_identity_(std::move(helper_signer_identity)),
       helper_sha256_(std::move(helper_sha256)),
       allowed_install_roots_(std::move(allowed_install_roots)),
       allowed_target_classes_(std::move(allowed_target_classes)),
       release_root_public_keys_(std::move(release_root_public_keys)),
       allowed_strategies_(std::move(allowed_strategies)),
       minimum_helper_protocol_version_(minimum_helper_protocol_version) {
-  ValidatePrivilegePolicy(
+  portable_ = ValidatePolicy(
       policy_id_, application_package_id_, helper_service_id_,
-      application_publisher_, helper_publisher_, helper_sha256_,
+      application_signer_kind_, application_signer_identity_,
+      helper_signer_kind_, helper_signer_identity_, helper_sha256_,
       allowed_install_roots_, allowed_target_classes_,
       release_root_public_keys_, allowed_strategies_,
       minimum_helper_protocol_version_);
@@ -129,18 +162,12 @@ WindowsHelperPolicy WindowsHelperPolicy::Load(
     const std::string& sealed_helper_sha256) {
   HelperPolicyV1 parsed = ParseHelperPolicyV1(
       canonical_json, expected_application_package_id, 1);
-  if (parsed.canonical_sha256 != sealed_policy_sha256) {
+  if (parsed.canonical_json != canonical_json ||
+      parsed.canonical_sha256 != sealed_policy_sha256) {
     throw WindowsHelperPolicyError(
         WindowsHelperPolicyError::Code::kPolicyDigestMismatch,
         "sealed policy digest does not match canonical policy");
   }
-  if (parsed.allowed_application_signer.kind != authenticodePublisher ||
-      parsed.allowed_helper_signer.kind != authenticodePublisher) {
-    throw WindowsHelperPolicyError(
-        WindowsHelperPolicyError::Code::kPortableElevationRejected,
-        portableElevationRejected);
-  }
-
   std::vector<std::wstring> roots;
   roots.reserve(parsed.allowed_install_roots.size());
   for (const std::string& root : parsed.allowed_install_roots) {
@@ -160,7 +187,9 @@ WindowsHelperPolicy WindowsHelperPolicy::Load(
   return WindowsHelperPolicy(
       parsed.policy_id, parsed.application_package_id,
       parsed.helper_service_id,
+      parsed.allowed_application_signer.kind,
       parsed.allowed_application_signer.value,
+      parsed.allowed_helper_signer.kind,
       parsed.allowed_helper_signer.value, sealed_helper_sha256,
       std::move(roots), parsed.allowed_target_classes,
       std::move(release_root_public_keys), std::move(allowed_strategies),
@@ -176,12 +205,31 @@ WindowsHelperPolicy WindowsHelperPolicy::ForTesting(
   return WindowsHelperPolicy(
       "com.example.desktop-updater", std::move(application_package_id),
       "com.example.desktop-updater.helper",
-      std::move(application_publisher), std::move(helper_publisher),
+      authenticodePublisher, std::move(application_publisher),
+      authenticodePublisher, std::move(helper_publisher),
       std::move(helper_sha256), std::move(allowed_install_roots),
       {"applicationDirectory"},
       {{"test-release-root", "ed25519",
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}},
       {{"directoryReplace", "platformDirectory"}}, 1);
+}
+
+WindowsHelperPolicy WindowsHelperPolicy::ForPortableTesting(
+    std::string application_package_id,
+    std::string application_sha256,
+    std::string helper_sha256) {
+  const std::string helper_signer_identity = helper_sha256;
+  return WindowsHelperPolicy(
+      "com.example.desktop-updater.portable",
+      std::move(application_package_id),
+      "com.example.desktop-updater.helper", sha256Signer,
+      std::move(application_sha256), sha256Signer, helper_signer_identity,
+      std::move(helper_sha256), {}, {"sameUserWritable"},
+      {{"test-release-root", "ed25519",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}},
+      {{"directoryReplace", "platformDirectory"},
+       {"singleFileReplace", "platformFile"}},
+      1);
 }
 
 bool WindowsHelperPolicy::AllowsRequest(

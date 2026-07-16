@@ -137,6 +137,70 @@ void main() {
       expect(source, contains(name), reason: name);
     }
   });
+
+  test("Linux restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[2]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('strcmp(method, "restartApp")'),
+      plugin.indexOf('strcmp(method, "installUpdate")'),
+    );
+    final nativeHeader = File(
+      "linux/native/include/desktop_updater_native.h",
+    ).readAsStringSync();
+
+    expect(restartBranch, contains("RestartCurrentApplication"));
+    expect(restartBranch, isNot(contains("HandoffNativeInstall")));
+    expect(restartBranch, isNot(contains("PrepareInstall")));
+    expect(
+        nativeHeader, contains("InstallResult RestartCurrentApplication();"));
+  });
+
+  test(
+    "Windows ambiguous handoff keeps released errors with recovery details",
+    () {
+      final source = File(pluginSources[1]).readAsStringSync();
+      final recoveryDetails = _functionBody(
+        source,
+        "RecoveryRequiredErrorDetails",
+      );
+      final restartBranch = source.substring(
+        source.indexOf('method_name().compare("restartApp")'),
+        source.indexOf('method_name().compare("installUpdate")'),
+      );
+      final installBranch = source.substring(
+        source.indexOf('method_name().compare("installUpdate")'),
+        source.indexOf('method_name().compare("queryInstallTransaction")'),
+      );
+
+      expect(
+        recoveryDetails,
+        contains('flutter::EncodableValue("recoveryRequired")'),
+      );
+      expect(recoveryDetails, contains("flutter::EncodableValue(true)"));
+      expect(
+        restartBranch,
+        contains(
+          RegExp(
+            r"if\s*\(recovery_required\)\s*\{\s*"
+            r'result->Error\(\s*"RestartError",\s*error,\s*'
+            r"RecoveryRequiredErrorDetails\(\)\)",
+          ),
+        ),
+      );
+      expect(
+        installBranch,
+        contains(
+          RegExp(
+            r"if\s*\(recovery_required\)\s*\{\s*"
+            r'result->Error\(\s*"InstallError",\s*error,\s*'
+            r"RecoveryRequiredErrorDetails\(\)\)",
+          ),
+        ),
+      );
+      expect(source, isNot(contains('"InstallRecoveryRequired"')));
+      expect(source, isNot(contains('"RestartRecoveryRequired"')));
+    },
+  );
 }
 
 String _readAll(Iterable<String> paths) =>

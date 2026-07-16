@@ -114,6 +114,7 @@ NativeInstallReservationV1 NativeInstallOneShotSessionV1::AcceptCommit(
     (void)CancelPreparedState(State::kPrepared);
     throw NativeInstallSessionError("reservation expired before commit");
   }
+  transaction_->MarkCommitAccepted();
   state_ = State::kCommitAccepted;
   return reservation_;
 }

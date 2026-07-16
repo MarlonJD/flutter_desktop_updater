@@ -147,7 +147,7 @@ void main() {
     expect(fixtureServer, contains('"/redirect/six/0"'));
     expect(fixtureServer, contains('"/redirect/cross-authority"'));
     expect(fixtureServer, contains('"/redirect/missing-location"'));
-    expect(cmake, contains("Winhttp"));
+    expect(cmake.toLowerCase(), contains("winhttp"));
     expect(cmake, contains("update_transport_winhttp.cpp"));
     expect(cmake, contains("redirect_url.cc"));
     expect(cmake, contains("desktop_updater_runtime_redirect_url_test"));

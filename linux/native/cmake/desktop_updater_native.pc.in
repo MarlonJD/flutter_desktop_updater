@@ -11,4 +11,5 @@ Name: desktop_updater_native
 Description: Flutter-free Linux desktop updater install helper
 Version: 2.7.0
 Libs: -L${libdir} -ldesktop_updater_native
+Requires: libcrypto
 Cflags: -I${includedir}

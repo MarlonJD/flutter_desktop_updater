@@ -72,6 +72,7 @@ enum class InstallTransactionResultCode : std::uint32_t {
   kAuthenticationFailed = 5,
   kInvalidResponse = 6,
   kRecoveryRequired = 7,
+  kRelaunchFailure = 8,
 };
 
 struct InstallReservation {
@@ -102,6 +103,9 @@ InstallTransactionStatus CancelReservation(
 InstallTransactionStatus QueryTransaction(const std::string& transaction_id);
 InstallTransactionStatus RecoverPendingInstall(
     const std::string& transaction_id);
+// Arms a same-user relaunch that starts after the caller exits. A successful
+// caller must terminate promptly so the replacement process can start.
+InstallResult RestartCurrentApplication();
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
 
 }  // namespace native

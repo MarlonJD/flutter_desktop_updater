@@ -189,25 +189,110 @@ long RenameAt2(int old_parent,
                  flags);
 }
 
-void RemoveTree(int parent, const std::string& leaf) {
-  auto retained = OpenLinuxRelativeNoFollow(parent, leaf, O_PATH);
-  const LinuxFileIdentity identity = ReadLinuxFileIdentity(retained.get());
-  if (!identity.directory) {
-    if (identity.link_count != 1) {
-      throw LinuxTransactionJournalError("hard-linked file cleanup rejected");
-    }
-    if (unlinkat(parent, leaf.c_str(), 0) != 0) {
-      throw LinuxTransactionJournalError("unlinkat file cleanup failed");
-    }
-    return;
-  }
+// These bounds cover the signed archive verifier's accepted inventory: 128
+// descendant levels and 100,000 descendants. Cleanup also counts the root and
+// charges every readdir record, including dot entries.
+constexpr std::size_t kMaximumCleanupDepth = 128;
+constexpr std::uint64_t kMaximumCleanupEntries = 100001;
+constexpr std::uint64_t kMaximumCleanupWork = 128 * 1024 * 1024;
 
-  auto directory = OpenLinuxRelativeNoFollow(
-      parent, leaf, O_RDONLY | O_DIRECTORY);
-  DIR* stream = fdopendir(dup(directory.get()));
-  if (stream == nullptr) {
+struct CleanupBudget {
+  std::uint64_t entries = 0;
+  std::uint64_t work = 0;
+};
+
+struct CleanupManifestNode {
+  std::string name;
+  LinuxFileIdentity identity;
+  std::vector<CleanupManifestNode> children;
+};
+
+bool IsRegularFile(const LinuxFileIdentity& identity) {
+  return (identity.mode & S_IFMT) == S_IFREG;
+}
+
+bool HasStableIdentity(const LinuxFileIdentity& observed,
+                       const LinuxFileIdentity& expected) {
+  return observed.device == expected.device &&
+         observed.inode == expected.inode &&
+         observed.mount_id == expected.mount_id &&
+         observed.mode == expected.mode && observed.uid == expected.uid &&
+         observed.gid == expected.gid &&
+         observed.directory == expected.directory;
+}
+
+void RequireCleanupNodePolicy(const LinuxFileIdentity& identity,
+                              const LinuxFileIdentity& root_identity) {
+  if (identity.device != root_identity.device ||
+      identity.mount_id != root_identity.mount_id) {
+    throw LinuxTransactionJournalError(
+        "cleanup descendant crosses a mount or device boundary");
+  }
+  if (!identity.directory && !IsRegularFile(identity)) {
+    throw LinuxTransactionJournalError(
+        "cleanup rejects symbolic links and special files");
+  }
+  if (IsRegularFile(identity) && identity.link_count != 1) {
+    throw LinuxTransactionJournalError("hard-linked file cleanup rejected");
+  }
+}
+
+void ChargeCleanupWork(CleanupBudget& budget, std::uint64_t cost) {
+  if (budget.work > kMaximumCleanupWork ||
+      cost > kMaximumCleanupWork - budget.work) {
+    throw LinuxTransactionJournalError("cleanup traversal work limit exceeded");
+  }
+  budget.work += cost;
+}
+
+void ChargeCleanupEntry(CleanupBudget& budget,
+                        std::size_t depth,
+                        const std::string& name) {
+  if (depth > kMaximumCleanupDepth) {
+    throw LinuxTransactionJournalError("cleanup depth limit exceeded");
+  }
+  if (budget.entries >= kMaximumCleanupEntries) {
+    throw LinuxTransactionJournalError("cleanup entry limit exceeded");
+  }
+  ++budget.entries;
+  ChargeCleanupWork(
+      budget, 1 + static_cast<std::uint64_t>(depth) + name.size());
+}
+
+UniqueLinuxFd OpenRetainedDirectory(int retained) {
+  const LinuxFileIdentity before = ReadLinuxFileIdentity(retained);
+  if (!before.directory) {
+    throw LinuxTransactionJournalError(
+        "cleanup retained object is not a directory");
+  }
+  const int raw = openat(retained, ".",
+                         O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (raw < 0) {
+    throw LinuxTransactionJournalError(
+        "cleanup retained directory open failed");
+  }
+  UniqueLinuxFd directory(raw);
+  if (ReadLinuxFileIdentity(directory.get()) != before) {
+    throw LinuxTransactionJournalError(
+        "cleanup retained directory identity changed");
+  }
+  return directory;
+}
+
+std::vector<std::string> ReadCleanupDirectoryNames(int directory,
+                                                   std::size_t child_depth,
+                                                   CleanupBudget& budget) {
+  const int scan_fd = fcntl(directory, F_DUPFD_CLOEXEC, 0);
+  if (scan_fd < 0) {
     throw LinuxTransactionJournalError("fd-relative directory scan failed");
   }
+  DIR* stream = fdopendir(scan_fd);
+  if (stream == nullptr) {
+    close(scan_fd);
+    throw LinuxTransactionJournalError("fd-relative directory scan failed");
+  }
+
+  std::vector<std::string> names;
   try {
     for (;;) {
       errno = 0;
@@ -219,19 +304,135 @@ void RemoveTree(int parent, const std::string& leaf) {
         break;
       }
       const std::string name(entry->d_name);
-      if (name != "." && name != "..") RemoveTree(directory.get(), name);
+      ChargeCleanupWork(
+          budget, 1 + static_cast<std::uint64_t>(child_depth) + name.size());
+      if (name == "." || name == "..") continue;
+      ChargeCleanupEntry(budget, child_depth, name);
+      names.push_back(name);
     }
-    closedir(stream);
+    if (closedir(stream) != 0) {
+      stream = nullptr;
+      throw LinuxTransactionJournalError("directory scan close failed");
+    }
     stream = nullptr;
-    if (fsync(directory.get()) != 0) {
-      throw LinuxTransactionJournalError("directory fsync failed");
-    }
-    if (unlinkat(parent, leaf.c_str(), AT_REMOVEDIR) != 0) {
-      throw LinuxTransactionJournalError("unlinkat directory cleanup failed");
-    }
   } catch (...) {
     if (stream != nullptr) closedir(stream);
     throw;
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+CleanupManifestNode BuildCleanupManifest(
+    int retained,
+    std::string name,
+    const LinuxFileIdentity& root_identity,
+    std::size_t depth,
+    CleanupBudget& budget,
+    bool entry_already_charged) {
+  if (!entry_already_charged) ChargeCleanupEntry(budget, depth, name);
+  const LinuxFileIdentity identity = ReadLinuxFileIdentity(retained);
+  RequireCleanupNodePolicy(identity, root_identity);
+
+  CleanupManifestNode result{std::move(name), identity, {}};
+  if (!identity.directory) return result;
+
+  auto directory = OpenRetainedDirectory(retained);
+  const std::vector<std::string> children =
+      ReadCleanupDirectoryNames(directory.get(), depth + 1, budget);
+  result.children.reserve(children.size());
+  for (const auto& child_name : children) {
+    auto child =
+        OpenLinuxRelativeNoFollow(directory.get(), child_name, O_PATH);
+    result.children.push_back(BuildCleanupManifest(
+        child.get(), child_name, root_identity, depth + 1, budget, true));
+  }
+  return result;
+}
+
+UniqueLinuxFd RevalidateCleanupName(
+    int parent,
+    const CleanupManifestNode& node,
+    int retained,
+    const LinuxFileIdentity& root_identity,
+    bool exact_manifest_identity) {
+  const LinuxFileIdentity retained_identity = ReadLinuxFileIdentity(retained);
+  RequireCleanupNodePolicy(retained_identity, root_identity);
+  if (exact_manifest_identity ? retained_identity != node.identity
+                              : !HasStableIdentity(retained_identity,
+                                                   node.identity)) {
+    throw LinuxTransactionJournalError("cleanup retained identity changed");
+  }
+
+  auto current = OpenLinuxRelativeNoFollow(parent, node.name, O_PATH);
+  if (ReadLinuxFileIdentity(current.get()) != retained_identity) {
+    throw LinuxTransactionJournalError(
+        "cleanup name changed before fd-relative mutation");
+  }
+  return current;
+}
+
+void RequireCurrentDirectoryNames(int retained,
+                                  const CleanupManifestNode& node) {
+  auto scan = OpenRetainedDirectory(retained);
+  CleanupBudget budget;
+  const std::vector<std::string> observed =
+      ReadCleanupDirectoryNames(scan.get(), 1, budget);
+  std::vector<std::string> expected;
+  expected.reserve(node.children.size());
+  for (const auto& child : node.children) expected.push_back(child.name);
+  if (observed != expected) {
+    throw LinuxTransactionJournalError(
+        "cleanup directory entries changed after preflight");
+  }
+}
+
+void RequireEmptyCleanupDirectory(int retained) {
+  auto scan = OpenRetainedDirectory(retained);
+  CleanupBudget budget;
+  if (!ReadCleanupDirectoryNames(scan.get(), 1, budget).empty()) {
+    throw LinuxTransactionJournalError(
+        "cleanup directory gained an unexpected entry");
+  }
+}
+
+void RemoveCleanupManifestNode(int parent,
+                               const CleanupManifestNode& node,
+                               const LinuxFileIdentity& root_identity,
+                               UniqueLinuxFd retained) {
+  auto initial_name = RevalidateCleanupName(
+      parent, node, retained.get(), root_identity, true);
+  if (!node.identity.directory) {
+    // Keep the just-validated name descriptor alive through unlinkat. Linux
+    // has no compare-and-unlink-by-fd primitive, so this is the narrowest
+    // available check immediately before the name-based mutation.
+    (void)initial_name;
+    if (unlinkat(parent, node.name.c_str(), 0) != 0) {
+      throw LinuxTransactionJournalError("unlinkat file cleanup failed");
+    }
+    return;
+  }
+
+  auto directory = OpenRetainedDirectory(retained.get());
+  RequireCurrentDirectoryNames(retained.get(), node);
+  for (const auto& child_node : node.children) {
+    auto current_directory_name = RevalidateCleanupName(
+        parent, node, retained.get(), root_identity, false);
+    (void)current_directory_name;
+    auto child = OpenLinuxRelativeNoFollow(directory.get(), child_node.name,
+                                           O_PATH);
+    RemoveCleanupManifestNode(directory.get(), child_node, root_identity,
+                              std::move(child));
+  }
+  RequireEmptyCleanupDirectory(retained.get());
+  if (fsync(directory.get()) != 0) {
+    throw LinuxTransactionJournalError("directory fsync failed");
+  }
+  auto final_name = RevalidateCleanupName(
+      parent, node, retained.get(), root_identity, false);
+  (void)final_name;
+  if (unlinkat(parent, node.name.c_str(), AT_REMOVEDIR) != 0) {
+    throw LinuxTransactionJournalError("unlinkat directory cleanup failed");
   }
 }
 
@@ -423,10 +624,28 @@ void RemoveLinuxTreeExact(int parent,
                           const std::string& leaf,
                           const LinuxFileIdentity& expected_identity) {
   auto retained = OpenLinuxRelativeNoFollow(parent, leaf, O_PATH);
-  if (ReadLinuxFileIdentity(retained.get()) != expected_identity) {
+  const LinuxFileIdentity root_identity =
+      ReadLinuxFileIdentity(retained.get());
+  if (root_identity != expected_identity) {
     throw LinuxTransactionJournalError("cleanup identity mismatch");
   }
-  RemoveTree(parent, leaf);
+  const LinuxFileIdentity parent_identity = ReadLinuxFileIdentity(parent);
+  if (!parent_identity.directory ||
+      parent_identity.device != root_identity.device ||
+      parent_identity.mount_id != root_identity.mount_id) {
+    throw LinuxTransactionJournalError(
+        "cleanup root crosses a mount or device boundary");
+  }
+  RequireCleanupNodePolicy(root_identity, root_identity);
+
+  // Complete the bounded, read-only walk before the first unlink so a nested
+  // mount, special node, hard link, or limit violation cannot cause partial
+  // cleanup on the way to being rejected.
+  CleanupBudget budget;
+  const CleanupManifestNode manifest = BuildCleanupManifest(
+      retained.get(), leaf, root_identity, 0, budget, false);
+  RemoveCleanupManifestNode(parent, manifest, root_identity,
+                            std::move(retained));
   SyncLinuxDirectory(parent);
 }
 

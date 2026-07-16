@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <bcrypt.h>
+#include <userenv.h>
 #include <winternl.h>
 
 #include <algorithm>
@@ -16,6 +17,8 @@
 #include <vector>
 
 #include "helper_authenticode.h"
+#include "windows_archive_restage.h"
+#include "windows_helper_diagnostics.h"
 #include "json_value.h"
 
 namespace desktop_updater::helper {
@@ -416,42 +419,31 @@ AuthenticodeWindowsPayloadVerifier::AuthenticodeWindowsPayloadVerifier(
 WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
     HANDLE parent,
     const std::wstring& bundle_leaf) {
-  auto bundle = OpenRelativeNoReparse(
-      parent, bundle_leaf,
-      GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-      FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_OPEN,
-      FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
-  VerifyNoAlternateDataStreams(bundle.get());
-  auto provenance = OpenRelativeNoReparse(
-      bundle.get(), L".desktop_updater_stage_provenance.json",
-      GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-      FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_OPEN,
-      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
-  VerifyNoAlternateDataStreams(provenance.get());
-  const std::string provenance_json =
-      ReadHandleUtf8(provenance.get(), 16 * 1024 * 1024);
-  const std::string provenance_sha256 = Sha256Handle(provenance.get());
-  const auto provenance_value =
-      desktop_updater::runtime::internal::ParseJson(provenance_json);
-  if (desktop_updater::runtime::internal::EncodeCanonicalJson(
-          provenance_value) != provenance_json) {
-    throw WindowsRelaunchError("stage provenance is not canonical JSON");
-  }
-  const StageProvenance decoded = DecodeStageProvenance(provenance_value);
-
   std::string executable_inventory_path =
       WideToUtf8(expectation_.executable_relative_path);
   std::replace(executable_inventory_path.begin(),
                executable_inventory_path.end(), '\\', '/');
   ValidateInventoryPath(executable_inventory_path);
   std::vector<UniqueWindowsHandle> retained_handles;
-  const std::string inventory_executable_sha256 =
-      VerifyCompleteStageInventory(bundle.get(), decoded.entries,
-                                   executable_inventory_path,
-                                   &retained_handles);
+  const WindowsPayloadSeal payload_seal = SealWindowsPayloadTree(
+      parent, bundle_leaf, expectation_.package_id,
+      expectation_.package_identity_sha256, expectation_.artifact_sha256,
+      &retained_handles);
+  if (payload_seal.sha256 != expectation_.payload_seal_sha256) {
+    throw WindowsRelaunchError("helper payload seal mismatch");
+  }
+  const auto inventory_executable = std::find_if(
+      payload_seal.entries.begin(), payload_seal.entries.end(),
+      [&](const auto& entry) {
+        return entry.path == executable_inventory_path &&
+               entry.kind == "file";
+      });
+  if (inventory_executable == payload_seal.entries.end()) {
+    throw WindowsRelaunchError("signed executable missing from payload seal");
+  }
 
   auto executable = OpenRelativeNoReparse(
-      bundle.get(), expectation_.executable_relative_path,
+      parent, bundle_leaf + L"\\" + expectation_.executable_relative_path,
       GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
@@ -465,7 +457,7 @@ WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
       signed_executable.publisher !=
           Utf8ToWide(expectation_.authenticode_publisher) ||
       signed_executable.sha256 != executable_sha256 ||
-      inventory_executable_sha256 != executable_sha256 ||
+      inventory_executable->sha256 != executable_sha256 ||
       signed_executable.volume_serial != retained_identity.volume_serial ||
       signed_executable.file_id != retained_identity.file_id ||
       !VerifyWindowsExecutableStillMatches(executable_path,
@@ -474,20 +466,19 @@ WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
   }
 
   WindowsVerifiedPayloadIdentity observed{
-      decoded.package_id,
+      expectation_.package_id,
       expectation_.authenticode_publisher,
-      decoded.descriptor_sha256,
-      provenance_sha256,
-      decoded.artifact_sha256,
+      expectation_.package_identity_sha256,
+      expectation_.stage_provenance_sha256,
+      expectation_.artifact_sha256,
       expectation_.executable_relative_path,
       executable_sha256,
+      payload_seal.sha256,
   };
   if (observed != expectation_) {
     throw WindowsRelaunchError("payload package/provenance identity mismatch");
   }
-  retained_handles.push_back(std::move(provenance));
   retained_handles.push_back(std::move(executable));
-  retained_handles.push_back(std::move(bundle));
   retained_stage_handles_ = std::move(retained_handles);
   return observed;
 }
@@ -504,6 +495,63 @@ void CreateProcessWindowsLauncher::Launch(
                       nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT, nullptr,
                       executable.parent_path().c_str(), &startup, &process)) {
     throw WindowsRelaunchError("CreateProcessW verified relaunch failed");
+  }
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+}
+
+CallerTokenWindowsLauncher::CallerTokenWindowsLauncher(
+    HANDLE caller_process) {
+  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+    throw WindowsRelaunchError("caller process token source is unavailable");
+  }
+  HANDLE raw_token = nullptr;
+  if (!OpenProcessToken(caller_process, TOKEN_QUERY | TOKEN_DUPLICATE,
+                        &raw_token)) {
+    throw WindowsRelaunchError("caller process token cannot be opened");
+  }
+  UniqueWindowsHandle token(raw_token);
+  HANDLE raw_primary = nullptr;
+  constexpr DWORD desired_access =
+      TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY |
+      TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID;
+  if (!DuplicateTokenEx(token.get(), desired_access, nullptr,
+                        SecurityImpersonation, TokenPrimary, &raw_primary)) {
+    throw WindowsRelaunchError(
+        "caller process primary token cannot be duplicated");
+  }
+  caller_primary_token_.reset(raw_primary);
+}
+
+void CallerTokenWindowsLauncher::Launch(
+    const std::filesystem::path& executable) {
+  if (!caller_primary_token_.valid() || !executable.is_absolute() ||
+      executable.filename().empty()) {
+    throw WindowsRelaunchError("caller-token relaunch path is invalid");
+  }
+  void* environment = nullptr;
+  if (!CreateEnvironmentBlock(&environment, caller_primary_token_.get(),
+                              FALSE) ||
+      environment == nullptr) {
+    throw WindowsRelaunchError(
+        "caller-token relaunch environment is unavailable");
+  }
+  struct EnvironmentDestroyer {
+    void operator()(void* value) const {
+      if (value != nullptr) DestroyEnvironmentBlock(value);
+    }
+  };
+  std::unique_ptr<void, EnvironmentDestroyer> environment_owner(environment);
+  std::wstring command_line = L"\"" + executable.wstring() + L"\"";
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  const std::filesystem::path working_directory = executable.parent_path();
+  if (!CreateProcessWithTokenW(
+          caller_primary_token_.get(), LOGON_WITH_PROFILE,
+          executable.c_str(), command_line.data(), CREATE_UNICODE_ENVIRONMENT,
+          environment, working_directory.c_str(), &startup, &process)) {
+    throw WindowsRelaunchError("caller-token process relaunch failed");
   }
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
@@ -554,6 +602,7 @@ void WindowsRelaunchService::Relaunch(
       !VerifyWindowsExecutableStillMatches(executable, verified)) {
     throw WindowsRelaunchError("executable Authenticode proof mismatch");
   }
+  RecordWindowsHelperEvent(WindowsHelperEvent::kRelaunchAttempt);
   launcher_.Launch(executable);
 }
 

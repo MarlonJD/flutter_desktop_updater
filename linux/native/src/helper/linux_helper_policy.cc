@@ -138,12 +138,14 @@ LinuxHelperPolicy::LinuxHelperPolicy(
     std::string application_signer,
     std::string helper_sha256,
     std::filesystem::path broker_path,
-    std::vector<std::filesystem::path> allowed_install_roots)
+    std::vector<std::filesystem::path> allowed_install_roots,
+    std::string canonical_policy_json)
     : package_id_(std::move(package_id)),
       application_signer_(std::move(application_signer)),
       helper_sha256_(std::move(helper_sha256)),
       broker_path_(std::move(broker_path)),
-      allowed_install_roots_(std::move(allowed_install_roots)) {
+      allowed_install_roots_(std::move(allowed_install_roots)),
+      canonical_policy_json_(std::move(canonical_policy_json)) {
   if (package_id_.empty() || application_signer_.empty() ||
       !std::regex_match(helper_sha256_, kSha256) ||
       broker_path_ != "/usr/libexec/desktop-updater-helper" ||
@@ -197,7 +199,7 @@ LinuxHelperPolicy LinuxHelperPolicy::Load(
   return LinuxHelperPolicy(
       package_id, parsed.allowed_application_signer.value,
       wrapper.at("helperSha256").string(), wrapper.at("brokerPath").string(),
-      std::move(roots));
+      std::move(roots), parsed.canonical_json);
 }
 
 void ValidateLinuxBrokerIdentity(const LinuxVerifiedFile& broker,

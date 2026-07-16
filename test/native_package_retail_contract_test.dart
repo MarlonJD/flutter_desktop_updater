@@ -135,6 +135,9 @@ void main() {
     final template = readRequiredFile(
       "linux/native/cmake/desktop_updater_native.pc.in",
     );
+    final cmakeConfig = readRequiredFile(
+      "linux/native/cmake/desktop_updater_nativeConfig.cmake.in",
+    );
     final cmake = readRequiredFile("linux/native/CMakeLists.txt");
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
@@ -156,6 +159,15 @@ void main() {
     expect(cmake, contains("file(RELATIVE_PATH"));
     expect(cmake, contains("DESKTOP_UPDATER_PC_PREFIX_FROM_PCFILEDIR"));
     expect(
+      cmake,
+      contains("DESKTOP_UPDATER_CMAKE_PREFIX_FROM_CONFIGDIR"),
+    );
+    expect(
+      cmakeConfig,
+      contains("desktop_updater_native_HELPER_EXECUTABLE"),
+    );
+    expect(cmakeConfig, contains("@CMAKE_INSTALL_LIBEXECDIR@"));
+    expect(
       workflow,
       contains(
         r'cmake --install linux/native/build --prefix "$PWD/linux/native/install"',
@@ -164,6 +176,15 @@ void main() {
     expect(workflow, contains("lib/pkgconfig"));
     expect(workflow, contains("lib/x86_64-linux-gnu/pkgconfig"));
     expect(workflow, contains("pkg-config --cflags --libs"));
+  });
+
+  test("pkg-config exports the native SDK public crypto dependency", () {
+    final template = readRequiredFile(
+      "linux/native/cmake/desktop_updater_native.pc.in",
+    );
+
+    expect(template, contains("Requires: libcrypto"));
+    expect(template, isNot(contains("Requires.private: openssl")));
   });
 
   test("configured pkg-config paths compile from standard and multiarch dirs",

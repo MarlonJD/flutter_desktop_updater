@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "json_value.h"
 #include "windows_file_transaction.h"
 
 namespace desktop_updater::helper {
@@ -25,6 +26,7 @@ WindowsVerifiedPayloadIdentity IdentityForVersion(const std::string& version) {
       std::string(64, 'd'),
       L"bin\\example.exe",
       std::string(64, 'e'),
+      std::string(64, 'f'),
   };
 }
 
@@ -92,10 +94,11 @@ class WindowsTransactionFixture {
   std::unique_ptr<WindowsFileTransaction> MakeTransaction(
       std::string transaction_id =
           "00000000-0000-4000-8000-000000000008",
-      WindowsTransactionFaultInjector* fault = nullptr) {
+      WindowsTransactionFaultInjector* fault = nullptr,
+      WindowsTransactionTerminalCallbacks callbacks = {}) {
     return std::make_unique<WindowsFileTransaction>(
         target, stage, std::move(transaction_id), GetCurrentProcessId(),
-        IdentityForVersion("new"), verifier, fault);
+        IdentityForVersion("new"), verifier, fault, std::move(callbacks));
   }
 
   std::filesystem::path root;
@@ -150,6 +153,154 @@ TEST(WindowsFileTransaction, PrepareIsDurableAndDoesNotMutateTarget) {
   EXPECT_NE(artifacts.end(),
             std::find(artifacts.begin(), artifacts.end(),
                       transaction->paths().lock_name));
+  EXPECT_EQ(artifacts.end(),
+            std::find(artifacts.begin(), artifacts.end(),
+                      transaction->paths().lock_candidate_name));
+}
+
+TEST(WindowsFileTransaction, LockBindingDistinguishesForeignAndMalformed) {
+  WindowsTransactionFixture fixture;
+  auto parent = OpenFixtureParent(fixture.root);
+  const auto paths = WindowsTransactionPaths::Create(
+      L"Example.app", "00000000-0000-4000-8000-000000000008");
+  auto foreign = OpenRelativeNoReparse(
+      parent.get(), L"foreign.lock",
+      GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE, 0, FILE_CREATE,
+      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+          FILE_WRITE_THROUGH);
+  WriteWindowsTransactionLockBinding(
+      foreign.get(), "00000000-0000-4000-8000-000000000009");
+  EXPECT_EQ(WindowsTransactionLockBindingState::kForeign,
+            ClassifyWindowsTransactionLockBinding(
+                foreign.get(), paths.transaction_id));
+
+  auto malformed = OpenRelativeNoReparse(
+      parent.get(), L"malformed.lock",
+      GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE, 0, FILE_CREATE,
+      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+          FILE_WRITE_THROUGH);
+  constexpr char partial[] = "partial";
+  DWORD written = 0;
+  ASSERT_TRUE(WriteFile(malformed.get(), partial, sizeof(partial) - 1,
+                        &written, nullptr));
+  ASSERT_TRUE(FlushFileBuffers(malformed.get()));
+  EXPECT_EQ(WindowsTransactionLockBindingState::kMalformed,
+            ClassifyWindowsTransactionLockBinding(
+                malformed.get(), paths.transaction_id));
+}
+
+TEST(WindowsFileTransaction,
+     FrozenJournalExistsBeforeAnyDerivedFilesystemArtifact) {
+  WindowsTransactionFixture fixture;
+  auto transaction = fixture.MakeTransaction();
+
+  const WindowsTransactionJournal frozen =
+      WindowsTransactionJournal::DecodeStrict(
+          transaction->initial_journal_canonical());
+
+  EXPECT_EQ(WindowsTransactionState::kPrepared, frozen.state);
+  EXPECT_EQ(transaction->paths().transaction_id, frozen.transaction_id);
+  EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+  EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+  EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+}
+
+TEST(WindowsFileTransaction,
+     JournalV2SeparatesCallerProvenanceFromHelperPayloadSeal) {
+  WindowsTransactionFixture fixture;
+  auto transaction = fixture.MakeTransaction();
+
+  const WindowsTransactionJournal frozen =
+      WindowsTransactionJournal::DecodeStrict(
+          transaction->initial_journal_canonical());
+
+  EXPECT_EQ(2, frozen.schema_version);
+  EXPECT_EQ(std::string(64, 'c'),
+            frozen.expected_payload_identity.stage_provenance_sha256);
+  EXPECT_EQ(std::string(64, 'f'),
+            frozen.expected_payload_identity.payload_seal_sha256);
+}
+
+TEST(WindowsFileTransaction, LegacyV1JournalFailsClosedWithoutPayloadSeal) {
+  WindowsTransactionFixture fixture;
+  auto transaction = fixture.MakeTransaction();
+  auto legacy = desktop_updater::runtime::internal::ParseJson(
+      transaction->initial_journal_canonical());
+  legacy.object()["schemaVersion"] =
+      desktop_updater::runtime::internal::JsonValue(
+          static_cast<std::int64_t>(1));
+  legacy.object()["expectedPayloadIdentity"].object().erase(
+      "payloadSealSha256");
+
+  EXPECT_THROW(
+      WindowsTransactionJournal::DecodeStrict(
+          desktop_updater::runtime::internal::EncodeCanonicalJson(legacy)),
+      WindowsTransactionJournalError);
+}
+
+TEST(WindowsFileTransaction,
+     TerminalCallbacksBracketDurableLockReleaseAfterArtifactCleanup) {
+  {
+    WindowsTransactionFixture fixture;
+    bool before_observed = false;
+    bool after_observed = false;
+    const std::string transaction_id =
+        "00000000-0000-4000-8000-000000000008";
+    const WindowsTransactionPaths paths =
+        WindowsTransactionPaths::Create(fixture.target.filename(),
+                                        transaction_id);
+    auto transaction = fixture.MakeTransaction(
+        transaction_id, nullptr,
+        {[&]() {
+           const auto artifacts = FindWindowsTransactionArtifacts(fixture.root);
+           EXPECT_EQ(1U, artifacts.size());
+           EXPECT_EQ(paths.lock_name, artifacts.front());
+           EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
+           before_observed = true;
+         },
+         [&]() {
+           EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+           EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
+           after_observed = true;
+         },
+         {},
+         {}});
+    EXPECT_EQ(WindowsFileTransactionResult::kCompleted,
+              transaction->Execute());
+    EXPECT_TRUE(before_observed);
+    EXPECT_TRUE(after_observed);
+  }
+  {
+    WindowsTransactionFixture fixture;
+    bool before_observed = false;
+    bool after_observed = false;
+    const std::string transaction_id =
+        "00000000-0000-4000-8000-000000000008";
+    const WindowsTransactionPaths paths =
+        WindowsTransactionPaths::Create(fixture.target.filename(),
+                                        transaction_id);
+    auto transaction = fixture.MakeTransaction(
+        transaction_id, nullptr,
+        {{}, {},
+         [&]() {
+           const auto artifacts = FindWindowsTransactionArtifacts(fixture.root);
+           EXPECT_EQ(1U, artifacts.size());
+           EXPECT_EQ(paths.lock_name, artifacts.front());
+           EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+           EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+           before_observed = true;
+         },
+         [&]() {
+           EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+           EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
+           EXPECT_EQ("new", fixture.ReadVersion(fixture.stage));
+           after_observed = true;
+         }});
+    transaction->Prepare();
+    transaction->CancelPrepared();
+    EXPECT_TRUE(before_observed);
+    EXPECT_TRUE(after_observed);
+  }
 }
 
 TEST(WindowsFileTransaction, PreparedCommitAndCancellationAreDisjoint) {
@@ -287,16 +438,24 @@ TEST(WindowsFileTransaction, RejectsTargetParentReplacement) {
 TEST(WindowsFileTransaction, SharingViolationAndSecondHelperFailClosed) {
   WindowsTransactionFixture fixture;
   auto transaction = fixture.MakeTransaction();
+  transaction->Prepare();
+
+  const auto second_stage = fixture.root / L"Stage-2.app";
+  std::filesystem::create_directories(second_stage);
+  fixture.WriteVersion(second_stage, "new");
+  auto second = std::make_unique<WindowsFileTransaction>(
+      fixture.target, second_stage,
+      "00000000-0000-4000-8000-000000000009", GetCurrentProcessId(),
+      IdentityForVersion("new"), fixture.verifier);
   EXPECT_THROW(
-      fixture.MakeTransaction(
-          "00000000-0000-4000-8000-000000000009"),
+      second->Prepare(),
       WindowsFileTransactionError);
 
   HANDLE blocker = CreateFileW(
       (fixture.target / L"version.txt").c_str(), GENERIC_READ, FILE_SHARE_READ,
       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   ASSERT_NE(INVALID_HANDLE_VALUE, blocker);
-  EXPECT_THROW(transaction->Execute(), WindowsFileTransactionError);
+  EXPECT_THROW(transaction->ExecutePrepared(), WindowsFileTransactionError);
   CloseHandle(blocker);
   EXPECT_EQ("old", fixture.ReadVersion(fixture.target));
 }

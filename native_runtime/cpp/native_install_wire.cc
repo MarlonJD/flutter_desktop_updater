@@ -135,6 +135,14 @@ void ValidateStatus(const NativeInstallTransactionStatusV1& value) {
       !IsSha256(value.journal_sha256)) {
     Fail("invalidTransactionStatus");
   }
+  const bool completed = value.state == "completed";
+  const bool completed_result = value.result_code == "completed";
+  const bool rolled_back = value.state == "rolledBack";
+  const bool rolled_back_result = value.result_code == "rolledBack";
+  if ((completed_result && !completed) ||
+      (rolled_back_result && !rolled_back)) {
+    Fail("inconsistentTransactionStatus");
+  }
 }
 
 void ValidateRecovery(const NativeInstallRecoveryResultV1& value) {
@@ -146,6 +154,13 @@ void ValidateRecovery(const NativeInstallRecoveryResultV1& value) {
        value.verified_outcome != "none") ||
       !IsSha256(value.journal_sha256)) {
     Fail("invalidRecoveryResult");
+  }
+  const bool completed = value.result_code == "completed";
+  const bool new_target = value.verified_outcome == "newTarget";
+  const bool rolled_back = value.result_code == "rolledBack";
+  const bool old_target = value.verified_outcome == "oldTarget";
+  if ((completed && !new_target) || (rolled_back && !old_target)) {
+    Fail("inconsistentRecoveryResult");
   }
 }
 

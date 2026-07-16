@@ -19,6 +19,29 @@ WindowsHelperPolicy TestPolicy() {
       {L"C:\\Program Files\\Example"});
 }
 
+const char kPortablePolicy[] =
+    "{\"allowedApplicationSigner\":{\"kind\":\"sha256\",\"value\":"
+    "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},"
+    "\"allowedHelperSigner\":{\"kind\":\"sha256\",\"value\":"
+    "\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},"
+    "\"allowedInstallRoots\":[],\"allowedStrategies\":[{\"provider\":"
+    "\"platformDirectory\",\"strategy\":\"directoryReplace\"},{\"provider\":"
+    "\"platformFile\",\"strategy\":\"singleFileReplace\"}],"
+    "\"allowedTargetClasses\":[\"sameUserWritable\"],"
+    "\"applicationPackageId\":\"com.example.app\",\"helperServiceId\":"
+    "\"com.example.desktop-updater.helper\",\"minimumHelperProtocolVersion\":1,"
+    "\"policyId\":\"com.example.desktop-updater.portable\",\"policyVersion\":1,"
+    "\"releaseRootPublicKeys\":[{\"algorithm\":\"ed25519\",\"keyId\":"
+    "\"stable-2026\",\"publicKeyBase64\":"
+    "\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\"}]}";
+
+WindowsHelperPolicy PortablePolicy() {
+  return WindowsHelperPolicy::Load(
+      kPortablePolicy,
+      "99b18f06fc11f18ad34b7cad9d10408ae0726679b20e44a84c518f886db0cf10",
+      "com.example.app", std::string(64, 'b'));
+}
+
 VerifiedWindowsExecutable ValidIdentity() {
   return VerifiedWindowsExecutable{
       true,
@@ -73,6 +96,48 @@ TEST(WindowsHelperAuth, RejectsPortableElevationAndUnsealedPolicy) {
       WindowsHelperPolicy::PortableElevationErrorForTesting());
 }
 
+TEST(WindowsHelperAuth, AcceptsSealedPortablePolicyWithoutElevationAuthority) {
+  const WindowsHelperPolicy policy = PortablePolicy();
+  EXPECT_TRUE(policy.is_portable());
+  EXPECT_EQ("sha256", policy.application_signer_kind());
+  EXPECT_EQ(std::string(64, 'a'), policy.application_signer_identity());
+  EXPECT_EQ("sha256", policy.helper_signer_kind());
+  EXPECT_EQ(std::string(64, 'b'), policy.helper_signer_identity());
+  EXPECT_TRUE(policy.allowed_install_roots().empty());
+  EXPECT_TRUE(policy.AllowsRequest(
+      1, "sameUserWritable", "directoryReplace", "platformDirectory"));
+  EXPECT_TRUE(policy.AllowsRequest(
+      1, "sameUserWritable", "singleFileReplace", "platformFile"));
+  EXPECT_FALSE(policy.AllowsRequest(
+      1, "applicationDirectory", "directoryReplace", "platformDirectory"));
+  EXPECT_FALSE(policy.AllowsRequest(
+      1, "sameUserWritable", "verifiedInstallerHandoff", "windowsInno"));
+}
+
+TEST(WindowsHelperAuth, PortableHelperMustRemainSignedAndDigestBound) {
+  VerifiedWindowsExecutable portable{
+      true,
+      L"Trusted Helper LLC",
+      std::string(64, 'b'),
+      L"C:\\Users\\caller\\Example\\desktop_updater_install_helper.exe",
+      false,
+      7,
+      {1, 2},
+  };
+  EXPECT_NO_THROW(ValidateWindowsHelperIdentity(
+      portable, PortablePolicy(), false));
+
+  portable.signature_valid = false;
+  EXPECT_THROW(ValidateWindowsHelperIdentity(
+                   portable, PortablePolicy(), false),
+               WindowsHelperTrustError);
+  portable.signature_valid = true;
+  portable.sha256 = std::string(64, 'c');
+  EXPECT_THROW(ValidateWindowsHelperIdentity(
+                   portable, PortablePolicy(), false),
+               WindowsHelperTrustError);
+}
+
 TEST(WindowsHelperAuth, RetainsCompleteSealedAuthorizationContext) {
   const WindowsHelperPolicy policy = TestPolicy();
   EXPECT_EQ("com.example.desktop-updater", policy.policy_id());
@@ -106,6 +171,22 @@ TEST(WindowsHelperAuth, PipeNameAndPeerAreBoundToOneNonceAndToken) {
                NamedPipeTransportError);
   EXPECT_THROW(ValidatePeerBinding(
                    binding, 4242, L"S-1-5-21-100", std::string(43, 'B')),
+               NamedPipeTransportError);
+}
+
+TEST(WindowsHelperAuth, PipeDaclAdmitsExactOverTheShoulderHelperSid) {
+  const std::wstring caller_sid = L"S-1-5-21-100";
+  const std::wstring helper_sid = L"S-1-5-21-200";
+  EXPECT_EQ(L"D:P(A;;GA;;;S-1-5-21-100)(A;;GA;;;SY)",
+            BuildCallerPipeDaclSddl(caller_sid, L""));
+  EXPECT_EQ(
+      L"D:P(A;;GA;;;S-1-5-21-100)(A;;GA;;;S-1-5-21-200)(A;;GA;;;SY)",
+      BuildCallerPipeDaclSddl(caller_sid, helper_sid));
+  EXPECT_EQ(L"D:P(A;;GA;;;S-1-5-21-100)(A;;GA;;;SY)",
+            BuildCallerPipeDaclSddl(caller_sid, caller_sid));
+  EXPECT_EQ(std::wstring::npos,
+            BuildCallerPipeDaclSddl(caller_sid, helper_sid).find(L";;;BA"));
+  EXPECT_THROW(BuildCallerPipeDaclSddl(L"", helper_sid),
                NamedPipeTransportError);
 }
 

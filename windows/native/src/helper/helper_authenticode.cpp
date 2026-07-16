@@ -319,11 +319,21 @@ void ValidateWindowsHelperIdentity(const VerifiedWindowsExecutable& identity,
   if (!identity.signature_valid) {
     throw WindowsHelperTrustError("unsigned or untrusted helper");
   }
-  if (identity.publisher != Utf8ToWide(policy.helper_publisher())) {
-    throw WindowsHelperTrustError("helper Authenticode publisher mismatch");
-  }
   if (identity.sha256 != policy.helper_sha256()) {
     throw WindowsHelperTrustError("helper digest mismatch");
+  }
+  if (policy.is_portable()) {
+    if (require_protected_location ||
+        policy.helper_signer_kind() != "sha256" ||
+        policy.helper_signer_identity() != identity.sha256 ||
+        !policy.allowed_install_roots().empty()) {
+      throw WindowsHelperTrustError(
+          "portable helper cannot acquire elevation authority");
+    }
+    return;
+  }
+  if (identity.publisher != Utf8ToWide(policy.helper_publisher())) {
+    throw WindowsHelperTrustError("helper Authenticode publisher mismatch");
   }
   if (require_protected_location && !identity.installer_protected_location) {
     throw WindowsHelperTrustError("helper is in a user-writable location");

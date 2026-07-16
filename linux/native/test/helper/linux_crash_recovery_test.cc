@@ -2,12 +2,17 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "linux_recovery_service.h"
 #include "linux_relaunch_service.h"
@@ -221,19 +226,122 @@ TEST(LinuxCrashRecovery, RecoveryIsIdempotent) {
 
 class RecordingLauncher final : public LinuxProcessLauncher {
  public:
-  void Launch(int executable_fd, const std::string&) override {
+  void Launch(int executable_fd,
+              const std::string&,
+              const Identity& identity) override {
     launched_fd = executable_fd;
+    launched_identity = identity;
   }
   int launched_fd = -1;
+  Identity launched_identity;
 };
 
 TEST(LinuxCrashRecovery, RelaunchRequiresVerifiedExecutableDescriptor) {
   Fixture fixture;
   RecordingLauncher launcher;
-  LinuxRelaunchService service(Payload("new"), fixture.verifier, launcher);
+  LinuxProcessLauncher::Identity identity;
+  identity.source_process_id = getpid();
+  identity.source_process_start_identity = LinuxProcessStartIdentity(getpid());
+  identity.uid = geteuid();
+  identity.gid = getegid();
+  identity.home_directory = "/tmp";
+  identity.sanitized_environment = {"HOME=/tmp", "PATH=/usr/bin:/bin"};
+  LinuxRelaunchService service(Payload("new"), fixture.verifier, launcher,
+                               identity);
 
   EXPECT_THROW(service.Relaunch(fixture.target), LinuxRelaunchError);
   EXPECT_EQ(-1, launcher.launched_fd);
+}
+
+TEST(LinuxCrashRecovery, CapturesSanitizedCurrentPeerIdentity) {
+  const auto identity = CaptureLinuxRelaunchIdentity(
+      getpid(), LinuxProcessStartIdentity(getpid()), geteuid(), getegid());
+  EXPECT_EQ(geteuid(), identity.uid);
+  EXPECT_EQ(getegid(), identity.gid);
+  EXPECT_FALSE(identity.home_directory.empty());
+  EXPECT_NE(identity.sanitized_environment.end(),
+            std::find_if(identity.sanitized_environment.begin(),
+                         identity.sanitized_environment.end(),
+                         [](const std::string& value) {
+                           return value.rfind("HOME=", 0) == 0;
+                         }));
+  EXPECT_EQ(identity.sanitized_environment.end(),
+            std::find_if(identity.sanitized_environment.begin(),
+                         identity.sanitized_environment.end(),
+                         [](const std::string& value) {
+                           return value.rfind("LD_PRELOAD=", 0) == 0;
+                         }));
+}
+
+TEST(LinuxCrashRecovery, FexecveLauncherConfirmsChildExec) {
+  const auto identity = CaptureLinuxRelaunchIdentity(
+      getpid(), LinuxProcessStartIdentity(getpid()), geteuid(), getegid());
+  auto executable = OpenLinuxRelativeNoFollow(
+      OpenLinuxDirectory("/usr/bin").get(), "true", O_RDONLY);
+  FexecveLinuxProcessLauncher launcher;
+  EXPECT_NO_THROW(launcher.Launch(executable.get(), "true", identity));
+}
+
+TEST(LinuxCrashRecovery, RootLauncherDropsCredentialsAndSanitizesEnvironment) {
+  if (geteuid() != 0) GTEST_SKIP() << "requires the privileged broker identity";
+
+  constexpr uid_t kPeerUid = 65534;
+  constexpr gid_t kPeerGid = 65534;
+  const std::filesystem::path fixture =
+      DESKTOP_UPDATER_COMMIT_CALLER_FIXTURE;
+  const std::filesystem::path proof =
+      std::filesystem::path("/tmp") /
+      ("desktop-updater-root-relaunch-proof-" + std::to_string(getpid()) +
+       ".txt");
+  std::error_code ignored;
+  std::filesystem::remove(proof, ignored);
+  ASSERT_EQ(0,
+            setenv("DESKTOP_UPDATER_ROOT_SECRET", "must-not-cross-exec", 1));
+
+  LinuxProcessLauncher::Identity identity;
+  identity.source_process_id = getpid();
+  identity.source_process_start_identity = LinuxProcessStartIdentity(getpid());
+  identity.uid = kPeerUid;
+  identity.gid = kPeerGid;
+  identity.supplementary_groups = {kPeerGid};
+  identity.home_directory = "/tmp";
+  identity.sanitized_environment = {
+      "HOME=/tmp", "USER=nobody", "LOGNAME=nobody",
+      "PATH=/usr/local/bin:/usr/bin:/bin",
+      "DESKTOP_UPDATER_TEST_RELAUNCH_PROOF=" + proof.string()};
+
+  auto parent = OpenLinuxDirectory(fixture.parent_path().string());
+  auto executable = OpenLinuxRelativeNoFollow(
+      parent.get(), fixture.filename().string(), O_RDONLY);
+  FexecveLinuxProcessLauncher launcher;
+  ASSERT_NO_THROW(
+      launcher.Launch(executable.get(), fixture.filename().string(), identity));
+
+  for (int attempt = 0; attempt != 100 && !std::filesystem::exists(proof);
+       ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(std::filesystem::exists(proof));
+  std::ifstream input(proof, std::ios::binary);
+  const std::string observed{std::istreambuf_iterator<char>(input),
+                             std::istreambuf_iterator<char>()};
+  EXPECT_NE(std::string::npos,
+            observed.find("uid=" + std::to_string(kPeerUid) + "\n"));
+  EXPECT_NE(std::string::npos,
+            observed.find("euid=" + std::to_string(kPeerUid) + "\n"));
+  EXPECT_NE(std::string::npos,
+            observed.find("gid=" + std::to_string(kPeerGid) + "\n"));
+  EXPECT_NE(std::string::npos,
+            observed.find("egid=" + std::to_string(kPeerGid) + "\n"));
+  EXPECT_NE(std::string::npos,
+            observed.find("groups=" + std::to_string(kPeerGid) + "\n"));
+  EXPECT_NE(std::string::npos, observed.find("secret=absent\n"));
+
+  int status = 0;
+  while (waitpid(-1, &status, WNOHANG) > 0) {
+  }
+  unsetenv("DESKTOP_UPDATER_ROOT_SECRET");
+  std::filesystem::remove(proof, ignored);
 }
 
 }  // namespace

@@ -105,6 +105,16 @@ StageProvenanceMarker VerifyStageProvenance(
     const std::string& expected_marker_sha256,
     const StageSha256Function& sha256);
 
+// Verifies the same canonical marker and complete inventory after the helper
+// has atomically moved a pinned stage to its transaction-derived prepared or
+// target leaf. The original owned-stage basename is intentionally not
+// required at that point; callers must already hold and validate the pinned
+// filesystem identity.
+StageProvenanceMarker VerifyRelocatedStageProvenance(
+    const std::filesystem::path& stage_root,
+    const std::string& expected_marker_sha256,
+    const StageSha256Function& sha256);
+
 void RemoveOwnedStage(const std::filesystem::path& parent_path,
                       const std::filesystem::path& stage_root,
                       const std::string& nonce,

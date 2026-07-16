@@ -2,6 +2,7 @@
 #define DESKTOP_UPDATER_LINUX_HELPER_LINUX_FILE_TRANSACTION_H_
 
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -20,6 +21,17 @@ class LinuxInstallPayloadVerifier {
   virtual ~LinuxInstallPayloadVerifier() = default;
   virtual LinuxVerifiedPayloadIdentity Verify(int parent,
                                               const std::string& payload_leaf) = 0;
+  virtual void FinalizeActivatedPayloadRoot(
+      int,
+      const std::string&,
+      const LinuxFileIdentity&) {}
+  virtual bool MatchesActivatedPayloadRoot(
+      int parent,
+      const std::string& leaf,
+      const LinuxFileIdentity& staged_identity) {
+    return LinuxRelativeExistsNoFollow(parent, leaf) &&
+           ReadLinuxRelativeIdentity(parent, leaf) == staged_identity;
+  }
 };
 
 enum class LinuxFileTransactionResult { kCompleted };
@@ -39,6 +51,8 @@ class LinuxFileTransaction {
   LinuxFileTransaction(const LinuxFileTransaction&) = delete;
   LinuxFileTransaction& operator=(const LinuxFileTransaction&) = delete;
 
+  std::string PrepareDurableJournal();
+  void CancelPrepared();
   LinuxFileTransactionResult Execute();
   const LinuxTransactionPaths& paths() const { return paths_; }
 
@@ -63,7 +77,9 @@ class LinuxFileTransaction {
   UniqueLinuxFd stage_;
   UniqueLinuxFd lock_;
   LinuxMountGuard mount_guard_;
+  std::optional<LinuxTransactionJournal> journal_;
   bool journal_persisted_ = false;
+  bool execution_started_ = false;
 };
 
 }  // namespace desktop_updater::helper

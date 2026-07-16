@@ -137,7 +137,13 @@ void LinuxFileTransaction::VerifyPayload(const std::string& leaf) const {
   }
 }
 
-LinuxFileTransactionResult LinuxFileTransaction::Execute() {
+std::string LinuxFileTransaction::PrepareDurableJournal() {
+  if (execution_started_) {
+    throw LinuxFileTransactionError(
+        "transaction preparation cannot follow mutation");
+  }
+  if (journal_.has_value()) return journal_->EncodeCanonical();
+
   ValidateParentLocator();
   mount_guard_.Validate(parent_.get(), target_.get(), stage_.get());
   ValidateRelativeIdentity(paths_.target_name,
@@ -167,6 +173,37 @@ LinuxFileTransactionResult LinuxFileTransaction::Execute() {
   // durable lock record (pre-journal) or the journal (post-rename).
   journal_persisted_ = true;
   store.Persist(journal);
+  journal_ = journal;
+  return journal.EncodeCanonical();
+}
+
+void LinuxFileTransaction::CancelPrepared() {
+  if (!journal_.has_value() || execution_started_) {
+    throw LinuxFileTransactionError(
+        "only a prepared transaction can be cancelled");
+  }
+  ValidateParentLocator();
+  ValidateRelativeIdentity(paths_.target_name, journal_->target_identity,
+                           "target identity changed before cancellation");
+  ValidateRelativeIdentity(stage_name_, journal_->stage_identity,
+                           "stage identity changed before cancellation");
+  DurableLinuxTransactionJournalStore store(parent_.get(), paths_,
+                                             fault_injector_);
+  store.Remove();
+  lock_.reset();
+  journal_.reset();
+  journal_persisted_ = false;
+}
+
+LinuxFileTransactionResult LinuxFileTransaction::Execute() {
+  if (!journal_.has_value()) (void)PrepareDurableJournal();
+  if (execution_started_) {
+    throw LinuxFileTransactionError("transaction mutation already started");
+  }
+  execution_started_ = true;
+  LinuxTransactionJournal journal = *journal_;
+  DurableLinuxTransactionJournalStore store(parent_.get(), paths_,
+                                             fault_injector_);
 
   fault_injector_->Hit(LinuxTransactionFaultPoint::kBeforeStageRename);
   ValidateParentLocator();
@@ -211,8 +248,12 @@ LinuxFileTransactionResult LinuxFileTransaction::Execute() {
   store.Persist(journal);
 
   ValidateParentLocator();
-  ValidateRelativeIdentity(paths_.target_name, journal.stage_identity,
-                           "activated target identity changed");
+  verifier_.FinalizeActivatedPayloadRoot(parent_.get(), paths_.target_name,
+                                         journal.stage_identity);
+  if (!verifier_.MatchesActivatedPayloadRoot(
+          parent_.get(), paths_.target_name, journal.stage_identity)) {
+    throw LinuxFileTransactionError("activated target identity changed");
+  }
   VerifyPayload(paths_.target_name);
   journal.state = LinuxTransactionState::kCompleted;
   store.Persist(journal);

@@ -47,6 +47,37 @@ TEST(DesktopUpdaterPlugin, ProductVersionBuildNumberRejectsEmptyMetadata) {
             ProductVersionBuildParseResult::kInvalid);
 }
 
+TEST(DesktopUpdaterPlugin, InstallTransactionIdIsCanonicalUuidV4) {
+  EXPECT_TRUE(IsCanonicalInstallTransactionId(
+      "123e4567-e89b-42d3-a456-426614174000"));
+  EXPECT_FALSE(IsCanonicalInstallTransactionId(""));
+  EXPECT_FALSE(IsCanonicalInstallTransactionId(
+      "123E4567-E89B-42D3-A456-426614174000"));
+  EXPECT_FALSE(IsCanonicalInstallTransactionId(
+      "123e4567-e89b-12d3-a456-426614174000"));
+  EXPECT_FALSE(IsCanonicalInstallTransactionId(
+      "123e4567-e89b-42d3-c456-426614174000"));
+}
+
+TEST(DesktopUpdaterPlugin, LegacyInstallRequestAggregateOrderIsPreserved) {
+  native::InstallRequest request = {
+      L"C:\\stage",
+      L"C:\\app",
+      L"bin\\example.exe",
+      L"com.example.app",
+      {},
+      L"C:\\diagnostics.log",
+      L"provenance",
+      L"artifact",
+      {},
+      native::InstallElevationPolicy::kAlways,
+  };
+
+  EXPECT_EQ(L"C:\\stage", request.staging_path);
+  EXPECT_EQ(native::InstallElevationPolicy::kAlways,
+            request.elevation_policy);
+}
+
 TEST(DesktopUpdaterPlugin, RemovedFileMustBeStrictChildPath) {
   EXPECT_TRUE(native::IsStrictChildPath(L"C:\\App", L"C:\\App\\data.txt"));
   EXPECT_FALSE(native::IsStrictChildPath(L"C:\\App", L"C:\\App"));

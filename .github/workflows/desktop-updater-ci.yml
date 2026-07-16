@@ -1006,73 +1006,107 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1'
     steps:
       - uses: actions/checkout@v4
-      - name: Validate sealed broker policy inputs
-        env:
-          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
-          DESKTOP_UPDATER_LINUX_POLICY_JSON: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_JSON }}
-          DESKTOP_UPDATER_LINUX_POLICY_SHA256: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_SHA256 }}
-        run: |
-          set -euo pipefail
-          test -n "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID"
-          test -n "$DESKTOP_UPDATER_LINUX_POLICY_JSON"
-          test -n "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
-          canonical_policy_json="$(printf '%s' "$DESKTOP_UPDATER_LINUX_POLICY_JSON" | jq -cS .)"
-          test "$canonical_policy_json" = "$DESKTOP_UPDATER_LINUX_POLICY_JSON"
-          printf '%s' "$canonical_policy_json" | jq -e \
-            --arg package_id "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
-            '.applicationPackageId == $package_id' >/dev/null
-          canonical_policy_sha="$(printf '%s' "$canonical_policy_json" | sha256sum | awk '{print $1}')"
-          test "$canonical_policy_sha" = "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
-      - name: Build and install fixed system broker artifacts
-        env:
-          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
-          DESKTOP_UPDATER_LINUX_POLICY_JSON: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_JSON }}
-          DESKTOP_UPDATER_LINUX_POLICY_SHA256: ${{ secrets.DESKTOP_UPDATER_LINUX_POLICY_SHA256 }}
+      - name: Build test-only caller and sealed fixed broker
         shell: bash
         run: |
           set -euo pipefail
           build="$RUNNER_TEMP/desktop-updater-polkit-build"
-          canonical_policy_json="$(printf '%s' "$DESKTOP_UPDATER_LINUX_POLICY_JSON" | jq -cS .)"
+          package_id=com.example.desktop-updater.polkit-e2e
+          allowed_root="/opt/desktop-updater-polkit-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cmake -S linux/native -B "$build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON \
+            -DDESKTOP_UPDATER_ENABLE_POLKIT_E2E_FAULT_INJECTION=ON
+          cmake --build "$build" \
+            --target desktop-updater-helper linux_polkit_e2e_fixture
+          helper_sha="$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')"
+          caller_sha="$(sha256sum "$build/linux_polkit_e2e_fixture" | awk '{print $1}')"
+          # linux_polkit_e2e_fixture --canonical-policy uses a deterministic,
+          # test-only Ed25519 key and binds the actual helper/caller bytes.
+          canonical_policy_json="$(
+            "$build/linux_polkit_e2e_fixture" --canonical-policy \
+              "$caller_sha" "$helper_sha" "$allowed_root"
+          )"
+          test "$(printf '%s' "$canonical_policy_json" | jq -cS .)" = "$canonical_policy_json"
           canonical_policy_sha="$(printf '%s' "$canonical_policy_json" | sha256sum | awk '{print $1}')"
-          test "$canonical_policy_sha" = "$DESKTOP_UPDATER_LINUX_POLICY_SHA256"
           escaped_policy_json="$(printf '%s' "$canonical_policy_json" | jq -Rs .)"
           escaped_policy_json="${escaped_policy_json#\"}"
           escaped_policy_json="${escaped_policy_json%\"}"
-          cmake -S linux/native -B "$build" -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$build" --target desktop-updater-helper
-          helper_sha="$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')"
           cmake -S linux/native -B "$build" \
             -DDESKTOP_UPDATER_INSTALL_SYSTEM_BROKER=ON \
-            "-DDESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID=$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
+            "-DDESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID=$package_id" \
             "-DDESKTOP_UPDATER_HELPER_SHA256=$helper_sha" \
             "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON=$escaped_policy_json" \
             "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256=$canonical_policy_sha"
-          cmake --build "$build" --target desktop-updater-helper
+          cmake --build "$build" \
+            --target desktop-updater-helper linux_polkit_e2e_fixture
           test "$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')" = "$helper_sha"
-          sudo cmake --install "$build"
-          printf 'DESKTOP_UPDATER_LINUX_HELPER_SHA256=%s\n' "$helper_sha" >> "$GITHUB_ENV"
-      - name: Run installed polkit root broker smoke
-        env:
-          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
+          test "$(sha256sum "$build/linux_polkit_e2e_fixture" | awk '{print $1}')" = "$caller_sha"
+          sudo -n install -d -o root -g root -m 0755 \
+            /usr/libexec /usr/share/polkit-1/actions \
+            /etc/desktop-updater/policies
+          sudo -n install -o root -g root -m 0755 \
+            "$build/desktop-updater-helper" \
+            /usr/libexec/desktop-updater-helper
+          sudo -n install -o root -g root -m 0755 \
+            "$build/linux_polkit_e2e_fixture" \
+            /usr/libexec/desktop-updater-polkit-e2e-fixture
+          sudo -n install -o root -g root -m 0644 \
+            "$build/com.desktopupdater.install.policy" \
+            /usr/share/polkit-1/actions/com.desktopupdater.install.policy
+          sudo -n install -o root -g root -m 0644 \
+            "$build/$package_id.json" \
+            "/etc/desktop-updater/policies/$package_id.json"
+          {
+            printf 'DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID=%s\n' "$package_id"
+            printf 'DESKTOP_UPDATER_LINUX_HELPER_SHA256=%s\n' "$helper_sha"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256=%s\n' "$caller_sha"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT=%s\n' "$allowed_root"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_CALLER=%s\n' \
+              /usr/libexec/desktop-updater-polkit-e2e-fixture
+          } >> "$GITHUB_ENV"
+      - name: Run installed broker static audit
         shell: bash
         run: |
           set -euo pipefail
-          pkexec /usr/libexec/desktop-updater-helper --version
-          sudo env \
+          mkdir -p reports
+          sudo -n env \
             DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID="$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
             DESKTOP_UPDATER_LINUX_HELPER_SHA256="$DESKTOP_UPDATER_LINUX_HELPER_SHA256" \
-            sh tool/linux_install_helper_smoke.sh --mode root-broker
+            DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256="$DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256" \
+            DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT="$DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT" \
+            DESKTOP_UPDATER_LINUX_E2E_CALLER="$DESKTOP_UPDATER_LINUX_E2E_CALLER" \
+            sh tool/linux_install_helper_smoke.sh --mode root-broker-audit | \
+            tee reports/linux-polkit-static-audit.txt
+      - name: Run real non-root polkit broker E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          sh tool/linux_install_helper_smoke.sh --mode root-broker | \
+            tee reports/linux-polkit-root-broker-e2e.txt
+      - name: Upload installed polkit broker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installed-polkit-broker-evidence
+          path: reports/linux-polkit-*.txt
+          if-no-files-found: error
       - name: Remove installed broker smoke artifacts
         if: always()
         shell: bash
-        env:
-          DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID: ${{ vars.DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID }}
         run: |
-          sudo rm -f /usr/libexec/desktop-updater-helper
-          sudo rm -f /usr/share/polkit-1/actions/com.desktopupdater.install.policy
-          if [ -n "$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" ]; then
-            sudo rm -f "/etc/desktop-updater/policies/$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID.json"
-          fi
+          sudo -n rm -f \
+            /var/lib/desktop-updater/desktop-updater-polkit-e2e-crash-after-backup \
+            /usr/libexec/desktop-updater-helper \
+            /usr/libexec/desktop-updater-polkit-e2e-fixture \
+            /usr/share/polkit-1/actions/com.desktopupdater.install.policy \
+            /etc/desktop-updater/policies/com.example.desktop-updater.polkit-e2e.json
+          case "${DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT:-}" in
+            /opt/desktop-updater-polkit-e2e-*)
+              sudo -n rm -rf -- "$DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT"
+              ;;
+          esac
 
   linux:
     name: Linux
@@ -1103,7 +1137,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          filter='^linux_transaction\.LinuxFileTransaction\.RejectsBindMountAndMountIdChange$'
+          filter='^linux_transaction\.LinuxFileTransaction\.(RejectsBindMountAndMountIdChange|CleanupRejectsNestedBindMountBeforeDeletingBackingData)$'
           sudo ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error | tee "$RUNNER_TEMP/linux-privileged-mount-test.log"
           if grep -q 'Skipped' "$RUNNER_TEMP/linux-privileged-mount-test.log"; then
             echo "Linux privileged mount namespace test was skipped"
@@ -1111,6 +1145,7 @@ jobs:
           fi
           test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
           test -n "$test_count"
+          test "$test_count" -ge 2
           printf 'platform=linux\nsuite=privileged-mount-namespace\ntestCount=%s\n' "$test_count" >> reports/linux-helper-test-counts.txt
       - name: Run unprivileged Linux install helper smoke
         run: sh tool/linux_install_helper_smoke.sh --mode unprivileged
@@ -1157,12 +1192,46 @@ jobs:
           actual="$(PKG_CONFIG_PATH="$PWD/linux/native/install/lib/pkgconfig" pkg-config --modversion desktop_updater_native)"
           test "$actual" = "$expected"
       - name: Build and run installed Linux pkg-config consumer
+        shell: bash
         run: |
-          pc_path="$PWD/linux/native/install/lib/pkgconfig"
-          c++ example/native/linux-cmake/main.cpp \
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-pkg-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174101"
+          runtime="/tmp/du-${UID}-pkg"
+          test ! -e "$prefix"
+          test ! -e "$runtime"
+          cp -a linux/native/install "$prefix"
+          pc_path="$prefix/lib/pkgconfig"
+          helper="$(realpath "$(PKG_CONFIG_PATH="$pc_path" pkg-config --variable=helper desktop_updater_native)")"
+          test "$helper" = "$prefix/libexec/desktop-updater-helper"
+          mkdir -p "$prefix/bin"
+          c++ -std=c++17 example/native/linux-cmake/main.cpp \
             $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
-            -o linux/native/install/pkg-config-consumer
-          linux/native/install/pkg-config-consumer
+            "-DDESKTOP_UPDATER_INSTALLED_HELPER_PATH=\"$helper\"" \
+            -o "$prefix/bin/linux_installed_consumer"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.1 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
+          XDG_RUNTIME_DIR="$runtime" XDG_STATE_HOME="$prefix/state" \
+            "$prefix/bin/linux_installed_consumer" --exchange "$stage"
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.1
+          rmdir "$runtime"
       - name: Configure Linux multiarch pkg-config package
         run: |
           cmake -S linux/native -B linux/native/build-multiarch \
@@ -1171,20 +1240,91 @@ jobs:
           cmake --install linux/native/build-multiarch \
             --prefix "$PWD/linux/native/install-multiarch"
       - name: Build and run Linux multiarch pkg-config consumer
+        shell: bash
         run: |
-          pc_path="$PWD/linux/native/install-multiarch/lib/x86_64-linux-gnu/pkgconfig"
-          c++ example/native/linux-cmake/main.cpp \
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-multiarch-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174102"
+          runtime="/tmp/du-${UID}-multi"
+          test ! -e "$prefix"
+          test ! -e "$runtime"
+          cp -a linux/native/install-multiarch "$prefix"
+          pc_path="$prefix/lib/x86_64-linux-gnu/pkgconfig"
+          helper="$(realpath "$(PKG_CONFIG_PATH="$pc_path" pkg-config --variable=helper desktop_updater_native)")"
+          test "$helper" = "$prefix/libexec/desktop-updater-helper"
+          mkdir -p "$prefix/bin"
+          c++ -std=c++17 example/native/linux-cmake/main.cpp \
             $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
-            -o linux/native/install-multiarch/pkg-config-consumer
-          linux/native/install-multiarch/pkg-config-consumer
+            "-DDESKTOP_UPDATER_INSTALLED_HELPER_PATH=\"$helper\"" \
+            -o "$prefix/bin/linux_installed_consumer"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.2 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
+          XDG_RUNTIME_DIR="$runtime" XDG_STATE_HOME="$prefix/state" \
+            "$prefix/bin/linux_installed_consumer" --exchange "$stage"
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.2
+          rmdir "$runtime"
       - name: Configure installed Linux CMake consumer
-        run: cmake -S example/native/linux-cmake -B example/native/linux-cmake/build -DCMAKE_PREFIX_PATH="$PWD/linux/native/install"
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$PWD/linux/native/install-cmake-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174103"
+          test ! -e "$prefix"
+          cp -a linux/native/install "$prefix"
+          cmake -S example/native/linux-cmake \
+            -B example/native/linux-cmake/build \
+            -DCMAKE_PREFIX_PATH="$prefix" \
+            -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DDESKTOP_UPDATER_LINUX_CONSUMER_STAGE="$stage"
       - name: Build installed Linux CMake consumer
-        run: cmake --build example/native/linux-cmake/build
+        run: |
+          cmake --build example/native/linux-cmake/build
+          cmake --install example/native/linux-cmake/build
       - name: Run installed Linux CMake consumer
         run: |
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-cmake-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174103"
+          runtime="/tmp/du-${UID}-cmake"
+          helper="$prefix/libexec/desktop-updater-helper"
+          test ! -e "$runtime"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.3 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
           set +e
-          output="$(ctest --test-dir example/native/linux-cmake/build --output-on-failure 2>&1)"
+          output="$(XDG_RUNTIME_DIR="$runtime" \
+            XDG_STATE_HOME="$prefix/state" \
+            ctest --test-dir example/native/linux-cmake/build \
+              --output-on-failure 2>&1)"
           status=$?
           set -e
           printf '%s\n' "$output"
@@ -1193,6 +1333,12 @@ jobs:
             echo "Linux installed consumer CTest registered zero tests"
             exit 1
           fi
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.3
+          rmdir "$runtime"
       - name: Linux native runtime ZIP smoke
         shell: bash
         run: |

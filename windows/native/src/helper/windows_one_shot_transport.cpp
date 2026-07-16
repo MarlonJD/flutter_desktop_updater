@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "windows_helper_diagnostics.h"
 #include "windows_transaction_journal.h"
 
 namespace desktop_updater::helper {
@@ -110,6 +111,7 @@ class WindowsCallerExitMonitor final
       throw WindowsOneShotTransportError(
           "caller executable changed before commit exit");
     }
+    RecordWindowsHelperEvent(WindowsHelperEvent::kWaitingForParentProcess);
     const DWORD wait = WaitForSingleObject(
         process_.get(), RemainingMilliseconds(expires_at_unix_milliseconds));
     if (wait != WAIT_OBJECT_0) {
@@ -117,6 +119,7 @@ class WindowsCallerExitMonitor final
           wait == WAIT_TIMEOUT ? "caller exit timed out"
                                : "caller exit wait failed");
     }
+    RecordWindowsHelperEvent(WindowsHelperEvent::kParentProcessExited);
   }
 
  private:
@@ -144,6 +147,16 @@ void ValidateWindowsCallerIdentity(
     const NativeInstallCallerV1& caller,
     const ObservedWindowsCallerIdentity& observed,
     const WindowsHelperPolicy& policy) {
+  const bool signer_matches =
+      policy.is_portable()
+          ? policy.application_signer_kind() == "sha256" &&
+                caller.executable_sha256 ==
+                    policy.application_signer_identity() &&
+                observed.executable.publisher ==
+                    Utf8ToWide(caller.signer_identity)
+          : caller.signer_identity == policy.application_publisher() &&
+                observed.executable.publisher ==
+                    Utf8ToWide(policy.application_publisher());
   if (caller.process_id <= 0 ||
       static_cast<std::uint64_t>(caller.process_id) >
           std::numeric_limits<DWORD>::max() ||
@@ -152,10 +165,8 @@ void ValidateWindowsCallerIdentity(
                                            observed.process_start_identity) ||
       caller.executable_sha256 != observed.executable.sha256 ||
       caller.package_id != policy.application_package_id() ||
-      caller.signer_identity != policy.application_publisher() ||
       !observed.executable.signature_valid ||
-      observed.executable.publisher !=
-          Utf8ToWide(policy.application_publisher())) {
+      !signer_matches) {
     throw WindowsOneShotTransportError(
         "frozen caller identity does not match named-pipe peer");
   }
@@ -349,6 +360,47 @@ void RunWindowsOneShotPipeSession(
       reservation_lifetime_milliseconds);
   NativeInstallOneShotServiceRuntimeV1 runtime(session, monitor_factory);
   runtime.Run(channel);
+}
+
+void RunWindowsOneShotPipeSessionWithInitialRequest(
+    HANDLE pipe,
+    DWORD observed_caller_process_id,
+    const WindowsHelperPolicy& policy,
+    desktop_updater::runtime::internal::NativeInstallRequestAuthorizerV1&
+        authorizer,
+    NativeInstallOneShotSessionV1::ReadyTokenGenerator ready_token_generator,
+    NativeInstallOneShotSessionV1::Sha256Function sha256,
+    NativeInstallOneShotSessionV1::Clock now_unix_milliseconds,
+    std::int64_t reservation_lifetime_milliseconds,
+    DWORD startup_timeout_milliseconds,
+    const std::string& canonical_request) {
+  if (!now_unix_milliseconds || startup_timeout_milliseconds == 0 ||
+      canonical_request.empty()) {
+    throw WindowsOneShotTransportError(
+        "invalid dispatched one-shot session dependencies");
+  }
+  const std::int64_t now = now_unix_milliseconds();
+  if (now < 0 ||
+      now > std::numeric_limits<std::int64_t>::max() -
+                startup_timeout_milliseconds) {
+    throw WindowsOneShotTransportError("one-shot startup deadline overflow");
+  }
+  UniqueWindowsHandle caller_process(OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE,
+      observed_caller_process_id));
+  if (!caller_process.valid()) {
+    throw WindowsOneShotTransportError("named-pipe caller cannot be retained");
+  }
+  WindowsOneShotPipeChannel channel(
+      pipe, caller_process.get(), now + startup_timeout_milliseconds);
+  WindowsCallerExitMonitorFactory monitor_factory(
+      observed_caller_process_id, policy);
+  NativeInstallOneShotSessionV1 session(
+      authorizer, std::move(ready_token_generator), std::move(sha256),
+      std::move(now_unix_milliseconds),
+      reservation_lifetime_milliseconds);
+  NativeInstallOneShotServiceRuntimeV1 runtime(session, monitor_factory);
+  runtime.RunWithInitialRequest(channel, canonical_request);
 }
 
 }  // namespace desktop_updater::helper

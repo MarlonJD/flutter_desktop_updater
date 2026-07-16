@@ -3,6 +3,7 @@
 #include <sddl.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <memory>
@@ -110,12 +111,36 @@ std::wstring ProcessUserSid(HANDLE process) {
   return result;
 }
 
+void ValidateLaunchedHelperProcess(
+    HANDLE process,
+    const VerifiedWindowsExecutable& expected) {
+  std::vector<wchar_t> buffer(32768);
+  DWORD length = static_cast<DWORD>(buffer.size());
+  if (!QueryFullProcessImageNameW(process, 0, buffer.data(), &length) ||
+      length == 0 || length >= buffer.size()) {
+    throw NamedPipeTransportError("launched helper image path unavailable");
+  }
+  const std::filesystem::path path(std::wstring(buffer.data(), length));
+  const VerifiedWindowsExecutable observed = VerifyWindowsExecutable(path);
+  if (!observed.signature_valid || observed.sha256 != expected.sha256 ||
+      observed.publisher != expected.publisher ||
+      observed.volume_serial != expected.volume_serial ||
+      observed.file_id != expected.file_id ||
+      _wcsicmp(observed.final_path.lexically_normal().c_str(),
+               expected.final_path.lexically_normal().c_str()) != 0 ||
+      !VerifyWindowsExecutableStillMatches(path, observed)) {
+    throw NamedPipeTransportError(
+        "launched helper process identity does not match retained binary");
+  }
+}
+
 ScopedHandle CreateCallerPipe(const std::wstring& pipe_name,
                               const std::wstring& caller_sid) {
-  // The caller and its UAC-elevated helper retain the same user SID. Grant
-  // only that identity and SYSTEM; never grant the broad Administrators SID.
-  const std::wstring sddl = L"D:P(A;;GA;;;" + caller_sid +
-                            L")(A;;GA;;;SY)";
+  // Start with the caller and SYSTEM. After ShellExecuteExW returns an exact
+  // process handle, the client adds that helper process's token SID. This is
+  // required when over-the-shoulder UAC uses a different administrator
+  // account, without granting the broad Administrators SID.
+  const std::wstring sddl = BuildCallerPipeDaclSddl(caller_sid, L"");
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
           sddl.c_str(), SDDL_REVISION_1, &raw_descriptor, nullptr)) {
@@ -129,7 +154,8 @@ ScopedHandle CreateCallerPipe(const std::wstring& pipe_name,
   attributes.bInheritHandle = FALSE;
   HANDLE pipe = CreateNamedPipeW(
       pipe_name.c_str(),
-      PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
+      PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE |
+          FILE_FLAG_OVERLAPPED | WRITE_DAC,
       PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT |
           PIPE_REJECT_REMOTE_CLIENTS,
       1, 4096, 4096, 0, &attributes);
@@ -137,6 +163,52 @@ ScopedHandle CreateCallerPipe(const std::wstring& pipe_name,
     throw NamedPipeTransportError("exclusive caller pipe creation failed");
   }
   return ScopedHandle(pipe);
+}
+
+void AuthorizeExactHelperSid(HANDLE pipe,
+                             const std::wstring& caller_sid,
+                             const std::wstring& helper_sid) {
+  const std::wstring sddl =
+      BuildCallerPipeDaclSddl(caller_sid, helper_sid);
+  PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
+  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+          sddl.c_str(), SDDL_REVISION_1, &raw_descriptor, nullptr) ||
+      raw_descriptor == nullptr) {
+    throw NamedPipeTransportError("helper pipe DACL conversion failed");
+  }
+  std::unique_ptr<void, decltype(&LocalFree)> descriptor(raw_descriptor,
+                                                         LocalFree);
+  if (!SetKernelObjectSecurity(pipe, DACL_SECURITY_INFORMATION,
+                               raw_descriptor)) {
+    throw NamedPipeTransportError("helper pipe DACL update failed");
+  }
+}
+
+ScopedHandle ConnectHelperPipeWithRetry(const std::wstring& pipe_name,
+                                        DWORD timeout_millis) {
+  const ULONGLONG started = GetTickCount64();
+  for (;;) {
+    const ULONGLONG elapsed = GetTickCount64() - started;
+    if (elapsed >= timeout_millis) return ScopedHandle();
+    const DWORD remaining = static_cast<DWORD>(timeout_millis - elapsed);
+    if (WaitNamedPipeW(pipe_name.c_str(),
+                       std::min<DWORD>(remaining, 50))) {
+      ScopedHandle pipe(CreateFileW(
+          pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+          nullptr));
+      if (pipe.get() != INVALID_HANDLE_VALUE) return pipe;
+    }
+    const DWORD error = GetLastError();
+    if (error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY &&
+        error != ERROR_FILE_NOT_FOUND && error != ERROR_SEM_TIMEOUT) {
+      throw NamedPipeTransportError("helper cannot connect to caller pipe");
+    }
+    const ULONGLONG after_attempt = GetTickCount64() - started;
+    if (after_attempt >= timeout_millis) return ScopedHandle();
+    Sleep(static_cast<DWORD>(
+        std::min<ULONGLONG>(10, timeout_millis - after_attempt)));
+  }
 }
 
 bool ConnectWithTimeout(HANDLE pipe, DWORD timeout_millis) {
@@ -150,7 +222,11 @@ bool ConnectWithTimeout(HANDLE pipe, DWORD timeout_millis) {
   if (error != ERROR_IO_PENDING) return false;
   const DWORD wait = WaitForSingleObject(event.get(), timeout_millis);
   if (wait != WAIT_OBJECT_0) {
-    CancelIoEx(pipe, &overlapped);
+    (void)CancelIoEx(pipe, &overlapped);
+    // CancelIoEx is asynchronous. Keep the OVERLAPPED and its event alive
+    // until this exact ConnectNamedPipe operation reaches a terminal state.
+    DWORD ignored = 0;
+    (void)GetOverlappedResult(pipe, &overlapped, &ignored, TRUE);
     return false;
   }
   DWORD transferred = 0;
@@ -174,6 +250,19 @@ std::int64_t NowUnixMilliseconds() {
 }
 
 }  // namespace
+
+std::wstring BuildCallerPipeDaclSddl(const std::wstring& caller_sid,
+                                    const std::wstring& helper_sid) {
+  if (caller_sid.empty()) {
+    throw NamedPipeTransportError("caller SID is unavailable");
+  }
+  std::wstring result = L"D:P(A;;GA;;;" + caller_sid + L")";
+  if (!helper_sid.empty() && helper_sid != caller_sid) {
+    result += L"(A;;GA;;;" + helper_sid + L")";
+  }
+  result += L"(A;;GA;;;SY)";
+  return result;
+}
 
 std::wstring DerivePipeName(const std::string& nonce) {
   if (!IsNonce(nonce)) {
@@ -355,6 +444,8 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
     return {ClassifyElevationResult(GetLastError(), false), nullptr};
   }
   ScopedHandle helper_process(launch.hProcess);
+  const std::wstring helper_sid = ProcessUserSid(helper_process.get());
+  AuthorizeExactHelperSid(pipe.get(), caller_sid, helper_sid);
   if (!ConnectWithTimeout(pipe.get(), timeout_millis)) {
     return {ElevationLaunchResult::kTimedOut, nullptr};
   }
@@ -369,7 +460,7 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
   if (peer_process.get() == nullptr) {
     throw NamedPipeTransportError("cannot retain helper process");
   }
-  const PeerBinding expected{peer_pid, caller_sid, nonce};
+  const PeerBinding expected{peer_pid, helper_sid, nonce};
   ValidatePeerBinding(expected, peer_pid, ProcessUserSid(peer_process.get()),
                       nonce);
 
@@ -399,6 +490,248 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
               new WindowsElevatedHelperClientSession(std::move(impl)))};
 }
 
+WindowsElevatedHelperLaunch LaunchAuthenticatedPortableHelper(
+    const std::filesystem::path& fixed_helper_path,
+    const WindowsHelperPolicy& policy,
+    const std::string& nonce,
+    const std::string& canonical_request,
+    DWORD timeout_millis) {
+  using desktop_updater::runtime::internal::
+      ParseNativeInstallTransactionRequestV1;
+  const auto request =
+      ParseNativeInstallTransactionRequestV1(canonical_request);
+  if (!policy.is_portable() || request.request_nonce != nonce ||
+      request.policy_id != policy.policy_id() ||
+      request.package_id != policy.application_package_id() ||
+      request.target.target_class != "sameUserWritable" ||
+      !policy.AllowsRequest(request.protocol_version,
+                            request.target.target_class, request.strategy,
+                            request.provider)) {
+    throw NamedPipeTransportError(
+        "portable request is not bound to sealed same-user policy");
+  }
+  ConsumeNonceOnce(nonce);
+  const VerifiedWindowsExecutable identity =
+      VerifyWindowsExecutable(fixed_helper_path);
+  ValidateWindowsHelperIdentity(identity, policy, false);
+  const std::wstring pipe_name = DerivePipeName(nonce);
+  const std::wstring caller_sid = CurrentUserSid();
+  ScopedHandle pipe = CreateCallerPipe(pipe_name, caller_sid);
+
+  std::wstring command_line =
+      L"\"" + fixed_helper_path.wstring() + L"\" --portable-pipe \"" +
+      pipe_name + L"\" --nonce " + AsciiToWide(nonce);
+  std::vector<wchar_t> mutable_command(command_line.begin(),
+                                       command_line.end());
+  mutable_command.push_back(L'\0');
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(fixed_helper_path.c_str(), mutable_command.data(),
+                      nullptr, nullptr, FALSE,
+                      CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
+                      fixed_helper_path.parent_path().c_str(), &startup,
+                      &process)) {
+    return {ElevationLaunchResult::kFailed, nullptr};
+  }
+  ScopedHandle helper_thread(process.hThread);
+  ScopedHandle helper_process(process.hProcess);
+  ValidateLaunchedHelperProcess(helper_process.get(), identity);
+  const std::wstring helper_sid = ProcessUserSid(helper_process.get());
+  if (helper_sid != caller_sid) {
+    throw NamedPipeTransportError(
+        "portable helper token does not match the caller token");
+  }
+  AuthorizeExactHelperSid(pipe.get(), caller_sid, helper_sid);
+  if (!ConnectWithTimeout(pipe.get(), timeout_millis)) {
+    return {ElevationLaunchResult::kTimedOut, nullptr};
+  }
+
+  ULONG peer_pid = 0;
+  if (!GetNamedPipeClientProcessId(pipe.get(), &peer_pid) ||
+      peer_pid != GetProcessId(helper_process.get())) {
+    throw NamedPipeTransportError("pipe client is not launched helper");
+  }
+  ScopedHandle peer_process(OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, peer_pid));
+  if (peer_process.get() == nullptr ||
+      peer_process.get() == INVALID_HANDLE_VALUE) {
+    throw NamedPipeTransportError("cannot retain portable helper process");
+  }
+  const PeerBinding expected{peer_pid, caller_sid, nonce};
+  ValidatePeerBinding(expected, peer_pid, ProcessUserSid(peer_process.get()),
+                      nonce);
+
+  const std::int64_t now = NowUnixMilliseconds();
+  if (timeout_millis == 0 ||
+      now > std::numeric_limits<std::int64_t>::max() - timeout_millis) {
+    throw NamedPipeTransportError("helper startup deadline overflow");
+  }
+  const std::int64_t deadline = now + timeout_millis;
+  WindowsOneShotPipeChannel channel(pipe.get(), helper_process.get(),
+                                    deadline);
+  channel.WriteFrame(canonical_request);
+  const auto reservation =
+      desktop_updater::runtime::internal::ParseNativeInstallReservationV1(
+          channel.ReadFrameUntil(deadline));
+  if (reservation.transaction_id != request.transaction_id ||
+      reservation.helper_endpoint_identity_sha256 != identity.sha256 ||
+      reservation.helper_endpoint_identity_sha256 != policy.helper_sha256() ||
+      reservation.expires_at_unix_milliseconds <= NowUnixMilliseconds() ||
+      !VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
+    throw NamedPipeTransportError("portable helper reservation binding changed");
+  }
+  auto impl = std::make_unique<WindowsElevatedHelperClientSession::Impl>(
+      std::move(pipe), std::move(helper_process), fixed_helper_path, identity,
+      reservation, deadline);
+  return {ElevationLaunchResult::kLaunched,
+          std::unique_ptr<WindowsElevatedHelperClientSession>(
+              new WindowsElevatedHelperClientSession(std::move(impl)))};
+}
+
+WindowsElevatedHelperExchange LaunchAuthenticatedPortableHelperExchange(
+    const std::filesystem::path& fixed_helper_path,
+    const WindowsHelperPolicy& policy,
+    const std::string& nonce,
+    const std::string& canonical_request,
+    DWORD timeout_millis) {
+  if (!policy.is_portable() || canonical_request.empty()) {
+    throw NamedPipeTransportError(
+        "portable helper exchange requires a sealed portable policy");
+  }
+  ConsumeNonceOnce(nonce);
+  const VerifiedWindowsExecutable identity =
+      VerifyWindowsExecutable(fixed_helper_path);
+  ValidateWindowsHelperIdentity(identity, policy, false);
+  const std::wstring pipe_name = DerivePipeName(nonce);
+  const std::wstring caller_sid = CurrentUserSid();
+  ScopedHandle pipe = CreateCallerPipe(pipe_name, caller_sid);
+
+  std::wstring command_line =
+      L"\"" + fixed_helper_path.wstring() + L"\" --portable-pipe \"" +
+      pipe_name + L"\" --nonce " + AsciiToWide(nonce);
+  std::vector<wchar_t> mutable_command(command_line.begin(),
+                                       command_line.end());
+  mutable_command.push_back(L'\0');
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(fixed_helper_path.c_str(), mutable_command.data(),
+                      nullptr, nullptr, FALSE,
+                      CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
+                      fixed_helper_path.parent_path().c_str(), &startup,
+                      &process)) {
+    return {ElevationLaunchResult::kFailed, "", ""};
+  }
+  ScopedHandle helper_thread(process.hThread);
+  ScopedHandle helper_process(process.hProcess);
+  ValidateLaunchedHelperProcess(helper_process.get(), identity);
+  const std::wstring helper_sid = ProcessUserSid(helper_process.get());
+  if (helper_sid != caller_sid) {
+    throw NamedPipeTransportError(
+        "portable helper token does not match the caller token");
+  }
+  AuthorizeExactHelperSid(pipe.get(), caller_sid, helper_sid);
+  if (!ConnectWithTimeout(pipe.get(), timeout_millis)) {
+    return {ElevationLaunchResult::kTimedOut, "", ""};
+  }
+
+  ULONG peer_pid = 0;
+  if (!GetNamedPipeClientProcessId(pipe.get(), &peer_pid) ||
+      peer_pid != GetProcessId(helper_process.get())) {
+    throw NamedPipeTransportError("pipe client is not launched portable helper");
+  }
+  ScopedHandle peer_process(OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, peer_pid));
+  if (peer_process.get() == nullptr ||
+      peer_process.get() == INVALID_HANDLE_VALUE) {
+    throw NamedPipeTransportError("cannot retain portable helper process");
+  }
+  const PeerBinding expected{peer_pid, caller_sid, nonce};
+  ValidatePeerBinding(expected, peer_pid, ProcessUserSid(peer_process.get()),
+                      nonce);
+
+  const std::int64_t now = NowUnixMilliseconds();
+  if (timeout_millis == 0 ||
+      now > std::numeric_limits<std::int64_t>::max() - timeout_millis) {
+    throw NamedPipeTransportError("portable helper exchange deadline overflow");
+  }
+  const std::int64_t deadline = now + timeout_millis;
+  WindowsOneShotPipeChannel channel(pipe.get(), helper_process.get(), deadline);
+  channel.WriteFrame(canonical_request);
+  const std::string response = channel.ReadFrameUntil(deadline);
+  if (!VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
+    throw NamedPipeTransportError(
+        "portable helper identity changed during exchange");
+  }
+  return {ElevationLaunchResult::kLaunched, response, identity.sha256};
+}
+
+WindowsElevatedHelperExchange LaunchAuthenticatedElevatedHelperExchange(
+    const std::filesystem::path& fixed_helper_path,
+    const WindowsHelperPolicy& policy,
+    const std::string& nonce,
+    const std::string& canonical_request,
+    DWORD timeout_millis) {
+  if (canonical_request.empty()) {
+    throw NamedPipeTransportError("elevated helper request is empty");
+  }
+  ConsumeNonceOnce(nonce);
+  const VerifiedWindowsExecutable identity =
+      VerifyWindowsExecutable(fixed_helper_path);
+  ValidateWindowsHelperIdentity(identity, policy, true);
+  const std::wstring pipe_name = DerivePipeName(nonce);
+  const std::wstring caller_sid = CurrentUserSid();
+  ScopedHandle pipe = CreateCallerPipe(pipe_name, caller_sid);
+
+  const std::wstring parameters =
+      L"--pipe \"" + pipe_name + L"\" --nonce " + AsciiToWide(nonce);
+  SHELLEXECUTEINFOW launch{};
+  launch.cbSize = sizeof(launch);
+  launch.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+  launch.lpVerb = L"runas";
+  launch.lpFile = fixed_helper_path.c_str();
+  launch.lpParameters = parameters.c_str();
+  launch.nShow = SW_HIDE;
+  if (!ShellExecuteExW(&launch)) {
+    return {ClassifyElevationResult(GetLastError(), false), "", ""};
+  }
+  ScopedHandle helper_process(launch.hProcess);
+  const std::wstring helper_sid = ProcessUserSid(helper_process.get());
+  AuthorizeExactHelperSid(pipe.get(), caller_sid, helper_sid);
+  if (!ConnectWithTimeout(pipe.get(), timeout_millis)) {
+    return {ElevationLaunchResult::kTimedOut, "", ""};
+  }
+
+  ULONG peer_pid = 0;
+  if (!GetNamedPipeClientProcessId(pipe.get(), &peer_pid) ||
+      peer_pid != GetProcessId(helper_process.get())) {
+    throw NamedPipeTransportError("pipe client is not launched helper");
+  }
+  ScopedHandle peer_process(OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, peer_pid));
+  if (peer_process.get() == nullptr) {
+    throw NamedPipeTransportError("cannot retain helper process");
+  }
+  const PeerBinding expected{peer_pid, helper_sid, nonce};
+  ValidatePeerBinding(expected, peer_pid, ProcessUserSid(peer_process.get()),
+                      nonce);
+
+  const std::int64_t now = NowUnixMilliseconds();
+  if (timeout_millis == 0 ||
+      now > std::numeric_limits<std::int64_t>::max() - timeout_millis) {
+    throw NamedPipeTransportError("helper exchange deadline overflow");
+  }
+  const std::int64_t deadline = now + timeout_millis;
+  WindowsOneShotPipeChannel channel(pipe.get(), helper_process.get(), deadline);
+  channel.WriteFrame(canonical_request);
+  const std::string response = channel.ReadFrameUntil(deadline);
+  if (!VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
+    throw NamedPipeTransportError("helper identity changed during exchange");
+  }
+  return {ElevationLaunchResult::kLaunched, response, identity.sha256};
+}
+
 int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
                                       const std::string& nonce,
                                       DWORD timeout_millis,
@@ -410,14 +743,9 @@ int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
   if (pipe_name != DerivePipeName(nonce)) {
     throw NamedPipeTransportError("pipe locator is not nonce-derived");
   }
-  if (!WaitNamedPipeW(pipe_name.c_str(), timeout_millis)) {
-    return static_cast<int>(WAIT_TIMEOUT);
-  }
-  ScopedHandle pipe(CreateFileW(
-      pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr));
+  ScopedHandle pipe = ConnectHelperPipeWithRetry(pipe_name, timeout_millis);
   if (pipe.get() == INVALID_HANDLE_VALUE) {
-    throw NamedPipeTransportError("helper cannot connect to caller pipe");
+    return static_cast<int>(WAIT_TIMEOUT);
   }
   ULONG server_pid = 0;
   if (!GetNamedPipeServerProcessId(pipe.get(), &server_pid)) {
@@ -429,7 +757,38 @@ int ConnectElevatedHelperToCallerPipe(const std::wstring& pipe_name,
       ProcessUserSid(caller_process.get()).empty()) {
     throw NamedPipeTransportError("caller process/token validation failed");
   }
-  session_runner(pipe.get(), server_pid);
+  session_runner(pipe.get(), server_pid, caller_process.get());
+  return ERROR_SUCCESS;
+}
+
+int ConnectPortableHelperToCallerPipe(
+    const std::wstring& pipe_name,
+    const std::string& nonce,
+    DWORD timeout_millis,
+    const WindowsElevatedPipeSessionRunner& session_runner) {
+  if (!session_runner) {
+    throw NamedPipeTransportError("portable session runner is required");
+  }
+  if (pipe_name != DerivePipeName(nonce)) {
+    throw NamedPipeTransportError("pipe locator is not nonce-derived");
+  }
+  ScopedHandle pipe = ConnectHelperPipeWithRetry(pipe_name, timeout_millis);
+  if (pipe.get() == INVALID_HANDLE_VALUE) {
+    return static_cast<int>(WAIT_TIMEOUT);
+  }
+  ULONG server_pid = 0;
+  if (!GetNamedPipeServerProcessId(pipe.get(), &server_pid)) {
+    throw NamedPipeTransportError("pipe server PID unavailable");
+  }
+  ScopedHandle caller_process(OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, server_pid));
+  if (caller_process.get() == nullptr ||
+      caller_process.get() == INVALID_HANDLE_VALUE ||
+      ProcessUserSid(caller_process.get()) != CurrentUserSid()) {
+    throw NamedPipeTransportError(
+        "portable caller process/token validation failed");
+  }
+  session_runner(pipe.get(), server_pid, caller_process.get());
   return ERROR_SUCCESS;
 }
 

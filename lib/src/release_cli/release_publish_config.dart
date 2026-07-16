@@ -667,6 +667,8 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
     updatesUrl: _stringValue(installer, "updatesUrl"),
     privilegesRequired:
         _stringValue(installer, "privilegesRequired") ?? "lowest",
+    protectedHelperInstallDir:
+        _stringValue(installer, "protectedHelperInstallDir"),
     architecturesAllowed:
         _stringValue(installer, "architecturesAllowed") ?? "x64",
     architecturesInstallIn64BitMode:
@@ -705,6 +707,7 @@ void _validateInnoConfig(InnoPublishConfig config) {
       "windows.installer.requiresElevation must be auto, always, or never.",
     );
   }
+  resolveGeneratedProtectedHelperInstallDir(config);
 }
 
 Uri _normalizeBaseUrl(String value) {

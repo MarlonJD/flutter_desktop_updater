@@ -18,6 +18,12 @@ NativeInstallOneShotServiceRuntimeV1::NativeInstallOneShotServiceRuntimeV1(
 void NativeInstallOneShotServiceRuntimeV1::Run(
     NativeInstallWireChannelV1& channel) {
   const std::string canonical_request = channel.ReadFrame();
+  RunWithInitialRequest(channel, canonical_request);
+}
+
+void NativeInstallOneShotServiceRuntimeV1::RunWithInitialRequest(
+    NativeInstallWireChannelV1& channel,
+    const std::string& canonical_request) {
   const NativeInstallTransactionRequestV1 request =
       ParseNativeInstallTransactionRequestV1(canonical_request);
   std::unique_ptr<NativeInstallCallerExitMonitorV1> caller_monitor =

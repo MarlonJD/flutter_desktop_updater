@@ -132,8 +132,11 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     ],
   },
   "linux-polkit-helper": <String, List<String>>{
-    "Run installed polkit root broker smoke": <String>[
-      "sudo env",
+    "Run installed broker static audit": <String>[
+      "sudo -n env",
+      "sh tool/linux_install_helper_smoke.sh --mode root-broker-audit",
+    ],
+    "Run real non-root polkit broker E2E": <String>[
       "sh tool/linux_install_helper_smoke.sh --mode root-broker",
     ],
   },

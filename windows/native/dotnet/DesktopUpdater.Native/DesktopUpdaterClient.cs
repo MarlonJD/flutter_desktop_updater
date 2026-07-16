@@ -518,6 +518,17 @@ public sealed class DesktopUpdaterClient : IDisposable
         return DesktopUpdaterNative.PrepareInstall(request);
     }
 
+    /// <summary>
+    /// Prepares a helper-owned reservation using a caller-persisted ID.
+    /// </summary>
+    public DesktopUpdaterInstallReservation PrepareInstall(
+        DesktopUpdaterInstallRequest request,
+        string transactionId)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.PrepareInstall(request, transactionId);
+    }
+
     /// <summary>Commits one prepared helper reservation.</summary>
     public DesktopUpdaterInstallTransactionStatus CommitAfterExit(
         DesktopUpdaterInstallReservation reservation)
@@ -548,6 +559,17 @@ public sealed class DesktopUpdaterClient : IDisposable
     {
         ThrowIfDisposed();
         return DesktopUpdaterNative.RecoverPendingInstall(transactionId);
+    }
+
+    /// <summary>
+    /// Resolves an incomplete transaction after the previous app has exited.
+    /// </summary>
+    public DesktopUpdaterInstallTransactionStatus
+        ResolvePendingInstallAfterExit(string transactionId)
+    {
+        ThrowIfDisposed();
+        return DesktopUpdaterNative.ResolvePendingInstallAfterExit(
+            transactionId);
     }
 
     /// <inheritdoc />

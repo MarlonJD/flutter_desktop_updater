@@ -94,6 +94,22 @@ void RunWindowsOneShotPipeSession(
     std::int64_t reservation_lifetime_milliseconds,
     DWORD startup_timeout_milliseconds);
 
+void RunWindowsOneShotPipeSessionWithInitialRequest(
+    HANDLE pipe,
+    DWORD observed_caller_process_id,
+    const WindowsHelperPolicy& policy,
+    desktop_updater::runtime::internal::NativeInstallRequestAuthorizerV1&
+        authorizer,
+    desktop_updater::runtime::internal::NativeInstallOneShotSessionV1::
+        ReadyTokenGenerator ready_token_generator,
+    desktop_updater::runtime::internal::NativeInstallOneShotSessionV1::
+        Sha256Function sha256,
+    desktop_updater::runtime::internal::NativeInstallOneShotSessionV1::Clock
+        now_unix_milliseconds,
+    std::int64_t reservation_lifetime_milliseconds,
+    DWORD startup_timeout_milliseconds,
+    const std::string& canonical_request);
+
 }  // namespace desktop_updater::helper
 
 #endif  // DESKTOP_UPDATER_WINDOWS_HELPER_ONE_SHOT_TRANSPORT_H_

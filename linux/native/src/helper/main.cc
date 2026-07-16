@@ -2,14 +2,17 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <chrono>
 #include <filesystem>
 #include <regex>
 #include <string>
 
 #include "json_value.h"
+#include "linux_control_wire.h"
 #include "linux_helper_policy.h"
+#include "linux_native_install_service.h"
 #include "linux_reservation.h"
+#include "native_install_request.h"
+#include "native_install_wire.h"
 #include "unix_socket_transport.h"
 
 namespace {
@@ -40,87 +43,62 @@ int Run(int argc, char** argv) {
       desktop_updater::helper::ConnectAuthenticatedUnixSocket(socket_path,
                                                                nonce);
   try {
+    desktop_updater::helper::LinuxSeqpacketWireChannel channel(socket_fd);
     const auto peer =
         desktop_updater::helper::ReadLinuxPeerBinding(socket_fd, nonce);
     const std::string canonical_request =
-        desktop_updater::helper::ReceiveCanonicalRequest(socket_fd, 1024 * 1024);
-    const auto request =
+        channel.ReadFrame();
+    const std::string self_executable = SelfExecutablePath();
+    const bool broker_mode = self_executable == kInstalledBroker;
+    if (geteuid() == 0 && !broker_mode) {
+      throw desktop_updater::helper::LinuxHelperPolicyError(
+          "root mode requires the fixed installed broker");
+    }
+    if (broker_mode && geteuid() != 0) {
+      throw desktop_updater::helper::LinuxHelperPolicyError(
+          "installed broker requires root credentials");
+    }
+    const auto envelope =
         desktop_updater::runtime::internal::ParseJson(canonical_request);
-    const std::string package_id = request.at("packageId").string();
+    if (envelope.find("operation") != nullptr) {
+      const auto control =
+          desktop_updater::helper::ParseLinuxControlRequestV1(
+              canonical_request);
+      if (control.request_nonce != nonce ||
+          control.caller_process_id != peer.pid ||
+          control.caller_process_start_identity !=
+              "linux:" + std::to_string(peer.process_start_identity)) {
+        throw desktop_updater::helper::UnixSocketTransportError(
+            "control caller or nonce does not match authenticated peer");
+      }
+      desktop_updater::helper::RunLinuxNativeInstallControlService(
+          channel, peer, self_executable, broker_mode, canonical_request);
+      close(socket_fd);
+      return 0;
+    }
+    const auto request =
+        desktop_updater::runtime::internal::
+            ParseNativeInstallTransactionRequestV1(canonical_request);
+    const std::string package_id = request.package_id;
     if (!std::regex_match(package_id, kPackageId)) {
       throw desktop_updater::helper::LinuxHelperPolicyError(
           "request package ID rejected");
     }
 
-    if (geteuid() == 0) {
-      if (SelfExecutablePath() != kInstalledBroker) {
-        throw desktop_updater::helper::LinuxHelperPolicyError(
-            "root mode requires fixed installed broker");
-      }
-      const auto policy = desktop_updater::helper::LinuxHelperPolicy::Load(
-          std::filesystem::path("/etc/desktop-updater/policies") /
-              (package_id + ".json"),
-          package_id);
-      const auto broker =
-          desktop_updater::helper::VerifyProtectedLinuxFile(kInstalledBroker);
-      desktop_updater::helper::ValidateLinuxBrokerIdentity(broker, policy);
-      desktop_updater::helper::VerifyLinuxPeerExecutable(
-          peer.pid, peer.process_start_identity, policy.application_signer());
-    }
-
-    const pid_t caller_pid = static_cast<pid_t>(
-        request.at("caller").at("processId").integer());
-    if (caller_pid != peer.pid || request.at("requestNonce").string() != nonce) {
+    const pid_t caller_pid = static_cast<pid_t>(request.caller.process_id);
+    if (caller_pid != peer.pid || request.request_nonce != nonce ||
+        request.caller.process_start_identity !=
+            "linux:" + std::to_string(peer.process_start_identity)) {
       throw desktop_updater::helper::UnixSocketTransportError(
           "request caller or nonce does not match authenticated peer");
     }
-    const std::filesystem::path target_path(
-        request.at("target").at("pathHint").string());
-    const std::filesystem::path stage_path(
-        request.at("stage").at("pathHint").string());
-    struct stat target_status {};
-    const bool root_owned_target =
-        lstat(target_path.c_str(), &target_status) == 0 &&
-        target_status.st_uid == 0;
-    const bool broker_mode = geteuid() == 0;
-    desktop_updater::helper::LinuxReservationStore store(broker_mode);
-    const auto expires = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::system_clock::now()
-                                 .time_since_epoch())
-                             .count() +
-                         30'000;
-    auto reservation = store.Prepare({
-        request.at("transactionId").string(), target_path.parent_path(),
-        target_path.filename().string(), stage_path, caller_pid, nonce, expires,
-        root_owned_target});
-    const std::string response = "READY " + reservation->ready_token();
-    if (send(socket_fd, response.data(), response.size(), MSG_NOSIGNAL) !=
-        static_cast<ssize_t>(response.size())) {
+    const std::filesystem::path target_path(request.target.path_hint);
+    if (target_path.filename().string() != request.target.target_name_hint) {
       throw desktop_updater::helper::UnixSocketTransportError(
-          "authenticated response failed");
+          "request target name hint changed");
     }
-    std::string command(256, '\0');
-    const ssize_t command_length = recv(socket_fd, command.data(), command.size(), 0);
-    if (command_length <= 0) {
-      store.CallerExited(reservation->transaction_id());
-    } else {
-      command.resize(static_cast<std::size_t>(command_length));
-      const std::string cancel = "CANCEL " + reservation->ready_token();
-      const std::string commit = "COMMIT " + reservation->ready_token();
-      if (command == cancel) {
-        store.Cancel(reservation->transaction_id(), reservation->ready_token());
-      } else if (command == commit) {
-        const auto now =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
-        store.Commit(reservation->transaction_id(), reservation->ready_token(),
-                     now);
-      } else {
-        throw desktop_updater::helper::UnixSocketTransportError(
-            "reservation command rejected");
-      }
-    }
+    desktop_updater::helper::RunLinuxNativeInstallService(
+        channel, peer, self_executable, broker_mode, canonical_request);
     close(socket_fd);
     return 0;
   } catch (...) {

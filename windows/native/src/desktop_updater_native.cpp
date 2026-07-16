@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,10 @@
 #include "stage_provenance.h"
 #include "windows_native_install_request_builder.h"
 #include "windows_one_shot_transport.h"
+#include "windows_portable_transaction_index.h"
+#include "windows_protected_helper_locator.h"
+#include "windows_recovery_transport.h"
+#include "windows_uninstall_record_proof.h"
 
 #ifndef DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR
 #define DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR ""
@@ -138,13 +143,30 @@ std::string CanonicalJsonFile(const fs::path& path,
   return contents;
 }
 
-fs::path FixedWindowsHelperPath(const fs::path& running_executable) {
+void ValidateConfiguredWindowsHelperPath(
+    const helper::ProtectedWindowsHelperEndpointV1& endpoint) {
   const std::string configured =
       DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR;
   if (!configured.empty()) {
-    return fs::u8path(configured) / kWindowsHelperExecutableName;
+    const fs::path expected =
+        fs::u8path(configured) / kWindowsHelperExecutableName;
+    if (_wcsicmp(expected.lexically_normal().c_str(),
+                 endpoint.helper_path.lexically_normal().c_str()) != 0) {
+      throw std::runtime_error(
+          "Protected Windows helper install directory is not configured for "
+          "the registered endpoint.");
+    }
   }
-  return running_executable.parent_path() / kWindowsHelperExecutableName;
+}
+
+fs::path ConfiguredWindowsHelperPath() {
+  const std::string configured =
+      DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR;
+  if (configured.empty()) {
+    throw std::runtime_error(
+        "Protected Windows helper install directory is not configured.");
+  }
+  return fs::u8path(configured) / kWindowsHelperExecutableName;
 }
 
 std::string NewTransactionId() {
@@ -245,6 +267,9 @@ std::wstring EnvironmentVariableValue(const wchar_t* name) {
 
 std::wstring NormalizedDirectoryPath(const fs::path& path) {
   std::wstring value = path.lexically_normal().wstring();
+  if (value.rfind(L"\\\\?\\", 0) == 0) {
+    value.erase(0, 4);
+  }
   while (!value.empty() && (value.back() == L'\\' || value.back() == L'/')) {
     value.pop_back();
   }
@@ -440,45 +465,10 @@ bool ReadRegistryString(HKEY key,
 
 bool HasMatchingUninstallRecord(const std::wstring& canonical_target,
                                 const std::wstring& expected_package_id) {
-  constexpr const wchar_t* kUninstallPath =
-      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
-  const REGSAM views[] = {KEY_WOW64_64KEY, KEY_WOW64_32KEY};
-  for (const REGSAM view : views) {
-    HKEY uninstall = nullptr;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kUninstallPath, 0,
-                      KEY_READ | view, &uninstall) != ERROR_SUCCESS) {
-      continue;
-    }
-    DWORD index = 0;
-    wchar_t key_name[256] = {};
-    DWORD key_name_length = 256;
-    while (RegEnumKeyExW(uninstall, index++, key_name, &key_name_length,
-                         nullptr, nullptr, nullptr, nullptr) ==
-           ERROR_SUCCESS) {
-      HKEY record = nullptr;
-      if (RegOpenKeyExW(uninstall, key_name, 0, KEY_READ, &record) ==
-          ERROR_SUCCESS) {
-        std::wstring install_location;
-        std::wstring package_id;
-        const bool matches =
-            ReadRegistryString(record, L"InstallLocation",
-                               &install_location) &&
-            ReadRegistryString(record, L"DesktopUpdaterPackageId",
-                               &package_id) &&
-            RegistryRecordMatchesInstallTarget(
-                install_location, package_id, canonical_target,
-                expected_package_id);
-        RegCloseKey(record);
-        if (matches) {
-          RegCloseKey(uninstall);
-          return true;
-        }
-      }
-      key_name_length = 256;
-    }
-    RegCloseKey(uninstall);
-  }
-  return false;
+  return helper::FindCanonicalWindowsUninstallRecordProof(
+             fs::path(canonical_target), WideToUtf8(expected_package_id),
+             GetCurrentProcess())
+      .has_value();
 }
 
 bool HasMatchingInstallIdentityMarker(
@@ -704,6 +694,8 @@ bool IsTransactionId(const std::string& value) {
 struct WindowsHelperClientContext {
   fs::path helper_path;
   helper::WindowsHelperPolicy policy;
+  helper::ProtectedWindowsHelperEndpointV1 endpoint;
+  bool portable = false;
 };
 
 struct PreparedWindowsHelperRequest {
@@ -740,59 +732,287 @@ bool ReservationsMatch(const InstallReservation& first,
 }
 
 WindowsHelperClientContext LoadWindowsHelperClientContext(
-    const fs::path& running_executable,
+    const helper::ProtectedWindowsHelperEndpointV1& endpoint,
     const std::string& expected_package_id) {
-  const fs::path helper_path = FixedWindowsHelperPath(running_executable);
+  ValidateConfiguredWindowsHelperPath(endpoint);
+  const fs::path helper_path = endpoint.helper_path;
   const helper::VerifiedWindowsExecutable helper_identity =
       helper::VerifyWindowsExecutable(helper_path);
-  const fs::path policy_path =
-      helper_identity.final_path.parent_path() / kWindowsHelperPolicyName;
+  if (helper_identity.sha256 != endpoint.helper_sha256 ||
+      _wcsicmp(helper_identity.final_path.lexically_normal().c_str(),
+               endpoint.helper_path.lexically_normal().c_str()) != 0) {
+    throw std::runtime_error(
+        "Registered Windows helper endpoint identity does not match.");
+  }
+  const fs::path policy_path = endpoint.policy_path;
   const std::string policy_json = CanonicalJsonFile(
       policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  if (Sha256Hex(policy_json) != endpoint.policy_sha256) {
+    throw std::runtime_error(
+        "Registered Windows helper policy digest does not match.");
+  }
   const runtime::internal::JsonValue policy_value =
       runtime::internal::ParseJson(policy_json);
   const std::string application_package_id =
       policy_value.at("applicationPackageId").string();
-  if (application_package_id != expected_package_id) {
+  if (!expected_package_id.empty() &&
+      application_package_id != expected_package_id) {
     throw std::runtime_error(
         "Windows helper policy package identity does not match the app.");
   }
+  if (application_package_id != endpoint.package_id ||
+      policy_value.at("policyId").string() != endpoint.policy_id ||
+      policy_value.at("helperServiceId").string() !=
+          endpoint.helper_service_id) {
+    throw std::runtime_error(
+        "Windows helper policy does not match the registered endpoint.");
+  }
   helper::WindowsHelperPolicy policy = helper::WindowsHelperPolicy::Load(
-      policy_json, Sha256Hex(policy_json), application_package_id,
-      helper_identity.sha256);
+      policy_json, endpoint.policy_sha256, application_package_id,
+      endpoint.helper_sha256);
   helper::ValidateWindowsHelperIdentity(helper_identity, policy, true);
   if (!helper::VerifyWindowsExecutableStillMatches(helper_path,
                                                    helper_identity)) {
     throw std::runtime_error(
         "Windows helper identity changed after policy validation.");
   }
-  return {helper_identity.final_path, std::move(policy)};
+  return {helper_identity.final_path, std::move(policy), endpoint};
+}
+
+WindowsHelperClientContext LoadPortableWindowsHelperClientContext(
+    const fs::path& running_executable,
+    const std::string& expected_package_id) {
+  const fs::path helper_path =
+      running_executable.parent_path() / kWindowsHelperExecutableName;
+  const fs::path policy_path =
+      running_executable.parent_path() / kWindowsHelperPolicyName;
+  const helper::VerifiedWindowsExecutable helper_identity =
+      helper::VerifyWindowsExecutable(helper_path);
+  if (!PathEquals(helper_identity.final_path.parent_path(),
+                  running_executable.parent_path()) ||
+      _wcsicmp(helper_identity.final_path.filename().c_str(),
+               kWindowsHelperExecutableName) != 0) {
+    throw std::runtime_error(
+        "Portable Windows helper is not app-adjacent.");
+  }
+  const std::string policy_json = CanonicalJsonFile(
+      policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  const runtime::internal::JsonValue policy_value =
+      runtime::internal::ParseJson(policy_json);
+  const std::string application_package_id =
+      policy_value.at("applicationPackageId").string();
+  if (!expected_package_id.empty() &&
+      application_package_id != expected_package_id) {
+    throw std::runtime_error(
+        "Portable Windows policy package identity does not match the app.");
+  }
+  helper::WindowsHelperPolicy policy = helper::WindowsHelperPolicy::Load(
+      policy_json, Sha256Hex(policy_json), application_package_id,
+      helper_identity.sha256);
+  if (!policy.is_portable()) {
+    throw std::runtime_error(
+        "App-adjacent Windows policy requests elevation authority.");
+  }
+  helper::ValidateWindowsHelperIdentity(helper_identity, policy, false);
+  const helper::VerifiedWindowsExecutable caller_identity =
+      helper::VerifyWindowsExecutable(running_executable);
+  if (!caller_identity.signature_valid ||
+      policy.application_signer_kind() != "sha256" ||
+      caller_identity.sha256 != policy.application_signer_identity() ||
+      !helper::VerifyWindowsExecutableStillMatches(running_executable,
+                                                   caller_identity) ||
+      !helper::VerifyWindowsExecutableStillMatches(helper_path,
+                                                   helper_identity)) {
+    throw std::runtime_error(
+        "Running app or portable helper identity does not match policy.");
+  }
+  return {helper_identity.final_path, std::move(policy), {}, true};
+}
+
+WindowsHelperClientContext LoadFrozenPortableWindowsTransactionClientContext(
+    const fs::path& running_executable,
+    const std::string& transaction_id,
+    const helper::ResolvedWindowsPortableTransactionEndpointV1& endpoint) {
+  const helper::VerifiedWindowsExecutable helper_identity =
+      helper::VerifyWindowsExecutable(endpoint.helper_path);
+  if (helper_identity.sha256 != endpoint.locator.helper_sha256 ||
+      !PathEquals(helper_identity.final_path, endpoint.helper_path)) {
+    throw std::runtime_error(
+        "Frozen portable Windows helper identity does not match.");
+  }
+  const std::string policy_json = CanonicalJsonFile(
+      endpoint.policy_path, kMaximumHelperPolicyBytes,
+      "Frozen portable Windows helper policy");
+  if (Sha256Hex(policy_json) != endpoint.locator.policy_sha256) {
+    throw std::runtime_error(
+        "Frozen portable Windows policy digest does not match.");
+  }
+  const runtime::internal::JsonValue policy_value =
+      runtime::internal::ParseJson(policy_json);
+  if (policy_value.at("policyId").string() != endpoint.locator.policy_id ||
+      policy_value.at("applicationPackageId").string() !=
+          endpoint.locator.package_id) {
+    throw std::runtime_error(
+        "Frozen portable Windows policy authority changed.");
+  }
+  helper::WindowsHelperPolicy policy = helper::WindowsHelperPolicy::Load(
+      policy_json, endpoint.locator.policy_sha256,
+      endpoint.locator.package_id, endpoint.locator.helper_sha256);
+  if (!policy.is_portable() ||
+      helper::WindowsPortableIndexBindingKey(policy) !=
+          endpoint.locator.index_binding_sha256) {
+    throw std::runtime_error(
+        "Frozen portable Windows generation binding changed.");
+  }
+  helper::ValidateWindowsHelperIdentity(helper_identity, policy, false);
+  if (!helper::VerifyWindowsExecutableStillMatches(endpoint.helper_path,
+                                                   helper_identity)) {
+    throw std::runtime_error(
+        "Frozen portable Windows helper changed after validation.");
+  }
+
+  helper::WindowsPortableTransactionStore store(
+      policy, GetCurrentProcess(), false);
+  const auto record = store.ReadRecord(transaction_id);
+  if (!record.has_value()) {
+    throw std::runtime_error(
+        "Frozen portable Windows transaction record is unavailable.");
+  }
+  const helper::VerifiedWindowsExecutable caller_identity =
+      helper::VerifyWindowsExecutable(running_executable);
+  if (helper::ResolveWindowsPortableTransactionAuthority(
+          endpoint.locator, policy, transaction_id, *record, caller_identity,
+          running_executable,
+          helper::VerifyWindowsExecutableStillMatches(running_executable,
+                                                       caller_identity)) ==
+      helper::WindowsPortableTransactionResolution::kReject) {
+    throw std::runtime_error(
+        "Running app is not a frozen portable transaction generation.");
+  }
+  return {helper_identity.final_path, std::move(policy), {}, true};
+}
+
+bool AdjacentPolicyDeclaresPortable(const fs::path& running_executable) {
+  const fs::path helper_path =
+      running_executable.parent_path() / kWindowsHelperExecutableName;
+  const fs::path policy_path =
+      running_executable.parent_path() / kWindowsHelperPolicyName;
+  const DWORD helper_attributes = GetFileAttributesW(helper_path.c_str());
+  const DWORD policy_attributes = GetFileAttributesW(policy_path.c_str());
+  const DWORD policy_error = policy_attributes == INVALID_FILE_ATTRIBUTES
+                                 ? GetLastError()
+                                 : ERROR_SUCCESS;
+  const bool policy_missing = policy_attributes == INVALID_FILE_ATTRIBUTES &&
+                              (policy_error == ERROR_FILE_NOT_FOUND ||
+                               policy_error == ERROR_PATH_NOT_FOUND);
+  // The helper executable is bundled for protected installer flows as well.
+  // Without an adjacent portable policy there is no portable authority to
+  // probe, so continue to the independently registered protected endpoint.
+  if (policy_missing) return false;
+  if (helper_attributes == INVALID_FILE_ATTRIBUTES ||
+      policy_attributes == INVALID_FILE_ATTRIBUTES ||
+      (helper_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+      (policy_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+      (helper_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+      (policy_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    throw std::runtime_error(
+        "Adjacent Windows helper/policy layout is incomplete or unsafe.");
+  }
+  const std::string canonical = CanonicalJsonFile(
+      policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  const runtime::internal::JsonValue value =
+      runtime::internal::ParseJson(canonical);
+  const auto& roots = value.at("allowedInstallRoots").array();
+  const std::string application_kind =
+      value.at("allowedApplicationSigner").at("kind").string();
+  const std::string helper_kind =
+      value.at("allowedHelperSigner").at("kind").string();
+  return roots.empty() && application_kind == "sha256" &&
+         helper_kind == "sha256";
+}
+
+WindowsHelperClientContext LoadWindowsRecoveryClientContext(
+    const fs::path& running_executable,
+    const std::string& transaction_id) {
+  const auto endpoint =
+      helper::LoadProtectedWindowsTransactionEndpoint(transaction_id);
+  if (!endpoint.has_value()) {
+    throw std::runtime_error(
+        "Protected Windows transaction endpoint is unavailable.");
+  }
+  WindowsHelperClientContext context =
+      LoadWindowsHelperClientContext(*endpoint, endpoint->package_id);
+  const helper::VerifiedWindowsExecutable caller_identity =
+      helper::VerifyWindowsExecutable(running_executable);
+  if (!caller_identity.signature_valid ||
+      WideToUtf8(caller_identity.publisher) !=
+          context.policy.application_publisher() ||
+      !helper::VerifyWindowsExecutableStillMatches(running_executable,
+                                                   caller_identity)) {
+    throw std::runtime_error(
+        "Running app identity does not match the sealed helper policy.");
+  }
+  return context;
 }
 
 PreparedWindowsHelperRequest BuildWindowsHelperRequest(
     const InstallRequest& request,
     const fs::path& running_executable,
-    const InstallTargetProof& target_proof) {
+    const InstallTargetProof& target_proof,
+    const std::string& requested_transaction_id,
+    bool portable) {
   using runtime::internal::BuildWindowsNativeInstallTransactionRequestV1;
   using runtime::internal::EncodeCanonicalNativeInstallTransactionRequestV1;
   using runtime::internal::VerifyStageProvenance;
   using runtime::internal::WindowsNativeInstallEvidenceV1;
 
   const std::string package_id = WideToUtf8(request.expected_package_id);
-  WindowsHelperClientContext context =
-      LoadWindowsHelperClientContext(running_executable, package_id);
+  WindowsHelperClientContext context = [&]() {
+    if (portable) {
+      if (target_proof.source !=
+          InstallTargetProofSource::kInstalledIdentityMarker) {
+        throw std::runtime_error(
+            "Portable helper requires an app-owned identity marker.");
+      }
+      return LoadPortableWindowsHelperClientContext(running_executable,
+                                                    package_id);
+    }
+    const auto endpoint = helper::LoadProtectedWindowsHelperEndpoint(
+        package_id, ConfiguredWindowsHelperPath());
+    if (!endpoint.has_value()) {
+      throw std::runtime_error(
+          "Protected Windows helper endpoint is not registered.");
+    }
+    return LoadWindowsHelperClientContext(*endpoint, package_id);
+  }();
+  if (context.portable != portable) {
+    throw std::runtime_error("Windows helper execution mode changed.");
+  }
 
   const fs::path target_path(target_proof.canonical_root);
-  const std::string installed_identity = CanonicalJsonFile(
-      target_path / kInstalledIdentityMarkerName,
-      kMaximumInstalledIdentityMarkerBytes, "Installed identity marker");
-  if (!InstalledIdentityMarkerMatchesJson(installed_identity,
-                                          request.expected_package_id)) {
-    throw std::runtime_error(
-        "Installed identity marker does not match the package.");
+  std::string installed_identity;
+  if (target_proof.source ==
+      InstallTargetProofSource::kInstalledIdentityMarker) {
+    installed_identity = CanonicalJsonFile(
+        target_path / kInstalledIdentityMarkerName,
+        kMaximumInstalledIdentityMarkerBytes, "Installed identity marker");
+    if (!InstalledIdentityMarkerMatchesJson(installed_identity,
+                                            request.expected_package_id)) {
+      throw std::runtime_error(
+          "Installed identity marker does not match the package.");
+    }
+  } else {
+    const auto registry_proof =
+        helper::FindCanonicalWindowsUninstallRecordProof(target_path,
+                                                          package_id,
+                                                          GetCurrentProcess());
+    if (!registry_proof.has_value()) {
+      throw std::runtime_error(
+          "Installed uninstall record identity proof is unavailable.");
+    }
+    installed_identity = *registry_proof;
   }
-  const std::string installed_identity_sha256 =
-      Sha256Hex(installed_identity);
+  const std::string installed_identity_sha256 = Sha256Hex(installed_identity);
 
   const fs::path stage_path(request.staging_path);
   const std::string expected_provenance_sha256 =
@@ -806,16 +1026,23 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
 
   const helper::VerifiedWindowsExecutable caller_identity =
       helper::VerifyWindowsExecutable(running_executable);
-  if (!caller_identity.signature_valid ||
-      WideToUtf8(caller_identity.publisher) !=
-          context.policy.application_publisher() ||
+  const bool caller_policy_matches =
+      portable
+          ? context.policy.application_signer_kind() == "sha256" &&
+                caller_identity.sha256 ==
+                    context.policy.application_signer_identity()
+          : WideToUtf8(caller_identity.publisher) ==
+                context.policy.application_publisher();
+  if (!caller_identity.signature_valid || !caller_policy_matches ||
       !helper::VerifyWindowsExecutableStillMatches(running_executable,
                                                    caller_identity)) {
     throw std::runtime_error(
         "Running app identity does not match the sealed helper policy.");
   }
 
-  const std::string transaction_id = NewTransactionId();
+  const std::string transaction_id = requested_transaction_id.empty()
+                                         ? NewTransactionId()
+                                         : requested_transaction_id;
   if (!IsTransactionId(transaction_id)) {
     throw std::runtime_error("Generated install transaction ID is invalid.");
   }
@@ -845,9 +1072,18 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
   evidence.caller_signer_identity =
       WideToUtf8(caller_identity.publisher);
   evidence.request_nonce = nonce;
-  const runtime::internal::NativeInstallTransactionRequestV1 native_request =
+  runtime::internal::NativeInstallTransactionRequestV1 native_request =
       BuildWindowsNativeInstallTransactionRequestV1(
           release_manifest, marker, evidence, Sha256Hex);
+  if (portable) {
+    native_request.target.target_class = "sameUserWritable";
+  }
+  if (!context.policy.AllowsRequest(
+          native_request.protocol_version, native_request.target.target_class,
+          native_request.strategy, native_request.provider)) {
+    throw std::runtime_error(
+        "Windows helper policy rejects the requested target strategy.");
+  }
   return {std::move(context), nonce,
           EncodeCanonicalNativeInstallTransactionRequestV1(native_request)};
 }
@@ -883,25 +1119,164 @@ InstallTransactionStatus EndpointUnavailableStatus(
           ""};
 }
 
+InstallTransactionState WindowsStateFromWire(const std::string& state) {
+  if (state == "prepared" || state == "backupCreated" ||
+      state == "targetActivated") {
+    return InstallTransactionState::kPrepared;
+  }
+  if (state == "completed") return InstallTransactionState::kCompleted;
+  if (state == "rolledBack") return InstallTransactionState::kRolledBack;
+  if (state == "manualActionRequired") {
+    return InstallTransactionState::kManualActionRequired;
+  }
+  return InstallTransactionState::kUnknown;
+}
+
+InstallTransactionResultCode WindowsResultFromWire(
+    const std::string& result_code) {
+  if (result_code == "completed" || result_code == "rolledBack") {
+    return InstallTransactionResultCode::kSucceeded;
+  }
+  if (result_code == "recoveryRequired" ||
+      result_code == "manualActionRequired" ||
+      result_code == "journalCorrupt") {
+    return InstallTransactionResultCode::kRecoveryRequired;
+  }
+  if (result_code == "relaunchFailure") {
+    return InstallTransactionResultCode::kRelaunchFailure;
+  }
+  return InstallTransactionResultCode::kRejected;
+}
+
+InstallTransactionStatus RunWindowsPersistentOperation(
+    const std::string& transaction_id,
+    const std::string& operation) {
+  try {
+    const std::wstring executable_path = CurrentExecutablePath();
+    if (executable_path.empty()) {
+      return EndpointUnavailableStatus(transaction_id);
+    }
+    std::error_code canonical_error;
+    const fs::path executable =
+        fs::canonical(executable_path, canonical_error);
+    if (canonical_error) {
+      return EndpointUnavailableStatus(transaction_id);
+    }
+    std::optional<WindowsHelperClientContext> portable_context;
+    helper::WindowsPortableTransactionProbe portable_probe =
+        helper::WindowsPortableTransactionProbe::kAbsent;
+    try {
+      const auto frozen_endpoint =
+          helper::LoadWindowsPortableTransactionEndpoint(transaction_id);
+      if (frozen_endpoint.has_value()) {
+        portable_context.emplace(
+            LoadFrozenPortableWindowsTransactionClientContext(
+                executable, transaction_id, *frozen_endpoint));
+        portable_probe = helper::WindowsPortableTransactionProbe::kPresent;
+      } else if (AdjacentPolicyDeclaresPortable(executable)) {
+        // Compatibility for transactions created before the durable neutral
+        // locator existed. New transactions always bind the frozen endpoint.
+        portable_context.emplace(
+            LoadPortableWindowsHelperClientContext(executable, ""));
+        portable_probe = helper::ProbeWindowsPortableTransaction(
+            portable_context->policy, transaction_id);
+      }
+    } catch (const std::exception&) {
+      portable_context.reset();
+      portable_probe =
+          helper::WindowsPortableTransactionProbe::kBindingMismatch;
+    }
+    const auto protected_endpoint =
+        helper::LoadProtectedWindowsTransactionEndpoint(transaction_id);
+    const helper::WindowsTransactionLookupDecision lookup =
+        helper::DecideWindowsTransactionLookup(
+            portable_probe, protected_endpoint.has_value());
+    if (lookup == helper::WindowsTransactionLookupDecision::kBindingMismatch) {
+      throw std::runtime_error(
+          "Portable and protected transaction authority conflicts.");
+    }
+    if (lookup == helper::WindowsTransactionLookupDecision::kUnavailable) {
+      return EndpointUnavailableStatus(transaction_id);
+    }
+    WindowsHelperClientContext context =
+        lookup == helper::WindowsTransactionLookupDecision::kPortable
+            ? std::move(*portable_context)
+            : LoadWindowsRecoveryClientContext(executable, transaction_id);
+    const std::string nonce = SecureRequestNonce();
+    const helper::WindowsPersistentRecoveryRequestV1 request{
+        operation,
+        1,
+        context.policy.policy_id(),
+        context.policy.application_package_id(),
+        transaction_id,
+        nonce,
+    };
+    const helper::WindowsElevatedRecoveryResponse response =
+        context.portable
+            ? helper::LaunchAuthenticatedPortableRecoveryRequest(
+                  context.helper_path, context.policy, request,
+                  kWindowsHelperStartupTimeoutMilliseconds)
+            : helper::LaunchAuthenticatedElevatedRecoveryRequest(
+                  context.helper_path, context.policy, request,
+                  kWindowsHelperStartupTimeoutMilliseconds);
+    if (response.result != helper::ElevationLaunchResult::kLaunched) {
+      const bool cancelled =
+          response.result == helper::ElevationLaunchResult::kCancelled;
+      return {transaction_id,
+              InstallTransactionState::kUnknown,
+              cancelled ? InstallTransactionResultCode::kRejected
+                        : InstallTransactionResultCode::kEndpointUnavailable,
+              ElevationLaunchError(response.result), "", ""};
+    }
+    if (!response.is_recovery) {
+      return {transaction_id,
+              WindowsStateFromWire(response.status.state),
+              WindowsResultFromWire(response.status.result_code),
+              "Windows helper returned authoritative transaction status.",
+              response.status.journal_sha256,
+              response.helper_endpoint_identity_sha256};
+    }
+    InstallTransactionState state = InstallTransactionState::kUnknown;
+    if (response.recovery.result_code == "completed") {
+      state = InstallTransactionState::kCompleted;
+    } else if (response.recovery.result_code == "rolledBack") {
+      state = InstallTransactionState::kRolledBack;
+    } else if (response.recovery.result_code == "manualActionRequired") {
+      state = InstallTransactionState::kManualActionRequired;
+    }
+    return {transaction_id,
+            state,
+            WindowsResultFromWire(response.recovery.result_code),
+            "Windows helper returned authoritative recovery status.",
+            response.recovery.journal_sha256,
+            response.helper_endpoint_identity_sha256};
+  } catch (const std::exception&) {
+    return {transaction_id,
+            InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kAuthenticationFailed,
+            "Windows helper recovery endpoint authentication failed.", "",
+            ""};
+  }
+}
+
 }  // namespace
 
-InstallResult PrepareInstall(const InstallRequest& request,
-                             InstallReservation* reservation) {
-  if (reservation == nullptr) {
+InstallResult PrepareInstallWithTransactionId(
+    const InstallRequest& request,
+    const std::string& transaction_id,
+    InstallReservation* reservation,
+    bool* recovery_required) {
+  if (reservation == nullptr || recovery_required == nullptr) {
     return {false, "Install reservation output must not be null."};
   }
   *reservation = {};
+  *recovery_required = false;
   const InstallResult staging = ValidateStagingRoot(request);
   if (!staging.ok) {
     return staging;
   }
   if (request.staging_path.empty()) {
     return {false, "Staged update root is required."};
-  }
-  if (request.elevation_policy == InstallElevationPolicy::kNever) {
-    return {false,
-            "Windows native helper elevation is disabled by install policy; "
-            "no unprivileged provider is available."};
   }
   const std::wstring executable_path = CurrentExecutablePath();
   if (executable_path.empty()) {
@@ -919,17 +1294,49 @@ InstallResult PrepareInstall(const InstallRequest& request,
   if (!target.ok) {
     return target;
   }
+  const bool protected_target =
+      target_proof.source ==
+      InstallTargetProofSource::kRegistryUninstallRecord;
+  if (protected_target &&
+      request.elevation_policy == InstallElevationPolicy::kNever) {
+    return {false,
+            "Windows protected install target requires the registered "
+            "elevated helper endpoint."};
+  }
+  const bool portable =
+      !protected_target &&
+      request.elevation_policy != InstallElevationPolicy::kAlways;
+  std::optional<PreparedWindowsHelperRequest> prepared;
   try {
-    PreparedWindowsHelperRequest prepared =
-        BuildWindowsHelperRequest(request, executable, target_proof);
+    prepared.emplace(
+        BuildWindowsHelperRequest(request, executable, target_proof,
+                                  transaction_id, portable));
+  } catch (const std::exception& error) {
+    return {false, std::string("Windows helper preparation failed: ") +
+                       error.what()};
+  }
+  try {
     helper::WindowsElevatedHelperLaunch launch =
-        helper::LaunchAuthenticatedElevatedHelper(
-            prepared.helper.helper_path, prepared.helper.policy,
-            prepared.nonce, prepared.canonical_request,
-            kWindowsHelperStartupTimeoutMilliseconds);
+        portable
+            ? helper::LaunchAuthenticatedPortableHelper(
+                  prepared->helper.helper_path, prepared->helper.policy,
+                  prepared->nonce, prepared->canonical_request,
+                  kWindowsHelperStartupTimeoutMilliseconds)
+            : helper::LaunchAuthenticatedElevatedHelper(
+                  prepared->helper.helper_path, prepared->helper.policy,
+                  prepared->nonce, prepared->canonical_request,
+                  kWindowsHelperStartupTimeoutMilliseconds);
     if (launch.result != helper::ElevationLaunchResult::kLaunched ||
         launch.session == nullptr) {
-      return {false, ElevationLaunchError(launch.result)};
+      const bool ambiguous_handoff =
+          launch.result == helper::ElevationLaunchResult::kTimedOut ||
+          launch.result == helper::ElevationLaunchResult::kLaunched;
+      *recovery_required = ambiguous_handoff;
+      return {false,
+              portable && launch.result ==
+                              helper::ElevationLaunchResult::kFailed
+                  ? "Windows portable helper launch failed."
+                  : ElevationLaunchError(launch.result)};
     }
     const InstallReservation public_reservation =
         PublicReservation(launch.session->reservation());
@@ -937,6 +1344,7 @@ InstallResult PrepareInstall(const InstallRequest& request,
         public_reservation.ready_token.empty() ||
         public_reservation.response_digest_sha256.size() != 64 ||
         public_reservation.helper_endpoint_identity_sha256.size() != 64) {
+      *recovery_required = true;
       return {false, "Windows helper returned an invalid reservation."};
     }
     {
@@ -948,6 +1356,7 @@ InstallResult PrepareInstall(const InstallRequest& request,
                            public_reservation, std::move(launch.session)})
               .second;
       if (!inserted) {
+        *recovery_required = true;
         return {false,
                 "Windows helper returned a duplicate transaction ID."};
       }
@@ -955,9 +1364,17 @@ InstallResult PrepareInstall(const InstallRequest& request,
     *reservation = public_reservation;
     return {true, ""};
   } catch (const std::exception& error) {
+    *recovery_required = true;
     return {false, std::string("Windows helper preparation failed: ") +
                        error.what()};
   }
+}
+
+InstallResult PrepareInstall(const InstallRequest& request,
+                             InstallReservation* reservation) {
+  bool ignored_recovery_required = false;
+  return PrepareInstallWithTransactionId(
+      request, "", reservation, &ignored_recovery_required);
 }
 
 InstallTransactionStatus CommitAfterExit(
@@ -1074,7 +1491,7 @@ InstallTransactionStatus QueryTransaction(
             InstallTransactionResultCode::kRejected,
             "Transaction ID is invalid.", "", ""};
   }
-  return EndpointUnavailableStatus(transaction_id);
+  return RunWindowsPersistentOperation(transaction_id, "queryTransaction");
 }
 
 InstallTransactionStatus RecoverPendingInstall(
@@ -1084,7 +1501,19 @@ InstallTransactionStatus RecoverPendingInstall(
             InstallTransactionResultCode::kRejected,
             "Transaction ID is invalid.", "", ""};
   }
-  return EndpointUnavailableStatus(transaction_id);
+  return RunWindowsPersistentOperation(transaction_id,
+                                       "recoverPendingInstall");
+}
+
+InstallTransactionStatus ResolvePendingInstallAfterExit(
+    const std::string& transaction_id) {
+  if (!IsTransactionId(transaction_id)) {
+    return {transaction_id, InstallTransactionState::kUnknown,
+            InstallTransactionResultCode::kRejected,
+            "Transaction ID is invalid.", "", ""};
+  }
+  return RunWindowsPersistentOperation(
+      transaction_id, "resolvePendingInstallAfterExit");
 }
 
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {

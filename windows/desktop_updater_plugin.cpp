@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <filesystem>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -174,10 +175,14 @@ std::vector<std::wstring> StringListFromArguments(
 
 bool HandoffNativeInstall(
     const desktop_updater::native::InstallRequest& request,
-    std::string* error) {
+    const std::string& request_transaction_id,
+    std::string* error,
+    bool* recovery_required) {
+  *recovery_required = false;
   desktop_updater::native::InstallReservation reservation;
   const desktop_updater::native::InstallResult prepared =
-      desktop_updater::native::PrepareInstall(request, &reservation);
+      desktop_updater::native::PrepareInstallWithTransactionId(
+          request, request_transaction_id, &reservation, recovery_required);
   if (!prepared.ok) {
     *error = prepared.error_message;
     return false;
@@ -188,9 +193,17 @@ bool HandoffNativeInstall(
     *error = status.detail.empty()
                  ? "Native install helper commit was not accepted."
                  : status.detail;
+    *recovery_required = true;
     return false;
   }
   return true;
+}
+
+flutter::EncodableValue RecoveryRequiredErrorDetails() {
+  flutter::EncodableMap details;
+  details[flutter::EncodableValue("recoveryRequired")] =
+      flutter::EncodableValue(true);
+  return flutter::EncodableValue(details);
 }
 
 std::string TransactionStateName(
@@ -220,6 +233,7 @@ std::string TransactionResultName(
     case Code::kAuthenticationFailed: return "authenticationFailed";
     case Code::kInvalidResponse: return "invalidResponse";
     case Code::kRecoveryRequired: return "recoveryRequired";
+    case Code::kRelaunchFailure: return "relaunchFailure";
     case Code::kNone: return "none";
   }
   return "none";
@@ -259,6 +273,13 @@ bool ReadTransactionId(const flutter::EncodableValue* arguments,
 }
 
 }  // namespace
+
+bool IsCanonicalInstallTransactionId(const std::string& transaction_id) {
+  static const std::regex transaction_id_pattern(
+      "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"
+      "[0-9a-f]{12}$");
+  return std::regex_match(transaction_id, transaction_id_pattern);
+}
 
 bool IsAcceptedInstallHandoff(
     const native::InstallReservation& reservation,
@@ -334,8 +355,13 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     request.elevation_policy =
         desktop_updater::native::InstallElevationPolicy::kNever;
     std::string error;
-    if (!HandoffNativeInstall(request, &error)) {
-      result->Error("RestartError", error);
+    bool recovery_required = false;
+    if (!HandoffNativeInstall(request, "", &error, &recovery_required)) {
+      if (recovery_required) {
+        result->Error("RestartError", error, RecoveryRequiredErrorDetails());
+      } else {
+        result->Error("RestartError", error);
+      }
       return;
     }
     result->Success();
@@ -361,6 +387,21 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     }
 
     desktop_updater::native::InstallRequest request;
+    std::string request_transaction_id;
+    const auto transaction_iterator =
+        arguments->find(flutter::EncodableValue("transactionId"));
+    if (transaction_iterator != arguments->end()) {
+      const auto* transaction_id =
+          std::get_if<std::string>(&transaction_iterator->second);
+      if (transaction_id == nullptr ||
+          !IsCanonicalInstallTransactionId(*transaction_id)) {
+        result->Error(
+            "InvalidArguments",
+            "transactionId must be a canonical lowercase UUIDv4.");
+        return;
+      }
+      request_transaction_id = *transaction_id;
+    }
     request.staging_path = Utf8ToWide(*staging_path);
     request.install_root = StringFromArguments(*arguments, "installRoot");
     request.executable_relative_path =
@@ -398,8 +439,14 @@ void DesktopUpdaterPlugin::HandleMethodCall(
       return;
     }
     std::string error;
-    if (!HandoffNativeInstall(request, &error)) {
-      result->Error("InstallError", error);
+    bool recovery_required = false;
+    if (!HandoffNativeInstall(request, request_transaction_id, &error,
+                              &recovery_required)) {
+      if (recovery_required) {
+        result->Error("InstallError", error, RecoveryRequiredErrorDetails());
+      } else {
+        result->Error("InstallError", error);
+      }
       return;
     }
     result->Success();
@@ -407,17 +454,31 @@ void DesktopUpdaterPlugin::HandleMethodCall(
   } else if (method_call.method_name().compare("queryInstallTransaction") ==
              0 ||
              method_call.method_name().compare(
-                 "recoverPendingInstallTransaction") == 0) {
+                 "recoverPendingInstallTransaction") == 0 ||
+             method_call.method_name().compare(
+                 "resolvePendingInstallTransactionAfterExit") == 0) {
     std::string transaction_id;
     if (!ReadTransactionId(method_call.arguments(), &transaction_id)) {
       result->Error("InvalidArguments", "transactionId must be a string.");
       return;
     }
+    const bool query =
+        method_call.method_name().compare("queryInstallTransaction") == 0;
+    const bool resolve_after_exit =
+        method_call.method_name().compare(
+            "resolvePendingInstallTransactionAfterExit") == 0;
     const native::InstallTransactionStatus status =
-        method_call.method_name().compare("queryInstallTransaction") == 0
-            ? native::QueryTransaction(transaction_id)
-            : native::RecoverPendingInstall(transaction_id);
+        query ? native::QueryTransaction(transaction_id)
+              : resolve_after_exit
+                    ? native::ResolvePendingInstallAfterExit(transaction_id)
+                    : native::RecoverPendingInstall(transaction_id);
     result->Success(TransactionStatusValue(status));
+    if (resolve_after_exit &&
+        status.state == native::InstallTransactionState::kPrepared &&
+        status.result_code ==
+            native::InstallTransactionResultCode::kRecoveryRequired) {
+      ExitProcess(0);
+    }
   } else if (method_call.method_name().compare("getExecutablePath") == 0) {
     result->Success(flutter::EncodableValue(WideToUtf8(CurrentExecutablePath())));
   } else if (method_call.method_name().compare("getCurrentVersion") == 0) {

@@ -198,7 +198,8 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       const auto identity =
           ReadLinuxRelativeIdentity(parent.get(), paths_.target_name);
       if (identity != journal.target_identity &&
-          identity != journal.stage_identity) {
+          !verifier_.MatchesActivatedPayloadRoot(
+              parent.get(), paths_.target_name, journal.stage_identity)) {
         return LinuxRecoveryOutcome::kManualActionRequired;
       }
     }
@@ -250,8 +251,14 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       store.Persist(journal);
     }
 
+    if (target_exists && !prepared_exists && backup_exists) {
+      verifier_.FinalizeActivatedPayloadRoot(
+          parent.get(), paths_.target_name, journal.stage_identity);
+    }
+
     if (!target_exists || stage_exists || prepared_exists ||
-        !Matches(parent.get(), paths_.target_name, journal.stage_identity) ||
+        !verifier_.MatchesActivatedPayloadRoot(
+            parent.get(), paths_.target_name, journal.stage_identity) ||
         verifier_.Verify(parent.get(), paths_.target_name) !=
             expected_payload_identity_) {
       return LinuxRecoveryOutcome::kManualActionRequired;

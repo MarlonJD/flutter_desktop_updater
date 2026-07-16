@@ -76,6 +76,9 @@ enum class InstallTransactionResultCode : std::uint32_t {
   kAuthenticationFailed = 5,
   kInvalidResponse = 6,
   kRecoveryRequired = 7,
+  // The install reached a verified terminal state, but the best-effort
+  // at-most-once application relaunch was not durably confirmed.
+  kRelaunchFailure = 8,
 };
 
 struct InstallReservation {
@@ -98,12 +101,21 @@ struct InstallTransactionStatus {
 
 InstallResult PrepareInstall(const InstallRequest& request,
                              InstallReservation* reservation);
+// Additive entry point for callers that must persist a transaction locator
+// before the privileged handoff. Existing request/result layouts stay intact.
+InstallResult PrepareInstallWithTransactionId(
+    const InstallRequest& request,
+    const std::string& transaction_id,
+    InstallReservation* reservation,
+    bool* recovery_required);
 InstallTransactionStatus CommitAfterExit(
     const InstallReservation& reservation);
 InstallTransactionStatus CancelReservation(
     const InstallReservation& reservation);
 InstallTransactionStatus QueryTransaction(const std::string& transaction_id);
 InstallTransactionStatus RecoverPendingInstall(
+    const std::string& transaction_id);
+InstallTransactionStatus ResolvePendingInstallAfterExit(
     const std::string& transaction_id);
 
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);

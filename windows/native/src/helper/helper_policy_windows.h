@@ -50,6 +50,11 @@ class WindowsHelperPolicy {
       std::string helper_sha256,
       std::vector<std::wstring> allowed_install_roots);
 
+  static WindowsHelperPolicy ForPortableTesting(
+      std::string application_package_id,
+      std::string application_sha256,
+      std::string helper_sha256);
+
   static WindowsHelperPolicyError::Code PortableElevationErrorForTesting();
 
   const std::string& application_package_id() const {
@@ -58,10 +63,25 @@ class WindowsHelperPolicy {
   const std::string& policy_id() const { return policy_id_; }
   const std::string& helper_service_id() const { return helper_service_id_; }
   const std::string& application_publisher() const {
-    return application_publisher_;
+    return application_signer_identity_;
   }
-  const std::string& helper_publisher() const { return helper_publisher_; }
+  const std::string& helper_publisher() const {
+    return helper_signer_identity_;
+  }
+  const std::string& application_signer_kind() const {
+    return application_signer_kind_;
+  }
+  const std::string& application_signer_identity() const {
+    return application_signer_identity_;
+  }
+  const std::string& helper_signer_kind() const {
+    return helper_signer_kind_;
+  }
+  const std::string& helper_signer_identity() const {
+    return helper_signer_identity_;
+  }
   const std::string& helper_sha256() const { return helper_sha256_; }
+  bool is_portable() const { return portable_; }
   const std::vector<std::wstring>& allowed_install_roots() const {
     return allowed_install_roots_;
   }
@@ -89,8 +109,10 @@ class WindowsHelperPolicy {
   WindowsHelperPolicy(std::string policy_id,
                       std::string application_package_id,
                       std::string helper_service_id,
-                      std::string application_publisher,
-                      std::string helper_publisher,
+                      std::string application_signer_kind,
+                      std::string application_signer_identity,
+                      std::string helper_signer_kind,
+                      std::string helper_signer_identity,
                       std::string helper_sha256,
                       std::vector<std::wstring> allowed_install_roots,
                       std::vector<std::string> allowed_target_classes,
@@ -103,9 +125,12 @@ class WindowsHelperPolicy {
   std::string policy_id_;
   std::string application_package_id_;
   std::string helper_service_id_;
-  std::string application_publisher_;
-  std::string helper_publisher_;
+  std::string application_signer_kind_;
+  std::string application_signer_identity_;
+  std::string helper_signer_kind_;
+  std::string helper_signer_identity_;
   std::string helper_sha256_;
+  bool portable_ = false;
   std::vector<std::wstring> allowed_install_roots_;
   std::vector<std::string> allowed_target_classes_;
   std::vector<WindowsReleaseRootPublicKey> release_root_public_keys_;

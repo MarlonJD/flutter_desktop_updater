@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "native_install_request.h"
@@ -40,6 +41,7 @@ NativeInstallTransactionRequestV1 Request() {
 
 struct TransactionState {
   bool prepared = false;
+  bool commit_marked = false;
   bool executed = false;
   bool cancelled = false;
 };
@@ -58,7 +60,13 @@ class FakeTransaction final : public NativeInstallPreparedTransactionV1 {
     state_->prepared = true;
     return "canonical-journal";
   }
-  void ExecuteAfterCallerExit() override { state_->executed = true; }
+  void MarkCommitAccepted() override { state_->commit_marked = true; }
+  void ExecuteAfterCallerExit() override {
+    if (!state_->commit_marked) {
+      throw std::runtime_error("commit was not durably marked");
+    }
+    state_->executed = true;
+  }
   void CancelPrepared() override { state_->cancelled = true; }
 
  private:
@@ -113,6 +121,7 @@ TEST(native_install_session, MutatesOnlyAfterBoundCommitAndCallerExit) {
   EXPECT_EQ(reservation,
             session.AcceptCommit(EncodeNativeInstallWireCommandV1(
                 Command(reservation, "commitAfterExit"))));
+  EXPECT_TRUE(state->commit_marked);
   EXPECT_FALSE(state->executed);
   const NativeInstallTransactionStatusV1 completed =
       session.ExecuteAfterCallerExit();

@@ -274,13 +274,17 @@ NativeInstallTargetV1 ParseTarget(const JsonValue* value,
                     "executableRelativePath", "identityProofSha256"},
                    {}, "target");
   static const std::set<std::string> classes = {
-      "applicationBundle", "applicationDirectory", "singleExecutable",
-      "systemPackage", "externalManaged"};
+      "sameUserWritable", "applicationBundle", "applicationDirectory",
+      "singleExecutable", "protectedApplication", "systemPackage",
+      "externalManaged"};
   static const std::map<std::string, std::set<std::string>> strategy_classes = {
-      {"directoryReplace", {"applicationBundle", "applicationDirectory"}},
+      {"directoryReplace",
+       {"sameUserWritable", "applicationBundle", "applicationDirectory",
+        "protectedApplication"}},
       {"singleFileReplace", {"singleExecutable"}},
       {"verifiedInstallerHandoff",
-       {"applicationBundle", "applicationDirectory"}},
+       {"applicationBundle", "applicationDirectory",
+        "protectedApplication"}},
       {"systemPackageTransaction", {"systemPackage"}},
       {"externalManagedRefresh", {"externalManaged"}},
   };

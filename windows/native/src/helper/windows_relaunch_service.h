@@ -42,6 +42,17 @@ class CreateProcessWindowsLauncher final : public WindowsProcessLauncher {
   void Launch(const std::filesystem::path& executable) override;
 };
 
+// Captures the exact authenticated app token before the app exits so the
+// elevated helper never relaunches the updated app with its own admin token.
+class CallerTokenWindowsLauncher final : public WindowsProcessLauncher {
+ public:
+  explicit CallerTokenWindowsLauncher(HANDLE caller_process);
+  void Launch(const std::filesystem::path& executable) override;
+
+ private:
+  UniqueWindowsHandle caller_primary_token_;
+};
+
 class WindowsRelaunchService {
  public:
   WindowsRelaunchService(

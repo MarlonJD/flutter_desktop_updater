@@ -81,6 +81,32 @@ TEST(native_install_wire, RejectsUnknownFieldsNonCanonicalAndSecretDrift) {
                NativeInstallWireError);
 }
 
+TEST(native_install_wire, RejectsInconsistentTerminalStatusAndRecovery) {
+  NativeInstallTransactionStatusV1 status{
+      1,
+      Reservation().transaction_id,
+      "completed",
+      "rolledBack",
+      Reservation().journal_sha256,
+  };
+  EXPECT_THROW(EncodeNativeInstallTransactionStatusV1(status),
+               NativeInstallWireError);
+
+  NativeInstallRecoveryResultV1 recovery{
+      1,
+      Reservation().transaction_id,
+      "completed",
+      "oldTarget",
+      Reservation().journal_sha256,
+  };
+  EXPECT_THROW(EncodeNativeInstallRecoveryResultV1(recovery),
+               NativeInstallWireError);
+
+  recovery.result_code = "relaunchFailure";
+  recovery.verified_outcome = "newTarget";
+  EXPECT_NO_THROW(EncodeNativeInstallRecoveryResultV1(recovery));
+}
+
 }  // namespace
 }  // namespace internal
 }  // namespace runtime

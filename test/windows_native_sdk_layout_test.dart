@@ -18,6 +18,21 @@ void main() {
     expect(pluginCmake, contains("desktop_updater_install_helper"));
     expect(pluginCmake,
         contains(r"$<TARGET_FILE:desktop_updater_install_helper>"));
+    expect(nativeCmake, contains("DESKTOP_UPDATER_PORTABLE_PROVIDER"));
+    expect(
+      nativeCmake,
+      contains("DESKTOP_UPDATER_PORTABLE_HELPER_POLICY_PATH"),
+    );
+    expect(pluginCmake, contains("desktop_updater_helper_policy.json"));
+    expect(
+      nativeCmake,
+      contains(
+        'install(FILES "\${DESKTOP_UPDATER_PORTABLE_POLICY_OUTPUT}"',
+      ),
+    );
+    expect(nativeCmake, contains("IS_ABSOLUTE"));
+    expect(nativeCmake, contains("EXISTS"));
+    expect(nativeCmake, contains("FATAL_ERROR"));
     expect(
       pluginCmake,
       contains(
@@ -28,6 +43,15 @@ void main() {
       contains("DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR"),
     );
     expect(nativeCmake, contains("IS_ABSOLUTE"));
+    expect(
+      nativeCmake,
+      contains("Program Files/DesktopUpdaterHelperGenerationV1--"),
+    );
+    expect(nativeCmake, contains("<package-id>--<release>"));
+    expect(
+      nativeCmake,
+      isNot(contains("Program Files/DesktopUpdater/Helpers")),
+    );
     expect(nativeCmake, contains("desktop_updater_install_helper"));
     expect(nativeCmake, contains("RUNTIME DESTINATION"));
 
@@ -38,6 +62,40 @@ void main() {
     expect(targets, contains("desktop_updater_install_helper.exe"));
     expect(targets, contains("desktop_updater_helper_policy.json"));
     expect(targets, contains("CopyDesktopUpdaterNativeRuntime"));
+  });
+
+  test("Windows protected endpoints are immutable and version-addressed", () {
+    final locator = readRequiredFile(
+      "windows/native/src/helper/windows_protected_helper_locator.cpp",
+    );
+    final client = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final inno = readRequiredFile(
+      "lib/src/release_cli/inno/inno_script_builder.dart",
+    );
+    final innoConfig = readRequiredFile(
+      "lib/src/release_cli/inno/inno_publish_config.dart",
+    );
+
+    expect(locator, contains("ProtectedWindowsEndpointPackageRegistryPath"));
+    expect(locator, contains("endpoint.helper_path"));
+    expect(locator, contains("REG_OPENED_EXISTING_KEY"));
+    expect(locator, contains("immutable binding changed"));
+    expect(client, contains("ConfiguredWindowsHelperPath()"));
+    expect(inno, contains("GenerateUniqueName(TrustedProgramFilesDir"));
+    expect(innoConfig, contains("DesktopUpdaterHelperGenerationV1--"));
+    expect(inno, isNot(contains(r"DesktopUpdater\Helpers")));
+    expect(innoConfig, isNot(contains(r"DesktopUpdater\Helpers")));
+    expect(
+      inno,
+      contains("RenameFile(DesktopUpdaterProvisioningPath, FinalDir)"),
+    );
+    expect(inno, contains("if not RenameFile(FinalDir, "));
+    expect(inno, contains("DesktopUpdaterQuarantinePath) then"));
+    expect(inno, contains("GetSHA256OfFile"));
+    expect(inno, contains("PrepareToInstall"));
+    expect(inno, contains("--validate-endpoint"));
   });
 
   test("Windows native SDK exposes the versioned C ABI", () {
@@ -140,6 +198,8 @@ void main() {
     expect(plugin, contains("desktop_updater::native::InstallRequest"));
     expect(plugin, contains("PrepareInstall"));
     expect(plugin, contains("CommitAfterExit"));
+    expect(plugin,
+        contains('case Code::kRelaunchFailure: return "relaunchFailure"'));
     expect(plugin, isNot(contains("ScheduleInstallAndRelaunch")));
     expect(
       native,
@@ -246,7 +306,10 @@ void main() {
     );
 
     expect(cmake, contains("desktop_updater_install_helper"));
-    expect(cmake, contains("Wintrust Crypt32 Advapi32 Shell32 Bcrypt"));
+    expect(
+      cmake.toLowerCase(),
+      contains("wintrust crypt32 advapi32 shell32 bcrypt"),
+    );
     expect(cmake, contains("windows_helper_auth"));
     expect(cmake, contains("windows_helper_reservation"));
     expect(cmake, contains(r"RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}"));
@@ -423,6 +486,41 @@ void main() {
     expect(tests, contains("RejectsExecutableInventoryDrift"));
   });
 
+  test("Windows helper emits fixed redacted protocol-v1 platform events", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final diagnostics = readRequiredFile(
+      "windows/native/src/helper/windows_helper_diagnostics.cpp",
+    );
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final transport = readRequiredFile(
+      "windows/native/src/helper/windows_one_shot_transport.cpp",
+    );
+    final transaction = readRequiredFile(
+      "windows/native/src/helper/windows_file_transaction.cpp",
+    );
+    final authorizer = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+    final relaunch = readRequiredFile(
+      "windows/native/src/helper/windows_relaunch_service.cpp",
+    );
+
+    expect(cmake, contains("windows_helper_diagnostics.cpp"));
+    expect(diagnostics, contains("RegisterEventSourceW"));
+    expect(diagnostics, contains("ReportEventW"));
+    expect(diagnostics, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
+    expect(diagnostics, isNot(contains("transaction_id")));
+    expect(main, contains("WindowsHelperEvent::kHelperScheduled"));
+    expect(transport, contains("WindowsHelperEvent::kWaitingForParentProcess"));
+    expect(transport, contains("WindowsHelperEvent::kParentProcessExited"));
+    expect(authorizer, contains("WindowsHelperEvent::kStagingPathValidation"));
+    expect(transaction, contains("WindowsHelperEvent::kBackupStart"));
+    expect(transaction, contains("WindowsHelperEvent::kMoveStart"));
+    expect(transaction, contains("WindowsHelperEvent::kRollbackStart"));
+    expect(transaction, contains("WindowsHelperEvent::kCleanupStart"));
+    expect(relaunch, contains("WindowsHelperEvent::kRelaunchAttempt"));
+  });
+
   test("Windows elevated helper boots a protected one-shot service", () {
     final cmake = readRequiredFile("windows/native/CMakeLists.txt");
     final main = readRequiredFile("windows/native/src/helper/main.cpp");
@@ -432,11 +530,18 @@ void main() {
     final pipe = readRequiredFile(
       "windows/native/src/helper/named_pipe_transport.cpp",
     );
+    final dispatcher = readRequiredFile(
+      "windows/native/src/helper/windows_recovery_pipe_server.cpp",
+    );
 
     expect(cmake, contains("windows_helper_bootstrap.cpp"));
     expect(main, contains("LoadWindowsHelperBootstrap"));
     expect(main, contains("WindowsNativeInstallAuthorizer"));
-    expect(main, contains("RunWindowsOneShotPipeSession"));
+    expect(main, contains("RunWindowsPersistentRecoveryPipeSession"));
+    expect(
+      dispatcher,
+      contains("RunWindowsOneShotPipeSessionWithInitialRequest"),
+    );
     expect(main, contains("SecureWindowsReadyToken"));
     expect(bootstrap, contains("desktop_updater_helper_policy.json"));
     expect(bootstrap, contains("GetSecurityInfo"));
@@ -444,6 +549,113 @@ void main() {
     expect(bootstrap, contains("VerifyWindowsExecutableStillMatches"));
     expect(pipe, contains("WindowsElevatedPipeSessionRunner"));
     expect(pipe, contains("FILE_FLAG_OVERLAPPED"));
+  });
+
+  test("Windows writable targets use signed portable one-shot helper", () {
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final bootstrap = readRequiredFile(
+      "windows/native/src/helper/windows_helper_bootstrap.cpp",
+    );
+    final pipe = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.cpp",
+    );
+    final client = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final authorizer = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+
+    expect(main, contains("--portable-pipe"));
+    expect(main, contains("LoadPortableWindowsHelperBootstrap"));
+    expect(main, contains("WindowsPortableInstallAuthorizer"));
+    expect(main, contains("RunWindowsPersistentRecoveryPipeSession"));
+    expect(pipe, contains("LaunchAuthenticatedPortableHelper"));
+    expect(pipe, contains("CreateProcessW"));
+    expect(
+      _functionBody(pipe, "LaunchAuthenticatedPortableHelper"),
+      isNot(contains('L"runas"')),
+    );
+    expect(
+      _functionBody(pipe, "LaunchAuthenticatedPortableHelper"),
+      isNot(contains("ShellExecuteExW")),
+    );
+    expect(
+      _functionBody(pipe, "LaunchAuthenticatedPortableHelperExchange"),
+      isNot(contains('L"runas"')),
+    );
+    expect(
+      _functionBody(pipe, "LaunchAuthenticatedPortableHelperExchange"),
+      isNot(contains("ShellExecuteExW")),
+    );
+    expect(bootstrap, contains("policy.is_portable()"));
+    expect(client, contains("running_executable.parent_path()"));
+    expect(client, contains("desktop_updater_helper_policy.json"));
+    expect(client, contains("LaunchAuthenticatedPortableHelper"));
+    expect(client, contains("ProbeWindowsPortableTransaction"));
+    expect(client, contains("LaunchAuthenticatedPortableRecoveryRequest"));
+    expect(client, contains("kBindingMismatch"));
+    expect(client, contains('target_class = "sameUserWritable"'));
+    expect(
+      _functionBody(client, "AdjacentPolicyDeclaresPortable"),
+      contains("if (policy_missing) return false;"),
+    );
+    expect(authorizer, contains("ValidatePortableWindowsTargetAuthority"));
+    expect(authorizer, contains("AccessCheck"));
+    expect(authorizer, contains("WindowsPersistentTransactionIndex"));
+    expect(authorizer, contains("PersistPreparing"));
+    expect(authorizer, contains("PersistActive"));
+    expect(authorizer, contains("MarkCommitAccepted"));
+  });
+
+  test("Windows portable recovery survives helper death without elevation", () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final authorizer = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+    final persistent = readRequiredFile(
+      "windows/native/src/helper/windows_persistent_recovery.cpp",
+    );
+    final portableHost = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.cpp",
+    );
+    final portableTransaction = _functionBody(
+      authorizer,
+      "class WindowsPortableDirectoryPreparedTransaction",
+    );
+
+    expect(cmake, contains("windows_portable_recovery_host.cpp"));
+    expect(cmake, contains("windows_portable_recovery_host_test.cpp"));
+    expect(main, contains("ProvisionPortableWindowsRecoveryHost"));
+    expect(main, contains('L"--portable-recover-current"'));
+    expect(main, contains("LoadPortableWindowsRecoveryHostBootstrap"));
+    expect(main, contains("RunPortableWindowsAutonomousRecoveryBoundary"));
+    expect(authorizer,
+        contains("RequirePortableWindowsRecoveryHostOutsideMutationRoots"));
+    expect(portableTransaction,
+        contains("BuildPortableWindowsRecoveryHostTaskDefinition"));
+    expect(portableTransaction,
+        contains("RunPortableWindowsRecoveryPrepareBoundary"));
+    expect(
+      portableTransaction.indexOf("PersistPreparing"),
+      lessThan(portableTransaction.indexOf("ArmAndStart")),
+    );
+    expect(
+      portableTransaction.indexOf("ArmAndStart"),
+      lessThan(portableTransaction.indexOf("transaction_.Prepare()")),
+    );
+    expect(persistent, contains("ValidateCurrentPortableWindowsRecoveryHost"));
+    expect(portableHost, contains("TASK_LOGON_INTERACTIVE_TOKEN"));
+    expect(portableHost, contains("TASK_RUNLEVEL_LUA"));
+    expect(
+      portableHost,
+      contains("CreatePortableWindowsExactUserDirectory"),
+    );
+    expect(portableHost, contains("CreatePortableWindowsExactUserFile"));
+    expect(portableHost, isNot(contains("ApplyExactUserSecurity")));
+    expect(portableHost.toLowerCase(), isNot(contains("powershell")));
+    expect(portableHost, isNot(contains("RunOnce")));
   });
 
   test("Windows client validates canonical reservation and commit ACK", () {
@@ -474,6 +686,10 @@ void main() {
     final source = readRequiredFile(
       "windows/native/src/desktop_updater_native.cpp",
     );
+    final protectedContext = _functionBody(
+      source,
+      "LoadWindowsHelperClientContext",
+    );
 
     expect(nativeSources, contains("named_pipe_transport.cpp"));
     expect(
@@ -489,12 +705,152 @@ void main() {
     expect(source, contains("CancelReservation()"));
     expect(
       source,
+      contains("Protected Windows helper install directory is not configured"),
+    );
+    expect(
+      protectedContext,
+      isNot(
+        contains(
+          "running_executable.parent_path() / kWindowsHelperExecutableName",
+        ),
+      ),
+    );
+    expect(
+      source,
       isNot(
         contains(
           "Packaged Windows install helper endpoint is unavailable; no ",
         ),
       ),
     );
+  });
+
+  test("Windows public client routes persistent query and recovery to helper",
+      () {
+    final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final nativeSources = cmake.substring(
+      cmake.indexOf("set(NATIVE_SOURCES"),
+      cmake.indexOf("add_library(desktop_updater_native_objects"),
+    );
+    final helperSources = cmake.substring(
+      cmake.indexOf("set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES"),
+      cmake.indexOf("add_library(desktop_updater_install_helper_support"),
+    );
+    final client = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final transport = readRequiredFile(
+      "windows/native/src/helper/windows_recovery_transport.cpp",
+    );
+    final pipe = readRequiredFile(
+      "windows/native/src/helper/named_pipe_transport.cpp",
+    );
+    final recovery = readRequiredFile(
+      "windows/native/src/helper/windows_persistent_recovery.cpp",
+    );
+    final authorizer = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final locatorHeader = readRequiredFile(
+      "windows/native/src/helper/windows_protected_helper_locator.h",
+    );
+    final locator = readRequiredFile(
+      "windows/native/src/helper/windows_protected_helper_locator.cpp",
+    );
+    final recoveryHost = readRequiredFile(
+      "windows/native/src/helper/windows_recovery_host.cpp",
+    );
+    final recoveryPipe = readRequiredFile(
+      "windows/native/src/helper/windows_recovery_pipe_server.cpp",
+    );
+    final relaunch = readRequiredFile(
+      "windows/native/src/helper/windows_relaunch_service.cpp",
+    );
+    final publicHeader = readRequiredFile(
+      "windows/native/include/desktop_updater_native.h",
+    );
+    final protectedTransaction = _functionBody(
+      authorizer,
+      "class WindowsDirectoryPreparedTransaction",
+    );
+
+    expect(nativeSources, contains("windows_recovery_transport.cpp"));
+    expect(nativeSources, contains("windows_protected_helper_locator.cpp"));
+    expect(helperSources, contains("windows_persistent_recovery.cpp"));
+    expect(helperSources, contains("windows_protected_helper_locator.cpp"));
+    expect(helperSources, contains("windows_recovery_host.cpp"));
+    expect(cmake.toLowerCase(), contains("taskschd"));
+    expect(helperSources, contains("windows_recovery_transport.cpp"));
+    expect(client, contains("LaunchAuthenticatedElevatedRecoveryRequest"));
+    expect(client, contains('"queryTransaction"'));
+    expect(client, contains('"recoverPendingInstall"'));
+    expect(client, contains('"resolvePendingInstallAfterExit"'));
+    expect(publicHeader, contains("ResolvePendingInstallAfterExit"));
+    expect(
+      client,
+      isNot(
+        contains(
+          "return EndpointUnavailableStatus(transaction_id);\n}",
+        ),
+      ),
+    );
+    expect(transport, contains("ParseNativeInstallTransactionStatusV1"));
+    expect(transport, contains("ParseNativeInstallRecoveryResultV1"));
+    expect(pipe, contains("LaunchAuthenticatedElevatedHelperExchange"));
+    expect(pipe, contains("VerifyWindowsExecutableStillMatches"));
+    expect(recovery, contains("WindowsPersistentTransactionIndex"));
+    expect(recovery, contains("PersistPreparing"));
+    expect(recovery, contains("PersistActive"));
+    expect(recovery, contains("PersistTerminal"));
+    expect(recovery, contains("HKEY_LOCAL_MACHINE"));
+    expect(recovery, contains("RegFlushKey"));
+    expect(recovery, contains("AccessCheck"));
+    expect(recovery, contains("WindowsRecoveryService"));
+    expect(recovery, contains("manualActionRequired"));
+    expect(recovery, isNot(contains("directory_iterator")));
+    expect(authorizer, contains("WindowsPersistentTransactionIndex"));
+    expect(authorizer, contains("PersistActive"));
+    expect(authorizer, contains("WindowsRecoveryHostController"));
+    expect(authorizer, contains("ArmAndStart"));
+    expect(
+      protectedTransaction.indexOf("PersistPreparing"),
+      lessThan(protectedTransaction.indexOf("ArmAndStart")),
+    );
+    expect(
+      protectedTransaction.indexOf("ArmAndStart"),
+      lessThan(protectedTransaction.indexOf("transaction_.Prepare()")),
+    );
+    expect(main, contains("RunWindowsPersistentRecoveryPipeSession"));
+    expect(main, contains('L"--recover-current"'));
+    expect(main, contains("LoadWindowsHelperBootstrapForAutonomousRecovery"));
+    expect(main, contains("RecoverAutonomously"));
+    expect(locatorHeader, contains("ProtectedWindowsHelperEndpointV1"));
+    expect(locator, contains("HKEY_LOCAL_MACHINE"));
+    expect(locator, contains("TransactionEndpoints"));
+    expect(locator, contains("RegFlushKey"));
+    expect(locator, contains("SE_DACL_PROTECTED"));
+    expect(locator, contains("WinAuthenticatedUserSid"));
+    expect(recoveryHost, contains("TASK_TRIGGER_BOOT"));
+    expect(recoveryHost, contains("TASK_LOGON_SERVICE_ACCOUNT"));
+    expect(recoveryHost, contains("TASK_RUNLEVEL_HIGHEST"));
+    expect(recoveryHost, contains("RecoveryReady"));
+    expect(recoveryHost, contains("SignalWindowsRecoveryHostReady"));
+    expect(recoveryHost, contains("TASK_DONT_ADD_PRINCIPAL_ACE"));
+    expect(recoveryHost, contains("--recover-current"));
+    expect(
+      recoveryPipe,
+      contains('request.operation == "resolvePendingInstallAfterExit"'),
+    );
+    expect(recoveryPipe, contains("WaitForSingleObject"));
+    expect(relaunch, contains("CreateProcessWithTokenW"));
+    expect(cmake.toLowerCase(), contains("userenv"));
+    expect(recovery, contains('"executorProcessId"'));
+    expect(recovery, contains('"executorProcessStartIdentity"'));
+    expect(recovery, contains('"callerProcessId"'));
+    expect(recovery, contains('"callerProcessStartIdentity"'));
+    expect(recovery, contains("WaitForSingleObject(caller.get(), INFINITE)"));
+    expect(recovery, contains("WaitForSingleObject(executor.get(), INFINITE)"));
   });
 
   test("Windows client accepts the staged canonical manifest terminator", () {
@@ -536,4 +892,22 @@ String readRequiredDirectory(String path) {
       )
       .map((file) => file.readAsStringSync())
       .join("\n");
+}
+
+String _functionBody(String source, String functionName) {
+  final name = source.indexOf(functionName);
+  expect(name, isNonNegative, reason: "$functionName must exist");
+  if (name < 0) return "";
+  final openingBrace = source.indexOf("{", name);
+  expect(openingBrace, isNonNegative, reason: "$functionName must have a body");
+  if (openingBrace < 0) return "";
+  var depth = 0;
+  for (var index = openingBrace; index < source.length; index += 1) {
+    if (source[index] == "{") depth += 1;
+    if (source[index] == "}") {
+      depth -= 1;
+      if (depth == 0) return source.substring(openingBrace, index + 1);
+    }
+  }
+  fail("$functionName body must terminate");
 }

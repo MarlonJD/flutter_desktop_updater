@@ -25,6 +25,7 @@ class NativeInstallPreparedTransactionV1 {
   virtual ~NativeInstallPreparedTransactionV1() = default;
   virtual const std::string& transaction_id() const = 0;
   virtual std::string PrepareDurableJournal() = 0;
+  virtual void MarkCommitAccepted() = 0;
   virtual void ExecuteAfterCallerExit() = 0;
   virtual void CancelPrepared() = 0;
 };

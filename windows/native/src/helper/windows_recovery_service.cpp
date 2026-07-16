@@ -52,14 +52,24 @@ WindowsRecoveryService::WindowsRecoveryService(
     std::string transaction_id,
     WindowsVerifiedPayloadIdentity expected_payload_identity,
     WindowsInstallPayloadVerifier& verifier,
-    WindowsProcessLivenessChecker& liveness_checker)
+    WindowsProcessLivenessChecker& liveness_checker,
+    WindowsRecoveryIntent intent,
+    std::function<void(WindowsRecoveryOutcome)> before_lock_release,
+    std::function<void(WindowsRecoveryOutcome)> after_lock_release,
+    std::function<void()> after_lock_acquired,
+    bool require_volume_barrier)
     : target_path_(std::filesystem::absolute(target_path).lexically_normal()),
       parent_path_(target_path_.parent_path()),
       paths_(WindowsTransactionPaths::Create(target_path_.filename().wstring(),
                                              transaction_id)),
       expected_payload_identity_(std::move(expected_payload_identity)),
       verifier_(verifier),
-      liveness_checker_(liveness_checker) {}
+      liveness_checker_(liveness_checker),
+      intent_(intent),
+      before_lock_release_(std::move(before_lock_release)),
+      after_lock_release_(std::move(after_lock_release)),
+      after_lock_acquired_(std::move(after_lock_acquired)),
+      require_volume_barrier_(require_volume_barrier) {}
 
 WindowsRecoveryOutcome WindowsRecoveryService::Recover() {
   try {
@@ -88,20 +98,33 @@ WindowsRecoveryOutcome WindowsRecoveryService::Recover() {
       }
       return WindowsRecoveryOutcome::kManualActionRequired;
     }
-    if (next_exists || !journal_exists) {
+    if (!WindowsTransactionLockBindingMatches(
+            ownership_lock.get(), paths_.transaction_id)) {
       return WindowsRecoveryOutcome::kManualActionRequired;
     }
-
     DurableWindowsTransactionJournalStore store(parent.get(), paths_);
     const auto loaded = store.Load();
     if (!loaded.has_value()) {
-      return WindowsRecoveryOutcome::kManualActionRequired;
+      const bool clean_initial_topology =
+          !ExistsRelativeNoReparse(parent.get(), paths_.journal_name) &&
+          !ExistsRelativeNoReparse(parent.get(), paths_.journal_next_name) &&
+          !ExistsRelativeNoReparse(parent.get(), paths_.prepared_name) &&
+          !ExistsRelativeNoReparse(parent.get(), paths_.backup_name) &&
+          ExistsRelativeNoReparse(parent.get(), paths_.target_name);
+      if (!clean_initial_topology) {
+        return WindowsRecoveryOutcome::kManualActionRequired;
+      }
+      DeleteHandleExact(ownership_lock.get());
+      ownership_lock.reset();
+      FlushMetadata(parent.get());
+      return WindowsRecoveryOutcome::kNothingToRecover;
     }
     if (liveness_checker_.IsSameProcessAlive(
             loaded->owner_process_id,
             loaded->owner_process_start_identity)) {
       return WindowsRecoveryOutcome::kLiveOwner;
     }
+    if (after_lock_acquired_) after_lock_acquired_();
     return RecoverOwned(parent.get(), ownership_lock, store, *loaded);
   } catch (const std::exception&) {
     (void)manualActionRequired;
@@ -147,7 +170,12 @@ void WindowsRecoveryService::RecoveryRename(
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   RenameHandleRelative(object.get(), parent, destination, false);
-  FlushWindowsDirectory(parent);
+  FlushMetadata(parent);
+}
+
+void WindowsRecoveryService::FlushMetadata(HANDLE directory) const {
+  FlushWindowsDirectory(directory);
+  if (require_volume_barrier_) FlushWindowsVolume(directory);
 }
 
 WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
@@ -166,6 +194,10 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
         ReadWindowsFileIdentity(parent) != journal.parent_identity ||
         journal.state == WindowsTransactionState::kManualActionRequired) {
       return WindowsRecoveryOutcome::kManualActionRequired;
+    }
+
+    if (intent_ == WindowsRecoveryIntent::kRollBackUncommitted) {
+      return RollBackOwned(parent, ownership_lock, store, journal);
     }
 
     auto stage_parent = OpenRecoveryParent(
@@ -188,7 +220,12 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
     const bool observations_match_state = [&]() {
       switch (journal.state) {
         case WindowsTransactionState::kPrepared:
-          return !backup_exists || (!target_exists && prepared_exists);
+          return (target_exists && stage_exists && !prepared_exists &&
+                  !backup_exists) ||
+                 (target_exists && !stage_exists && prepared_exists &&
+                  !backup_exists) ||
+                 (!target_exists && !stage_exists && prepared_exists &&
+                  backup_exists);
         case WindowsTransactionState::kBackupCreated:
           return backup_exists && !stage_exists &&
                  ((prepared_exists && !target_exists) ||
@@ -224,8 +261,8 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
           FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
       RenameHandleRelative(stage.get(), parent, paths_.prepared_name, false);
-      FlushWindowsDirectory(stage_parent.get());
-      FlushWindowsDirectory(parent);
+      FlushMetadata(stage_parent.get());
+      FlushMetadata(parent);
       stage_exists = false;
       prepared_exists = true;
     }
@@ -240,6 +277,7 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       backup_exists = true;
       journal.state = WindowsTransactionState::kBackupCreated;
       store.Persist(journal);
+      FlushMetadata(parent);
     }
 
     if (backup_exists && prepared_exists && !target_exists) {
@@ -252,6 +290,7 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       target_exists = true;
       journal.state = WindowsTransactionState::kTargetActivated;
       store.Persist(journal);
+      FlushMetadata(parent);
     }
 
     if (!target_exists || prepared_exists || stage_exists ||
@@ -266,18 +305,99 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       }
       journal.state = WindowsTransactionState::kTargetActivated;
       store.Persist(journal);
+      FlushMetadata(parent);
       journal.state = WindowsTransactionState::kCompleted;
       store.Persist(journal);
+      FlushMetadata(parent);
       // Backup deletion is authorized only after the activated payload's
       // package identity, executable proof, stageProvenanceSha256,
       // artifactSha256, and authenticodePublisher all matched above.
       DeleteTreeRelative(parent, paths_.backup_name, journal.target_identity);
+      FlushMetadata(parent);
     }
     store.Remove();
+    FlushMetadata(parent);
+    if (before_lock_release_) {
+      before_lock_release_(WindowsRecoveryOutcome::kRecovered);
+    }
     DeleteHandleExact(ownership_lock.get());
     ownership_lock.reset();
-    FlushWindowsDirectory(parent);
+    FlushMetadata(parent);
+    if (after_lock_release_) {
+      after_lock_release_(WindowsRecoveryOutcome::kRecovered);
+    }
     return WindowsRecoveryOutcome::kRecovered;
+  } catch (const std::exception&) {
+    return WindowsRecoveryOutcome::kManualActionRequired;
+  }
+}
+
+WindowsRecoveryOutcome WindowsRecoveryService::RollBackOwned(
+    HANDLE parent,
+    UniqueWindowsHandle& ownership_lock,
+    DurableWindowsTransactionJournalStore& store,
+    const WindowsTransactionJournal& journal) {
+  try {
+    if (journal.state != WindowsTransactionState::kPrepared) {
+      return WindowsRecoveryOutcome::kManualActionRequired;
+    }
+    auto stage_parent = OpenRecoveryParent(
+        std::filesystem::path(journal.original_stage_parent_path));
+    if (ReadWindowsFileIdentity(stage_parent.get()) !=
+        journal.stage_parent_identity) {
+      return WindowsRecoveryOutcome::kManualActionRequired;
+    }
+
+    const bool target_exists =
+        ExistsRelativeNoReparse(parent, paths_.target_name);
+    bool stage_exists = ExistsRelativeNoReparse(
+        stage_parent.get(), journal.original_stage_name);
+    bool prepared_exists =
+        ExistsRelativeNoReparse(parent, paths_.prepared_name);
+    const bool backup_exists =
+        ExistsRelativeNoReparse(parent, paths_.backup_name);
+    if (!target_exists || backup_exists || (stage_exists == prepared_exists) ||
+        Identity(parent, paths_.target_name) != journal.target_identity) {
+      return WindowsRecoveryOutcome::kManualActionRequired;
+    }
+
+    if (prepared_exists) {
+      if (Identity(parent, paths_.prepared_name) != journal.stage_identity ||
+          !VerifyPayload(parent, paths_.prepared_name)) {
+        return WindowsRecoveryOutcome::kManualActionRequired;
+      }
+      auto prepared = OpenRelativeNoReparse(
+          parent, paths_.prepared_name,
+          DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+          FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+      RenameHandleRelative(prepared.get(), stage_parent.get(),
+                           journal.original_stage_name, false);
+      FlushMetadata(parent);
+      FlushMetadata(stage_parent.get());
+      prepared_exists = false;
+      stage_exists = true;
+    }
+
+    if (!stage_exists || prepared_exists ||
+        Identity(stage_parent.get(), journal.original_stage_name) !=
+            journal.stage_identity ||
+        !VerifyPayload(stage_parent.get(), journal.original_stage_name) ||
+        Identity(parent, paths_.target_name) != journal.target_identity) {
+      return WindowsRecoveryOutcome::kManualActionRequired;
+    }
+    store.Remove();
+    FlushMetadata(parent);
+    if (before_lock_release_) {
+      before_lock_release_(WindowsRecoveryOutcome::kRolledBack);
+    }
+    DeleteHandleExact(ownership_lock.get());
+    ownership_lock.reset();
+    FlushMetadata(parent);
+    if (after_lock_release_) {
+      after_lock_release_(WindowsRecoveryOutcome::kRolledBack);
+    }
+    return WindowsRecoveryOutcome::kRolledBack;
   } catch (const std::exception&) {
     return WindowsRecoveryOutcome::kManualActionRequired;
   }

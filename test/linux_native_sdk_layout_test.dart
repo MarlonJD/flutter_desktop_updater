@@ -54,6 +54,9 @@ void main() {
     expect(header, contains("std::string package_id"));
     expect(header, contains("std::vector<std::string> removed_files"));
     expect(header, contains("std::string diagnostics_log_path"));
+    expect(header, contains("kRelaunchFailure = 8"));
+    expect(header, isNot(contains("helper_executable_path")));
+    expect(header, isNot(contains("std::string policy_id")));
     expect(header, contains("ValidateInstallRequest"));
     expect(header, contains("ScheduleInstallAndRelaunch"));
     expect(header, contains("kLegacySelfContainedBundle"));
@@ -345,6 +348,14 @@ void main() {
     expect(crashTest, contains("invalidBackup"));
     expect(smoke, contains("--mode"));
     expect(smoke, contains("root-broker"));
+    expect(smoke,
+        contains("PublicCommitMutatesAfterCallerExitAndQueriesDurableState"));
+    expect(smoke, contains("PublicRecoverConvergesAfterKilledCommitHelper"));
+    expect(smoke, contains("publicNativeApi=true"));
+    expect(smoke, contains("authenticatedSocket=true"));
+    expect(smoke, contains("realMutation=true"));
+    expect(smoke, contains("durableQuery=true"));
+    expect(smoke, contains("crashRecovery=true"));
     expect(
       workflow,
       contains(
@@ -354,6 +365,59 @@ void main() {
     expect(
       workflow,
       contains('ctest --test-dir linux/native/build -R "\$filter"'),
+    );
+  });
+
+  test("installed polkit lane runs real public API mutation and recovery", () {
+    final cmake = readRequiredFile("linux/native/CMakeLists.txt");
+    final service = readRequiredFile(
+      "linux/native/src/helper/linux_native_install_service.cc",
+    );
+    final fixture = readRequiredFile(
+      "linux/native/test/linux_polkit_e2e_fixture.cc",
+    );
+    final smoke = readRequiredFile("tool/linux_install_helper_smoke.sh");
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
+
+    expect(cmake, contains("linux_polkit_e2e_fixture"));
+    expect(
+      cmake,
+      contains("DESKTOP_UPDATER_ENABLE_POLKIT_E2E_FAULT_INJECTION"),
+    );
+    expect(
+      service,
+      contains("desktop-updater-polkit-e2e-crash-after-backup"),
+    );
+    expect(service, contains("kAfterBackupRename"));
+    expect(fixture, contains("--prepare-stage"));
+    expect(fixture, contains("--canonical-policy"));
+    expect(fixture, contains("PrepareInstall"));
+    expect(fixture, contains("CommitAfterExit"));
+    expect(fixture, contains("QueryTransaction"));
+    expect(fixture, contains("RecoverPendingInstall"));
+
+    expect(smoke, contains("root-broker-audit"));
+    expect(smoke, contains("root-broker)"));
+    expect(smoke, contains("root-broker E2E must not run as root"));
+    expect(smoke, contains("--prepare-stage"));
+    expect(smoke, contains("--install"));
+    expect(smoke, contains("--query"));
+    expect(smoke, contains("--recover"));
+    expect(smoke, contains("targetRootOwned=true"));
+    expect(smoke, contains("crashPoint=afterBackupRename"));
+    expect(smoke, contains("freshBrokerRecovery=true"));
+
+    expect(
+      workflow,
+      contains("DESKTOP_UPDATER_ENABLE_POLKIT_E2E_FAULT_INJECTION=ON"),
+    );
+    expect(workflow, contains("Run installed broker static audit"));
+    expect(workflow, contains("Run real non-root polkit broker E2E"));
+    expect(
+      workflow,
+      contains("linux_polkit_e2e_fixture --canonical-policy"),
     );
   });
 }

@@ -42,6 +42,9 @@ class NativeInstallOneShotServiceRuntimeV1 {
       NativeInstallCallerExitMonitorFactoryV1& caller_monitor_factory);
 
   void Run(NativeInstallWireChannelV1& channel);
+  void RunWithInitialRequest(
+      NativeInstallWireChannelV1& channel,
+      const std::string& canonical_request);
 
  private:
   NativeInstallOneShotSessionV1& session_;

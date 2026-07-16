@@ -73,7 +73,14 @@ typedef enum desktop_updater_transaction_result_code_v1 {
   DESKTOP_UPDATER_TRANSACTION_RESULT_AUTHENTICATION_FAILED = 5,
   DESKTOP_UPDATER_TRANSACTION_RESULT_INVALID_RESPONSE = 6,
   DESKTOP_UPDATER_TRANSACTION_RESULT_RECOVERY_REQUIRED = 7,
+  DESKTOP_UPDATER_TRANSACTION_RESULT_RELAUNCH_FAILURE = 8,
 } desktop_updater_transaction_result_code_v1;
+
+typedef enum desktop_updater_prepare_outcome_v2 {
+  DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED = 0,
+  DESKTOP_UPDATER_PREPARE_OUTCOME_PREPARED = 1,
+  DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED = 2,
+} desktop_updater_prepare_outcome_v2;
 
 typedef struct desktop_updater_reservation_handle_v1
     desktop_updater_reservation_handle_v1;
@@ -96,6 +103,14 @@ desktop_updater_prepare_install_v1(
     desktop_updater_transaction_status_v1* status);
 
 DESKTOP_UPDATER_NATIVE_EXPORT desktop_updater_result_v1 DESKTOP_UPDATER_CALL
+desktop_updater_prepare_install_v2(
+    const desktop_updater_install_request_v1* request,
+    const uint16_t* transaction_id,
+    desktop_updater_reservation_handle_v1** reservation,
+    desktop_updater_transaction_status_v1* status,
+    uint32_t* prepare_outcome);
+
+DESKTOP_UPDATER_NATIVE_EXPORT desktop_updater_result_v1 DESKTOP_UPDATER_CALL
 desktop_updater_commit_after_exit_v1(
     desktop_updater_reservation_handle_v1* reservation,
     desktop_updater_transaction_status_v1* status);
@@ -112,6 +127,11 @@ desktop_updater_query_transaction_v1(
 
 DESKTOP_UPDATER_NATIVE_EXPORT desktop_updater_result_v1 DESKTOP_UPDATER_CALL
 desktop_updater_recover_pending_install_v1(
+    const uint16_t* transaction_id,
+    desktop_updater_transaction_status_v1* status);
+
+DESKTOP_UPDATER_NATIVE_EXPORT desktop_updater_result_v1 DESKTOP_UPDATER_CALL
+desktop_updater_resolve_pending_install_after_exit_v1(
     const uint16_t* transaction_id,
     desktop_updater_transaction_status_v1* status);
 

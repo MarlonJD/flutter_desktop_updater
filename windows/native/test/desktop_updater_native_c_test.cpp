@@ -22,6 +22,18 @@ desktop_updater_install_request_v1 ValidRequest() {
   return request;
 }
 
+desktop_updater_transaction_status_v1 EmptyStatus() {
+  desktop_updater_transaction_status_v1 status = {};
+  status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
+  status.struct_size = sizeof(status);
+  return status;
+}
+
+constexpr std::uint16_t kTransactionId[] = {
+    '1', '2', '3', 'e', '4', '5', '6', '7', '-', 'e', '8', '9', 'b', '-',
+    '4', '2', 'd', '3', '-', 'a', '4', '5', '6', '-', '4', '2', '6', '6',
+    '1', '4', '1', '7', '4', '0', '0', '0', 0};
+
 TEST(DesktopUpdaterNativeCAbi, AbiLayoutMatchesDeclaredFieldOrder) {
   EXPECT_EQ(offsetof(desktop_updater_install_request_v1, abi_version), 0u);
   EXPECT_LT(offsetof(desktop_updater_install_request_v1, abi_version),
@@ -233,6 +245,362 @@ TEST(DesktopUpdaterNativeCAbi, TargetProofContextReachesNativeRequest) {
   EXPECT_EQ(captured.executable_relative_path, L"Example.exe");
   EXPECT_EQ(captured.expected_package_id, L"com.example");
   desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2PropagatesExactTransactionId) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+  std::string captured_transaction_id;
+
+  auto result = internal::PrepareInstallV2With(
+      &request, kTransactionId, &reservation, &status, &outcome,
+      [&captured_transaction_id](const InstallRequest&,
+                                 const std::string& transaction_id,
+                                 InstallReservation* prepared,
+                                 bool* recovery_required) {
+        captured_transaction_id = transaction_id;
+        *prepared = {transaction_id, "ready-token", std::string(64, 'a'),
+                     std::string(64, 'b'), 123};
+        *recovery_required = false;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_PREPARED);
+  EXPECT_EQ(captured_transaction_id,
+            "123e4567-e89b-42d3-a456-426614174000");
+  ASSERT_NE(reservation, nullptr);
+  ASSERT_NE(status.transaction_id_utf8, nullptr);
+  EXPECT_STREQ(status.transaction_id_utf8,
+               "123e4567-e89b-42d3-a456-426614174000");
+  EXPECT_EQ(status.state, DESKTOP_UPDATER_TRANSACTION_PREPARED);
+  EXPECT_EQ(status.result_code, DESKTOP_UPDATER_TRANSACTION_RESULT_ACCEPTED);
+
+  desktop_updater_reservation_release_v1(reservation);
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2ReportsAmbiguousHandoff) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+
+  auto result = internal::PrepareInstallV2With(
+      &request, kTransactionId, &reservation, &status, &outcome,
+      [](const InstallRequest&, const std::string&, InstallReservation*,
+         bool* recovery_required) {
+        *recovery_required = true;
+        return InstallResult{false, "Commit acknowledgement was lost."};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED);
+  EXPECT_EQ(reservation, nullptr);
+  ASSERT_NE(status.transaction_id_utf8, nullptr);
+  EXPECT_STREQ(status.transaction_id_utf8,
+               "123e4567-e89b-42d3-a456-426614174000");
+  EXPECT_EQ(status.state, DESKTOP_UPDATER_TRANSACTION_UNKNOWN);
+  EXPECT_EQ(status.result_code,
+            DESKTOP_UPDATER_TRANSACTION_RESULT_RECOVERY_REQUIRED);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2ReportsDefiniteRejection) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+
+  auto result = internal::PrepareInstallV2With(
+      &request, kTransactionId, &reservation, &status, &outcome,
+      [](const InstallRequest&, const std::string&, InstallReservation*,
+         bool* recovery_required) {
+        *recovery_required = false;
+        return InstallResult{false, "Request was rejected before launch."};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED);
+  EXPECT_EQ(reservation, nullptr);
+  EXPECT_EQ(status.result_code, DESKTOP_UPDATER_TRANSACTION_RESULT_REJECTED);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2RejectsChangedTransactionBinding) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+
+  auto result = internal::PrepareInstallV2With(
+      &request, kTransactionId, &reservation, &status, &outcome,
+      [](const InstallRequest&, const std::string&, InstallReservation* prepared,
+         bool* recovery_required) {
+        *prepared = {"223e4567-e89b-42d3-a456-426614174000", "ready-token",
+                     std::string(64, 'a'), std::string(64, 'b'), 123};
+        *recovery_required = false;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED);
+  EXPECT_EQ(reservation, nullptr);
+  EXPECT_EQ(status.result_code,
+            DESKTOP_UPDATER_TRANSACTION_RESULT_RECOVERY_REQUIRED);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("binding"),
+            std::string::npos);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2RejectsInvalidIdBeforeHandoff) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+  bool preparer_called = false;
+  const std::uint16_t invalid_transaction_id[] = {
+      '1', '2', '3', 'e', '4', '5', '6', '7', '-', 'e', '8', '9', 'b', '-',
+      '1', '2', 'd', '3', '-', 'a', '4', '5', '6', '-', '4', '2', '6', '6',
+      '1', '4', '1', '7', '4', '0', '0', '0', 0};
+
+  auto result = internal::PrepareInstallV2With(
+      &request, invalid_transaction_id, &reservation, &status, &outcome,
+      [&preparer_called](const InstallRequest&, const std::string&,
+                         InstallReservation*, bool*) {
+        preparer_called = true;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED);
+  EXPECT_FALSE(preparer_called);
+  EXPECT_EQ(reservation, nullptr);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("UUIDv4"),
+            std::string::npos);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PrepareV2ValidatesOutputsBeforeHandoff) {
+  auto request = ValidRequest();
+  auto status = EmptyStatus();
+  status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION + 1;
+  desktop_updater_reservation_handle_v1* reservation = nullptr;
+  std::uint32_t outcome = 99;
+  bool preparer_called = false;
+
+  auto result = internal::PrepareInstallV2With(
+      &request, kTransactionId, &reservation, &status, &outcome,
+      [&preparer_called](const InstallRequest&, const std::string&,
+                         InstallReservation*, bool*) {
+        preparer_called = true;
+        return InstallResult{true, ""};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(outcome, DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED);
+  EXPECT_FALSE(preparer_called);
+  EXPECT_EQ(reservation, nullptr);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("status ABI"),
+            std::string::npos);
+
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, StatusOperationValidatesOutputBeforeMutation) {
+  auto status = EmptyStatus();
+  status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION + 1;
+  bool operation_called = false;
+
+  auto result = internal::StatusOperationWith(
+      &status, [&operation_called]() {
+        operation_called = true;
+        return InstallTransactionStatus{
+            "123e4567-e89b-42d3-a456-426614174000",
+            InstallTransactionState::kCommitAccepted,
+            InstallTransactionResultCode::kAccepted,
+            "accepted",
+            std::string(64, 'a'),
+            std::string(64, 'b')};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_FALSE(operation_called);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("ABI version"),
+            std::string::npos);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, ResolveAfterExitUsesTransactionStatusShape) {
+  auto status = EmptyStatus();
+  std::string captured_transaction_id;
+
+  auto result = internal::TransactionOperationWith(
+      kTransactionId, &status,
+      [&captured_transaction_id](const std::string& transaction_id) {
+        captured_transaction_id = transaction_id;
+        return InstallTransactionStatus{
+            transaction_id,
+            InstallTransactionState::kPrepared,
+            InstallTransactionResultCode::kRecoveryRequired,
+            "Recovery will continue after caller exit.",
+            std::string(64, 'a'),
+            std::string(64, 'b')};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_EQ(captured_transaction_id,
+            "123e4567-e89b-42d3-a456-426614174000");
+  EXPECT_EQ(status.state, DESKTOP_UPDATER_TRANSACTION_PREPARED);
+  EXPECT_EQ(status.result_code,
+            DESKTOP_UPDATER_TRANSACTION_RESULT_RECOVERY_REQUIRED);
+  ASSERT_NE(status.transaction_id_utf8, nullptr);
+  EXPECT_STREQ(status.transaction_id_utf8,
+               "123e4567-e89b-42d3-a456-426614174000");
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, PreservesRelaunchFailureResultCode) {
+  auto status = EmptyStatus();
+
+  auto result = internal::TransactionOperationWith(
+      kTransactionId, &status, [](const std::string& transaction_id) {
+        return InstallTransactionStatus{
+            transaction_id,
+            InstallTransactionState::kCompleted,
+            InstallTransactionResultCode::kRelaunchFailure,
+            "Verified install completed but relaunch was not confirmed.",
+            std::string(64, 'a'),
+            std::string(64, 'b')};
+      });
+
+  EXPECT_EQ(result.ok, 1);
+  EXPECT_EQ(status.state, DESKTOP_UPDATER_TRANSACTION_COMPLETED);
+  EXPECT_EQ(status.result_code,
+            DESKTOP_UPDATER_TRANSACTION_RESULT_RELAUNCH_FAILURE);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi,
+     TransactionOperationValidatesInputsBeforeCallback) {
+  int callback_count = 0;
+  const internal::TransactionOperation operation =
+      [&callback_count](const std::string& transaction_id) {
+        ++callback_count;
+        return InstallTransactionStatus{
+            transaction_id,
+            InstallTransactionState::kPrepared,
+            InstallTransactionResultCode::kRecoveryRequired,
+            "Recovery will continue after caller exit.",
+            std::string(64, 'a'),
+            std::string(64, 'b')};
+      };
+
+  auto null_status_result =
+      internal::TransactionOperationWith(kTransactionId, nullptr, operation);
+  EXPECT_EQ(null_status_result.ok, 0);
+  desktop_updater_result_free_v1(&null_status_result);
+
+  auto wrong_abi_status = EmptyStatus();
+  wrong_abi_status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION + 1;
+  auto wrong_abi_result = internal::TransactionOperationWith(
+      kTransactionId, &wrong_abi_status, operation);
+  EXPECT_EQ(wrong_abi_result.ok, 0);
+  desktop_updater_result_free_v1(&wrong_abi_result);
+
+  auto undersized_status = EmptyStatus();
+  undersized_status.struct_size =
+      sizeof(desktop_updater_transaction_status_v1) - 1;
+  auto undersized_result = internal::TransactionOperationWith(
+      kTransactionId, &undersized_status, operation);
+  EXPECT_EQ(undersized_result.ok, 0);
+  desktop_updater_result_free_v1(&undersized_result);
+
+  auto nonzero_status = EmptyStatus();
+  const char existing_value[] = "existing";
+  nonzero_status.detail_utf8 = existing_value;
+  auto nonzero_result = internal::TransactionOperationWith(
+      kTransactionId, &nonzero_status, operation);
+  EXPECT_EQ(nonzero_result.ok, 0);
+  nonzero_status.detail_utf8 = nullptr;
+  desktop_updater_result_free_v1(&nonzero_result);
+
+  constexpr std::uint16_t kWrongVersionTransactionId[] = {
+      '1', '2', '3', 'e', '4', '5', '6', '7', '-', 'e', '8', '9', 'b', '-',
+      '1', '2', 'd', '3', '-', 'a', '4', '5', '6', '-', '4', '2', '6', '6',
+      '1', '4', '1', '7', '4', '0', '0', '0', 0};
+  auto invalid_id_status = EmptyStatus();
+  auto invalid_id_result = internal::TransactionOperationWith(
+      kWrongVersionTransactionId, &invalid_id_status, operation);
+  EXPECT_EQ(invalid_id_result.ok, 0);
+  desktop_updater_result_free_v1(&invalid_id_result);
+
+  constexpr std::uint16_t kNonAsciiTransactionId[] = {
+      '1', '2', '3', 'e', '4', '5', '6', '7', '-', 'e', '8', '9', 'b', '-',
+      '4', '2', 'd', '3', '-', 'a', '4', '5', '6', '-', '4', '2', '6', '6',
+      '1', '4', '1', '7', '4', '0', '0', 0x00e9, 0};
+  auto non_ascii_status = EmptyStatus();
+  auto non_ascii_result = internal::TransactionOperationWith(
+      kNonAsciiTransactionId, &non_ascii_status, operation);
+  EXPECT_EQ(non_ascii_result.ok, 0);
+  ASSERT_NE(non_ascii_result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(non_ascii_result.error_message_utf8).find("ASCII"),
+            std::string::npos);
+  desktop_updater_result_free_v1(&non_ascii_result);
+
+  EXPECT_EQ(callback_count, 0);
+}
+
+TEST(DesktopUpdaterNativeCAbi,
+     TransactionOperationRejectsChangedTransactionBinding) {
+  auto status = EmptyStatus();
+
+  auto result = internal::TransactionOperationWith(
+      kTransactionId, &status,
+      [](const std::string&) {
+        return InstallTransactionStatus{
+            "223e4567-e89b-42d3-a456-426614174000",
+            InstallTransactionState::kPrepared,
+            InstallTransactionResultCode::kRecoveryRequired,
+            "Recovery will continue after caller exit.",
+            std::string(64, 'a'),
+            std::string(64, 'b')};
+      });
+
+  EXPECT_EQ(result.ok, 0);
+  EXPECT_EQ(status.transaction_id_utf8, nullptr);
+  EXPECT_EQ(status.detail_utf8, nullptr);
+  ASSERT_NE(result.error_message_utf8, nullptr);
+  EXPECT_NE(std::string(result.error_message_utf8).find("transaction binding"),
+            std::string::npos);
+
+  desktop_updater_transaction_status_free_v1(&status);
+  desktop_updater_result_free_v1(&result);
+}
+
+TEST(DesktopUpdaterNativeCAbi, ResolveAfterExitEntryPointIsLinked) {
+  auto* entry_point = &desktop_updater_resolve_pending_install_after_exit_v1;
+
+  EXPECT_NE(entry_point, nullptr);
 }
 
 TEST(DesktopUpdaterNativeCAbi, ThrownInternalException) {

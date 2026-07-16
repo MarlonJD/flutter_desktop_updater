@@ -52,19 +52,24 @@ class LinuxHelperPolicy {
   const std::vector<std::filesystem::path>& allowed_install_roots() const {
     return allowed_install_roots_;
   }
+  const std::string& canonical_policy_json() const {
+    return canonical_policy_json_;
+  }
 
  private:
   LinuxHelperPolicy(std::string package_id,
                     std::string application_signer,
                     std::string helper_sha256,
                     std::filesystem::path broker_path,
-                    std::vector<std::filesystem::path> allowed_install_roots);
+                    std::vector<std::filesystem::path> allowed_install_roots,
+                    std::string canonical_policy_json = {});
 
   std::string package_id_;
   std::string application_signer_;
   std::string helper_sha256_;
   std::filesystem::path broker_path_;
   std::vector<std::filesystem::path> allowed_install_roots_;
+  std::string canonical_policy_json_;
 };
 
 void ValidateProtectedFileSecurity(const LinuxFileSecurity& security,

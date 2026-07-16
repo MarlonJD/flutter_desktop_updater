@@ -54,9 +54,9 @@ void ClearStatusStrings(desktop_updater_transaction_status_v1* status) {
   status->helper_endpoint_identity_sha256_utf8 = nullptr;
 }
 
-bool WriteStatus(const InstallTransactionStatus& source,
-                 desktop_updater_transaction_status_v1* destination,
-                 std::string* error) {
+bool ValidateStatusDestination(
+    const desktop_updater_transaction_status_v1* destination,
+    std::string* error) {
   if (destination == nullptr) {
     *error = "transaction status output must not be null.";
     return false;
@@ -77,6 +77,15 @@ bool WriteStatus(const InstallTransactionStatus& source,
     *error = "transaction status output must be zero-initialized.";
     return false;
   }
+  return true;
+}
+
+bool WriteStatus(const InstallTransactionStatus& source,
+                 desktop_updater_transaction_status_v1* destination,
+                 std::string* error) {
+  if (!ValidateStatusDestination(destination, error)) {
+    return false;
+  }
   destination->state = static_cast<std::uint32_t>(source.state);
   destination->result_code = static_cast<std::uint32_t>(source.result_code);
   destination->transaction_id_utf8 = CopyString(source.transaction_id);
@@ -92,6 +101,22 @@ bool WriteStatus(const InstallTransactionStatus& source,
     ClearStatusStrings(destination);
     *error = "Unable to allocate transaction status response.";
     return false;
+  }
+  return true;
+}
+
+bool IsCanonicalTransactionId(const std::string& value) {
+  if (value.size() != 36 || value[8] != '-' || value[13] != '-' ||
+      value[18] != '-' || value[23] != '-' || value[14] != '4' ||
+      std::string("89ab").find(value[19]) == std::string::npos) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) continue;
+    const char byte = value[index];
+    if (!(byte >= '0' && byte <= '9') && !(byte >= 'a' && byte <= 'f')) {
+      return false;
+    }
   }
   return true;
 }
@@ -134,6 +159,30 @@ bool ReadUtf16(const uint16_t* value,
       return false;
     }
     output->push_back(static_cast<wchar_t>(code_unit));
+  }
+  return true;
+}
+
+bool ReadCanonicalTransactionId(const std::uint16_t* value,
+                                std::string* transaction_id,
+                                std::string* error) {
+  std::wstring wide_transaction_id;
+  if (!ReadUtf16(value, false, "transaction_id", &wide_transaction_id,
+                 error)) {
+    return false;
+  }
+  transaction_id->clear();
+  transaction_id->reserve(wide_transaction_id.size());
+  for (wchar_t character : wide_transaction_id) {
+    if (character > 0x7f) {
+      *error = "transaction_id must be ASCII.";
+      return false;
+    }
+    transaction_id->push_back(static_cast<char>(character));
+  }
+  if (!IsCanonicalTransactionId(*transaction_id)) {
+    *error = "transaction_id must be a canonical lowercase UUIDv4.";
+    return false;
   }
   return true;
 }
@@ -275,6 +324,131 @@ desktop_updater_result_v1 ScheduleInstallAndRelaunchWith(
   }
 }
 
+static desktop_updater_result_v1 PrepareInstallV2WithImpl(
+    const desktop_updater_install_request_v1* request,
+    const std::uint16_t* transaction_id,
+    desktop_updater_reservation_handle_v1** reservation,
+    desktop_updater_transaction_status_v1* status,
+    std::uint32_t* prepare_outcome,
+    const InstallPreparer& preparer) {
+  if (prepare_outcome == nullptr) {
+    return ErrorResult("prepare_outcome output must not be null.");
+  }
+  *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED;
+  if (reservation == nullptr) {
+    return ErrorResult("reservation output must not be null.");
+  }
+  *reservation = nullptr;
+
+  std::string error;
+  if (!ValidateStatusDestination(status, &error)) {
+    return ErrorResult(error);
+  }
+  std::string requested_transaction_id;
+  if (!ReadCanonicalTransactionId(transaction_id, &requested_transaction_id,
+                                  &error)) {
+    return ErrorResult(error);
+  }
+  InstallRequest parsed;
+  if (!ParseRequest(request, &parsed, &error)) {
+    return ErrorResult(error);
+  }
+
+  InstallReservation native_reservation;
+  bool recovery_required = false;
+  InstallResult result;
+  *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED;
+  try {
+    result = preparer(parsed, requested_transaction_id, &native_reservation,
+                      &recovery_required);
+  } catch (const std::exception& exception) {
+    recovery_required = true;
+    result = {false, exception.what()};
+  } catch (...) {
+    recovery_required = true;
+    result = {false, "Unknown C++ exception in install preparation."};
+  }
+
+  if (!result.ok) {
+    *prepare_outcome =
+        recovery_required
+            ? DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED
+            : DESKTOP_UPDATER_PREPARE_OUTCOME_REJECTED;
+    const InstallTransactionStatus failed_status = {
+        requested_transaction_id,
+        InstallTransactionState::kUnknown,
+        recovery_required ? InstallTransactionResultCode::kRecoveryRequired
+                          : InstallTransactionResultCode::kRejected,
+        result.error_message,
+        "",
+        ""};
+    if (!WriteStatus(failed_status, status, &error)) {
+      return ErrorResult(error);
+    }
+    return ErrorResult(result.error_message);
+  }
+
+  if (recovery_required ||
+      native_reservation.transaction_id != requested_transaction_id) {
+    (void)CancelReservation(native_reservation);
+    *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED;
+    const std::string detail =
+        "Windows helper changed the requested transaction binding.";
+    const InstallTransactionStatus failed_status = {
+        requested_transaction_id,
+        InstallTransactionState::kUnknown,
+        InstallTransactionResultCode::kRecoveryRequired,
+        detail,
+        "",
+        ""};
+    if (!WriteStatus(failed_status, status, &error)) {
+      return ErrorResult(error);
+    }
+    return ErrorResult(detail);
+  }
+
+  auto* handle = new (std::nothrow) desktop_updater_reservation_handle_v1;
+  if (handle == nullptr) {
+    (void)CancelReservation(native_reservation);
+    *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED;
+    return ErrorResult("Unable to allocate install reservation handle.");
+  }
+  handle->value = std::move(native_reservation);
+  const InstallTransactionStatus prepared_status = {
+      handle->value.transaction_id,
+      InstallTransactionState::kPrepared,
+      InstallTransactionResultCode::kAccepted,
+      "prepared",
+      handle->value.response_digest_sha256,
+      handle->value.helper_endpoint_identity_sha256};
+  if (!WriteStatus(prepared_status, status, &error)) {
+    (void)CancelReservation(handle->value);
+    delete handle;
+    *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_RECOVERY_REQUIRED;
+    return ErrorResult(error);
+  }
+  *reservation = handle;
+  *prepare_outcome = DESKTOP_UPDATER_PREPARE_OUTCOME_PREPARED;
+  return SuccessResult();
+}
+
+desktop_updater_result_v1 PrepareInstallV2With(
+    const desktop_updater_install_request_v1* request,
+    const std::uint16_t* transaction_id,
+    desktop_updater_reservation_handle_v1** reservation,
+    desktop_updater_transaction_status_v1* status,
+    std::uint32_t* prepare_outcome,
+    const InstallPreparer& preparer) {
+  try {
+    return PrepareInstallV2WithImpl(request, transaction_id, reservation,
+                                    status, prepare_outcome, preparer);
+  } catch (const std::exception& error) {
+    return ErrorResult(error.what());
+  } catch (...) {
+    return ErrorResult("Unknown C++ exception in install preparation V2.");
+  }
+}
+
 desktop_updater_result_v1 PrepareInstallWith(
     const desktop_updater_install_request_v1* request,
     desktop_updater_reservation_handle_v1** reservation,
@@ -286,6 +460,9 @@ desktop_updater_result_v1 PrepareInstallWith(
     *reservation = nullptr;
     InstallRequest parsed;
     std::string error;
+    if (!ValidateStatusDestination(status, &error)) {
+      return ErrorResult(error);
+    }
     if (!ParseRequest(request, &parsed, &error)) {
       return ErrorResult(error);
     }
@@ -318,21 +495,37 @@ desktop_updater_result_v1 PrepareInstallWith(
   }
 }
 
+desktop_updater_result_v1 StatusOperationWith(
+    desktop_updater_transaction_status_v1* status,
+    const StatusOperation& operation) {
+  try {
+    std::string error;
+    if (!ValidateStatusDestination(status, &error)) {
+      return ErrorResult(error);
+    }
+    const InstallTransactionStatus native_status = operation();
+    if (!WriteStatus(native_status, status, &error)) {
+      return ErrorResult(error);
+    }
+    return SuccessResult();
+  } catch (const std::exception& error) {
+    return ErrorResult(error.what());
+  } catch (...) {
+    return ErrorResult("Unknown C++ exception in status operation.");
+  }
+}
+
 desktop_updater_result_v1 ReservationOperationWith(
     desktop_updater_reservation_handle_v1* reservation,
     desktop_updater_transaction_status_v1* status,
     bool commit) {
-  try {
-    if (reservation == nullptr || !reservation->active) {
-      return ErrorResult("install reservation handle is invalid or inactive.");
-    }
+  if (reservation == nullptr || !reservation->active) {
+    return ErrorResult("install reservation handle is invalid or inactive.");
+  }
+  return StatusOperationWith(status, [reservation, commit]() {
     const InstallTransactionStatus native_status =
         commit ? CommitAfterExit(reservation->value)
                : CancelReservation(reservation->value);
-    std::string error;
-    if (!WriteStatus(native_status, status, &error)) {
-      return ErrorResult(error);
-    }
     if ((commit &&
          (native_status.state == InstallTransactionState::kCommitAccepted ||
           native_status.state == InstallTransactionState::kCompleted)) ||
@@ -340,36 +533,30 @@ desktop_updater_result_v1 ReservationOperationWith(
          native_status.state == InstallTransactionState::kCancelled)) {
       reservation->active = false;
     }
-    return SuccessResult();
-  } catch (const std::exception& error) {
-    return ErrorResult(error.what());
-  } catch (...) {
-    return ErrorResult("Unknown C++ exception in reservation operation.");
-  }
+    return native_status;
+  });
 }
 
 desktop_updater_result_v1 TransactionOperationWith(
     const std::uint16_t* transaction_id,
     desktop_updater_transaction_status_v1* status,
-    bool recover) {
+    const TransactionOperation& operation) {
   try {
-    std::wstring wide_transaction_id;
     std::string error;
-    if (!ReadUtf16(transaction_id, false, "transaction_id",
-                   &wide_transaction_id, &error)) {
+    if (!ValidateStatusDestination(status, &error)) {
       return ErrorResult(error);
     }
     std::string narrow_transaction_id;
-    narrow_transaction_id.reserve(wide_transaction_id.size());
-    for (wchar_t character : wide_transaction_id) {
-      if (character < 0 || character > 0x7f) {
-        return ErrorResult("transaction_id must be ASCII.");
-      }
-      narrow_transaction_id.push_back(static_cast<char>(character));
+    if (!ReadCanonicalTransactionId(transaction_id, &narrow_transaction_id,
+                                    &error)) {
+      return ErrorResult(error);
     }
     const InstallTransactionStatus native_status =
-        recover ? RecoverPendingInstall(narrow_transaction_id)
-                : QueryTransaction(narrow_transaction_id);
+        operation(narrow_transaction_id);
+    if (native_status.transaction_id != narrow_transaction_id) {
+      return ErrorResult(
+          "Windows helper changed the requested transaction binding.");
+    }
     if (!WriteStatus(native_status, status, &error)) {
       return ErrorResult(error);
     }
@@ -403,6 +590,18 @@ desktop_updater_prepare_install_v1(
 }
 
 desktop_updater_result_v1 DESKTOP_UPDATER_CALL
+desktop_updater_prepare_install_v2(
+    const desktop_updater_install_request_v1* request,
+    const uint16_t* transaction_id,
+    desktop_updater_reservation_handle_v1** reservation,
+    desktop_updater_transaction_status_v1* status,
+    uint32_t* prepare_outcome) {
+  return desktop_updater::native::internal::PrepareInstallV2With(
+      request, transaction_id, reservation, status, prepare_outcome,
+      desktop_updater::native::PrepareInstallWithTransactionId);
+}
+
+desktop_updater_result_v1 DESKTOP_UPDATER_CALL
 desktop_updater_commit_after_exit_v1(
     desktop_updater_reservation_handle_v1* reservation,
     desktop_updater_transaction_status_v1* status) {
@@ -423,7 +622,7 @@ desktop_updater_query_transaction_v1(
     const uint16_t* transaction_id,
     desktop_updater_transaction_status_v1* status) {
   return desktop_updater::native::internal::TransactionOperationWith(
-      transaction_id, status, false);
+      transaction_id, status, desktop_updater::native::QueryTransaction);
 }
 
 desktop_updater_result_v1 DESKTOP_UPDATER_CALL
@@ -431,7 +630,17 @@ desktop_updater_recover_pending_install_v1(
     const uint16_t* transaction_id,
     desktop_updater_transaction_status_v1* status) {
   return desktop_updater::native::internal::TransactionOperationWith(
-      transaction_id, status, true);
+      transaction_id, status,
+      desktop_updater::native::RecoverPendingInstall);
+}
+
+desktop_updater_result_v1 DESKTOP_UPDATER_CALL
+desktop_updater_resolve_pending_install_after_exit_v1(
+    const uint16_t* transaction_id,
+    desktop_updater_transaction_status_v1* status) {
+  return desktop_updater::native::internal::TransactionOperationWith(
+      transaction_id, status,
+      desktop_updater::native::ResolvePendingInstallAfterExit);
 }
 
 void DESKTOP_UPDATER_CALL desktop_updater_transaction_status_free_v1(

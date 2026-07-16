@@ -44,6 +44,7 @@ enum class WindowsTransactionFaultPoint {
   kDiskFull,
   kShortJournalWrite,
   kFileFlushFailure,
+  kAfterJournalNextFlushBeforeRename,
   kDirectoryFlushFailure,
 };
 
@@ -121,6 +122,9 @@ struct WindowsVerifiedPayloadIdentity {
   std::string artifact_sha256;
   std::wstring executable_relative_path;
   std::string executable_sha256;
+  // SHA-256 of the helper-computed canonical inventory of the pure payload
+  // tree. This is intentionally distinct from the caller stage provenance.
+  std::string payload_seal_sha256;
 
   bool operator==(const WindowsVerifiedPayloadIdentity& other) const;
   bool operator!=(const WindowsVerifiedPayloadIdentity& other) const {
@@ -135,6 +139,7 @@ struct WindowsTransactionPaths {
   std::wstring backup_name;
   std::wstring journal_name;
   std::wstring journal_next_name;
+  std::wstring lock_candidate_name;
   std::wstring lock_name;
 
   static WindowsTransactionPaths Create(const std::wstring& target_name,
@@ -142,7 +147,7 @@ struct WindowsTransactionPaths {
 };
 
 struct WindowsTransactionJournal {
-  static constexpr std::int64_t kSchemaVersion = 1;
+  static constexpr std::int64_t kSchemaVersion = 2;
 
   std::int64_t schema_version = kSchemaVersion;
   std::string transaction_id;
@@ -172,7 +177,8 @@ UniqueWindowsHandle OpenRelativeNoReparse(
     ULONG share_access,
     ULONG create_disposition,
     ULONG create_options,
-    ULONG file_attributes = FILE_ATTRIBUTE_NORMAL);
+    ULONG file_attributes = FILE_ATTRIBUTE_NORMAL,
+    PSECURITY_DESCRIPTOR create_security_descriptor = nullptr);
 
 WindowsFileIdentity ReadWindowsFileIdentity(HANDLE handle);
 void ValidateWindowsLinkCount(bool directory, DWORD NumberOfLinks);
@@ -180,6 +186,19 @@ bool ExistsRelativeNoReparse(HANDLE parent, const std::wstring& relative_path);
 std::string ReadUtf8FileRelative(HANDLE parent,
                                  const std::wstring& relative_path,
                                  std::size_t maximum_bytes);
+void WriteWindowsTransactionLockBinding(HANDLE lock,
+                                        const std::string& transaction_id);
+enum class WindowsTransactionLockBindingState {
+  kExact,
+  kForeign,
+  kMalformed,
+};
+WindowsTransactionLockBindingState ClassifyWindowsTransactionLockBinding(
+    HANDLE lock,
+    const std::string& transaction_id);
+bool WindowsTransactionLockBindingMatches(
+    HANDLE lock,
+    const std::string& transaction_id);
 void RenameHandleRelative(HANDLE source,
                           HANDLE RootDirectory,
                           const std::wstring& destination,
@@ -189,6 +208,7 @@ void DeleteTreeRelative(HANDLE parent,
                         const std::wstring& leaf,
                         const WindowsFileIdentity& expected_identity);
 void FlushWindowsDirectory(HANDLE directory);
+void FlushWindowsVolume(HANDLE directory);
 
 class DurableWindowsTransactionJournalStore {
  public:
