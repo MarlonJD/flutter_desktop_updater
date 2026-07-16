@@ -543,10 +543,6 @@ class LinuxPreparedInstall final : public NativeInstallPreparedTransactionV1 {
         broker_mode_(broker_mode),
         request_(std::move(request)),
         launch_identity_(std::move(launch_identity)) {
-    // This registry authority must exist before the transaction journal. A
-    // process death on either side of journal persistence is then
-    // classifiable as pre-journal rollback or durable-journal recovery.
-    registry_.Persist(record_);
     TestOnlyExitAfter(
         "DESKTOP_UPDATER_TEST_EXIT_AFTER_PREPARING_REGISTRY", 86);
   }
@@ -762,19 +758,13 @@ class LinuxInstallAuthorizer final : public NativeInstallRequestAuthorizerV1 {
         archive_request, restaged->payload_seal_sha256());
     const LinuxVerifiedPayloadIdentity expected = verifier->Verify(
         target_parent.get(), restaged->path().filename().string());
-    auto transaction = std::make_unique<LinuxFileTransaction>(
-        request.target.path_hint, restaged->path(),
-        request.transaction_id, getpid(),
-        expected, *verifier, PolkitE2EFaultInjector());
-    EmitLinuxHelperDiagnostic(broker_mode_, request, "prepared",
-                              "target lock acquired",
-                              "exclusiveTargetLock");
     LinuxTransactionRegistryRecord record;
     record.transaction_id = request.transaction_id;
     record.package_id = request.package_id;
     record.policy_id = request.policy_id;
     record.helper_endpoint_identity_sha256 = endpoint_sha256_;
     record.recovery_policy_identity_sha256 = policy_.canonical_sha256;
+    LinuxTransactionRegistry registry(broker_mode_);
     if (broker_mode_) {
       record.recovery_authority_kind = "fixedBroker";
       record.recovery_authority_generation_sha256 =
@@ -783,8 +773,7 @@ class LinuxInstallAuthorizer final : public NativeInstallRequestAuthorizerV1 {
               record.helper_endpoint_identity_sha256,
               record.recovery_policy_identity_sha256);
     } else {
-      LinuxTransactionRegistry authority_registry(false);
-      authority_registry.PreservePortableRecoveryAuthority(
+      registry.PreservePortableRecoveryAuthority(
           helper_executable_,
           helper_executable_.parent_path() / kPortablePolicyName, &record);
     }
@@ -795,6 +784,32 @@ class LinuxInstallAuthorizer final : public NativeInstallRequestAuthorizerV1 {
     record.result_code = "recoveryRequired";
     record.journal_sha256 = std::string(64, '0');
     record.expected_payload_identity = expected;
+    // Publish a complete recovery intent before attempting the durable target
+    // lock. A process death after successful lock persistence is then
+    // discoverable through the transaction registry.
+    registry.Persist(record);
+
+    std::unique_ptr<LinuxFileTransaction> transaction;
+    try {
+      transaction = std::make_unique<LinuxFileTransaction>(
+          request.target.path_hint, restaged->path(),
+          request.transaction_id, getpid(),
+          expected, *verifier, PolkitE2EFaultInjector());
+    } catch (...) {
+      try {
+        record.state = "rolledBack";
+        record.result_code = "rolledBack";
+        registry.Persist(record);
+        restaged->CleanupCancelled();
+      } catch (...) {
+      }
+      throw;
+    }
+    TestOnlyExitAfter(
+        "DESKTOP_UPDATER_TEST_EXIT_AFTER_TARGET_LOCK", 85);
+    EmitLinuxHelperDiagnostic(broker_mode_, request, "prepared",
+                              "target lock acquired",
+                              "exclusiveTargetLock");
     return std::make_unique<LinuxPreparedInstall>(
         request.transaction_id, std::move(restaged), std::move(verifier),
         std::move(transaction), std::move(record), broker_mode_, request,

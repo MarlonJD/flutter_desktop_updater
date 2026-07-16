@@ -445,6 +445,14 @@ std::string OnlyRegisteredTransactionId(const fs::path& state_home) {
   return transaction_ids.front();
 }
 
+std::string TransactionIdFromTargetLock(const fs::path& target) {
+  const fs::path lock = target.parent_path() /
+      ("." + target.filename().string() + ".desktop-updater.lock");
+  if (!fs::exists(lock)) return {};
+  const auto encoded = runtime::internal::ParseJson(ReadFile(lock));
+  return encoded.at("transactionId").string();
+}
+
 class ScopedEnvironmentVariable {
  public:
   explicit ScopedEnvironmentVariable(std::string name)
@@ -745,6 +753,121 @@ TEST(LinuxNativeInstall, PublicClientPreparesAndCancelsOverRealUnixSocket) {
   } else {
     setenv("XDG_STATE_HOME", saved_state.c_str(), 1);
   }
+}
+
+TEST(LinuxNativeInstall,
+     PublicRecoveryRollsBackWhenHelperDiesAfterDurableTargetLock) {
+  if (geteuid() == 0) {
+    GTEST_SKIP() << "portable helper handoff requires a non-root test user";
+  }
+  const fs::path executable = fs::canonical("/proc/self/exe");
+  const fs::path install_root = executable.parent_path();
+  const fs::path helper = install_root / "desktop-updater-helper";
+  if (!fs::exists(helper)) {
+    GTEST_SKIP() << "desktop-updater-helper target is unavailable";
+  }
+  const std::string nonce = "123e4567-e89b-42d3-a456-426614174000";
+  const fs::path staging_root =
+      install_root.parent_path() / ("desktop_updater_stage_" + nonce);
+  const fs::path installed_identity =
+      install_root / ".desktop_updater_install_identity.json";
+  const fs::path target_lock =
+      install_root.parent_path() /
+      ("." + install_root.filename().string() + ".desktop-updater.lock");
+  TemporaryDirectory runtime_directory(true);
+  TemporaryDirectory state_directory(true);
+  ASSERT_EQ(0, chmod(runtime_directory.path().c_str(), 0700));
+  ASSERT_EQ(0, chmod(state_directory.path().c_str(), 0700));
+  ScopedEnvironmentVariable runtime_environment("XDG_RUNTIME_DIR");
+  ScopedEnvironmentVariable state_environment("XDG_STATE_HOME");
+  ScopedEnvironmentVariable target_lock_exit(
+      "DESKTOP_UPDATER_TEST_EXIT_AFTER_TARGET_LOCK");
+  runtime_environment.Set(runtime_directory.path().c_str());
+  state_environment.Set(state_directory.path().c_str());
+
+  std::error_code cleanup_error;
+  fs::remove_all(staging_root, cleanup_error);
+  fs::remove(target_lock, cleanup_error);
+  WriteFile(staging_root / executable.filename(), "new", 0755);
+  const SignedLinuxManifest signed_manifest =
+      WriteSignedLinuxStageControl(staging_root);
+  const fs::path manifest_path =
+      staging_root / ".desktop_updater_release_manifest.json";
+  InstallRequest request = RequestFor(
+      install_root, staging_root, true, Sha256File(manifest_path),
+      Sha256File(staging_root / ".desktop_updater_artifact.zip"));
+  request.executable_relative_path = executable.filename().string();
+  WriteFile(helper.parent_path() / "desktop-updater-helper.policy.json",
+            CanonicalPortablePolicy(Sha256File(executable),
+                                    Sha256File(helper),
+                                    signed_manifest.public_key_base64),
+            0600);
+
+  target_lock_exit.Set("1");
+  InstallReservation reservation;
+  const InstallResult prepared = PrepareInstall(request, &reservation);
+  target_lock_exit.Unset();
+  EXPECT_FALSE(prepared.ok) << prepared.error;
+  EXPECT_TRUE(reservation.transaction_id.empty());
+  EXPECT_TRUE(fs::exists(target_lock));
+
+  const std::string transaction_id =
+      TransactionIdFromTargetLock(install_root);
+  EXPECT_FALSE(transaction_id.empty());
+  if (transaction_id.empty()) {
+    fs::remove(installed_identity, cleanup_error);
+    fs::remove_all(staging_root, cleanup_error);
+    return;
+  }
+
+  const fs::path transaction_record =
+      state_directory.path() / "desktop-updater" / "transactions" /
+      (transaction_id + ".json");
+  if (fs::exists(transaction_record)) {
+    const auto registered =
+        runtime::internal::ParseJson(ReadFile(transaction_record));
+    EXPECT_EQ("preparing", registered.at("state").string());
+    EXPECT_EQ(std::string(64, '0'),
+              registered.at("journalSha256").string());
+  }
+  const std::string prefix = "." + install_root.filename().string() +
+                             ".desktop-updater-" + transaction_id;
+  const fs::path helper_stage = install_root.parent_path() /
+      ("desktop_updater_stage_" + transaction_id);
+  const fs::path helper_control =
+      install_root.parent_path() / (prefix + ".control");
+  const fs::path restage_record = install_root.parent_path() /
+      (".desktop-updater-restage-" + transaction_id + ".json");
+  const fs::path journal =
+      install_root.parent_path() / (prefix + ".journal.json");
+  EXPECT_TRUE(fs::exists(transaction_record));
+  EXPECT_TRUE(fs::exists(helper_stage));
+  EXPECT_TRUE(fs::exists(helper_control));
+  EXPECT_TRUE(fs::exists(restage_record));
+  EXPECT_FALSE(fs::exists(journal));
+
+  const InstallTransactionStatus recovered =
+      RecoverPendingInstall(transaction_id);
+  EXPECT_EQ(InstallTransactionState::kRolledBack, recovered.state)
+      << recovered.detail;
+  EXPECT_EQ(InstallTransactionResultCode::kSucceeded,
+            recovered.result_code);
+  EXPECT_FALSE(fs::exists(target_lock));
+  EXPECT_FALSE(fs::exists(helper_stage));
+  EXPECT_FALSE(fs::exists(helper_control));
+  EXPECT_FALSE(fs::exists(restage_record));
+  EXPECT_TRUE(fs::exists(staging_root));
+  EXPECT_EQ("new", ReadFile(staging_root / executable.filename()));
+  EXPECT_EQ("{\"packageId\":\"com.example.app\",\"schemaVersion\":1}",
+            ReadFile(installed_identity));
+  EXPECT_TRUE(fs::exists(executable));
+
+  fs::remove(target_lock, cleanup_error);
+  fs::remove_all(helper_stage, cleanup_error);
+  fs::remove_all(helper_control, cleanup_error);
+  fs::remove(restage_record, cleanup_error);
+  fs::remove(installed_identity, cleanup_error);
+  fs::remove_all(staging_root, cleanup_error);
 }
 
 TEST(LinuxNativeInstall,
