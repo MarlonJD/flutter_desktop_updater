@@ -259,14 +259,24 @@ class _UpdateCardActions extends StatelessWidget {
         children: [
           FilledButton.icon(
             icon: const Icon(Icons.settings),
-            label: const Text("Open settings"),
+            label: Text(
+              notifier.getLocalization
+                      ?.macosPrivilegedHelperApprovalOpenSettingsText ??
+                  defaultDesktopUpdateLocalization
+                      .macosPrivilegedHelperApprovalOpenSettingsText!,
+            ),
             onPressed: () {
               unawaited(notifier.openMacOSBackgroundItemsSettings());
             },
           ),
           TextButton.icon(
             icon: const Icon(Icons.refresh),
-            label: const Text("Try again"),
+            label: Text(
+              notifier.getLocalization
+                      ?.macosPrivilegedHelperApprovalRetryText ??
+                  defaultDesktopUpdateLocalization
+                      .macosPrivilegedHelperApprovalRetryText!,
+            ),
             onPressed: () {
               unawaited(notifier.restartApp());
             },
@@ -440,8 +450,9 @@ String _longUpdateText(DesktopUpdaterController notifier) {
   final state = notifier.state;
   if (state is UpdateFailed) {
     if (isMacOSPrivilegedHelperApprovalRequiredError(state.error)) {
-      return "Allow this app to run in the background in System Settings > "
-          "General > Login Items & Extensions, then try the update again.";
+      return notifier.getLocalization?.macosPrivilegedHelperApprovalBodyText ??
+          defaultDesktopUpdateLocalization
+              .macosPrivilegedHelperApprovalBodyText!;
     }
     return "Please try again later.";
   }
@@ -566,8 +577,9 @@ String _updateFailedTooltip(
   final custom = loc?.onUpdateFailedTooltip?.call(error);
   if (custom != null) return custom;
   if (isMacOSPrivilegedHelperApprovalRequiredError(error)) {
-    return "Administrator approval is required before this update can be "
-        "installed.";
+    return loc?.macosPrivilegedHelperApprovalTitleText ??
+        defaultDesktopUpdateLocalization
+            .macosPrivilegedHelperApprovalTitleText!;
   }
   return loc?.updateFailedTooltipText ?? "Update failed. Please try again.";
 }

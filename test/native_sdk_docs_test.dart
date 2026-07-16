@@ -80,7 +80,14 @@ void main() {
     }
     expect(runtimeApi, isNot(contains("`not implemented`")));
     expect(runtimeApi, contains("not production-ready"));
-    expect(harness, contains("macOS native runtime ZIP smoke"));
+    expect(
+      harness,
+      contains(
+        "macOS native runtime ZIP package and unsigned rejection smoke",
+      ),
+    );
+    expect(harness, contains("not hosted PKG install-success evidence"));
+    expect(harness, contains("self-hosted preapproved target-host job"));
     expect(harness, contains("Windows native runtime ZIP smoke"));
     expect(harness, contains("Linux native runtime ZIP smoke"));
     expect(harness, contains("workflow_dispatch"));

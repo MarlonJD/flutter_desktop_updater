@@ -70,7 +70,7 @@ target, and run the relevant native tests:
 
 The current native merge-gate configuration also contains the normal macOS,
 Windows, and Linux ZIP runtime smokes; the exact CocoaPods macOS 10.14
-five-source typecheck; both current Flutter macOS integration modes; Windows
+six-source typecheck; both current Flutter macOS integration modes; Windows
 Unicode paths and relative redirects; Release NuGet packing, notice checks,
 isolated P/Invoke consumption, and DLL hash proof; and Linux standard plus
 multiarch pkg-config consumers. Every CTest invocation rejects “No tests were
@@ -102,8 +102,24 @@ The credential and privileged helper gates are separate manual jobs:
 - `macos-smappservice-helper` runs on a separately provisioned self-hosted
   `desktop-updater-smappservice` runner when
   `DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E=1`. Its administrator-approved signed
-  apps exercise the bundled root daemon/XPC recovery path. The
-  `macos-notarized` job separately owns Developer ID and notary credentials.
+  apps exercise the bundled root daemon/XPC recovery path. A separately
+  provisioned root-owned runtime app and signed, notarized PKG then exercise
+  the real `/Applications` installer handoff and verify the installed package
+  receipt. Configure these non-secret absolute target-host values:
+  `DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION`, and
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD`. The PKG runtime app must
+  be installed directly under `/Applications`, start at `2.7.0+270`, use the
+  `MacOSRuntimeCompile` executable, remain root-owned, and have its bundled
+  daemon approved before dispatch. Its PKG must install the same app as the
+  configured `2.7.1+271` target and preserve stapled trust. The
+  `macos-notarized` hosted job separately owns Developer ID/notary credentials
+  and proves the exact approval-required result; it is not privileged install
+  success evidence.
 - `windows-elevated-helper` runs only on a self-hosted
   `desktop-updater-uac` runner when
   `DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E=1`. It signs the fixed Release

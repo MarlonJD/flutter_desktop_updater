@@ -379,6 +379,7 @@ class UpdateDialogWidget extends StatelessWidget {
             listenable: notifier,
             builder: (context, child) {
               final state = notifier.state;
+              final localization = notifier.getLocalization;
               if (state is UpdateFailed) {
                 final approvalRequired =
                     isMacOSPrivilegedHelperApprovalRequiredError(state.error);
@@ -388,15 +389,18 @@ class UpdateDialogWidget extends StatelessWidget {
                   shadowColor: shadowColor,
                   title: Text(
                     approvalRequired
-                        ? "Administrator approval required"
+                        ? localization
+                                ?.macosPrivilegedHelperApprovalTitleText ??
+                            defaultDesktopUpdateLocalization
+                                .macosPrivilegedHelperApprovalTitleText!
                         : "Update failed",
                     style: TextStyle(color: textColor),
                   ),
                   content: Text(
                     approvalRequired
-                        ? "Allow this app to run in the background in System "
-                            "Settings > General > Login Items & Extensions, "
-                            "then try the update again."
+                        ? localization?.macosPrivilegedHelperApprovalBodyText ??
+                            defaultDesktopUpdateLocalization
+                                .macosPrivilegedHelperApprovalBodyText!
                         : "Please try again later.",
                     style: TextStyle(color: textColor),
                   ),
@@ -405,7 +409,10 @@ class UpdateDialogWidget extends StatelessWidget {
                       TextButton.icon(
                         icon: Icon(Icons.settings, color: buttonIconColor),
                         label: Text(
-                          "Open settings",
+                          localization
+                                  ?.macosPrivilegedHelperApprovalOpenSettingsText ??
+                              defaultDesktopUpdateLocalization
+                                  .macosPrivilegedHelperApprovalOpenSettingsText!,
                           style: TextStyle(color: buttonTextColor),
                         ),
                         onPressed: () {
@@ -417,7 +424,10 @@ class UpdateDialogWidget extends StatelessWidget {
                       TextButton.icon(
                         icon: Icon(Icons.refresh, color: buttonIconColor),
                         label: Text(
-                          "Try again",
+                          localization
+                                  ?.macosPrivilegedHelperApprovalRetryText ??
+                              defaultDesktopUpdateLocalization
+                                  .macosPrivilegedHelperApprovalRetryText!,
                           style: TextStyle(color: buttonTextColor),
                         ),
                         onPressed: () {

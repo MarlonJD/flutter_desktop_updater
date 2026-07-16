@@ -127,13 +127,18 @@ wrapper widgets handle placement.
   that background-item permission is required, show `Open settings`, and show
   `Try again` for the retained staged update.
 
-Writable macOS targets stay on the unprivileged helper path, so this approval UI
-appears only when the target actually requires the `SMAppService` root daemon.
+Writable macOS directory-replacement targets stay on the unprivileged helper
+path. PKG installer updates always require the `SMAppService` root daemon
+because the fixed system-installer operation needs root, so this approval UI
+can appear for PKG even when the app's parent directory is writable.
 It is a first-enable or revoked-approval recovery UI, not a prompt that should
 appear for every update; an already enabled daemon is reused.
 Custom UI can use `isMacOSPrivilegedHelperApprovalRequiredError(state.error)`
 and call `controller.openMacOSBackgroundItemsSettings()` to provide the same
 recovery action.
+The stock title, explanation, settings action, and retry action are localized
+through the four `macosPrivilegedHelperApproval*Text` fields on
+`DesktopUpdateLocalization`.
 
 ## Release Notes Patterns
 

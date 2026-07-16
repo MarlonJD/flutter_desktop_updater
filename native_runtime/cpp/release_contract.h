@@ -99,6 +99,7 @@ struct ReleaseDescriptor {
   std::string platform;
   std::string channel;
   ReleaseArtifact artifact;
+  JsonValue wire_install;
   JsonValue install;
   bool has_signature = false;
   ReleaseSignature signature;

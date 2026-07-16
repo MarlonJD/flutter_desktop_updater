@@ -159,6 +159,7 @@ void main() {
       "Run Linux unprivileged helper and crash recovery tests",
       "Run Linux privileged mount namespace rejection test",
       "Run signed bundled SMAppService daemon and XPC recovery smoke",
+      "Run preapproved signed PKG target-host smoke",
       "Run Authenticode and interactive UAC helper smoke",
       "Run installed broker static audit",
       "Run real non-root polkit broker E2E",

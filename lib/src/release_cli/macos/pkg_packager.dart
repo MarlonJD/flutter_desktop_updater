@@ -9,6 +9,7 @@ import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_manifest.dart";
 import "package:path/path.dart" as path;
+import "package:pub_semver/pub_semver.dart";
 
 class PkgPackager {
   const PkgPackager({this.runProcess = defaultProcessRunner});
@@ -26,6 +27,13 @@ class PkgPackager {
         "macos.pkg.signingIdentifier is required to build a signed macOS PKG.",
       );
     }
+    final buildNumber = request.buildNumber;
+    if (buildNumber == null || buildNumber < 0) {
+      throw const FormatException(
+        "macOS PKG publishing requires an explicit integer build number.",
+      );
+    }
+    await _validateInputApplication(request, buildNumber: buildNumber);
     await request.outputDirectory.create(recursive: true);
     final artifact = File(
       path.join(
@@ -109,12 +117,14 @@ class PkgPackager {
       install: ReleaseInstall(
         strategy: "pkgInstaller",
         macosPkg: ReleaseMacOSPkgInstall(
-          launchMode: "installerApp",
+          launchMode: "privilegedInstallerTool",
           expectedPackageIds: [config.packageIdentifier],
           relaunchAfterInstall: false,
         ),
       ),
-      minimumUpdaterVersion: request.minimumUpdaterVersion,
+      minimumUpdaterVersion: _pkgMinimumUpdaterVersion(
+        request.minimumUpdaterVersion,
+      ),
       generatedAt: DateTime.now().toUtc(),
     );
     final releaseFile =
@@ -144,6 +154,133 @@ class PkgPackager {
     }
     return result;
   }
+
+  Future<void> _validateInputApplication(
+    ReleasePackageRequest request, {
+    required int buildNumber,
+  }) async {
+    final inputName = path.basename(path.normalize(request.input.path));
+    if (request.input is! Directory ||
+        !inputName.endsWith(".app") ||
+        request.appName != inputName ||
+        path.basename(request.appName) != request.appName ||
+        path.normalize(request.appName) != request.appName) {
+      throw const FormatException(
+        "macOS PKG appName must match the input application bundle name.",
+      );
+    }
+    await _validateBundleModes(request.input as Directory);
+    final infoFile = File(
+      path.join(request.input.path, "Contents", "Info.plist"),
+    );
+    if (!await infoFile.exists()) {
+      throw FileSystemException(
+        "macOS PKG input is missing Contents/Info.plist.",
+        infoFile.path,
+      );
+    }
+    final result = await _runChecked("/usr/bin/plutil", [
+      "-convert",
+      "json",
+      "-o",
+      "-",
+      infoFile.path,
+    ]);
+    final decoded = jsonDecode(result.stdout.toString());
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException("macOS PKG Info.plist is invalid.");
+    }
+    final executableName = decoded["CFBundleExecutable"]?.toString();
+    if (decoded["CFBundleIdentifier"] != request.packageId ||
+        decoded["CFBundleShortVersionString"] != request.version ||
+        decoded["CFBundleVersion"]?.toString() != buildNumber.toString() ||
+        executableName == null ||
+        executableName.isEmpty ||
+        executableName == "." ||
+        executableName == ".." ||
+        executableName.contains("/") ||
+        executableName.contains("\\")) {
+      throw const FormatException(
+        "macOS PKG Info.plist identity must match release metadata.",
+      );
+    }
+    final mainExecutable = File(
+      path.join(
+        request.input.path,
+        "Contents",
+        "MacOS",
+        executableName,
+      ),
+    );
+    final helper = File(
+      path.join(
+        request.input.path,
+        "Contents",
+        "Helpers",
+        "DesktopUpdaterInstallHelper",
+      ),
+    );
+    for (final executable in [mainExecutable, helper]) {
+      if (await FileSystemEntity.type(executable.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        throw FileSystemException(
+          "macOS PKG input is missing a required executable.",
+          executable.path,
+        );
+      }
+      final stat = await executable.stat();
+      if (stat.mode & 0x41 != 0x41 ||
+          stat.mode & 0x12 != 0 ||
+          stat.mode & 0xE00 != 0) {
+        throw FileSystemException(
+          "macOS PKG input executable has unsafe permissions.",
+          executable.path,
+        );
+      }
+    }
+  }
+
+  Future<void> _validateBundleModes(Directory bundle) async {
+    Future<void> validate(FileSystemEntity entity) async {
+      final type = await FileSystemEntity.type(
+        entity.path,
+        followLinks: false,
+      );
+      if (type == FileSystemEntityType.link) return;
+      if (type != FileSystemEntityType.directory &&
+          type != FileSystemEntityType.file) {
+        throw FileSystemException(
+          "macOS PKG input contains an unsupported filesystem node.",
+          entity.path,
+        );
+      }
+      final mode = (await entity.stat()).mode;
+      final isDirectory = type == FileSystemEntityType.directory;
+      final accessible = isDirectory
+          ? mode & 0x5 == 0x5
+          : mode & 0x4 == 0x4 && (mode & 0x49 == 0 || mode & 0x41 == 0x41);
+      if (!accessible || mode & 0x12 != 0 || mode & 0xE00 != 0) {
+        throw FileSystemException(
+          "macOS PKG input contains unsafe or inaccessible permissions.",
+          entity.path,
+        );
+      }
+    }
+
+    await validate(bundle);
+    await for (final entity in bundle.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      await validate(entity);
+    }
+  }
+}
+
+String _pkgMinimumUpdaterVersion(String requested) {
+  final requestedVersion = Version.parse(requested);
+  final floor = Version(2, 7, 0);
+  return requestedVersion < floor ? floor.toString() : requested;
 }
 
 String _artifactNameStem(String appName) {

@@ -62,13 +62,22 @@ The broad platform gates are in GitHub Actions:
 - A privileged Linux mount-namespace rejection gate in the hosted Linux job.
   Signed SMAppService daemon/XPC, Authenticode/UAC, and installed polkit broker
   smokes remain separate manual credential/target-host jobs.
-- The `macOS native runtime ZIP smoke`, `Windows native runtime ZIP smoke`, and
-  `Linux native runtime ZIP smoke` exercise the three-stage preview through
-  external SwiftPM, NuGet, and installed CMake consumers. CTest consumers fail
-  explicitly when zero tests are registered.
+- The `Windows native runtime ZIP smoke` and `Linux native runtime ZIP smoke`
+  exercise the three-stage preview through NuGet and installed CMake consumers.
+  The `macOS native runtime ZIP package and unsigned rejection smoke` builds a
+  real helper-embedded app, verifies signed discovery and staging, and proves
+  that unsigned install handoff is rejected before helper launch. CTest
+  consumers fail explicitly when zero tests are registered.
 - The macOS DMG/PKG and Windows Inno runtime smokes are separate
   `workflow_dispatch` gates. They require the configured Developer ID/notary or
   Authenticode credentials and do not run on ordinary pushes or pull requests.
+  Each signed macOS lane notarizes and staples its real helper-embedded runtime
+  consumer. The DMG lane remains the signed whole-bundle handoff proof. The
+  hosted PKG lane proves that the signed consumer reaches the exact
+  SMAppService administrator-approval boundary; it is
+  not hosted PKG install-success evidence. The self-hosted preapproved target-host job owns
+  the real `/Applications` PKG mutation and receipt checks, alongside its
+  authenticated daemon/XPC crash-recovery smoke.
 - macOS notarized publish smoke only when explicitly dispatched with secrets.
 
 Evidence language is literal. `preview` describes API maturity;

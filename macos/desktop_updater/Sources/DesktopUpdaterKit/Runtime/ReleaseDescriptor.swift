@@ -40,6 +40,7 @@ public struct ReleaseArtifact {
 
 public struct ReleaseInstall {
     public let strategy: String
+    public let normalizedJSON: [String: Any]
     public let rawJSON: [String: Any]
 
     init(json: [String: Any], platform: String, artifactKind: String) throws {
@@ -54,6 +55,7 @@ public struct ReleaseInstall {
         }
 
         var normalized: [String: Any] = ["strategy": strategy]
+        var pkgWireLaunchMode: String?
         if let rawInno = json["inno"] {
             let metadata = try runtimeDictionary(rawInno)
             let arguments = try runtimeStringList(
@@ -114,11 +116,15 @@ public struct ReleaseInstall {
         }
         if let rawPKG = json["macosPkg"] {
             let metadata = try runtimeDictionary(rawPKG)
+            let rawLaunchMode = try runtimeOptionalString(
+                metadata["launchMode"],
+                default: "installerApp"
+            )
+            pkgWireLaunchMode = rawLaunchMode
             normalized["macosPkg"] = [
-                "launchMode": try runtimeOptionalString(
-                    metadata["launchMode"],
-                    default: "installerApp"
-                ),
+                "launchMode": rawLaunchMode == "installerApp"
+                    ? "privilegedInstallerTool"
+                    : rawLaunchMode,
                 "expectedPackageIds": try runtimeStringList(
                     metadata["expectedPackageIds"],
                     key: "expectedPackageIds",
@@ -163,7 +169,7 @@ public struct ReleaseInstall {
             guard platform == "macos",
                   strategy == "pkgInstaller",
                   let metadata = normalized["macosPkg"] as? [String: Any],
-                  metadata["launchMode"] as? String == "installerApp",
+                  metadata["launchMode"] as? String == "privilegedInstallerTool",
                   let packageIds = metadata["expectedPackageIds"] as? [String],
                   !packageIds.isEmpty
             else {
@@ -208,6 +214,13 @@ public struct ReleaseInstall {
                     message: "Invalid Windows Inno install metadata."
                 )
             }
+        }
+        normalizedJSON = normalized
+        if let pkgWireLaunchMode,
+           var wirePKG = normalized["macosPkg"] as? [String: Any]
+        {
+            wirePKG["launchMode"] = pkgWireLaunchMode
+            normalized["macosPkg"] = wirePKG
         }
         rawJSON = normalized
     }
@@ -270,6 +283,12 @@ public struct ReleaseDescriptor {
             platform: platform,
             artifactKind: artifact.kind
         )
+        if artifact.kind == "pkgInstaller", buildNumber == nil {
+            throw RuntimeError.outcome(
+                .invalidDescriptor,
+                message: "PKG release descriptors require a build number."
+            )
+        }
         if let signatureJSON = json["signature"] {
             let value = try runtimeDictionary(signatureJSON)
             signature = ReleaseSignature(

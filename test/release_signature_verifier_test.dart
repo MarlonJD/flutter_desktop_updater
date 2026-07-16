@@ -16,6 +16,38 @@ void main() {
     expect(await verifier.verify(signed.descriptor), isTrue);
   });
 
+  test("signed legacy PKG wire token remains verifiable", () async {
+    final signed = await _signedDescriptor(
+      descriptorJson: {
+        ..._descriptorJson(),
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://cdn.example.com/Example.pkg",
+          "sha256": "b" * 64,
+          "length": 24,
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": ["com.example.app.pkg"],
+            "relaunchAfterInstall": false,
+          },
+        },
+        "minimumUpdaterVersion": "2.6.0",
+      },
+    );
+    final verifier = Ed25519ReleaseSignatureVerifier({
+      _publicKeyId: signed.publicKey,
+    });
+
+    expect(
+      signed.descriptor.install.macosPkg!.launchMode,
+      "privilegedInstallerTool",
+    );
+    expect(await verifier.verify(signed.descriptor), isTrue);
+  });
+
   test("tampered descriptor fails", () async {
     final signed = await _signedDescriptor();
     final tamperedJson = signed.descriptor.toJson()..["version"] = "2.0.1";
@@ -109,12 +141,15 @@ const _privateSeed = <int>[
   31,
 ];
 
-Future<_SignedDescriptor> _signedDescriptor() async {
+Future<_SignedDescriptor> _signedDescriptor({
+  Map<String, dynamic>? descriptorJson,
+}) async {
+  final json = descriptorJson ?? _descriptorJson();
   final algorithm = Ed25519();
   final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
   final publicKey = await keyPair.extractPublicKey();
   final descriptorToSign = ReleaseDescriptor.fromJson({
-    ..._descriptorJson(),
+    ...json,
     "signature": {
       "algorithm": "ed25519",
       "publicKeyId": _publicKeyId,
@@ -126,7 +161,7 @@ Future<_SignedDescriptor> _signedDescriptor() async {
     keyPair: keyPair,
   );
   final descriptor = ReleaseDescriptor.fromJson({
-    ..._descriptorJson(),
+    ...json,
     "signature": {
       "algorithm": "ed25519",
       "publicKeyId": _publicKeyId,

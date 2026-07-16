@@ -1,3 +1,4 @@
+import CommonCrypto
 import Darwin
 import Foundation
 
@@ -60,6 +61,8 @@ enum MacTransactionFaultPoint: String, CaseIterable {
     case beforePreparedJournalFlush
     case afterPreparedJournalFlush
     case beforeStageRename
+    case afterOwnershipRootLocked
+    case beforeOwnershipEntryOpen
     case afterStageRenameBeforeDirectorySync
     case afterStageRename
     case beforeBackupRename
@@ -510,7 +513,8 @@ final class MacFileTransaction {
         if let preservedTargetOwnership {
             try directory.normalizeTreeOwnership(
                 name: paths.preparedName,
-                ownership: preservedTargetOwnership
+                ownership: preservedTargetOwnership,
+                faultInjector: faultInjector
             )
         }
         try faultInjector.hit(.afterStageRenameBeforeDirectorySync)
@@ -746,7 +750,7 @@ final class MacRetainedFileObject {
             Darwin.openat(
                 directory.fileDescriptor,
                 $0,
-                O_RDONLY | O_NOFOLLOW
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC
             )
         }
         guard descriptor >= 0 else {
@@ -770,6 +774,183 @@ final class MacRetainedFileObject {
         }
     }
 
+    func copyContents(to destination: Int32, expectedLength: Int64) throws {
+        guard expectedLength > 0,
+              currentLength() == expectedLength else {
+            throw MacVerifiedInstallerProtectedStageError.copyFailed
+        }
+        var offset: off_t = 0
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while offset < expectedLength {
+            let remaining = expectedLength - offset
+            let count = Darwin.pread(
+                descriptor,
+                &buffer,
+                min(buffer.count, Int(remaining)),
+                offset
+            )
+            guard count > 0 else {
+                throw MacVerifiedInstallerProtectedStageError.copyFailed
+            }
+            var written = 0
+            while written < count {
+                let result = buffer.withUnsafeBytes { bytes in
+                    Darwin.write(
+                        destination,
+                        bytes.baseAddress!.advanced(by: written),
+                        count - written
+                    )
+                }
+                guard result > 0 else {
+                    throw MacVerifiedInstallerProtectedStageError.copyFailed
+                }
+                written += result
+            }
+            offset += off_t(count)
+        }
+        var extra: UInt8 = 0
+        guard Darwin.pread(descriptor, &extra, 1, offset) == 0,
+              currentLength() == expectedLength else {
+            throw MacVerifiedInstallerProtectedStageError.copyFailed
+        }
+    }
+
+    func readData(
+        maximumLength: Int64,
+        expectedLength: Int64? = nil
+    ) throws -> Data {
+        let length = try validatedLength(
+            maximumLength: maximumLength,
+            expectedLength: expectedLength
+        )
+        guard length <= Int64(Int.max) else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        var result = Data()
+        result.reserveCapacity(Int(length))
+        var offset: off_t = 0
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while offset < length {
+            let remaining = length - offset
+            let count = Darwin.pread(
+                descriptor,
+                &buffer,
+                min(buffer.count, Int(remaining)),
+                offset
+            )
+            guard count > 0 else {
+                throw MacFileTransactionError.stageIdentityChanged
+            }
+            result.append(buffer, count: count)
+            offset += off_t(count)
+        }
+        try validateEnd(offset: offset, expectedLength: length)
+        return result
+    }
+
+    func sha256(expectedLength: Int64) throws -> String {
+        let length = try validatedLength(
+            maximumLength: expectedLength,
+            expectedLength: expectedLength
+        )
+        var context = CC_SHA256_CTX()
+        _ = CC_SHA256_Init(&context)
+        var offset: off_t = 0
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while offset < length {
+            let remaining = length - offset
+            let count = Darwin.pread(
+                descriptor,
+                &buffer,
+                min(buffer.count, Int(remaining)),
+                offset
+            )
+            guard count > 0 else {
+                throw MacFileTransactionError.stageIdentityChanged
+            }
+            buffer.withUnsafeBytes { bytes in
+                _ = CC_SHA256_Update(
+                    &context,
+                    bytes.baseAddress,
+                    CC_LONG(count)
+                )
+            }
+            offset += off_t(count)
+        }
+        try validateEnd(offset: offset, expectedLength: length)
+        var digest = [UInt8](
+            repeating: 0,
+            count: Int(CC_SHA256_DIGEST_LENGTH)
+        )
+        _ = CC_SHA256_Final(&digest, &context)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    func length(maximumLength: Int64) throws -> Int64 {
+        try validatedLength(
+            maximumLength: maximumLength,
+            expectedLength: nil
+        )
+    }
+
+    func rootOwnedBundleFileMode() throws -> UInt16 {
+        var value = stat()
+        guard Darwin.fstat(descriptor, &value) == 0,
+              value.st_dev == dev_t(identity.device),
+              value.st_ino == ino_t(identity.inode),
+              value.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        let mode = value.st_mode & mode_t(0o7777)
+        guard value.st_flags == 0,
+              mode & 0o7000 == 0,
+              mode & 0o022 == 0,
+              mode & 0o004 == 0o004,
+              (mode & 0o111 == 0 || mode & 0o101 == 0o101) else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        return UInt16(mode)
+    }
+
+    private func validatedLength(
+        maximumLength: Int64,
+        expectedLength: Int64?
+    ) throws -> Int64 {
+        var value = stat()
+        guard maximumLength >= 0,
+              Darwin.fstat(descriptor, &value) == 0,
+              value.st_dev == dev_t(identity.device),
+              value.st_ino == ino_t(identity.inode),
+              value.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              value.st_size >= 0,
+              value.st_size <= maximumLength,
+              expectedLength.map({ value.st_size == $0 }) ?? true else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        return value.st_size
+    }
+
+    private func validateEnd(
+        offset: off_t,
+        expectedLength: Int64
+    ) throws {
+        var extra: UInt8 = 0
+        guard offset == expectedLength,
+              Darwin.pread(descriptor, &extra, 1, offset) == 0,
+              currentLength() == expectedLength else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+    }
+
+    private func currentLength() -> Int64? {
+        var value = stat()
+        guard Darwin.fstat(descriptor, &value) == 0,
+              value.st_size >= 0 else {
+            return nil
+        }
+        return value.st_size
+    }
+
     deinit {
         _ = Darwin.close(descriptor)
     }
@@ -783,7 +964,7 @@ final class MacTransactionDirectory {
     init(url: URL) throws {
         self.url = url.standardizedFileURL
         fileDescriptor = self.url.path.withCString {
-            Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         }
         guard fileDescriptor >= 0 else {
             throw MacFileTransactionError.filesystemOperationFailed
@@ -906,7 +1087,9 @@ final class MacTransactionDirectory {
 
     func normalizeTreeOwnership(
         name: String,
-        ownership: MacFileOwnership
+        ownership: MacFileOwnership,
+        faultInjector: any MacTransactionFaultInjecting =
+            NoMacTransactionFaultInjector()
     ) throws {
         try validatePathIdentity()
         let initialIdentity = try identity(
@@ -929,76 +1112,253 @@ final class MacTransactionDirectory {
               Self.from(rootStatus) == initialIdentity else {
             throw MacFileTransactionError.stageIdentityChanged
         }
-        let rootMode = rootStatus.st_mode & mode_t(0o7777)
-        guard Darwin.fchown(
-            rootDescriptor,
-            Darwin.geteuid(),
-            Darwin.getegid()
-        ) == 0,
-            Darwin.fchmod(rootDescriptor, mode_t(0o700)) == 0
-        else {
-            throw MacFileTransactionError.filesystemOperationFailed
-        }
-
-        let rootURL = URL(
-            fileURLWithPath: try Self.canonicalPath(
-                url.appendingPathComponent(name, isDirectory: true)
-            ),
-            isDirectory: true
+        try normalizeDirectoryOwnership(
+            descriptor: rootDescriptor,
+            originalStatus: rootStatus,
+            ownership: ownership,
+            faultInjector: faultInjector,
+            isRoot: true
         )
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: nil,
-            options: []
+        guard Self.sameNode(
+            initialIdentity,
+            try identity(name: name, rejectSymbolicLink: true)
         ) else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
+        try validatePathIdentity()
+    }
+
+    private func normalizeDirectoryOwnership(
+        descriptor: Int32,
+        originalStatus: stat,
+        ownership: MacFileOwnership,
+        faultInjector: any MacTransactionFaultInjecting,
+        isRoot: Bool
+    ) throws {
+        let originalMode = originalStatus.st_mode & mode_t(0o7777)
+        guard originalStatus.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+              Darwin.fchflags(descriptor, 0) == 0 else {
             throw MacFileTransactionError.filesystemOperationFailed
         }
-        let rootPrefix = rootURL.path.hasSuffix("/")
-            ? rootURL.path : rootURL.path + "/"
-        for case let entryURL as URL in enumerator {
-            guard entryURL.path.hasPrefix(rootPrefix) else {
-                throw MacFileTransactionError.filesystemOperationFailed
+        var unlockedStatus = stat()
+        guard Darwin.fstat(descriptor, &unlockedStatus) == 0,
+              Self.sameNode(originalStatus, unlockedStatus),
+              unlockedStatus.st_flags == 0,
+              originalMode & 0o7000 == 0,
+              originalMode & 0o022 == 0,
+              originalMode & 0o005 == 0o005,
+              Darwin.fchown(
+                  descriptor,
+                  Darwin.geteuid(),
+                  Darwin.getegid()
+              ) == 0,
+              Darwin.fchmod(descriptor, mode_t(0o700)) == 0 else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        if isRoot {
+            try faultInjector.hit(.afterOwnershipRootLocked)
+        }
+        let duplicate = Darwin.dup(descriptor)
+        guard duplicate >= 0, let stream = Darwin.fdopendir(duplicate) else {
+            if duplicate >= 0 { _ = Darwin.close(duplicate) }
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        defer { _ = Darwin.closedir(stream) }
+        errno = 0
+        while let entry = Darwin.readdir(stream) {
+            let entryName = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(
+                    to: CChar.self,
+                    capacity: Int(MAXNAMLEN) + 1
+                ) { String(cString: $0) }
             }
-            var entryStatus = stat()
-            guard entryURL.path.withCString({
-                Darwin.lstat($0, &entryStatus)
-            }) == 0 else {
-                throw MacFileTransactionError.filesystemOperationFailed
-            }
-            let type = entryStatus.st_mode & mode_t(S_IFMT)
-            guard type == mode_t(S_IFDIR)
-                || type == mode_t(S_IFREG)
-                || type == mode_t(S_IFLNK) else {
-                throw MacFileTransactionError.filesystemOperationFailed
-            }
-            let entryMode = entryStatus.st_mode & mode_t(0o7777)
-            guard entryURL.path.withCString({
-                Darwin.lchown(
+            if entryName == "." || entryName == ".." { continue }
+            var before = stat()
+            let status = entryName.withCString {
+                Darwin.fstatat(
+                    descriptor,
                     $0,
-                    ownership.userIdentifier,
-                    ownership.groupIdentifier
+                    &before,
+                    AT_SYMLINK_NOFOLLOW
                 )
-            }) == 0 else {
+            }
+            let kind = before.st_mode & mode_t(S_IFMT)
+            let mode = before.st_mode & mode_t(0o7777)
+            guard status == 0,
+                  kind == mode_t(S_IFDIR)
+                    || kind == mode_t(S_IFREG)
+                    || kind == mode_t(S_IFLNK) else {
                 throw MacFileTransactionError.filesystemOperationFailed
             }
-            if type != mode_t(S_IFLNK) {
-                guard entryURL.path.withCString({
-                    Darwin.chmod($0, entryMode)
+            try faultInjector.hit(.beforeOwnershipEntryOpen)
+            switch kind {
+            case mode_t(S_IFDIR):
+                let child = entryName.withCString {
+                    Darwin.openat(
+                        descriptor,
+                        $0,
+                        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+                    )
+                }
+                guard child >= 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                defer { _ = Darwin.close(child) }
+                var opened = stat()
+                guard Darwin.fstat(child, &opened) == 0,
+                      Self.sameNode(before, opened) else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                try normalizeDirectoryOwnership(
+                    descriptor: child,
+                    originalStatus: opened,
+                    ownership: ownership,
+                    faultInjector: faultInjector,
+                    isRoot: false
+                )
+            case mode_t(S_IFREG):
+                let child = entryName.withCString {
+                    Darwin.openat(
+                        descriptor,
+                        $0,
+                        O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
+                    )
+                }
+                guard child >= 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                defer { _ = Darwin.close(child) }
+                var opened = stat()
+                guard Darwin.fstat(child, &opened) == 0,
+                      Self.sameNode(before, opened),
+                      Darwin.fchflags(child, 0) == 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                var unlocked = stat()
+                guard Darwin.fstat(child, &unlocked) == 0,
+                      Self.sameNode(opened, unlocked),
+                      unlocked.st_flags == 0,
+                      mode & 0o7000 == 0,
+                      mode & 0o022 == 0,
+                      mode & 0o004 == 0o004,
+                      (mode & 0o111 == 0 || mode & 0o101 == 0o101),
+                      Darwin.fchown(
+                          child,
+                          ownership.userIdentifier,
+                          ownership.groupIdentifier
+                      ) == 0,
+                      Darwin.fchmod(child, mode) == 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                try Self.validateNormalizedNode(
+                    descriptor: child,
+                    identity: opened,
+                    mode: mode,
+                    ownership: ownership
+                )
+            case mode_t(S_IFLNK):
+                let child = entryName.withCString {
+                    Darwin.openat(
+                        descriptor,
+                        $0,
+                        O_RDONLY | O_SYMLINK | O_CLOEXEC
+                    )
+                }
+                guard child >= 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                defer { _ = Darwin.close(child) }
+                var opened = stat()
+                guard Darwin.fstat(child, &opened) == 0,
+                      Self.sameNode(before, opened),
+                      Darwin.fchflags(child, 0) == 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                var unlocked = stat()
+                guard Darwin.fstat(child, &unlocked) == 0,
+                      Self.sameNode(opened, unlocked),
+                      unlocked.st_flags == 0,
+                      mode & 0o7000 == 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+                guard entryName.withCString({
+                    Darwin.fchownat(
+                        descriptor,
+                        $0,
+                        ownership.userIdentifier,
+                        ownership.groupIdentifier,
+                        AT_SYMLINK_NOFOLLOW
+                    )
                 }) == 0 else {
                     throw MacFileTransactionError.filesystemOperationFailed
                 }
+                var after = stat()
+                guard entryName.withCString({
+                    Darwin.fstatat(
+                        descriptor,
+                        $0,
+                        &after,
+                        AT_SYMLINK_NOFOLLOW
+                    )
+                }) == 0,
+                    Self.sameNode(before, after),
+                    after.st_uid == ownership.userIdentifier,
+                    after.st_gid == ownership.groupIdentifier,
+                    after.st_flags == 0 else {
+                    throw MacFileTransactionError.stageIdentityChanged
+                }
+            default:
+                throw MacFileTransactionError.filesystemOperationFailed
             }
+            errno = 0
         }
-        guard Darwin.fchown(
-            rootDescriptor,
-            ownership.userIdentifier,
-            ownership.groupIdentifier
-        ) == 0,
-            Darwin.fchmod(rootDescriptor, rootMode) == 0
-        else {
+        guard errno == 0,
+              Darwin.fchown(
+                  descriptor,
+                  ownership.userIdentifier,
+                  ownership.groupIdentifier
+              ) == 0,
+              Darwin.fchmod(descriptor, originalMode) == 0 else {
             throw MacFileTransactionError.filesystemOperationFailed
         }
-        try validatePathIdentity()
+        try Self.validateNormalizedNode(
+            descriptor: descriptor,
+            identity: originalStatus,
+            mode: originalMode,
+            ownership: ownership
+        )
+    }
+
+    private static func sameNode(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev
+            && lhs.st_ino == rhs.st_ino
+            && lhs.st_mode & mode_t(S_IFMT) == rhs.st_mode & mode_t(S_IFMT)
+    }
+
+    private static func sameNode(
+        _ lhs: MacFileIdentity,
+        _ rhs: MacFileIdentity
+    ) -> Bool {
+        lhs.device == rhs.device
+            && lhs.inode == rhs.inode
+            && lhs.mode & UInt16(S_IFMT) == rhs.mode & UInt16(S_IFMT)
+    }
+
+    private static func validateNormalizedNode(
+        descriptor: Int32,
+        identity: stat,
+        mode: mode_t,
+        ownership: MacFileOwnership
+    ) throws {
+        var current = stat()
+        guard Darwin.fstat(descriptor, &current) == 0,
+              sameNode(identity, current),
+              current.st_uid == ownership.userIdentifier,
+              current.st_gid == ownership.groupIdentifier,
+              current.st_mode & mode_t(0o7777) == mode,
+              current.st_flags == 0 else {
+            throw MacFileTransactionError.stageIdentityChanged
+        }
     }
 
     private static func identity(descriptor: Int32) throws -> MacFileIdentity {
@@ -1007,15 +1367,6 @@ final class MacTransactionDirectory {
             throw MacFileTransactionError.filesystemOperationFailed
         }
         return from(value)
-    }
-
-    private static func canonicalPath(_ url: URL) throws -> String {
-        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
-        guard url.path.withCString({ Darwin.realpath($0, &buffer) })
-            != nil else {
-            throw MacFileTransactionError.filesystemOperationFailed
-        }
-        return String(cString: buffer)
     }
 
     private static func from(_ value: stat) -> MacFileIdentity {

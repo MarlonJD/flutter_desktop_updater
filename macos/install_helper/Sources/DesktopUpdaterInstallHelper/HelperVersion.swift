@@ -12,6 +12,7 @@ enum HelperCommand: Equatable {
     case testParseProtocol
     case oneShotService
     case oneShotRecovery
+    case verifiedInstallerWorker
     case privilegedService
 
     static func parse(arguments: [String]) throws -> HelperCommand {
@@ -24,6 +25,8 @@ enum HelperCommand: Equatable {
             return .oneShotService
         case ["--one-shot-recovery"]:
             return .oneShotRecovery
+        case ["--verified-installer-worker"]:
+            return .verifiedInstallerWorker
         case []:
             return .privilegedService
         default:
@@ -62,6 +65,9 @@ enum HelperCommand: Equatable {
                 throw HelperBootstrapError.oneShotRecoveryUnavailable
             }
             try oneShotRecoveryRuntime.run()
+            return nil
+        case .verifiedInstallerWorker:
+            try MacInstallerWorkerRuntime.run(requestData: protocolInput)
             return nil
         case .privilegedService:
             try privilegedServiceRuntime.run()

@@ -26,6 +26,7 @@ import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:path/path.dart" as path;
 
 export "package:desktop_updater/src/core/update_client.dart"
     show MinimumOSSupportChecker;
@@ -909,8 +910,14 @@ class DesktopUpdaterController extends ChangeNotifier {
           var status = await DesktopUpdaterPlatform.instance
               .queryNativeInstallTransaction(transactionId);
           if (status?.requiresRecovery ?? false) {
-            status = await DesktopUpdaterPlatform.instance
-                .recoverNativeInstallTransaction(transactionId);
+            const maximumRecoveryAttempts = 6;
+            var attempts = 0;
+            do {
+              status = await DesktopUpdaterPlatform.instance
+                  .recoverNativeInstallTransaction(transactionId);
+              attempts += 1;
+            } while ((status?.awaitsCallerExit ?? false) &&
+                attempts < maximumRecoveryAttempts);
           }
           nativeStatus = status;
         }
@@ -934,7 +941,10 @@ class DesktopUpdaterController extends ChangeNotifier {
       }
       if (nativeStatus != null && !nativeStatus.isTerminalSuccess) {
         if (nativeStatus.isTerminalFailure) {
-          await _clearPendingRecoveryMarker();
+          final cleaned = await _cleanupRecoveredOwnedStage(marker);
+          if (cleaned) {
+            await _clearPendingRecoveryMarker();
+          }
         }
         _failRecoveredInstall(
           marker,
@@ -973,6 +983,15 @@ class DesktopUpdaterController extends ChangeNotifier {
     final currentAppVersion = _formatVersionInfo(currentVersion);
     _currentAppVersion = currentAppVersion ?? marker.appVersion;
     if (_matchesRecoveredTarget(currentVersion, marker)) {
+      if (!await _cleanupRecoveredOwnedStage(marker)) {
+        _failRecoveredInstall(
+          marker,
+          StateError("Completed install stage cleanup failed."),
+          message: "Completed install stage cleanup failed.",
+          appVersion: _currentAppVersion,
+        );
+        return;
+      }
       await _clearPendingRecoveryMarker();
       _state = const UpdateIdle();
       notifyListeners();
@@ -1060,6 +1079,64 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Recovery marker clear failed.",
         error: error,
       );
+    }
+  }
+
+  Future<bool> _cleanupRecoveredOwnedStage(
+    UpdateInstallRecoveryMarker marker,
+  ) async {
+    final stagingPath = marker.stagingPath;
+    if (stagingPath == null || stagingPath.isEmpty) {
+      return true;
+    }
+    var stageRoot = Directory(stagingPath);
+    if (!path.basename(stageRoot.path).startsWith(
+          desktopUpdaterStagingPrefix,
+        )) {
+      stageRoot = stageRoot.parent;
+    }
+    final stageName = path.basename(stageRoot.path);
+    if (!stageName.startsWith(desktopUpdaterStagingPrefix)) {
+      return true;
+    }
+    if (await FileSystemEntity.type(
+          stageRoot.path,
+          followLinks: false,
+        ) ==
+        FileSystemEntityType.notFound) {
+      return true;
+    }
+    final nonce = stageName.substring(desktopUpdaterStagingPrefix.length);
+    try {
+      await deleteOwnedStagingDirectory(
+        parent: stageRoot.parent,
+        stageRoot: stageRoot,
+        nonce: nonce,
+      );
+      _recordCleanupReport(
+        _buildCleanupReport(
+          stagingPath: stagingPath,
+          cleanupAttempted: true,
+          cleanupSucceeded: true,
+        ),
+      );
+      return true;
+    } on Object catch (error) {
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.warning,
+        message: "Recovered install stage cleanup failed.",
+        error: error,
+      );
+      _recordCleanupReport(
+        _buildCleanupReport(
+          stagingPath: stagingPath,
+          cleanupAttempted: true,
+          cleanupSucceeded: false,
+          errorText: error.toString(),
+        ),
+      );
+      return false;
     }
   }
 

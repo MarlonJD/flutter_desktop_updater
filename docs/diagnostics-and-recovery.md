@@ -38,9 +38,12 @@ encryption, and upload consent.
 
 ## macOS Privileged Helper Approval
 
-macOS updates use the bundled helper without elevation when the target parent
-is writable. That unprivileged path does not register a background item. A
-protected target uses the signed `SMAppService` daemon on macOS 13 or later and
+macOS directory-replacement updates use the bundled helper without elevation
+when the target parent is writable. That unprivileged path does not register a
+background item. A protected directory target uses the signed `SMAppService`
+daemon on macOS 13 or later. PKG `macosInstaller` +
+`verifiedInstallerHandoff` always uses the daemon because its fixed
+`/usr/sbin/installer` operation requires root. The daemon path
 fails before mutation until an administrator approves it in System Settings.
 Approval is a protected-target setup gate, not an expected prompt for every
 ordinary update. The updater reuses an enabled daemon. When ServiceManagement

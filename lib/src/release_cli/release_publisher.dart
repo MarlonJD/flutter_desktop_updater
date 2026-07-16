@@ -289,7 +289,7 @@ class ReleasePublisher {
           channel: config.channel,
           artifactUrl: layout.artifactUrl,
           installStrategy: "pkgInstaller",
-          minimumUpdaterVersion: "2.6.0",
+          minimumUpdaterVersion: "2.7.0",
         ),
         config: config.macos.pkg,
         publishConfig: config.macos,

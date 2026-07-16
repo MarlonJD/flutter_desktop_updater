@@ -5,6 +5,32 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class MacOneShotAuthorizationTests: XCTestCase {
+    func testRetainedStageReadsRejectOversizedFilesBeforeAllocation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("oversized.json")
+        FileManager.default.createFile(atPath: url.path, contents: Data())
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 2 * 1_048_576)
+        try handle.close()
+        let directory = try MacTransactionDirectory(url: root)
+        let retained = try MacRetainedFileObject(
+            directory: directory,
+            name: url.lastPathComponent
+        )
+
+        XCTAssertThrowsError(
+            try retained.readData(maximumLength: 1_048_576)
+        )
+    }
+
     func testSystemCallerInspectorBindsLiveProcessAndSignedBundle() throws {
         let fixture = try SignedRunningApplicationFixture()
         defer { fixture.remove() }
@@ -159,6 +185,97 @@ final class MacOneShotAuthorizationTests: XCTestCase {
         _ = try validator.validate(request, policy: policy)
     }
 
+    func testValidatorAcceptsSealedMacOSInstallerStrategy() throws {
+        let fixture = try MacTransactionFixture(externalStage: true)
+        defer { fixture.remove() }
+        let policy = testPolicy(
+            installRoot: fixture.rootURL.path,
+            includeInstallerStrategy: true
+        )
+        let directoryRequest = try authorizationRequest(
+            targetURL: fixture.targetURL,
+            stageURL: fixture.stageURL,
+            policy: policy
+        )
+        let request = NativeInstallTransactionRequestV1(
+            schemaVersion: directoryRequest.schemaVersion,
+            protocolVersion: directoryRequest.protocolVersion,
+            transactionID: directoryRequest.transactionID,
+            policyID: directoryRequest.policyID,
+            packageID: directoryRequest.packageID,
+            strategy: "verifiedInstallerHandoff",
+            provider: "macosInstaller",
+            target: directoryRequest.target,
+            currentIdentity: directoryRequest.currentIdentity,
+            desiredIdentity: directoryRequest.desiredIdentity,
+            stage: directoryRequest.stage,
+            signedDescriptor: directoryRequest.signedDescriptor,
+            caller: directoryRequest.caller,
+            requestNonce: directoryRequest.requestNonce,
+            diagnosticsDestination:
+                directoryRequest.diagnosticsDestination
+        )
+        let validator = MacOneShotInstallRequestValidator(
+            parentProcessIdentifier: {
+                Int32(request.caller.processIdentifier)
+            },
+            callerInspector: RecordingMacCallerEvidenceInspector(
+                evidence: MacCallerInstallEvidence(
+                    processIdentifier: request.caller.processIdentifier,
+                    processStartIdentity:
+                        request.caller.processStartIdentity,
+                    executableSHA256: request.caller.executableSHA256,
+                    signerIdentity: request.caller.signerIdentity,
+                    packageID: request.packageID,
+                    targetURL: fixture.targetURL,
+                    currentVersion: request.currentIdentity.version,
+                    currentBuildNumber:
+                        request.currentIdentity.buildNumber,
+                    currentPackageIdentitySHA256:
+                        request.currentIdentity.packageIdentitySHA256,
+                    targetIdentityProofSHA256:
+                        request.target.identityProofSHA256
+                )
+            ),
+            stageInspector: RecordingMacStageEvidenceInspector(
+                evidence: MacStageInstallEvidence(
+                    stageURL: fixture.stageURL,
+                    installerExpectation:
+                        MacVerifiedInstallerExpectation(
+                            installerURL: fixture.stageURL
+                                .appendingPathComponent("installer.pkg"),
+                            kind: .pkg,
+                            targetURL: fixture.targetURL,
+                            packageIdentifier: request.packageID,
+                            expectedVersion:
+                                request.desiredIdentity.version,
+                            expectedBuildNumber:
+                                request.desiredIdentity.buildNumber,
+                            designatedRequirement:
+                                policy.allowedApplicationSigner.value,
+                            artifactSHA256:
+                                request.stage.artifactSHA256,
+                            artifactLength:
+                                request.stage.artifactLength,
+                            expectedPackageIdentifiers: [
+                                "com.example.app.pkg",
+                            ],
+                            descriptorSHA256:
+                                request.signedDescriptor.canonicalSHA256,
+                            provenanceSHA256:
+                                request.stage.provenanceSHA256
+                        ),
+                    handoff: MacVerifiedInstallerHandoff(
+                        verifier: AuthorizationInstallerChecker(),
+                        runner: AuthorizationInstallerRunner()
+                    )
+                )
+            )
+        )
+
+        _ = try validator.validate(request, policy: policy)
+    }
+
     func testRejectsParentPidOrAnyCallerEvidenceMismatchBeforeLock() throws {
         let fixture = try MacTransactionFixture(externalStage: true)
         defer { fixture.remove() }
@@ -268,6 +385,308 @@ final class MacOneShotAuthorizationTests: XCTestCase {
             )
         }
     }
+
+    @available(macOS 10.15, *)
+    func testSystemStageInspectorRequiresBundledPrivilegedHelper() throws {
+        let fixture = try SignedStageFixture(includeHelper: false)
+        defer { fixture.remove() }
+        let policy = testPolicy(
+            installRoot: fixture.installRootURL.path,
+            releasePublicKey: fixture.publicKey
+        )
+
+        XCTAssertThrowsError(
+            try SystemMacStageInstallEvidenceInspector().inspect(
+                request: fixture.request(policy: policy),
+                policy: policy
+            )
+        )
+    }
+
+    @available(macOS 10.15, *)
+    func testSystemStageInspectorRequiresExecutableMainAndHelper() throws {
+        for (mainMode, helperMode) in [
+            (mode_t(0o644), mode_t(0o755)),
+            (mode_t(0o755), mode_t(0o644)),
+            (mode_t(0o710), mode_t(0o755)),
+            (mode_t(0o755), mode_t(0o710)),
+        ] {
+            let fixture = try SignedStageFixture(
+                mainMode: mainMode,
+                helperMode: helperMode
+            )
+            defer { fixture.remove() }
+            let policy = testPolicy(
+                installRoot: fixture.installRootURL.path,
+                releasePublicKey: fixture.publicKey
+            )
+
+            XCTAssertThrowsError(
+                try SystemMacStageInstallEvidenceInspector().inspect(
+                    request: fixture.request(policy: policy),
+                    policy: policy
+                ),
+                "main=\(String(mainMode, radix: 8)) "
+                    + "helper=\(String(helperMode, radix: 8))"
+            )
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func testSystemStageInspectorRejectsInaccessibleBundleTree() throws {
+        for (contentsMode, infoMode) in [
+            (mode_t(0o700), mode_t(0o644)),
+            (mode_t(0o755), mode_t(0o600)),
+        ] {
+            let fixture = try SignedStageFixture(
+                contentsMode: contentsMode,
+                infoMode: infoMode
+            )
+            defer { fixture.remove() }
+            let policy = testPolicy(
+                installRoot: fixture.installRootURL.path,
+                releasePublicKey: fixture.publicKey
+            )
+
+            XCTAssertThrowsError(
+                try SystemMacStageInstallEvidenceInspector().inspect(
+                    request: fixture.request(policy: policy),
+                    policy: policy
+                ),
+                "contents=\(String(contentsMode, radix: 8)) "
+                    + "info=\(String(infoMode, radix: 8))"
+            )
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func testSystemStageInspectorAuthenticatesSignedPKGProviderEvidence()
+        throws
+    {
+        for launchMode in ["installerApp", "privilegedInstallerTool"] {
+            let fixture = try SignedPKGStageFixture(launchMode: launchMode)
+            defer { fixture.remove() }
+            let checker = AuthorizationInstallerChecker()
+            let policy = testPolicy(
+                installRoot: fixture.installRootURL.path,
+                releasePublicKey: fixture.publicKey,
+                includeInstallerStrategy: true
+            )
+            let request = try fixture.request(policy: policy)
+
+            let evidence = try SystemMacStageInstallEvidenceInspector(
+                installerVerifierFactory:
+                    AuthorizationInstallerCheckerFactory(checker: checker)
+            ).inspect(request: request, policy: policy)
+
+            guard case let .verifiedInstaller(expectation, _) = evidence.payload
+            else {
+                return XCTFail("expected verified installer evidence")
+            }
+            XCTAssertEqual(evidence.stageURL, fixture.stageRootURL)
+            XCTAssertEqual(expectation.installerURL, fixture.installerURL)
+            XCTAssertEqual(expectation.targetURL.path, fixture.targetURL.path)
+            XCTAssertEqual(
+                expectation.expectedPackageIdentifiers,
+                ["com.example.app.pkg"]
+            )
+            XCTAssertEqual(
+                expectation.descriptorSHA256,
+                fixture.descriptorSHA256
+            )
+            XCTAssertEqual(expectation.provenanceSHA256, fixture.markerSHA256)
+            XCTAssertEqual(checker.verifiedInstallerCount, 1)
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func testSystemStageInspectorRejectsPKGDescriptorWithoutBuildNumber()
+        throws
+    {
+        let fixture = try SignedPKGStageFixture(buildNumber: nil)
+        defer { fixture.remove() }
+        let policy = testPolicy(
+            installRoot: fixture.installRootURL.path,
+            releasePublicKey: fixture.publicKey,
+            includeInstallerStrategy: true
+        )
+
+        XCTAssertThrowsError(
+            try SystemMacStageInstallEvidenceInspector(
+                installerVerifierFactory:
+                    AuthorizationInstallerCheckerFactory(
+                        checker: AuthorizationInstallerChecker()
+                    )
+            ).inspect(
+                request: fixture.request(policy: policy),
+                policy: policy
+            )
+        )
+    }
+}
+
+@available(macOS 10.15, *)
+private final class SignedPKGStageFixture {
+    let rootURL: URL
+    let installRootURL: URL
+    let targetURL: URL
+    let stageRootURL: URL
+    let installerURL: URL
+    let publicKey: Data
+    let descriptorSHA256: String
+    let markerSHA256: String
+
+    private let nonce = "22222222-2222-4222-8222-222222222222"
+    private let artifactSHA256: String
+    private let artifactLength: Int64
+    private let signatureBase64: String
+    private let desiredBuildNumber: Int64
+
+    init(
+        launchMode: String = "privilegedInstallerTool",
+        buildNumber: Int64? = 290
+    ) throws {
+        desiredBuildNumber = buildNumber ?? 0
+        rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString,
+            isDirectory: true
+        )
+        installRootURL = rootURL.appendingPathComponent(
+            "Applications",
+            isDirectory: true
+        )
+        targetURL = installRootURL.appendingPathComponent("Example.app")
+        stageRootURL = rootURL.appendingPathComponent(
+            "desktop_updater_stage_\(nonce)",
+            isDirectory: true
+        )
+        installerURL = stageRootURL.appendingPathComponent("installer.pkg")
+        try FileManager.default.createDirectory(
+            at: targetURL,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: stageRootURL,
+            withIntermediateDirectories: true
+        )
+        let artifact = Data("signed package bytes".utf8)
+        try artifact.write(to: installerURL)
+        artifactSHA256 = testSHA256(artifact)
+        artifactLength = Int64(artifact.count)
+
+        let key = Curve25519.Signing.PrivateKey()
+        publicKey = key.publicKey.rawRepresentation
+        var descriptor: [String: Any] = [
+            "schemaVersion": 3,
+            "packageId": "com.example.app",
+            "appName": "Example.app",
+            "version": "2.9.0",
+            "platform": "macos",
+            "channel": "stable",
+            "artifact": [
+                "kind": "pkgInstaller",
+                "url": "https://updates.example.test/Example.pkg",
+                "sha256": artifactSHA256,
+                "length": artifactLength,
+            ],
+            "install": [
+                "strategy": "pkgInstaller",
+                "macosPkg": [
+                    "launchMode": launchMode,
+                    "expectedPackageIds": ["com.example.app.pkg"],
+                    "relaunchAfterInstall": false,
+                ],
+            ],
+            "minimumUpdaterVersion": "2.0.0",
+            "generatedAt": "2026-07-16T00:00:00.000Z",
+            "signature": [
+                "algorithm": "ed25519",
+                "publicKeyId": "stable-2026",
+                "value": "",
+            ],
+        ]
+        if let buildNumber {
+            descriptor["buildNumber"] = buildNumber
+        }
+        let signature = try key.signature(for: testCanonicalJSON(descriptor))
+        signatureBase64 = signature.base64EncodedString()
+        descriptor["signature"] = [
+            "algorithm": "ed25519",
+            "publicKeyId": "stable-2026",
+            "value": signatureBase64,
+        ]
+        let canonicalDescriptor = try testCanonicalJSON(descriptor)
+        descriptorSHA256 = testSHA256(canonicalDescriptor)
+        try JSONSerialization.data(
+            withJSONObject: descriptor,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ).write(
+            to: stageRootURL.appendingPathComponent(
+                ".desktop_updater_release_manifest.json"
+            )
+        )
+        let marker: [String: Any] = [
+            "schemaVersion": 1,
+            "nonce": nonce,
+            "packageId": "com.example.app",
+            "descriptorSha256": descriptorSHA256,
+            "artifactSha256": artifactSHA256,
+            "entries": try stageInventory(at: stageRootURL),
+        ]
+        let markerData = try testCanonicalJSON(marker)
+        markerSHA256 = testSHA256(markerData)
+        try markerData.write(
+            to: stageRootURL.appendingPathComponent(
+                ".desktop_updater_stage_provenance.json"
+            )
+        )
+    }
+
+    func request(policy: MacSealedInstallPolicyV1) throws
+        -> NativeInstallTransactionRequestV1
+    {
+        let base = try authorizationRequest(
+            targetURL: targetURL,
+            stageURL: stageRootURL,
+            policy: policy
+        )
+        return NativeInstallTransactionRequestV1(
+            schemaVersion: base.schemaVersion,
+            protocolVersion: base.protocolVersion,
+            transactionID: base.transactionID,
+            policyID: base.policyID,
+            packageID: base.packageID,
+            strategy: "verifiedInstallerHandoff",
+            provider: "macosInstaller",
+            target: base.target,
+            currentIdentity: base.currentIdentity,
+            desiredIdentity: NativeInstallVersionIdentityV1(
+                version: "2.9.0",
+                buildNumber: desiredBuildNumber,
+                packageIdentitySHA256: descriptorSHA256
+            ),
+            stage: NativeInstallStageV1(
+                pathHint: stageRootURL.path,
+                ownershipNonce: testSHA256(Data(nonce.utf8)),
+                provenanceSHA256: markerSHA256,
+                artifactSHA256: artifactSHA256,
+                artifactLength: artifactLength
+            ),
+            signedDescriptor: NativeInstallSignedDescriptorV1(
+                canonicalSHA256: descriptorSHA256,
+                signatureAlgorithm: "ed25519",
+                keyID: "stable-2026",
+                signatureBase64: signatureBase64
+            ),
+            caller: base.caller,
+            requestNonce: base.requestNonce,
+            diagnosticsDestination: base.diagnosticsDestination
+        )
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
 }
 
 @available(macOS 10.15, *)
@@ -287,7 +706,13 @@ private final class SignedStageFixture {
     private let signatureBase64: String
     private let executableSHA256: String
 
-    init() throws {
+    init(
+        includeHelper: Bool = true,
+        mainMode: mode_t = 0o755,
+        helperMode: mode_t = 0o755,
+        contentsMode: mode_t = 0o755,
+        infoMode: mode_t = 0o644
+    ) throws {
         rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
             isDirectory: true
@@ -319,6 +744,21 @@ private final class SignedStageFixture {
             at: URL(fileURLWithPath: "/usr/bin/true"),
             to: executableURL
         )
+        XCTAssertEqual(Darwin.chmod(executableURL.path, mainMode), 0)
+        if includeHelper {
+            let helperURL = bundleURL.appendingPathComponent(
+                "Contents/Helpers/DesktopUpdaterInstallHelper"
+            )
+            try FileManager.default.createDirectory(
+                at: helperURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.copyItem(
+                at: URL(fileURLWithPath: "/usr/bin/true"),
+                to: helperURL
+            )
+            XCTAssertEqual(Darwin.chmod(helperURL.path, helperMode), 0)
+        }
         let info = try PropertyListSerialization.data(
             fromPropertyList: [
                 "CFBundleIdentifier": "com.example.app",
@@ -330,10 +770,17 @@ private final class SignedStageFixture {
             format: .xml,
             options: 0
         )
-        try info.write(
-            to: bundleURL.appendingPathComponent("Contents/Info.plist")
-        )
+        let infoURL = bundleURL.appendingPathComponent("Contents/Info.plist")
+        try info.write(to: infoURL)
         try signBundle(bundleURL)
+        XCTAssertEqual(Darwin.chmod(infoURL.path, infoMode), 0)
+        XCTAssertEqual(
+            Darwin.chmod(
+                bundleURL.appendingPathComponent("Contents").path,
+                contentsMode
+            ),
+            0
+        )
         executableSHA256 = testSHA256(try Data(contentsOf: executableURL))
 
         let artifact = Data("verified zip archive".utf8)
@@ -568,6 +1015,66 @@ private final class RecordingMacStageEvidenceInspector:
     }
 }
 
+private final class AuthorizationInstallerChecker:
+    MacVerifiedInstallerChecking
+{
+    private(set) var verifiedInstallerCount = 0
+
+    func verifyInstaller(
+        _ expectation: MacVerifiedInstallerExpectation
+    ) throws -> MacVerifiedInstallerSecurityEvidence {
+        verifiedInstallerCount += 1
+        return MacVerifiedInstallerSecurityEvidence(
+            receiptVersions: Dictionary(
+                uniqueKeysWithValues:
+                    expectation.expectedPackageIdentifiers.map {
+                        ($0, expectation.expectedVersion)
+                    }
+            ),
+            executableSHA256: String(repeating: "e", count: 64),
+            bundleTreeSHA256: String(repeating: "f", count: 64)
+        )
+    }
+
+    func verifyInstalledPackage(identifier _: String, version _: String)
+        throws {}
+}
+
+private final class AuthorizationInstallerCheckerFactory:
+    MacVerifiedInstallerCheckingCreating
+{
+    let checker: AuthorizationInstallerChecker
+
+    init(checker: AuthorizationInstallerChecker) {
+        self.checker = checker
+    }
+
+    func makeVerifier(
+        expectation _: MacVerifiedInstallerExpectation
+    ) throws -> any MacVerifiedInstallerChecking {
+        checker
+    }
+}
+
+private final class AuthorizationInstallerRunner: MacFixedInstallerRunning {
+    func spawnVerifiedInstaller(
+        at _: URL,
+        kind _: MacVerifiedInstallerKind
+    ) throws -> any MacGatedInstallerWorker {
+        AuthorizationInstallerWorker()
+    }
+}
+
+private final class AuthorizationInstallerWorker: MacGatedInstallerWorker {
+    let identity = MacInstallerWorkerIdentity(
+        processIdentifier: 999_999,
+        processStartIdentity: "macos:1:1",
+        providerTransactionIdentity: "provider"
+    )
+
+    func releaseAndWait() throws {}
+}
+
 private func signBundle(_ bundleURL: URL) throws {
     let sign = Process()
     sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
@@ -667,9 +1174,24 @@ private func testRealURL(_ url: URL) throws -> URL {
 
 private func testPolicy(
     installRoot: String,
-    releasePublicKey: Data = Data(repeating: 1, count: 32)
+    releasePublicKey: Data = Data(repeating: 1, count: 32),
+    includeInstallerStrategy: Bool = false
 ) -> MacSealedInstallPolicyV1 {
-    MacSealedInstallPolicyV1(
+    var strategies: Set<MacSealedInstallStrategy> = [
+        MacSealedInstallStrategy(
+            strategy: "directoryReplace",
+            provider: "platformDirectory"
+        ),
+    ]
+    if includeInstallerStrategy {
+        strategies.insert(
+            MacSealedInstallStrategy(
+                strategy: "verifiedInstallerHandoff",
+                provider: "macosInstaller"
+            )
+        )
+    }
+    return MacSealedInstallPolicyV1(
         policyVersion: 1,
         policyID: "com.example.desktop-updater.test",
         applicationPackageID: "com.example.app",
@@ -691,12 +1213,7 @@ private func testPolicy(
                 publicKey: releasePublicKey
             ),
         ],
-        allowedStrategies: [
-            MacSealedInstallStrategy(
-                strategy: "directoryReplace",
-                provider: "platformDirectory"
-            ),
-        ],
+        allowedStrategies: strategies,
         minimumHelperProtocolVersion: 1,
         canonicalSHA256: String(repeating: "e", count: 64)
     )

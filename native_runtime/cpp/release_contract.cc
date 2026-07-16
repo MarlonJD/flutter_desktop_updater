@@ -291,7 +291,8 @@ JsonValue::Array OptionalStringArray(const JsonValue& value,
   return result;
 }
 
-JsonValue NormalizeInstall(const JsonValue& install) {
+JsonValue NormalizeInstall(const JsonValue& install,
+                           bool normalize_legacy_pkg_launch_mode = true) {
   JsonValue::Object normalized;
   normalized.emplace("strategy",
                      JsonValue(RequiredTrimmedString(install, "strategy")));
@@ -343,10 +344,13 @@ JsonValue NormalizeInstall(const JsonValue& install) {
   }
   if (const JsonValue* pkg = install.find("macosPkg")) {
     JsonValue::Object metadata;
-    metadata.emplace(
-        "launchMode",
-        JsonValue(OptionalStringWithDefault(*pkg, "launchMode",
-                                            "installerApp")));
+    const std::string raw_launch_mode =
+        OptionalStringWithDefault(*pkg, "launchMode", "installerApp");
+    metadata.emplace("launchMode",
+                     JsonValue(normalize_legacy_pkg_launch_mode &&
+                                       raw_launch_mode == "installerApp"
+                                   ? "privilegedInstallerTool"
+                                   : raw_launch_mode));
     metadata.emplace(
         "expectedPackageIds",
         JsonValue(OptionalStringArray(*pkg, "expectedPackageIds")));
@@ -380,11 +384,13 @@ void ValidateInstall(const ReleaseDescriptor& descriptor) {
       throw JsonError("Invalid DMG app bundle name.");
     }
   } else if (descriptor.artifact.kind == "pkgInstaller") {
-    if (descriptor.platform != "macos" || strategy != "pkgInstaller") {
+    if (descriptor.platform != "macos" || strategy != "pkgInstaller" ||
+        !descriptor.has_build_number) {
       throw JsonError("Invalid PKG install strategy.");
     }
     const JsonValue& metadata = descriptor.install.at("macosPkg");
-    if (RequiredString(metadata, "launchMode") != "installerApp" ||
+    if (RequiredString(metadata, "launchMode") !=
+            "privilegedInstallerTool" ||
         metadata.at("expectedPackageIds").array().empty()) {
       throw JsonError("Invalid PKG install metadata.");
     }
@@ -645,6 +651,7 @@ ReleaseDescriptor ParseReleaseDescriptor(const std::string& json) {
     result.channel = "stable";
   }
   result.artifact = ParseArtifact(root.at("artifact"));
+  result.wire_install = NormalizeInstall(root.at("install"), false);
   result.install = NormalizeInstall(root.at("install"));
   if (const JsonValue* signature = root.find("signature")) {
     result.has_signature = true;
@@ -683,7 +690,7 @@ ReleaseDescriptor ParseReleaseDescriptor(const std::string& json) {
   normalized.emplace("platform", JsonValue(result.platform));
   normalized.emplace("channel", JsonValue(result.channel));
   normalized.emplace("artifact", result.artifact.raw);
-  normalized.emplace("install", result.install);
+  normalized.emplace("install", result.wire_install);
   if (result.has_signature) {
     JsonValue::Object signature;
     signature.emplace("algorithm", JsonValue(result.signature.algorithm));
@@ -761,7 +768,7 @@ std::string CanonicalSignatureBytes(const ReleaseDescriptor& descriptor) {
   canonical.emplace("platform", JsonValue(descriptor.platform));
   canonical.emplace("channel", JsonValue(descriptor.channel));
   canonical.emplace("artifact", JsonValue(std::move(artifact)));
-  canonical.emplace("install", descriptor.install);
+  canonical.emplace("install", descriptor.wire_install);
   if (descriptor.has_signature) {
     JsonValue::Object signature;
     signature.emplace("algorithm", JsonValue(descriptor.signature.algorithm));

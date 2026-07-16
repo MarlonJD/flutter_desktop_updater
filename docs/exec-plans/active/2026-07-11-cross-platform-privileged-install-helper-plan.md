@@ -542,7 +542,7 @@ terminal alternatives: rolledBack | manualActionRequired
   exit 0; printed `DesktopUpdaterInstallHelper 2.7.0 (protocol 1)`.
 - Exact CocoaPods allowlist: `verified locally` — macOS 26.5.2 arm64;
   `flutter test --no-pub test/macos_native_helper_layout_test.dart test/macos_cocoapods_source_layout_test.dart test/macos_swift_package_test.dart`;
-  exit 0; 23 tests passed and the podspec retained exactly five sources.
+  exit 0; 23 tests passed and the podspec retained exactly six sources.
 - CocoaPods macOS 10.14 compile: `verified locally` — macOS 26.5.2 arm64;
   `RUNNER_TEMP=/private/tmp FLUTTER_ROOT=/Users/marlonjd/Developer/flutter xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path /private/tmp/desktop-updater-swift-module-cache -F /Users/marlonjd/Developer/flutter/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64 macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift`;
   exit 0.
@@ -1439,7 +1439,7 @@ after durable ownership exists; it must not generate a script.
   point, and that every Flutter plugin calls prepare then commit; exit 0.
 - macOS Flutter plugin tests: `blocked` —
   `swift test --package-path macos/desktop_updater` cannot access the existing
-  broken `macos/FlutterFramework` symlink. The exact five-source CocoaPods
+  broken `macos/FlutterFramework` symlink. The exact six-source CocoaPods
   macOS 10.14 `swiftc -typecheck` passed, and repository-root `swift test`
   passed 62 tests with zero failures.
 - Windows Flutter plugin tests: `not run` — no Windows target host is
@@ -1496,7 +1496,7 @@ after durable ownership exists; it must not generate a script.
   - Linux helper/broker, polkit action, and policy templates installed to their
     fixed prefixes, with portable packaging limited to unprivileged mode.
 
-  Reassert the exact CocoaPods five-source allowlist and `DesktopUpdaterKit`
+  Reassert the exact CocoaPods six-source allowlist and `DesktopUpdaterKit`
   module/product name.
 
 - [x] **Step 2: Implement build/embed/install rules**
@@ -1546,7 +1546,7 @@ after durable ownership exists; it must not generate a script.
   3 with canonical SHA-256
   `05247eb6b09f8e88751b2299567fad350a48e9bb7310a53e76a7fdab81ee0be3`.
 - macOS CocoaPods 10.14 Flutter host: `blocked` — no `pod` executable is
-  installed on this host. The exact five-source macOS 10.14 `swiftc -typecheck`
+  installed on this host. The exact six-source macOS 10.14 `swiftc -typecheck`
   and Xcode project graph parse passed; CocoaPods preserves the helper package
   and tooling while the final host-app embed/sign phase remains host-owned.
 - macOS SwiftPM 10.15+ Flutter/native hosts: `verified locally` for a
@@ -1800,7 +1800,7 @@ after durable ownership exists; it must not generate a script.
   prior-version hint.
 - Complete macOS helper ladder: `verified locally`. The privileged helper and
   repo-context DesktopUpdaterKit suites each passed 82/82, and the signed
-  SMAppService transport subset passed 18/18. The exact five-source CocoaPods
+  SMAppService transport subset passed 18/18. The exact six-source CocoaPods
   macOS 10.14 typecheck and the external SwiftPM consumer exited 0. The raw
   `swift test --package-path macos/desktop_updater` command remains `blocked`
   outside a generated Flutter host because `FlutterMacOS` is unavailable; the

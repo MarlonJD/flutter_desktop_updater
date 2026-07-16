@@ -516,14 +516,14 @@
         "install": {
           "strategy": "pkgInstaller",
           "macosPkg": {
-            "launchMode": "installerApp",
+            "launchMode": "privilegedInstallerTool",
             "expectedPackageIds": [
               "com.example.native-contract.pkg"
             ],
             "relaunchAfterInstall": false
           }
         },
-        "minimumUpdaterVersion": "2.6.0",
+        "minimumUpdaterVersion": "2.7.0",
         "minimumOS": {
           "macos": "13.0"
         },
@@ -1173,7 +1173,7 @@
         "install": {
           "strategy": "pkgInstaller",
           "macosPkg": {
-            "launchMode": "installerApp",
+            "launchMode": "privilegedInstallerTool",
             "expectedPackageIds": [
               "com.example.native-contract.pkg",
               {
@@ -1183,7 +1183,7 @@
             "relaunchAfterInstall": false
           }
         },
-        "minimumUpdaterVersion": "2.6.0",
+        "minimumUpdaterVersion": "2.7.0",
         "minimumOS": {
           "macos": "13.0"
         },
@@ -1321,12 +1321,12 @@
         "install": {
           "strategy": "pkgInstaller",
           "macosPkg": {
-            "launchMode": "installerApp",
+            "launchMode": "privilegedInstallerTool",
             "expectedPackageIds": [],
             "relaunchAfterInstall": false
           }
         },
-        "minimumUpdaterVersion": "2.6.0",
+        "minimumUpdaterVersion": "2.7.0",
         "minimumOS": {
           "macos": "13.0"
         },
@@ -1336,7 +1336,41 @@
       "expectedErrorContains": "release.json install.macosPkg.expectedPackageIds must not be empty."
     },
     {
-      "name": "invalid PKG relaunch type",
+      "name": "PKG requires build number",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "privilegedInstallerTool",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.7.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": false,
+      "expectedErrorContains": "release.json buildNumber is required for pkgInstaller artifacts."
+    },
+    {
+      "name": "legacy PKG launch mode is accepted",
       "descriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -1358,10 +1392,44 @@
             "expectedPackageIds": [
               "com.example.native-contract.pkg"
             ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.7.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedValid": true
+    },
+    {
+      "name": "invalid PKG relaunch type",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "privilegedInstallerTool",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
             "relaunchAfterInstall": "false"
           }
         },
-        "minimumUpdaterVersion": "2.6.0",
+        "minimumUpdaterVersion": "2.7.0",
         "minimumOS": {
           "macos": "13.0"
         },

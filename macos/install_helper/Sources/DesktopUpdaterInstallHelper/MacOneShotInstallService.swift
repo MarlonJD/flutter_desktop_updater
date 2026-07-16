@@ -1,11 +1,22 @@
 import Foundation
 
+protocol MacPreparedInstallTransaction: AnyObject {
+    var paths: MacTransactionPaths { get }
+
+    func prepare() throws -> String
+    func authorizeCommit() throws
+    func execute() throws -> MacFileTransactionResult
+    func cancelPrepared() throws
+}
+
+extension MacFileTransaction: MacPreparedInstallTransaction {}
+
 protocol MacOneShotInstallAuthorizing: AnyObject {
     var helperEndpointIdentitySHA256: String { get }
 
     func authorize(
         _ request: NativeInstallTransactionRequestV1
-    ) throws -> MacFileTransaction
+    ) throws -> any MacPreparedInstallTransaction
 }
 
 struct MacOneShotReservationV1: Equatable {
@@ -53,7 +64,7 @@ final class MacOneShotInstallSession {
     private let reservationLifetimeMilliseconds: Int64
     private let lock = NSLock()
     private var state = State.initial
-    private var transaction: MacFileTransaction?
+    private var transaction: (any MacPreparedInstallTransaction)?
     private var reservation: MacOneShotReservationV1?
 
     init(
@@ -71,7 +82,7 @@ final class MacOneShotInstallSession {
 
     func prepare(requestData: Data) throws -> MacOneShotReservationV1 {
         try transition(from: .initial, to: .preparing)
-        var authorized: MacFileTransaction?
+        var authorized: (any MacPreparedInstallTransaction)?
         do {
             let request = try NativeInstallTransactionRequestV1.parse(
                 requestData
@@ -255,7 +266,9 @@ final class MacOneShotInstallSession {
         return reservation
     }
 
-    private func requiredTransaction() throws -> MacFileTransaction {
+    private func requiredTransaction() throws
+        -> any MacPreparedInstallTransaction
+    {
         lock.lock()
         defer { lock.unlock() }
         guard let transaction else {

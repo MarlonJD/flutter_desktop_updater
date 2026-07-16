@@ -9,7 +9,7 @@ const _expectedLedger = <String, String>{
       "verified locally",
   "Task 10 complete local ladder": "verified locally",
   "macOS root SwiftPM tests": "verified locally",
-  "macOS exact CocoaPods 10.14 five-source typecheck": "verified locally",
+  "macOS exact CocoaPods 10.14 six-source typecheck": "verified locally",
   "macOS external SwiftPM consumer": "verified locally",
   "Flutter macOS SwiftPM build and integration": "not run",
   "Flutter macOS CocoaPods build and integration": "not run",
@@ -38,7 +38,8 @@ const _expectedLedger = <String, String>{
   "Linux installed polkit broker CI": "not run",
   "Current remediation head in GitHub Actions": "not run",
   "macOS signed/notarized DMG smoke": "not run",
-  "macOS signed/notarized PKG smoke": "not run",
+  "macOS signed/notarized hosted PKG approval-required smoke": "not run",
+  "macOS signed/notarized self-hosted PKG install and receipt smoke": "not run",
   "Windows signed Inno smoke": "not run",
 };
 
@@ -71,7 +72,7 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     "Run external SwiftPM consumer": <String>[
       "swift run --package-path example/native/macos",
     ],
-    "macOS native runtime ZIP smoke": <String>[
+    "macOS native runtime ZIP package and unsigned rejection smoke": <String>[
       "dart run tool/native_runtime_smoke_server.dart",
     ],
   },
@@ -154,8 +155,8 @@ void main() {
 
   test("current-head ledger records helper evidence literally", () {
     final ledger = _read("docs/native-runtime-api.md");
-    expect(ledger, contains("82/82"));
-    expect(ledger, contains("82/82"));
+    expect(ledger, contains("134/134"));
+    expect(ledger, contains("96/96"));
     expect(ledger, contains("Notarized Developer ID"));
     expect(ledger, contains("one explicit mount-namespace skip"));
     expect(

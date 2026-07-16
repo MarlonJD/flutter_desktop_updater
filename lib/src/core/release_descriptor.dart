@@ -173,6 +173,11 @@ class ReleaseDescriptor {
         "release.json buildNumber must be zero or greater when provided.",
       );
     }
+    if (artifact.kind == "pkgInstaller" && buildNumber == null) {
+      throw const FormatException(
+        "release.json buildNumber is required for pkgInstaller artifacts.",
+      );
+    }
     artifact.validate();
     for (final deltaArtifact in deltaArtifacts) {
       deltaArtifact.validate();
@@ -560,12 +565,21 @@ class ReleaseMacOSPkgInstall {
     required this.launchMode,
     required this.expectedPackageIds,
     required this.relaunchAfterInstall,
-  });
+  }) : _wireLaunchMode = launchMode;
+
+  const ReleaseMacOSPkgInstall._({
+    required this.launchMode,
+    required this.expectedPackageIds,
+    required this.relaunchAfterInstall,
+    required String wireLaunchMode,
+  }) : _wireLaunchMode = wireLaunchMode;
 
   /// Parses PKG installer metadata.
   factory ReleaseMacOSPkgInstall.fromJson(Map<String, dynamic> json) {
-    return ReleaseMacOSPkgInstall(
-      launchMode: json["launchMode"] as String? ?? "installerApp",
+    final wireLaunchMode = json["launchMode"] as String? ?? "installerApp";
+    return ReleaseMacOSPkgInstall._(
+      launchMode: _normalizedMacOSPkgLaunchMode(wireLaunchMode),
+      wireLaunchMode: wireLaunchMode,
       expectedPackageIds: _parseStringList(
         json["expectedPackageIds"],
         "install.macosPkg.expectedPackageIds",
@@ -574,19 +588,24 @@ class ReleaseMacOSPkgInstall {
     );
   }
 
-  /// Native handoff mode. The runtime currently supports Installer.app only.
+  /// Native handoff mode. The runtime supports only the bundled privileged
+  /// helper's fixed `/usr/sbin/installer` execution path.
   final String launchMode;
 
   /// Package identifiers expected inside the installer package metadata.
   final List<String> expectedPackageIds;
 
-  /// Whether the app should relaunch after Installer.app completes.
+  /// Whether the app should relaunch after the verified installer completes.
   final bool relaunchAfterInstall;
+
+  /// Exact schema-v3 launch token retained for signature verification and
+  /// staging. Runtime behavior is exposed through normalized [launchMode].
+  final String _wireLaunchMode;
 
   /// Converts this policy to descriptor JSON.
   Map<String, dynamic> toJson() {
     return {
-      "launchMode": launchMode,
+      "launchMode": _wireLaunchMode,
       "expectedPackageIds": expectedPackageIds,
       "relaunchAfterInstall": relaunchAfterInstall,
     };
@@ -594,9 +613,10 @@ class ReleaseMacOSPkgInstall {
 
   /// Validates the PKG policy.
   void validate() {
-    if (launchMode != "installerApp") {
+    if (launchMode != "privilegedInstallerTool") {
       throw const FormatException(
-        "release.json install.macosPkg.launchMode must be installerApp.",
+        "release.json install.macosPkg.launchMode must be "
+        "privilegedInstallerTool.",
       );
     }
     if (expectedPackageIds.isEmpty) {
@@ -605,6 +625,14 @@ class ReleaseMacOSPkgInstall {
       );
     }
   }
+}
+
+String _normalizedMacOSPkgLaunchMode(Object? value) {
+  final launchMode = value as String? ?? "installerApp";
+  if (launchMode == "installerApp" || launchMode == "privilegedInstallerTool") {
+    return "privilegedInstallerTool";
+  }
+  return launchMode;
 }
 
 /// Windows Inno Setup installer execution policy from `release.json`.

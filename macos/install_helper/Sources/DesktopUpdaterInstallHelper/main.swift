@@ -6,6 +6,7 @@ do {
         arguments: Array(CommandLine.arguments.dropFirst())
     )
     let input = command == .testParseProtocol
+        || command == .verifiedInstallerWorker
         ? FileHandle.standardInput.readDataToEndOfFile()
         : Data()
     let oneShotRuntime = command == .oneShotService

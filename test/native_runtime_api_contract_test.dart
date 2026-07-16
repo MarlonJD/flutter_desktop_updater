@@ -52,6 +52,11 @@ void main() {
 
     expect(api, contains("public struct RuntimeConfiguration"));
     expect(api, contains("public enum RuntimeOutcome"));
+    expect(api, contains("public enum RuntimeDiagnosticCode"));
+    expect(api, contains("public enum RuntimeRemediationAction"));
+    expect(api, contains("public struct RuntimeDiagnostic"));
+    expect(api, contains('"PrivilegedHelperApprovalRequired"'));
+    expect(api, contains("case openMacOSBackgroundItemsSettings"));
     expect(api, contains("case packageIdentityMismatch"));
     expect(api, contains("case unsupportedArtifactKind"));
     expect(api, contains("maximumMetadataBytes: Int64 = 4 * 1024 * 1024"));
@@ -72,6 +77,15 @@ void main() {
     );
     expect(sample, contains("try RuntimeConfiguration("));
     expect(sample, contains("RuntimeOutcome.noUpdate"));
+    expect(sample, contains("RuntimeError.diagnostic"));
+    expect(sample, contains(".privilegedHelperApprovalRequired"));
+    expect(sample, contains(".openMacOSBackgroundItemsSettings"));
+    expect(
+      sample,
+      isNot(contains(
+        "macOS helper handoff failed: privilegedHelperApprovalRequired",
+      )),
+    );
     expect(sample, isNot(contains("bundlePath:")));
     expect(sample, isNot(contains('value("--bundle-path")')));
     expect(manifest, contains("DESKTOP_UPDATER_PACKAGE_PATH"));

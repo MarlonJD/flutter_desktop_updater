@@ -143,6 +143,41 @@ void main() {
     expect(localization.macosMoveToApplicationsReplaceText, "Replace custom");
   });
 
+  test("loads privileged helper approval localization keys", () async {
+    final localization = await DesktopUpdateLocalizationLoader.fromAsset(
+      "assets/i18n/macos_approval.json",
+      bundle: _MapAssetBundle({
+        "assets/i18n/macos_approval.json": jsonEncode({
+          "schemaVersion": 1,
+          "locale": "custom",
+          "strings": {
+            "macosPrivilegedHelperApprovalTitleText": "Approval custom",
+            "macosPrivilegedHelperApprovalBodyText": "Permission custom",
+            "macosPrivilegedHelperApprovalOpenSettingsText": "Settings custom",
+            "macosPrivilegedHelperApprovalRetryText": "Retry custom",
+          },
+        }),
+      }),
+    );
+
+    expect(
+      localization.macosPrivilegedHelperApprovalTitleText,
+      "Approval custom",
+    );
+    expect(
+      localization.macosPrivilegedHelperApprovalBodyText,
+      "Permission custom",
+    );
+    expect(
+      localization.macosPrivilegedHelperApprovalOpenSettingsText,
+      "Settings custom",
+    );
+    expect(
+      localization.macosPrivilegedHelperApprovalRetryText,
+      "Retry custom",
+    );
+  });
+
   test("date formatting can use the default or an app override", () {
     final dateTime = DateTime.utc(2026, 7, 15, 9, 5, 30);
 

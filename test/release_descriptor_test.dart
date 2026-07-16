@@ -149,7 +149,7 @@ void main() {
       "install": {
         "strategy": "pkgInstaller",
         "macosPkg": {
-          "launchMode": "installerApp",
+          "launchMode": "privilegedInstallerTool",
           "expectedPackageIds": ["com.example.app.pkg"],
           "relaunchAfterInstall": false,
         },
@@ -159,11 +159,48 @@ void main() {
 
     expect(descriptor.artifact.kind, "pkgInstaller");
     expect(descriptor.install.strategy, "pkgInstaller");
-    expect(descriptor.install.macosPkg!.launchMode, "installerApp");
+    expect(
+      descriptor.install.macosPkg!.launchMode,
+      "privilegedInstallerTool",
+    );
     expect(descriptor.install.macosPkg!.expectedPackageIds, [
       "com.example.app.pkg",
     ]);
     expect(descriptor.install.macosPkg!.relaunchAfterInstall, isFalse);
+  });
+
+  test("normalizes the schema-v3 legacy PKG launch token", () {
+    final descriptor = ReleaseDescriptor.fromJson({
+      ..._descriptorJson(),
+      "platform": "macos",
+      "artifact": {
+        "kind": "pkgInstaller",
+        "url": "https://cdn.example.com/Example-2.6.0.pkg",
+        "sha256": "c" * 64,
+        "length": 43,
+      },
+      "install": {
+        "strategy": "pkgInstaller",
+        "macosPkg": {
+          "launchMode": "installerApp",
+          "expectedPackageIds": ["com.example.app.pkg"],
+          "relaunchAfterInstall": false,
+        },
+      },
+      "minimumUpdaterVersion": "2.6.0",
+    });
+
+    expect(
+      descriptor.install.macosPkg!.launchMode,
+      "privilegedInstallerTool",
+    );
+    expect(
+      descriptor.toJson()["install"],
+      containsPair(
+        "macosPkg",
+        containsPair("launchMode", "installerApp"),
+      ),
+    );
   });
 
   test("rejects Inno installer descriptors without Windows platform", () {
@@ -262,7 +299,7 @@ void main() {
       "install": {
         "strategy": "pkgInstaller",
         "macosPkg": {
-          "launchMode": "installerApp",
+          "launchMode": "privilegedInstallerTool",
           "expectedPackageIds": ["com.example.app.pkg"],
         },
       },

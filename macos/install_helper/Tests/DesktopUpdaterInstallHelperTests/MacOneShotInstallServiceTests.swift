@@ -278,7 +278,7 @@ private final class FixtureOneShotAuthorizer: MacOneShotInstallAuthorizing {
 
     func authorize(
         _ request: NativeInstallTransactionRequestV1
-    ) throws -> MacFileTransaction {
+    ) throws -> any MacPreparedInstallTransaction {
         XCTAssertEqual(request.protocolVersion, 1)
         return transaction
     }

@@ -104,7 +104,9 @@ enum MacOneShotBootstrap {
         let service = MacPersistentRecoveryService(
             policy: helper.policy,
             callerAuthenticator: SystemMacRecoveryCallerAuthenticator(),
-            verifierFactory: SystemMacRecoveryPayloadVerifierFactory()
+            verifierFactory: SystemMacRecoveryPayloadVerifierFactory(),
+            installerVerifierFactory:
+                SystemMacVerifiedInstallerCheckerFactory()
         )
         return SystemMacPersistentRecoveryServiceRuntime(
             helperEndpointIdentitySHA256:

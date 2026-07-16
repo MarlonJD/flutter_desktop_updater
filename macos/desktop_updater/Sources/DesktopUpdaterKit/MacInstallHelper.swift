@@ -1233,6 +1233,10 @@ final class PackagedMacInstallHelperTransport:
               path.hasPrefix("/") else {
             return false
         }
+        if object["strategy"] as? String == "verifiedInstallerHandoff",
+           object["provider"] as? String == "macosInstaller" {
+            return true
+        }
         if ["protectedApplication", "systemPackage"]
             .contains(targetClass) {
             return true
@@ -1352,6 +1356,8 @@ final class PackagedMacInstallHelperTransport:
         switch value {
         case "prepared":
             return .prepared
+        case "commitAccepted":
+            return .commitAccepted
         case "backupCreated", "targetActivated", "managerStarted",
              "verificationPending":
             return .commitAccepted
@@ -1389,6 +1395,7 @@ final class PackagedMacInstallHelperTransport:
              ("manualActionRequired", "manualActionRequired"):
             return true
         case ("prepared", "recoveryRequired"),
+             ("commitAccepted", "recoveryRequired"),
              ("backupCreated", "recoveryRequired"),
              ("targetActivated", "recoveryRequired"),
              ("managerStarted", "recoveryRequired"),

@@ -171,18 +171,25 @@ publisher trust before replacement. It derives the current PID and
 application bundle. `DesktopUpdaterVersion.string` exposes the helper package
 version.
 
-Writable targets use the packaged one-shot helper and do not register a
-background item. A protected target uses the root `SMAppService` daemon on
-macOS 13 or later. The application should present the stable
+Writable directory-replacement targets use the packaged one-shot helper and do
+not register a background item. A protected directory target uses the root
+`SMAppService` daemon on macOS 13 or later. macOS PKG
+`macosInstaller` + `verifiedInstallerHandoff` always uses that daemon because
+the fixed `/usr/sbin/installer` operation requires root, even when the app
+bundle's parent directory is writable. The application should present the stable
 `PrivilegedHelperApprovalRequired` error and settings action only for first
 enable or revoked consent. Enabled services are reused; a required service
 refresh waits for asynchronous unregistration to complete before
 re-registration so existing administrator approval is preserved.
+The Swift runtime exposes this as `RuntimeError.diagnostic` with
+`RuntimeDiagnosticCode.privilegedHelperApprovalRequired` and
+`RuntimeRemediationAction.openMacOSBackgroundItemsSettings`. Custom UI must
+switch on those typed values instead of matching the diagnostic message.
 
 Flutter macOS hosts invoke `macos/install_helper/embed_install_helper.sh` from
 their final app target after Flutter assembly. The CocoaPods fallback preserves
 the tooling in its sandbox without adding helper sources to the pod's exact
-five-source allowlist; a CocoaPods host invokes it from
+six-source allowlist; a CocoaPods host invokes it from
 `${PODS_ROOT}/../.symlinks/plugins/desktop_updater/macos/install_helper`.
 SwiftPM hosts add the same final-app phase from the checked-out plugin source.
 The example Xcode target is shared by both Flutter integration modes and shows

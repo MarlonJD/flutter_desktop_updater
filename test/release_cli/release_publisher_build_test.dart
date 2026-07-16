@@ -120,6 +120,52 @@ void main() {
     }
   });
 
+  test("publish forwards version overrides to flutter build", () async {
+    final root = await _createWindowsFixture();
+    final buildCalls = <_BuildProcessCall>[];
+    try {
+      final publisher = ReleasePublisher(
+        packager: _RecordingPackager(<String>[]),
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls.add(
+            _BuildProcessCall(
+              executable: executable,
+              arguments: arguments,
+              workingDirectory: workingDirectory,
+              runInShell: runInShell,
+            ),
+          );
+          return const _FakeBuildProcess();
+        },
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(
+          version: "9.1.0",
+          buildNumber: 901,
+        ),
+        output: StringBuffer(),
+      );
+
+      expect(buildCalls.single.arguments, [
+        "build",
+        "windows",
+        "--release",
+        "--build-name=9.1.0",
+        "--build-number=901",
+      ]);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   test(
     "manual publish packages the complete artifact directory without Flutter",
     () async {
@@ -445,7 +491,7 @@ macos:
       expect(
           pkgPackager.configs.single.packageIdentifier, "com.example.app.pkg");
       expect(pkgPackager.requests.single.installStrategy, "pkgInstaller");
-      expect(pkgPackager.requests.single.minimumUpdaterVersion, "2.6.0");
+      expect(pkgPackager.requests.single.minimumUpdaterVersion, "2.7.0");
       expect(manifest.artifact.kind, "pkgInstaller");
       expect(manifest.artifact.path, endsWith(".pkg"));
     } finally {
@@ -1013,7 +1059,7 @@ class _FakePkgPackager extends PkgPackager {
       install: ReleaseInstall(
         strategy: "pkgInstaller",
         macosPkg: ReleaseMacOSPkgInstall(
-          launchMode: "installerApp",
+          launchMode: "privilegedInstallerTool",
           expectedPackageIds: [config.packageIdentifier],
           relaunchAfterInstall: false,
         ),

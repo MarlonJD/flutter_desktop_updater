@@ -298,7 +298,7 @@ ReleaseInstall _installFor(String platform, String kind) {
     return const ReleaseInstall(
       strategy: "pkgInstaller",
       macosPkg: ReleaseMacOSPkgInstall(
-        launchMode: "installerApp",
+        launchMode: "privilegedInstallerTool",
         expectedPackageIds: ["com.example.native-contract.pkg"],
         relaunchAfterInstall: false,
       ),
@@ -329,7 +329,8 @@ ReleaseInstall _installFor(String platform, String kind) {
 String _minimumUpdaterVersion(String kind) {
   return switch (kind) {
     "innoInstaller" => "2.5.0",
-    "dmg" || "pkgInstaller" => "2.6.0",
+    "dmg" => "2.6.0",
+    "pkgInstaller" => "2.7.0",
     _ => "2.0.0",
   };
 }
@@ -433,6 +434,11 @@ Future<void> _generateCanonicalSignatureCases(
     ..["platform"] = " macos "
     ..["channel"] = " stable ";
   _mapAt(normalizedIdentity, "install")["strategy"] = " wholeBundleReplace ";
+  final legacyPkgWireToken = _cloneMap(descriptors["macos-pkg-installer"]!);
+  _mapAt(
+    _mapAt(legacyPkgWireToken, "install"),
+    "macosPkg",
+  )["launchMode"] = "installerApp";
 
   final cases = <Map<String, dynamic>>[
     _signatureCase(
@@ -570,6 +576,10 @@ Future<void> _generateCanonicalSignatureCases(
           "canonicalization normalizes primary identity fields",
           normalizedIdentity,
         ),
+        _canonicalNormalizationCase(
+          "canonicalization preserves legacy PKG wire token",
+          legacyPkgWireToken,
+        ),
       ],
       "cases": cases,
     },
@@ -629,6 +639,11 @@ Future<void> _generateDescriptorValidationCases(
   final invalidPkg = _cloneMap(descriptors["macos-pkg-installer"]!);
   _mapAt(_mapAt(invalidPkg, "install"), "macosPkg")["expectedPackageIds"] =
       <String>[];
+  final pkgWithoutBuildNumber = _cloneMap(descriptors["macos-pkg-installer"]!)
+    ..remove("buildNumber");
+  final legacyPkgLaunchMode = _cloneMap(descriptors["macos-pkg-installer"]!);
+  _mapAt(_mapAt(legacyPkgLaunchMode, "install"), "macosPkg")["launchMode"] =
+      "installerApp";
   final zipWithPkgStrategy = _cloneMap(base);
   _mapAt(zipWithPkgStrategy, "install")["strategy"] = "pkgInstaller";
   final zipWithInnoStrategy = _cloneMap(base);
@@ -768,6 +783,8 @@ Future<void> _generateDescriptorValidationCases(
     ("incomplete DMG metadata", invalidDmg),
     ("invalid DMG signature flag type", invalidDmgSignatureFlag),
     ("incomplete PKG metadata", invalidPkg),
+    ("PKG requires build number", pkgWithoutBuildNumber),
+    ("legacy PKG launch mode is accepted", legacyPkgLaunchMode),
     ("invalid PKG relaunch type", invalidPkgRelaunch),
     ("valid delta metadata", validDelta),
     ("invalid delta from version", invalidDelta("fromVersion", " ")),

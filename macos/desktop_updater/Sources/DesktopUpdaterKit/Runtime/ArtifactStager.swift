@@ -142,7 +142,9 @@ public struct MacArtifactStager {
             expectedPackageId: expectedPackageId,
             artifactKind: "pkgInstaller"
         )
-        let metadata = try dictionary(descriptor.install.rawJSON["macosPkg"])
+        let metadata = try dictionary(
+            descriptor.install.normalizedJSON["macosPkg"]
+        )
         let expectedPackageIds = try strings(metadata, "expectedPackageIds")
         _ = try run(
             "/usr/sbin/pkgutil",
@@ -380,7 +382,7 @@ public struct MacArtifactStager {
         _ descriptor: ReleaseDescriptor
     ) -> [String] {
         guard descriptor.artifact.kind == "pkgInstaller",
-              let metadata = descriptor.install.rawJSON["macosPkg"]
+              let metadata = descriptor.install.normalizedJSON["macosPkg"]
                   as? [String: Any],
               let values = metadata["expectedPackageIds"] as? [String]
         else { return [] }

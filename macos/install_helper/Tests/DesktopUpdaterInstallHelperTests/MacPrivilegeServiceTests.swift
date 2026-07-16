@@ -239,6 +239,43 @@ final class MacPrivilegeServiceTests: XCTestCase {
             )
         }
     }
+
+    func testPrivilegedHandlerRejectsRecoveryWhileTransactionIsActive()
+        throws
+    {
+        let session = RecordingPrivilegedInstallSession()
+        let recovery = RecordingPrivilegedRecoveryHandler()
+        let handler = MacPrivilegedTransactionHandler(
+            sessionFactory: { _ in session },
+            monitorFactory: RecordingPrivilegedMonitorFactory(
+                monitor: RecordingPrivilegedCallerExitMonitor()
+            ),
+            recoveryHandler: recovery
+        )
+        _ = try handler.handle(
+            operation: "prepareInstall",
+            payload: privilegedValidRequestData(),
+            peerProcessIdentifier: 4_243
+        )
+        let payload = Data(
+            (#"{"operation":"recoverPendingInstall","transactionId":""#
+                + session.reservation.transactionID + #""}"#).utf8
+        )
+
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "recoverPendingInstall",
+                payload: payload,
+                peerProcessIdentifier: 4_243
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacPrivilegedTransactionHandlerError,
+                .transactionActive
+            )
+        }
+        XCTAssertTrue(recovery.requests.isEmpty)
+    }
 }
 
 private final class RecordingPrivilegedInstallSession:

@@ -174,6 +174,44 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertEqual(recorder.invocationCount, 2)
     }
 
+    func testHelperApprovalExposesStableTypedDiagnostic() async throws {
+        let fixture = try LifecycleFixture()
+        defer { fixture.remove() }
+        let recorder = InstallRecorder(
+            failuresRemaining: 1,
+            scheduledError: MacInstallClientError
+                .privilegedHelperApprovalRequired
+        )
+        let client = try fixture.makeClient(recorder: recorder)
+        let check = await client.checkForUpdate()
+        let staged = try await fixture.stage(
+            check,
+            with: client,
+            name: "helper-approval"
+        )
+
+        XCTAssertThrowsError(try client.installAndRelaunch(
+            staged,
+            diagnosticsLogPath: nil,
+            allowUnsignedUpdates: true
+        )) { error in
+            guard case let RuntimeError.diagnostic(outcome, diagnostic) = error
+            else {
+                return XCTFail("Expected a typed runtime diagnostic: \(error)")
+            }
+            XCTAssertEqual(outcome, .installHandoffFailure)
+            XCTAssertEqual(
+                diagnostic.code,
+                .privilegedHelperApprovalRequired
+            )
+            XCTAssertEqual(
+                diagnostic.remediationActions,
+                [.openMacOSBackgroundItemsSettings]
+            )
+            XCTAssertFalse(diagnostic.message.isEmpty)
+        }
+    }
+
     func testSlowEarlierStageCannotPublishAfterLaterStageFails() async throws {
         let fixture = try LifecycleFixture()
         defer { fixture.remove() }
@@ -935,13 +973,16 @@ private final class InstallRecorder {
     private var count = 0
     private var failuresRemaining: Int
     private let schedulerGate: InstallSchedulerGate?
+    private let scheduledError: Error?
 
     init(
         failuresRemaining: Int = 0,
-        schedulerGate: InstallSchedulerGate? = nil
+        schedulerGate: InstallSchedulerGate? = nil,
+        scheduledError: Error? = nil
     ) {
         self.failuresRemaining = failuresRemaining
         self.schedulerGate = schedulerGate
+        self.scheduledError = scheduledError
     }
 
     var invocationCount: Int {
@@ -964,7 +1005,7 @@ private final class InstallRecorder {
         lock.unlock()
         schedulerGate?.enterAndWait()
         if shouldFail {
-            throw CocoaError(.fileWriteUnknown)
+            throw scheduledError ?? CocoaError(.fileWriteUnknown)
         }
     }
 }
@@ -1213,13 +1254,6 @@ private extension Result where Success == RuntimeStagedUpdate,
     var runtimeOutcome: RuntimeOutcome? {
         guard case let .failure(error) = self else { return nil }
         return error.runtimeOutcome
-    }
-}
-
-private extension RuntimeError {
-    var runtimeOutcome: RuntimeOutcome? {
-        guard case let .outcome(outcome, _) = self else { return nil }
-        return outcome
     }
 }
 

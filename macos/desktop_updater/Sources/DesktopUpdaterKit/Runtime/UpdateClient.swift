@@ -717,12 +717,34 @@ public final class UpdateClient {
             }
         } catch {
             rollbackGuard.rollback()
-            record(.install, .error, "macOS helper handoff failed.", error)
-            throw RuntimeError.outcome(
+            let failure = mappedInstallFailure(error)
+            record(.install, .error, "macOS helper handoff failed.", failure)
+            throw failure
+        }
+    }
+
+    private func mappedInstallFailure(_ error: Error) -> RuntimeError {
+        if let runtimeError = error as? RuntimeError {
+            return runtimeError
+        }
+        if let clientError = error as? MacInstallClientError,
+           clientError == .privilegedHelperApprovalRequired
+        {
+            return .diagnostic(
                 .installHandoffFailure,
-                message: "macOS helper handoff failed: \(error)"
+                RuntimeDiagnostic(
+                    code: .privilegedHelperApprovalRequired,
+                    message: "Administrator approval is required before the privileged macOS updater helper can run.",
+                    remediationActions: [
+                        .openMacOSBackgroundItemsSettings
+                    ]
+                )
             )
         }
+        return .outcome(
+            .installHandoffFailure,
+            message: "macOS helper handoff failed: \(error)"
+        )
     }
 
     private func supportedArtifactKinds() -> Set<String> {
@@ -742,6 +764,13 @@ public final class UpdateClient {
     ) -> RuntimeUpdateCheck {
         if case let RuntimeError.outcome(outcome, message) = error {
             return failure(outcome, message, generation: generation)
+        }
+        if case let RuntimeError.diagnostic(outcome, diagnostic) = error {
+            return failure(
+                outcome,
+                diagnostic.message,
+                generation: generation
+            )
         }
         if case let RuntimeError.invalidConfiguration(message) = error {
             return failure(.invalidDescriptor, message, generation: generation)

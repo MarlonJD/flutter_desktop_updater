@@ -1934,7 +1934,7 @@ Draft the corrected PR body for the user; do not post it through a connector.
 - Binds checks, stages, provenance, and explicit install-target proof without
   changing the released Flutter API/MethodChannel surface or the
   `DesktopUpdaterKit` product/import.
-- Keeps the SwiftPM runtime at macOS 10.15+ and the exact five-source Flutter
+- Keeps the SwiftPM runtime at macOS 10.15+ and the exact six-source Flutter
   CocoaPods fallback at macOS 10.14.
 - Makes Windows transport paths Unicode-safe, resolves bounded relative
   redirects, and packages Release NuGet DLLs with isolated-consumer hash proof
@@ -1945,7 +1945,7 @@ Draft the corrected PR body for the user; do not post it through a connector.
 - Task 10 complete local ladder: `verified locally`; generated fixtures,
   repository format, analysis, 660 Flutter tests with 3 explicit skips, pub
   dry-run with 0 warnings and 1 hint, 52 SwiftPM tests, the exact macOS 10.14
-  five-source typecheck, the external SwiftPM consumer, and diff check exited
+  six-source typecheck, the external SwiftPM consumer, and diff check exited
   0.
 - Current-head macOS, Windows, and Linux target-host CI: `verified in CI` in
   successful push run `29291937840` for commit `87a2adf`. The run includes both
@@ -1998,7 +1998,7 @@ Task 10 evidence on 2026-07-11:
   passed independently.
 - GREEN, verified locally: the focused docs/CI suite passed 5/5. The combined
   docs, smoke, retail-package, CocoaPods-layout, and SwiftPM-layout command
-  passed 36/36. The exact five-source macOS 10.14 `swiftc -typecheck` command
+  passed 36/36. The exact six-source macOS 10.14 `swiftc -typecheck` command
   exited 0, workflow YAML parsed successfully, and every existing macOS docs
   compatibility assertion remained green.
 - Workflow configuration, not execution evidence: the Dart job now checks
@@ -2119,7 +2119,7 @@ Fresh-review evidence on 2026-07-11:
   the full SwiftPM suite passed 51/51;
   the external SwiftPM consumer built and ran against the packaged
   `DesktopUpdaterKit` product; the Dart consumer and SwiftPM contract suites
-  passed 12/12; and the exact five-source CocoaPods fallback typechecked at
+  passed 12/12; and the exact six-source CocoaPods fallback typechecked at
   `x86_64-apple-macosx10.14`. The public legacy request initializer remains
   source-compatible, while any non-nil staged request lacking the complete
   provenance tuple now fails before helper-script creation.
@@ -2325,7 +2325,7 @@ Fresh-review evidence on 2026-07-11:
 - Complete Task 10 ladder: blocked. Fixture generation was current; formatting
   checked 218 files with 0 changes; analysis exited 0 with 385 info-only
   diagnostics; the publication dry run reported 0 warnings and 1 version hint;
-  SwiftPM passed 51/51; the exact macOS 10.14 five-source typecheck and
+  SwiftPM passed 51/51; the exact macOS 10.14 six-source typecheck and
   `swift run --package-path example/native/macos` passed; and
   `git diff --check` exited 0. The full Flutter run reached 647 passes and 3
   explicit skips with 1 failure in
@@ -2483,7 +2483,7 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   the in-progress tracked docs test was modified; it is not counted as GREEN.
   The identical current contents in a clean temporary copy exited 0 with 0
   warnings and 1 prior-version hint.
-- Final macOS boundary checks, verified locally: the exact five-source
+- Final macOS boundary checks, verified locally: the exact six-source
   CocoaPods fallback typechecked for `x86_64-apple-macosx10.14`, and
   `swift run --package-path example/native/macos` built and ran the external
   `DesktopUpdaterKit` consumer. A first typecheck attempt hit a stale
@@ -2509,7 +2509,7 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
   interval.
 - Build and package pass: the `DesktopUpdaterKit` product/import and macOS
   10.15+ SwiftPM floor are unchanged; the CocoaPods fallback remains macOS
-  10.14 with its exact five-source allowlist. Installed Windows and Linux
+  10.14 with its exact six-source allowlist. Installed Windows and Linux
   CMake consumers, isolated NuGet P/Invoke, standard and multiarch pkg-config,
   third-party notices, and ordinary ZIP smokes retain target-host evidence.
   No version, changelog heading, or lockfile changed.

@@ -51,8 +51,8 @@ Future<void> main(List<String> args) async {
         await smoke.moveToApplications();
       case "dmg-update":
         await smoke.dmgUpdate();
-      case "pkg-installer":
-        await smoke.pkgInstaller();
+      case "pkg-artifact":
+        await smoke.pkgArtifact();
       case "pkg-install-verify":
         await smoke.pkgInstallVerify();
       case "all":
@@ -78,7 +78,7 @@ Usage:
   dart run tool/macos_production_smoke.dart dmg-first-install
   dart run tool/macos_production_smoke.dart move-to-applications
   dart run tool/macos_production_smoke.dart dmg-update
-  dart run tool/macos_production_smoke.dart pkg-installer
+  dart run tool/macos_production_smoke.dart pkg-artifact
   dart run tool/macos_production_smoke.dart pkg-install-verify
   dart run tool/macos_production_smoke.dart all --cleanup
   dart run tool/macos_production_smoke.dart cleanup
@@ -353,7 +353,6 @@ class _MacOSProductionSmoke {
           return _runHostedUpdateSmoke(
             app: installedApp,
             appArchiveUrl: appArchiveUrl,
-            expectInstallerHandoff: false,
           );
         },
       );
@@ -366,21 +365,10 @@ class _MacOSProductionSmoke {
     }
   }
 
-  Future<void> pkgInstaller() async {
-    final evidence = await _Evidence.open("pkg-installer");
+  Future<void> pkgArtifact() async {
+    final evidence = await _Evidence.open("pkg-artifact");
     try {
       final env = await _requireLocalProductionPrerequisites(evidence);
-      final v1App = await _buildSignedExampleApp(
-        version: versionV1,
-        buildNumber: buildV1,
-        includeUpdateSentinel: false,
-        evidence: evidence,
-        env: env,
-      );
-      final installedApp = await _installSmokeAppToApplications(
-        app: v1App,
-        evidence: evidence,
-      );
       final app = await _buildSignedExampleApp(
         version: versionV2,
         buildNumber: buildV2,
@@ -391,35 +379,11 @@ class _MacOSProductionSmoke {
       final pkg = await _buildSignedPkg(app: app, evidence: evidence, env: env);
       await _verifyPkgTrust(pkg);
       evidence
-        ..line("pkg-installer: package signature OK")
-        ..line("pkg-installer: Gatekeeper install assessment OK")
-        ..line("pkg-installer: stapler validation OK");
-      await _withHostedRelease(
-        artifact: pkg,
-        artifactKind: "pkgInstaller",
-        version: versionV2,
-        buildNumber: buildV2,
-        install: {
-          "strategy": "pkgInstaller",
-          "macosPkg": {
-            "launchMode": "installerApp",
-            "expectedPackageIds": [packageReceiptId],
-            "relaunchAfterInstall": false,
-          },
-        },
-        evidence: evidence,
-        hostedEvidenceLine: "pkg-installer: staged PKG update flow OK",
-        body: (appArchiveUrl) {
-          return _runHostedUpdateSmoke(
-            app: installedApp,
-            appArchiveUrl: appArchiveUrl,
-            expectInstallerHandoff: true,
-          );
-        },
-      );
-      evidence
-        ..line("pkg-installer: Installer.app handoff OK")
-        ..line("pkg-installer: silent privileged install not run");
+        ..line("pkg-artifact: package signature OK")
+        ..line("pkg-artifact: Gatekeeper install assessment OK")
+        ..line("pkg-artifact: stapler validation OK")
+        ..line("pkg-artifact: signed, notarized, stapled artifact ready")
+        ..line("pkg-artifact: install handoff not attempted");
     } finally {
       await evidence.close();
     }
@@ -474,7 +438,7 @@ class _MacOSProductionSmoke {
     await dmgFirstInstall();
     await moveToApplications();
     await dmgUpdate();
-    await pkgInstaller();
+    await pkgArtifact();
     if (cleanup) {
       await cleanupSmokeOwnedArtifacts();
     }
@@ -794,11 +758,10 @@ class _MacOSProductionSmoke {
   Future<void> _runHostedUpdateSmoke({
     required Directory app,
     required Uri appArchiveUrl,
-    required bool expectInstallerHandoff,
   }) async {
     final diagnosticsLogPath = path.join(
       workDir.path,
-      "hosted-smoke-diagnostics-${expectInstallerHandoff ? "pkg" : "dmg"}.jsonl",
+      "hosted-smoke-diagnostics-dmg.jsonl",
     );
     await File(diagnosticsLogPath).parent.create(recursive: true);
     final arguments = [
@@ -811,10 +774,7 @@ class _MacOSProductionSmoke {
       "--production-gates",
       "--diagnostics-log",
       diagnosticsLogPath,
-      if (expectInstallerHandoff)
-        "--expect-installer-handoff"
-      else
-        "--relaunch",
+      "--relaunch",
     ];
     await _runChecked("dart", arguments);
   }

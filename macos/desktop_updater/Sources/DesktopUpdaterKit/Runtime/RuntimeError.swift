@@ -27,9 +27,48 @@ public enum RuntimeOutcome: String, CaseIterable, Sendable {
     case installHandoffFailure
 }
 
+public enum RuntimeDiagnosticCode: String, CaseIterable, Sendable {
+    case privilegedHelperApprovalRequired = "PrivilegedHelperApprovalRequired"
+}
+
+public enum RuntimeRemediationAction: String, CaseIterable, Sendable {
+    case openMacOSBackgroundItemsSettings
+}
+
+public struct RuntimeDiagnostic: Equatable, Sendable {
+    public let code: RuntimeDiagnosticCode
+    public let message: String
+    public let remediationActions: [RuntimeRemediationAction]
+
+    public init(
+        code: RuntimeDiagnosticCode,
+        message: String,
+        remediationActions: [RuntimeRemediationAction]
+    ) {
+        self.code = code
+        self.message = message
+        self.remediationActions = remediationActions
+    }
+}
+
 public enum RuntimeError: Error, Equatable, Sendable {
     case invalidConfiguration(String)
     case outcome(RuntimeOutcome, message: String)
+    case diagnostic(RuntimeOutcome, RuntimeDiagnostic)
+
+    public var runtimeOutcome: RuntimeOutcome? {
+        switch self {
+        case .invalidConfiguration:
+            return nil
+        case let .outcome(outcome, _), let .diagnostic(outcome, _):
+            return outcome
+        }
+    }
+
+    public var failureDiagnostic: RuntimeDiagnostic? {
+        guard case let .diagnostic(_, diagnostic) = self else { return nil }
+        return diagnostic
+    }
 }
 
 extension RuntimeError: LocalizedError {
@@ -39,6 +78,8 @@ extension RuntimeError: LocalizedError {
             return message
         case let .outcome(outcome, message):
             return "\(outcome.rawValue): \(message)"
+        case let .diagnostic(outcome, diagnostic):
+            return "\(outcome.rawValue): \(diagnostic.message)"
         }
     }
 }

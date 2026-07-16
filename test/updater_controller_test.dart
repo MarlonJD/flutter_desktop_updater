@@ -5,6 +5,7 @@ import "dart:io";
 import "package:archive/archive.dart";
 import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/desktop_updater.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -901,6 +902,115 @@ void main() {
     expect(resolveCalls, 0);
     expect(controller.state, isA<UpdateIdle>());
     expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+  });
+
+  test("non-Windows recovery keeps resolving an active native manager",
+      () async {
+    final stagingParent =
+        await Directory.systemTemp.createTemp("recovery_stage_");
+    final stage = await createOwnedStagingDirectory(
+      parent: stagingParent,
+      nonce: "123e4567-e89b-42d3-a456-426614174000",
+    );
+    await File(path.join(stage.path, "installer.pkg")).writeAsString("pkg");
+    await writeStagedUpdateProvenance(
+      stageRoot: stage,
+      nonce: "123e4567-e89b-42d3-a456-426614174000",
+      packageId: "com.example.app",
+      descriptorSha256: "a" * 64,
+      artifactSha256: "b" * 64,
+    );
+    addTearDown(() async {
+      if (await stagingParent.exists()) {
+        await stagingParent.delete(recursive: true);
+      }
+    });
+    var recoveryCalls = 0;
+    _setMockPlatformHandler(
+      versionName: "2.0.1",
+      buildNumber: "201",
+      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
+        state: "prepared",
+        resultCode: "recoveryRequired",
+      ),
+      onRecoverPendingInstallTransaction: (_) {
+        recoveryCalls += 1;
+        return _nativeTransactionStatus(
+          state: recoveryCalls == 1 ? "prepared" : "completed",
+          resultCode: recoveryCalls == 1 ? "recoveryRequired" : "succeeded",
+        );
+      },
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "macos",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: stage.path,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: false,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(recoveryCalls, 2);
+    expect(controller.state, isA<UpdateIdle>());
+    expect(await stage.exists(), isFalse);
+    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+  });
+
+  test("non-Windows recovery bounds retries for a stuck native manager",
+      () async {
+    var recoveryCalls = 0;
+    _setMockPlatformHandler(
+      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
+        state: "prepared",
+        resultCode: "recoveryRequired",
+      ),
+      onRecoverPendingInstallTransaction: (_) {
+        recoveryCalls += 1;
+        return _nativeTransactionStatus(
+          state: "prepared",
+          resultCode: "recoveryRequired",
+        );
+      },
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "macos",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: "/tmp/stuck-native-manager",
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: false,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(recoveryCalls, 6);
+    expect(controller.state, isA<UpdateInstalling>());
+    expect(
+      await recoveryStore.readPendingInstall(channel: "stable"),
+      isNotNull,
+    );
   });
 
   test("active startup recovery ACK preserves marker and skips version check",

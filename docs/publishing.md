@@ -162,9 +162,11 @@ artifact; Windows can also use an Inno Setup installer artifact.
 }
 ```
 
-`buildNumber` is optional in both files. Include it when your app exposes a
-monotonic build number. Omit it when the installed app only exposes a semantic
-version such as `1.2.3`.
+`buildNumber` is optional for ZIP, DMG, and Inno metadata. Include it when your
+app exposes a monotonic build number. Omit it when the installed app only
+exposes a semantic version such as `1.2.3`. PKG descriptors and PKG publishing
+require an explicit nonnegative integer build number because privileged
+post-install verification binds it exactly to `CFBundleVersion`.
 
 `minimumUpdaterVersion` is enforced before artifact download. If a descriptor
 requires a newer `desktop_updater` runtime than the app has, update checks skip
@@ -1067,7 +1069,8 @@ Important trust boundary:
 macOS can publish three artifact kinds. Direct zip remains the default. DMG
 artifacts are for first-install distribution UX and DMG update artifacts that
 mount and copy a verified `.app`. PKG artifacts are installer-owned updates that
-hand off to Installer.app.
+hand off to the bundled `SMAppService` privileged helper, which runs the fixed
+`/usr/sbin/installer` command after approval.
 
 Quick config notes:
 

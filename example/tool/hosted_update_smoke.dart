@@ -9,7 +9,6 @@ Future<void> main(List<String> args) async {
 
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
-  final expectInstallerHandoff = args.contains("--expect-installer-handoff");
   final appPath = _absolutePath(_argValue(args, "--app") ?? _defaultAppPath());
   final appArchiveUrl = _argValue(args, "--app-archive-url");
   final diagnosticsLogPath =
@@ -17,8 +16,7 @@ Future<void> main(List<String> args) async {
 
   if (appPath == null ||
       appArchiveUrl == null ||
-      appArchiveUrl.trim().isEmpty ||
-      (expectInstallerHandoff && diagnosticsLogPath == null)) {
+      appArchiveUrl.trim().isEmpty) {
     _usage();
     exit(64);
   }
@@ -102,19 +100,6 @@ Future<void> main(List<String> args) async {
 
   stdout.writeln("Initial hosted app process exited with code $exitCode");
 
-  if (expectInstallerHandoff) {
-    await _expectDiagnosticsLog(
-      diagnosticsLogPath!,
-      const <String>[
-        "pkg manifest loaded",
-        "pkg installer open",
-        "pkg installer opened",
-      ],
-    );
-    stdout.writeln("Hosted smoke Installer.app handoff scheduled.");
-    return;
-  }
-
   await _waitFor(
     installedSentinel.existsSync,
     const Duration(seconds: 60),
@@ -169,38 +154,6 @@ Future<void> _waitForFileText(
     timeout,
     "Timed out waiting for hosted smoke marker '$expected'.",
   );
-}
-
-Future<void> _expectDiagnosticsLog(
-  String logPath,
-  List<String> expectedEvents,
-) async {
-  final log = File(logPath);
-  var contents = "";
-  await _waitFor(
-    () {
-      if (!log.existsSync()) {
-        return false;
-      }
-      contents = log.readAsStringSync();
-      return expectedEvents.every(
-        (event) => contents.contains('"event":"$event"'),
-      );
-    },
-    const Duration(seconds: 45),
-    "Timed out waiting for helper diagnostics events in $logPath.",
-  );
-
-  final missingEvents = expectedEvents
-      .where((event) => !contents.contains('"event":"$event"'))
-      .toList(growable: false);
-  if (missingEvents.isNotEmpty) {
-    stderr.writeln(contents);
-    throw StateError(
-      "Helper diagnostics log missing events ${missingEvents.join(", ")} "
-      "in $logPath.",
-    );
-  }
 }
 
 bool markerHasReached(String actual, String expected) {
@@ -296,7 +249,7 @@ void _usage() {
   stderr.writeln(
     "Usage: dart run example/tool/hosted_update_smoke.dart --app <path> "
     "--app-archive-url <url> [--production-gates] [--relaunch] "
-    "[--expect-installer-handoff --diagnostics-log <path>]\n"
+    "[--diagnostics-log <path>]\n"
     "\n"
     "Use --production-gates on macOS with signed, notarized, stapled Release "
     ".app bundles.",

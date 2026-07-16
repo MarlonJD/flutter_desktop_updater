@@ -265,6 +265,187 @@ final class MacFileTransactionTests: XCTestCase {
         XCTAssertEqual(try groupIdentifier(at: installedFile), targetGroup)
     }
 
+    func testOwnershipNormalizationRejectsPreparedRootReplacement() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let paths = try MacTransactionPaths(
+            targetName: fixture.targetURL.lastPathComponent,
+            transactionID: fixture.transactionID
+        )
+        let prepared = fixture.rootURL.appendingPathComponent(
+            paths.preparedName,
+            isDirectory: true
+        )
+        let displaced = fixture.rootURL.appendingPathComponent(
+            "displaced-prepared",
+            isDirectory: true
+        )
+        let injector = CallbackMacFaultInjector(
+            point: .afterOwnershipRootLocked
+        ) {
+            try FileManager.default.moveItem(at: prepared, to: displaced)
+            try FileManager.default.createDirectory(
+                at: prepared,
+                withIntermediateDirectories: false
+            )
+        }
+        let transaction = try fixture.makeTransaction(
+            preserveTargetOwnership: true,
+            faultInjector: injector
+        )
+
+        XCTAssertThrowsError(try transaction.prepare()) { error in
+            XCTAssertEqual(
+                error as? MacFileTransactionError,
+                .stageIdentityChanged
+            )
+        }
+        XCTAssertEqual(try fixture.version(at: displaced), "new")
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+    }
+
+    func testOwnershipNormalizationNeverFollowsRacedEntrySymlink() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let paths = try MacTransactionPaths(
+            targetName: fixture.targetURL.lastPathComponent,
+            transactionID: fixture.transactionID
+        )
+        let preparedFile = fixture.rootURL.appendingPathComponent(
+            paths.preparedName,
+            isDirectory: true
+        ).appendingPathComponent("version.txt")
+        let victim = fixture.rootURL.appendingPathComponent("victim.txt")
+        try Data("victim".utf8).write(to: victim)
+        XCTAssertEqual(Darwin.chmod(victim.path, 0o640), 0)
+        let before = try fileStatus(victim)
+        let injector = CallbackMacFaultInjector(
+            point: .beforeOwnershipEntryOpen
+        ) {
+            try FileManager.default.removeItem(at: preparedFile)
+            try FileManager.default.createSymbolicLink(
+                at: preparedFile,
+                withDestinationURL: victim
+            )
+        }
+        let transaction = try fixture.makeTransaction(
+            preserveTargetOwnership: true,
+            faultInjector: injector
+        )
+
+        XCTAssertThrowsError(try transaction.prepare()) { error in
+            XCTAssertEqual(
+                error as? MacFileTransactionError,
+                .stageIdentityChanged
+            )
+        }
+        XCTAssertEqual(try fileStatus(victim), before)
+        XCTAssertEqual(try String(contentsOf: victim), "victim")
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+    }
+
+    func testOwnershipNormalizationRejectsSpecialModeBits() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let unsafeName = "Unsafe.app"
+        let unsafeRoot = fixture.rootURL.appendingPathComponent(
+            unsafeName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: unsafeRoot,
+            withIntermediateDirectories: false
+        )
+        let unsafeFile = unsafeRoot.appendingPathComponent("payload")
+        try Data("unsafe".utf8).write(to: unsafeFile)
+        XCTAssertEqual(Darwin.chmod(unsafeFile.path, 0o4755), 0)
+        let targetStatus = try fileStatus(fixture.targetURL)
+        let directory = try MacTransactionDirectory(url: fixture.rootURL)
+
+        XCTAssertThrowsError(
+            try directory.normalizeTreeOwnership(
+                name: unsafeName,
+                ownership: MacFileOwnership(
+                    userIdentifier: targetStatus.userIdentifier,
+                    groupIdentifier: targetStatus.groupIdentifier
+                )
+            )
+        )
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+    }
+
+    func testOwnershipNormalizationRejectsUnsafeOrInaccessibleModes()
+        throws
+    {
+        for (relativePath, mode) in [
+            ("version.txt", mode_t(0o666)),
+            ("", mode_t(0o777)),
+            ("version.txt", mode_t(0o600)),
+            ("version.txt", mode_t(0o710)),
+            ("", mode_t(0o700)),
+        ] {
+            let fixture = try MacTransactionFixture()
+            defer { fixture.remove() }
+            let stagedNode = relativePath.isEmpty
+                ? fixture.stageURL
+                : fixture.stageURL.appendingPathComponent(relativePath)
+            XCTAssertEqual(Darwin.chmod(stagedNode.path, mode), 0)
+            let transaction = try fixture.makeTransaction(
+                preserveTargetOwnership: true
+            )
+
+            XCTAssertThrowsError(try transaction.prepare(), relativePath)
+            XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        }
+    }
+
+    func testOwnershipNormalizationClearsImmutableFlags() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let stagedFile = fixture.stageURL.appendingPathComponent("version.txt")
+        XCTAssertEqual(
+            Darwin.chflags(stagedFile.path, UInt32(UF_IMMUTABLE)),
+            0
+        )
+        defer { _ = Darwin.chflags(stagedFile.path, 0) }
+        let transaction = try fixture.makeTransaction(
+            preserveTargetOwnership: true
+        )
+
+        XCTAssertEqual(try transaction.execute(), .completed)
+
+        let installedFile = fixture.targetURL.appendingPathComponent(
+            "version.txt"
+        )
+        XCTAssertEqual(try fileFlags(installedFile), 0)
+    }
+
+    func testRecoveryRemovesPreparedTreeAfterImmutableFlagNormalization()
+        throws
+    {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let stagedFile = fixture.stageURL.appendingPathComponent("version.txt")
+        XCTAssertEqual(
+            Darwin.chflags(stagedFile.path, UInt32(UF_IMMUTABLE)),
+            0
+        )
+        defer { _ = Darwin.chflags(stagedFile.path, 0) }
+        let injector = ThrowingMacFaultInjector(point: .afterStageRename)
+        let transaction = try fixture.makeTransaction(
+            preserveTargetOwnership: true,
+            faultInjector: injector
+        )
+
+        XCTAssertThrowsError(try transaction.prepare())
+        XCTAssertEqual(
+            try fixture.makeRecoveryService().recover(),
+            .recovered
+        )
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+    }
+
     func testRejectsCrossVolumeStage() {
         XCTAssertThrowsError(
             try MacFileTransaction.validateSameVolume(
@@ -408,6 +589,48 @@ private func userIdentifier(at url: URL) throws -> uid_t {
         throw MacFileTransactionError.filesystemOperationFailed
     }
     return value.st_uid
+}
+
+private func fileFlags(_ url: URL) throws -> UInt32 {
+    var value = stat()
+    guard url.path.withCString({ Darwin.lstat($0, &value) }) == 0 else {
+        throw MacFileTransactionError.filesystemOperationFailed
+    }
+    return value.st_flags
+}
+
+private func fileStatus(_ url: URL) throws -> MacFileIdentity {
+    var value = stat()
+    guard url.path.withCString({ Darwin.lstat($0, &value) }) == 0 else {
+        throw MacFileTransactionError.filesystemOperationFailed
+    }
+    return MacFileIdentity(
+        device: UInt64(value.st_dev),
+        inode: UInt64(value.st_ino),
+        mode: UInt16(value.st_mode & mode_t(UInt16.max)),
+        userIdentifier: value.st_uid,
+        groupIdentifier: value.st_gid
+    )
+}
+
+private final class CallbackMacFaultInjector: MacTransactionFaultInjecting {
+    private let point: MacTransactionFaultPoint
+    private let callback: () throws -> Void
+    private var didRun = false
+
+    init(
+        point: MacTransactionFaultPoint,
+        callback: @escaping () throws -> Void
+    ) {
+        self.point = point
+        self.callback = callback
+    }
+
+    func hit(_ candidate: MacTransactionFaultPoint) throws {
+        guard candidate == point, !didRun else { return }
+        didRun = true
+        try callback()
+    }
 }
 
 private func supplementaryGroup(excluding current: gid_t) -> gid_t? {

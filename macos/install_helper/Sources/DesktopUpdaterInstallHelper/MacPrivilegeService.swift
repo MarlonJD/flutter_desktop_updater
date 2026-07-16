@@ -228,6 +228,7 @@ enum MacPrivilegedTransactionHandlerError: Error, Equatable {
     case invalidPeer
     case duplicateTransaction
     case transactionNotFound
+    case transactionActive
     case transactionBindingMismatch
 }
 
@@ -296,7 +297,9 @@ final class MacPrivilegedTransactionHandler {
             policy: policy,
             callerAuthenticator:
                 AuthenticatedMacXPCRecoveryCallerAuthenticator(),
-            verifierFactory: SystemMacRecoveryPayloadVerifierFactory()
+            verifierFactory: SystemMacRecoveryPayloadVerifierFactory(),
+            installerVerifierFactory:
+                SystemMacVerifiedInstallerCheckerFactory()
         )
         self.init(
             helperEndpointIdentitySHA256:
@@ -367,8 +370,11 @@ final class MacPrivilegedTransactionHandler {
                 throw MacPrivilegedTransactionHandlerError
                     .invalidOperation
             }
+            let response = operation == "recoverPendingInstall"
+                ? try recoverWhenInactive(payload: payload, object: object)
+                : try recoveryHandler.response(for: payload)
             return MacPrivilegedTransactionResponse(
-                payload: try recoveryHandler.response(for: payload),
+                payload: response,
                 helperEndpointIdentitySHA256:
                     helperEndpointIdentitySHA256,
                 completeAfterReply: nil
@@ -376,6 +382,22 @@ final class MacPrivilegedTransactionHandler {
         default:
             throw MacPrivilegedTransactionHandlerError.invalidOperation
         }
+    }
+
+    private func recoverWhenInactive(
+        payload: Data,
+        object: [String: Any]
+    ) throws -> Data {
+        guard let transactionID = object["transactionId"] as? String else {
+            return try recoveryHandler.response(for: payload)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        guard pending[transactionID] == nil,
+              !preparing.contains(transactionID) else {
+            throw MacPrivilegedTransactionHandlerError.transactionActive
+        }
+        return try recoveryHandler.response(for: payload)
     }
 
     private func prepare(

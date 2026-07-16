@@ -214,7 +214,7 @@ Future<Map<String, dynamic>> signedDescriptor({
       "publicKeyId": publicKeyId,
       "value": "",
     },
-    "minimumUpdaterVersion": "2.0.0",
+    "minimumUpdaterVersion": artifactKind == "pkgInstaller" ? "2.7.0" : "2.0.0",
     "minimumOS": {platform: minimumOS(platform)},
     "generatedAt": DateTime.now().toUtc().toIso8601String(),
   };
@@ -257,7 +257,7 @@ Map<String, dynamic> installMetadata({
       return {
         "strategy": "pkgInstaller",
         "macosPkg": {
-          "launchMode": "installerApp",
+          "launchMode": "privilegedInstallerTool",
           "expectedPackageIds": ["$packageId.pkg"],
           "relaunchAfterInstall": false,
         },

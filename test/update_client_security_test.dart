@@ -397,7 +397,7 @@ void main() {
       install: const ReleaseInstall(
         strategy: "pkgInstaller",
         macosPkg: ReleaseMacOSPkgInstall(
-          launchMode: "installerApp",
+          launchMode: "privilegedInstallerTool",
           expectedPackageIds: ["com.example.app.pkg"],
           relaunchAfterInstall: false,
         ),

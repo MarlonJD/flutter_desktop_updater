@@ -53,7 +53,7 @@ remove that blocker rather than patching the rejected scripts.
   engine or Dart runtime in a helper.
 - Preserve the released Flutter API and MethodChannel surface.
 - Preserve `DesktopUpdaterKit`, SwiftPM macOS 10.15+, and the CocoaPods macOS
-  10.14 exact five-source fallback.
+  10.14 exact six-source fallback.
 - Provide helper-side strategies that a later Linux distribution-artifact plan
   can consume for AppImage, deb, rpm, Flatpak, and Snap updates.
 

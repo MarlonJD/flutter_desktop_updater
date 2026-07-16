@@ -15,14 +15,14 @@
   "install": {
     "strategy": "pkgInstaller",
     "macosPkg": {
-      "launchMode": "installerApp",
+      "launchMode": "privilegedInstallerTool",
       "expectedPackageIds": [
         "com.example.native-contract.pkg"
       ],
       "relaunchAfterInstall": false
     }
   },
-  "minimumUpdaterVersion": "2.6.0",
+  "minimumUpdaterVersion": "2.7.0",
   "minimumOS": {
     "macos": "13.0"
   },

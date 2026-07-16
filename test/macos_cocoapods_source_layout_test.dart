@@ -5,11 +5,12 @@ import "package:flutter_test/flutter_test.dart";
 import "support/contract_source.dart";
 
 const _typecheck =
-    r'xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift';
+    r'xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift';
 
 const _podSources = <String>[
   "desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift",
   "desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
+  "desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift",
   "desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
   "desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift",
   "desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
@@ -43,7 +44,7 @@ void main() {
     }
   });
 
-  test("CocoaPods fallback uses the exact five-file macOS 10.14 set", () {
+  test("CocoaPods fallback uses the exact macOS 10.14 source set", () {
     expect(
       _podErrors(File("macos/desktop_updater.podspec").readAsStringSync()),
       isEmpty,

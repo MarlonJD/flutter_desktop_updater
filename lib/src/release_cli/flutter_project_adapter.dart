@@ -63,6 +63,8 @@ final class FlutterProjectAdapter implements ProjectAdapter {
       await _buildFlutterProject(
         request: request,
         metadata: metadata,
+        versionOverride: overrides.version,
+        buildNumberOverride: overrides.buildNumber,
         dartDefines: overrides.dartDefines,
         output: sink,
         startBuildProcess: startBuildProcess,
@@ -81,6 +83,8 @@ final class FlutterProjectAdapter implements ProjectAdapter {
 Future<void> _buildFlutterProject({
   required ProjectBuildRequest request,
   required ProjectMetadata metadata,
+  required String? versionOverride,
+  required int? buildNumberOverride,
   required List<String> dartDefines,
   required StringSink output,
   required BuildProcessStarter startBuildProcess,
@@ -89,6 +93,8 @@ Future<void> _buildFlutterProject({
   final flutterBuildArgs = [
     for (final argument in metadata.profile.flutterBuildArgs)
       if (request.releaseMode || argument != "--release") argument,
+    if (versionOverride != null) "--build-name=${metadata.version}",
+    if (buildNumberOverride != null) "--build-number=${metadata.buildNumber}",
     for (final define in dartDefines) "--dart-define=$define",
   ];
   final process = await startBuildProcess(

@@ -699,9 +699,25 @@ public struct MacInstallRequest: Sendable {
         let provider: String
         switch artifactKind {
         case "zip", "dmg":
+            guard expectedPackageIDs.isEmpty else {
+                throw macInstallRequestFailure(
+                    "Package receipt IDs are only valid for PKG updates."
+                )
+            }
             strategy = "directoryReplace"
             provider = "platformDirectory"
         case "pkgInstaller":
+            guard let install = manifest["install"] as? [String: Any],
+                  let macosPKG = install["macosPkg"] as? [String: Any],
+                  let manifestPackageIDs = macosPKG["expectedPackageIds"]
+                    as? [String],
+                  manifestPackageIDs.count == 1,
+                  manifestPackageIDs == expectedPackageIDs,
+                  macosPKG["relaunchAfterInstall"] as? Bool == false else {
+                throw macInstallRequestFailure(
+                    "PKG receipt IDs are not bound to the signed manifest."
+                )
+            }
             strategy = "verifiedInstallerHandoff"
             provider = "macosInstaller"
         default:

@@ -624,7 +624,7 @@ Map<String, Object?> _installDescriptorForArtifactKind(
       return {
         "strategy": "pkgInstaller",
         "macosPkg": {
-          "launchMode": "installerApp",
+          "launchMode": "privilegedInstallerTool",
           "expectedPackageIds": ["com.example.app.pkg"],
           "relaunchAfterInstall": false,
         },

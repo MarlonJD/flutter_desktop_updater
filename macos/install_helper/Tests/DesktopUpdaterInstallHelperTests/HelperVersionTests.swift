@@ -27,6 +27,12 @@ final class HelperVersionTests: XCTestCase {
             .oneShotRecovery
         )
         XCTAssertEqual(
+            try HelperCommand.parse(
+                arguments: ["--verified-installer-worker"]
+            ),
+            .verifiedInstallerWorker
+        )
+        XCTAssertEqual(
             try HelperCommand.parse(arguments: []),
             .privilegedService
         )
@@ -143,6 +149,31 @@ final class HelperVersionTests: XCTestCase {
             ),
             "valid schema=1 protocol=1 "
                 + "transaction=00000000-0000-4000-8000-000000000001\n"
+        )
+    }
+
+    func testBuiltHelperWorkerEOFExitsWithoutLaunchingInstaller() throws {
+        let helper = Bundle(for: Self.self).bundleURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("DesktopUpdaterInstallHelper")
+        let process = Process()
+        process.executableURL = helper
+        process.arguments = ["--verified-installer-worker"]
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+
+        try process.run()
+        process.waitUntilExit()
+
+        XCTAssertEqual(
+            process.terminationStatus,
+            0,
+            String(
+                decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            )
         )
     }
 }

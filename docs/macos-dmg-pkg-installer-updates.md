@@ -6,7 +6,7 @@ This guide covers the three macOS lanes supported by `desktop_updater`:
 | --- | --- | --- | --- |
 | Direct update | `artifact.kind: zip` | `wholeBundleReplace` | Existing whole `.app` bundle replacement. |
 | DMG update | `artifact.kind: dmg` | `wholeBundleReplace` | Mount a verified DMG, copy the contained `.app`, verify it, detach, then use whole-bundle replacement. |
-| PKG update | `artifact.kind: pkgInstaller` | `install.strategy: pkgInstaller` | Stage a verified installer package and hand it to Installer.app. |
+| PKG update | `artifact.kind: pkgInstaller` | `install.strategy: pkgInstaller` | Stage a verified installer package and hand it to the bundled `SMAppService` root daemon for fixed `/usr/sbin/installer` execution. |
 
 The direct `.app.zip` path stays backward-compatible. A zip descriptor still
 means one verified archive, `ditto` extraction, staged `.app` verification, and
@@ -75,7 +75,7 @@ PKG descriptors use installer-owned semantics:
   "install": {
     "strategy": "pkgInstaller",
     "macosPkg": {
-      "launchMode": "installerApp",
+      "launchMode": "privilegedInstallerTool",
       "expectedPackageIds": ["com.example.app.pkg"],
       "relaunchAfterInstall": false
     }
@@ -83,11 +83,17 @@ PKG descriptors use installer-owned semantics:
 }
 ```
 
-The updater stages the verified PKG and the native helper opens it with
-Installer.app. The user confirms installation in Apple's installer UI. A
-silent privileged install is not promised, and this package does not use `sudo`,
-AppleScript privilege escalation, `AuthorizationExecuteWithPrivileges`, or a
-hidden root installer.
+The updater verifies and stages the PKG, then routes the sealed
+`macosInstaller` + `verifiedInstallerHandoff` request through its bundled
+`SMAppService` root daemon. The daemon accepts only the authenticated request
+and runs the fixed `/usr/sbin/installer -pkg <sealed-stage>/installer.pkg
+-target /` command. The runtime does not invoke `sudo`, AppleScript privilege
+escalation, `AuthorizationExecuteWithPrivileges`, or Installer.app.
+
+First enable and revoked consent fail before mutation with the stable
+`PrivilegedHelperApprovalRequired` error. The verified stage is retained so the
+application can open Background Items settings and retry. Once approved, the
+same daemon approval is reused; users do not approve every update.
 
 ## Release CLI Config
 
@@ -193,19 +199,25 @@ dart run tool/macos_production_smoke.dart doctor
 dart run tool/macos_production_smoke.dart dmg-first-install
 dart run tool/macos_production_smoke.dart move-to-applications
 dart run tool/macos_production_smoke.dart dmg-update
-dart run tool/macos_production_smoke.dart pkg-installer
+dart run tool/macos_production_smoke.dart pkg-artifact
 dart run tool/macos_production_smoke.dart pkg-install-verify
 dart run tool/macos_production_smoke.dart all --cleanup
 ```
 
 Evidence is written under `reports/macos-production-smoke/`.
 
-`pkg-installer` verifies the updater-owned PKG boundary: download, checksum,
-Apple trust checks, package metadata validation, and Installer.app handoff.
-It does not perform a silent privileged install. `pkg-install-verify` is a
-separate opt-in QA gate that uses macOS administrator approval to run the
-system installer, then verifies the smoke receipt, installed v2 app sentinel,
-and final app Apple trust.
+`pkg-artifact` builds and verifies the signed, notarized, stapled PKG without
+attempting an install handoff. `pkg-install-verify` is a separate opt-in QA gate
+that uses macOS administrator approval to run the system installer directly,
+then verifies the smoke receipt, installed v2 app sentinel, and final app Apple
+trust. It validates the package itself; it is not runtime-helper evidence.
+
+The hosted approval-boundary lane runs a signed helper-embedded v1 app from
+`/Applications` and requires the exact approval-required result, unchanged v1,
+and a retained verified stage. This is not install-success evidence. The
+self-hosted preapproved target-host lane owns the real privileged runtime
+handoff: it requires the v2 app/build, package receipt/version, post-install
+bundle/helper/LaunchDaemon identity and root ownership, and empty staging.
 
 Cleanup removes only smoke-owned paths: the smoke app in `/Applications`, smoke
 DMG volumes, smoke temp roots, and listed smoke package receipts. Receipt

@@ -109,6 +109,14 @@ final class MacInstallHelperTests: XCTestCase {
                 "sha256": String(repeating: "c", count: 64),
                 "length": 123,
             ],
+            "install": [
+                "strategy": "pkgInstaller",
+                "macosPkg": [
+                    "launchMode": "privilegedInstallerTool",
+                    "expectedPackageIds": ["com.example.app.pkg"],
+                    "relaunchAfterInstall": false,
+                ],
+            ],
             "signature": [
                 "algorithm": "ed25519",
                 "publicKeyId": "stable-2026",
@@ -203,6 +211,42 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertEqual(
             descriptor["canonicalSha256"] as? String,
             provenance.marker.descriptorSha256
+        )
+
+        let mismatchedPackageIDs = MacInstallRequest(
+            stagingPath: stagedApp.path,
+            allowUnsignedUpdates: false,
+            diagnosticsLogPath: nil,
+            stageRoot: stageRoot.path,
+            expectedProvenanceSHA256: provenance.markerSHA256,
+            artifactKind: "pkgInstaller",
+            expectedArtifactSHA256: String(repeating: "c", count: 64),
+            expectedPackageIDs: ["com.example.attacker.pkg"],
+            provenanceEntries: provenance.marker.entries
+        )
+        XCTAssertThrowsError(
+            try mismatchedPackageIDs.helperRequestData(
+                transactionID: "00000000-0000-4000-8000-000000000099",
+                processIdentifier: 4_243,
+                bundleURL: URL(fileURLWithPath: "/Applications/Example.app"),
+                evidence: MacInstallRequestEvidence(
+                    policyID: "com.example.desktop-updater.privileged",
+                    packageID: "com.example.app",
+                    processStartIdentity: "pid-start-99",
+                    executableSHA256: String(repeating: "a", count: 64),
+                    signerIdentity: "identifier com.example.app",
+                    targetClass: "applicationBundle",
+                    executableRelativePath: "Contents/MacOS/Example",
+                    currentVersion: "2.7.0",
+                    currentBuildNumber: 270,
+                    currentPackageIdentitySHA256:
+                        String(repeating: "b", count: 64),
+                    targetIdentityProofSHA256:
+                        String(repeating: "a", count: 64),
+                    requestNonce:
+                        "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
+                )
+            )
         )
     }
 

@@ -71,11 +71,36 @@ struct MacOSRuntimeSmoke {
             client.diagnostics.redactedLogLines(),
             to: smokeRoot.appendingPathComponent("runtime-diagnostics.log")
         )
-        try client.installAndRelaunch(
-            staged,
-            diagnosticsLogPath: diagnosticsLog,
-            allowUnsignedUpdates: allowUnsigned
-        )
+        do {
+            try client.installAndRelaunch(
+                staged,
+                diagnosticsLogPath: diagnosticsLog,
+                allowUnsignedUpdates: allowUnsigned
+            )
+        } catch let RuntimeError.outcome(outcome, message)
+            where arguments.expectsUnsignedHandoffRejection &&
+            outcome == .installHandoffFailure &&
+            message.contains("Canonical signed install evidence is required.")
+        {
+            print("Expected unsigned install handoff rejection")
+            return
+        } catch let RuntimeError.diagnostic(outcome, diagnostic)
+            where arguments.expectsHelperApprovalRequirement &&
+            outcome == .installHandoffFailure &&
+            diagnostic.code == .privilegedHelperApprovalRequired &&
+            diagnostic.remediationActions.contains(
+                .openMacOSBackgroundItemsSettings
+            )
+        {
+            print("Expected SMAppService admin approval requirement")
+            return
+        }
+        if arguments.expectsUnsignedHandoffRejection {
+            throw SmokeFailure("Unsigned install handoff unexpectedly succeeded.")
+        }
+        if arguments.expectsHelperApprovalRequirement {
+            throw SmokeFailure("SMAppService helper unexpectedly avoided approval.")
+        }
         print(
             "installAndRelaunch scheduled \(staged.descriptor.version) " +
                 "from \(staged.descriptor.artifact.kind)"
@@ -102,6 +127,12 @@ private struct Arguments {
     }
 
     var isSmoke: Bool { values.contains("--smoke") }
+    var expectsUnsignedHandoffRejection: Bool {
+        values.contains("--expect-unsigned-handoff-rejection")
+    }
+    var expectsHelperApprovalRequirement: Bool {
+        values.contains("--expect-helper-approval-required")
+    }
     func has(_ option: String) -> Bool { values.contains(option) }
 
     func value(_ option: String) -> String {

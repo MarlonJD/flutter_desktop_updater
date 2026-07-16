@@ -11,7 +11,11 @@ void main() {
     expect(doc, contains("artifact.kind: dmg"));
     expect(doc, contains("artifact.kind: pkgInstaller"));
     expect(doc, contains("install.strategy: pkgInstaller"));
-    expect(doc, contains("silent privileged install is not promised"));
+    expect(doc, contains('"launchMode": "privilegedInstallerTool"'));
+    expect(doc, contains("SMAppService"));
+    expect(doc, contains("PrivilegedHelperApprovalRequired"));
+    expect(doc, contains("/usr/sbin/installer"));
+    expect(doc, isNot(contains("Installer.app handoff")));
     expect(
       doc,
       contains("dart run tool/macos_production_smoke.dart doctor"),
@@ -21,6 +25,8 @@ void main() {
       contains("dart run tool/macos_production_smoke.dart pkg-install-verify"),
     );
     expect(doc, contains("separate opt-in QA gate"));
+    expect(doc, contains("hosted approval-boundary"));
+    expect(doc, contains("self-hosted preapproved"));
     expect(doc, contains("hdiutil attach -readonly -nobrowse"));
     expect(doc, contains("pkgutil --check-signature"));
   });

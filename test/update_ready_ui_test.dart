@@ -322,6 +322,31 @@ void main() {
     },
   );
 
+  testWidgets("privileged helper approval UI uses localization", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController(
+      localization: const DesktopUpdateLocalization(
+        macosPrivilegedHelperApprovalTitleText: "Custom approval",
+        macosPrivilegedHelperApprovalBodyText: "Custom permission body",
+        macosPrivilegedHelperApprovalOpenSettingsText: "Custom settings",
+        macosPrivilegedHelperApprovalRetryText: "Custom retry",
+      ),
+    )..showApprovalRequired();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DesktopUpdateDirectCard(controller: controller),
+        ),
+      ),
+    );
+
+    expect(find.text("Custom permission body"), findsOneWidget);
+    expect(find.text("Custom settings"), findsOneWidget);
+    expect(find.text("Custom retry"), findsOneWidget);
+  });
+
   testWidgets("error icon has a Tooltip with a non-empty message", (
     tester,
   ) async {

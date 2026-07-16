@@ -6,6 +6,17 @@ import Security
 final class SystemMacStageInstallEvidenceInspector:
     MacStageInstallEvidenceInspecting
 {
+    private let installerVerifierFactory:
+        any MacVerifiedInstallerCheckingCreating
+
+    init(
+        installerVerifierFactory:
+            any MacVerifiedInstallerCheckingCreating =
+            SystemMacVerifiedInstallerCheckerFactory()
+    ) {
+        self.installerVerifierFactory = installerVerifierFactory
+    }
+
     func inspect(
         request: NativeInstallTransactionRequestV1,
         policy: MacSealedInstallPolicyV1
@@ -27,17 +38,28 @@ final class SystemMacStageInstallEvidenceInspector:
     ) throws -> MacStageInstallEvidence {
         let stageURL = URL(fileURLWithPath: request.stage.pathHint)
             .standardizedFileURL
+        let isInstaller = request.strategy == "verifiedInstallerHandoff"
+            && request.provider == "macosInstaller"
         guard stageURL.path == request.stage.pathHint,
-              try isRealDirectory(stageURL),
-              stageURL.lastPathComponent == request.target.targetNameHint
+              try isRealDirectory(stageURL)
         else {
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
-        let rootURL = stageURL.deletingLastPathComponent()
+        let rootURL = isInstaller
+            ? stageURL : stageURL.deletingLastPathComponent()
+        guard isInstaller
+            || stageURL.lastPathComponent == request.target.targetNameHint
+        else {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        let rootDirectory = try MacTransactionDirectory(url: rootURL)
         let markerURL = rootURL.appendingPathComponent(
             ".desktop_updater_stage_provenance.json"
         )
-        let markerData = try Data(contentsOf: markerURL)
+        let markerData = try MacRetainedFileObject(
+            directory: rootDirectory,
+            name: markerURL.lastPathComponent
+        ).readData(maximumLength: macStageMetadataMaximumLength)
         guard macPrivilegeSHA256(markerData)
                 == request.stage.provenanceSHA256,
               try NativeStrictJSON.canonicalize(markerData) == markerData,
@@ -64,7 +86,11 @@ final class SystemMacStageInstallEvidenceInspector:
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
         let expectedEntries = try parseEntries(rawEntries)
-        let actualEntries = try inventory(rootURL, excludingMarker: true)
+        let actualEntries = try inventory(
+            rootURL,
+            excludingMarker: true,
+            expectedEntries: expectedEntries
+        )
         guard expectedEntries == actualEntries else {
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
@@ -72,7 +98,10 @@ final class SystemMacStageInstallEvidenceInspector:
         let descriptorURL = rootURL.appendingPathComponent(
             ".desktop_updater_release_manifest.json"
         )
-        let descriptorData = try Data(contentsOf: descriptorURL)
+        let descriptorData = try MacRetainedFileObject(
+            directory: rootDirectory,
+            name: descriptorURL.lastPathComponent
+        ).readData(maximumLength: macStageMetadataMaximumLength)
         let canonicalDescriptor = try NativeStrictJSON.canonicalize(
             descriptorData
         )
@@ -89,11 +118,59 @@ final class SystemMacStageInstallEvidenceInspector:
             policy: policy
         )
         try verifyArtifact(
-            rootURL: rootURL,
+            rootDirectory: rootDirectory,
             kind: descriptorEvidence.artifactKind,
             request: request
         )
 
+        if isInstaller {
+            guard descriptorEvidence.artifactKind == "pkgInstaller",
+                  !descriptorEvidence.expectedPackageIdentifiers.isEmpty
+            else {
+                throw MacOneShotAuthorizationError.stageAuthenticationFailed
+            }
+            let expectation = MacVerifiedInstallerExpectation(
+                installerURL: rootURL.appendingPathComponent(
+                    "installer.pkg"
+                ),
+                kind: .pkg,
+                targetURL: URL(
+                    fileURLWithPath: request.target.pathHint
+                ).standardizedFileURL,
+                packageIdentifier: request.packageID,
+                expectedVersion: request.desiredIdentity.version,
+                expectedBuildNumber: request.desiredIdentity.buildNumber,
+                designatedRequirement:
+                    policy.allowedApplicationSigner.value,
+                artifactSHA256: request.stage.artifactSHA256,
+                artifactLength: request.stage.artifactLength,
+                expectedPackageIdentifiers:
+                    descriptorEvidence.expectedPackageIdentifiers,
+                descriptorSHA256:
+                    request.signedDescriptor.canonicalSHA256,
+                provenanceSHA256: request.stage.provenanceSHA256
+            )
+            let checker = try installerVerifierFactory.makeVerifier(
+                expectation: expectation
+            )
+            let evidence = try checker.verifyInstaller(expectation)
+            let boundExpectation = expectation.binding(evidence)
+            return MacStageInstallEvidence(
+                stageURL: rootURL,
+                installerExpectation: boundExpectation,
+                handoff: MacVerifiedInstallerHandoff(
+                    verifier: checker,
+                    runner: MacPlatformInstallerRunner()
+                )
+            )
+        }
+
+        guard let executableSHA256 =
+                descriptorEvidence.executableSHA256,
+              let bundleTreeSHA256 =
+                descriptorEvidence.bundleTreeSHA256 else {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
         let verifier = MacAuthorizedBundlePayloadVerifier(
             expectation: MacAuthorizedBundlePayloadExpectation(
                 packageIdentifier: request.packageID,
@@ -102,8 +179,8 @@ final class SystemMacStageInstallEvidenceInspector:
                 version: request.desiredIdentity.version,
                 buildNumber: request.desiredIdentity.buildNumber,
                 provenanceSHA256: request.stage.provenanceSHA256,
-                executableSHA256: descriptorEvidence.executableSHA256,
-                bundleTreeSHA256: descriptorEvidence.bundleTreeSHA256
+                executableSHA256: executableSHA256,
+                bundleTreeSHA256: bundleTreeSHA256
             )
         )
         let identity = try verifier.verifyPayload(at: stageURL)
@@ -119,8 +196,7 @@ final class SystemMacStageInstallEvidenceInspector:
         _ descriptor: [String: Any],
         request: NativeInstallTransactionRequestV1,
         policy: MacSealedInstallPolicyV1
-    ) throws -> (artifactKind: String, executableSHA256: String,
-        bundleTreeSHA256: String)
+    ) throws -> MacDescriptorInstallEvidence
     {
         let required: Set<String> = [
             "schemaVersion", "packageId", "appName", "version",
@@ -146,15 +222,18 @@ final class SystemMacStageInstallEvidenceInspector:
               let artifact = descriptor["artifact"] as? [String: Any],
               Set(artifact.keys) == ["kind", "url", "sha256", "length"],
               let artifactKind = artifact["kind"] as? String,
-              ["zip", "dmg"].contains(artifactKind),
+              ["zip", "dmg", "pkgInstaller"].contains(artifactKind),
               artifact["url"] as? String != nil,
               artifact["sha256"] as? String
                 == request.stage.artifactSHA256,
               exactInteger(artifact["length"])
                 == request.stage.artifactLength,
               let install = descriptor["install"] as? [String: Any],
-              install["strategy"] as? String == "wholeBundleReplace",
-              try validInstall(install, artifactKind: artifactKind),
+              try validInstall(
+                  install,
+                  artifactKind: artifactKind,
+                  request: request
+              ),
               let signature = descriptor["signature"]
                 as? [String: Any],
               Set(signature.keys) == ["algorithm", "publicKeyId", "value"],
@@ -176,6 +255,10 @@ final class SystemMacStageInstallEvidenceInspector:
         else {
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
+        if artifactKind == "pkgInstaller",
+           exactInteger(descriptor["buildNumber"]) == nil {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
         var unsigned = descriptor
         var unsignedSignature = signature
         unsignedSignature["value"] = ""
@@ -191,11 +274,28 @@ final class SystemMacStageInstallEvidenceInspector:
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
 
+        if artifactKind == "pkgInstaller" {
+            guard let macosPKG = install["macosPkg"] as? [String: Any],
+                  let identifiers = macosPKG["expectedPackageIds"]
+                    as? [String] else {
+                throw MacOneShotAuthorizationError.stageAuthenticationFailed
+            }
+            return MacDescriptorInstallEvidence(
+                artifactKind: artifactKind,
+                executableSHA256: nil,
+                bundleTreeSHA256: nil,
+                expectedPackageIdentifiers: identifiers
+            )
+        }
+
         let stageURL = URL(fileURLWithPath: request.stage.pathHint)
             .standardizedFileURL
         let infoURL = stageURL.appendingPathComponent("Contents/Info.plist")
         guard let info = try PropertyListSerialization.propertyList(
-            from: Data(contentsOf: infoURL),
+            from: try macReadBoundedRegularFile(
+                infoURL,
+                maximumLength: macStageMetadataMaximumLength
+            ),
             options: [],
             format: nil
         ) as? [String: Any],
@@ -212,8 +312,17 @@ final class SystemMacStageInstallEvidenceInspector:
         let executableURL = stageURL.appendingPathComponent(
             "Contents/MacOS/\(executableName)"
         )
-        let executableSHA256 = macPrivilegeSHA256(
-            try Data(contentsOf: executableURL, options: [.mappedIfSafe])
+        do {
+            try macValidateRequiredBundleExecutables(
+                stageURL,
+                executableName: executableName
+            )
+        } catch {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        let executableSHA256 = try macBoundedFileSHA256(
+            executableURL,
+            maximumLength: macStageTreeFileMaximumLength
         )
         let bundleTreeSHA256 = try macAuthorizedTreeSHA256(stageURL)
         let verifier = MacAuthorizedBundlePayloadVerifier(
@@ -229,30 +338,78 @@ final class SystemMacStageInstallEvidenceInspector:
             )
         )
         _ = try verifier.verifyPayload(at: stageURL)
-        return (artifactKind, executableSHA256, bundleTreeSHA256)
+        return MacDescriptorInstallEvidence(
+            artifactKind: artifactKind,
+            executableSHA256: executableSHA256,
+            bundleTreeSHA256: bundleTreeSHA256,
+            expectedPackageIdentifiers: []
+        )
     }
 
     private func verifyArtifact(
-        rootURL: URL,
+        rootDirectory: MacTransactionDirectory,
         kind: String,
         request: NativeInstallTransactionRequestV1
     ) throws {
-        let name = kind == "zip"
-            ? ".desktop_updater_artifact.zip" : "artifact.dmg"
-        let data = try Data(
-            contentsOf: rootURL.appendingPathComponent(name),
-            options: [.mappedIfSafe]
+        let name: String
+        switch kind {
+        case "zip":
+            name = ".desktop_updater_artifact.zip"
+        case "dmg":
+            name = "artifact.dmg"
+        case "pkgInstaller":
+            name = "installer.pkg"
+        default:
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        let artifact = try MacRetainedFileObject(
+            directory: rootDirectory,
+            name: name
         )
-        guard data.count == request.stage.artifactLength,
-              macPrivilegeSHA256(data) == request.stage.artifactSHA256 else {
+        guard try artifact.sha256(
+            expectedLength: request.stage.artifactLength
+        ) == request.stage.artifactSHA256 else {
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
     }
 
     private func validInstall(
         _ install: [String: Any],
-        artifactKind: String
+        artifactKind: String,
+        request: NativeInstallTransactionRequestV1
     ) throws -> Bool {
+        if artifactKind == "pkgInstaller" {
+            guard request.strategy == "verifiedInstallerHandoff",
+                  request.provider == "macosInstaller",
+                  Set(install.keys) == ["strategy", "macosPkg"],
+                  install["strategy"] as? String == "pkgInstaller",
+                  let pkg = install["macosPkg"] as? [String: Any],
+                  Set(pkg.keys) == [
+                      "launchMode", "expectedPackageIds",
+                      "relaunchAfterInstall",
+                  ],
+                  let launchMode = pkg["launchMode"] as? String,
+                  launchMode == "installerApp" ||
+                      launchMode == "privilegedInstallerTool",
+                  pkg["relaunchAfterInstall"] as? Bool == false,
+                  let identifiers = pkg["expectedPackageIds"] as? [String],
+                  identifiers.count == 1,
+                  Set(identifiers).count == identifiers.count,
+                  identifiers.allSatisfy({ identifier in
+                      identifier.range(
+                          of: #"^[a-zA-Z0-9](?:[a-zA-Z0-9._-]{0,126}[a-zA-Z0-9])?$"#,
+                          options: .regularExpression
+                      ) != nil
+                  }) else {
+                return false
+            }
+            return true
+        }
+        guard request.strategy == "directoryReplace",
+              request.provider == "platformDirectory",
+              install["strategy"] as? String == "wholeBundleReplace" else {
+            return false
+        }
         if artifactKind == "zip" {
             return Set(install.keys) == ["strategy"]
         }
@@ -269,12 +426,20 @@ final class SystemMacStageInstallEvidenceInspector:
     }
 }
 
+private struct MacDescriptorInstallEvidence {
+    let artifactKind: String
+    let executableSHA256: String?
+    let bundleTreeSHA256: String?
+    let expectedPackageIdentifiers: [String]
+}
+
 private struct MacStageInventoryEntry: Equatable {
     let path: String
     let kind: String
     let length: Int64
     let sha256: String?
     let target: String?
+    let mode: UInt16?
 }
 
 private struct MacAuthorizedBundlePayloadExpectation {
@@ -301,10 +466,11 @@ private final class MacAuthorizedBundlePayloadVerifier:
         guard canonical.path == bundleURL.standardizedFileURL.path,
               try isRealDirectory(canonical),
               let info = try PropertyListSerialization.propertyList(
-                  from: Data(
-                      contentsOf: canonical.appendingPathComponent(
+                  from: try macReadBoundedRegularFile(
+                      canonical.appendingPathComponent(
                           "Contents/Info.plist"
-                      )
+                      ),
+                      maximumLength: macStageMetadataMaximumLength
                   ),
                   options: [],
                   format: nil
@@ -319,14 +485,21 @@ private final class MacAuthorizedBundlePayloadVerifier:
               isSimpleComponent(executableName) else {
             throw MacPayloadVerificationError.invalidBundle
         }
-        let executableData = try Data(
-            contentsOf: canonical.appendingPathComponent(
+        let executableSHA256 = try macBoundedFileSHA256(
+            canonical.appendingPathComponent(
                 "Contents/MacOS/\(executableName)"
             ),
-            options: [.mappedIfSafe]
+            maximumLength: macStageTreeFileMaximumLength
         )
-        guard macPrivilegeSHA256(executableData)
-                == expectation.executableSHA256 else {
+        do {
+            try macValidateRequiredBundleExecutables(
+                canonical,
+                executableName: executableName
+            )
+        } catch {
+            throw MacPayloadVerificationError.invalidBundle
+        }
+        guard executableSHA256 == expectation.executableSHA256 else {
             throw MacPayloadVerificationError.executableMismatch
         }
         guard try macAuthorizedTreeSHA256(canonical)
@@ -399,7 +572,8 @@ private func parseEntries(_ values: [Any]) throws
                 kind: kind,
                 length: length,
                 sha256: sha,
-                target: target
+                target: target,
+                mode: nil
             )
         )
         previous = path
@@ -409,7 +583,9 @@ private func parseEntries(_ values: [Any]) throws
 
 private func inventory(
     _ rootURL: URL,
-    excludingMarker: Bool
+    excludingMarker: Bool,
+    expectedEntries: [MacStageInventoryEntry]? = nil,
+    includeModes: Bool = false
 ) throws -> [MacStageInventoryEntry] {
     let canonicalRoot = try realURL(rootURL)
     guard try isRealDirectory(rootURL),
@@ -421,6 +597,10 @@ private func inventory(
               options: []
           ) else {
         throw MacOneShotAuthorizationError.stageAuthenticationFailed
+    }
+    let rootDirectory = try MacTransactionDirectory(url: canonicalRoot)
+    let expectedByPath = expectedEntries.map { entries in
+        Dictionary(uniqueKeysWithValues: entries.map { ($0.path, $0) })
     }
     var result: [MacStageInventoryEntry] = []
     for case let url as URL in enumerator {
@@ -436,6 +616,9 @@ private func inventory(
         if excludingMarker
             && relative == ".desktop_updater_stage_provenance.json" {
             continue
+        }
+        if let expectedByPath, expectedByPath[relative] == nil {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
         let values = try url.resourceValues(forKeys: [
             .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
@@ -454,7 +637,8 @@ private func inventory(
                     kind: "symlink",
                     length: 0,
                     sha256: nil,
-                    target: target
+                    target: target,
+                    mode: nil
                 )
             )
         } else if values.isDirectory == true {
@@ -464,18 +648,36 @@ private func inventory(
                     kind: "directory",
                     length: 0,
                     sha256: nil,
-                    target: nil
+                    target: nil,
+                    mode: includeModes ? try macStageMode(url) : nil
                 )
             )
         } else if values.isRegularFile == true {
-            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            let retained = try MacRetainedFileObject(
+                directory: rootDirectory,
+                name: relative
+            )
+            let length: Int64
+            if let expected = expectedByPath?[relative] {
+                guard expected.kind == "file" else {
+                    throw MacOneShotAuthorizationError
+                        .stageAuthenticationFailed
+                }
+                length = expected.length
+            } else {
+                length = try retained.length(
+                    maximumLength: macStageTreeFileMaximumLength
+                )
+            }
             result.append(
                 MacStageInventoryEntry(
                     path: relative,
                     kind: "file",
-                    length: Int64(data.count),
-                    sha256: macPrivilegeSHA256(data),
-                    target: nil
+                    length: length,
+                    sha256: try retained.sha256(expectedLength: length),
+                    target: nil,
+                    mode: includeModes
+                        ? try retained.rootOwnedBundleFileMode() : nil
                 )
             )
         } else {
@@ -487,6 +689,37 @@ private func inventory(
     }
 }
 
+private let macStageMetadataMaximumLength: Int64 = 1_048_576
+private let macStageTreeFileMaximumLength: Int64 = 16 * 1024 * 1024 * 1024
+
+func macReadBoundedRegularFile(
+    _ url: URL,
+    maximumLength: Int64
+) throws -> Data {
+    let directory = try MacTransactionDirectory(
+        url: url.deletingLastPathComponent()
+    )
+    return try MacRetainedFileObject(
+        directory: directory,
+        name: url.lastPathComponent
+    ).readData(maximumLength: maximumLength)
+}
+
+func macBoundedFileSHA256(
+    _ url: URL,
+    maximumLength: Int64
+) throws -> String {
+    let directory = try MacTransactionDirectory(
+        url: url.deletingLastPathComponent()
+    )
+    let retained = try MacRetainedFileObject(
+        directory: directory,
+        name: url.lastPathComponent
+    )
+    let length = try retained.length(maximumLength: maximumLength)
+    return try retained.sha256(expectedLength: length)
+}
+
 private func realURL(_ url: URL) throws -> URL {
     var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard url.path.withCString({ realpath($0, &buffer) }) != nil else {
@@ -496,7 +729,11 @@ private func realURL(_ url: URL) throws -> URL {
 }
 
 func macAuthorizedTreeSHA256(_ rootURL: URL) throws -> String {
-    let entries = try inventory(rootURL, excludingMarker: false)
+    let entries = try inventory(
+        rootURL,
+        excludingMarker: false,
+        includeModes: true
+    )
     let object: [[String: Any]] = entries.map { entry in
         var value: [String: Any] = [
             "path": entry.path,
@@ -505,6 +742,7 @@ func macAuthorizedTreeSHA256(_ rootURL: URL) throws -> String {
         ]
         if let sha = entry.sha256 { value["sha256"] = sha }
         if let target = entry.target { value["target"] = target }
+        if let mode = entry.mode { value["mode"] = Int(mode) }
         return value
     }
     return macPrivilegeSHA256(
@@ -512,6 +750,82 @@ func macAuthorizedTreeSHA256(_ rootURL: URL) throws -> String {
             JSONSerialization.data(withJSONObject: object)
         )
     )
+}
+
+private func macStageMode(_ url: URL) throws -> UInt16 {
+    var value = stat()
+    let status = url.path.withCString({ Darwin.lstat($0, &value) })
+    let kind = value.st_mode & mode_t(S_IFMT)
+    let mode = value.st_mode & mode_t(0o7777)
+    let accessible = kind == mode_t(S_IFDIR)
+        ? mode & 0o005 == 0o005
+        : kind == mode_t(S_IFREG)
+            && mode & 0o004 == 0o004
+            && (mode & 0o111 == 0 || mode & 0o101 == 0o101)
+    guard status == 0,
+          value.st_flags == 0,
+          mode & 0o7000 == 0,
+          mode & 0o022 == 0,
+          accessible else {
+        throw MacOneShotAuthorizationError.stageAuthenticationFailed
+    }
+    return UInt16(mode)
+}
+
+private func macValidateRequiredBundleExecutables(
+    _ bundleURL: URL,
+    executableName: String
+) throws {
+    guard isSimpleComponent(executableName) else {
+        throw MacOneShotAuthorizationError.stageAuthenticationFailed
+    }
+    let root = try MacTransactionDirectory(url: bundleURL)
+    for components in [
+        ["Contents", "MacOS", executableName],
+        ["Contents", "Helpers", "DesktopUpdaterInstallHelper"],
+    ] {
+        var descriptor = Darwin.dup(root.fileDescriptor)
+        guard descriptor >= 0 else {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        defer { _ = Darwin.close(descriptor) }
+        for component in components.dropLast() {
+            let child = component.withCString {
+                Darwin.openat(
+                    descriptor,
+                    $0,
+                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+                )
+            }
+            guard child >= 0 else {
+                throw MacOneShotAuthorizationError.stageAuthenticationFailed
+            }
+            _ = Darwin.close(descriptor)
+            descriptor = child
+        }
+        let executable = components.last!.withCString {
+            Darwin.openat(
+                descriptor,
+                $0,
+                O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard executable >= 0 else {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        var status = stat()
+        let valid = Darwin.fstat(executable, &status) == 0
+            && status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG)
+            && status.st_mode & mode_t(0o101) == mode_t(0o101)
+            && status.st_mode & mode_t(0o004) == mode_t(0o004)
+            && status.st_mode & mode_t(0o7000) == 0
+            && status.st_mode & mode_t(0o022) == 0
+            && status.st_flags == 0
+        _ = Darwin.close(executable)
+        guard valid else {
+            throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+    }
 }
 
 func macVerifyBundleSignature(

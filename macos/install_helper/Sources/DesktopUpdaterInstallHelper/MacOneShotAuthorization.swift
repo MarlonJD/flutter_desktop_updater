@@ -180,10 +180,55 @@ final class SystemMacCallerInstallEvidenceInspector:
     }
 }
 
+enum MacStageInstallPayload {
+    case bundle(
+        identity: MacVerifiedPayloadIdentity,
+        verifier: any MacInstallPayloadVerifying
+    )
+    case verifiedInstaller(
+        expectation: MacVerifiedInstallerExpectation,
+        handoff: MacVerifiedInstallerHandoff
+    )
+}
+
 struct MacStageInstallEvidence {
     let stageURL: URL
-    let payloadIdentity: MacVerifiedPayloadIdentity
-    let verifier: any MacInstallPayloadVerifying
+    let payload: MacStageInstallPayload
+
+    init(
+        stageURL: URL,
+        payloadIdentity: MacVerifiedPayloadIdentity,
+        verifier: any MacInstallPayloadVerifying
+    ) {
+        self.stageURL = stageURL
+        payload = .bundle(identity: payloadIdentity, verifier: verifier)
+    }
+
+    init(
+        stageURL: URL,
+        installerExpectation: MacVerifiedInstallerExpectation,
+        handoff: MacVerifiedInstallerHandoff
+    ) {
+        self.stageURL = stageURL
+        payload = .verifiedInstaller(
+            expectation: installerExpectation,
+            handoff: handoff
+        )
+    }
+
+    var payloadIdentity: MacVerifiedPayloadIdentity {
+        guard case let .bundle(identity, _) = payload else {
+            preconditionFailure("Installer evidence has no bundle identity.")
+        }
+        return identity
+    }
+
+    var verifier: any MacInstallPayloadVerifying {
+        guard case let .bundle(_, verifier) = payload else {
+            preconditionFailure("Installer evidence has no bundle verifier.")
+        }
+        return verifier
+    }
 }
 
 protocol MacStageInstallEvidenceInspecting: AnyObject {
@@ -221,8 +266,11 @@ final class MacOneShotInstallRequestValidator:
         _ request: NativeInstallTransactionRequestV1,
         policy: MacSealedInstallPolicyV1
     ) throws -> MacStageInstallEvidence {
-        guard request.strategy == "directoryReplace",
-              request.provider == "platformDirectory" else {
+        let isDirectory = request.strategy == "directoryReplace"
+            && request.provider == "platformDirectory"
+        let isInstaller = request.strategy == "verifiedInstallerHandoff"
+            && request.provider == "macosInstaller"
+        guard isDirectory || isInstaller else {
             throw MacOneShotAuthorizationError.unsupportedStrategy
         }
         let targetURL = URL(fileURLWithPath: request.target.pathHint)
@@ -280,11 +328,39 @@ final class MacOneShotInstallRequestValidator:
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
         }
         guard stage.stageURL.standardizedFileURL.path
-            == request.stage.pathHint,
-            stage.payloadIdentity.packageIdentifier == request.packageID,
-            stage.payloadIdentity.provenanceSHA256
-                == request.stage.provenanceSHA256 else {
+            == request.stage.pathHint else {
             throw MacOneShotAuthorizationError.stageAuthenticationFailed
+        }
+        switch stage.payload {
+        case let .bundle(identity, _):
+            guard isDirectory,
+                  identity.packageIdentifier == request.packageID,
+                  identity.provenanceSHA256
+                    == request.stage.provenanceSHA256 else {
+                throw MacOneShotAuthorizationError.stageAuthenticationFailed
+            }
+        case let .verifiedInstaller(expectation, _):
+            guard isInstaller,
+                  expectation.installerURL.standardizedFileURL.path
+                    == URL(fileURLWithPath: request.stage.pathHint)
+                        .appendingPathComponent("installer.pkg").path,
+                  expectation.targetURL.standardizedFileURL.path
+                    == targetURL.path,
+                  expectation.packageIdentifier == request.packageID,
+                  expectation.expectedVersion
+                    == request.desiredIdentity.version,
+                  expectation.expectedBuildNumber
+                    == request.desiredIdentity.buildNumber,
+                  expectation.designatedRequirement
+                    == policy.allowedApplicationSigner.value,
+                  expectation.artifactSHA256
+                    == request.stage.artifactSHA256,
+                  expectation.descriptorSHA256
+                    == request.signedDescriptor.canonicalSHA256,
+                  expectation.provenanceSHA256
+                    == request.stage.provenanceSHA256 else {
+                throw MacOneShotAuthorizationError.stageAuthenticationFailed
+            }
         }
         return stage
     }
@@ -313,7 +389,7 @@ final class SealedMacOneShotInstallAuthorizer:
 
     func authorize(
         _ request: NativeInstallTransactionRequestV1
-    ) throws -> MacFileTransaction {
+    ) throws -> any MacPreparedInstallTransaction {
         guard helperEndpointIdentitySHA256.range(
             of: #"^[0-9a-f]{64}$"#,
             options: .regularExpression
@@ -327,15 +403,30 @@ final class SealedMacOneShotInstallAuthorizer:
         guard request.caller.processIdentifier <= Int64(Int32.max) else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }
-        return try MacFileTransaction(
-            targetURL: URL(fileURLWithPath: request.target.pathHint),
-            stageURL: stage.stageURL,
-            transactionID: request.transactionID,
-            ownerProcessIdentifier:
-                Int32(request.caller.processIdentifier),
-            expectedPayloadIdentity: stage.payloadIdentity,
-            verifier: stage.verifier,
-            preserveTargetOwnership: preserveTargetOwnership
-        )
+        switch stage.payload {
+        case let .bundle(identity, verifier):
+            return try MacFileTransaction(
+                targetURL: URL(fileURLWithPath: request.target.pathHint),
+                stageURL: stage.stageURL,
+                transactionID: request.transactionID,
+                ownerProcessIdentifier:
+                    Int32(request.caller.processIdentifier),
+                expectedPayloadIdentity: identity,
+                verifier: verifier,
+                preserveTargetOwnership: preserveTargetOwnership
+            )
+        case let .verifiedInstaller(expectation, handoff):
+            return try MacVerifiedInstallerTransaction(
+                transactionID: request.transactionID,
+                ownerProcessIdentifier:
+                    Int32(request.caller.processIdentifier),
+                ownerProcessStartIdentity:
+                    request.caller.processStartIdentity,
+                policyID: policy.policyID,
+                policySHA256: policy.canonicalSHA256,
+                expectation: expectation,
+                handoff: handoff
+            )
+        }
     }
 }

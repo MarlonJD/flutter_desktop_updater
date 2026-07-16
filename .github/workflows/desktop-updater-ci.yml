@@ -650,12 +650,12 @@ jobs:
       - name: Run unprivileged macOS install helper smoke
         run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
       - name: Typecheck macOS 10.14 CocoaPods fallback source set
-        run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
+        run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
       - name: Run DesktopUpdaterKit SwiftPM tests
         run: swift test --package-path .
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
-      - name: macOS native runtime ZIP smoke
+      - name: macOS native runtime ZIP package and unsigned rejection smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -664,21 +664,21 @@ jobs:
           package_id="com.example.native-runtime-smoke"
           app_name="NativeRuntimeSmoke.app"
           rm -rf "$smoke_root"
-          mkdir -p "$smoke_root/install/$app_name/Contents/MacOS" "$smoke_root/install/$app_name/Contents/Resources"
-          mkdir -p "$smoke_root/payload/$app_name/Contents/MacOS" "$smoke_root/payload/$app_name/Contents/Resources"
+          mkdir -p "$smoke_root/install" "$smoke_root/payload"
           export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
-          swift build --package-path example/native/macos-runtime
-          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
-          for app_root in "$smoke_root/install/$app_name" "$smoke_root/payload/$app_name"; do
-            cp "$consumer_bin" "$app_root/Contents/MacOS/NativeRuntimeSmoke"
-            chmod +x "$app_root/Contents/MacOS/NativeRuntimeSmoke"
-            plutil -create xml1 "$app_root/Contents/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $package_id" "$app_root/Contents/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string NativeRuntimeSmoke" "$app_root/Contents/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$app_root/Contents/Info.plist"
-          done
-          printf '2.7.0\n' > "$smoke_root/install/$app_name/Contents/Resources/version.txt"
-          printf '2.7.1\n' > "$smoke_root/payload/$app_name/Contents/Resources/version.txt"
+          export DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="$smoke_root/install"
+          export DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$package_id"
+          export DESKTOP_UPDATER_RUNTIME_APP_NAME="NativeRuntimeSmoke"
+          export DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="-"
+          runtime_packager="$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh"
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="2.7.0" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="270" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$smoke_root/package-work-v1" \
+            "$runtime_packager" "$smoke_root/install/$app_name"
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="2.7.1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="271" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$smoke_root/package-work-v2" \
+            "$runtime_packager" "$smoke_root/payload/$app_name"
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$smoke_root/payload/$app_name" "$smoke_root/update.zip"
           dart run tool/native_runtime_smoke_server.dart \
             --artifact "$smoke_root/update.zip" \
@@ -708,32 +708,22 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          "$smoke_root/install/$app_name/Contents/MacOS/NativeRuntimeSmoke" \
+          "$smoke_root/install/$app_name/Contents/MacOS/MacOSRuntimeCompile" \
             --smoke \
             --app-archive-url "$archive_url" \
             --public-key-base64 "$public_key" \
             --package-id "$package_id" \
             --smoke-root "$smoke_root/runtime" \
             --diagnostics-log "$smoke_root/helper-diagnostics.jsonl" \
-            --bundle-path "$smoke_root/install/$app_name" \
-            --allow-unsigned-updates
-          for attempt in $(seq 1 60); do
-            if [ "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt" 2>/dev/null || true)" = "2.7.1" ] &&
-               [ -d "$smoke_root/runtime/staging" ] &&
-               [ -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)" ] &&
-               grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
-               grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl" 2>/dev/null &&
-               [ -s "$smoke_root/runtime/runtime-diagnostics.log" ]; then
-              break
-            fi
-            sleep 0.25
-          done
-          test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.1"
+            --allow-unsigned-updates \
+            --expect-unsigned-handoff-rejection 2>&1 | tee "$smoke_root/client.log"
+          grep -q 'Expected unsigned install handoff rejection' "$smoke_root/client.log"
+          test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.0"
           test -d "$smoke_root/runtime/staging"
-          test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
-          grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"
-          grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl"
+          test -n "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test ! -e "$smoke_root/helper-diagnostics.jsonl"
           test -s "$smoke_root/runtime/runtime-diagnostics.log"
+          grep -q 'Verified native artifact is staged.' "$smoke_root/runtime/runtime-diagnostics.log"
       - name: Upload macOS native helper test counts
         if: always()
         uses: actions/upload-artifact@v4
@@ -853,20 +843,34 @@ jobs:
           DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
           DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
           DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_TEST_VERSION_V1: "2.7.0"
+          DESKTOP_UPDATER_TEST_VERSION_V2: "2.7.1"
+          DESKTOP_UPDATER_TEST_BUILD_V1: "270"
+          DESKTOP_UPDATER_TEST_BUILD_V2: "271"
           DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+          DESKTOP_UPDATER_RUNTIME_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
           set -euo pipefail
           dart run tool/macos_production_smoke.dart dmg-update
-          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
-          swift build --package-path example/native/macos-runtime
-          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
           app_name="Desktop Updater Smoke"
           app_path="/Applications/$app_name.app"
           artifact="$DESKTOP_UPDATER_TEST_WORKDIR/$app_name.dmg"
           runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-dmg-runtime"
+          runtime_install_root="$runtime_root/install"
+          runtime_app="$runtime_install_root/$app_name.app"
           ready_file="$runtime_root/ready.json"
-          mkdir -p "$runtime_root"
+          mkdir -p "$runtime_install_root"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="$runtime_install_root" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V1" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_app"
           dart run tool/native_runtime_smoke_server.dart \
             --artifact "$artifact" \
             --artifact-kind dmg \
@@ -894,14 +898,13 @@ jobs:
           team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
           test -n "$team_id"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          "$consumer_bin" \
+          "$runtime_app/Contents/MacOS/MacOSRuntimeCompile" \
             --smoke \
             --app-archive-url "$archive_url" \
             --public-key-base64 "$public_key" \
             --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
             --smoke-root "$runtime_root/client" \
             --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
-            --bundle-path "$app_path" \
             --expected-team-identifier "$team_id"
           for attempt in $(seq 1 120); do
             if grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl" 2>/dev/null; then break; fi
@@ -909,7 +912,7 @@ jobs:
           done
           grep -q '"event":"move success"' "$runtime_root/helper-diagnostics.jsonl"
           grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl"
-      - name: macOS native runtime PKG smoke
+      - name: macOS native runtime PKG approval-required smoke
         if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:
           DESKTOP_UPDATER_DEV_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
@@ -917,25 +920,73 @@ jobs:
           DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
           DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
           DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_TEST_VERSION_V1: "2.7.0"
+          DESKTOP_UPDATER_TEST_VERSION_V2: "2.7.1"
+          DESKTOP_UPDATER_TEST_BUILD_V1: "270"
+          DESKTOP_UPDATER_TEST_BUILD_V2: "271"
           DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+          DESKTOP_UPDATER_RUNTIME_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          dart run tool/macos_production_smoke.dart pkg-installer
-          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
-          swift build --package-path example/native/macos-runtime
-          consumer_bin="$(swift build --package-path example/native/macos-runtime --show-bin-path)/MacOSRuntimeCompile"
           app_name="Desktop Updater Smoke"
-          artifact="$DESKTOP_UPDATER_TEST_WORKDIR/$app_name.pkg"
+          app_path="/Applications/$app_name.app"
           runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-pkg-runtime"
+          runtime_package_root="$runtime_root/packaged"
+          runtime_v1_app="$runtime_package_root/v1/$app_name.app"
+          runtime_v2_app="$runtime_package_root/v2/$app_name.app"
+          artifact="$runtime_root/$app_name.pkg"
           ready_file="$runtime_root/ready.json"
-          mkdir -p "$runtime_root"
+          mkdir -p "$runtime_package_root/v1" "$runtime_package_root/v2"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="/Applications" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V1" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work-v1" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_v1_app"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="/Applications" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V2" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V2" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work-v2" \
+          DESKTOP_UPDATER_RUNTIME_PKG_OUTPUT="$artifact" \
+          DESKTOP_UPDATER_RUNTIME_PKG_INSTALLER_IDENTITY="$DESKTOP_UPDATER_DEV_ID_INSTALLER" \
+          DESKTOP_UPDATER_RUNTIME_PKG_RECEIPT_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID.pkg" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_v2_app"
+          test -x "$runtime_v1_app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          test -x "$runtime_v2_app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          /usr/sbin/pkgutil --check-signature "$artifact"
+          /usr/sbin/spctl --assess --type install "$artifact"
+          /usr/bin/xcrun stapler validate "$artifact"
+          owner_marker="$app_path/Contents/Resources/desktop_updater_smoke_owner.txt"
+          if [ -e "$app_path" ]; then
+            test -f "$owner_marker"
+            grep -q 'desktop_updater macOS production smoke' "$owner_marker"
+            grep -q "packageId=$DESKTOP_UPDATER_TEST_BUNDLE_ID" "$owner_marker"
+            mv "$app_path" "$runtime_root/production-v1.app"
+          fi
+          /usr/bin/ditto "$runtime_v1_app" "$app_path"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path"
+          /usr/sbin/spctl --assess --type execute --verbose=2 "$app_path"
+          /usr/bin/xcrun stapler validate "$app_path"
+          team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test "$team_id" = "$DESKTOP_UPDATER_RUNTIME_TEAM_ID"
           dart run tool/native_runtime_smoke_server.dart \
             --artifact "$artifact" \
             --artifact-kind pkgInstaller \
             --platform macos \
             --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
             --app-name "$app_name.app" \
+            --version "$DESKTOP_UPDATER_TEST_VERSION_V2" \
+            --build-number "$DESKTOP_UPDATER_TEST_BUILD_V2" \
             --ready-file "$ready_file" \
             --port 43894 > "$runtime_root/server.log" 2>&1 &
           server_pid=$!
@@ -955,20 +1006,20 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          "$consumer_bin" \
+          "$app_path/Contents/MacOS/MacOSRuntimeCompile" \
             --smoke \
             --app-archive-url "$archive_url" \
             --public-key-base64 "$public_key" \
             --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
             --smoke-root "$runtime_root/client" \
             --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
-            --bundle-path "/Applications/$app_name.app"
-          for attempt in $(seq 1 120); do
-            if grep -q '"event":"pkg installer opened"' "$runtime_root/helper-diagnostics.jsonl" 2>/dev/null; then break; fi
-            sleep 0.25
-          done
-          grep -q '"event":"pkg manifest loaded"' "$runtime_root/helper-diagnostics.jsonl"
-          grep -q '"event":"pkg installer opened"' "$runtime_root/helper-diagnostics.jsonl"
+            --expected-team-identifier "$team_id" \
+            --expect-helper-approval-required 2>&1 | tee "$runtime_root/client.log"
+          grep -q 'Expected SMAppService admin approval requirement' "$runtime_root/client.log"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")" = "2.7.0"
+          test -d "$runtime_root/client/staging"
+          test -n "$(find "$runtime_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test -s "$runtime_root/client/runtime-diagnostics.log"
       - name: Clean native runtime macOS smoke roots
         if: always() && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:
@@ -998,7 +1049,171 @@ jobs:
           signature="$(codesign -d --verbose=4 "$helper" 2>&1)"
           printf '%s\n' "$signature"
           printf '%s\n' "$signature" | grep -q 'flags=.*runtime'
-          dart run tool/macos_install_helper_smoke.dart --mode privileged
+          mkdir -p reports
+          dart run tool/macos_install_helper_smoke.dart --mode privileged | \
+            tee reports/macos-smappservice-recovery.jsonl
+      - name: Run preapproved signed PKG target-host smoke
+        env:
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD; do
+            test -n "${!variable:-}"
+          done
+          app="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP")"
+          artifact="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT")"
+          receipt_id="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID"
+          expected_version="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION"
+          expected_build="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD"
+          test "$(dirname "$app")" = /Applications
+          test -d "$app"
+          test -f "$artifact"
+          test "${artifact##*.}" = pkg
+          [[ "$receipt_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
+          [[ "$expected_build" =~ ^[0-9]+$ ]]
+          info="$app/Contents/Info.plist"
+          package_id="$(plutil -extract CFBundleIdentifier raw -o - "$info")"
+          app_name="$(basename "$app")"
+          executable="$(plutil -extract CFBundleExecutable raw -o - "$info")"
+          service_id="$(plutil -extract DesktopUpdaterInstallHelperServiceID raw -o - "$info")"
+          test "$executable" = MacOSRuntimeCompile
+          test "$receipt_id" = "$package_id.pkg"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$info")" = 2.7.0
+          test "$(plutil -extract CFBundleVersion raw -o - "$info")" = 270
+          test "$(stat -f '%u:%g' "$app")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/MacOS/$executable")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/Helpers/DesktopUpdaterInstallHelper")" = 0:0
+          test -x "$app/Contents/MacOS/$executable"
+          test -x "$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          test -f "$app/Contents/Library/LaunchDaemons/$service_id.plist"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          pkgutil --check-signature "$artifact"
+          spctl --assess --type install --verbose=2 "$artifact"
+          xcrun stapler validate "$artifact"
+          team_id="$(codesign -dv --verbose=4 "$app" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          helper_team_id="$(codesign -dv --verbose=4 "$app/Contents/Helpers/DesktopUpdaterInstallHelper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test -n "$team_id"
+          test "$helper_team_id" = "$team_id"
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/native-runtime-macos-pkg-target-host.XXXXXX")"
+          ready_file="$smoke_root/ready.json"
+          mkdir -p reports
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind pkgInstaller \
+            --platform macos \
+            --package-id "$package_id" \
+            --app-name "$app_name" \
+            --version "$expected_version" \
+            --build-number "$expected_build" \
+            --ready-file "$ready_file" \
+            --port 43895 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43895/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43895/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43895/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$app/Contents/MacOS/$executable" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$package_id" \
+            --smoke-root "$smoke_root/client" \
+            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl" \
+            --expected-team-identifier "$team_id" 2>&1 | \
+            tee "$smoke_root/client.log"
+          grep -q 'installAndRelaunch scheduled' "$smoke_root/client.log"
+          installed=0
+          for attempt in $(seq 1 240); do
+            version="$(plutil -extract CFBundleShortVersionString raw -o - "$info" 2>/dev/null || true)"
+            build="$(plutil -extract CFBundleVersion raw -o - "$info" 2>/dev/null || true)"
+            if [ "$version" = "$expected_version" ] && \
+               [ "$build" = "$expected_build" ] && \
+               pkgutil --pkg-info "$receipt_id" >/dev/null 2>&1; then
+              installed=1
+              break
+            fi
+            sleep 0.5
+          done
+          test "$installed" -eq 1
+          pkgutil --pkg-info-plist "$receipt_id" > "$smoke_root/receipt.plist"
+          test "$(plutil -extract pkg-version raw -o - "$smoke_root/receipt.plist")" = "$expected_version"
+          post_info="$app/Contents/Info.plist"
+          post_package_id="$(plutil -extract CFBundleIdentifier raw -o - "$post_info")"
+          post_executable="$(plutil -extract CFBundleExecutable raw -o - "$post_info")"
+          post_service_id="$(plutil -extract DesktopUpdaterInstallHelperServiceID raw -o - "$post_info")"
+          test "$post_package_id" = "$package_id"
+          test "$post_executable" = "$executable"
+          test "$post_service_id" = "$service_id"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$post_info")" = "$expected_version"
+          test "$(plutil -extract CFBundleVersion raw -o - "$post_info")" = "$expected_build"
+          post_helper="$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          post_launchd="$app/Contents/Library/LaunchDaemons/$post_service_id.plist"
+          test -x "$app/Contents/MacOS/$post_executable"
+          test -x "$post_helper"
+          test -f "$post_launchd"
+          test "$(plutil -extract Label raw -o - "$post_launchd")" = "$post_service_id"
+          test "$(plutil -extract BundleProgram raw -o - "$post_launchd")" = Contents/Helpers/DesktopUpdaterInstallHelper
+          test "$(stat -f '%u:%g' "$app")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/MacOS/$post_executable")" = 0:0
+          test "$(stat -f '%u:%g' "$post_helper")" = 0:0
+          test "$(stat -f '%u:%g' "$post_launchd")" = 0:0
+          codesign --verify --strict --verbose=2 "$post_helper"
+          post_app_team_id="$(codesign -dv --verbose=4 "$app" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          post_helper_team_id="$(codesign -dv --verbose=4 "$post_helper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test "$post_app_team_id" = "$team_id"
+          test "$post_helper_team_id" = "$team_id"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          launchctl print "system/$post_service_id" > "$smoke_root/launchd.txt"
+          grep -Eq '^[[:space:]]*pid = [1-9][0-9]*$' "$smoke_root/launchd.txt"
+          for attempt in $(seq 1 120); do
+            if [ -d "$smoke_root/client/staging" ] && \
+               [ -z "$(find "$smoke_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+              break
+            fi
+            sleep 0.25
+          done
+          test -d "$smoke_root/client/staging"
+          test -z "$(find "$smoke_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test -s "$smoke_root/client/runtime-diagnostics.log"
+          printf 'platform=macos\nsuite=smappservice-pkg-target-host\nprivilegedDaemonExecuted=true\npackageReceiptVerified=true\ninstalledHelperVerified=true\ninstalledLaunchDaemonVerified=true\ninstalledVersion=%s\ninstalledBuild=%s\n' \
+            "$expected_version" "$expected_build" \
+            > reports/macos-smappservice-pkg.txt
+      - name: Upload macOS SMAppService target-host evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smappservice-target-host-evidence
+          path: |
+            reports/macos-smappservice-recovery.jsonl
+            reports/macos-smappservice-pkg.txt
+          if-no-files-found: ignore
 
   linux-polkit-helper:
     name: Linux Installed Polkit Broker (not run unless enabled)

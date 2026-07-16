@@ -354,6 +354,32 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertTrue(session.didCloseInput)
     }
 
+    func testQueryMapsDurableInstallerCommitAcceptedState() throws {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let session = RecordingMacOneShotClientSession(
+            responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: "commitAccepted",
+                    resultCode: "recoveryRequired"
+                ),
+            ]
+        )
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(session: session),
+            authenticator: RecordingEndpointAuthenticator()
+        )
+
+        let status = try transport.queryTransaction(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(status.state, .commitAccepted)
+        XCTAssertEqual(status.resultCode, .recoveryRequired)
+    }
+
     func testRecoveryMapsVerifiedRollbackFromAuthenticatedHelper() throws {
         let transactionID = "00000000-0000-4000-8000-000000000099"
         let session = RecordingMacOneShotClientSession(
@@ -588,6 +614,16 @@ final class MacPackagedHelperTransportTests: XCTestCase {
                 )
             )
         )
+        XCTAssertTrue(
+            try PackagedMacInstallHelperTransport.defaultPrivilegeRequired(
+                targetRequestData(
+                    targetClass: "applicationBundle",
+                    path: root.appendingPathComponent("Example.app").path,
+                    strategy: "verifiedInstallerHandoff",
+                    provider: "macosInstaller"
+                )
+            )
+        )
     }
 
     func testApplicationsRootUsesActualParentWriteAccess() {
@@ -813,15 +849,20 @@ private func statusData(
 
 private func targetRequestData(
     targetClass: String,
-    path: String
+    path: String,
+    strategy: String? = nil,
+    provider: String? = nil
 ) -> Data {
-    try! JSONSerialization.data(
-        withJSONObject: [
+    var request: [String: Any] = [
             "target": [
                 "class": targetClass,
                 "pathHint": path,
             ],
-        ],
+        ]
+    if let strategy { request["strategy"] = strategy }
+    if let provider { request["provider"] = provider }
+    return try! JSONSerialization.data(
+        withJSONObject: request,
         options: [.sortedKeys]
     )
 }

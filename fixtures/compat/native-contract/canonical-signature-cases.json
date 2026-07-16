@@ -380,6 +380,70 @@
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
       "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoiemlwIiwibGVuZ3RoIjo0Miwic2hhMjU2IjoiYWRjMWE1YTZlZDYzMTJlNjQzNGVlNTQwZTIxMTJkMzM1MTBjYTM0NzlkNDFhZDE2NjA2ODUxMWIxZmFlMGZiNCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy16aXAvYXJ0aWZhY3QuemlwIn0sImJ1aWxkTnVtYmVyIjoyNzAsImNoYW5uZWwiOiJzdGFibGUiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDctMTBUMDA6MDA6MDAuMDAwWiIsImluc3RhbGwiOnsic3RyYXRlZ3kiOiJ3aG9sZUJ1bmRsZVJlcGxhY2UifSwibWluaW11bU9TIjp7Im1hY29zIjoiMTMuMCJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjAuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoibWFjb3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+    },
+    {
+      "name": "canonicalization preserves legacy PKG wire token",
+      "inputDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.7.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedDescriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 272,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://updates.example.test/release-contract/macos-pkg-installer/artifact.pkg",
+          "sha256": "3207c3bbd8641c9c77fe343c18e06d5c473e47dc84ef3313dd31a99a93d89668",
+          "length": 51
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": [
+              "com.example.native-contract.pkg"
+            ],
+            "relaunchAfterInstall": false
+          }
+        },
+        "minimumUpdaterVersion": "2.7.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZS5hcHAiLCJhcnRpZmFjdCI6eyJraW5kIjoicGtnSW5zdGFsbGVyIiwibGVuZ3RoIjo1MSwic2hhMjU2IjoiMzIwN2MzYmJkODY0MWM5Yzc3ZmUzNDNjMThlMDZkNWM0NzNlNDdkYzg0ZWYzMzEzZGQzMWE5OWE5M2Q4OTY2OCIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC9tYWNvcy1wa2ctaW5zdGFsbGVyL2FydGlmYWN0LnBrZyJ9LCJidWlsZE51bWJlciI6MjcyLCJjaGFubmVsIjoic3RhYmxlIiwiZ2VuZXJhdGVkQXQiOiIyMDI2LTA3LTEwVDAwOjAwOjAwLjAwMFoiLCJpbnN0YWxsIjp7Im1hY29zUGtnIjp7ImV4cGVjdGVkUGFja2FnZUlkcyI6WyJjb20uZXhhbXBsZS5uYXRpdmUtY29udHJhY3QucGtnIl0sImxhdW5jaE1vZGUiOiJpbnN0YWxsZXJBcHAiLCJyZWxhdW5jaEFmdGVySW5zdGFsbCI6ZmFsc2V9LCJzdHJhdGVneSI6InBrZ0luc3RhbGxlciJ9LCJtaW5pbXVtT1MiOnsibWFjb3MiOiIxMy4wIn0sIm1pbmltdW1VcGRhdGVyVmVyc2lvbiI6IjIuNy4wIiwicGFja2FnZUlkIjoiY29tLmV4YW1wbGUubmF0aXZlLWNvbnRyYWN0IiwicGxhdGZvcm0iOiJtYWNvcyIsInNjaGVtYVZlcnNpb24iOjMsInZlcnNpb24iOiIyLjcuMCJ9"
     }
   ],
   "cases": [

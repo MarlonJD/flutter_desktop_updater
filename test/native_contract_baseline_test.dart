@@ -28,7 +28,7 @@ void main() {
         install: const {
           "strategy": "pkgInstaller",
           "macosPkg": {
-            "launchMode": "installerApp",
+            "launchMode": "privilegedInstallerTool",
             "expectedPackageIds": ["com.example.app.pkg"],
             "relaunchAfterInstall": false,
           },
