@@ -514,6 +514,93 @@ void main() {
     }
   });
 
+  test("Windows forwards the same durable marker transaction ID", () async {
+    late MethodCall capturedCall;
+    final recoveryStore = _MemoryRecoveryStore();
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (methodCall) {
+          capturedCall = methodCall;
+        },
+      );
+      final controller = DesktopUpdaterController.forTesting(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "windows"),
+        isWindows: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      final marker = await recoveryStore.readPendingInstall(channel: "stable");
+      final transactionId = marker?.transactionId;
+      expect(
+        transactionId,
+        matches(
+          RegExp(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          ),
+        ),
+      );
+      expect(
+          capturedCall.arguments, containsPair("transactionId", transactionId));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("Windows preserves marker only for ambiguous native handoff", () async {
+    final recoveryStore = _MemoryRecoveryStore();
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (_) => throw PlatformException(
+          code: "InstallError",
+          message: "Commit acknowledgement was lost.",
+          details: const <String, Object?>{"recoveryRequired": true},
+        ),
+      );
+      final controller = DesktopUpdaterController.forTesting(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "windows"),
+        isWindows: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            "code",
+            "InstallError",
+          ),
+        ),
+      );
+
+      expect(
+        await recoveryStore.readPendingInstall(channel: "stable"),
+        isNotNull,
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("relaunch on old version creates recovered failed report", () async {
     final recoveryStore = _MemoryRecoveryStore()
       ..marker = UpdateInstallRecoveryMarker(
@@ -577,14 +664,15 @@ void main() {
     expect(recoveryStore.clearedChannels, ["stable"]);
   });
 
-  test("startup recovery queries native helper before trusting app version",
+  test(
+      "Windows startup recovery resolves native helper once before app version",
       () async {
-    var queryCalls = 0;
+    var resolveCalls = 0;
     _setMockPlatformHandler(
       versionName: "2.0.1",
       buildNumber: "201",
-      onQueryInstallTransaction: (methodCall) {
-        queryCalls += 1;
+      onResolvePendingInstallTransactionAfterExit: (methodCall) {
+        resolveCalls += 1;
         expect(methodCall.arguments, {
           "transactionId": "123e4567-e89b-42d3-a456-426614174000",
         });
@@ -606,33 +694,92 @@ void main() {
         stagingPath: "/tmp/staged-app",
         transactionId: "123e4567-e89b-42d3-a456-426614174000",
       );
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: null,
       skipInitialVersionCheck: true,
       recoveryStore: recoveryStore,
+      isWindows: true,
     );
 
     await controller.recoverPendingInstall();
 
-    expect(queryCalls, 1);
+    expect(resolveCalls, 1);
     expect(controller.state, isA<UpdateIdle>());
     expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
   });
 
-  test("startup asks native helper to recover a pending transaction", () async {
+  test("non-Windows recovery queries then recovers without atomic method",
+      () async {
+    var queryCalls = 0;
     var recoveryCalls = 0;
+    var resolveCalls = 0;
     _setMockPlatformHandler(
       versionName: "2.0.1",
       buildNumber: "201",
-      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
-        state: "prepared",
-        resultCode: "recoveryRequired",
-      ),
+      onQueryInstallTransaction: (_) {
+        queryCalls += 1;
+        return _nativeTransactionStatus(
+          state: "prepared",
+          resultCode: "recoveryRequired",
+        );
+      },
       onRecoverPendingInstallTransaction: (_) {
         recoveryCalls += 1;
         return _nativeTransactionStatus(
           state: "completed",
           resultCode: "succeeded",
+        );
+      },
+      onResolvePendingInstallTransactionAfterExit: (_) {
+        resolveCalls += 1;
+        throw MissingPluginException(
+          "resolvePendingInstallTransactionAfterExit is Windows-only",
+        );
+      },
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "linux",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        stagingPath: "/tmp/staged-app",
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: false,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(queryCalls, 1);
+    expect(recoveryCalls, 1);
+    expect(resolveCalls, 0);
+    expect(controller.state, isA<UpdateIdle>());
+    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+  });
+
+  test("active startup recovery ACK preserves marker and skips version check",
+      () async {
+    var resolveCalls = 0;
+    var versionCalls = 0;
+    _setMockPlatformHandler(
+      versionName: "2.0.1",
+      buildNumber: "201",
+      onGetCurrentVersionInfo: () {
+        versionCalls += 1;
+      },
+      onResolvePendingInstallTransactionAfterExit: (_) {
+        resolveCalls += 1;
+        return _nativeTransactionStatus(
+          state: "prepared",
+          resultCode: "recoveryRequired",
         );
       },
     );
@@ -646,16 +793,136 @@ void main() {
         updateBuildNumber: 201,
         transactionId: "123e4567-e89b-42d3-a456-426614174000",
       );
-    final controller = DesktopUpdaterController(
+    final controller = DesktopUpdaterController.forTesting(
       appArchiveUrl: null,
       skipInitialVersionCheck: true,
       recoveryStore: recoveryStore,
+      isWindows: true,
     );
 
     await controller.recoverPendingInstall();
 
-    expect(recoveryCalls, 1);
-    expect(controller.state, isA<UpdateIdle>());
+    expect(resolveCalls, 1);
+    expect(versionCalls, 0);
+    expect(controller.state, isA<UpdateInstalling>());
+    expect(
+      await recoveryStore.readPendingInstall(channel: "stable"),
+      isNotNull,
+    );
+  });
+
+  test("verified native rollback clears the pending marker", () async {
+    _setMockPlatformHandler(
+      onResolvePendingInstallTransactionAfterExit: (_) =>
+          _nativeTransactionStatus(
+        state: "rolledBack",
+        resultCode: "succeeded",
+      ),
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "windows",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: true,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(controller.state, isA<UpdateFailed>());
+    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
+  });
+
+  test("manual-action recovery fails visibly without checking app version",
+      () async {
+    var versionCalls = 0;
+    _setMockPlatformHandler(
+      onGetCurrentVersionInfo: () {
+        versionCalls += 1;
+      },
+      onResolvePendingInstallTransactionAfterExit: (_) =>
+          _nativeTransactionStatus(
+        state: "manualActionRequired",
+        resultCode: "recoveryRequired",
+      ),
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "windows",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: true,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(versionCalls, 0);
+    expect(controller.state, isA<UpdateFailed>());
+    expect(
+      await recoveryStore.readPendingInstall(channel: "stable"),
+      isNotNull,
+    );
+  });
+
+  test("relaunch failure fails visibly and preserves recovery evidence",
+      () async {
+    var versionCalls = 0;
+    _setMockPlatformHandler(
+      onGetCurrentVersionInfo: () {
+        versionCalls += 1;
+      },
+      onResolvePendingInstallTransactionAfterExit: (_) =>
+          _nativeTransactionStatus(
+        state: "completed",
+        resultCode: "relaunchFailure",
+      ),
+    );
+    final recoveryStore = _MemoryRecoveryStore()
+      ..marker = UpdateInstallRecoveryMarker(
+        createdAt: DateTime.utc(2026, 6, 16, 10),
+        packageVersion: "2.1.4",
+        platform: "windows",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.1",
+        updateBuildNumber: 201,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      );
+    final controller = DesktopUpdaterController.forTesting(
+      appArchiveUrl: null,
+      skipInitialVersionCheck: true,
+      recoveryStore: recoveryStore,
+      isWindows: true,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(versionCalls, 0);
+    expect(controller.state, isA<UpdateFailed>());
+    expect(
+      await recoveryStore.readPendingInstall(channel: "stable"),
+      isNotNull,
+    );
   });
 
   test("recovery store failures do not crash startup or install handoff",
@@ -681,10 +948,15 @@ void main() {
       validArtifact: true,
     );
     try {
-      final controller = DesktopUpdaterController(
+      late MethodCall installCall;
+      _setMockPlatformHandler(
+        onInstallUpdate: (methodCall) => installCall = methodCall,
+      );
+      final controller = DesktopUpdaterController.forTesting(
         appArchiveUrl: fixture.archiveUrl,
         skipInitialVersionCheck: true,
         recoveryStore: writeFailureStore,
+        isWindows: true,
       );
 
       await controller.checkVersion();
@@ -695,6 +967,15 @@ void main() {
       expect(
         controller.diagnosticsRecorder.entries.map((entry) => entry.message),
         contains("Recovery marker write failed."),
+      );
+      expect(
+        (installCall.arguments as Map<Object?, Object?>)["transactionId"],
+        matches(
+          RegExp(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          ),
+        ),
       );
     } finally {
       await fixture.delete();
@@ -1014,12 +1295,16 @@ void _setMockPlatformHandler({
       onQueryInstallTransaction,
   FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
       onRecoverPendingInstallTransaction,
+  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
+      onResolvePendingInstallTransactionAfterExit,
+  FutureOr<void> Function()? onGetCurrentVersionInfo,
 }) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_desktopUpdaterChannel, (
     MethodCall methodCall,
   ) async {
     if (methodCall.method == "getCurrentVersionInfo") {
+      await onGetCurrentVersionInfo?.call();
       return <String, String?>{
         "version": versionName,
         "buildNumber": buildNumber,
@@ -1042,6 +1327,9 @@ void _setMockPlatformHandler({
     }
     if (methodCall.method == "recoverPendingInstallTransaction") {
       return onRecoverPendingInstallTransaction?.call(methodCall);
+    }
+    if (methodCall.method == "resolvePendingInstallTransactionAfterExit") {
+      return onResolvePendingInstallTransactionAfterExit?.call(methodCall);
     }
     return null;
   });

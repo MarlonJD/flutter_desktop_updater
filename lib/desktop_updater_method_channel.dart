@@ -1,11 +1,136 @@
+import "dart:async";
+import "dart:io";
+
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/src/core/update_client.dart"
+    show retainedVerifiedStageFor;
 import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 
+final Object _installUpdateContextZoneKey = Object();
+final Object _verifiedInstallContextDispatch = Object();
+
+class _InstallUpdateContext {
+  const _InstallUpdateContext({
+    required this.owner,
+    required this.stagingPath,
+    required this.removedFiles,
+    required this.allowUnsignedMacOSUpdates,
+    required this.diagnosticsLogPath,
+    required this.installRoot,
+    required this.executableRelativePath,
+    required this.packageId,
+    required this.stageProvenanceSha256,
+    required this.stageProvenanceNonce,
+    required this.stageProvenanceEntries,
+    required this.expectedArtifactSha256,
+    required this.allowedSignerThumbprints,
+    required this.innoRequiresElevation,
+    required this.transactionId,
+    required this.resolveMissingVerifiedContext,
+  });
+
+  final MethodChannelDesktopUpdater owner;
+  final String stagingPath;
+  final List<String> removedFiles;
+  final bool allowUnsignedMacOSUpdates;
+  final String? diagnosticsLogPath;
+  final String? installRoot;
+  final String? executableRelativePath;
+  final String? packageId;
+  final String? stageProvenanceSha256;
+  final String? stageProvenanceNonce;
+  final List<Map<String, Object?>> stageProvenanceEntries;
+  final String? expectedArtifactSha256;
+  final List<String> allowedSignerThumbprints;
+  final String innoRequiresElevation;
+  final String? transactionId;
+  final bool resolveMissingVerifiedContext;
+
+  Future<_InstallUpdateContext> resolveVerifiedContext() async {
+    var resolvedPackageId = packageId;
+    var resolvedProvenanceSha256 = stageProvenanceSha256;
+    var resolvedProvenanceNonce = stageProvenanceNonce;
+    var resolvedProvenanceEntries = stageProvenanceEntries;
+    var resolvedArtifactSha256 = expectedArtifactSha256;
+    if (resolvedPackageId == null ||
+        resolvedPackageId.isEmpty ||
+        resolvedProvenanceSha256 == null ||
+        resolvedProvenanceSha256.isEmpty ||
+        resolvedProvenanceNonce == null ||
+        resolvedProvenanceNonce.isEmpty ||
+        resolvedProvenanceEntries.isEmpty ||
+        resolvedArtifactSha256 == null ||
+        resolvedArtifactSha256.isEmpty) {
+      final retained = await retainedVerifiedStageFor(stagingPath);
+      if (retained == null) {
+        throw StateError(
+          "Legacy installs require retained verified stage provenance "
+          "from UpdateClient staging.",
+        );
+      }
+      final stageRoot = Directory(retained.stageRoot);
+      final state = retained.state;
+      final provenance = await verifyStagedUpdateProvenance(
+        stageRoot: stageRoot,
+        expectedMarkerSha256: state.markerSha256,
+      );
+      if (provenance.canonicalJson != state.provenance.canonicalJson) {
+        throw StateError("Retained verified stage provenance changed.");
+      }
+      if (resolvedPackageId != null &&
+          resolvedPackageId.isNotEmpty &&
+          resolvedPackageId != provenance.packageId) {
+        throw StateError(
+          "Explicit package identity does not match verified stage provenance.",
+        );
+      }
+      resolvedPackageId = provenance.packageId;
+      resolvedProvenanceSha256 = state.markerSha256;
+      resolvedProvenanceNonce = provenance.nonce;
+      resolvedProvenanceEntries = provenance.entries
+          .map((entry) => Map<String, Object?>.from(entry.toJson()))
+          .toList(growable: false);
+      resolvedArtifactSha256 = provenance.artifactSha256;
+    }
+    return _InstallUpdateContext(
+      owner: owner,
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+      installRoot: installRoot,
+      executableRelativePath: executableRelativePath,
+      packageId: resolvedPackageId,
+      stageProvenanceSha256: resolvedProvenanceSha256,
+      stageProvenanceNonce: resolvedProvenanceNonce,
+      stageProvenanceEntries: resolvedProvenanceEntries,
+      expectedArtifactSha256: resolvedArtifactSha256,
+      allowedSignerThumbprints: allowedSignerThumbprints,
+      innoRequiresElevation: innoRequiresElevation,
+      transactionId: transactionId,
+      resolveMissingVerifiedContext: resolveMissingVerifiedContext,
+    );
+  }
+}
+
 /// An implementation of [DesktopUpdaterPlatform] that uses method channels.
 class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
+  /// Runs an install-context call as verified platform-interface dispatch.
+  static Future<T> runWithVerifiedInstallContext<T>(
+    Future<T> Function() action,
+  ) {
+    return runZoned<Future<T>>(
+      action,
+      zoneValues: {
+        _installUpdateContextZoneKey: _verifiedInstallContextDispatch,
+      },
+    );
+  }
+
   /// The method channel used to interact with the native platform.
   @visibleForTesting
   final methodChannel = const MethodChannel("desktop_updater");
@@ -30,6 +155,29 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     bool allowUnsignedMacOSUpdates = false,
     String? diagnosticsLogPath,
   }) async {
+    final context = Zone.current[_installUpdateContextZoneKey];
+    if (context is _InstallUpdateContext && identical(context.owner, this)) {
+      final resolvedContext = context.resolveMissingVerifiedContext
+          ? await context.resolveVerifiedContext()
+          : context;
+      await _invokeInstallUpdate(
+        stagingPath: stagingPath,
+        removedFiles: removedFiles,
+        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+        diagnosticsLogPath: diagnosticsLogPath,
+        installRoot: resolvedContext.installRoot,
+        executableRelativePath: resolvedContext.executableRelativePath,
+        packageId: resolvedContext.packageId,
+        stageProvenanceSha256: resolvedContext.stageProvenanceSha256,
+        stageProvenanceNonce: resolvedContext.stageProvenanceNonce,
+        stageProvenanceEntries: resolvedContext.stageProvenanceEntries,
+        expectedArtifactSha256: resolvedContext.expectedArtifactSha256,
+        allowedSignerThumbprints: resolvedContext.allowedSignerThumbprints,
+        innoRequiresElevation: resolvedContext.innoRequiresElevation,
+        transactionId: resolvedContext.transactionId,
+      );
+      return;
+    }
     await _invokeInstallUpdate(
       stagingPath: stagingPath,
       removedFiles: removedFiles,
@@ -53,8 +201,10 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
     String innoRequiresElevation = "auto",
+    String? transactionId,
   }) async {
-    await _invokeInstallUpdate(
+    final context = _InstallUpdateContext(
+      owner: this,
       stagingPath: stagingPath,
       removedFiles: removedFiles,
       allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
@@ -68,6 +218,20 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
       expectedArtifactSha256: expectedArtifactSha256,
       allowedSignerThumbprints: allowedSignerThumbprints,
       innoRequiresElevation: innoRequiresElevation,
+      transactionId: transactionId,
+      resolveMissingVerifiedContext: identical(
+        Zone.current[_installUpdateContextZoneKey],
+        _verifiedInstallContextDispatch,
+      ),
+    );
+    await runZoned<Future<void>>(
+      () => installUpdate(
+        stagingPath: stagingPath,
+        removedFiles: removedFiles,
+        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+        diagnosticsLogPath: diagnosticsLogPath,
+      ),
+      zoneValues: {_installUpdateContextZoneKey: context},
     );
   }
 
@@ -85,6 +249,7 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
     String innoRequiresElevation = "auto",
+    String? transactionId,
   }) async {
     if (!const {"auto", "always", "never"}.contains(innoRequiresElevation)) {
       throw ArgumentError.value(
@@ -127,6 +292,9 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     }
     if (innoRequiresElevation != "auto") {
       arguments["innoRequiresElevation"] = innoRequiresElevation;
+    }
+    if (transactionId != null && transactionId.isNotEmpty) {
+      arguments["transactionId"] = transactionId;
     }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }
@@ -203,6 +371,18 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     );
   }
 
+  /// Acknowledges active recovery, exits, then lets the helper recover and
+  /// relaunch with the captured caller token.
+  Future<NativeInstallTransactionStatus>
+      resolvePendingInstallTransactionAfterExit(
+    String transactionId,
+  ) async {
+    return _invokeTransactionStatus(
+      "resolvePendingInstallTransactionAfterExit",
+      transactionId,
+    );
+  }
+
   Future<NativeInstallTransactionStatus> _invokeTransactionStatus(
     String method,
     String transactionId,
@@ -221,8 +401,14 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     if (status == null) {
       throw StateError("Native helper returned no transaction status.");
     }
-    return NativeInstallTransactionStatus.fromJson(
+    final parsed = NativeInstallTransactionStatus.fromJson(
       Map<String, Object?>.from(status),
     );
+    if (parsed.transactionId != transactionId) {
+      throw const FormatException(
+        "Native helper changed the transaction binding.",
+      );
+    }
+    return parsed;
   }
 }

@@ -100,6 +100,10 @@ enum NativeInstallTransactionResultCode {
 
   /// The helper must perform crash recovery.
   recoveryRequired,
+
+  /// Installation finished, but the best-effort app relaunch was not
+  /// durably confirmed and will not be retried automatically.
+  relaunchFailure,
 }
 
 /// Read-only native helper status used by optional recovery UX.
@@ -153,6 +157,19 @@ class NativeInstallTransactionStatus {
   bool get isTerminalSuccess =>
       state == NativeInstallTransactionState.completed &&
       resultCode == NativeInstallTransactionResultCode.succeeded;
+
+  /// Whether the helper verified that this install ended without activation.
+  bool get isTerminalFailure =>
+      resultCode == NativeInstallTransactionResultCode.succeeded &&
+      (state == NativeInstallTransactionState.rolledBack ||
+          state == NativeInstallTransactionState.cancelled ||
+          state == NativeInstallTransactionState.expired);
+
+  /// Whether the atomic Windows resolver retained this caller and requires
+  /// it to exit before recovery can continue.
+  bool get awaitsCallerExit =>
+      state == NativeInstallTransactionState.prepared &&
+      resultCode == NativeInstallTransactionResultCode.recoveryRequired;
 
   /// Whether startup should ask the native helper to recover the transaction.
   bool get requiresRecovery =>
@@ -208,6 +225,7 @@ NativeInstallTransactionResultCode _parseResultCode(Object? value) {
       NativeInstallTransactionResultCode.authenticationFailed,
     "invalidResponse" => NativeInstallTransactionResultCode.invalidResponse,
     "recoveryRequired" => NativeInstallTransactionResultCode.recoveryRequired,
+    "relaunchFailure" => NativeInstallTransactionResultCode.relaunchFailure,
     _ => throw const FormatException(
         "Native helper status has an invalid result code.",
       ),

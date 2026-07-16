@@ -1,9 +1,4 @@
-import "dart:io";
-
 import "package:desktop_updater/desktop_updater_method_channel.dart";
-import "package:desktop_updater/src/core/staged_update_provenance.dart";
-import "package:desktop_updater/src/core/update_client.dart"
-    show retainedVerifiedStageFor;
 import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
@@ -51,7 +46,8 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
 
-    /// Optional app-owned native helper diagnostics log path.
+    /// Compatibility-only diagnostics path. Standalone helpers use their
+    /// fixed platform log sink instead of writing this caller-selected path.
     String? diagnosticsLogPath,
   }) {
     throw UnimplementedError("installUpdate() has not been implemented.");
@@ -97,8 +93,8 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
 
 /// Internal install-context handoff that preserves old platform implementers.
 extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
-  /// Installs a staged update with verified context when the default
-  /// MethodChannel implementation is active, otherwise uses the compatible
+  /// Installs a staged update with verified context when a MethodChannel
+  /// implementation is active, otherwise uses the compatible
   /// [DesktopUpdaterPlatform.installUpdate] call.
   Future<void> installUpdateWithContext({
     required String stagingPath,
@@ -114,69 +110,27 @@ extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
     String? expectedArtifactSha256,
     List<String> allowedSignerThumbprints = const [],
     String innoRequiresElevation = "auto",
+    String? transactionId,
   }) async {
     final platform = this;
-    if (platform.runtimeType == MethodChannelDesktopUpdater) {
-      final methodChannel = platform as MethodChannelDesktopUpdater;
-      var resolvedPackageId = packageId;
-      var resolvedProvenanceSha256 = stageProvenanceSha256;
-      var resolvedProvenanceNonce = stageProvenanceNonce;
-      var resolvedProvenanceEntries = stageProvenanceEntries;
-      var resolvedArtifactSha256 = expectedArtifactSha256;
-      if (resolvedPackageId == null ||
-          resolvedPackageId.isEmpty ||
-          resolvedProvenanceSha256 == null ||
-          resolvedProvenanceSha256.isEmpty ||
-          resolvedProvenanceNonce == null ||
-          resolvedProvenanceNonce.isEmpty ||
-          resolvedProvenanceEntries.isEmpty ||
-          resolvedArtifactSha256 == null ||
-          resolvedArtifactSha256.isEmpty) {
-        final retained = await retainedVerifiedStageFor(stagingPath);
-        if (retained == null) {
-          throw StateError(
-            "Legacy installs require retained verified stage provenance "
-            "from UpdateClient staging.",
-          );
-        }
-        final stageRoot = Directory(retained.stageRoot);
-        final state = retained.state;
-        final provenance = await verifyStagedUpdateProvenance(
-          stageRoot: stageRoot,
-          expectedMarkerSha256: state.markerSha256,
-        );
-        if (provenance.canonicalJson != state.provenance.canonicalJson) {
-          throw StateError("Retained verified stage provenance changed.");
-        }
-        if (resolvedPackageId != null &&
-            resolvedPackageId.isNotEmpty &&
-            resolvedPackageId != provenance.packageId) {
-          throw StateError(
-            "Explicit package identity does not match verified stage provenance.",
-          );
-        }
-        resolvedPackageId = provenance.packageId;
-        resolvedProvenanceSha256 = state.markerSha256;
-        resolvedProvenanceNonce = provenance.nonce;
-        resolvedProvenanceEntries = provenance.entries
-            .map((entry) => Map<String, Object?>.from(entry.toJson()))
-            .toList(growable: false);
-        resolvedArtifactSha256 = provenance.artifactSha256;
-      }
-      return methodChannel.installUpdateWithContext(
-        stagingPath: stagingPath,
-        removedFiles: removedFiles,
-        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-        diagnosticsLogPath: diagnosticsLogPath,
-        installRoot: installRoot,
-        executableRelativePath: executableRelativePath,
-        packageId: resolvedPackageId,
-        stageProvenanceSha256: resolvedProvenanceSha256,
-        stageProvenanceNonce: resolvedProvenanceNonce,
-        stageProvenanceEntries: resolvedProvenanceEntries,
-        expectedArtifactSha256: resolvedArtifactSha256,
-        allowedSignerThumbprints: allowedSignerThumbprints,
-        innoRequiresElevation: innoRequiresElevation,
+    if (platform is MethodChannelDesktopUpdater) {
+      return MethodChannelDesktopUpdater.runWithVerifiedInstallContext(
+        () => platform.installUpdateWithContext(
+          stagingPath: stagingPath,
+          removedFiles: removedFiles,
+          allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+          diagnosticsLogPath: diagnosticsLogPath,
+          installRoot: installRoot,
+          executableRelativePath: executableRelativePath,
+          packageId: packageId,
+          stageProvenanceSha256: stageProvenanceSha256,
+          stageProvenanceNonce: stageProvenanceNonce,
+          stageProvenanceEntries: stageProvenanceEntries,
+          expectedArtifactSha256: expectedArtifactSha256,
+          allowedSignerThumbprints: allowedSignerThumbprints,
+          innoRequiresElevation: innoRequiresElevation,
+          transactionId: transactionId,
+        ),
       );
     }
     return installUpdate(
@@ -213,6 +167,19 @@ extension DesktopUpdaterPlatformNativeRecovery on DesktopUpdaterPlatform {
     if (platform.runtimeType == MethodChannelDesktopUpdater) {
       return (platform as MethodChannelDesktopUpdater)
           .recoverPendingInstallTransaction(transactionId);
+    }
+    return Future.value();
+  }
+
+  /// Resolves a pending transaction in one elevated exchange. An active
+  /// recovery acknowledgement causes the native plugin to exit the app before
+  /// the helper mutates or relaunches it.
+  Future<NativeInstallTransactionStatus?>
+      resolveNativeInstallTransactionAfterExit(String transactionId) {
+    final platform = this;
+    if (platform.runtimeType == MethodChannelDesktopUpdater) {
+      return (platform as MethodChannelDesktopUpdater)
+          .resolvePendingInstallTransactionAfterExit(transactionId);
     }
     return Future.value();
   }

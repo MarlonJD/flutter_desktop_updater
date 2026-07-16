@@ -55,7 +55,8 @@ class DesktopUpdater {
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
 
-    /// Optional app-owned native helper diagnostics log path.
+    /// Compatibility-only diagnostics path. Standalone helpers use their
+    /// fixed platform log sink instead of writing this caller-selected path.
     String? diagnosticsLogPath,
 
     /// Verified package identity required by protected native install targets.
@@ -92,7 +93,8 @@ class DesktopUpdater {
     /// Allows unsigned macOS update artifacts for explicitly trusted lanes.
     bool allowUnsignedMacOSUpdates = false,
 
-    /// Optional app-owned native helper diagnostics log path.
+    /// Compatibility-only diagnostics path. Standalone helpers use their
+    /// fixed platform log sink instead of writing this caller-selected path.
     String? diagnosticsLogPath,
 
     /// Verified package identity required by protected native install targets.

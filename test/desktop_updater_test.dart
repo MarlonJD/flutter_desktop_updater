@@ -1,3 +1,4 @@
+import "dart:async";
 import "dart:convert";
 import "dart:io";
 
@@ -90,6 +91,89 @@ class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
   }
 }
 
+class InheritingMethodChannelDesktopUpdater
+    extends MethodChannelDesktopUpdater {}
+
+class _DelegatingMethodChannelDesktopUpdater
+    extends MethodChannelDesktopUpdater {
+  @override
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+  }) {
+    return super.installUpdate(
+      stagingPath: "$stagingPath/delegated",
+      removedFiles: [...removedFiles, "delegated.dll"],
+      allowUnsignedMacOSUpdates: !allowUnsignedMacOSUpdates,
+      diagnosticsLogPath:
+          diagnosticsLogPath == null ? null : "$diagnosticsLogPath.delegated",
+    );
+  }
+}
+
+class _DelayedSuperMethodChannelDesktopUpdater
+    extends MethodChannelDesktopUpdater {
+  _DelayedSuperMethodChannelDesktopUpdater(this.releaseByStagingPath);
+
+  final Map<String, Completer<void>> releaseByStagingPath;
+
+  @override
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+  }) async {
+    await releaseByStagingPath[stagingPath]!.future;
+    await super.installUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+    );
+  }
+}
+
+class _NestedMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
+  bool _dispatchingNestedInstall = false;
+
+  @override
+  Future<void> installUpdate({
+    required String stagingPath,
+    List<String> removedFiles = const [],
+    bool allowUnsignedMacOSUpdates = false,
+    String? diagnosticsLogPath,
+  }) async {
+    if (!_dispatchingNestedInstall && stagingPath == "/tmp/outer") {
+      _dispatchingNestedInstall = true;
+      try {
+        final DesktopUpdaterPlatform platform = this;
+        await platform.installUpdateWithContext(
+          stagingPath: "/tmp/nested",
+          packageId: "com.example.nested",
+          stageProvenanceSha256: "c" * 64,
+          stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174002",
+          stageProvenanceEntries: const [
+            {"path": "nested", "kind": "file", "length": 7},
+          ],
+          expectedArtifactSha256: "d" * 64,
+          transactionId: "123e4567-e89b-42d3-a456-426614174003",
+        );
+      } finally {
+        _dispatchingNestedInstall = false;
+      }
+    }
+    await super.installUpdate(
+      stagingPath: stagingPath,
+      removedFiles: removedFiles,
+      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
+      diagnosticsLogPath: diagnosticsLogPath,
+    );
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final initialPlatform = DesktopUpdaterPlatform.instance;
@@ -131,6 +215,247 @@ void main() {
     );
 
     expect(platform.legacyInstallInvoked, isTrue);
+  });
+
+  test("inheriting MethodChannel subclass forwards complete install context",
+      () async {
+    late MethodCall capturedCall;
+    const channel = MethodChannel("desktop_updater");
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      capturedCall = call;
+      return null;
+    });
+    final DesktopUpdaterPlatform platform =
+        InheritingMethodChannelDesktopUpdater();
+
+    try {
+      await platform.installUpdateWithContext(
+        stagingPath: "/tmp/staged",
+        removedFiles: const ["old.dll"],
+        allowUnsignedMacOSUpdates: true,
+        diagnosticsLogPath: "/tmp/helper.jsonl",
+        installRoot: "/opt/example",
+        executableRelativePath: "bin/example",
+        packageId: "com.example.app",
+        stageProvenanceSha256: "a" * 64,
+        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
+        stageProvenanceEntries: const [
+          {"path": "bin/example", "kind": "file", "length": 42},
+        ],
+        expectedArtifactSha256: "b" * 64,
+        allowedSignerThumbprints: ["C" * 64],
+        innoRequiresElevation: "always",
+        transactionId: "123e4567-e89b-42d3-a456-426614174001",
+      );
+
+      expect(capturedCall.method, "installUpdate");
+      expect(capturedCall.arguments, {
+        "stagingPath": "/tmp/staged",
+        "removedFiles": <String>["old.dll"],
+        "allowUnsignedMacOSUpdates": true,
+        "diagnosticsLogPath": "/tmp/helper.jsonl",
+        "installRoot": "/opt/example",
+        "executableRelativePath": "bin/example",
+        "packageId": "com.example.app",
+        "stageProvenanceSha256": "a" * 64,
+        "stageProvenanceNonce": "123e4567-e89b-42d3-a456-426614174000",
+        "stageProvenanceEntries": <Map<String, Object?>>[
+          {"path": "bin/example", "kind": "file", "length": 42},
+        ],
+        "expectedArtifactSha256": "b" * 64,
+        "allowedSignerThumbprints": <String>["C" * 64],
+        "innoRequiresElevation": "always",
+        "transactionId": "123e4567-e89b-42d3-a456-426614174001",
+      });
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    }
+  });
+
+  test("delegating MethodChannel override controls legacy install arguments",
+      () async {
+    late MethodCall capturedCall;
+    const channel = MethodChannel("desktop_updater");
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      capturedCall = call;
+      return null;
+    });
+    final DesktopUpdaterPlatform platform =
+        _DelegatingMethodChannelDesktopUpdater();
+
+    try {
+      await platform.installUpdateWithContext(
+        stagingPath: "/tmp/staged",
+        removedFiles: const ["old.dll"],
+        allowUnsignedMacOSUpdates: true,
+        diagnosticsLogPath: "/tmp/helper.jsonl",
+        installRoot: "/opt/example",
+        executableRelativePath: "bin/example",
+        packageId: "com.example.app",
+        stageProvenanceSha256: "a" * 64,
+        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
+        stageProvenanceEntries: const [
+          {"path": "bin/example", "kind": "file", "length": 42},
+        ],
+        expectedArtifactSha256: "b" * 64,
+        allowedSignerThumbprints: ["C" * 64],
+        innoRequiresElevation: "always",
+        transactionId: "123e4567-e89b-42d3-a456-426614174001",
+      );
+
+      expect(capturedCall.method, "installUpdate");
+      expect(capturedCall.arguments, {
+        "stagingPath": "/tmp/staged/delegated",
+        "removedFiles": <String>["old.dll", "delegated.dll"],
+        "allowUnsignedMacOSUpdates": false,
+        "diagnosticsLogPath": "/tmp/helper.jsonl.delegated",
+        "installRoot": "/opt/example",
+        "executableRelativePath": "bin/example",
+        "packageId": "com.example.app",
+        "stageProvenanceSha256": "a" * 64,
+        "stageProvenanceNonce": "123e4567-e89b-42d3-a456-426614174000",
+        "stageProvenanceEntries": <Map<String, Object?>>[
+          {"path": "bin/example", "kind": "file", "length": 42},
+        ],
+        "expectedArtifactSha256": "b" * 64,
+        "allowedSignerThumbprints": <String>["C" * 64],
+        "innoRequiresElevation": "always",
+        "transactionId": "123e4567-e89b-42d3-a456-426614174001",
+      });
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    }
+  });
+
+  test("delayed super calls keep sibling install contexts isolated", () async {
+    final capturedCalls = <MethodCall>[];
+    const channel = MethodChannel("desktop_updater");
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      capturedCalls.add(call);
+      return null;
+    });
+    final firstRelease = Completer<void>();
+    final secondRelease = Completer<void>();
+    final DesktopUpdaterPlatform platform =
+        _DelayedSuperMethodChannelDesktopUpdater({
+      "/tmp/first": firstRelease,
+      "/tmp/second": secondRelease,
+    });
+
+    try {
+      final first = platform.installUpdateWithContext(
+        stagingPath: "/tmp/first",
+        packageId: "com.example.first",
+        stageProvenanceSha256: "a" * 64,
+        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174010",
+        stageProvenanceEntries: const [
+          {"path": "first", "kind": "file", "length": 1},
+        ],
+        expectedArtifactSha256: "b" * 64,
+        transactionId: "123e4567-e89b-42d3-a456-426614174011",
+      );
+      final second = platform.installUpdateWithContext(
+        stagingPath: "/tmp/second",
+        packageId: "com.example.second",
+        stageProvenanceSha256: "c" * 64,
+        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174012",
+        stageProvenanceEntries: const [
+          {"path": "second", "kind": "file", "length": 2},
+        ],
+        expectedArtifactSha256: "d" * 64,
+        transactionId: "123e4567-e89b-42d3-a456-426614174013",
+      );
+
+      secondRelease.complete();
+      await second;
+      firstRelease.complete();
+      await first;
+
+      expect(capturedCalls, hasLength(2));
+      expect(
+        capturedCalls[0].arguments,
+        allOf(
+          containsPair("stagingPath", "/tmp/second"),
+          containsPair("packageId", "com.example.second"),
+          containsPair(
+            "transactionId",
+            "123e4567-e89b-42d3-a456-426614174013",
+          ),
+        ),
+      );
+      expect(
+        capturedCalls[1].arguments,
+        allOf(
+          containsPair("stagingPath", "/tmp/first"),
+          containsPair("packageId", "com.example.first"),
+          containsPair(
+            "transactionId",
+            "123e4567-e89b-42d3-a456-426614174011",
+          ),
+        ),
+      );
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    }
+  });
+
+  test("nested install dispatch restores its outer Zone context", () async {
+    final capturedCalls = <MethodCall>[];
+    const channel = MethodChannel("desktop_updater");
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      capturedCalls.add(call);
+      return null;
+    });
+    final DesktopUpdaterPlatform platform =
+        _NestedMethodChannelDesktopUpdater();
+
+    try {
+      await platform.installUpdateWithContext(
+        stagingPath: "/tmp/outer",
+        packageId: "com.example.outer",
+        stageProvenanceSha256: "a" * 64,
+        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
+        stageProvenanceEntries: const [
+          {"path": "outer", "kind": "file", "length": 9},
+        ],
+        expectedArtifactSha256: "b" * 64,
+        transactionId: "123e4567-e89b-42d3-a456-426614174001",
+      );
+
+      expect(capturedCalls, hasLength(2));
+      expect(
+        capturedCalls[0].arguments,
+        allOf(
+          containsPair("stagingPath", "/tmp/nested"),
+          containsPair("packageId", "com.example.nested"),
+          containsPair(
+            "transactionId",
+            "123e4567-e89b-42d3-a456-426614174003",
+          ),
+        ),
+      );
+      expect(
+        capturedCalls[1].arguments,
+        allOf(
+          containsPair("stagingPath", "/tmp/outer"),
+          containsPair("packageId", "com.example.outer"),
+          containsPair(
+            "transactionId",
+            "123e4567-e89b-42d3-a456-426614174001",
+          ),
+        ),
+      );
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    }
   });
 
   test("old safe install call loads package identity from stage provenance",

@@ -1,5 +1,6 @@
 import "dart:async";
 import "dart:io";
+import "dart:math";
 
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
@@ -24,6 +25,7 @@ import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 
 export "package:desktop_updater/src/core/update_client.dart"
     show MinimumOSSupportChecker;
@@ -79,6 +81,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
             ? null
             : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+        _isWindows = Platform.isWindows,
         _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
@@ -126,9 +129,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     Uri? releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
     ExternalUrlLauncher? externalUrlLauncher,
+    bool? isWindows,
   })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
             ? null
             : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+        _isWindows = isWindows ?? Platform.isWindows,
         _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
         _diagnosticsRecorder =
@@ -151,6 +156,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   }
 
   final bool _skipInitialVersionCheck;
+  final bool _isWindows;
 
   /// Whether construction should avoid starting the first automatic check.
   bool get skipInitialVersionCheck => _skipInitialVersionCheck;
@@ -184,7 +190,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Optional app-owned persistence adapter for pending install recovery.
   final UpdateRecoveryStore? recoveryStore;
 
-  /// Optional app-owned native helper diagnostics log path.
+  /// Compatibility-only diagnostics path. Standalone helpers use their fixed
+  /// platform log sink instead of writing this caller-selected path.
   final String? diagnosticsLogPath;
 
   /// Optional app-owned telemetry callback.
@@ -566,7 +573,7 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   Future<void> _recoverThenCheckVersionQuietly() async {
     await recoverPendingInstall();
-    if (_state is UpdateFailed) {
+    if (_state is UpdateFailed || _state is UpdateInstalling) {
       return;
     }
     await _checkVersionQuietly();
@@ -753,8 +760,15 @@ class DesktopUpdaterController extends ChangeNotifier {
     );
     notifyListeners();
 
+    String? transactionId;
     try {
-      await _writePendingRecoveryMarker(stagingPath);
+      final candidateTransactionId =
+          _isWindows ? _createInstallTransactionId() : null;
+      transactionId = candidateTransactionId;
+      await _writePendingRecoveryMarker(
+        stagingPath,
+        candidateTransactionId,
+      );
       await DesktopUpdaterPlatform.instance.installUpdateWithContext(
         stagingPath: stagingPath,
         allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
@@ -771,6 +785,7 @@ class DesktopUpdaterController extends ChangeNotifier {
                 const [],
         innoRequiresElevation:
             _activeDescriptor?.install.inno?.requiresElevation ?? "auto",
+        transactionId: transactionId,
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,
@@ -780,7 +795,14 @@ class DesktopUpdaterController extends ChangeNotifier {
       _state = UpdateInstalling(cleanupReport: cleanupReport);
       notifyListeners();
     } on Object catch (error) {
-      await _clearPendingRecoveryMarker();
+      final preserveForNativeRecovery = transactionId != null &&
+          error is PlatformException &&
+          (error.code == "InstallRecoveryRequired" ||
+              (error.code == "InstallError" &&
+                  _hasRecoveryRequiredDetails(error.details)));
+      if (!preserveForNativeRecovery) {
+        await _clearPendingRecoveryMarker();
+      }
       _recordCleanupReport(
         _buildCleanupReport(
           stagingPath: stagingPath,
@@ -858,13 +880,18 @@ class DesktopUpdaterController extends ChangeNotifier {
     if (transactionId != null && transactionId.isNotEmpty) {
       final NativeInstallTransactionStatus? nativeStatus;
       try {
-        var status = await DesktopUpdaterPlatform.instance
-            .queryNativeInstallTransaction(transactionId);
-        if (status?.requiresRecovery ?? false) {
-          status = await DesktopUpdaterPlatform.instance
-              .recoverNativeInstallTransaction(transactionId);
+        if (_isWindows) {
+          nativeStatus = await DesktopUpdaterPlatform.instance
+              .resolveNativeInstallTransactionAfterExit(transactionId);
+        } else {
+          var status = await DesktopUpdaterPlatform.instance
+              .queryNativeInstallTransaction(transactionId);
+          if (status?.requiresRecovery ?? false) {
+            status = await DesktopUpdaterPlatform.instance
+                .recoverNativeInstallTransaction(transactionId);
+          }
+          nativeStatus = status;
         }
-        nativeStatus = status;
       } on Object catch (error) {
         _failRecoveredInstall(
           marker,
@@ -878,7 +905,15 @@ class DesktopUpdaterController extends ChangeNotifier {
 
       // A custom released platform implementation has no native recovery
       // lookup surface, so preserve its existing version-only behavior.
+      if (nativeStatus?.awaitsCallerExit ?? false) {
+        _state = const UpdateInstalling();
+        notifyListeners();
+        return;
+      }
       if (nativeStatus != null && !nativeStatus.isTerminalSuccess) {
+        if (nativeStatus.isTerminalFailure) {
+          await _clearPendingRecoveryMarker();
+        }
         _failRecoveredInstall(
           marker,
           StateError("Native helper did not confirm a completed install."),
@@ -936,10 +971,13 @@ class DesktopUpdaterController extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _writePendingRecoveryMarker(String stagingPath) async {
+  Future<bool> _writePendingRecoveryMarker(
+    String stagingPath,
+    String? transactionId,
+  ) async {
     final store = recoveryStore;
     if (store == null) {
-      return;
+      return false;
     }
 
     final marker = UpdateInstallRecoveryMarker(
@@ -956,10 +994,12 @@ class DesktopUpdaterController extends ChangeNotifier {
         updateVersion: _activeDescriptor?.version,
         stagingPath: stagingPath,
       ).toPlainText(),
+      transactionId: transactionId,
     );
 
     try {
       await store.writePendingInstall(marker);
+      return true;
     } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
@@ -967,7 +1007,20 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Recovery marker write failed.",
         error: error,
       );
+      return false;
     }
+  }
+
+  String _createInstallTransactionId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();
+    return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-"
+        "${hex.substring(12, 16)}-${hex.substring(16, 20)}-"
+        "${hex.substring(20)}";
   }
 
   Future<void> _clearPendingRecoveryMarker() async {
@@ -1090,6 +1143,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     _cachedReleaseNotesKey = null;
     _releaseNotesState = const ReleaseNotesIdle();
   }
+}
+
+bool _hasRecoveryRequiredDetails(Object? details) {
+  return details is Map<Object?, Object?> &&
+      details["recoveryRequired"] == true;
 }
 
 String _releaseNotesCacheKey(ReleaseDescriptor descriptor) {

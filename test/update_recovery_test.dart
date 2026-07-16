@@ -58,6 +58,40 @@ void main() {
     expect(status.isTerminalSuccess, isFalse);
   });
 
+  test("manual action is not an active caller-exit acknowledgement", () {
+    final status = NativeInstallTransactionStatus.fromJson({
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+      "state": "manualActionRequired",
+      "resultCode": "recoveryRequired",
+      "detail": "Operator action is required.",
+      "responseDigestSha256": "a" * 64,
+      "helperEndpointIdentitySha256": "b" * 64,
+    });
+
+    expect(status.requiresRecovery, isTrue);
+    expect(status.awaitsCallerExit, isFalse);
+  });
+
+  test("relaunch failure is a distinct terminal non-recovery result", () {
+    final status = NativeInstallTransactionStatus.fromJson({
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+      "state": "completed",
+      "resultCode": "relaunchFailure",
+      "detail": "The verified application was not relaunched.",
+      "responseDigestSha256": "a" * 64,
+      "helperEndpointIdentitySha256": "b" * 64,
+    });
+
+    expect(
+      status.resultCode,
+      NativeInstallTransactionResultCode.relaunchFailure,
+    );
+    expect(status.isTerminalSuccess, isFalse);
+    expect(status.isTerminalFailure, isFalse);
+    expect(status.awaitsCallerExit, isFalse);
+    expect(status.requiresRecovery, isFalse);
+  });
+
   test("app-owned recovery store contract can read write and clear by channel",
       () async {
     final store = _MemoryRecoveryStore();

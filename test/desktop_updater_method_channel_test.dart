@@ -120,6 +120,7 @@ void main() {
       installRoot: "/opt/example-app",
       executableRelativePath: "bin/example-app",
       packageId: "com.example.app",
+      transactionId: "123e4567-e89b-42d3-a456-426614174000",
     );
 
     expect(capturedCall.method, "installUpdate");
@@ -130,6 +131,7 @@ void main() {
       "installRoot": "/opt/example-app",
       "executableRelativePath": "bin/example-app",
       "packageId": "com.example.app",
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
     });
   });
 
@@ -276,5 +278,62 @@ void main() {
 
     expect(capturedCall.method, "recoverPendingInstallTransaction");
     expect(status.state, NativeInstallTransactionState.rolledBack);
+  });
+
+  test("resolvePendingInstallTransactionAfterExit uses one status exchange",
+      () async {
+    late MethodCall capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      capturedCall = methodCall;
+      return {
+        "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+        "state": "prepared",
+        "resultCode": "recoveryRequired",
+        "detail": "Caller exit required.",
+        "responseDigestSha256": "a" * 64,
+        "helperEndpointIdentitySha256": "b" * 64,
+      };
+    });
+
+    final status = await platform.resolvePendingInstallTransactionAfterExit(
+      "123e4567-e89b-42d3-a456-426614174000",
+    );
+
+    expect(
+      capturedCall.method,
+      "resolvePendingInstallTransactionAfterExit",
+    );
+    expect(capturedCall.arguments, {
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+    });
+    expect(status.requiresRecovery, isTrue);
+  });
+
+  test("transaction status rejects a changed transaction binding", () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async {
+      return {
+        "transactionId": "123e4567-e89b-42d3-a456-426614174001",
+        "state": "completed",
+        "resultCode": "succeeded",
+        "detail": "Wrong transaction.",
+        "responseDigestSha256": "a" * 64,
+        "helperEndpointIdentitySha256": "b" * 64,
+      };
+    });
+
+    await expectLater(
+      platform.queryInstallTransaction(
+        "123e4567-e89b-42d3-a456-426614174000",
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("transaction binding"),
+        ),
+      ),
+    );
   });
 }
