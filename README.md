@@ -299,9 +299,10 @@ localization: DesktopUpdateLocalization(
 quiet: no package-owned files, uploads, telemetry, or storage.
 
 Use in-memory problem reports for normal support, add an app-owned diagnostics
-sink for durable Dart lifecycle logs, and add `diagnosticsLogPath` plus an
-app-owned `UpdateRecoveryStore` only when support needs post-exit native helper
-evidence.
+sink for durable Dart lifecycle logs, and add an app-owned
+`UpdateRecoveryStore` when support needs post-relaunch evidence.
+`diagnosticsLogPath` remains a compatibility input; standalone helpers use
+fixed platform logs rather than that caller-selected path.
 
 Details live in [Diagnostics and recovery](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/diagnostics-and-recovery.md),
 [Ready-made UI widgets](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/ui-widgets.md#diagnostics-and-support), and

@@ -44,7 +44,7 @@ configured-but-unexecuted workflow.
 | Linux helper and privileged mount-namespace CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | macOS signed bundled SMAppService daemon/XPC CI | `not run` | The equivalent target-host boundary is verified locally, but the manual credential-gated CI lane has not executed for the current head |
 | Windows Authenticode/UAC helper CI | `not run` | Manual self-hosted credential-gated lane |
-| Linux installed polkit broker CI | `not run` | Manual self-hosted policy/privilege lane |
+| Linux installed polkit broker CI | `not run` | Manual self-hosted lane is configured for separate fixed-byte/policy audit plus real non-root public-API → pkexec mutation, durable query, after-backup death, and fresh-broker recovery; it has not run for this head |
 | Current remediation head in GitHub Actions | `not run` | The current helper head has not run in GitHub Actions; older run `29291937840` does not prove these helper changes |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | macOS signed/notarized PKG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
@@ -86,6 +86,11 @@ only an already-selected artifact, verifies its length and SHA-256, and stages
 it under application-owned disposable roots. The third passes that staged
 artifact to the existing platform helper. A failed or non-update result cannot
 skip directly to a later stage.
+
+The optional `diagnosticsLogPath` argument is a compatibility-only diagnostics
+input. Standalone protocol-v1 helpers use their fixed platform-owned log and do
+not write post-exit events to a caller-selected path. Hosts that need their own
+durable file should persist app-owned lifecycle diagnostics before handoff.
 
 ### macOS Swift
 

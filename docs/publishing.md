@@ -444,12 +444,12 @@ app-owned:
   pre-exit native scheduling fails, and `recoverPendingInstall()` converts an
   old-version relaunch or unverifiable current version into `UpdateFailed` with
   a redacted report. Store read, write, and clear failures are diagnostics-only.
-- Apps can pass `diagnosticsLogPath` to `DesktopUpdaterController` or
-  `DesktopUpdater.installUpdate()` when they want native helper post-exit
-  diagnostics. The path is explicit and app-owned; native helpers append
-  bounded JSONL-style events only when it is present, except that an elevated
-  Windows helper does not receive or use the caller-provided path. Logging
-  failures do not block install, rollback, cleanup, or relaunch attempts.
+- `diagnosticsLogPath` remains accepted by `DesktopUpdaterController` and
+  `DesktopUpdater.installUpdate()` for compatibility. Protocol-v1 standalone
+  requests use a fixed `platformLog` destination instead: Windows writes fixed
+  Event Log records and Linux writes syslog plus helper-owned transaction
+  registry events. Those helpers do not receive or write the caller-selected
+  path. Logging failures do not block install, rollback, cleanup, or relaunch.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor
@@ -475,11 +475,10 @@ Use three explicit support levels:
    `UpdateDiagnosticsRecorder(sink: ...)` when your app wants a redacted log for
    check, descriptor, download, verify, stage, and native handoff events. Your
    app chooses the file path, storage package, retention, and upload policy.
-3. **App-owned native helper log plus recovery store.** Supply
-   `diagnosticsLogPath` with an app-owned `UpdateRecoveryStore` when support
-   needs post-exit install, rollback, cleanup, or relaunch evidence and
-   post-relaunch `UpdateFailed(report)` recovery. Elevated Windows helpers do
-   not write to this caller-selected helper log.
+3. **Platform helper log plus recovery store.** Supply an app-owned
+   `UpdateRecoveryStore` when support needs post-relaunch
+   `UpdateFailed(report)` recovery, and collect the fixed Windows or Linux
+   platform helper log for post-exit install evidence.
 
 See [Diagnostics and recovery](diagnostics-and-recovery.md) for concrete log
 locations, JSONL helper events, and support handoff examples.
@@ -491,8 +490,8 @@ Open Settings > Updates > Copy update report. If the app cannot open that
 screen, attach the update log from the location your app shows in Settings.
 ```
 
-Avoid package-level platform paths in public docs or support scripts. If your
-app writes a helper log, show the user the app-owned location and ask for
+Avoid presenting `diagnosticsLogPath` as a standalone-helper sink. If your app
+writes a Dart lifecycle log, show the user the app-owned location and ask for
 explicit approval before sharing it.
 
 ### Staged Rollouts

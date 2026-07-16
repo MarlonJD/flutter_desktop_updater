@@ -502,20 +502,17 @@ while the old version or an unverifiable version becomes `UpdateFailed(report)`.
 Store failures are captured as diagnostics warnings and do not crash startup or
 block install handoff.
 
-For post-exit native helper diagnostics, pass an explicit app-owned log path.
-The helpers append bounded JSONL-style lifecycle events only when a path is
-provided; logging failures are ignored so update install and rollback work are
-not blocked by support logging:
+For a durable app-owned log, configure an `UpdateDiagnosticsRecorder` sink.
+`diagnosticsLogPath` remains available for source and ABI compatibility, but
+the standalone protocol-v1 helpers convert diagnostics to a fixed
+`platformLog` destination and do not write to that caller-selected path. New
+integrations should not set it as an app-owned helper-log destination; use the
+`UpdateDiagnosticsRecorder` example above for durable app-owned lifecycle
+logs.
 
-```dart
-final controller = DesktopUpdaterController(
-  appArchiveUrl: archiveUrl,
-  diagnosticsLogPath: appOwnedHelperLogFile.path,
-);
-```
-
-Use this with an app-owned recovery store when support needs evidence from
-after the Flutter process has exited.
+Use an app-owned recovery store for startup UX. Collect post-exit helper
+evidence from the Windows Application Event Log or the Linux helper-owned
+transaction-registry log.
 
 For support flows, keep the integration level explicit:
 
@@ -523,9 +520,9 @@ For support flows, keep the integration level explicit:
    files and uploads nothing.
 2. App-owned Dart lifecycle log: add `UpdateDiagnosticsRecorder(sink: ...)`
    when your app wants a redacted durable log at a path it controls.
-3. App-owned native helper log plus recovery store: add `diagnosticsLogPath`
-   and `UpdateRecoveryStore` when support needs post-exit install, rollback,
-   cleanup, or relaunch evidence.
+3. Platform helper log plus recovery store: add `UpdateRecoveryStore` and
+   collect the fixed platform helper log when support needs post-exit install,
+   rollback, cleanup, or relaunch evidence.
 
 Suggested user-facing support copy:
 

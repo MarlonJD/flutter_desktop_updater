@@ -28,37 +28,46 @@ void main() {
     for (final source in <String>[uiDocs, publishingDocs, diagnosticsDocs]) {
       expect(source, contains("In-memory problem report only"));
       expect(source, contains("App-owned Dart lifecycle log"));
-      expect(
-        source,
-        contains("App-owned native helper log plus recovery store"),
-      );
+      expect(source, contains("Platform helper log plus recovery store"));
       expect(source, contains("Open Settings > Updates > Copy update report"));
       expect(source, contains("app-owned"));
     }
+
+    expect(uiDocs, contains("UpdateDiagnosticsRecorder("));
+    expect(
+      uiDocs,
+      isNot(contains("diagnosticsLogPath: appOwnedHelperLogFile.path")),
+    );
   });
 
   test("diagnostics docs explain log locations and helper behavior", () {
     final source = File("docs/diagnostics-and-recovery.md").readAsStringSync();
 
-    expect(source, contains("The package writes no log files by default"));
+    expect(
+      source,
+      contains("The package writes no caller-selected log files by default"),
+    );
     expect(source, contains("Where Logs Go"));
     expect(source, contains("UpdateDiagnosticsSink"));
     expect(source, contains("diagnosticsLogPath"));
+    expect(source, contains("platformLog"));
     expect(source, contains("UpdateRecoveryStore"));
-    expect(source, contains("Create the parent directory"));
     expect(source, contains("one JSON object per line"));
     expect(source, contains("helper scheduled"));
     expect(source, contains("relaunch attempt"));
-    expect(source, contains("cleanup retry"));
-    expect(source, contains("inno installer start"));
-    expect(source, contains("inno authenticode verified"));
+    expect(source, contains("transaction completed"));
+    expect(source, contains("package manager state verified"));
     expect(source, contains("desktop_updater_stage_*"));
     expect(source, contains("stale-staging window"));
     expect(source, contains("does not include a logging backend"));
+    expect(
+      source,
+      isNot(contains("A normal, non-elevated Windows helper may append")),
+    );
     expect(source, isNot(contains("docs/plans")));
   });
 
-  test("diagnostics docs distinguish normal and elevated Windows helpers", () {
+  test("diagnostics docs describe standalone platform-owned helper sinks", () {
     final source = File("docs/diagnostics-and-recovery.md")
         .readAsStringSync()
         .replaceAll(RegExp(r"\s+"), " ");
@@ -66,28 +75,49 @@ void main() {
     expect(
       source,
       contains(
-        "A normal, non-elevated Windows helper may append best-effort "
-        "redacted lifecycle events to the explicit `diagnosticsLogPath`.",
+        "`diagnosticsLogPath` remains a compatibility input for existing "
+        "Flutter and native callers",
       ),
     );
     expect(
       source,
       contains(
-        "An elevated Windows helper does not receive, open, create, append "
-        "to, or otherwise use the caller-provided `diagnosticsLogPath`.",
+        "The standalone protocol-v1 Windows and Linux helpers do not receive, "
+        "open, create, append to, or otherwise use that caller-provided path.",
       ),
     );
     expect(
       source,
       contains(
         "App-owned Dart diagnostics and the package's in-memory problem "
-        "report remain available before the elevated handoff.",
+        "report remain available before the helper handoff.",
       ),
     );
+    expect(source, contains("Windows Application Event Log"));
+    expect(
+      source,
+      contains("DesktopUpdater.InstallHelper.ProtocolV1"),
+    );
+    expect(source, contains("fixed protocol-v1 event names and IDs"));
+    expect(source, contains("`desktop-updater-helper` syslog identity"));
+    expect(source, contains("helper-owned `events.jsonl`"));
     expect(
       source,
       contains("Windows UAC and real helper execution: `not run`."),
     );
+  });
+
+  test("native SDK docs do not advertise a caller-selected helper log", () {
+    for (final path in <String>[
+      "docs/native-sdk.md",
+      "docs/native-runtime-api.md",
+    ]) {
+      final source = File(
+        path,
+      ).readAsStringSync().replaceAll(RegExp(r"\s+"), " ");
+      expect(source, contains("compatibility-only diagnostics input"));
+      expect(source, contains("fixed platform-owned log"));
+    }
   });
 
   test("CI docs keep helper diagnostics artifacts opt-in", () {
@@ -128,6 +158,15 @@ void main() {
     expect(source, contains("mode: generated"));
     expect(source, contains("mode: script"));
     expect(source, contains("authenticodeThumbprints"));
+    expect(source, contains("protectedHelperInstallDir"));
+    expect(
+      source,
+      contains("DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR"),
+    );
+    expect(source, contains("--register-endpoint"));
+    expect(source, contains("uninsneveruninstall"));
+    expect(source, contains("registration fails"));
+    expect(source, contains("target-host"));
     expect(source, contains("Windows Inno Installer Updates"));
   });
 

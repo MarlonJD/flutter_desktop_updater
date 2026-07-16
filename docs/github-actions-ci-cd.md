@@ -112,8 +112,16 @@ The credential and privileged helper gates are separate manual jobs:
   `desktop-updater-polkit` runner when
   `DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E=1`. The runner needs CMake, OpenSSL,
   `jq`, polkit with an interactive authentication agent, and passwordless
-  `sudo` for the bounded install and cleanup steps. The job verifies fixed
-  helper bytes and sealed policy metadata before the installed broker smoke.
+  `sudo` for bounded fixture setup, static audit, and cleanup only. The job
+  builds a test-only caller and crash-injection helper, seals the actual
+  helper/caller SHA-256 values and deterministic test Ed25519 public key into
+  the root-owned package policy, and audits the fixed installed bytes
+  separately. Its non-root step then uses the public native API and `pkexec`
+  fixed broker to mutate a protected root-owned target, query completed durable
+  state, kill the helper exactly after the target-to-backup rename, and prove a
+  fresh broker converges recovery. Configuration is not execution evidence;
+  this lane remains `not run` until that self-hosted job passes for the current
+  head.
 
 The signed/notarized DMG and PKG smokes still need Developer ID Application,
 Developer ID Installer, keychain, and notary credentials. Signed Windows

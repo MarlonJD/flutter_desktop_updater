@@ -54,10 +54,40 @@ disposing a .NET safe handle sends a best-effort cancellation; the helper's
 journal remains authoritative if the caller dies or cancellation cannot be
 delivered.
 
-At startup, persist only the transaction ID in application state. Call
-`queryTransaction`, then call `recoverPendingInstall` only when the returned
-native state requires recovery. Application or Flutter state may drive UX but
-must not authorize mutation, choose rollback, or rewrite helper state.
+At startup, persist only the transaction ID in application state. On Windows,
+call `resolvePendingInstallAfterExit` once instead of issuing a
+`queryTransaction`/`recoverPendingInstall` pair. When it returns a prepared,
+recovery-required status, the authenticated helper has retained the exact
+caller identity and will continue only after that process exits; the caller
+must exit immediately and must not launch a second recovery request. A terminal
+completed, rolled-back, or manual-action status may be handled without exiting.
+The separate Windows query and recovery functions remain available as low-level
+diagnostic and operator-recovery operations.
+
+Windows filesystem recovery is durable; automatic relaunch is a separate,
+verified best-effort operation with an at-most-once attempt boundary. The
+protected transaction index records `launchPending`, `launchAttempting`,
+`launched`, or `launchFailed`. The startup resolver reports terminal install
+success only after the verified caller-token launcher returns and `launched` is
+flushed. Low-level recovery results still describe the verified filesystem
+outcome independently. If the helper dies after consuming the attempt claim
+but before that proof is durable, the next query reports `relaunchFailure` and
+does not automatically retry, because retrying could open a second app process.
+The installed target or rollback result remains authoritative and the user may
+start the app manually. This is deliberately not an exactly-once process-launch
+guarantee.
+
+For protected installs, the SYSTEM recovery host captures the exact
+authenticated caller token before signalling readiness. It can therefore
+finish recovery and make the same single verified relaunch attempt when the
+normal elevated helper dies. A host that starts after reboot without that token
+still recovers the filesystem transaction but records relaunch failure instead
+of launching with the SYSTEM token or claiming that relaunch succeeded.
+
+The other platform SDKs retain the query-then-recover startup sequence until
+they expose an equivalent atomic operation. Application or Flutter state may
+drive UX but must not authorize mutation, choose rollback, or rewrite helper
+state.
 
 The compatibility method `scheduleInstallAndRelaunch` remains available. It is
 implemented as prepare, reservation validation, and commit; it has no script
@@ -65,6 +95,11 @@ fallback. A missing, untrusted, or unavailable packaged endpoint fails before
 mutation. The transport integration and signed/elevated retail evidence are
 still **candidate-only**; this API surface is not production-ready until the
 target-host gates described below pass.
+
+Across these APIs, `diagnosticsLogPath` is a compatibility-only diagnostics
+input. Standalone protocol-v1 helpers use their fixed platform-owned log and do
+not write post-exit events to a caller-selected path. Use an app-owned lifecycle
+diagnostics sink when the host needs its own durable file.
 
 Each retail application must provision these policy-bound artifacts:
 
@@ -211,6 +246,22 @@ install-root, executable-relative-path, and package-identity target proof; an
 incomplete request is rejected before scheduling. The installed header also
 exposes `DESKTOP_UPDATER_NATIVE_VERSION_STRING`.
 
+Durable Windows consumers should generate and persist a canonical lowercase
+UUIDv4 before privileged preparation, then use
+`desktop_updater_prepare_install_v2`. Its prepare outcome distinguishes a
+definite rejection from an ambiguous handoff that requires authoritative
+recovery by that same transaction ID. Startup recovery uses
+`desktop_updater_resolve_pending_install_after_exit_v1`; an active recovery ACK
+requires the caller to exit immediately. The original prepare, query, and
+recover entry points remain ABI-compatible for existing consumers.
+The .NET status exposes `AwaitsCallerExit` for that exact
+`prepared`/`recoveryRequired` combination; `manualActionRequired` must remain
+visible to the operator and must not be treated as an exit acknowledgement.
+The C++, C, .NET, Flutter plugin, and Dart status surfaces preserve
+`relaunchFailure` as a distinct additive result code. It means the install
+reached a verified terminal state but the single best-effort relaunch was not
+durably confirmed; it is neither success nor a request to retry recovery.
+
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
 wrappers, `buildTransitive` copy target, both
 `runtimes/win-x64/native/desktop_updater_native.dll` and
@@ -239,10 +290,15 @@ release workflow publishes that exact verified package.
 The NuGet or Flutter copy beside the runtime DLLs is a discovery artifact. It
 does not become an elevation authority merely by being present. A machine-wide
 installer must copy the exact signed helper and sealed policy into an absolute,
-installer-owned protected directory and pass that directory as
+installer-owned immutable
+`C:\Program Files\DesktopUpdaterHelperGenerationV1--<package-id>--<release-version>`
+generation leaf, directly beneath trusted Program Files, and pass that directory as
 `DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR`. The elevated path verifies
 Authenticode publisher, helper digest, final path, and directory writability
-before UAC launch. A user-writable package copy is rejected for elevation.
+before UAC launch. Endpoint records are keyed by package and exact helper path;
+an upgrade never replaces the endpoint or files retained by an older pending
+transaction. The legacy nested `DesktopUpdater\Helpers` layout is not a trusted
+provisioning parent; a user-writable package copy is rejected for elevation.
 
 ## Linux: Source-First CMake Package
 
