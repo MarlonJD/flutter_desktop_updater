@@ -1632,7 +1632,7 @@ after durable ownership exists; it must not generate a script.
   broker smokes behind the required credentials and target hosts. Missing
   credentials must produce literal `not run`, never green substitute evidence.
 
-- [ ] **Step 4: Close the old Task 6 blocker only with evidence**
+- [x] **Step 4: Close the old Task 6 blocker only with evidence**
 
   Update the remediation plan's Task 6 checkbox only after all secretless
   platform gates pass and the evidence notes identify any credential lanes still

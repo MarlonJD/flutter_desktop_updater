@@ -1,10 +1,19 @@
 # macOS DMG And PKG Production Integration Implementation Plan
 
+**Status:** Completed as an implementation ledger and superseded on
+2026-07-17. This document must not be cited as production-ready evidence.
+The remaining current-head artifact-trust and privileged PKG crash-recovery
+acceptance gates moved to
+[macOS Privileged Updater Production Closure](../active/2026-07-17-macos-privileged-updater-production-closure-plan.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add production-ready macOS DMG and PKG distribution/update support while preserving the existing direct `.app.zip` whole-bundle replacement path.
 
-**Architecture:** Keep `zip` plus `wholeBundleReplace` as the backward-compatible macOS default, then add macOS-only descriptor branches for DMG and PKG artifacts. DMG updates mount a verified DMG, copy out and verify the contained `.app`, detach the image, and hand the `.app` to the existing safe bundle replacement helper. PKG updates stage a verified signed/notarized/stapled installer and hand it to an explicit installer-owned path that launches Installer.app; the package does not promise silent privileged installation without a separately designed signed privileged helper.
+**Architecture:** Historical design record. The DMG and direct-zip branches remain
+as described below. The proposed PKG `Installer.app` handoff was superseded by
+the signed SMAppService/XPC daemon and fixed `/usr/sbin/installer` worker; the
+completion reconciliation and follow-up plan are authoritative for PKG.
 
 **Tech Stack:** Dart/Flutter unit and widget tests, schema-v3 `release.json`, macOS Swift MethodChannel helper, `/usr/bin/hdiutil`, `/usr/bin/codesign`, `/usr/sbin/spctl`, `/usr/bin/xcrun stapler`, `/usr/sbin/pkgutil`, `/usr/sbin/pkgbuild`, `/usr/bin/productbuild`, release CLI publish/validate commands, local MacBook production smoke harness.
 
@@ -22,10 +31,34 @@
 - DMG first-install UX is installer/distribution ergonomics.
 - DMG update mode is mount plus verified `.app` replacement.
 - PKG mode is installer-owned install/update.
-- Silent privileged PKG install is out of scope unless separately planned.
+- Historical constraint, superseded: privileged PKG installation is implemented
+  by the separately designed SMAppService/XPC helper plan.
 - Production-ready macOS evidence requires real Apple trust validation, not only unit tests.
 - The package must not create or import Apple certificates or notary credentials; apps and CI provide those credentials by reference.
 - Release metadata SHA-256 remains artifact integrity; production authenticity still requires Apple trust gates and, where configured, signed `release.json`.
+
+## Completion Reconciliation
+
+- Descriptor, DMG/PKG verification, runtime staging, Move to Applications,
+  release CLI, packager, validation, smoke-tool, documentation, and focused
+  validation work was implemented and committed in later native-runtime
+  slices.
+- The Task 4 `Installer.app` handoff design was superseded by the signed
+  `SMAppService` daemon/XPC provider and fixed `/usr/sbin/installer` worker.
+  `SMJobBless`, hidden shell execution, and an actual `Installer.app` handoff
+  are not part of the current implementation.
+- The legacy local-smoke and final-production-evidence steps are checked below
+  only as transferred plan-accounting items. They did not pass a
+  production-ready gate: the installed `2.7.1+271` PKG fixture was generated
+  before commit `ccfbe52`, and a 2026-07-17 recheck found invalid signatures
+  on both its main executable and embedded helper.
+- The authenticated SMAppService directory-replacement recovery evidence
+  remains valid for that scoped path, but the current-head privileged PKG
+  installer-active crash/recovery run is still required.
+- The follow-up plan owns fresh current-head signing, notarization, stapling,
+  nested payload verification, `/Applications` elevation, System Settings
+  approval handling, installer-active recovery, sanitized evidence, and the
+  final GO/NO-GO decision.
 
 ---
 
@@ -35,7 +68,12 @@ This plan adds three macOS distribution lanes:
 
 - **Direct zip update, unchanged:** `artifact.kind == "zip"` and `install.strategy == "wholeBundleReplace"`. The runtime downloads a `.app.zip`, extracts with `ditto`, verifies the staged `.app`, and replaces the installed bundle through the existing macOS helper.
 - **DMG first install and update:** `artifact.kind == "dmg"` and `install.strategy == "wholeBundleReplace"`. The release CLI creates a signed/notarized/stapled DMG containing the `.app` and a `/Applications` alias. Runtime update mode mounts the verified DMG read-only, finds exactly one contained `.app` or the configured app name, copies it to staging, verifies it with the same bundle identity and Apple trust gates as zip updates, detaches the DMG, and reuses the existing whole-bundle replacement helper.
-- **PKG installer install and update:** `artifact.kind == "pkgInstaller"` and `install.strategy == "pkgInstaller"`. The release CLI creates, signs, notarizes, staples, verifies, publishes, and validates a `.pkg`. Runtime mode downloads and verifies the `.pkg`, checks `pkgutil`, `spctl`, and stapler acceptance, stages it with a manifest, then launches Installer.app for user-confirmed installation. It does not call `sudo`, AppleScript privilege escalation, `AuthorizationExecuteWithPrivileges`, or a hidden root install.
+- **PKG installer install and update (historical proposal):**
+  `artifact.kind == "pkgInstaller"` and `install.strategy == "pkgInstaller"`.
+  The implemented runtime normalizes the legacy `installerApp` wire token to
+  `privilegedInstallerTool`, then uses the signed SMAppService/XPC daemon and
+  fixed `/usr/sbin/installer` worker. It does not call `sudo`, AppleScript
+  privilege escalation, `AuthorizationExecuteWithPrivileges`, or Installer.app.
 
 The optional **Move to Applications** flow is separate from update artifacts. Apps opt in to a runtime prompt when launched from a DMG volume, Downloads, or another non-installed location. The prompt can copy the running app to `/Applications`, launch the copied app, and terminate the source instance.
 
@@ -246,7 +284,7 @@ For notary submissions that use `--keychain`, pass the same keychain used when s
 - Produces: `ReleaseInstall.macosPkg` as `ReleaseMacOSPkgInstall?`.
 - Produces: validation that rejects unsupported platform/artifact/strategy pairings before download.
 
-- [ ] **Step 1.1: Write failing descriptor parse tests**
+- [x] **Step 1.1: Write failing descriptor parse tests**
 
 Add these tests to `test/release_descriptor_test.dart` near the Inno descriptor tests:
 
@@ -316,7 +354,7 @@ flutter test --no-pub test/release_descriptor_test.dart
 
 Expected: FAIL with missing artifact kind and missing `macosDmg`/`macosPkg` accessors.
 
-- [ ] **Step 1.2: Write failing rejection tests**
+- [x] **Step 1.2: Write failing rejection tests**
 
 Add tests that prove the schema fails closed:
 
@@ -376,7 +414,7 @@ flutter test --no-pub test/release_descriptor_test.dart
 
 Expected: FAIL until validation supports the new cases.
 
-- [ ] **Step 1.3: Implement descriptor value objects**
+- [x] **Step 1.3: Implement descriptor value objects**
 
 Modify `ReleaseArtifact.validate()` to allow `"dmg"` and `"pkgInstaller"`.
 
@@ -510,7 +548,7 @@ if (artifactKind == "pkgInstaller") {
 }
 ```
 
-- [ ] **Step 1.4: Verify descriptor tests**
+- [x] **Step 1.4: Verify descriptor tests**
 
 Run:
 
@@ -520,7 +558,7 @@ flutter test --no-pub test/release_descriptor_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 1.5: Commit**
+- [x] **Step 1.5: Commit**
 
 Suggested commit:
 
@@ -544,7 +582,7 @@ git commit -m "feat: add macos dmg and pkg descriptor contracts"
 - Produces: `MountedDmg`.
 - Produces: `mountDmgReadOnly`, `detachDmg`, `copyAppFromMountedDmg`, `verifyDmgPrimarySignature`, and `verifyPkgInstaller`.
 
-- [ ] **Step 2.1: Write failing command-order tests for DMG**
+- [x] **Step 2.1: Write failing command-order tests for DMG**
 
 Create `test/macos_distribution_artifacts_test.dart`:
 
@@ -596,7 +634,7 @@ flutter test --no-pub test/macos_distribution_artifacts_test.dart
 
 Expected: FAIL because the helper file does not exist.
 
-- [ ] **Step 2.2: Write failing PKG verification test**
+- [x] **Step 2.2: Write failing PKG verification test**
 
 Add:
 
@@ -627,7 +665,7 @@ test("PKG verification runs package signature, install assessment, and stapler",
 
 Run the focused test again. Expected: FAIL.
 
-- [ ] **Step 2.3: Implement the helper class with injectable process runner**
+- [x] **Step 2.3: Implement the helper class with injectable process runner**
 
 Create `lib/src/core/macos_distribution_artifacts.dart` with:
 
@@ -743,7 +781,7 @@ class MacOSDistributionVerifier {
 
 Parse identifiers from expanded `PackageInfo` and `Distribution` files after `pkgutil --expand-full`. The parser should collect `identifier="..."` from `<pkg-info>` and `id="..."` from `<pkg-ref>` entries, compare them against `expectedPackageIds`, and throw a `StateError` naming the missing package identifier when an expected value is absent.
 
-- [ ] **Step 2.4: Add detach-on-error tests**
+- [x] **Step 2.4: Add detach-on-error tests**
 
 Add a test proving DMG mounts are detached when app copy or verification fails:
 
@@ -789,7 +827,7 @@ flutter test --no-pub test/macos_distribution_artifacts_test.dart
 
 Expected: PASS after implementation.
 
-- [ ] **Step 2.5: Commit**
+- [x] **Step 2.5: Commit**
 
 Suggested commit:
 
@@ -813,7 +851,7 @@ git commit -m "feat: add macos distribution artifact verification helpers"
 - Produces: DMG staging result whose `stagingPath` is a verified `.app` path.
 - Produces: PKG staging result whose `stagingPath` is the staging root containing `installer.pkg` and `.desktop_updater_release_manifest.json`.
 
-- [ ] **Step 3.1: Add failing DMG staging test**
+- [x] **Step 3.1: Add failing DMG staging test**
 
 In `test/update_client_security_test.dart`, add a fake verifier through a new `UpdateClient` constructor parameter:
 
@@ -872,7 +910,7 @@ flutter test --no-pub test/update_client_security_test.dart
 
 Expected: FAIL because `UpdateClient` has no `macosDistributionVerifier` injection and no DMG branch.
 
-- [ ] **Step 3.2: Add failing PKG staging test**
+- [x] **Step 3.2: Add failing PKG staging test**
 
 Add:
 
@@ -924,7 +962,7 @@ test("stages macOS PKG installer artifacts without extracting", () async {
 
 Run the focused test. Expected: FAIL.
 
-- [ ] **Step 3.3: Implement UpdateClient branching**
+- [x] **Step 3.3: Implement UpdateClient branching**
 
 Add a constructor dependency:
 
@@ -996,7 +1034,7 @@ if (descriptor.artifact.kind == "pkgInstaller") {
 }
 ```
 
-- [ ] **Step 3.4: Verify focused runtime tests**
+- [x] **Step 3.4: Verify focused runtime tests**
 
 Run:
 
@@ -1006,7 +1044,7 @@ flutter test --no-pub test/update_client_security_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 3.5: Verify direct zip compatibility**
+- [x] **Step 3.5: Verify direct zip compatibility**
 
 Run:
 
@@ -1018,7 +1056,7 @@ flutter test --no-pub test/macos_updater_manifest_test.dart
 
 Expected: PASS. The `.app.zip` staging path and native helper manifest behavior stay unchanged.
 
-- [ ] **Step 3.6: Commit**
+- [x] **Step 3.6: Commit**
 
 Suggested commit:
 
@@ -1042,7 +1080,7 @@ git commit -m "feat: stage macos dmg and pkg update artifacts"
 - Produces: native helper branch that opens Installer.app for the verified staged PKG.
 - Produces: diagnostics events `pkg manifest loaded`, `pkg installer open`, and `pkg installer open failure`.
 
-- [ ] **Step 4.1: Write failing helper source test**
+- [x] **Step 4.1: Write failing helper source test**
 
 Add to `test/native_helper_script_test.dart`:
 
@@ -1070,7 +1108,7 @@ flutter test --no-pub test/native_helper_script_test.dart
 
 Expected: FAIL until the Swift helper adds a PKG branch.
 
-- [ ] **Step 4.2: Implement manifest strategy detection**
+- [x] **Step 4.2: Implement manifest strategy detection**
 
 In the generated shell script, read the staged manifest before `.app`-specific validation when `STAGING` is a directory containing `installer.pkg`:
 
@@ -1096,7 +1134,7 @@ fi
 
 Keep the existing `.app` path validation and whole-bundle replacement script for zip and DMG updates. Do not add a root `installer` command in this task.
 
-- [ ] **Step 4.3: Add SwiftPM smoke assertion**
+- [x] **Step 4.3: Add SwiftPM smoke assertion**
 
 In `DesktopUpdaterSwiftPMTests.swift`, add a source or method-channel assertion that the macOS plugin exposes `installUpdate` and still compiles after the helper script changes. If the current SwiftPM test is only a compile test, keep it compile-focused and rely on Dart source tests for script text.
 
@@ -1108,7 +1146,7 @@ swift test
 
 Expected: PASS on macOS. Label as `not run` on non-macOS hosts.
 
-- [ ] **Step 4.4: Verify helper tests**
+- [x] **Step 4.4: Verify helper tests**
 
 Run:
 
@@ -1118,7 +1156,7 @@ flutter test --no-pub test/native_helper_script_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 4.5: Commit**
+- [x] **Step 4.5: Commit**
 
 Suggested commit:
 
@@ -1148,7 +1186,7 @@ git commit -m "feat: hand off macos pkg installers to Installer app"
 - Produces: `DesktopUpdater.moveMacOSAppToApplications({bool replaceExisting = false})`.
 - Consumes: macOS native bundle path and destination `/Applications/<App>.app`.
 
-- [ ] **Step 5.1: Write failing pure Dart model tests**
+- [x] **Step 5.1: Write failing pure Dart model tests**
 
 Create `test/macos_install_location_test.dart`:
 
@@ -1186,7 +1224,7 @@ flutter test --no-pub test/macos_install_location_test.dart
 
 Expected: FAIL because the model does not exist.
 
-- [ ] **Step 5.2: Write failing method channel tests**
+- [x] **Step 5.2: Write failing method channel tests**
 
 Add to `test/desktop_updater_method_channel_test.dart`:
 
@@ -1233,7 +1271,7 @@ flutter test --no-pub test/desktop_updater_method_channel_test.dart
 
 Expected: FAIL until platform interfaces are added.
 
-- [ ] **Step 5.3: Implement Dart API and channel forwarding**
+- [x] **Step 5.3: Implement Dart API and channel forwarding**
 
 Create `MacOSInstallLocationStatus`:
 
@@ -1275,7 +1313,7 @@ class MacOSInstallLocationStatus {
 
 Expose facade methods from `DesktopUpdater` and platform interface. On non-macOS platforms, native implementations return `unsupported`.
 
-- [ ] **Step 5.4: Implement macOS native detection and move**
+- [x] **Step 5.4: Implement macOS native detection and move**
 
 In Swift:
 
@@ -1288,7 +1326,7 @@ In Swift:
 
 The native method must not detach a DMG or delete the source app. The user controls those outside this package.
 
-- [ ] **Step 5.5: Verify focused tests**
+- [x] **Step 5.5: Verify focused tests**
 
 Run:
 
@@ -1301,7 +1339,7 @@ swift test
 
 Expected: PASS on macOS for `swift test`; Dart tests pass everywhere.
 
-- [ ] **Step 5.6: Commit**
+- [x] **Step 5.6: Commit**
 
 Suggested commit:
 
@@ -1327,7 +1365,7 @@ git commit -m "feat: add macos move to applications runtime api"
 - Produces: opt-in `MacOSMoveToApplicationsPrompt`.
 - Produces: localized title, body, move, skip, and replace-existing error copy.
 
-- [ ] **Step 6.1: Write failing widget test**
+- [x] **Step 6.1: Write failing widget test**
 
 Create `test/macos_move_to_applications_prompt_test.dart`:
 
@@ -1372,7 +1410,7 @@ flutter test --no-pub test/macos_move_to_applications_prompt_test.dart
 
 Expected: FAIL because the widget does not exist.
 
-- [ ] **Step 6.2: Implement the opt-in widget**
+- [x] **Step 6.2: Implement the opt-in widget**
 
 Implement the widget as an app wrapper:
 
@@ -1400,7 +1438,7 @@ Behavior:
 - If native move returns an already-exists error, show a second confirmation with replace copy and call `replaceExisting: true` only after the user confirms.
 - `Skip` closes the prompt for the current process.
 
-- [ ] **Step 6.3: Verify widget and localization tests**
+- [x] **Step 6.3: Verify widget and localization tests**
 
 Run:
 
@@ -1411,7 +1449,7 @@ flutter test --no-pub test/localization_loader_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 6.4: Commit**
+- [x] **Step 6.4: Commit**
 
 Suggested commit:
 
@@ -1435,7 +1473,7 @@ git commit -m "feat: add optional macos move to applications prompt"
 - Produces: `MacOSPkgPublishConfig`.
 - Consumes: existing `MacOSPublishConfig` for notarization, stapling, and Gatekeeper settings.
 
-- [ ] **Step 7.1: Write failing config tests**
+- [x] **Step 7.1: Write failing config tests**
 
 Add to `test/release_cli/release_publish_config_test.dart`:
 
@@ -1492,7 +1530,7 @@ flutter test --no-pub test/release_cli/release_publish_config_test.dart
 
 Expected: FAIL because macOS artifact config is not implemented.
 
-- [ ] **Step 7.2: Implement typed config**
+- [x] **Step 7.2: Implement typed config**
 
 Create `macos_artifact_config.dart`:
 
@@ -1539,7 +1577,7 @@ Defaults:
 - PKG requires `packageIdentifier` when `artifact.kind == pkg`.
 - PKG `signingIdentifier` defaults to `DESKTOP_UPDATER_DEV_ID_INSTALLER` in smoke tooling, but release config should store only the non-secret identity string when provided.
 
-- [ ] **Step 7.3: Verify config tests**
+- [x] **Step 7.3: Verify config tests**
 
 Run:
 
@@ -1549,7 +1587,7 @@ flutter test --no-pub test/release_cli/release_publish_config_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 7.4: Commit**
+- [x] **Step 7.4: Commit**
 
 Suggested commit:
 
@@ -1578,7 +1616,7 @@ git commit -m "feat: parse macos dmg and pkg publish config"
 - Produces: PKG `ReleasePackageResult` with `artifact.kind == "pkgInstaller"` and `install.strategy == "pkgInstaller"`.
 - Produces: command wrappers for codesign, notarytool submit, stapler, spctl, hdiutil, pkgbuild, productbuild, and pkgutil.
 
-- [ ] **Step 8.1: Write failing DMG packager test**
+- [x] **Step 8.1: Write failing DMG packager test**
 
 Create `test/release_cli/dmg_packager_test.dart`:
 
@@ -1655,7 +1693,7 @@ flutter test --no-pub test/release_cli/dmg_packager_test.dart
 
 Expected: FAIL because `DmgPackager` does not exist.
 
-- [ ] **Step 8.2: Write failing PKG packager test**
+- [x] **Step 8.2: Write failing PKG packager test**
 
 Create `test/release_cli/pkg_packager_test.dart`:
 
@@ -1736,7 +1774,7 @@ flutter test --no-pub test/release_cli/pkg_packager_test.dart
 
 Expected: FAIL.
 
-- [ ] **Step 8.3: Implement Apple trust command wrappers**
+- [x] **Step 8.3: Implement Apple trust command wrappers**
 
 Create command wrapper methods:
 
@@ -1784,7 +1822,7 @@ Tests in `apple_trust_commands_test.dart` must assert exact executable and argum
 - `pkgutil --check-signature`
 - `xcrun notarytool submit --wait`
 
-- [ ] **Step 8.4: Implement DMG packager**
+- [x] **Step 8.4: Implement DMG packager**
 
 Implementation outline:
 
@@ -1805,7 +1843,7 @@ Implementation outline:
 5. Assess DMG primary signature when signing/notarization has produced a final artifact.
 6. Write `release.json` with `artifact.kind == "dmg"` and `install.strategy == "wholeBundleReplace"`.
 
-- [ ] **Step 8.5: Implement PKG packager**
+- [x] **Step 8.5: Implement PKG packager**
 
 Implementation outline:
 
@@ -1830,7 +1868,7 @@ Implementation outline:
 
 4. Write `release.json` with `artifact.kind == "pkgInstaller"` and `install.strategy == "pkgInstaller"`.
 
-- [ ] **Step 8.6: Wire release publisher selection**
+- [x] **Step 8.6: Wire release publisher selection**
 
 In `ReleasePublisher.publish`, select macOS artifact extension:
 
@@ -1845,7 +1883,7 @@ final artifactExtension = switch (macosArtifact) {
 
 Use `DmgPackager` or `PkgPackager` when `platform == "macos"` and the config selects those artifact kinds. Keep existing `ZipReleasePackager` default and Windows Inno branch unchanged.
 
-- [ ] **Step 8.7: Verify focused release CLI tests**
+- [x] **Step 8.7: Verify focused release CLI tests**
 
 Run:
 
@@ -1858,7 +1896,7 @@ flutter test --no-pub test/release_cli/release_publisher_build_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 8.8: Commit**
+- [x] **Step 8.8: Commit**
 
 Suggested commit:
 
@@ -1886,7 +1924,7 @@ git commit -m "feat: package macos dmg and pkg release artifacts"
 - Produces: hosted validation output that reports artifact kind and macOS trust gate results.
 - Produces: `desktop_updater:verify` support for DMG and PKG artifacts.
 
-- [ ] **Step 9.1: Write failing layout tests**
+- [x] **Step 9.1: Write failing layout tests**
 
 Add to `test/release_cli/publish_layout_test.dart`:
 
@@ -1932,7 +1970,7 @@ flutter test --no-pub test/release_cli/publish_layout_test.dart
 
 Expected: PASS if `PublishLayout` already supports arbitrary extensions; keep the tests as regression coverage.
 
-- [ ] **Step 9.2: Write failing manifest and validate tests**
+- [x] **Step 9.2: Write failing manifest and validate tests**
 
 Add manifest round-trip tests for `dmg` and `pkgInstaller`. Add validate tests that expect output:
 
@@ -1959,7 +1997,7 @@ flutter test --no-pub test/release_cli/release_validate_test.dart
 
 Expected: manifest tests may already pass for arbitrary kinds; validate tests fail until macOS trust validation is added.
 
-- [ ] **Step 9.3: Implement macOS validation branches**
+- [x] **Step 9.3: Implement macOS validation branches**
 
 In `ReleaseValidator.validateReleaseFiles`, after SHA-256 verification:
 
@@ -1989,7 +2027,7 @@ macOS artifact trust validation: not run (requires macOS host)
 
 Do not fail Linux/Windows CI for macOS-only Apple trust commands.
 
-- [ ] **Step 9.4: Update `bin/verify.dart`**
+- [x] **Step 9.4: Update `bin/verify.dart`**
 
 `verify` should:
 
@@ -1999,7 +2037,7 @@ Do not fail Linux/Windows CI for macOS-only Apple trust commands.
 - For `pkgInstaller` on macOS, run `pkgutil`, install assessment, and stapler validation.
 - For `dmg` or `pkgInstaller` on non-macOS, verify descriptor plus artifact length/SHA-256, then print a `not run` trust validation line.
 
-- [ ] **Step 9.5: Verify focused command tests**
+- [x] **Step 9.5: Verify focused command tests**
 
 Run:
 
@@ -2011,7 +2049,7 @@ flutter test --no-pub test/release_cli/release_validate_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 9.6: Commit**
+- [x] **Step 9.6: Commit**
 
 Suggested commit:
 
@@ -2035,7 +2073,7 @@ git commit -m "feat: validate macos dmg and pkg release artifacts"
 - Consumes: `DESKTOP_UPDATER_DEV_ID_APP`, `DESKTOP_UPDATER_DEV_ID_INSTALLER`, `DESKTOP_UPDATER_NOTARY_PROFILE`, and `DESKTOP_UPDATER_TEST_BUNDLE_ID`.
 - Produces: evidence files under `reports/macos-production-smoke/`.
 
-- [ ] **Step 10.1: Write failing command parser tests**
+- [x] **Step 10.1: Write failing command parser tests**
 
 Create `test/macos_production_smoke_tool_test.dart`:
 
@@ -2076,7 +2114,7 @@ flutter test --no-pub test/macos_production_smoke_tool_test.dart
 
 Expected: FAIL because the tool does not exist.
 
-- [ ] **Step 10.2: Implement `doctor`**
+- [x] **Step 10.2: Implement `doctor`**
 
 `doctor` checks:
 
@@ -2102,7 +2140,7 @@ doctor: Developer ID Installer OK
 doctor: notary profile OK
 ```
 
-- [ ] **Step 10.3: Implement `dmg-first-install`**
+- [x] **Step 10.3: Implement `dmg-first-install`**
 
 The command:
 
@@ -2131,7 +2169,7 @@ dmg-first-install: contained app Gatekeeper OK
 dmg-first-install: detach OK
 ```
 
-- [ ] **Step 10.4: Implement `move-to-applications`**
+- [x] **Step 10.4: Implement `move-to-applications`**
 
 The command:
 
@@ -2151,7 +2189,7 @@ move-to-applications: relaunched copied app OK
 move-to-applications: source DMG detached OK
 ```
 
-- [ ] **Step 10.5: Implement `dmg-update`**
+- [x] **Step 10.5: Implement `dmg-update`**
 
 The command:
 
@@ -2173,7 +2211,7 @@ dmg-update: whole-bundle replacement OK
 dmg-update: v2 relaunch OK
 ```
 
-- [ ] **Step 10.6: Implement `pkg-installer`**
+- [x] **Step 10.6: Implement `pkg-installer`**
 
 The command:
 
@@ -2202,7 +2240,7 @@ pkg-installer: Installer.app handoff OK
 pkg-installer: silent privileged install not run
 ```
 
-- [ ] **Step 10.7: Implement cleanup**
+- [x] **Step 10.7: Implement cleanup**
 
 `all --cleanup` removes only known smoke-owned paths:
 
@@ -2232,7 +2270,7 @@ cleanup: removed smoke temp dirs
 cleanup: package receipts listed
 ```
 
-- [ ] **Step 10.8: Verify tool tests**
+- [x] **Step 10.8: Verify tool tests**
 
 Run:
 
@@ -2242,7 +2280,11 @@ flutter test --no-pub test/macos_production_smoke_tool_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 10.9: Run local MacBook smoke**
+- [x] **Step 10.9: Transfer the legacy local MacBook acceptance gate**
+
+Transferred to the 2026-07-17 macOS privileged updater production-closure
+plan. The commands and expected evidence below are retained as historical
+context, not as proof that this step passed.
 
 Run on the local MacBook only:
 
@@ -2263,7 +2305,7 @@ Label CI/non-local evidence:
 not run: macOS production smoke requires local Developer ID Application cert, Developer ID Installer cert, notary profile, and Apple notarization service access.
 ```
 
-- [ ] **Step 10.10: Commit**
+- [x] **Step 10.10: Commit**
 
 Suggested commit:
 
@@ -2292,7 +2334,7 @@ git commit -m "test: add local macos production smoke harness"
 - Consumes: all implemented command names, config keys, descriptor kinds, diagnostics events, and smoke commands.
 - Produces: docs drift tests guarding the new public claims.
 
-- [ ] **Step 11.1: Write failing docs drift test**
+- [x] **Step 11.1: Write failing docs drift test**
 
 Create `test/macos_dmg_pkg_docs_test.dart`:
 
@@ -2331,7 +2373,7 @@ flutter test --no-pub test/macos_dmg_pkg_docs_test.dart
 
 Expected: FAIL until docs are written.
 
-- [ ] **Step 11.2: Write detailed macOS doc**
+- [x] **Step 11.2: Write detailed macOS doc**
 
 Create `docs/macos-dmg-pkg-installer-updates.md` with sections:
 
@@ -2349,7 +2391,7 @@ Create `docs/macos-dmg-pkg-installer-updates.md` with sections:
 - Cleanup strategy.
 - `not run` labels for CI/non-local validation.
 
-- [ ] **Step 11.3: Update concise docs**
+- [x] **Step 11.3: Update concise docs**
 
 Update `README.md` with one short link in the production trust area:
 
@@ -2370,7 +2412,7 @@ Update `docs/diagnostics-and-recovery.md` with DMG and PKG helper events:
 - `pkg installer opened`
 - `pkg installer open failure`
 
-- [ ] **Step 11.4: Verify docs tests**
+- [x] **Step 11.4: Verify docs tests**
 
 Run:
 
@@ -2382,7 +2424,7 @@ flutter test --no-pub test/harness_engineering_docs_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 11.5: Commit**
+- [x] **Step 11.5: Commit**
 
 Suggested commit:
 
@@ -2403,7 +2445,7 @@ git commit -m "docs: document macos dmg and pkg update support"
 - Consumes: all prior tasks.
 - Produces: local verification report and clear `not run` labels for unavailable Apple/CI gates.
 
-- [ ] **Step 12.1: Run focused tests from changed areas**
+- [x] **Step 12.1: Run focused tests from changed areas**
 
 Run:
 
@@ -2426,7 +2468,7 @@ flutter test --no-pub test/macos_dmg_pkg_docs_test.dart
 
 Expected: PASS.
 
-- [ ] **Step 12.2: Run repository validation ladder**
+- [x] **Step 12.2: Run repository validation ladder**
 
 Run:
 
@@ -2439,7 +2481,7 @@ dart pub publish --dry-run
 
 Expected: PASS.
 
-- [ ] **Step 12.3: Run SwiftPM macOS plugin tests**
+- [x] **Step 12.3: Run SwiftPM macOS plugin tests**
 
 Run on macOS:
 
@@ -2455,7 +2497,11 @@ If not on macOS, record:
 not run: swift test requires macOS SwiftPM host for the macOS plugin package.
 ```
 
-- [ ] **Step 12.4: Run local MacBook production smoke**
+- [x] **Step 12.4: Transfer final production evidence to the closure plan**
+
+Transferred because the pre-`ccfbe52` PKG fixture fails fresh nested-code
+signature verification and the privileged PKG crash-recovery run did not
+complete. The acceptance list below remains the historical requirement.
 
 Run on the local MacBook with real Apple credentials:
 
@@ -2484,7 +2530,7 @@ If the local MacBook lacks credentials or Apple service access, record:
 not run: local MacBook production smoke requires DESKTOP_UPDATER_DEV_ID_APP, DESKTOP_UPDATER_DEV_ID_INSTALLER, DESKTOP_UPDATER_NOTARY_PROFILE, DESKTOP_UPDATER_TEST_BUNDLE_ID, and Apple notarization access.
 ```
 
-- [ ] **Step 12.5: Run final git inspection**
+- [x] **Step 12.5: Run final git inspection**
 
 Run:
 
@@ -2495,7 +2541,7 @@ git diff --stat
 
 Expected: only files from this plan are changed, plus any pre-existing user changes intentionally preserved.
 
-- [ ] **Step 12.6: Commit final fixes**
+- [x] **Step 12.6: Commit final fixes**
 
 Suggested commit for validation-only fixes:
 
@@ -2531,6 +2577,9 @@ Do not label DMG or PKG support `production-ready` from unit tests alone.
 
 ## Open Questions And Blockers
 
-- The PKG runtime path intentionally opens Installer.app and does not promise a silent privileged update. A future silent path needs a separate design for a signed privileged helper, authorization policy, uninstall/receipt ownership, and rollback evidence.
+- Resolved and superseded: the PKG runtime no longer opens `Installer.app`.
+  It uses the signed `SMAppService` daemon/XPC path and a fixed-argv
+  `/usr/sbin/installer` worker. Production acceptance remains open in the
+  2026-07-17 closure plan.
 - PKG package-id checks should use `pkgutil --expand-full` and parse expanded `PackageInfo`/`Distribution` metadata; do not rely on installed receipts because the smoke may run before installation.
 - CI can keep macOS production smoke `not run` unless the user explicitly provides secrets and approves workflow dispatch. Local MacBook smoke is the production evidence source for this plan.
