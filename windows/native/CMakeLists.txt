@@ -365,6 +365,18 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/release_contract.cc
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/monocypher.c
     ${DESKTOP_UPDATER_MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
+  add_executable(windows_restart_caller_fixture
+    test/windows_restart_caller_fixture.cpp)
+  target_compile_features(windows_restart_caller_fixture PRIVATE cxx_std_17)
+  target_compile_definitions(windows_restart_caller_fixture
+    PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  if(MINGW)
+    target_link_options(windows_restart_caller_fixture PRIVATE -municode)
+  endif()
+  target_link_libraries(windows_restart_caller_fixture
+    PRIVATE desktop_updater_native_static)
+  add_dependencies(desktop_updater_native_test
+    windows_restart_caller_fixture)
   target_compile_features(desktop_updater_native_test PRIVATE cxx_std_17)
   target_include_directories(desktop_updater_native_test
     PRIVATE

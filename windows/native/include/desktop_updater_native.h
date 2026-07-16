@@ -118,6 +118,9 @@ InstallTransactionStatus RecoverPendingInstall(
 InstallTransactionStatus ResolvePendingInstallAfterExit(
     const std::string& transaction_id);
 
+InstallResult RestartCurrentApplication();
+bool AwaitRestartParentExitIfRequested();
+
 InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
 
 InstallLaunchDecision ResolveInstallLaunchDecision(

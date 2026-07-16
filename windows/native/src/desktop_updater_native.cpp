@@ -10,8 +10,10 @@
 #include <array>
 #include <climits>
 #include <cstdint>
+#include <cwchar>
 #include <filesystem>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -57,6 +59,32 @@ constexpr wchar_t kInstalledIdentityMarkerName[] =
     L".desktop_updater_install_identity.json";
 constexpr wchar_t kStagedReleaseManifestName[] =
     L".desktop_updater_release_manifest.json";
+constexpr wchar_t kRestartParentHandleEnvironment[] =
+    L"DESKTOP_UPDATER_RESTART_PARENT_HANDLE";
+constexpr wchar_t kRestartReadyHandleEnvironment[] =
+    L"DESKTOP_UPDATER_RESTART_READY_HANDLE";
+constexpr DWORD kRestartReadinessTimeoutMilliseconds = 10 * 1000;
+
+class ScopedWindowsHandle {
+ public:
+  ScopedWindowsHandle() = default;
+  explicit ScopedWindowsHandle(HANDLE handle) : handle_(handle) {}
+  ~ScopedWindowsHandle() { reset(); }
+  ScopedWindowsHandle(const ScopedWindowsHandle&) = delete;
+  ScopedWindowsHandle& operator=(const ScopedWindowsHandle&) = delete;
+
+  HANDLE get() const { return handle_; }
+  bool valid() const {
+    return handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE;
+  }
+  void reset(HANDLE handle = nullptr) {
+    if (valid()) CloseHandle(handle_);
+    handle_ = handle;
+  }
+
+ private:
+  HANDLE handle_ = nullptr;
+};
 
 std::string WideToUtf8(const std::wstring& value) {
   if (value.empty()) {
@@ -251,6 +279,18 @@ std::wstring CurrentExecutablePath() {
   }
 }
 
+std::wstring FinalPathForHandle(HANDLE handle) {
+  const DWORD required = GetFinalPathNameByHandleW(
+      handle, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (required == 0) return L"";
+  std::vector<wchar_t> buffer(static_cast<std::size_t>(required) + 1);
+  const DWORD written = GetFinalPathNameByHandleW(
+      handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+      FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (written == 0 || written >= buffer.size()) return L"";
+  return std::wstring(buffer.data(), written);
+}
+
 std::wstring EnvironmentVariableValue(const wchar_t* name) {
   const DWORD required_length = GetEnvironmentVariableW(name, nullptr, 0);
   if (required_length == 0) {
@@ -263,6 +303,80 @@ std::wstring EnvironmentVariableValue(const wchar_t* name) {
     return L"";
   }
   return std::wstring(buffer.data(), written_length);
+}
+
+bool EnvironmentVariableIsPresent(const wchar_t* name) {
+  SetLastError(ERROR_SUCCESS);
+  const DWORD required_length = GetEnvironmentVariableW(name, nullptr, 0);
+  return required_length > 0 || GetLastError() != ERROR_ENVVAR_NOT_FOUND;
+}
+
+bool EnvironmentEntryHasName(const std::wstring& entry,
+                             const wchar_t* name) {
+  const std::size_t name_length = wcslen(name);
+  return entry.size() > name_length && entry[name_length] == L'=' &&
+         _wcsnicmp(entry.c_str(), name, name_length) == 0;
+}
+
+std::vector<wchar_t> RestartChildEnvironment(HANDLE parent_process,
+                                             HANDLE ready_event) {
+  LPWCH raw_environment = GetEnvironmentStringsW();
+  if (raw_environment == nullptr) {
+    throw std::runtime_error(
+        "Windows restart environment is unavailable.");
+  }
+  std::vector<std::wstring> entries;
+  for (const wchar_t* cursor = raw_environment; *cursor != L'\0';
+       cursor += wcslen(cursor) + 1) {
+    std::wstring entry(cursor);
+    if (!EnvironmentEntryHasName(entry, kRestartParentHandleEnvironment) &&
+        !EnvironmentEntryHasName(entry, kRestartReadyHandleEnvironment)) {
+      entries.push_back(std::move(entry));
+    }
+  }
+  FreeEnvironmentStringsW(raw_environment);
+  entries.push_back(
+      std::wstring(kRestartParentHandleEnvironment) + L"=" +
+      std::to_wstring(reinterpret_cast<std::uintptr_t>(parent_process)));
+  entries.push_back(
+      std::wstring(kRestartReadyHandleEnvironment) + L"=" +
+      std::to_wstring(reinterpret_cast<std::uintptr_t>(ready_event)));
+  std::sort(entries.begin(), entries.end(),
+            [](const std::wstring& left, const std::wstring& right) {
+              return _wcsicmp(left.c_str(), right.c_str()) < 0;
+            });
+
+  std::size_t length = 1;
+  for (const std::wstring& entry : entries) length += entry.size() + 1;
+  std::vector<wchar_t> environment;
+  environment.reserve(length);
+  for (const std::wstring& entry : entries) {
+    environment.insert(environment.end(), entry.begin(), entry.end());
+    environment.push_back(L'\0');
+  }
+  environment.push_back(L'\0');
+  return environment;
+}
+
+bool StrictInheritedHandle(const std::wstring& value, HANDLE* handle) {
+  if (handle == nullptr || value.empty()) return false;
+  std::uintptr_t parsed = 0;
+  for (const wchar_t character : value) {
+    if (character < L'0' || character > L'9') return false;
+    const std::uintptr_t digit =
+        static_cast<std::uintptr_t>(character - L'0');
+    if (parsed >
+        (std::numeric_limits<std::uintptr_t>::max() - digit) / 10) {
+      return false;
+    }
+    parsed = parsed * 10 + digit;
+  }
+  if (parsed == 0) return false;
+  const HANDLE candidate = reinterpret_cast<HANDLE>(parsed);
+  DWORD flags = 0;
+  if (!GetHandleInformation(candidate, &flags)) return false;
+  *handle = candidate;
+  return true;
 }
 
 std::wstring NormalizedDirectoryPath(const fs::path& path) {
@@ -1260,6 +1374,152 @@ InstallTransactionStatus RunWindowsPersistentOperation(
 }
 
 }  // namespace
+
+InstallResult RestartCurrentApplication() {
+  try {
+    const std::wstring executable_path = CurrentExecutablePath();
+    if (executable_path.empty()) {
+      return {false, "Running Windows executable identity is unavailable."};
+    }
+    // Keep the loaded image's backing file closed against write/delete from
+    // identity discovery through CreateProcessW. Windows also retains an
+    // image section for the running executable; this explicit handle closes
+    // the canonicalize-then-reopen race in the restart implementation.
+    ScopedWindowsHandle executable_lock(CreateFileW(
+        executable_path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+        nullptr));
+    BY_HANDLE_FILE_INFORMATION executable_information{};
+    if (!executable_lock.valid() ||
+        !GetFileInformationByHandle(executable_lock.get(),
+                                    &executable_information) ||
+        (executable_information.dwFileAttributes &
+         (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+      return {false, "Running Windows executable identity is unavailable."};
+    }
+    const fs::path executable(FinalPathForHandle(executable_lock.get()));
+    if (executable.empty() || !executable.is_absolute()) {
+      return {false, "Running Windows executable identity is unavailable."};
+    }
+
+    HANDLE inherited_parent = nullptr;
+    if (!DuplicateHandle(
+            GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(),
+            &inherited_parent,
+            SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, TRUE, 0)) {
+      return {false, "Windows restart lifetime barrier failed."};
+    }
+    ScopedWindowsHandle parent_handle(inherited_parent);
+
+    SECURITY_ATTRIBUTES attributes{};
+    attributes.nLength = sizeof(attributes);
+    attributes.bInheritHandle = TRUE;
+    ScopedWindowsHandle ready_event(
+        CreateEventW(&attributes, TRUE, FALSE, nullptr));
+    if (!ready_event.valid()) {
+      return {false, "Windows restart readiness proof failed."};
+    }
+
+    SIZE_T attribute_bytes = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_bytes);
+    if (attribute_bytes == 0) {
+      return {false, "Windows restart handle isolation failed."};
+    }
+    std::vector<unsigned char> attribute_storage(attribute_bytes);
+    auto* attribute_list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(
+        attribute_storage.data());
+    if (!InitializeProcThreadAttributeList(attribute_list, 1, 0,
+                                           &attribute_bytes)) {
+      return {false, "Windows restart handle isolation failed."};
+    }
+    struct AttributeListDestroyer {
+      LPPROC_THREAD_ATTRIBUTE_LIST value;
+      ~AttributeListDestroyer() { DeleteProcThreadAttributeList(value); }
+    } attribute_owner{attribute_list};
+    HANDLE inherited_handles[] = {parent_handle.get(), ready_event.get()};
+    if (!UpdateProcThreadAttribute(
+            attribute_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            inherited_handles, sizeof(inherited_handles), nullptr, nullptr)) {
+      return {false, "Windows restart handle isolation failed."};
+    }
+
+    std::vector<wchar_t> environment =
+        RestartChildEnvironment(parent_handle.get(), ready_event.get());
+    std::wstring command_line = L"\"" + executable.wstring() + L"\"";
+    std::vector<wchar_t> mutable_command(command_line.begin(),
+                                         command_line.end());
+    mutable_command.push_back(L'\0');
+    STARTUPINFOEXW startup{};
+    startup.StartupInfo.cb = sizeof(startup);
+    startup.lpAttributeList = attribute_list;
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(
+            executable.c_str(), mutable_command.data(), nullptr, nullptr, TRUE,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+            environment.data(), executable.parent_path().c_str(),
+            &startup.StartupInfo, &process)) {
+      return {false, "Windows restart process creation failed."};
+    }
+    ScopedWindowsHandle child_process(process.hProcess);
+    ScopedWindowsHandle child_thread(process.hThread);
+
+    if (!SetHandleInformation(parent_handle.get(), HANDLE_FLAG_INHERIT, 0) ||
+        !SetHandleInformation(ready_event.get(), HANDLE_FLAG_INHERIT, 0)) {
+      TerminateProcess(child_process.get(), ERROR_INVALID_HANDLE);
+      WaitForSingleObject(child_process.get(), INFINITE);
+      return {false, "Windows restart handle isolation failed."};
+    }
+
+    HANDLE readiness_handles[] = {ready_event.get(), child_process.get()};
+    const DWORD readiness = WaitForMultipleObjects(
+        2, readiness_handles, FALSE, kRestartReadinessTimeoutMilliseconds);
+    if (readiness != WAIT_OBJECT_0 ||
+        WaitForSingleObject(child_process.get(), 0) == WAIT_OBJECT_0) {
+      TerminateProcess(child_process.get(), ERROR_TIMEOUT);
+      WaitForSingleObject(child_process.get(), INFINITE);
+      if (readiness == WAIT_TIMEOUT) {
+        return {false, "Windows restart readiness timed out."};
+      }
+      return {false, "Windows restart readiness proof failed."};
+    }
+    return {true, ""};
+  } catch (const std::exception& error) {
+    return {false, std::string("Unable to schedule Windows restart: ") +
+                       error.what()};
+  }
+}
+
+bool AwaitRestartParentExitIfRequested() {
+  const bool parent_present =
+      EnvironmentVariableIsPresent(kRestartParentHandleEnvironment);
+  const bool ready_present =
+      EnvironmentVariableIsPresent(kRestartReadyHandleEnvironment);
+  const std::wstring parent_value =
+      EnvironmentVariableValue(kRestartParentHandleEnvironment);
+  const std::wstring ready_value =
+      EnvironmentVariableValue(kRestartReadyHandleEnvironment);
+  if (!parent_present && !ready_present) return true;
+  const bool parent_cleared =
+      SetEnvironmentVariableW(kRestartParentHandleEnvironment, nullptr) !=
+      FALSE;
+  const bool ready_cleared =
+      SetEnvironmentVariableW(kRestartReadyHandleEnvironment, nullptr) !=
+      FALSE;
+  if (!parent_cleared || !ready_cleared) return false;
+
+  HANDLE raw_parent = nullptr;
+  HANDLE raw_ready = nullptr;
+  if (!StrictInheritedHandle(parent_value, &raw_parent) ||
+      !StrictInheritedHandle(ready_value, &raw_ready) ||
+      raw_parent == raw_ready || GetProcessId(raw_parent) == 0) {
+    return false;
+  }
+  ScopedWindowsHandle parent_handle(raw_parent);
+  ScopedWindowsHandle ready_event(raw_ready);
+  if (!SetEvent(ready_event.get())) return false;
+  ready_event.reset();
+  return WaitForSingleObject(parent_handle.get(), INFINITE) == WAIT_OBJECT_0;
+}
 
 InstallResult PrepareInstallWithTransactionId(
     const InstallRequest& request,

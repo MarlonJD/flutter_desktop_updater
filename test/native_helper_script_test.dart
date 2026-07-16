@@ -155,8 +155,87 @@ void main() {
         nativeHeader, contains("InstallResult RestartCurrentApplication();"));
   });
 
+  test("Windows restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[1]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('method_name().compare("restartApp")'),
+      plugin.indexOf('method_name().compare("installUpdate")'),
+    );
+    final nativeHeader = File(
+      "windows/native/include/desktop_updater_native.h",
+    ).readAsStringSync();
+    final nativeSource = File(productionSources[1]).readAsStringSync();
+
+    expect(restartBranch, contains("RestartCurrentApplication"));
+    expect(restartBranch, isNot(contains("HandoffNativeInstall")));
+    expect(restartBranch, isNot(contains("PrepareInstall")));
+    expect(restartBranch, isNot(contains("InstallRequest")));
+    expect(
+      nativeHeader,
+      contains("InstallResult RestartCurrentApplication();"),
+    );
+    expect(
+      nativeHeader,
+      contains("bool AwaitRestartParentExitIfRequested();"),
+    );
+    final restart = _functionBody(nativeSource, "RestartCurrentApplication");
+    expect(restart, contains("CurrentExecutablePath"));
+    expect(restart, contains("CreateProcessW"));
+    expect(restart, contains("PROC_THREAD_ATTRIBUTE_HANDLE_LIST"));
+    expect(restart, isNot(contains("PrepareInstall")));
+    expect(restartBranch, contains("if (!restart.ok)"));
+    expect(restartBranch, contains('result->Error("RestartError"'));
+    expect(
+      restartBranch.indexOf('result->Error("RestartError"'),
+      lessThan(restartBranch.indexOf("ExitProcess(0)")),
+    );
+  });
+
+  test("macOS restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[0]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('case "restartApp"'),
+      plugin.indexOf('case "installUpdate"'),
+    );
+    final restartSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/"
+      "MacApplicationRestarter.swift",
+    ).readAsStringSync();
+
+    expect(restartBranch, contains("restartCurrentApplication"));
+    expect(restartBranch, isNot(contains("handoffInstallAndRelaunch")));
+    expect(restartBranch, isNot(contains("prepareInstall")));
+    expect(restartBranch, isNot(contains("MacInstallRequest")));
+    final restart = plugin.substring(
+      plugin.indexOf("private func restartCurrentApplication"),
+      plugin.indexOf("private func handoffInstallAndRelaunch"),
+    );
+    expect(restart, contains("scheduleCurrentApplicationRestart"));
+    expect(restart, contains("exit(EXIT_SUCCESS)"));
+    expect(restartSource, contains("Bundle.main.executableURL"));
+    expect(restartSource, contains("posix_spawn"));
+    expect(restartSource, contains("POSIX_SPAWN_CLOEXEC_DEFAULT"));
+    expect(
+      restartSource,
+      contains("posix_spawn_file_actions_addinherit_np"),
+    );
+    expect(
+      restartSource,
+      contains("awaitRestartParentExitIfRequested"),
+    );
+    final registration = plugin.substring(
+      plugin.indexOf("public static func register"),
+      plugin.indexOf("public func handle"),
+    );
+    expect(registration, contains("awaitRestartParentExitIfRequested"));
+    expect(registration, contains("_exit"));
+    final errorBranch = restart.substring(restart.indexOf("} catch {"));
+    expect(errorBranch, contains('code: "RestartError"'));
+    expect(errorBranch, isNot(contains("exit(")));
+  });
+
   test(
-    "Windows ambiguous handoff keeps released errors with recovery details",
+    "Windows install handoff keeps released errors with recovery details",
     () {
       final source = File(pluginSources[1]).readAsStringSync();
       final recoveryDetails = _functionBody(
@@ -179,13 +258,7 @@ void main() {
       expect(recoveryDetails, contains("flutter::EncodableValue(true)"));
       expect(
         restartBranch,
-        contains(
-          RegExp(
-            r"if\s*\(recovery_required\)\s*\{\s*"
-            r'result->Error\(\s*"RestartError",\s*error,\s*'
-            r"RecoveryRequiredErrorDetails\(\)\)",
-          ),
-        ),
+        isNot(contains("RecoveryRequiredErrorDetails")),
       );
       expect(
         installBranch,

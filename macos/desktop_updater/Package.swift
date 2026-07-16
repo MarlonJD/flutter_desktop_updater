@@ -51,13 +51,27 @@ let package = Package(
                 // https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
             ]
         ),
+        .executableTarget(
+            name: "MacApplicationRestartFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "Tests/Fixtures/MacApplicationRestartFixture"
+        ),
+        .executableTarget(
+            name: "MacApplicationRestartImpostorFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "Tests/Fixtures/MacApplicationRestartImpostorFixture"
+        ),
         .testTarget(
             name: "desktop_updaterTests",
             dependencies: ["desktop_updater"]
         ),
         .testTarget(
             name: "DesktopUpdaterKitTests",
-            dependencies: ["DesktopUpdaterKit"],
+            dependencies: [
+                "DesktopUpdaterKit",
+                "MacApplicationRestartFixture",
+                "MacApplicationRestartImpostorFixture"
+            ],
             path: "Tests/DesktopUpdaterKitTests"
         )
     ]

@@ -1,4 +1,5 @@
 import Cocoa
+import Darwin
 import FlutterMacOS
 import ServiceManagement
 #if canImport(DesktopUpdaterKit)
@@ -7,6 +8,10 @@ import DesktopUpdaterKit
 
 public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     public static func register(with registrar: FlutterPluginRegistrar) {
+        guard MacApplicationRestarter
+            .awaitRestartParentExitIfRequested() else {
+            _exit(78)
+        }
         let channel = FlutterMethodChannel(
             name: "desktop_updater",
             binaryMessenger: registrar.messenger
@@ -20,12 +25,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         case "getPlatformVersion":
             result("macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
         case "restartApp":
-            handoffInstallAndRelaunch(
-                stagingPath: nil,
-                removedFiles: [],
-                diagnosticsLogPath: nil,
-                result: result
-            )
+            restartCurrentApplication(result: result)
         case "installUpdate":
             guard
                 let arguments = call.arguments as? [String: Any],
@@ -93,6 +93,23 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             result(nil)
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func restartCurrentApplication(result: @escaping FlutterResult) {
+        do {
+            try MacApplicationRestarter()
+                .scheduleCurrentApplicationRestart()
+            result(nil)
+            exit(EXIT_SUCCESS)
+        } catch {
+            result(
+                FlutterError(
+                    code: "RestartError",
+                    message: "Unable to schedule application restart.",
+                    details: error.localizedDescription
+                )
+            )
         }
     }
 

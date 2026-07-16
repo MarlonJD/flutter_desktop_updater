@@ -320,6 +320,9 @@ ProductVersionBuildParseResult ParseProductVersionBuildNumber(
 
 void DesktopUpdaterPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
+  if (!desktop_updater::native::AwaitRestartParentExitIfRequested()) {
+    ExitProcess(ERROR_INVALID_DATA);
+  }
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), "desktop_updater",
@@ -351,17 +354,10 @@ void DesktopUpdaterPlugin::HandleMethodCall(
     }
     result->Success(flutter::EncodableValue(version_stream.str()));
   } else if (method_call.method_name().compare("restartApp") == 0) {
-    desktop_updater::native::InstallRequest request;
-    request.elevation_policy =
-        desktop_updater::native::InstallElevationPolicy::kNever;
-    std::string error;
-    bool recovery_required = false;
-    if (!HandoffNativeInstall(request, "", &error, &recovery_required)) {
-      if (recovery_required) {
-        result->Error("RestartError", error, RecoveryRequiredErrorDetails());
-      } else {
-        result->Error("RestartError", error);
-      }
+    const desktop_updater::native::InstallResult restart =
+        desktop_updater::native::RestartCurrentApplication();
+    if (!restart.ok) {
+      result->Error("RestartError", restart.error_message);
       return;
     }
     result->Success();

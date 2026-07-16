@@ -239,6 +239,33 @@ TEST(DesktopUpdaterPlugin, AcceptsOnlyProofBoundNativeCommit) {
   EXPECT_FALSE(IsAcceptedInstallHandoff(reservation, accepted));
 }
 
+TEST(DesktopUpdaterPlugin, MalformedRestartWorkerHandoffFailsClosed) {
+  SetEnvironmentVariableW(L"DESKTOP_UPDATER_RESTART_PARENT_HANDLE",
+                          L"not-a-handle");
+  SetEnvironmentVariableW(L"DESKTOP_UPDATER_RESTART_READY_HANDLE", L"1");
+
+  EXPECT_FALSE(native::AwaitRestartParentExitIfRequested());
+  EXPECT_EQ(GetEnvironmentVariableW(
+                L"DESKTOP_UPDATER_RESTART_PARENT_HANDLE", nullptr, 0),
+            0u);
+  EXPECT_EQ(GetEnvironmentVariableW(
+                L"DESKTOP_UPDATER_RESTART_READY_HANDLE", nullptr, 0),
+            0u);
+}
+
+TEST(DesktopUpdaterPlugin, EmptyRestartWorkerHandoffFailsClosed) {
+  SetEnvironmentVariableW(L"DESKTOP_UPDATER_RESTART_PARENT_HANDLE", L"");
+  SetEnvironmentVariableW(L"DESKTOP_UPDATER_RESTART_READY_HANDLE", L"");
+
+  EXPECT_FALSE(native::AwaitRestartParentExitIfRequested());
+  EXPECT_EQ(GetEnvironmentVariableW(
+                L"DESKTOP_UPDATER_RESTART_PARENT_HANDLE", nullptr, 0),
+            0u);
+  EXPECT_EQ(GetEnvironmentVariableW(
+                L"DESKTOP_UPDATER_RESTART_READY_HANDLE", nullptr, 0),
+            0u);
+}
+
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   DesktopUpdaterPlugin plugin;
   // Save the reply value from the success callback.

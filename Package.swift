@@ -15,9 +15,23 @@ let package = Package(
             name: "DesktopUpdaterKit",
             path: "macos/desktop_updater/Sources/DesktopUpdaterKit"
         ),
+        .executableTarget(
+            name: "MacApplicationRestartFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "macos/desktop_updater/Tests/Fixtures/MacApplicationRestartFixture"
+        ),
+        .executableTarget(
+            name: "MacApplicationRestartImpostorFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "macos/desktop_updater/Tests/Fixtures/MacApplicationRestartImpostorFixture"
+        ),
         .testTarget(
             name: "DesktopUpdaterKitTests",
-            dependencies: ["DesktopUpdaterKit"],
+            dependencies: [
+                "DesktopUpdaterKit",
+                "MacApplicationRestartFixture",
+                "MacApplicationRestartImpostorFixture"
+            ],
             path: "macos/desktop_updater/Tests/DesktopUpdaterKitTests"
         )
     ]

@@ -17,6 +17,7 @@ A new Flutter plugin project.
   s.source_files = [
     File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'DesktopUpdaterVersion.swift'),
     File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'Diagnostics.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacApplicationRestarter.swift'),
     File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallHelper.swift'),
     File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallRequest.swift'),
     File.join('desktop_updater', 'Sources', 'desktop_updater', 'DesktopUpdaterPlugin.swift')

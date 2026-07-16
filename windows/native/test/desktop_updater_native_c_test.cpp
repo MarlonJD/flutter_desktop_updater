@@ -1,9 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <windows.h>
+
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "desktop_updater_native.h"
@@ -33,6 +40,55 @@ constexpr std::uint16_t kTransactionId[] = {
     '1', '2', '3', 'e', '4', '5', '6', '7', '-', 'e', '8', '9', 'b', '-',
     '4', '2', 'd', '3', '-', 'a', '4', '5', '6', '-', '4', '2', '6', '6',
     '1', '4', '1', '7', '4', '0', '0', '0', 0};
+
+class ScopedEnvironmentVariable {
+ public:
+  ScopedEnvironmentVariable(const wchar_t* name, const std::wstring& value)
+      : name_(name) {
+    const DWORD required = GetEnvironmentVariableW(name_.c_str(), nullptr, 0);
+    if (required > 0) {
+      std::vector<wchar_t> buffer(required);
+      const DWORD written =
+          GetEnvironmentVariableW(name_.c_str(), buffer.data(), required);
+      if (written > 0 && written < required) {
+        previous_ = std::wstring(buffer.data(), written);
+        had_previous_ = true;
+      }
+    }
+    SetEnvironmentVariableW(name_.c_str(), value.c_str());
+  }
+
+  ~ScopedEnvironmentVariable() {
+    SetEnvironmentVariableW(name_.c_str(),
+                            had_previous_ ? previous_.c_str() : nullptr);
+  }
+
+ private:
+  std::wstring name_;
+  std::wstring previous_;
+  bool had_previous_ = false;
+};
+
+std::filesystem::path CurrentBinaryDirectory() {
+  std::vector<wchar_t> buffer(MAX_PATH);
+  for (;;) {
+    const DWORD length = GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) return {};
+    if (length < buffer.size() - 1) {
+      return std::filesystem::path(
+                 std::wstring(buffer.data(), length))
+          .parent_path();
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+std::string ReadFile(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
 
 TEST(DesktopUpdaterNativeCAbi, AbiLayoutMatchesDeclaredFieldOrder) {
   EXPECT_EQ(offsetof(desktop_updater_install_request_v1, abi_version), 0u);
@@ -601,6 +657,56 @@ TEST(DesktopUpdaterNativeCAbi, ResolveAfterExitEntryPointIsLinked) {
   auto* entry_point = &desktop_updater_resolve_pending_install_after_exit_v1;
 
   EXPECT_NE(entry_point, nullptr);
+}
+
+TEST(DesktopUpdaterNative,
+     RestartCurrentApplicationRelaunchesExactExecutableAfterCallerExit) {
+  const std::filesystem::path fixture =
+      CurrentBinaryDirectory() / L"windows_restart_caller_fixture.exe";
+  ASSERT_TRUE(std::filesystem::exists(fixture));
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() /
+      (L"desktop-updater-restart-" +
+       std::to_wstring(GetCurrentProcessId()) + L"-" +
+       std::to_wstring(GetTickCount64()));
+  ASSERT_TRUE(std::filesystem::create_directories(root));
+  const std::filesystem::path proof = root / L"restart-proof.txt";
+  const std::filesystem::path exit_proof = root / L"exit-proof.txt";
+  ScopedEnvironmentVariable proof_environment(
+      L"DESKTOP_UPDATER_TEST_RESTART_PROOF", proof.wstring());
+  ScopedEnvironmentVariable exit_environment(
+      L"DESKTOP_UPDATER_TEST_RESTART_EXIT_PROOF", exit_proof.wstring());
+
+  std::wstring command_line = L"\"" + fixture.wstring() + L"\" --restart";
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  ASSERT_TRUE(CreateProcessW(
+      fixture.c_str(), command_line.data(), nullptr, nullptr, FALSE,
+      CREATE_UNICODE_ENVIRONMENT, nullptr, fixture.parent_path().c_str(),
+      &startup, &process));
+  CloseHandle(process.hThread);
+  ASSERT_EQ(WAIT_OBJECT_0, WaitForSingleObject(process.hProcess, 10'000));
+  DWORD exit_code = 1;
+  ASSERT_TRUE(GetExitCodeProcess(process.hProcess, &exit_code));
+  CloseHandle(process.hProcess);
+  ASSERT_EQ(0u, exit_code);
+
+  const std::string expected_proof =
+      "restarted-after-exit\n"
+      "unrelated-handle-closed=true\n"
+      "exact-executable=true\n";
+  std::string observed_proof;
+  for (int attempt = 0; attempt != 200; ++attempt) {
+    if (std::filesystem::exists(proof)) {
+      observed_proof = ReadFile(proof);
+      if (observed_proof == expected_proof) break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(expected_proof, observed_proof);
+  std::error_code cleanup_error;
+  std::filesystem::remove_all(root, cleanup_error);
 }
 
 TEST(DesktopUpdaterNativeCAbi, ThrownInternalException) {
