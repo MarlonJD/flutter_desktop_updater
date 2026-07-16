@@ -156,7 +156,6 @@ public struct MacArtifactStager {
         let ownedStage = try ownedStage(in: stagingRoot)
         do {
             let expanded = ownedStage.appendingPathComponent("expanded-pkg")
-            defer { try? FileManager.default.removeItem(at: expanded) }
             try run(
                 "/usr/sbin/pkgutil",
                 ["--expand-full", pkg.path, expanded.path]
@@ -171,15 +170,38 @@ public struct MacArtifactStager {
             let installer = ownedStage.appendingPathComponent("installer.pkg")
             try FileManager.default.copyItem(at: pkg, to: installer)
             try writeManifest(descriptor, to: ownedStage)
-            return try finalize(
-                stagedPath: ownedStage,
+            return try finalizePKGStage(
                 stageRoot: ownedStage,
+                expanded: expanded,
                 descriptor: descriptor
             )
         } catch {
             try? FileManager.default.removeItem(at: ownedStage)
             throw error
         }
+    }
+
+    func finalizePKGStage(
+        stageRoot: URL,
+        expanded: URL,
+        descriptor: ReleaseDescriptor
+    ) throws -> RuntimeStagedArtifact {
+        let canonicalStageRoot = stageRoot.standardizedFileURL
+        let canonicalExpanded = expanded.standardizedFileURL
+        guard canonicalExpanded.lastPathComponent == "expanded-pkg",
+              canonicalExpanded.deletingLastPathComponent() == canonicalStageRoot
+        else {
+            throw RuntimeError.outcome(
+                .stagingFailure,
+                message: "PKG verification cleanup escaped the owned stage."
+            )
+        }
+        try FileManager.default.removeItem(at: expanded)
+        return try finalize(
+            stagedPath: stageRoot,
+            stageRoot: stageRoot,
+            descriptor: descriptor
+        )
     }
 
     public func installAndRelaunch(

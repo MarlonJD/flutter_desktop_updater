@@ -93,6 +93,61 @@ final class ArtifactStagerTests: XCTestCase {
             )
         )
     }
+
+    func testPKGFinalizationRemovesExpansionBeforeProvenance() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("artifact-pkg-finalize-\(UUID().uuidString)")
+        let parent = root.appendingPathComponent("staging")
+        try FileManager.default.createDirectory(
+            at: parent,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stage = try StageProvenance.createOwnedStage(parent: parent)
+        let expanded = stage.appendingPathComponent("expanded-pkg")
+        try FileManager.default.createDirectory(
+            at: expanded,
+            withIntermediateDirectories: false
+        )
+        try Data("verification-only".utf8).write(
+            to: expanded.appendingPathComponent("PackageInfo")
+        )
+        try Data("installer".utf8).write(
+            to: stage.appendingPathComponent("installer.pkg")
+        )
+        try Data("{}".utf8).write(
+            to: stage.appendingPathComponent(
+                ".desktop_updater_release_manifest.json"
+            )
+        )
+        let descriptor = try ReleaseDescriptor(
+            jsonData: JSONSerialization.data(
+                withJSONObject: stagingFixtureObject(
+                    "release-contract/release-macos-pkg.json"
+                )
+            )
+        )
+
+        let result = try MacArtifactStager().finalizePKGStage(
+            stageRoot: stage,
+            expanded: expanded,
+            descriptor: descriptor
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expanded.path))
+        XCTAssertNoThrow(
+            try StageProvenance.verify(
+                stageRoot: stage,
+                expectedMarkerSHA256: result.provenance.markerSHA256
+            )
+        )
+        XCTAssertFalse(
+            result.provenance.marker.entries.contains {
+                $0.path == "expanded-pkg" ||
+                    $0.path.hasPrefix("expanded-pkg/")
+            }
+        )
+    }
 }
 
 private func zip64CentralDirectory(uncompressedSize: UInt64) -> Data {
