@@ -202,7 +202,7 @@ fi
 
 if [ -n "$pkg_output" ]; then
   pkg_root="$work/pkg-root"
-  component_pkg="$work/MacOSRuntimeSmoke-component.pkg"
+  component_pkg="$work/component.pkg"
   /bin/rm -rf "$pkg_root"
   /bin/rm -f "$component_pkg"
   /bin/mkdir -p "$pkg_root" "$(/usr/bin/dirname "$pkg_output")"

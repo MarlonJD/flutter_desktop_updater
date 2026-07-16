@@ -95,6 +95,20 @@ void main() {
     expect(source, isNot(contains("Installer.app handoff OK")));
   });
 
+  test("PKG smoke artifacts preserve the fixed verifier component shape", () {
+    final productionSmoke =
+        File("tool/macos_production_smoke.dart").readAsStringSync();
+    final packageSmoke = File(
+      "example/native/macos-runtime/package_smoke_app.sh",
+    ).readAsStringSync();
+
+    for (final source in [productionSmoke, packageSmoke]) {
+      expect(source, contains('component.pkg'));
+      expect(source, isNot(contains('MacOSRuntimeSmoke-component.pkg')));
+      expect(source, isNot(contains('\$appName-component.pkg')));
+    }
+  });
+
   test("PKG install verification is explicit and outside all smoke", () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 

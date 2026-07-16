@@ -629,7 +629,7 @@ class _MacOSProductionSmoke {
       app.path,
       path.join(pkgRoot.path, path.basename(app.path)),
     ]);
-    final component = File(path.join(workDir.path, "$appName-component.pkg"));
+    final component = File(path.join(workDir.path, "component.pkg"));
     final product = File(path.join(workDir.path, "$appName.pkg"));
     await _runChecked("/usr/bin/pkgbuild", [
       "--root",
