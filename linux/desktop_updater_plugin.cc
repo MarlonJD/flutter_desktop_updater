@@ -30,19 +30,40 @@ bool ReadOptionalString(FlValue* args,
   return true;
 }
 
-desktop_updater::native::InstallResult HandoffNativeInstall(
+struct NativeInstallHandoffResult {
+  bool ok;
+  bool recovery_required;
+  std::string error;
+};
+
+NativeInstallHandoffResult HandoffNativeInstall(
     const desktop_updater::native::InstallRequest& request) {
+  const auto validation =
+      desktop_updater::native::ValidateInstallRequest(request);
+  if (!validation.ok) return {false, false, validation.error};
   desktop_updater::native::InstallReservation reservation;
   const auto prepared =
       desktop_updater::native::PrepareInstall(request, &reservation);
-  if (!prepared.ok) return prepared;
+  if (!prepared.ok) return {false, true, prepared.error};
   const auto status = desktop_updater::native::CommitAfterExit(reservation);
   if (!is_accepted_install_handoff(reservation, status)) {
-    return {false, status.detail.empty()
-                       ? "Native install helper commit was not accepted."
-                       : status.detail};
+    return {false, true,
+            status.detail.empty()
+                ? "Native install helper commit was not accepted."
+                : status.detail};
   }
-  return {true, ""};
+  return {true, false, ""};
+}
+
+FlValue* RecoveryRequiredErrorDetails(const std::string& transaction_id,
+                                      const std::string& detail) {
+  FlValue* value = fl_value_new_map();
+  fl_value_set_string_take(value, "recoveryRequired", fl_value_new_bool(true));
+  fl_value_set_string_take(
+      value, "transactionId", fl_value_new_string(transaction_id.c_str()));
+  fl_value_set_string_take(value, "detail",
+                           fl_value_new_string(detail.c_str()));
+  return value;
 }
 
 const char* TransactionStateName(
@@ -200,6 +221,7 @@ static void desktop_updater_plugin_handle_method_call(
         std::string executable_relative_path;
         std::string package_id;
         std::string provenance_sha256;
+        std::string transaction_id;
         std::string argument_error;
         const bool context_is_valid =
             ReadOptionalString(args, "diagnosticsLogPath",
@@ -211,7 +233,9 @@ static void desktop_updater_plugin_handle_method_call(
             ReadOptionalString(args, "packageId", &package_id,
                                &argument_error) &&
             ReadOptionalString(args, "stageProvenanceSha256",
-                               &provenance_sha256, &argument_error);
+                               &provenance_sha256, &argument_error) &&
+            ReadOptionalString(args, "transactionId", &transaction_id,
+                               &argument_error);
         if (!context_is_valid) {
           response = FL_METHOD_RESPONSE(fl_method_error_response_new(
               "InvalidArguments", argument_error.c_str(), nullptr));
@@ -226,10 +250,15 @@ static void desktop_updater_plugin_handle_method_call(
           request.removed_files = removed_files;
           request.diagnostics_log_path = diagnostics_log_path;
           request.expected_provenance_sha256 = provenance_sha256;
+          request.transaction_id = transaction_id;
           const auto result = HandoffNativeInstall(request);
           if (!result.ok) {
-            g_autoptr(FlValue) details =
-                fl_value_new_string(result.error.c_str());
+            g_autoptr(FlValue) details = result.recovery_required
+                                             ? RecoveryRequiredErrorDetails(
+                                                   transaction_id,
+                                                   result.error)
+                                             : fl_value_new_string(
+                                                   result.error.c_str());
             response = FL_METHOD_RESPONSE(fl_method_error_response_new(
                 "InstallError", result.error.c_str(), details));
           } else {

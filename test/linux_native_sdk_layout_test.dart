@@ -155,6 +155,9 @@ void main() {
     final source = readRequiredFile(
       "linux/native/src/desktop_updater_native.cc",
     );
+    final header = readRequiredFile(
+      "linux/native/include/desktop_updater_native.h",
+    );
 
     expect(plugin, contains("desktop_updater::native::InstallRequest"));
     expect(plugin, contains("PrepareInstall"));
@@ -166,6 +169,10 @@ void main() {
     expect(source, contains("Removed file path escapes install root"));
     expect(source, contains("Staging path must not overlap install root"));
     expect(source, contains("SerializeCommonInstallRequest"));
+    expect(header, contains("std::string transaction_id;"));
+    expect(plugin, contains('ReadOptionalString(args, "transactionId"'));
+    expect(plugin, contains("request.transaction_id = transaction_id;"));
+    expect(source, contains("request.transaction_id.empty()"));
     expect(source, contains("EndpointUnavailableStatus"));
     expect(source, isNot(contains("/bin/bash")));
     expect(source, isNot(contains("BuildInstallScriptForTesting")));

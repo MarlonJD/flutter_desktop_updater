@@ -170,6 +170,7 @@ public final class MacInstallReservation {
 public enum MacInstallClientError: Error, Equatable {
     case endpointUnavailable
     case privilegedHelperApprovalRequired
+    case installRecoveryRequired
     case invalidTransactionID
     case invalidReservationResponse
     case inactiveReservation
@@ -1594,30 +1595,50 @@ public struct MacInstallHelper {
     public func prepareInstall(
         _ request: MacInstallRequest
     ) throws -> MacInstallReservation {
+        try prepareInstall(
+            request,
+            transactionID: UUID().uuidString.lowercased()
+        )
+    }
+
+    public func prepareInstall(
+        _ request: MacInstallRequest,
+        transactionID: String
+    ) throws -> MacInstallReservation {
+        try validateCallerTransactionID(transactionID)
         try validateCompleteHandoff(request)
         try transport.validateEndpoint()
         let target = targetResolver()
         let evidence = try evidenceBuilder.build(for: target)
-        let transactionID = UUID().uuidString.lowercased()
         let requestData = try request.helperRequestData(
             transactionID: transactionID,
             processIdentifier: target.processIdentifier,
             bundleURL: target.bundleURL,
             evidence: evidence
         )
-        let response = try transport.prepareInstall(
-            request: requestData,
-            transactionID: transactionID
-        )
-        guard response.protocolVersion == 1,
-              response.transactionID == transactionID,
-              HelperProtocolValidation.isReadyToken(response.readyToken),
-              HelperProtocolValidation.isSHA256(response.journalSHA256),
-              HelperProtocolValidation.isSHA256(
-                  response.helperEndpointIdentitySHA256
-              ),
-              response.expiresAtUnixMilliseconds > 0 else {
-            throw MacInstallClientError.invalidReservationResponse
+        let response: InstallReservationResponseV1
+        do {
+            response = try transport.prepareInstall(
+                request: requestData,
+                transactionID: transactionID
+            )
+            guard response.protocolVersion == 1,
+                  response.transactionID == transactionID,
+                  HelperProtocolValidation.isReadyToken(response.readyToken),
+                  HelperProtocolValidation.isSHA256(response.journalSHA256),
+                  HelperProtocolValidation.isSHA256(
+                      response.helperEndpointIdentitySHA256
+                  ),
+                  response.expiresAtUnixMilliseconds > 0 else {
+                throw MacInstallClientError.installRecoveryRequired
+            }
+        } catch let error as MacInstallClientError {
+            if error == .privilegedHelperApprovalRequired {
+                throw error
+            }
+            throw MacInstallClientError.installRecoveryRequired
+        } catch {
+            throw MacInstallClientError.installRecoveryRequired
         }
         let cancellationTransport = transport
         return MacInstallReservation(response: response) {
@@ -1634,18 +1655,23 @@ public struct MacInstallHelper {
         guard reservation.isActive else {
             throw MacInstallClientError.inactiveReservation
         }
-        let status = try transport.commitAfterExit(
-            transactionID: reservation.transactionID,
-            readyToken: reservation.readyToken
-        )
-        try validate(
-            status,
-            transactionID: reservation.transactionID,
-            reservation: reservation
-        )
-        guard status.state == .commitAccepted ||
-            status.state == .completed else {
-            throw MacInstallClientError.invalidReservationResponse
+        let status: InstallTransactionStatus
+        do {
+            status = try transport.commitAfterExit(
+                transactionID: reservation.transactionID,
+                readyToken: reservation.readyToken
+            )
+            try validate(
+                status,
+                transactionID: reservation.transactionID,
+                reservation: reservation
+            )
+            guard status.state == .commitAccepted ||
+                status.state == .completed else {
+                throw MacInstallClientError.installRecoveryRequired
+            }
+        } catch {
+            throw MacInstallClientError.installRecoveryRequired
         }
         reservation.release()
         return status
@@ -1697,6 +1723,16 @@ public struct MacInstallHelper {
 
     private func validateTransactionID(_ value: String) throws {
         guard HelperProtocolValidation.isTransactionID(value) else {
+            throw MacInstallClientError.invalidTransactionID
+        }
+    }
+
+    private func validateCallerTransactionID(_ value: String) throws {
+        let fullRange = value.startIndex ..< value.endIndex
+        guard value.range(
+            of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+            options: .regularExpression
+        ) == fullRange else {
             throw MacInstallClientError.invalidTransactionID
         }
     }

@@ -711,6 +711,7 @@ TEST(LinuxNativeInstall, PublicClientPreparesAndCancelsOverRealUnixSocket) {
   InstallRequest request = RequestFor(install_root, staging_root, true,
                                       descriptor_sha256, artifact_sha256);
   request.executable_relative_path = executable.filename().string();
+  request.transaction_id = "123e4567-e89b-42d3-a456-426614174001";
   WriteFile(helper.parent_path() / "desktop-updater-helper.policy.json",
             CanonicalPortablePolicy(Sha256File(executable),
                                     Sha256File(helper),
@@ -720,7 +721,7 @@ TEST(LinuxNativeInstall, PublicClientPreparesAndCancelsOverRealUnixSocket) {
   InstallReservation reservation;
   const InstallResult prepared = PrepareInstall(request, &reservation);
   EXPECT_TRUE(prepared.ok) << prepared.error;
-  EXPECT_FALSE(reservation.transaction_id.empty());
+  EXPECT_EQ(request.transaction_id, reservation.transaction_id);
   EXPECT_EQ(43u, reservation.ready_token.size());
   if (prepared.ok) {
     const fs::path helper_stage =
@@ -1820,6 +1821,22 @@ TEST(LinuxNativeInstall, RejectsNonCanonicalAndSymlinkEscapes) {
   InstallRequest executable_symlink = RequestFor(install_root, staging_root);
   executable_symlink.executable_relative_path = "outside-link";
   EXPECT_FALSE(ValidateInstallRequest(executable_symlink).ok);
+}
+
+TEST(LinuxNativeInstall, RejectsInvalidCallerProvidedTransactionId) {
+  TemporaryDirectory temporary;
+  const fs::path install_root = temporary.path() / "app";
+  const fs::path staging_root = temporary.path() /
+      "desktop_updater_stage_123e4567-e89b-42d3-a456-426614174000";
+  WriteFile(install_root / "example", "old", 0755);
+  WriteFile(staging_root / "example", "new", 0755);
+  InstallRequest request = RequestFor(install_root, staging_root);
+  request.transaction_id = "NOT-A-CANONICAL-TRANSACTION-ID";
+
+  const InstallResult result = ValidateInstallRequest(request);
+
+  EXPECT_FALSE(result.ok);
+  EXPECT_NE(std::string::npos, result.error.find("transaction ID"));
 }
 
 }  // namespace

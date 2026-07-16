@@ -45,6 +45,9 @@ struct InstallRequest {
   std::string expected_provenance_sha256;
   std::string provenance_nonce;
   std::vector<InstallProvenanceEntry> provenance_entries;
+  // Optional caller-owned durable transaction identity. Empty preserves the
+  // native SDK's backwards-compatible generated-ID behavior.
+  std::string transaction_id;
 };
 
 struct InstallResult {

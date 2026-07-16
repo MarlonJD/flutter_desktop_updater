@@ -223,6 +223,148 @@ final class MacInstallHelperTests: XCTestCase {
         }
     }
 
+    func testPrepareInstallUsesCallerProvidedTransactionID() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let transport = CapturingInstallHelperTransport()
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+
+        let reservation = try helper.prepareInstall(
+            fixture.request,
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(reservation.transactionID, transactionID)
+        XCTAssertEqual(transport.preparedTransactionID, transactionID)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: XCTUnwrap(transport.preparedRequest)
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(object["transactionId"] as? String, transactionID)
+    }
+
+    func testPrepareInstallRejectsNonCanonicalCallerTransactionID() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let transport = CapturingInstallHelperTransport()
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        XCTAssertThrowsError(
+            try helper.prepareInstall(
+                fixture.request,
+                transactionID: "123e4567-e89b-42d3-a456-426614174099".uppercased()
+            )
+        ) { error in
+            XCTAssertEqual(error as? MacInstallClientError, .invalidTransactionID)
+        }
+        XCTAssertNil(transport.preparedRequest)
+    }
+
+    func testPrepareInstallRejectsCanonicalNonV4CallerTransactionID() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let transport = CapturingInstallHelperTransport()
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        XCTAssertThrowsError(
+            try helper.prepareInstall(
+                fixture.request,
+                transactionID: "00000000-0000-1000-8000-000000000099"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MacInstallClientError, .invalidTransactionID)
+        }
+        XCTAssertNil(transport.preparedRequest)
+    }
+
+    func testPrepareTransportFailureRequiresCallerTransactionRecovery() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let transport = CapturingInstallHelperTransport()
+        transport.prepareError = MacInstallClientError.endpointUnavailable
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        XCTAssertThrowsError(
+            try helper.prepareInstall(
+                fixture.request,
+                transactionID: "00000000-0000-4000-8000-000000000099"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .installRecoveryRequired
+            )
+        }
+    }
+
+    func testCommitTransportFailureRequiresCallerTransactionRecovery() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let transport = CapturingInstallHelperTransport()
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+        let reservation = try helper.prepareInstall(
+            fixture.request,
+            transactionID: "00000000-0000-4000-8000-000000000099"
+        )
+        transport.commitError = MacInstallClientError.endpointUnavailable
+
+        XCTAssertThrowsError(
+            try helper.commitAfterExit(reservation)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .installRecoveryRequired
+            )
+        }
+    }
+
     func testCanonicalHelperEventsMatchTheDartFixture() throws {
         let fixture: HelperEventsFixture = try decodeFixture(
             "helper-events.json"
@@ -250,6 +392,165 @@ final class MacInstallHelperTests: XCTestCase {
         XCTAssertEqual(event.timestamp, first.timestamp)
     }
 
+}
+
+private struct CallerTransactionFixture {
+    let root: URL
+    let request: MacInstallRequest
+
+    static func create() throws -> Self {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let stageRoot = try StageProvenance.createOwnedStage(parent: root)
+        let stagedApp = stageRoot.appendingPathComponent("Example.app")
+        let executable = stagedApp.appendingPathComponent(
+            "Contents/MacOS/Example"
+        )
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("new".utf8).write(to: executable)
+        let artifactSHA256 = String(repeating: "c", count: 64)
+        let manifest: [String: Any] = [
+            "schemaVersion": 3,
+            "packageId": "com.example.app",
+            "version": "2.8.0",
+            "buildNumber": 280,
+            "artifact": [
+                "sha256": artifactSHA256,
+                "length": 123,
+            ],
+            "signature": [
+                "algorithm": "ed25519",
+                "publicKeyId": "stable-2026",
+                "value": Data(repeating: 7, count: 64).base64EncodedString(),
+            ],
+        ]
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        try manifestData.write(
+            to: stageRoot.appendingPathComponent(
+                ".desktop_updater_release_manifest.json"
+            )
+        )
+        let nonce = String(
+            stageRoot.lastPathComponent.dropFirst(updaterOwnedStagePrefix.count)
+        )
+        let provenance = try StageProvenance.write(
+            stageRoot: stageRoot,
+            nonce: nonce,
+            packageID: "com.example.app",
+            descriptorSHA256: try StageProvenance.canonicalJSONSHA256(manifest),
+            artifactSHA256: artifactSHA256
+        )
+        return Self(
+            root: root,
+            request: MacInstallRequest(
+                verifiedStage: MacVerifiedStage(
+                    stagedPath: stagedApp,
+                    stageRoot: stageRoot,
+                    provenance: provenance,
+                    artifactKind: "zip"
+                ),
+                allowUnsignedUpdates: false,
+                diagnosticsLogPath: nil
+            )
+        )
+    }
+}
+
+private struct FixedInstallRequestEvidenceBuilder:
+    MacInstallRequestEvidenceBuilding
+{
+    func build(for _: MacInstallTarget) throws -> MacInstallRequestEvidence {
+        MacInstallRequestEvidence(
+            policyID: "com.example.desktop-updater.privileged",
+            packageID: "com.example.app",
+            processStartIdentity: "pid-start-99",
+            executableSHA256: String(repeating: "a", count: 64),
+            signerIdentity: "identifier com.example.app",
+            targetClass: "applicationBundle",
+            executableRelativePath: "Contents/MacOS/Example",
+            currentVersion: "2.7.0",
+            currentBuildNumber: 270,
+            currentPackageIdentitySHA256: String(repeating: "b", count: 64),
+            targetIdentityProofSHA256: String(repeating: "a", count: 64),
+            requestNonce: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
+        )
+    }
+}
+
+private final class CapturingInstallHelperTransport: MacInstallHelperTransport {
+    var preparedRequest: Data?
+    var preparedTransactionID: String?
+    var prepareError: Error?
+    var commitError: Error?
+
+    func prepareInstall(
+        request: Data,
+        transactionID: String
+    ) throws -> InstallReservationResponseV1 {
+        preparedRequest = request
+        preparedTransactionID = transactionID
+        if let prepareError {
+            throw prepareError
+        }
+        return InstallReservationResponseV1(
+            protocolVersion: 1,
+            transactionID: transactionID,
+            readyToken: String(repeating: "a", count: 43),
+            journalSHA256: String(repeating: "b", count: 64),
+            helperEndpointIdentitySHA256: String(repeating: "c", count: 64),
+            expiresAtUnixMilliseconds: 1
+        )
+    }
+
+    func commitAfterExit(
+        transactionID: String,
+        readyToken _: String
+    ) throws -> InstallTransactionStatus {
+        if let commitError {
+            throw commitError
+        }
+        return status(transactionID: transactionID)
+    }
+
+    func cancelReservation(
+        transactionID: String,
+        readyToken _: String
+    ) throws -> InstallTransactionStatus {
+        status(transactionID: transactionID)
+    }
+
+    func queryTransaction(
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        status(transactionID: transactionID)
+    }
+
+    func recoverPendingInstall(
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        status(transactionID: transactionID)
+    }
+
+    private func status(transactionID: String) -> InstallTransactionStatus {
+        InstallTransactionStatus(
+            transactionID: transactionID,
+            state: .prepared,
+            resultCode: .accepted,
+            detail: "",
+            responseDigestSHA256: String(repeating: "b", count: 64),
+            helperEndpointIdentitySHA256: String(repeating: "c", count: 64)
+        )
+    }
 }
 
 private struct HelperEventsFixture: Decodable {

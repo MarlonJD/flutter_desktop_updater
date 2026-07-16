@@ -48,12 +48,30 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
             let stageProvenanceSHA256 =
                 arguments["stageProvenanceSha256"] as? String
+            let transactionID: String?
+            if let value = arguments["transactionId"] {
+                guard let candidate = value as? String,
+                      isCanonicalTransactionID(candidate) else {
+                    result(
+                        FlutterError(
+                            code: "InvalidArguments",
+                            message: "transactionId must be a canonical lowercase UUIDv4.",
+                            details: nil
+                        )
+                    )
+                    return
+                }
+                transactionID = candidate
+            } else {
+                transactionID = nil
+            }
             handoffInstallAndRelaunch(
                 stagingPath: stagingPath,
                 removedFiles: removedFiles,
                 allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
                 diagnosticsLogPath: diagnosticsLogPath,
                 stageProvenanceSHA256: stageProvenanceSHA256,
+                transactionID: transactionID,
                 result: result
             )
         case "queryInstallTransaction":
@@ -119,6 +137,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         allowUnsignedMacOSUpdates: Bool = false,
         diagnosticsLogPath: String? = nil,
         stageProvenanceSHA256: String? = nil,
+        transactionID: String? = nil,
         result: @escaping FlutterResult
     ) {
         do {
@@ -173,7 +192,15 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 provenanceEntries: provenance?.marker.entries ?? []
             )
             let helper = MacInstallHelper()
-            let reservation = try helper.prepareInstall(request)
+            let reservation: MacInstallReservation
+            if let transactionID {
+                reservation = try helper.prepareInstall(
+                    request,
+                    transactionID: transactionID
+                )
+            } else {
+                reservation = try helper.prepareInstall(request)
+            }
             let status = try helper.commitAfterExit(reservation)
             guard status.state == .commitAccepted || status.state == .completed,
                   status.resultCode == .accepted || status.resultCode == .succeeded,
@@ -199,6 +226,22 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                         details: [
                             "action": "openMacOSBackgroundItemsSettings",
                             "settingsPath": "System Settings > General > Login Items & Extensions",
+                        ]
+                    )
+                )
+                return
+            }
+            if (error as? MacInstallClientError) ==
+                MacInstallClientError.installRecoveryRequired
+            {
+                result(
+                    FlutterError(
+                        code: "InstallError",
+                        message: "Unable to confirm update installation handoff.",
+                        details: [
+                            "recoveryRequired": true,
+                            "transactionId": transactionID ?? "",
+                            "detail": error.localizedDescription,
                         ]
                     )
                 )
@@ -270,6 +313,13 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 )
             )
         }
+    }
+
+    private func isCanonicalTransactionID(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private func transactionStatusMap(

@@ -234,6 +234,64 @@ void main() {
     expect(errorBranch, isNot(contains("exit(")));
   });
 
+  test("macOS install binds the caller transaction ID to the helper", () {
+    final plugin = File(pluginSources[0]).readAsStringSync();
+    final installBranch = plugin.substring(
+      plugin.indexOf('case "installUpdate"'),
+      plugin.indexOf('case "queryInstallTransaction"'),
+    );
+    final handoff = plugin.substring(
+      plugin.indexOf("private func handoffInstallAndRelaunch"),
+      plugin.indexOf("private func queryInstallTransaction"),
+    );
+
+    expect(installBranch, contains('arguments["transactionId"]'));
+    expect(installBranch, contains("transactionID: transactionID"));
+    expect(handoff, contains("transactionID: String?"));
+    expect(
+      handoff,
+      matches(
+        RegExp(
+          r"helper\.prepareInstall\(\s*request,\s*"
+          r"transactionID: transactionID\s*\)",
+          multiLine: true,
+        ),
+      ),
+    );
+  });
+
+  test("macOS and Linux ambiguous handoffs preserve recovery markers", () {
+    final macPlugin = File(pluginSources[0]).readAsStringSync();
+    final macInstallBranch = macPlugin.substring(
+      macPlugin.indexOf("private func handoffInstallAndRelaunch"),
+      macPlugin.indexOf("private func queryInstallTransaction"),
+    );
+    final linuxPlugin = File(pluginSources[2]).readAsStringSync();
+    final linuxInstallBranch = linuxPlugin.substring(
+      linuxPlugin.indexOf('strcmp(method, "installUpdate")'),
+      linuxPlugin.indexOf('strcmp(method, "queryInstallTransaction")'),
+    );
+
+    expect(
+      macInstallBranch,
+      contains("MacInstallClientError.installRecoveryRequired"),
+    );
+    expect(macInstallBranch, contains('"recoveryRequired": true'));
+    expect(linuxPlugin, contains("RecoveryRequiredErrorDetails"));
+    expect(linuxPlugin, contains('"recoveryRequired"'));
+    expect(linuxInstallBranch, contains("result.recovery_required"));
+    expect(
+      linuxInstallBranch,
+      matches(
+        RegExp(
+          r"RecoveryRequiredErrorDetails\(\s*transaction_id,\s*"
+          r"result\.error\s*\)",
+          multiLine: true,
+        ),
+      ),
+    );
+  });
+
   test(
     "Windows install handoff keeps released errors with recovery details",
     () {

@@ -650,6 +650,51 @@ void main() {
     }
   });
 
+  test("non-Windows forwards the same durable marker transaction ID", () async {
+    late MethodCall capturedCall;
+    final recoveryStore = _MemoryRecoveryStore();
+    final fixture = await _ControllerUpdateFixture.create(
+      mandatory: false,
+      validArtifact: true,
+    );
+    try {
+      _setMockPlatformHandler(
+        onInstallUpdate: (methodCall) {
+          capturedCall = methodCall;
+        },
+      );
+      final controller = DesktopUpdaterController.forTesting(
+        appArchiveUrl: fixture.archiveUrl,
+        skipInitialVersionCheck: true,
+        recoveryStore: recoveryStore,
+        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "linux"),
+        isWindows: false,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+
+      final marker = await recoveryStore.readPendingInstall(channel: "stable");
+      final transactionId = marker?.transactionId;
+      expect(
+        transactionId,
+        matches(
+          RegExp(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          ),
+        ),
+      );
+      expect(
+        capturedCall.arguments,
+        containsPair("transactionId", transactionId),
+      );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
   test("Windows preserves marker only for ambiguous native handoff", () async {
     final recoveryStore = _MemoryRecoveryStore();
     final fixture = await _ControllerUpdateFixture.create(

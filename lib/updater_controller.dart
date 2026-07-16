@@ -764,8 +764,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     String? transactionId;
     try {
       _validateNativeInstallTrust();
-      final candidateTransactionId =
-          _isWindows ? _createInstallTransactionId() : null;
+      final candidateTransactionId = _createInstallTransactionId();
       transactionId = candidateTransactionId;
       await _writePendingRecoveryMarker(
         stagingPath,

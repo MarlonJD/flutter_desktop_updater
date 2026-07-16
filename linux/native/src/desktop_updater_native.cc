@@ -428,6 +428,12 @@ InstallResult BindProvenanceToMarker(InstallRequest* request,
 
 InstallResult ValidateNormalizedRequest(const InstallRequest& request,
                                         bool validate_provenance = true) {
+  if (!request.transaction_id.empty() &&
+      !IsLowercaseUuidNonce(request.transaction_id)) {
+    return {false,
+            "Linux install transaction ID must be a canonical lowercase "
+            "UUID v4."};
+  }
   if (!IsCanonicalAbsolutePath(request.install_root)) {
     return {false, "Linux install root must be an absolute canonical path."};
   }
@@ -748,7 +754,9 @@ InstallResult SerializeCommonInstallRequest(
       throw std::runtime_error("running executable identity unavailable");
     }
     runtime::internal::LinuxNativeInstallEvidenceV1 evidence;
-    evidence.transaction_id = NewTransactionId();
+    evidence.transaction_id = request.transaction_id.empty()
+                                  ? NewTransactionId()
+                                  : request.transaction_id;
     evidence.policy_id = PackagedPolicyId(request);
     evidence.package_id = request.package_id;
     evidence.target_class = RequiresPrivilegedBroker(request.install_root)
