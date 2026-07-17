@@ -107,6 +107,29 @@ void main() {
       expect(source, isNot(contains('MacOSRuntimeSmoke-component.pkg')));
       expect(source, isNot(contains('\$appName-component.pkg')));
     }
+    expect(
+      packageSmoke,
+      contains(
+        r'/usr/sbin/pkgutil --expand-full "$pkg_output" "$expanded_pkg"',
+      ),
+    );
+    expect(
+      packageSmoke,
+      contains(
+        r'payload_app="$expanded_pkg/component.pkg/Payload/$(/usr/bin/basename "$app_bundle")"',
+      ),
+    );
+    expect(
+      packageSmoke,
+      contains(
+        r'"$payload_app/Contents/Helpers/DesktopUpdaterInstallHelper"',
+      ),
+    );
+    expect(packageSmoke, contains(r'[ ! -L "$payload_app" ]'));
+    expect(
+      packageSmoke.indexOf('/usr/sbin/pkgutil --expand-full'),
+      lessThan(packageSmoke.indexOf(r'notarytool submit "$pkg_output"')),
+    );
   });
 
   test("PKG install verification is explicit and outside all smoke", () {

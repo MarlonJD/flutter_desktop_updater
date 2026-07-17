@@ -58,7 +58,7 @@
 - Consumes: `AppleTrustCommands.verifyApp(Directory app)`.
 - Produces: source-app verification, `pkgbuild`, `productbuild`, `pkgutil --expand-full`, exact payload verification, then notarization/stapling/package checks.
 
-- [ ] **Step 1: Write RED order and failure tests**
+- [x] **Step 1: Write RED order and failure tests**
 
 Add ordered assertions:
 
@@ -88,7 +88,13 @@ flutter test --no-pub test/release_cli/pkg_packager_test.dart
 
 Expected: FAIL because the packager does not expand/verify the final payload.
 
-- [ ] **Step 2: Implement exact payload verification**
+Evidence (`verified locally`, 2026-07-17): the focused RED run failed with two
+expected assertions: zero source/payload strict verifications were observed,
+and an invalid expanded payload still returned a successful package result.
+Adversarial follow-up RED coverage also proved that top-level source and payload
+application symlinks were accepted before the fixed-node hardening.
+
+- [x] **Step 2: Implement exact payload verification**
 
 In `PkgPackager.package`, verify the input app, then after `productbuild` and before temp cleanup/notarization:
 
@@ -118,7 +124,14 @@ await trust.verifyApp(payloadApp);
 
 Keep `component.pkg` fixed; do not search alternate members.
 
-- [ ] **Step 3: Add the same gate to the runtime packager**
+Evidence (`verified locally`, 2026-07-17): the publisher now verifies the
+source application before packaging, expands only the final product archive,
+requires the exact non-symlink
+`component.pkg/Payload/<request.appName>` directory, and verifies it before any
+notarization submission. A simulated payload-signature failure throws
+`ProcessException` and records no `notarytool submit` command.
+
+- [x] **Step 3: Add the same gate to the runtime packager**
 
 After `productbuild`, before `notarytool submit`:
 
@@ -133,7 +146,12 @@ payload_app="$expanded_pkg/component.pkg/Payload/$(/usr/bin/basename "$app_bundl
   "$payload_app/Contents/Helpers/DesktopUpdaterInstallHelper"
 ```
 
-- [ ] **Step 4: Verify, review, commit, and push**
+Evidence (`verified locally`, 2026-07-17): the runtime shell packager expands
+the final product archive at the fixed component path, rejects a missing or
+top-level symlink payload app, and independently verifies the payload app and
+embedded helper before notarization. `sh -n` completed successfully.
+
+- [x] **Step 4: Verify, review, commit, and push**
 
 ```sh
 flutter test --no-pub \
@@ -155,6 +173,14 @@ git add lib/src/release_cli/macos/pkg_packager.dart \
 git commit -m "fix(macos): verify nested pkg payload signatures"
 git push origin feat/native-sdk-platform-split
 ```
+
+Evidence (`verified locally`, 2026-07-17): 33 focused Flutter tests passed;
+`sh -n example/native/macos-runtime/package_smoke_app.sh`, focused Dart format,
+and `git diff --check` passed. The adversarial review confirmed a unique temp
+expansion root, a fixed non-symlink `component.pkg` payload node, checked command
+failures, strict app/helper verification, and payload verification before PKG
+notarization. No unresolved privilege, traversal, or notarization-order finding
+remains in this slice.
 
 ### Task 2: Build and Audit a Fresh Current-Head Artifact
 

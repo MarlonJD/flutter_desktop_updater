@@ -217,6 +217,15 @@ if [ -n "$pkg_output" ]; then
     --package "$component_pkg" \
     --sign "$pkg_installer_identity" \
     "$pkg_output"
+  expanded_pkg="$work/expanded-product"
+  /bin/rm -rf "$expanded_pkg"
+  /usr/sbin/pkgutil --expand-full "$pkg_output" "$expanded_pkg"
+  payload_app="$expanded_pkg/component.pkg/Payload/$(/usr/bin/basename "$app_bundle")"
+  [ -d "$payload_app" ] && [ ! -L "$payload_app" ] || \
+    fail "final PKG payload app is missing or not a directory"
+  /usr/bin/codesign --verify --deep --strict --verbose=2 "$payload_app"
+  /usr/bin/codesign --verify --strict --verbose=2 \
+    "$payload_app/Contents/Helpers/DesktopUpdaterInstallHelper"
   if [ -n "$notary_profile" ]; then
     /usr/bin/xcrun notarytool submit "$pkg_output" \
       --keychain-profile "$notary_profile" --wait

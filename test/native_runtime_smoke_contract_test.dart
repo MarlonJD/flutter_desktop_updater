@@ -148,6 +148,12 @@ void main() {
     expect(packager, contains("stapler staple"));
     expect(packager, contains("spctl --assess --type execute"));
     expect(packager, contains("codesign --verify --deep --strict"));
+    expect(packager, contains("pkgutil --expand-full"));
+    expect(packager, contains("component.pkg/Payload"));
+    expect(
+      packager,
+      contains("Contents/Helpers/DesktopUpdaterInstallHelper"),
+    );
 
     for (final boundary in [
       zipStart,

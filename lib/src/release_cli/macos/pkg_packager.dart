@@ -34,6 +34,8 @@ class PkgPackager {
       );
     }
     await _validateInputApplication(request, buildNumber: buildNumber);
+    final trust = AppleTrustCommands(runProcess: runProcess);
+    await trust.verifyApp(request.input as Directory);
     await request.outputDirectory.create(recursive: true);
     final artifact = File(
       path.join(
@@ -72,20 +74,43 @@ class PkgPackager {
         config.signingIdentifier!,
         artifact.path,
       ]);
+      if (!await artifact.exists()) {
+        throw FileSystemException(
+          "productbuild did not produce a PKG artifact.",
+          artifact.path,
+        );
+      }
+      final expanded = Directory(path.join(tempDir.path, "expanded"));
+      await _runChecked("/usr/sbin/pkgutil", [
+        "--expand-full",
+        artifact.path,
+        expanded.path,
+      ]);
+      final payloadApp = Directory(
+        path.join(
+          expanded.path,
+          "component.pkg",
+          "Payload",
+          request.appName,
+        ),
+      );
+      if (await FileSystemEntity.type(
+            payloadApp.path,
+            followLinks: false,
+          ) !=
+          FileSystemEntityType.directory) {
+        throw FileSystemException(
+          "Signed PKG does not contain the expected application payload directory.",
+          payloadApp.path,
+        );
+      }
+      await trust.verifyApp(payloadApp);
     } finally {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
     }
 
-    if (!await artifact.exists()) {
-      throw FileSystemException(
-        "productbuild did not produce a PKG artifact.",
-        artifact.path,
-      );
-    }
-
-    final trust = AppleTrustCommands(runProcess: runProcess);
     if (publishConfig?.notarize ?? false) {
       await trust.submitForNotarization(
         archive: artifact,
@@ -167,6 +192,16 @@ class PkgPackager {
         path.normalize(request.appName) != request.appName) {
       throw const FormatException(
         "macOS PKG appName must match the input application bundle name.",
+      );
+    }
+    if (await FileSystemEntity.type(
+          request.input.path,
+          followLinks: false,
+        ) !=
+        FileSystemEntityType.directory) {
+      throw FileSystemException(
+        "macOS PKG source application must be a directory, not a symbolic link.",
+        request.input.path,
       );
     }
     await _validateBundleModes(request.input as Directory);
