@@ -154,6 +154,15 @@ void main() {
     expect(source, contains("BundleHasStrictIdentifier"));
     expect(source, contains("BundleOverwriteAction"));
     expect(source, contains("--component-plist"));
+    expect(source, contains("baseline-distribution.xml"));
+    expect(source, contains("productbuild --synthesize"));
+    expect(source, contains("baseline distribution bundle-version mismatch"));
+    expect(source,
+        contains("baseline final distribution retained bundle-version"));
+    expect(source, contains("--distribution"));
+    expect(source, contains("pkgutil --flatten"));
+    expect(source, contains("productsign"));
+    expect(source, contains("baseline-product-expanded"));
     expect(
       RegExp("fixed smoke application bundle").allMatches(source),
       hasLength(2),

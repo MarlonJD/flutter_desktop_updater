@@ -580,6 +580,27 @@ runtime, and production packager set passed 39/39; focused format changed no
 files; and shell syntax plus `git diff --check` passed. Fresh
 signed/notarized target-host proof remains required.
 
+Final-Distribution continuation (`candidate-only`, 2026-07-19): the first
+fresh app and PKG submissions from commit
+`22750d26a9c8021d8baadf738122a9b498a27895` were accepted, but independent
+final-PKG expansion found that `productbuild`
+reintroduced the exact v1 `bundle-version` node even after the component plist
+disabled it. Those artifacts are rejected as acceptance inputs. A third
+focused RED required an exact outer-product expansion, Distribution patch,
+flatten, and final `productsign` boundary. The GREEN path accepts only the two
+tool-generated outer nodes and the scripts-free three-node component shape,
+validates the single reintroduced version rule against the fixed receipt,
+bundle, version, build, and path before removing it, flattens and signs the
+outer archive with a trusted timestamp, and then independently requires the
+final expanded Distribution to contain no version rule while PackageInfo keeps
+an empty version gate and the exact atomic-upgrade identifier. A real signed
+local package traversed every new shape, payload-signature, Distribution, and
+package-signature gate; its final Gatekeeper assessment rejected only because
+that diagnostic artifact was intentionally not notarized. Fresh notarized
+artifacts from the eventual fix commit remain required. The focused contract
+passed 6/6 and the widened install/recovery/runtime/packager set passed 39/39;
+focused format, shell syntax, and `git diff --check` passed.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

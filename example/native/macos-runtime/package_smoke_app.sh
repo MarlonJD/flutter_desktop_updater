@@ -313,10 +313,136 @@ PY
       --version "$app_version" \
       "$component_pkg"
   fi
-  /usr/bin/productbuild \
-    --package "$component_pkg" \
-    --sign "$pkg_installer_identity" \
-    "$pkg_output"
+  if [ "$pkg_baseline_smoke" = 1 ]; then
+    baseline_distribution="$work/baseline-distribution.xml"
+    /bin/rm -f "$baseline_distribution"
+    /usr/bin/productbuild --synthesize \
+      --package "$component_pkg" "$baseline_distribution"
+    /usr/bin/python3 - \
+      "$baseline_distribution" "$pkg_receipt_id" "$package_id" \
+      "$app_version" "$app_build" \
+      "$(/usr/bin/basename "$app_bundle")" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, receipt_id, bundle_id, version, build, bundle_path = sys.argv[1:]
+tree = ET.parse(path)
+root = tree.getroot()
+matches = []
+for parent in root.iter():
+    for child in list(parent):
+        if child.tag == "bundle-version":
+            matches.append((parent, child))
+if len(matches) > 1:
+    raise SystemExit("baseline distribution bundle-version mismatch")
+if matches:
+    parent, version_node = matches[0]
+    bundles = list(version_node)
+    if parent.tag != "pkg-ref" or parent.get("id") != receipt_id:
+        raise SystemExit("baseline distribution bundle-version mismatch")
+    if len(bundles) != 1 or bundles[0].tag != "bundle":
+        raise SystemExit("baseline distribution bundle-version mismatch")
+    expected = {
+        "id": bundle_id,
+        "path": bundle_path,
+        "CFBundleShortVersionString": version,
+        "CFBundleVersion": build,
+    }
+    if bundles[0].attrib != expected:
+        raise SystemExit("baseline distribution bundle-version mismatch")
+    parent.remove(version_node)
+options = [element for element in root.iter() if element.tag == "options"]
+if len(options) != 1 or options[0].get("require-scripts") != "false":
+    raise SystemExit("baseline distribution scripts authority mismatch")
+if any(element.tag == "bundle-version" for element in root.iter()):
+    raise SystemExit("baseline distribution bundle-version mismatch")
+tree.write(path, encoding="utf-8", xml_declaration=True)
+PY
+    baseline_product="$work/baseline-product.pkg"
+    baseline_product_expanded="$work/baseline-product-expanded"
+    baseline_product_flattened="$work/baseline-product-flattened.pkg"
+    /bin/rm -f "$baseline_product" "$baseline_product_flattened"
+    /bin/rm -rf "$baseline_product_expanded"
+    /usr/bin/productbuild \
+      --distribution "$baseline_distribution" \
+      --package-path "$work" \
+      "$baseline_product"
+    /usr/sbin/pkgutil --expand \
+      "$baseline_product" "$baseline_product_expanded"
+    [ -f "$baseline_product_expanded/Distribution" ] && \
+      [ ! -L "$baseline_product_expanded/Distribution" ] && \
+      [ -d "$baseline_product_expanded/component.pkg" ] && \
+      [ ! -L "$baseline_product_expanded/component.pkg" ] || \
+      fail "baseline product shape is invalid"
+    baseline_product_entry_count=$(/usr/bin/find \
+      "$baseline_product_expanded" -mindepth 1 -maxdepth 1 -print | \
+      /usr/bin/wc -l | /usr/bin/tr -d ' ')
+    [ "$baseline_product_entry_count" = 2 ] || \
+      fail "baseline product shape contains unexpected entries"
+    for component_entry in Bom Payload PackageInfo; do
+      [ -f "$baseline_product_expanded/component.pkg/$component_entry" ] && \
+        [ ! -L "$baseline_product_expanded/component.pkg/$component_entry" ] || \
+        fail "baseline component shape is invalid"
+    done
+    baseline_component_entry_count=$(/usr/bin/find \
+      "$baseline_product_expanded/component.pkg" \
+      -mindepth 1 -maxdepth 1 -print | \
+      /usr/bin/wc -l | /usr/bin/tr -d ' ')
+    [ "$baseline_component_entry_count" = 3 ] || \
+      fail "baseline component shape contains unexpected entries"
+    /usr/bin/python3 - \
+      "$baseline_product_expanded/Distribution" \
+      "$pkg_receipt_id" "$package_id" "$app_version" "$app_build" \
+      "$(/usr/bin/basename "$app_bundle")" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, receipt_id, bundle_id, version, build, bundle_path = sys.argv[1:]
+tree = ET.parse(path)
+root = tree.getroot()
+matches = []
+for parent in root.iter():
+    for child in list(parent):
+        if child.tag == "bundle-version":
+            matches.append((parent, child))
+if len(matches) != 1:
+    raise SystemExit("baseline distribution bundle-version mismatch")
+parent, version_node = matches[0]
+bundles = list(version_node)
+expected = {
+    "id": bundle_id,
+    "path": bundle_path,
+    "CFBundleShortVersionString": version,
+    "CFBundleVersion": build,
+}
+if (parent.tag != "pkg-ref" or parent.get("id") != receipt_id or
+        len(bundles) != 1 or bundles[0].tag != "bundle" or
+        bundles[0].attrib != expected):
+    raise SystemExit("baseline distribution bundle-version mismatch")
+options = [element for element in root.iter() if element.tag == "options"]
+if len(options) != 1 or options[0].get("require-scripts") != "false":
+    raise SystemExit("baseline distribution scripts authority mismatch")
+parent.remove(version_node)
+if any(element.tag == "bundle-version" for element in root.iter()):
+    raise SystemExit("baseline distribution bundle-version mismatch")
+tree.write(path, encoding="utf-8", xml_declaration=True)
+PY
+    /usr/sbin/pkgutil --flatten \
+      "$baseline_product_expanded" "$baseline_product_flattened"
+    /usr/bin/productsign --timestamp --sign "$pkg_installer_identity" \
+      "$baseline_product_flattened" "$pkg_output"
+    baseline_signed_expanded="$work/baseline-signed-expanded"
+    /bin/rm -rf "$baseline_signed_expanded"
+    /usr/sbin/pkgutil --expand "$pkg_output" "$baseline_signed_expanded"
+    [ -d "$baseline_signed_expanded/component.pkg" ] && \
+      [ ! -L "$baseline_signed_expanded/component.pkg" ] || \
+      fail "signed baseline component shape is invalid"
+  else
+    /usr/bin/productbuild \
+      --package "$component_pkg" \
+      --sign "$pkg_installer_identity" \
+      "$pkg_output"
+  fi
   expanded_pkg="$work/expanded-product"
   /bin/rm -rf "$expanded_pkg"
   /usr/sbin/pkgutil --expand-full "$pkg_output" "$expanded_pkg"
@@ -326,6 +452,34 @@ PY
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$payload_app"
   /usr/bin/codesign --verify --strict --verbose=2 \
     "$payload_app/Contents/Helpers/DesktopUpdaterInstallHelper"
+  if [ "$pkg_baseline_smoke" = 1 ]; then
+    /usr/bin/python3 - \
+      "$expanded_pkg/Distribution" \
+      "$expanded_pkg/component.pkg/PackageInfo" \
+      "$pkg_receipt_id" "$package_id" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+distribution_path, package_info_path, receipt_id, bundle_id = sys.argv[1:]
+distribution = ET.parse(distribution_path).getroot()
+if any(element.tag == "bundle-version" for element in distribution.iter()):
+    raise SystemExit("baseline final distribution retained bundle-version")
+options = [element for element in distribution.iter()
+           if element.tag == "options"]
+if len(options) != 1 or options[0].get("require-scripts") != "false":
+    raise SystemExit("baseline final distribution scripts authority mismatch")
+package_info = ET.parse(package_info_path).getroot()
+version_nodes = [element for element in package_info.iter()
+                 if element.tag == "bundle-version"]
+if len(version_nodes) != 1 or list(version_nodes[0]):
+    raise SystemExit("baseline component retained bundle-version authority")
+upgrade_ids = [element.get("id") for element in package_info.findall(
+    "./upgrade-bundle/bundle"
+)]
+if package_info.get("identifier") != receipt_id or upgrade_ids != [bundle_id]:
+    raise SystemExit("baseline component upgrade authority mismatch")
+PY
+  fi
   if [ -n "$notary_profile" ]; then
     /usr/bin/xcrun notarytool submit "$pkg_output" \
       --keychain-profile "$notary_profile" --wait
