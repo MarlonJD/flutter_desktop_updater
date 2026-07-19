@@ -887,6 +887,45 @@ passed 53/53; the runtime sample completed a release Swift build; and
 after this code change; fresh artifacts and both real target-host sequences
 remain required before checking Step 4 or Task 4 Step 3.
 
+ServiceManagement-settlement continuation (`candidate-only`, 2026-07-20):
+exact HEAD `11ca63a9b901167c591536b47b688dd8d8ebf6a7` produced fresh signed,
+accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submission IDs were
+`93a3155b-0d45-4154-b746-cfe9010f7603` and
+`af96907d-212c-4a04-ac62-205fa2732c79`; the v2 app/PKG submission IDs were
+`2608a001-f0c9-4455-a84a-a909c71d5d30` and
+`4a8fd26d-073f-4a50-83df-e8cc115f7810`. Their final PKG SHA-256 values were
+`d861fec2378fb810313349599fc105cb84e4409f3e7f529faa17893ef69d9c2d`
+and
+`6ca85d4130a187e1999331440080a2d0ecd523d6fb6482783679c24b7f19d747`;
+both independent audits passed. Official bootstrap, v1 verification, and the
+user-controlled approval cycle passed with the exact typed code and
+remediation, one retained owned stage, and no installer process. The
+continuation installed `2.7.1+271` and updated the matching receipt, but its
+terminal helper probe reproduced the registration P1: successful unregister
+completion was followed by repeated ServiceManagement `Operation not
+permitted` responses during the 100-ms retry burst. The same fixed signed probe
+registered successfully after the transient interval without any stage,
+journal, receipt, or installer mutation. The retained provider transaction was
+then closed only through authenticated XPC recovery as `completed/succeeded`;
+its owned journal, lock, and stage were absent afterward. No elevation report
+was written. Apple DTS documents this unregister/register timing behavior as
+an operating-system issue and recommends yielding the main run loop or adding
+a short delay before re-registration. The focused RED failed to compile five
+tests because the settlement and separate registration-retry contracts were
+absent. The minimal GREEN gives a stale enabled registration one main-run-loop
+turn plus a bounded two-second settlement interval, and separates registration
+retry from endpoint activation with at most three two-second-spaced attempts.
+It still retries only `endpointUnavailable`; it never retries approval,
+malformed responses, or identity mismatches, and adds no executable, argument,
+provider, stage, journal, or approval authority. The five focused GREEN tests
+passed 5/5; the complete isolated `MacPackagedHelperTransportTests` set passed
+27/27; the Task 3 Flutter set passed 53/53; the runtime sample completed a
+release Swift build; and `git diff --check` passed. The accepted `11ca63a`
+artifacts are diagnostic-only after this code change; fresh exact-current-head
+artifacts and both real target-host sequences remain required before checking
+Step 4 or Task 4 Step 3.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

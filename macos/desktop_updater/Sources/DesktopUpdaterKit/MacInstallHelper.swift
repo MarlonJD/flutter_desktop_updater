@@ -415,6 +415,22 @@ struct MacAppServiceUnregistrationWaiter {
     }
 }
 
+struct MacAppServiceRegistrationSettler {
+    func wait(interval: TimeInterval = 2) {
+        guard interval > 0 else { return }
+        // ServiceManagement can reject re-registration immediately after a
+        // successful asynchronous unregister. Give its state machine a main
+        // run-loop turn and a bounded settlement interval before retrying.
+        if Thread.isMainThread {
+            RunLoop.current.run(
+                until: Date(timeIntervalSinceNow: interval)
+            )
+        } else {
+            Thread.sleep(forTimeInterval: interval)
+        }
+    }
+}
+
 final class SystemMacAppServiceRegistrar: MacPrivilegedServiceRegistering {
     func status(
         plistName: String
@@ -473,6 +489,7 @@ final class SystemMacPrivilegedHelperInstaller:
     private let infoDictionary: [String: Any]
     private let authenticator: any MacOneShotEndpointAuthenticating
     private let registrar: any MacPrivilegedServiceRegistering
+    private let registrationSettleDelay: () -> Void
 
     init(
         applicationBundleURL: URL = Bundle.main.bundleURL,
@@ -480,7 +497,10 @@ final class SystemMacPrivilegedHelperInstaller:
         infoDictionary: [String: Any]? = Bundle.main.infoDictionary,
         authenticator: any MacOneShotEndpointAuthenticating,
         registrar: any MacPrivilegedServiceRegistering =
-            SystemMacAppServiceRegistrar()
+            SystemMacAppServiceRegistrar(),
+        registrationSettleDelay: @escaping () -> Void = {
+            MacAppServiceRegistrationSettler().wait()
+        }
     ) {
         self.applicationBundleURL =
             applicationBundleURL.standardizedFileURL
@@ -488,6 +508,7 @@ final class SystemMacPrivilegedHelperInstaller:
         self.infoDictionary = infoDictionary ?? [:]
         self.authenticator = authenticator
         self.registrar = registrar
+        self.registrationSettleDelay = registrationSettleDelay
     }
 
     func install() throws {
@@ -553,6 +574,7 @@ final class SystemMacPrivilegedHelperInstaller:
         switch try registrar.status(plistName: plistName) {
         case .enabled:
             try registrar.unregister(plistName: plistName)
+            registrationSettleDelay()
             try registrar.register(plistName: plistName)
         case .notRegistered, .notFound:
             try registrar.register(plistName: plistName)
@@ -812,6 +834,8 @@ final class PackagedMacInstallHelperTransport:
     private let privilegedExchange: any MacPrivilegedXPCExchanging
     private let privilegeRequired: (Data) throws -> Bool
     private let forcePrivilegedPersistentOperations: Bool
+    private let privilegedRegistrationAttempts: Int
+    private let privilegedRegistrationDelay: () -> Void
     private let privilegedEndpointActivationAttempts: Int
     private let privilegedEndpointActivationDelay: () -> Void
     private let lock = NSLock()
@@ -834,6 +858,10 @@ final class PackagedMacInstallHelperTransport:
         privilegeRequired: @escaping (Data) throws -> Bool =
             PackagedMacInstallHelperTransport.defaultPrivilegeRequired,
         forcePrivilegedPersistentOperations: Bool = false,
+        privilegedRegistrationAttempts: Int = 3,
+        privilegedRegistrationDelay: @escaping () -> Void = {
+            MacAppServiceRegistrationSettler().wait()
+        },
         privilegedEndpointActivationAttempts: Int = 30,
         privilegedEndpointActivationDelay: @escaping () -> Void = {
             Thread.sleep(forTimeInterval: 0.1)
@@ -853,6 +881,11 @@ final class PackagedMacInstallHelperTransport:
         self.privilegeRequired = privilegeRequired
         self.forcePrivilegedPersistentOperations =
             forcePrivilegedPersistentOperations
+        self.privilegedRegistrationAttempts = max(
+            1,
+            privilegedRegistrationAttempts
+        )
+        self.privilegedRegistrationDelay = privilegedRegistrationDelay
         self.privilegedEndpointActivationAttempts = max(
             1,
             privilegedEndpointActivationAttempts
@@ -1242,15 +1275,15 @@ final class PackagedMacInstallHelperTransport:
                 throw error
             }
         }
-        for attempt in 0 ..< privilegedEndpointActivationAttempts {
+        for attempt in 0 ..< privilegedRegistrationAttempts {
             do {
                 try privilegedInstaller.install()
                 break
             } catch let error as MacInstallClientError
                 where error == .endpointUnavailable
-                    && attempt + 1 < privilegedEndpointActivationAttempts
+                    && attempt + 1 < privilegedRegistrationAttempts
             {
-                privilegedEndpointActivationDelay()
+                privilegedRegistrationDelay()
             }
         }
         for attempt in 0 ..< privilegedEndpointActivationAttempts {

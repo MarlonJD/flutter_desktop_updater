@@ -66,12 +66,16 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             statuses: [.notRegistered, .enabled]
         )
         let authenticator = RecordingEndpointAuthenticator()
+        var registrationSettleCount = 0
         let installer = SystemMacPrivilegedHelperInstaller(
             applicationBundleURL: fixture.applicationURL,
             oneShotHelperURL: fixture.helperURL,
             infoDictionary: fixture.infoDictionary,
             authenticator: authenticator,
-            registrar: registrar
+            registrar: registrar,
+            registrationSettleDelay: {
+                registrationSettleCount += 1
+            }
         )
 
         try installer.install()
@@ -83,6 +87,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(registrar.registeredPlistNames, [fixture.plistName])
         XCTAssertEqual(authenticator.processIdentifiers.count, 1)
         XCTAssertNil(authenticator.processIdentifiers[0])
+        XCTAssertEqual(registrationSettleCount, 0)
     }
 
     func testSystemInstallerRegistersWhenInitialStatusIsNotFound() throws {
@@ -110,12 +115,16 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         let registrar = RecordingMacPrivilegedServiceRegistrar(
             statuses: [.enabled, .enabled]
         )
+        var registrationSettleCount = 0
         let installer = SystemMacPrivilegedHelperInstaller(
             applicationBundleURL: fixture.applicationURL,
             oneShotHelperURL: fixture.helperURL,
             infoDictionary: fixture.infoDictionary,
             authenticator: RecordingEndpointAuthenticator(),
-            registrar: registrar
+            registrar: registrar,
+            registrationSettleDelay: {
+                registrationSettleCount += 1
+            }
         )
 
         try installer.install()
@@ -126,6 +135,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             registrar.statusPlistNames,
             [fixture.plistName, fixture.plistName]
         )
+        XCTAssertEqual(registrationSettleCount, 1)
     }
 
     func testAppServiceUnregistrationWaitsForCompletion() throws {
@@ -529,6 +539,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
             privileged.endpointIdentity = expectedIdentity
         }
+        var registrationDelayCount = 0
         var activationDelayCount = 0
         let transport = PackagedMacInstallHelperTransport(
             helperURL: URL(fileURLWithPath: "/fixed/helper"),
@@ -542,6 +553,10 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             privilegedInstaller: installer,
             privilegedExchange: privileged,
             forcePrivilegedPersistentOperations: true,
+            privilegedRegistrationAttempts: 3,
+            privilegedRegistrationDelay: {
+                registrationDelayCount += 1
+            },
             privilegedEndpointActivationAttempts: 3,
             privilegedEndpointActivationDelay: {
                 activationDelayCount += 1
@@ -552,7 +567,40 @@ final class MacPackagedHelperTransportTests: XCTestCase {
 
         XCTAssertEqual(installer.installCount, 2)
         XCTAssertEqual(privileged.validationCount, 2)
-        XCTAssertEqual(activationDelayCount, 1)
+        XCTAssertEqual(registrationDelayCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
+    }
+
+    func testPrivilegedEndpointRefreshBoundsUnavailableRegistrationRetries() {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        let installer = RecordingPrivilegedHelperInstaller {
+            throw MacInstallClientError.endpointUnavailable
+        }
+        var registrationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedRegistrationAttempts: 3,
+            privilegedRegistrationDelay: {
+                registrationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(try transport.refreshPrivilegedEndpoint()) {
+            XCTAssertEqual(
+                $0 as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
+        XCTAssertEqual(installer.installCount, 3)
+        XCTAssertEqual(registrationDelayCount, 2)
     }
 
     func testPrivilegedEndpointRefreshDoesNotRetryApprovalRequirement() {
@@ -560,6 +608,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         let installer = RecordingPrivilegedHelperInstaller {
             throw MacInstallClientError.privilegedHelperApprovalRequired
         }
+        var registrationDelayCount = 0
         var activationDelayCount = 0
         let transport = PackagedMacInstallHelperTransport(
             helperURL: URL(fileURLWithPath: "/fixed/helper"),
@@ -571,6 +620,10 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             privilegedInstaller: installer,
             privilegedExchange: privileged,
             forcePrivilegedPersistentOperations: true,
+            privilegedRegistrationAttempts: 3,
+            privilegedRegistrationDelay: {
+                registrationDelayCount += 1
+            },
             privilegedEndpointActivationAttempts: 3,
             privilegedEndpointActivationDelay: {
                 activationDelayCount += 1
@@ -584,6 +637,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             )
         }
         XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(registrationDelayCount, 0)
         XCTAssertEqual(activationDelayCount, 0)
     }
 
