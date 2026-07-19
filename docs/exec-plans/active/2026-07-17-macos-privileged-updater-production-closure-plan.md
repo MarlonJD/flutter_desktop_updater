@@ -483,6 +483,20 @@ contracts were RED before implementation and GREEN in the 14-test combined
 set; targeted analysis/formatting, the Swift runtime build, 47 widened
 approval/UI/smoke tests, 20 `UpdateClientTests`, and `git diff --check` passed.
 
+Current-head continuation evidence (`blocked`, 2026-07-19): exact implementation
+commit `251a3c12b5dba50f59fff70bd1af7682a2861599` produced a fresh signed,
+notarized, and stapled v1 source app and PKG. Their accepted submissions were
+`bdbd9948-c92c-4f5e-8b82-6b71573ffec8` and
+`6f6c934d-bdb3-40ae-88fe-b8d0db71d332`. The execution environment then denied
+the external notarization submission required for the matching v2 artifact, so
+no exact-commit v2 submission ID or installable v2 acceptance artifact exists.
+The authenticated recovery operation released the retained transaction's exact
+target lock while preserving its provider journal, but the login Keychain later
+became unavailable and independent app/helper/PKG verification failed closed.
+No artifact was handed to the installer after that trust failure. Task 3 remains
+unaccepted; the target is still the known v2-app/v1-receipt recovery pair and no
+production claim is made from this candidate state.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
@@ -539,7 +553,7 @@ git push origin feat/native-sdk-platform-split
 - Consumes: fixed gated worker and durable manager PID/start identity.
 - Produces: proof that a fresh daemon does not race/clean a live installer and converges to `completed`.
 
-- [ ] **Step 1: Re-run the unit fault matrix cleanly**
+- [x] **Step 1: Re-run the unit fault matrix cleanly**
 
 ```sh
 rm -rf /private/tmp/desktop-updater-macos-helper-build
@@ -552,6 +566,14 @@ swift test --package-path macos/install_helper \
 ```
 
 Expected: all boundary, identity, cleanup, and idempotence tests PASS.
+
+Evidence (`verified locally`, 2026-07-19): after removing only the plan-owned
+scratch build directory, `MacVerifiedInstallerTransactionTests` passed 18/18
+and `MacInstallerWorkerTests` passed 4/4 with zero failures. The matrix covers
+exact manager PID/start-identity liveness, timeout retention, no relaunch after
+manager start, completed/rollback cleanup idempotence, source-stage authority,
+protected-copy immutability, root-only execution, and rejection of any package
+path other than the protected `installer.pkg`.
 
 - [ ] **Step 2: Write RED fixed-gate/harness contracts**
 
