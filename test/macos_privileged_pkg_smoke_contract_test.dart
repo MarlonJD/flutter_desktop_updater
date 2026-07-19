@@ -137,6 +137,23 @@ void main() {
     );
   });
 
+  test("launch daemon probes bind the kernel executable path", () {
+    for (final harness in [
+      "tool/macos_privileged_pkg_smoke.dart",
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ]) {
+      final source = File(harness).readAsStringSync();
+      expect(source, contains("proc_pidpath"), reason: harness);
+      expect(
+        source,
+        isNot(
+          contains(r'["-ww", "-p", "$pid", "-o", "command="]'),
+        ),
+        reason: harness,
+      );
+    }
+  });
+
   test("bootstrap refresh releases the fixed recovery gate", () {
     final source = File(
       "tool/macos_privileged_pkg_smoke.dart",

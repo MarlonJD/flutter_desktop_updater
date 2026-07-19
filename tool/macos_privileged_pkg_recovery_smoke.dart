@@ -49,6 +49,16 @@ typedef _ProcPIDInfoDart = int Function(
   Pointer<Void>,
   int,
 );
+typedef _ProcPIDPathNative = Int32 Function(
+  Int32,
+  Pointer<Void>,
+  Uint32,
+);
+typedef _ProcPIDPathDart = int Function(
+  int,
+  Pointer<Void>,
+  int,
+);
 typedef _MallocNative = Pointer<Void> Function(IntPtr);
 typedef _MallocDart = Pointer<Void> Function(int);
 typedef _FreeNative = Void Function(Pointer<Void>);
@@ -56,6 +66,8 @@ typedef _FreeDart = void Function(Pointer<Void>);
 
 final _ProcPIDInfoDart _procPIDInfo = DynamicLibrary.process()
     .lookupFunction<_ProcPIDInfoNative, _ProcPIDInfoDart>("proc_pidinfo");
+final _ProcPIDPathDart _procPIDPath = DynamicLibrary.process()
+    .lookupFunction<_ProcPIDPathNative, _ProcPIDPathDart>("proc_pidpath");
 final _MallocDart _malloc = DynamicLibrary.process()
     .lookupFunction<_MallocNative, _MallocDart>("malloc");
 final _FreeDart _free =
@@ -618,12 +630,7 @@ final class _RecoverySmoke {
     int pid,
     String expectedExecutable,
   ) async {
-    final result = await Process.run(
-      "/bin/ps",
-      ["-ww", "-p", "$pid", "-o", "command="],
-    );
-    if (result.exitCode != 0 ||
-        "${result.stdout}".trim() != expectedExecutable) {
+    if (_processExecutablePath(pid) != expectedExecutable) {
       return null;
     }
     final startIdentity = _processStartIdentity(pid);
@@ -1105,8 +1112,33 @@ String? _processStartIdentity(int pid) {
   }
 }
 
+String? _processExecutablePath(int pid) {
+  const bufferSize = 4096;
+  if (pid <= 0) return null;
+  final buffer = _malloc(bufferSize);
+  if (buffer.address == 0) return null;
+  try {
+    final read = _procPIDPath(pid, buffer, bufferSize);
+    if (read <= 0 || read > bufferSize) return null;
+    final bytes = buffer.cast<Uint8>().asTypedList(read);
+    final terminator = bytes.indexOf(0);
+    final value = utf8.decode(
+      terminator < 0 ? bytes : bytes.sublist(0, terminator),
+      allowMalformed: false,
+    );
+    return path.isAbsolute(value) ? value : null;
+  } on FormatException {
+    return null;
+  } finally {
+    _free(buffer);
+  }
+}
+
 String? macOSProcessStartIdentityForTesting(int pid) =>
     _processStartIdentity(pid);
+
+String? macOSProcessExecutablePathForTesting(int pid) =>
+    _processExecutablePath(pid);
 
 final class _SmokeServer {
   const _SmokeServer({

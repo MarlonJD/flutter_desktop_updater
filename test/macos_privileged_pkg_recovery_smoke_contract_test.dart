@@ -13,6 +13,14 @@ void main() {
     expect(first, matches(RegExp(r"^macos:[0-9]+:[0-9]+$")));
     expect(second, first);
     expect(recovery.macOSProcessStartIdentityForTesting(-1), isNull);
+
+    final executable = recovery.macOSProcessExecutablePathForTesting(pid);
+    expect(executable, isNotNull);
+    expect(
+      File(executable!).resolveSymbolicLinksSync(),
+      File(Platform.resolvedExecutable).resolveSymbolicLinksSync(),
+    );
+    expect(recovery.macOSProcessExecutablePathForTesting(-1), isNull);
   });
 
   test("recovery package uses only the fixed repository preinstall gate", () {

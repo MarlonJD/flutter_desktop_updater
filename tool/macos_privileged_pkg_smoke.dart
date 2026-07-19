@@ -1,4 +1,5 @@
 import "dart:convert";
+import "dart:ffi";
 import "dart:io";
 
 import "package:args/args.dart";
@@ -42,6 +43,28 @@ final _servicePattern = RegExp(
   r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
   r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$",
 );
+
+typedef _ProcPIDPathNative = Int32 Function(
+  Int32,
+  Pointer<Void>,
+  Uint32,
+);
+typedef _ProcPIDPathDart = int Function(
+  int,
+  Pointer<Void>,
+  int,
+);
+typedef _MallocNative = Pointer<Void> Function(IntPtr);
+typedef _MallocDart = Pointer<Void> Function(int);
+typedef _FreeNative = Void Function(Pointer<Void>);
+typedef _FreeDart = void Function(Pointer<Void>);
+
+final _ProcPIDPathDart _procPIDPath = DynamicLibrary.process()
+    .lookupFunction<_ProcPIDPathNative, _ProcPIDPathDart>("proc_pidpath");
+final _MallocDart _malloc = DynamicLibrary.process()
+    .lookupFunction<_MallocNative, _MallocDart>("malloc");
+final _FreeDart _free =
+    DynamicLibrary.process().lookupFunction<_FreeNative, _FreeDart>("free");
 
 Future<void> main(List<String> arguments) async {
   try {
@@ -1194,11 +1217,7 @@ final class _PrivilegedPkgSmoke {
       if (servicePID == null) {
         throw const _SmokeFailure("launch-daemon-not-active");
       }
-      final command = await Process.run(
-        "/bin/ps",
-        ["-ww", "-p", "$servicePID", "-o", "command="],
-      );
-      if (command.exitCode != 0 || "${command.stdout}".trim() != helper) {
+      if (_processExecutablePath(servicePID) != helper) {
         throw const _SmokeFailure("launch-daemon-executable-mismatch");
       }
       final code = await process.exitCode.timeout(
@@ -1390,6 +1409,31 @@ final class _PrivilegedPkgSmoke {
     }
   }
 }
+
+String? _processExecutablePath(int pid) {
+  const bufferSize = 4096;
+  if (pid <= 0) return null;
+  final buffer = _malloc(bufferSize);
+  if (buffer.address == 0) return null;
+  try {
+    final read = _procPIDPath(pid, buffer, bufferSize);
+    if (read <= 0 || read > bufferSize) return null;
+    final bytes = buffer.cast<Uint8>().asTypedList(read);
+    final terminator = bytes.indexOf(0);
+    final value = utf8.decode(
+      terminator < 0 ? bytes : bytes.sublist(0, terminator),
+      allowMalformed: false,
+    );
+    return path.isAbsolute(value) ? value : null;
+  } on FormatException {
+    return null;
+  } finally {
+    _free(buffer);
+  }
+}
+
+String? macOSProcessExecutablePathForTesting(int pid) =>
+    _processExecutablePath(pid);
 
 void _validateEvidenceDocument(
   Map<String, Object?> evidence, {

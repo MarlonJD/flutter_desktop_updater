@@ -755,6 +755,37 @@ focused GREEN passed 1/1 and the complete privileged-PKG smoke contract passed
 from the fix commit and the real approval/install rerun remain required before
 checking Step 4.
 
+Installed-helper identity continuation (`verified locally`, 2026-07-20): exact
+HEAD `13f835eb59bfd523c3b919eb41c8a5a02605fbf4` produced fresh signed,
+accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submission IDs were
+`60833e71-e708-46c2-9044-f0927511d767` and
+`aa90dde3-42e0-43c8-b0b0-71fca393bf3d`; the v2 app/PKG submission IDs were
+`26dba162-a4c8-4572-bd05-a7feddb4d4bd` and
+`0bd74cf7-4afd-4cd0-a661-73f21580afe4`. Their final PKG SHA-256 values were
+`d3fd3db100471b1762bde6ee7a4294ca19a9970b3370453718559da2d5247235`
+and
+`662c1143c4b46e6f3a9cc2af486863fb14eefd891c957972f9c32f21780de4c9`;
+both independent audits passed. The official bootstrap and v1 verification
+passed, and the user-controlled approval cycle produced the exact typed
+`PrivilegedHelperApprovalRequired` event, remediation action, unchanged
+`2.7.0+270` target and receipt, no installer, and one retained owned stage.
+The continuation then installed `2.7.1+271`, updated the matching receipt, and
+left the app, main executable, helper, and LaunchDaemon `root:wheel`, but the
+final probe exposed a P1 and wrote no elevation report: SMAppService launches
+the packaged daemon with a relative command display, so comparing the `ps`
+command field to the absolute installed helper path produced a false mismatch.
+The same assumption existed in the recovery harness. The focused RED failed
+1/1 on the missing kernel executable-path binding. The minimal GREEN replaces
+only those daemon argv comparisons with `proc_pidpath`, requires an absolute
+path exactly equal to the fixed installed helper, and retains recovery's exact
+PID plus microsecond start identity checks. It does not accept a relative path,
+weaken launchd service binding, or expose the executable in evidence. The
+focused static and real macOS FFI tests passed 1/1 each and the combined
+install/recovery contract set passed 17/17. Fresh artifacts from the fix commit
+and both real target-host sequences remain required before checking Step 4 or
+Task 4 Step 3.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
