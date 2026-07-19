@@ -786,6 +786,39 @@ install/recovery contract set passed 17/17. Fresh artifacts from the fix commit
 and both real target-host sequences remain required before checking Step 4 or
 Task 4 Step 3.
 
+Terminal health-probe continuation (`verified locally`, 2026-07-20): exact
+HEAD `b72420c360bbe3c0bb839cb139478f187b602176` produced fresh signed,
+accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submission IDs were
+`40f01551-374b-434d-b641-c3a4e8a58eaf` and
+`e2a9be3b-cbfb-4df6-a6f7-b1e4445fcca4`; the v2 app/PKG submission IDs were
+`8428e864-9886-4357-8822-49023115d55a` and
+`ed59bdf0-6fe7-40d3-a550-f07e5c28ebe1`. Their final PKG SHA-256 values were
+`f5f81814d585f04c114910a36dd8ffc673e6289b18e2e72d536dda8771cf3f74`
+and
+`6da6b0a19dd61cd8b79e62c9eec867851bb16b9697c4f5b36118ce04fca0fcd5`;
+both independent audits passed. Official bootstrap and v1 verification passed,
+and the repeated user-controlled approval cycle again produced exact typed,
+stage-retaining, no-installer evidence bound to that commit and v2 hash. The
+continuation installed `2.7.1+271` and passed the new kernel executable-path
+binding, then exposed a P1 at the next probe boundary: successful terminal
+provider cleanup had correctly removed the completed journal, so a post-install
+transaction query could not be used as a helper health check. No elevation
+report was written. Retaining or recreating that journal would violate cleanup
+authority. The two focused RED contracts failed on the missing fixed health
+operation. The minimal GREEN adds only an SPI-scoped, argument-free
+`--probe-helper` mode to the signed smoke host. It authenticates the embedded
+helper identity, sends the existing SMAppService XPC `health` operation without
+installing or registering a service, requires the authenticated endpoint
+identity to match, emits only `helperProbe/healthy`, and holds the connection
+for the fixed PID observation window. The install harness no longer queries a
+deleted transaction after completion. Both focused contracts passed 1/1, the
+focused transport test passed 1/1 and proved zero installer calls, the complete
+`MacPackagedHelperTransportTests` set passed 23/23, and the runtime sample
+completed a release Swift build. The accepted `b72420c` artifacts are
+diagnostic-only after this signed-host change; fresh artifacts and both real
+target-host sequences remain required before checking Step 4 or Task 4 Step 3.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

@@ -410,7 +410,6 @@ final class _PrivilegedPkgSmoke {
       throw const _SmokeFailure("privileged-install-timeout");
     }
     final installedServicePID = await _probeInstalledLaunchDaemon(
-      transactionID: manager.transactionID,
       expectedVersion: _v2Version,
       expectedBuild: _v2Build,
     );
@@ -1173,13 +1172,9 @@ final class _PrivilegedPkgSmoke {
   }
 
   Future<int> _probeInstalledLaunchDaemon({
-    required String transactionID,
     required String expectedVersion,
     required String expectedBuild,
   }) async {
-    if (!_uuidPattern.hasMatch(transactionID)) {
-      throw const _SmokeFailure("installed-helper-probe-transaction-invalid");
-    }
     final metadata = await _readBundleMetadata(Directory(_targetPath));
     if (metadata.bundleIdentifier != _bundleIdentifier ||
         metadata.version != expectedVersion ||
@@ -1200,8 +1195,7 @@ final class _PrivilegedPkgSmoke {
     );
     final process = await Process.start(host, [
       "--smoke",
-      "--query-transaction",
-      transactionID,
+      "--probe-helper",
       "--hold-helper-active",
     ]);
     final stdoutFuture = utf8.decoder.bind(process.stdout).join();
@@ -1227,7 +1221,8 @@ final class _PrivilegedPkgSmoke {
       final errorOutput = await stderrFuture;
       if (code != 0 ||
           errorOutput.trim().isNotEmpty ||
-          !output.contains('"event":"query"')) {
+          !output.contains('"event":"helperProbe"') ||
+          !output.contains('"status":"healthy"')) {
         throw const _SmokeFailure("installed-helper-probe-failed");
       }
       return servicePID;

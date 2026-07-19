@@ -179,6 +179,8 @@ public enum MacInstallClientError: Error, Equatable {
 protocol MacInstallHelperTransport: AnyObject {
     func validateEndpoint() throws
 
+    func validatePrivilegedEndpoint() throws
+
     func prepareInstall(
         request: Data,
         transactionID: String
@@ -205,6 +207,10 @@ protocol MacInstallHelperTransport: AnyObject {
 
 extension MacInstallHelperTransport {
     func validateEndpoint() throws {}
+
+    func validatePrivilegedEndpoint() throws {
+        throw MacInstallClientError.endpointUnavailable
+    }
 }
 
 protocol MacOneShotClientSession: AnyObject {
@@ -858,6 +864,10 @@ final class PackagedMacInstallHelperTransport:
             executableURL: helperURL,
             processIdentifier: nil
         )
+    }
+
+    func validatePrivilegedEndpoint() throws {
+        _ = try authenticatedPrivilegedEndpoint(allowInstallation: false)
     }
 
     func prepareInstall(
@@ -1581,6 +1591,11 @@ public struct MacInstallHelper {
         }
         evidenceBuilder = SystemMacInstallRequestEvidenceBuilder()
         transport = PackagedMacInstallHelperTransport()
+    }
+
+    @_spi(DesktopUpdaterSmoke)
+    public func validatePrivilegedEndpointForSmoke() throws {
+        try transport.validatePrivilegedEndpoint()
     }
 
     @_spi(DesktopUpdaterSmoke)

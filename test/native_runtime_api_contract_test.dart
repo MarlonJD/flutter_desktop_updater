@@ -136,16 +136,28 @@ void main() {
     final source = readRequiredFile(
       "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
     );
+    final helper = readRequiredFile(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    );
 
     expect(source, contains('arguments.has("--hold-helper-active")'));
-    expect(source, contains("let helper = MacInstallHelper()"));
+    expect(source, contains('arguments.has("--probe-helper")'));
+    expect(source, contains("MacInstallHelper.smAppServiceSmokeHost()"));
+    expect(source, contains("validatePrivilegedEndpointForSmoke()"));
+    expect(source, contains('"event": "helperProbe"'));
+    expect(source, contains('"status": "healthy"'));
     expect(
       source,
       contains("try await Task.sleep(nanoseconds: 15_000_000_000)"),
     );
     expect(
       source,
-      contains("Helper hold is available only for transaction queries."),
+      contains("Helper hold is available only for helper probes."),
+    );
+    expect(helper, contains("validatePrivilegedEndpointForSmoke()"));
+    expect(
+      helper,
+      contains("authenticatedPrivilegedEndpoint(allowInstallation: false)"),
     );
   });
 

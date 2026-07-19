@@ -1,10 +1,22 @@
-import DesktopUpdaterKit
+@_spi(DesktopUpdaterSmoke) import DesktopUpdaterKit
 import Foundation
 
 @main
 struct MacOSRuntimeSmoke {
     static func main() async throws {
         let arguments = try Arguments(CommandLine.arguments)
+        if arguments.has("--probe-helper") {
+            let helper = MacInstallHelper.smAppServiceSmokeHost()
+            try helper.validatePrivilegedEndpointForSmoke()
+            try emit([
+                "event": "helperProbe",
+                "status": "healthy",
+            ])
+            if arguments.has("--hold-helper-active") {
+                try await Task.sleep(nanoseconds: 15_000_000_000)
+            }
+            return
+        }
         if let transactionID = arguments.optionalValue(
             "--recover-transaction"
         ) {
@@ -67,9 +79,6 @@ struct MacOSRuntimeSmoke {
                     "code": diagnostic.code.rawValue,
                     "remediationActions": diagnostic.remediationActions.map(\.rawValue),
                 ])
-            }
-            if arguments.has("--hold-helper-active") {
-                try await Task.sleep(nanoseconds: 15_000_000_000)
             }
             return
         }
@@ -187,20 +196,24 @@ private struct Arguments {
 
     init(_ values: [String]) throws {
         self.values = values
-        guard optionalValue("--recover-transaction") == nil ||
-                optionalValue("--query-transaction") == nil
-        else {
+        let operationCount = [
+            optionalValue("--recover-transaction") != nil,
+            optionalValue("--query-transaction") != nil,
+            has("--probe-helper"),
+        ].filter { $0 }.count
+        guard operationCount <= 1 else {
             throw SmokeFailure("Select exactly one transaction operation.")
         }
         if has("--hold-helper-active") &&
-            optionalValue("--query-transaction") == nil
+            !has("--probe-helper")
         {
             throw SmokeFailure(
-                "Helper hold is available only for transaction queries."
+                "Helper hold is available only for helper probes."
             )
         }
         if optionalValue("--recover-transaction") != nil ||
-            optionalValue("--query-transaction") != nil
+            optionalValue("--query-transaction") != nil ||
+            has("--probe-helper")
         {
             guard isSmoke else {
                 throw SmokeFailure("Transaction inspection is available only in smoke mode.")

@@ -462,6 +462,31 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(status.resultCode, .accepted)
     }
 
+    func testPrivilegedEndpointProbeAuthenticatesWithoutInstallation() throws {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let authenticator = RecordingEndpointAuthenticator()
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: authenticator,
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true
+        )
+
+        try transport.validatePrivilegedEndpoint()
+
+        XCTAssertEqual(authenticator.processIdentifiers, [nil])
+        XCTAssertEqual(privileged.validationCount, 1)
+        XCTAssertEqual(privileged.operations, [])
+        XCTAssertEqual(installer.installCount, 0)
+    }
+
     func testProtectedEndpointActivationRetriesAfterRegistration()
         throws
     {

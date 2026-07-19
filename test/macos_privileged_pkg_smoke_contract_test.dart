@@ -118,6 +118,7 @@ void main() {
       "/private/var/tmp/net.monolib.updater.pkg-recovery.release",
       "root:wheel:600",
       "_probeInstalledLaunchDaemon",
+      "--probe-helper",
       "--hold-helper-active",
     ]) {
       expect(source, contains(value), reason: value);
@@ -127,6 +128,7 @@ void main() {
     expect(source, contains("verifyStagedUpdateProvenance("));
     expect(source, contains("deleteOwnedStagingDirectory("));
     expect(source, contains("Process.start(host,"));
+    expect(source, contains('output.contains(\'"event":"helperProbe"\')'));
     expect(
       source,
       isNot(contains('Process.run("/usr/sbin/installer"')),
