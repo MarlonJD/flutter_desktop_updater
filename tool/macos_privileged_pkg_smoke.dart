@@ -83,6 +83,7 @@ final class _SmokeRequest {
   const _SmokeRequest({
     required this.mode,
     required this.v1App,
+    required this.recoveryApp,
     required this.v1Pkg,
     required this.v2Pkg,
     required this.gitCommit,
@@ -97,6 +98,7 @@ final class _SmokeRequest {
     final parser = ArgParser()
       ..addOption("mode", mandatory: true)
       ..addOption("v1-app", mandatory: true)
+      ..addOption("recovery-app", mandatory: true)
       ..addOption("v1-pkg", mandatory: true)
       ..addOption("v2-pkg", mandatory: true)
       ..addOption("git-commit", mandatory: true)
@@ -119,6 +121,7 @@ final class _SmokeRequest {
     return _SmokeRequest(
       mode: mode,
       v1App: Directory(values.option("v1-app")!),
+      recoveryApp: Directory(values.option("recovery-app")!),
       v1Pkg: File(values.option("v1-pkg")!),
       v2Pkg: File(values.option("v2-pkg")!),
       gitCommit: commit,
@@ -132,6 +135,7 @@ final class _SmokeRequest {
 
   final String mode;
   final Directory v1App;
+  final Directory recoveryApp;
   final File v1Pkg;
   final File v2Pkg;
   final String gitCommit;
@@ -150,9 +154,10 @@ final class _PrivilegedPkgSmoke {
   Future<void> bootstrapV1() async {
     await _validateInputs(requireV2Hash: true);
     await _verifySourceV1(request.v1App);
+    await _verifySourceRecoveryApp(request.recoveryApp);
     await _verifyPackage(request.v1Pkg);
     await _verifyPackage(request.v2Pkg);
-    await _inspectTarget(
+    final initialTarget = await _inspectTarget(
       allowedVersions: const {(_v1Version, _v1Build), (_v2Version, _v2Build)},
       allowedReceiptStates: const {
         (_v1Version, _v1Version),
@@ -186,6 +191,21 @@ final class _PrivilegedPkgSmoke {
           ),
         );
         return;
+      }
+
+      if (initialTarget.version == _v2Version &&
+          initialTarget.receiptVersion == _v1Version) {
+        if (!await _bundlesShareCodeIdentity(
+          Directory(_targetPath),
+          v2Payload.app,
+        )) {
+          throw const _SmokeFailure("receipt-drift-target-mismatch");
+        }
+        await _recoverBlockingBootstrapTransaction(
+          expectedState: "manualActionRequired",
+          expectedResultCode: "recoveryRequired",
+          required: true,
+        );
       }
 
       if (!await _bundlesShareCodeIdentity(
@@ -237,6 +257,11 @@ final class _PrivilegedPkgSmoke {
         requireLoadedService: true,
       );
       await _waitForOwnedStageEmpty();
+      await _recoverBlockingBootstrapTransaction(
+        expectedState: "completed",
+        expectedResultCode: "succeeded",
+        required: false,
+      );
       stdout.writeln(
         jsonEncode({"status": "verified locally", "baseline": "2.7.0+270"}),
       );
@@ -405,6 +430,10 @@ final class _PrivilegedPkgSmoke {
 
   Future<void> _validateInputs({required bool requireV2Hash}) async {
     await _requireNode(request.v1App.path, FileSystemEntityType.directory);
+    await _requireNode(
+      request.recoveryApp.path,
+      FileSystemEntityType.directory,
+    );
     await _requireNode(request.v1Pkg.path, FileSystemEntityType.file);
     await _requireNode(request.v2Pkg.path, FileSystemEntityType.file);
     await _requireSafeDirectory(request.evidenceDirectory, create: true);
@@ -421,6 +450,17 @@ final class _PrivilegedPkgSmoke {
         metadata.version != _v1Version ||
         metadata.build != _v1Build) {
       throw const _SmokeFailure("v1-source-identity-mismatch");
+    }
+    await _verifyOwnerMarker(app);
+    await _verifySignedBundle(app, metadata, requireOwnership: false);
+  }
+
+  Future<void> _verifySourceRecoveryApp(Directory app) async {
+    final metadata = await _readBundleMetadata(app);
+    if (metadata.bundleIdentifier != _bundleIdentifier ||
+        metadata.version != _v2Version ||
+        metadata.build != _v2Build) {
+      throw const _SmokeFailure("recovery-app-identity-mismatch");
     }
     await _verifyOwnerMarker(app);
     await _verifySignedBundle(app, metadata, requireOwnership: false);
@@ -569,8 +609,98 @@ final class _PrivilegedPkgSmoke {
     return _InstalledTarget(
       version: metadata.version,
       build: metadata.build,
+      receiptVersion: receipt,
       servicePID: servicePID,
     );
+  }
+
+  Future<void> _recoverBlockingBootstrapTransaction({
+    required String expectedState,
+    required String expectedResultCode,
+    required bool required,
+  }) async {
+    final applications = Directory(path.dirname(_targetPath));
+    final targetName = path.basename(_targetPath);
+    final journalPattern = RegExp(
+      "^\\.${RegExp.escape(targetName)}\\.desktop-updater-"
+      "([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+      r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\.provider\.json$",
+    );
+    final transactionIDs = <String>[];
+    await for (final entry in applications.list(followLinks: false)) {
+      final match = journalPattern.firstMatch(path.basename(entry.path));
+      if (match == null) continue;
+      if (await FileSystemEntity.type(entry.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        throw const _SmokeFailure("bootstrap-recovery-journal-invalid");
+      }
+      transactionIDs.add(match.group(1)!);
+    }
+    if (transactionIDs.isEmpty && !required) return;
+    if (transactionIDs.length != 1) {
+      throw const _SmokeFailure("bootstrap-recovery-journal-ambiguous");
+    }
+    final metadata = await _readBundleMetadata(request.recoveryApp);
+    final host = path.join(
+      request.recoveryApp.path,
+      "Contents",
+      "MacOS",
+      metadata.executable,
+    );
+    final result = await Process.run(host, [
+      "--smoke",
+      "--recover-transaction",
+      transactionIDs.single,
+    ]);
+    final runtime = _RuntimeResult(
+      exitCode: result.exitCode,
+      output: "${result.stdout}\n${result.stderr}",
+    );
+    await _pauseIfApproval(runtime);
+    if (runtime.exitCode != 0) {
+      throw const _SmokeFailure("bootstrap-recovery-call-failed");
+    }
+    Map<String, Object?>? event;
+    for (final line in runtime.output.split("\n")) {
+      try {
+        final value = jsonDecode(line.trim());
+        if (value is Map<String, Object?> &&
+            value.keys.toSet().difference(
+              const {"event", "state", "resultCode"},
+            ).isEmpty &&
+            value.keys.length == 3 &&
+            value["event"] == "recovery") {
+          event = value;
+        }
+      } on FormatException {
+        // Ignore unrelated Swift runtime output.
+      }
+    }
+    if (event?["state"] != expectedState ||
+        event?["resultCode"] != expectedResultCode) {
+      throw const _SmokeFailure("bootstrap-recovery-outcome-invalid");
+    }
+    final lock = File(
+      path.join(
+        applications.path,
+        ".$targetName.desktop-updater-lock",
+      ),
+    );
+    if (await FileSystemEntity.type(lock.path, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw const _SmokeFailure("bootstrap-recovery-lock-retained");
+    }
+    if (expectedState == "completed") {
+      final remaining = await applications
+          .list(followLinks: false)
+          .where(
+            (entry) => journalPattern.hasMatch(path.basename(entry.path)),
+          )
+          .toList();
+      if (remaining.isNotEmpty) {
+        throw const _SmokeFailure("bootstrap-recovery-journal-retained");
+      }
+    }
   }
 
   Future<_BundleMetadata> _readBundleMetadata(Directory app) async {
@@ -1236,11 +1366,13 @@ final class _InstalledTarget {
   const _InstalledTarget({
     required this.version,
     required this.build,
+    required this.receiptVersion,
     required this.servicePID,
   });
 
   final String version;
   final String build;
+  final String receiptVersion;
   final int? servicePID;
 }
 

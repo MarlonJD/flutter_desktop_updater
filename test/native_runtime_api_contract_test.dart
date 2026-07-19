@@ -85,7 +85,7 @@ void main() {
     expect(
       sample,
       contains(
-        '"remediationActions": diagnostic.remediationActions.map(\\.rawValue)',
+        r'"remediationActions": diagnostic.remediationActions.map(\.rawValue)',
       ),
     );
     expect(sample, contains("JSONSerialization.data"));
@@ -97,11 +97,19 @@ void main() {
       sample,
       contains('arguments.optionalInt("--current-build-number") ?? 270'),
     );
+    expect(sample, contains('optionalValue("--recover-transaction")'));
+    expect(sample, contains("MacInstallHelper().recoverPendingInstall("));
+    expect(sample, contains('"event": "recovery"'));
+    expect(sample, contains('"state": recoveryStateName(status.state)'));
+    expect(sample, contains('"resultCode": recoveryResultName('));
+    expect(sample, isNot(contains('"transactionID": transactionID')));
     expect(
       sample,
-      isNot(contains(
-        "macOS helper handoff failed: privilegedHelperApprovalRequired",
-      )),
+      isNot(
+        contains(
+          "macOS helper handoff failed: privilegedHelperApprovalRequired",
+        ),
+      ),
     );
     expect(sample, isNot(contains("bundlePath:")));
     expect(sample, isNot(contains('value("--bundle-path")')));
@@ -326,8 +334,10 @@ void main() {
       "linux/native/src/helper/linux_reservation.cc",
     );
 
-    expect(macos,
-        contains(r".desktop-updater-journal-\(request.transactionID).json"));
+    expect(
+      macos,
+      contains(r".desktop-updater-journal-\(request.transactionID).json"),
+    );
     expect(macos, contains("O_CREAT | O_EXCL | O_NOFOLLOW"));
     expect(windows, contains("CREATE_NEW"));
     expect(windows, contains(".desktop-updater-"));

@@ -127,4 +127,28 @@ void main() {
     expect(receiptOverride, greaterThan(bootstrap));
     expect(receiptOverride, lessThan(verify));
   });
+
+  test("bootstrap recovery uses typed signed-app XPC without exposing identity",
+      () {
+    final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
+    if (!smokeFile.existsSync()) return;
+    final source = smokeFile.readAsStringSync();
+
+    expect(source, contains('addOption("recovery-app", mandatory: true)'));
+    expect(source, contains("_recoverBlockingBootstrapTransaction("));
+    expect(source, contains('"--recover-transaction"'));
+    expect(source, contains(r"\.provider\.json$"));
+    expect(source, contains('value["event"] == "recovery"'));
+    expect(source, contains('"manualActionRequired"'));
+    expect(source, contains('"completed"'));
+    expect(source, isNot(contains('"transactionID": transactionID')));
+
+    final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
+    final verify = source.indexOf("Future<void> verifyV1() async");
+    final recovery = source.indexOf(
+      "await _recoverBlockingBootstrapTransaction(",
+    );
+    expect(recovery, greaterThan(bootstrap));
+    expect(recovery, lessThan(verify));
+  });
 }

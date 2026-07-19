@@ -468,6 +468,21 @@ exception does not bypass path, bundle, marker, Team ID, signature, Gatekeeper,
 or staple checks and appears at exactly one call site before the exact v1/v2
 payload identity comparisons.
 
+Second follow-up evidence (`candidate-only`, 2026-07-19): the approved
+baseline-only install reached the runtime handoff but the exact target lock
+from the earlier post-installer `manualActionRequired` transaction correctly
+rejected a concurrent reservation. No provider journal or lock was deleted
+out-of-band. A private signed-smoke-app adapter now invokes only the existing
+authenticated XPC `recoverPendingInstall` operation for the single exact
+provider-journal UUID discovered under `/Applications`; its typed output
+contains only event/state/result code and never the transaction ID. Bootstrap
+requires the first recovery to report `manualActionRequired/recoveryRequired`
+and release the target lock, then after the verified v1 target requires the
+same journal to report `completed/succeeded` and disappear. The two focused
+contracts were RED before implementation and GREEN in the 14-test combined
+set; targeted analysis/formatting, the Swift runtime build, 47 widened
+approval/UI/smoke tests, 20 `UpdateClientTests`, and `git diff --check` passed.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

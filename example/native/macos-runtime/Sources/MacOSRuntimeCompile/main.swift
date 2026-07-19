@@ -5,6 +5,38 @@ import Foundation
 struct MacOSRuntimeSmoke {
     static func main() async throws {
         let arguments = try Arguments(CommandLine.arguments)
+        if let transactionID = arguments.optionalValue(
+            "--recover-transaction"
+        ) {
+            do {
+                let status = try MacInstallHelper().recoverPendingInstall(
+                    transactionID
+                )
+                try emit([
+                    "event": "recovery",
+                    "state": recoveryStateName(status.state),
+                    "resultCode": recoveryResultName(
+                        status.resultCode
+                    ),
+                ])
+            } catch let error as MacInstallClientError
+                where error == .privilegedHelperApprovalRequired
+            {
+                let diagnostic = RuntimeDiagnostic(
+                    code: .privilegedHelperApprovalRequired,
+                    message: "Administrator approval is required before the privileged macOS updater helper can run.",
+                    remediationActions: [
+                        .openMacOSBackgroundItemsSettings
+                    ]
+                )
+                try emit([
+                    "event": "installFailed",
+                    "code": diagnostic.code.rawValue,
+                    "remediationActions": diagnostic.remediationActions.map(\.rawValue),
+                ])
+            }
+            return
+        }
         guard arguments.isSmoke else {
             let configuration = try RuntimeConfiguration(
                 appArchiveUrl: URL(
@@ -118,6 +150,12 @@ private struct Arguments {
 
     init(_ values: [String]) throws {
         self.values = values
+        if optionalValue("--recover-transaction") != nil {
+            guard isSmoke else {
+                throw SmokeFailure("Recovery is available only in smoke mode.")
+            }
+            return
+        }
         if isSmoke {
             for option in [
                 "--app-archive-url",
@@ -157,6 +195,36 @@ private struct Arguments {
 
     func optionalInt(_ option: String) -> Int64? {
         optionalValue(option).flatMap(Int64.init)
+    }
+}
+
+private func recoveryStateName(_ state: InstallTransactionState) -> String {
+    switch state {
+    case .unknown: "unknown"
+    case .prepared: "prepared"
+    case .commitAccepted: "commitAccepted"
+    case .completed: "completed"
+    case .cancelled: "cancelled"
+    case .expired: "expired"
+    case .rolledBack: "rolledBack"
+    case .manualActionRequired: "manualActionRequired"
+    @unknown default: "unknown"
+    }
+}
+
+private func recoveryResultName(
+    _ result: InstallTransactionResultCode
+) -> String {
+    switch result {
+    case .none: "none"
+    case .accepted: "accepted"
+    case .succeeded: "succeeded"
+    case .rejected: "rejected"
+    case .endpointUnavailable: "endpointUnavailable"
+    case .authenticationFailed: "authenticationFailed"
+    case .invalidResponse: "invalidResponse"
+    case .recoveryRequired: "recoveryRequired"
+    @unknown default: "invalidResponse"
     }
 }
 
