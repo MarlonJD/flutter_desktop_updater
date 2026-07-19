@@ -557,8 +557,28 @@ change, and continues fail-closed to reservation expiry when identity cannot be
 inspected. `MacOneShotWireTests` passed 6/6 and the complete install-helper
 package executed 137 tests with zero failures and one intentional crash-worker
 skip. Real target-host GREEN remains `not run` until fresh signed, notarized,
-and stapled v1/v2
-artifacts contain this helper fix, so Task 3 remains open.
+and stapled v1/v2 artifacts contain this helper fix, so Task 3 remains open.
+
+Baseline-component continuation (`verified locally`, 2026-07-19): independent
+expansion of the previous v1 final PKG confirmed that it still emitted normal
+`bundle-version` authority. This matches the real target result in which Apple
+Installer downgraded the receipt to `2.7.0` but left the newer v2 application
+in place, and invalidated the earlier candidate statement that the baseline
+package disabled version checks. A focused RED failed because the packager had
+no baseline-only authority. An adversarial follow-up RED also rejected the
+unbound output bundle basename. The minimal GREEN adds a default-off flag
+confined to the exact smoke package, receipt, app name and `.app` basename,
+`2.7.0+270`, and `/Applications`; rejects any combination with the
+recovery-script flag; requires the
+`pkgbuild --analyze` result to contain exactly the fixed app bundle; and sets
+only `BundleIsVersionChecked=false`, `BundleIsRelocatable=false`, strict
+identifier, and atomic `upgrade` replacement before
+`pkgbuild --component-plist`. The
+baseline path remains scripts-free and normal/recovery package behavior is
+unchanged. The focused contract passed 6/6; the widened install, recovery,
+runtime, and production packager set passed 39/39; focused format changed no
+files; and shell syntax plus `git diff --check` passed. Fresh
+signed/notarized target-host proof remains required.
 
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
@@ -934,9 +954,17 @@ reproducing the caller-exit P1 described in Task 3. Its separate focused
 RED/GREEN fix binds the monitor to the caller's exact PID/start identity; the
 complete helper suite executed 137 tests with zero failures and one intentional
 skip. The finding is resolved in code but not yet accepted at the production
-boundary; fresh exact-commit artifacts and
-the real v1-to-v2 and installer-active recovery sequences are still required.
+boundary; fresh exact-commit artifacts and the real v1-to-v2 and
+installer-active recovery sequences are still required.
 The literal verdict therefore remains `candidate-only / NO-GO`.
+
+The same continuation validated a second P1 in the controlled bootstrap
+boundary: the previous v1 PKG had not actually disabled Installer bundle
+version checks, so it could change the receipt without replacing a newer app.
+The separate focused RED/GREEN baseline-component fix is exact-identity-bound,
+scripts-free, and excluded from recovery and normal publication paths. It is
+`verified locally` in contract/syntax coverage but still awaits fresh artifact
+and real target-host acceptance.
 
 - [x] **Step 4: Issue verdict and close**
 

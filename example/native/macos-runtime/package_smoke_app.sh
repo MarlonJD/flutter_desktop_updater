@@ -25,6 +25,7 @@ notary_profile=${DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE:-}
 pkg_output=${DESKTOP_UPDATER_RUNTIME_PKG_OUTPUT:-}
 pkg_installer_identity=${DESKTOP_UPDATER_RUNTIME_PKG_INSTALLER_IDENTITY:-}
 pkg_receipt_id=${DESKTOP_UPDATER_RUNTIME_PKG_RECEIPT_ID:-$package_id.pkg}
+pkg_baseline_smoke=${DESKTOP_UPDATER_RUNTIME_PKG_BASELINE_SMOKE:-0}
 pkg_recovery_smoke=${DESKTOP_UPDATER_RUNTIME_PKG_RECOVERY_SMOKE:-0}
 archs=${DESKTOP_UPDATER_RUNTIME_ARCHS:-$(/usr/bin/uname -m)}
 
@@ -49,6 +50,13 @@ case "$pkg_recovery_smoke" in
   0|1) ;;
   *) fail "PKG recovery smoke flag must be 0 or 1" ;;
 esac
+case "$pkg_baseline_smoke" in
+  0|1) ;;
+  *) fail "PKG baseline smoke flag must be 0 or 1" ;;
+esac
+if [ "$pkg_baseline_smoke" = 1 ] && [ "$pkg_recovery_smoke" = 1 ]; then
+  fail "baseline and recovery smoke flags are exclusive"
+fi
 if [ -n "$team_id" ]; then
   case "$team_id" in
     *[!A-Z0-9]*) fail "team identifier must contain only uppercase letters and digits" ;;
@@ -74,10 +82,29 @@ if [ "$pkg_recovery_smoke" = 1 ]; then
     fail "PKG recovery smoke requires the fixed smoke receipt identifier"
   [ "$app_name" = 'Desktop Updater SMAppService PKG E2E' ] || \
     fail "PKG recovery smoke requires the fixed smoke application name"
+  [ "$(/usr/bin/basename "$app_bundle")" = \
+      'Desktop Updater SMAppService PKG E2E.app' ] || \
+    fail "PKG recovery smoke requires the fixed smoke application bundle"
   [ "$app_version:$app_build" = 2.7.1:271 ] || \
     fail "PKG recovery smoke requires the fixed v2 version and build"
   [ "$allowed_install_root" = /Applications ] || \
     fail "PKG recovery smoke requires the fixed application install root"
+fi
+if [ "$pkg_baseline_smoke" = 1 ]; then
+  [ -n "$pkg_output" ] || fail "PKG baseline smoke requires PKG output"
+  [ "$package_id" = net.monolib.updater ] || \
+    fail "PKG baseline smoke requires the fixed smoke package identifier"
+  [ "$pkg_receipt_id" = net.monolib.updater.pkg ] || \
+    fail "PKG baseline smoke requires the fixed smoke receipt identifier"
+  [ "$app_name" = 'Desktop Updater SMAppService PKG E2E' ] || \
+    fail "PKG baseline smoke requires the fixed smoke application name"
+  [ "$(/usr/bin/basename "$app_bundle")" = \
+      'Desktop Updater SMAppService PKG E2E.app' ] || \
+    fail "PKG baseline smoke requires the fixed smoke application bundle"
+  [ "$app_version:$app_build" = 2.7.0:270 ] || \
+    fail "PKG baseline smoke requires the fixed v1 version and build"
+  [ "$allowed_install_root" = /Applications ] || \
+    fail "PKG baseline smoke requires the fixed application install root"
 fi
 
 [ -d "$repo_root/macos/install_helper" ] || fail "repository install helper package is unavailable"
@@ -225,7 +252,41 @@ if [ -n "$pkg_output" ]; then
   /bin/rm -f "$component_pkg"
   /bin/mkdir -p "$pkg_root" "$(/usr/bin/dirname "$pkg_output")"
   /usr/bin/ditto "$app_bundle" "$pkg_root/$(/usr/bin/basename "$app_bundle")"
-  if [ "$pkg_recovery_smoke" = 1 ]; then
+  if [ "$pkg_baseline_smoke" = 1 ]; then
+    component_plist="$work/baseline-components.plist"
+    /bin/rm -f "$component_plist"
+    /usr/bin/pkgbuild --analyze --root "$pkg_root" "$component_plist"
+    /usr/bin/python3 - \
+      "$component_plist" "$(/usr/bin/basename "$app_bundle")" <<'PY'
+import plistlib
+import sys
+
+path = sys.argv[1]
+expected_bundle = sys.argv[2]
+with open(path, "rb") as source:
+    components = plistlib.load(source)
+if not isinstance(components, list) or len(components) != 1:
+    raise SystemExit("baseline component discovery must find one bundle")
+component = components[0]
+if not isinstance(component, dict):
+    raise SystemExit("baseline component entry must be a dictionary")
+if component.get("RootRelativeBundlePath") != expected_bundle:
+    raise SystemExit("baseline component path does not match the fixed app")
+component["BundleIsVersionChecked"] = False
+component["BundleIsRelocatable"] = False
+component["BundleHasStrictIdentifier"] = True
+component["BundleOverwriteAction"] = "upgrade"
+with open(path, "wb") as output:
+    plistlib.dump(components, output, fmt=plistlib.FMT_XML, sort_keys=True)
+PY
+    /usr/bin/pkgbuild \
+      --root "$pkg_root" \
+      --component-plist "$component_plist" \
+      --install-location /Applications \
+      --identifier "$pkg_receipt_id" \
+      --version "$app_version" \
+      "$component_pkg"
+  elif [ "$pkg_recovery_smoke" = 1 ]; then
     recovery_scripts="$script_dir/pkg-scripts/recovery"
     [ -d "$recovery_scripts" ] && [ ! -L "$recovery_scripts" ] || \
       fail "fixed PKG recovery scripts directory is unavailable"

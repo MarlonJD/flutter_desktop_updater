@@ -128,6 +128,38 @@ void main() {
     expect(receiptOverride, lessThan(verify));
   });
 
+  test("baseline package disables version checks only for the fixed v1 smoke",
+      () {
+    final source = File(
+      "example/native/macos-runtime/package_smoke_app.sh",
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains("DESKTOP_UPDATER_RUNTIME_PKG_BASELINE_SMOKE"),
+    );
+    for (final boundary in [
+      "net.monolib.updater",
+      "net.monolib.updater.pkg",
+      "Desktop Updater SMAppService PKG E2E",
+      "2.7.0:270",
+      "/Applications",
+    ]) {
+      expect(source, contains(boundary), reason: boundary);
+    }
+    expect(source, contains("baseline and recovery smoke flags are exclusive"));
+    expect(source, contains("pkgbuild --analyze"));
+    expect(source, contains("BundleIsVersionChecked"));
+    expect(source, contains("BundleIsRelocatable"));
+    expect(source, contains("BundleHasStrictIdentifier"));
+    expect(source, contains("BundleOverwriteAction"));
+    expect(source, contains("--component-plist"));
+    expect(
+      RegExp("fixed smoke application bundle").allMatches(source),
+      hasLength(2),
+    );
+  });
+
   test("bootstrap recovery uses typed signed-app XPC without exposing identity",
       () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
