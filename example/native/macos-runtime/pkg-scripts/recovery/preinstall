@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -eu
+umask 077
+
+ready=/private/var/tmp/net.monolib.updater.pkg-recovery.ready
+release=/private/var/tmp/net.monolib.updater.pkg-recovery.release
+
+cleanup() {
+  /bin/rm -f "$ready" "$release"
+}
+
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+/bin/rm -f "$ready" "$release"
+set -C
+/usr/bin/printf '%s\n' "$PPID" > "$ready"
+while [ ! -f "$release" ]; do /bin/sleep 0.1; done

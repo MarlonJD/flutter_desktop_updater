@@ -575,7 +575,7 @@ manager start, completed/rollback cleanup idempotence, source-stage authority,
 protected-copy immutability, root-only execution, and rejection of any package
 path other than the protected `installer.pkg`.
 
-- [ ] **Step 2: Write RED fixed-gate/harness contracts**
+- [x] **Step 2: Write RED fixed-gate/harness contracts**
 
 The smoke-only `preinstall` is fixed:
 
@@ -599,6 +599,24 @@ flutter test --no-pub test/macos_privileged_pkg_recovery_smoke_contract_test.dar
 ```
 
 Expected: FAIL because fixture/harness do not exist.
+
+Evidence (`verified locally`, 2026-07-19): after correcting a test-only string
+escape that was not counted as RED, the valid focused RED run passed 1 test and
+failed the intended 4 contracts because the fixed preinstall, recovery-only
+packager branch, typed query adapter, and harness did not exist. The minimal
+GREEN implementation passed all 6 focused tests, including a real
+`proc_pidinfo` identity-shape/stability test. The widened runtime/PKG/recovery
+contract set passed 20/20, targeted Dart analysis reported no issues, both shell
+files passed `sh -n`, the preinstall is executable, and the Swift runtime adapter
+built successfully. The packager can enable only the one fixed repository
+preinstall for the exact v2 smoke identity. The harness binds the exact current
+HEAD and artifact hash, observes only the fixed `/usr/sbin/installer` argv,
+compares the same microsecond-resolution process start identity used by the
+helper, revalidates launchd service PID/executable/start identity immediately
+before SIGKILL, retains the identity-bound source stage while that manager is
+live, and excludes PID, start identity, command line, stage path, and helper log
+from evidence. The real sequence remains `not run` because no exact-current-HEAD
+v2 notarized artifact exists and the login Keychain trust context is unavailable.
 
 - [ ] **Step 3: Implement and run the real sequence**
 

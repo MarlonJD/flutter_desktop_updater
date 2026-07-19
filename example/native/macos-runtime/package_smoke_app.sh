@@ -25,6 +25,7 @@ notary_profile=${DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE:-}
 pkg_output=${DESKTOP_UPDATER_RUNTIME_PKG_OUTPUT:-}
 pkg_installer_identity=${DESKTOP_UPDATER_RUNTIME_PKG_INSTALLER_IDENTITY:-}
 pkg_receipt_id=${DESKTOP_UPDATER_RUNTIME_PKG_RECEIPT_ID:-$package_id.pkg}
+pkg_recovery_smoke=${DESKTOP_UPDATER_RUNTIME_PKG_RECOVERY_SMOKE:-0}
 archs=${DESKTOP_UPDATER_RUNTIME_ARCHS:-$(/usr/bin/uname -m)}
 
 case "$app_bundle" in
@@ -44,6 +45,10 @@ esac
 case "$app_build" in
   *[!0-9]*) fail "build number must contain only digits" ;;
 esac
+case "$pkg_recovery_smoke" in
+  0|1) ;;
+  *) fail "PKG recovery smoke flag must be 0 or 1" ;;
+esac
 if [ -n "$team_id" ]; then
   case "$team_id" in
     *[!A-Z0-9]*) fail "team identifier must contain only uppercase letters and digits" ;;
@@ -60,6 +65,19 @@ if [ -n "$pkg_output" ]; then
     *[!A-Za-z0-9._-]*|'') fail "PKG receipt identifier is invalid" ;;
   esac
   [ ! -e "$pkg_output" ] || fail "PKG output already exists: $pkg_output"
+fi
+if [ "$pkg_recovery_smoke" = 1 ]; then
+  [ -n "$pkg_output" ] || fail "PKG recovery smoke requires PKG output"
+  [ "$package_id" = net.monolib.updater ] || \
+    fail "PKG recovery smoke requires the fixed smoke package identifier"
+  [ "$pkg_receipt_id" = net.monolib.updater.pkg ] || \
+    fail "PKG recovery smoke requires the fixed smoke receipt identifier"
+  [ "$app_name" = 'Desktop Updater SMAppService PKG E2E' ] || \
+    fail "PKG recovery smoke requires the fixed smoke application name"
+  [ "$app_version:$app_build" = 2.7.1:271 ] || \
+    fail "PKG recovery smoke requires the fixed v2 version and build"
+  [ "$allowed_install_root" = /Applications ] || \
+    fail "PKG recovery smoke requires the fixed application install root"
 fi
 
 [ -d "$repo_root/macos/install_helper" ] || fail "repository install helper package is unavailable"
@@ -207,12 +225,33 @@ if [ -n "$pkg_output" ]; then
   /bin/rm -f "$component_pkg"
   /bin/mkdir -p "$pkg_root" "$(/usr/bin/dirname "$pkg_output")"
   /usr/bin/ditto "$app_bundle" "$pkg_root/$(/usr/bin/basename "$app_bundle")"
-  /usr/bin/pkgbuild \
-    --root "$pkg_root" \
-    --install-location /Applications \
-    --identifier "$pkg_receipt_id" \
-    --version "$app_version" \
-    "$component_pkg"
+  if [ "$pkg_recovery_smoke" = 1 ]; then
+    recovery_scripts="$script_dir/pkg-scripts/recovery"
+    [ -d "$recovery_scripts" ] && [ ! -L "$recovery_scripts" ] || \
+      fail "fixed PKG recovery scripts directory is unavailable"
+    [ -f "$recovery_scripts/preinstall" ] && \
+      [ ! -L "$recovery_scripts/preinstall" ] && \
+      [ -x "$recovery_scripts/preinstall" ] || \
+      fail "fixed PKG recovery preinstall is unavailable"
+    recovery_entry_count=$(/usr/bin/find "$recovery_scripts" \
+      -mindepth 1 -maxdepth 1 -print | /usr/bin/wc -l | /usr/bin/tr -d ' ')
+    [ "$recovery_entry_count" = 1 ] || \
+      fail "fixed PKG recovery scripts directory contains unexpected entries"
+    /usr/bin/pkgbuild \
+      --root "$pkg_root" \
+      --scripts "$recovery_scripts" \
+      --install-location /Applications \
+      --identifier "$pkg_receipt_id" \
+      --version "$app_version" \
+      "$component_pkg"
+  else
+    /usr/bin/pkgbuild \
+      --root "$pkg_root" \
+      --install-location /Applications \
+      --identifier "$pkg_receipt_id" \
+      --version "$app_version" \
+      "$component_pkg"
+  fi
   /usr/bin/productbuild \
     --package "$component_pkg" \
     --sign "$pkg_installer_identity" \

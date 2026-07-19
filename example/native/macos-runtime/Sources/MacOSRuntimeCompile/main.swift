@@ -37,6 +37,38 @@ struct MacOSRuntimeSmoke {
             }
             return
         }
+        if let transactionID = arguments.optionalValue(
+            "--query-transaction"
+        ) {
+            do {
+                let status = try MacInstallHelper().queryTransaction(
+                    transactionID
+                )
+                try emit([
+                    "event": "query",
+                    "state": recoveryStateName(status.state),
+                    "resultCode": recoveryResultName(
+                        status.resultCode
+                    ),
+                ])
+            } catch let error as MacInstallClientError
+                where error == .privilegedHelperApprovalRequired
+            {
+                let diagnostic = RuntimeDiagnostic(
+                    code: .privilegedHelperApprovalRequired,
+                    message: "Administrator approval is required before the privileged macOS updater helper can run.",
+                    remediationActions: [
+                        .openMacOSBackgroundItemsSettings
+                    ]
+                )
+                try emit([
+                    "event": "installFailed",
+                    "code": diagnostic.code.rawValue,
+                    "remediationActions": diagnostic.remediationActions.map(\.rawValue),
+                ])
+            }
+            return
+        }
         guard arguments.isSmoke else {
             let configuration = try RuntimeConfiguration(
                 appArchiveUrl: URL(
@@ -150,9 +182,16 @@ private struct Arguments {
 
     init(_ values: [String]) throws {
         self.values = values
-        if optionalValue("--recover-transaction") != nil {
+        guard optionalValue("--recover-transaction") == nil ||
+                optionalValue("--query-transaction") == nil
+        else {
+            throw SmokeFailure("Select exactly one transaction operation.")
+        }
+        if optionalValue("--recover-transaction") != nil ||
+            optionalValue("--query-transaction") != nil
+        {
             guard isSmoke else {
-                throw SmokeFailure("Recovery is available only in smoke mode.")
+                throw SmokeFailure("Transaction inspection is available only in smoke mode.")
             }
             return
         }
