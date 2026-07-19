@@ -655,6 +655,38 @@ arguments remain rejected. The `cc1e2a4` artifacts are diagnostic-only after
 this fix; real target-host GREEN remains `not run` until fresh artifacts are
 built from the eventual fix commit.
 
+Baseline-verifier continuation (`verified locally`, 2026-07-19): exact HEAD
+`8ad576a82034e81cb700ffcc874bf5f950348eeb` produced fresh accepted and stapled
+v1 and v2 source apps and final PKGs. The v1 app/PKG submission IDs were
+`9a4ca111-1ed7-49ac-b8af-62d69f3e57ad` and
+`8f3dd485-086c-4291-90f0-f2e702e16732`; the v2 app/PKG submission IDs were
+`f7733a4e-f6bd-4ae1-a998-3796d33b02f2` and
+`78e97860-9fd9-42a4-b567-5f027a7d3ae8`. Their final PKG SHA-256 values were
+`c2e36343e0c90dfc5dbb4998e53db952e2c2ea3cb09dd3c2a323a016655dca4e` and
+`b4cd6a283fc4884f19c50d6353adabc1f017b9308de8c020a2fc2bba2184ba4f`.
+Both sanitized artifact audits and a separate system-context audit passed all
+12 source/payload app, main-executable, and helper signature/runtime nodes; both
+app and PKG staples; both execute/install Gatekeeper assessments; and the exact
+scripts-free v1 and single-preinstall v2 component shapes. The verified
+smoke-owned target was refreshed with the exact v2 source helper, but a real v1
+bootstrap then failed closed before journal, lock, protected-stage, or installer
+creation. Expansion isolated a second verifier P1: the baseline packager
+intentionally removes the outer Distribution `bundle-version` authority, while
+the helper still required that redundant outer record even though the signed
+component PackageInfo retained the exact app identifier, version, build, and
+path. The focused RED executed one test and failed with
+`invalidExpectation`. The minimal GREEN makes the signed PackageInfo direct
+bundle records authoritative for payload verification, permits the outer
+Distribution to contain either zero bundle-version records or exactly one, and
+still requires a present outer record to match PackageInfo exactly. The real
+payload Info.plist and signed app remain independently verified. The focused
+GREEN passed 1/1, the adversarial `InstallStrategyTests` passed 18/18, the
+complete helper package executed 139 tests with zero failures and one
+intentional crash-harness skip, and the related Flutter contracts passed
+31/31; both shell scripts passed `sh -n`. The `8ad576a` artifacts are
+diagnostic-only after this fix. Fresh exact-fix artifacts and target-host
+acceptance remain `not run`.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

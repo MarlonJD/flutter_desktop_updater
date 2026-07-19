@@ -335,6 +335,91 @@ final class InstallStrategyTests: XCTestCase {
         XCTAssertEqual(evidence.bundleTreeSHA256, application.bundleTreeSHA256)
     }
 
+    func testSystemInstallerVerifierAcceptsPackageWithoutOuterBundleVersion()
+        throws
+    {
+        let application = try InstalledApplicationFixture(
+            includeFrameworks: true
+        )
+        defer { application.remove() }
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: output,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: output) }
+        let component = output.appendingPathComponent("component.pkg")
+        let product = output.appendingPathComponent("product.pkg")
+        let expanded = output.appendingPathComponent(
+            "expanded",
+            isDirectory: true
+        )
+        let installer = output.appendingPathComponent("installer.pkg")
+        _ = try runInstallerTestProcess(
+            "/usr/bin/pkgbuild",
+            [
+                "--root", application.rootURL.path,
+                "--install-location", "/Applications",
+                "--identifier", "com.example.app.pkg",
+                "--version", "2.0.0",
+                component.path,
+            ]
+        )
+        _ = try runInstallerTestProcess(
+            "/usr/bin/productbuild",
+            ["--package", component.path, product.path]
+        )
+        _ = try runInstallerTestProcess(
+            "/usr/sbin/pkgutil",
+            ["--expand", product.path, expanded.path]
+        )
+        let distribution = expanded.appendingPathComponent("Distribution")
+        let document = try XMLDocument(
+            data: Data(contentsOf: distribution),
+            options: [.nodeLoadExternalEntitiesNever]
+        )
+        let outerVersionNodes = try document.nodes(
+            forXPath: "/installer-gui-script/pkg-ref/bundle-version"
+        )
+        XCTAssertEqual(outerVersionNodes.count, 1)
+        outerVersionNodes[0].detach()
+        try document.xmlData(options: [.nodePrettyPrint]).write(
+            to: distribution
+        )
+        _ = try runInstallerTestProcess(
+            "/usr/sbin/pkgutil",
+            ["--flatten", expanded.path, installer.path]
+        )
+        let bytes = try Data(contentsOf: installer, options: [.mappedIfSafe])
+        let expectation = MacVerifiedInstallerExpectation(
+            installerURL: installer,
+            kind: .pkg,
+            targetURL: URL(fileURLWithPath: "/Applications/Example.app"),
+            packageIdentifier: "com.example.app",
+            expectedVersion: "2.0.0",
+            expectedBuildNumber: 200,
+            designatedRequirement: "identifier com.example.app",
+            artifactSHA256: macPrivilegeSHA256(bytes),
+            artifactLength: Int64(bytes.count),
+            expectedPackageIdentifiers: ["com.example.app.pkg"],
+            descriptorSHA256: String(repeating: "d", count: 64),
+            provenanceSHA256: String(repeating: "a", count: 64)
+        )
+
+        let evidence = try SystemMacVerifiedInstallerChecker(
+            commandRunner: ProductbuildTopologyCommandRunner(),
+            ownershipValidator: AllowingInstallerOwnershipValidator()
+        ).verifyInstaller(expectation)
+
+        XCTAssertEqual(
+            evidence.receiptVersions,
+            ["com.example.app.pkg": "2.0.0"]
+        )
+        XCTAssertEqual(evidence.executableSHA256, application.executableSHA256)
+        XCTAssertEqual(evidence.bundleTreeSHA256, application.bundleTreeSHA256)
+    }
+
     func testSystemInstallerVerifierRejectsSpecialModesFromRealPackageBOM()
         throws
     {

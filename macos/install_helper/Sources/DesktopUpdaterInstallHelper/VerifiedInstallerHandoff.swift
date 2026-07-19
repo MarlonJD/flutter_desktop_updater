@@ -729,7 +729,7 @@ final class SystemMacVerifiedInstallerChecker:
             expectation: expectation
         )
         try validatePackagedBundleRecords(
-            distributionBundles,
+            packageInfo.bundleRecords,
             payload: payload,
             targetName: targetName,
             packageIdentifier: expectation.packageIdentifier
@@ -953,6 +953,9 @@ final class SystemMacVerifiedInstallerChecker:
             forXPath:
                 "/installer-gui-script/pkg-ref/bundle-version/bundle"
         ).compactMap { $0 as? XMLElement }
+        let bundleVersionElements = try document.nodes(
+            forXPath: "/installer-gui-script/pkg-ref/bundle-version"
+        ).compactMap { $0 as? XMLElement }
         let allBundleElements = elements.filter { $0.name == "bundle" }
         let bundleRecords = try Set(bundleElements.map(bundleRecord))
         guard options.count == 1,
@@ -989,7 +992,7 @@ final class SystemMacVerifiedInstallerChecker:
               selectedLines.count == 1,
               selectedLines[0].attribute(forName: "choice")?.stringValue
                 == identifier,
-              !bundleRecords.isEmpty,
+              bundleVersionElements.count == (bundleRecords.isEmpty ? 0 : 1),
               bundleElements.count == allBundleElements.count else {
             throw MacVerifiedInstallerHandoffError.invalidExpectation
         }
@@ -1002,7 +1005,11 @@ final class SystemMacVerifiedInstallerChecker:
         identifier: String,
         distributionBundles: Set<MacInstallerBundleRecord>,
         hasPreinstallScript: Bool
-    ) throws -> (identifier: String, version: String) {
+    ) throws -> (
+        identifier: String,
+        version: String,
+        bundleRecords: Set<MacInstallerBundleRecord>
+    ) {
         guard verifiedInstallerRegularFile(url, maximumLength: 1_048_576)
         else {
             throw MacVerifiedInstallerHandoffError.invalidExpectation
@@ -1076,7 +1083,8 @@ final class SystemMacVerifiedInstallerChecker:
                     .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             : scriptElements.isEmpty && preinstallElements.isEmpty
         guard !directBundles.isEmpty,
-              directBundles == distributionBundles,
+              distributionBundles.isEmpty
+                || directBundles == distributionBundles,
               allBundleElements.count
                 == directBundleElements.count + referenceBundles.count,
               scriptsAreBound,
@@ -1087,7 +1095,7 @@ final class SystemMacVerifiedInstallerChecker:
               }) else {
             throw MacVerifiedInstallerHandoffError.invalidExpectation
         }
-        return (identifier, expectation.expectedVersion)
+        return (identifier, expectation.expectedVersion, directBundles)
     }
 
     private func validateScripts(_ directory: URL) throws {
