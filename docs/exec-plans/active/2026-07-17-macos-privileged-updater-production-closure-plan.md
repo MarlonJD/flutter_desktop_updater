@@ -687,6 +687,21 @@ intentional crash-harness skip, and the related Flutter contracts passed
 diagnostic-only after this fix. Fresh exact-fix artifacts and target-host
 acceptance remain `not run`.
 
+Approval-probe crash continuation (`verified locally`, 2026-07-19): a fresh
+target-host bootstrap plus the user-supplied macOS crash report reproduced a
+P1 in the signed smoke adapter. When SMAppService approval was already granted,
+the adapter deliberately raised the successful probe sentinel as a top-level
+Swift error. Unified logging confirmed that exact sentinel reached
+`swift_errorInMain`, producing `EXC_BREAKPOINT/SIGTRAP` instead of a normal
+probe result. The focused RED failed because the sentinel was still thrown.
+The minimal GREEN prints the same fixed sentinel and returns normally, so the
+existing harness can distinguish already-approved bootstrap without an OS
+crash report. It changes no typed approval event, XPC authentication, helper
+authority, or installer arguments. The focused test passed 1/1; the widened
+runtime and privileged-PKG contracts passed 16/16; the signed runtime sample
+completed a release Swift build; and `git diff --check` passed. Fresh artifacts
+from the eventual Task 3 fix commit remain required.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

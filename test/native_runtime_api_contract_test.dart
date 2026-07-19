@@ -121,6 +121,17 @@ void main() {
     expect("$manifest\n$sample", isNot(contains("Flutter")));
   });
 
+  test("macOS approval probe does not crash when approval is already granted",
+      () {
+    final source = readRequiredFile(
+      "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
+    );
+    const sentinel = "SMAppService helper unexpectedly avoided approval.";
+
+    expect(source, contains('print("$sentinel")'));
+    expect(source, isNot(contains('throw SmokeFailure("$sentinel")')));
+  });
+
   test("Windows runtime C ABI is versioned, sized, owned, and exception-safe",
       () {
     final header = readRequiredFile(
