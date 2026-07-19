@@ -539,6 +539,27 @@ no-relaunch-after-manager-start recovery rule cannot safely recreate the old
 installer manager, and a verified new v1 target is unavailable. Therefore the
 real v1 baseline, typed approval, and v1-to-v2 elevation remain `not run`.
 
+Caller-exit continuation (`candidate-only`, 2026-07-19): after removing only
+the previously authorized smoke-owned retained transaction state, the trusted
+installed host completed a normal exit after the helper accepted a fresh v1
+commit. The provider journal remained `commitAccepted`, no installer manager
+or `/usr/sbin/installer` process appeared, and the exact lock and owned stages
+were retained until the 300-second reservation expiry triggered verified
+rollback cleanup. This reproduced the same missing manager transition without
+the smoke executable's separate uncaught-error crash path and validated a P1:
+the system caller-exit monitor trusted only a PID and had no exact start-identity
+fallback when the real XPC `NOTE_EXIT` notification was missed. The focused RED
+failed because the monitor API did not accept a process-start identity. The
+minimal GREEN binds the already authenticated caller PID to its exact
+microsecond start identity, polls that identity while retaining the kqueue
+exit notification, treats PID reuse as exit only after an exact identity
+change, and continues fail-closed to reservation expiry when identity cannot be
+inspected. `MacOneShotWireTests` passed 6/6 and the complete install-helper
+package executed 137 tests with zero failures and one intentional crash-worker
+skip. Real target-host GREEN remains `not run` until fresh signed, notarized,
+and stapled v1/v2
+artifacts contain this helper fix, so Task 3 remains open.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
@@ -906,6 +927,16 @@ locally`. One validated P1 service-identity mismatch was resolved in separate
 RED/GREEN commit `ce6d318ad34d8640d9392b0626ea2848b3b2e2a7`; no validated
 P0/P1 remains in the reviewed implementation. Missing production evidence is a
 gate blocker, not a downgraded code finding.
+
+Current continuation (`candidate-only`, 2026-07-19): fresh target-host
+execution invalidated the earlier "no validated P0/P1 remains" statement by
+reproducing the caller-exit P1 described in Task 3. Its separate focused
+RED/GREEN fix binds the monitor to the caller's exact PID/start identity; the
+complete helper suite executed 137 tests with zero failures and one intentional
+skip. The finding is resolved in code but not yet accepted at the production
+boundary; fresh exact-commit artifacts and
+the real v1-to-v2 and installer-active recovery sequences are still required.
+The literal verdict therefore remains `candidate-only / NO-GO`.
 
 - [x] **Step 4: Issue verdict and close**
 

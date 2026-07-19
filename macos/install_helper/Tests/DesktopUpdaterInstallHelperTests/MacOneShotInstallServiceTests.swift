@@ -156,6 +156,7 @@ final class MacOneShotInstallServiceTests: XCTestCase {
         try runtime.run(channel: channel)
 
         XCTAssertEqual(monitorFactory.processIdentifier, 4_243)
+        XCTAssertEqual(monitorFactory.processStartIdentity, "pid-start-1")
         XCTAssertTrue(monitorFactory.didWait)
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
@@ -346,6 +347,7 @@ private final class RecordingCallerMonitorFactory:
 {
     private let onWait: () throws -> Void
     private(set) var processIdentifier: Int64?
+    private(set) var processStartIdentity: String?
     private(set) var didWait = false
 
     init(onWait: @escaping () throws -> Void) {
@@ -353,9 +355,11 @@ private final class RecordingCallerMonitorFactory:
     }
 
     func makeMonitor(
-        processIdentifier: Int64
+        processIdentifier: Int64,
+        processStartIdentity: String
     ) throws -> any MacCallerExitMonitoring {
         self.processIdentifier = processIdentifier
+        self.processStartIdentity = processStartIdentity
         return self
     }
 

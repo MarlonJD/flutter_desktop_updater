@@ -16,7 +16,8 @@ protocol MacCallerExitMonitoring: AnyObject {
 
 protocol MacCallerExitMonitorCreating: AnyObject {
     func makeMonitor(
-        processIdentifier: Int64
+        processIdentifier: Int64,
+        processStartIdentity: String
     ) throws -> any MacCallerExitMonitoring
 }
 
@@ -93,7 +94,8 @@ final class MacOneShotServiceRuntime {
         let requestData = try channel.readFrame()
         let request = try NativeInstallTransactionRequestV1.parse(requestData)
         let monitor = try callerMonitorFactory.makeMonitor(
-            processIdentifier: request.caller.processIdentifier
+            processIdentifier: request.caller.processIdentifier,
+            processStartIdentity: request.caller.processStartIdentity
         )
         let reservation = try session.prepare(requestData: requestData)
         do {

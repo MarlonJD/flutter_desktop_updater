@@ -73,7 +73,10 @@ final class MacOneShotWireTests: XCTestCase {
         process.arguments = ["0.05"]
         try process.run()
         let monitor = try SystemMacCallerExitMonitorFactory().makeMonitor(
-            processIdentifier: Int64(process.processIdentifier)
+            processIdentifier: Int64(process.processIdentifier),
+            processStartIdentity: try processStartIdentity(
+                process.processIdentifier
+            )
         )
 
         try monitor.waitForExit(
@@ -84,9 +87,30 @@ final class MacOneShotWireTests: XCTestCase {
         XCTAssertFalse(process.isRunning)
     }
 
+    func testSystemCallerMonitorRejectsMismatchedProcessStartIdentity() {
+        XCTAssertThrowsError(
+            try SystemMacCallerExitMonitorFactory().makeMonitor(
+                processIdentifier: Int64(
+                    ProcessInfo.processInfo.processIdentifier
+                ),
+                processStartIdentity: "macos:0:0"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacCallerExitMonitorError,
+                .registrationFailed
+            )
+        }
+    }
+
     func testSystemCallerMonitorFailsClosedAtReservationExpiry() throws {
         let monitor = try SystemMacCallerExitMonitorFactory().makeMonitor(
-            processIdentifier: Int64(ProcessInfo.processInfo.processIdentifier)
+            processIdentifier: Int64(
+                ProcessInfo.processInfo.processIdentifier
+            ),
+            processStartIdentity: try processStartIdentity(
+                ProcessInfo.processInfo.processIdentifier
+            )
         )
 
         XCTAssertThrowsError(
@@ -114,4 +138,19 @@ private func framed(_ payload: Data) -> Data {
 
 private func unixMilliseconds() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1_000).rounded(.down))
+}
+
+private func processStartIdentity(_ processIdentifier: Int32) throws -> String {
+    var info = proc_bsdinfo()
+    let expected = Int32(MemoryLayout<proc_bsdinfo>.size)
+    guard proc_pidinfo(
+        processIdentifier,
+        PROC_PIDTBSDINFO,
+        0,
+        &info,
+        expected
+    ) == expected else {
+        throw MacCallerExitMonitorError.registrationFailed
+    }
+    return "macos:\(info.pbi_start_tvsec):\(info.pbi_start_tvusec)"
 }

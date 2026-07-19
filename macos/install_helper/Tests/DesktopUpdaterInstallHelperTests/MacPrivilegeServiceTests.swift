@@ -366,9 +366,11 @@ private final class RecordingPrivilegedMonitorFactory:
     }
 
     func makeMonitor(
-        processIdentifier: Int64
+        processIdentifier: Int64,
+        processStartIdentity: String
     ) throws -> any MacCallerExitMonitoring {
         XCTAssertEqual(processIdentifier, 4_243)
+        XCTAssertEqual(processStartIdentity, "pid-start-1")
         return monitor
     }
 }

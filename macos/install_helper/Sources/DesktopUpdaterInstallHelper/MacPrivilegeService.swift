@@ -421,7 +421,9 @@ final class MacPrivilegedTransactionHandler {
         do {
             let session = try sessionFactory(peerProcessIdentifier)
             let monitor = try monitorFactory.makeMonitor(
-                processIdentifier: request.caller.processIdentifier
+                processIdentifier: request.caller.processIdentifier,
+                processStartIdentity:
+                    request.caller.processStartIdentity
             )
             let reservation = try session.prepare(requestData: payload)
             guard reservation.transactionID == request.transactionID,
