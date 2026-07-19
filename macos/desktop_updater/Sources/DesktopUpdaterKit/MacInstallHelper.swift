@@ -800,6 +800,8 @@ final class PackagedMacInstallHelperTransport:
     private let privilegedExchange: any MacPrivilegedXPCExchanging
     private let privilegeRequired: (Data) throws -> Bool
     private let forcePrivilegedPersistentOperations: Bool
+    private let privilegedEndpointActivationAttempts: Int
+    private let privilegedEndpointActivationDelay: () -> Void
     private let lock = NSLock()
     private var sessions: [String: ActiveSession] = [:]
     private var privilegedTransactions: Set<String> = []
@@ -819,7 +821,11 @@ final class PackagedMacInstallHelperTransport:
         privilegedExchange: (any MacPrivilegedXPCExchanging)? = nil,
         privilegeRequired: @escaping (Data) throws -> Bool =
             PackagedMacInstallHelperTransport.defaultPrivilegeRequired,
-        forcePrivilegedPersistentOperations: Bool = false
+        forcePrivilegedPersistentOperations: Bool = false,
+        privilegedEndpointActivationAttempts: Int = 30,
+        privilegedEndpointActivationDelay: @escaping () -> Void = {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
     ) {
         self.helperURL = helperURL.standardizedFileURL
         self.policyID = policyID
@@ -835,6 +841,12 @@ final class PackagedMacInstallHelperTransport:
         self.privilegeRequired = privilegeRequired
         self.forcePrivilegedPersistentOperations =
             forcePrivilegedPersistentOperations
+        self.privilegedEndpointActivationAttempts = max(
+            1,
+            privilegedEndpointActivationAttempts
+        )
+        self.privilegedEndpointActivationDelay =
+            privilegedEndpointActivationDelay
     }
 
     func validateEndpoint() throws {
@@ -1211,11 +1223,22 @@ final class PackagedMacInstallHelperTransport:
             }
         }
         try privilegedInstaller.install()
-        let installedEndpoint = try privilegedExchange.validateEndpoint()
-        guard installedEndpoint == expectedEndpoint else {
-            throw MacInstallClientError.invalidReservationResponse
+        for attempt in 0 ..< privilegedEndpointActivationAttempts {
+            do {
+                let installedEndpoint = try privilegedExchange
+                    .validateEndpoint()
+                guard installedEndpoint == expectedEndpoint else {
+                    throw MacInstallClientError.invalidReservationResponse
+                }
+                return installedEndpoint
+            } catch let error as MacInstallClientError
+                where error == .endpointUnavailable
+                    && attempt + 1 < privilegedEndpointActivationAttempts
+            {
+                privilegedEndpointActivationDelay()
+            }
         }
-        return installedEndpoint
+        throw MacInstallClientError.endpointUnavailable
     }
 
     private func usesPrivilegedTransport(_ transactionID: String) -> Bool {

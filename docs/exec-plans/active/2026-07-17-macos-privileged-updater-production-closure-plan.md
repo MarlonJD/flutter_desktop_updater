@@ -601,6 +601,34 @@ artifacts from the eventual fix commit remain required. The focused contract
 passed 6/6 and the widened install/recovery/runtime/packager set passed 39/39;
 focused format, shell syntax, and `git diff --check` passed.
 
+SMAppService activation continuation (`candidate-only`, 2026-07-19): exact
+HEAD `2de155e0871b6f7ca3a370bb65c2d1f4179c527a` produced new accepted,
+stapled v1 and v2 apps and final PKGs. The final PKG submission IDs were
+`ac758784-41d5-469b-99f3-57244468792b` and
+`d96f99e4-bfef-4e52-bf75-97b5ddad6d97`; their SHA-256 values were
+`c0d19ec5ee8e832fa90093aff86018fb431fe04e4acc8b761f085c90d4fcaeb8`
+and
+`2580c37b4ce1cfecc80857c0391e9dbd620fc356b909cf7f29f4d616e0f274a5`.
+Both independent artifact audits passed source/payload app and helper signing,
+hardened runtime, package signing, app/PKG staples, and Gatekeeper
+execute/install assessment. The scripts-free v1 final Distribution contained
+no bundle-version gate, and the v2 package contained only the byte-identical
+fixed recovery preinstall script. These artifacts then reproduced a new P1 at
+the target-host bootstrap boundary: SMAppService unregister/register was
+accepted as `enabled, allowed`, but the client performed only one immediate XPC
+health check before launchd had activated the new job and failed closed with
+`endpointUnavailable`. The focused RED required an injectable activation
+retry boundary. The minimal GREEN retries only `endpointUnavailable` after the
+same fixed registration, remains bounded to 30 authenticated health checks at
+100 ms intervals, validates the exact signed helper endpoint identity on every
+successful response, and never retries an invalid response or identity
+mismatch. The three adversarial activation tests passed 3/3, the complete
+`MacPackagedHelperTransportTests` passed 22/22, and the full isolated
+`DesktopUpdaterKitTests` suite passed 100/100 with repository fixtures at their
+canonical relative paths. `git diff --check` passed. The accepted `2de155e`
+artifacts are diagnostic-only after this code change; real target-host GREEN is
+`not run` until fresh artifacts are rebuilt from the fix commit.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
