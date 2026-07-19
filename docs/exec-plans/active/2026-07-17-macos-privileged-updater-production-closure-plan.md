@@ -693,6 +693,17 @@ git push origin feat/native-sdk-platform-split
 - Consumes: Tasks 2-4 reports.
 - Produces: one internally consistent evidence set bound to one commit/artifact hash, plus distinct hosted-approval and self-hosted success/recovery rows.
 
+Current gate evidence (`blocked`, 2026-07-19): Tasks 3 and 4 did not produce
+accepted exact-current install or recovery reports, so the four-report set
+cannot truthfully share one current commit and artifact SHA-256. The existing
+documentation already distinguishes hosted approval-required evidence from
+self-hosted `/Applications` install and recovery evidence, but the self-hosted
+workflow still uploads its earlier JSONL/text outputs rather than the required
+four sanitized reports. The sole local `artifact-trust.json` is untracked,
+binds older commit `96cc4ecbb009d5be5a50adcbeeedf8fae2dedfa4`, and is not
+current-head publication evidence. No Task 5 report or CI success claim was
+published.
+
 - [ ] **Step 1: Write RED evidence/docs tests**
 
 All reports share schema, commit, artifact hash, bundle/version/build/team, and literal status. Reject temp paths, credential names, env dumps, raw process command lines, or key material.
@@ -750,7 +761,7 @@ git push origin feat/native-sdk-platform-split
 - Consumes: all fresh current-head code, tests, artifacts, and evidence.
 - Produces: macOS-only GO/NO-GO without changing Windows/Linux readiness.
 
-- [ ] **Step 1: Run the full validation ladder**
+- [x] **Step 1: Run the full validation ladder**
 
 ```sh
 dart run tool/generate_native_contract_fixtures.dart
@@ -768,11 +779,40 @@ git diff --check
 
 Expected: PASS. The package-local Swift command may be `blocked` only for the documented missing generated Flutter host when exact source-set typecheck and real Flutter Release build pass.
 
+Evidence (`verified locally`, 2026-07-19, exact HEAD
+`ce6d318ad34d8640d9392b0626ea2848b3b2e2a7`): both fixture generators ran and
+the install-helper fixture check was current; Dart format inspected 236 files
+with zero changes; `flutter analyze --no-fatal-infos` exited zero with 483
+existing info diagnostics and no error/warning gate; the complete Flutter suite
+passed 788 tests with 3 conditional E2E skips; and `dart pub publish --dry-run`
+reported 0 warnings and 1 version-history hint. The install-helper Swift package
+passed 136 tests with 1 intentional crash-worker skip, and root SwiftPM passed
+97 tests. Package-local `macos/desktop_updater` remained `blocked` only by the
+documented absent generated `FlutterMacOS` host module; the exact six-source
+macOS 10.14 typecheck exited zero and a real Flutter macOS Release application
+built successfully. `git diff --check` exited zero and the pushed branch and
+local HEAD matched.
+
 - [ ] **Step 2: Apply required completion skills**
 
 Use `build-macos-apps:signing-entitlements` and `build-macos-apps:packaging-notarization` against the actual source app, expanded payload app, installed app, helpers, and PKG. Then use `superpowers:verification-before-completion` against fresh output only.
 
-- [ ] **Step 3: Run fresh exhaustive adversarial review**
+Evidence (`blocked`, 2026-07-19): the signing/entitlements and
+packaging/notarization reviews were applied fail-closed, followed by fresh
+verification-before-completion checks. There is no signed/notarized/stapled v2
+artifact from exact HEAD `ce6d318`; the last exact-implementation v1 artifact
+belongs to older commit `251a3c12b5dba50f59fff70bd1af7682a2861599`, and
+its matching v2 submission was denied by the execution environment. The login
+Keychain currently reports zero valid code-signing identities. The installed
+smoke target reports bundle `net.monolib.updater`, `2.7.1+271`, Team ID
+`UPK4SC93AN`, hardened-runtime metadata, and root:wheel ownership for app,
+main executable, helper, and LaunchDaemon, but receipt
+`net.monolib.updater.pkg` remains `2.7.0`; fresh app/main/helper signature,
+staple, and Gatekeeper checks fail closed; and the LaunchDaemon is not loaded.
+Consequently source/payload/PKG/installed trust cannot be accepted for current
+HEAD and this step remains open.
+
+- [x] **Step 3: Run fresh exhaustive adversarial review**
 
 Use `killcritic-complete-review` over:
 
@@ -784,13 +824,39 @@ Use `killcritic-complete-review` over:
 
 Resolve each validated P0/P1 with RED/GREEN regression coverage and a separate commit.
 
-- [ ] **Step 4: Issue verdict and close**
+Evidence (`verified locally`, 2026-07-19): `killcritic-complete-review` scanned
+962 repository files and the active plan, then each required macOS boundary was
+reviewed directly in source, tests, workflow, documentation, target state, and
+fresh command output. Nested source/payload/PKG trust is `blocked`; typed
+approval and real elevation are `not run` for current HEAD; SMAppService/XPC
+authentication, fixed `/usr/sbin/installer` argv authority, durable manager
+PID/start identity, and cleanup/retention are `verified locally` in focused and
+full unit/contract coverage; installer-active target-host recovery is `not
+run`; installed receipt/trust/daemon state is `candidate-only`; and the
+four-report/CI publication gate is `blocked`. Schema v3, legacy `installerApp`
+parsing, `privilegedInstallerTool` publication, minimum updater 2.7.0, typed
+approval code/remediation, and stock/custom UI contracts remain `verified
+locally`. One validated P1 service-identity mismatch was resolved in separate
+RED/GREEN commit `ce6d318ad34d8640d9392b0626ea2848b3b2e2a7`; no validated
+P0/P1 remains in the reviewed implementation. Missing production evidence is a
+gate blocker, not a downgraded code finding.
+
+- [x] **Step 4: Issue verdict and close**
 
 macOS is `production-ready` only when current-head source/payload/installed signatures, notarization/stapling/Gatekeeper, typed approval, real v1-to-v2 elevation, receipt/ownership/helper/LaunchDaemon, installer-active recovery, stage cleanup, full validation, and evidence consistency all pass with no P0/P1.
 
 If any gate fails or is not run, record `candidate-only / NO-GO` and leave this plan active.
 
-- [ ] **Step 5: Commit and push final status**
+Final macOS verdict (`candidate-only / NO-GO`, 2026-07-19): exact-current v2
+artifact trust/notarization is `blocked`; typed target-host approval and real
+2.7.0+270 to 2.7.1+271 elevation are `not run`; installer-active daemon crash
+recovery is `not run`; and four-report evidence/CI publication is `blocked`.
+The last candidate recovery released the exact target lock without deleting the
+single retained provider journal; no accepted real crash point, terminal
+`completed/newTarget` result, or completed-stage cleanup exists. The plan stays
+active. Windows and Linux readiness were not changed.
+
+- [x] **Step 5: Commit and push final status**
 
 ```sh
 git add docs/exec-plans/active/2026-07-17-macos-privileged-updater-production-closure-plan.md
