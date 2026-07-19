@@ -154,6 +154,11 @@ final class _PrivilegedPkgSmoke {
     await _verifyPackage(request.v2Pkg);
     await _inspectTarget(
       allowedVersions: const {(_v1Version, _v1Build), (_v2Version, _v2Build)},
+      allowedReceiptStates: const {
+        (_v1Version, _v1Version),
+        (_v2Version, _v2Version),
+        (_v2Version, _v1Version),
+      },
       requireTrust: true,
       requireLoadedService: false,
     );
@@ -532,6 +537,7 @@ final class _PrivilegedPkgSmoke {
 
   Future<_InstalledTarget> _inspectTarget({
     required Set<(String, String)> allowedVersions,
+    Set<(String, String)>? allowedReceiptStates,
     required bool requireTrust,
     required bool requireLoadedService,
   }) async {
@@ -547,7 +553,10 @@ final class _PrivilegedPkgSmoke {
     }
     await _verifyOwnerMarker(app);
     final receipt = await _receiptVersion();
-    if (receipt != metadata.version) {
+    final receiptAccepted = allowedReceiptStates == null
+        ? receipt == metadata.version
+        : allowedReceiptStates.contains((metadata.version, receipt));
+    if (!receiptAccepted) {
       throw const _SmokeFailure("target-receipt-identity-mismatch");
     }
     if (requireTrust) {

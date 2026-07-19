@@ -105,4 +105,26 @@ void main() {
       isNot(contains("_removeVerifiedBootstrapRefreshStage")),
     );
   });
+
+  test("only bootstrap accepts the known v2 app and v1 receipt recovery pair",
+      () {
+    final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
+    if (!smokeFile.existsSync()) return;
+    final source = smokeFile.readAsStringSync();
+
+    expect(
+      RegExp(r"allowedReceiptStates:").allMatches(source),
+      hasLength(1),
+    );
+    expect(
+      source,
+      contains("(_v2Version, _v1Version)"),
+    );
+    final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
+    final verify = source.indexOf("Future<void> verifyV1() async");
+    final receiptOverride = source.indexOf("allowedReceiptStates:");
+    expect(bootstrap, isNonNegative);
+    expect(receiptOverride, greaterThan(bootstrap));
+    expect(receiptOverride, lessThan(verify));
+  });
 }

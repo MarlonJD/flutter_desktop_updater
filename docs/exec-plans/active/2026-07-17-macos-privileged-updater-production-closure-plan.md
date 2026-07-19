@@ -451,6 +451,23 @@ source stage, deletion is an identity-bound direct-child `removefileat`,
 manual-action state retains both stages, and recovery cannot reach cleanup
 while the exact manager PID/start identity remains live.
 
+Follow-up bootstrap evidence (`candidate-only`, 2026-07-19): Apple Installer's
+bundle-version downgrade gate accepted the v1 receipt but intentionally left
+the exact fresh v2 app in place. Post-install verification failed closed,
+entered `manualActionRequired`, and retained the stage as required. The
+scripts-free, signed/notarized baseline-only v1 package disables bundle version
+checking for this controlled smoke downgrade, but the next attempt stopped
+before mutation because the smoke precondition did not recognize the known
+`(v2 app, v1 receipt)` recovery pair. A focused RED contract now confines that
+pair to the initial bootstrap inspection; all approval, final install, and
+terminal inspections continue requiring app and receipt versions to match.
+The focused contract was RED before implementation and GREEN at 4/4; the
+widened approval/UI/smoke set passed 46/46, targeted analysis and formatting
+passed, and `git diff --check` passed. Adversarial review confirmed that the
+exception does not bypass path, bundle, marker, Team ID, signature, Gatekeeper,
+or staple checks and appears at exactly one call site before the exact v1/v2
+payload identity comparisons.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
