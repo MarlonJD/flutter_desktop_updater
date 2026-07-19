@@ -284,6 +284,18 @@ source apps and PKGs were built from exact implementation commit
 `6fc6647f-68ed-4756-ad10-2aadb45ad628` and
 `5559ae5f-09bc-4da2-999a-e9f8542729e9` for v2. No prior fixture was reused.
 
+Current exact-head rerun (`verified locally`, 2026-07-19): system-context
+Keychain checks found the existing Developer ID Application and Installer
+identities after sandbox-only queries had reported a false zero. Fresh v1 and
+v2 source apps were built and signed from exact HEAD
+`464cef9b5d0e5f156cb1aaf597ac472bba1d2ed8`. The source apps were notarized
+before packaging so the final PKG payloads retain their app tickets. Accepted
+v1 app and final-PKG submissions were
+`9ac5a23d-12f5-4c31-b5ce-0b763c347766` and
+`6072afd4-dbbf-4a06-893a-afb5b92c80f7`; accepted v2 app and final-PKG
+submissions were `3ea288d3-586a-4291-b207-f0aa644a7955` and
+`78ee7ea0-6530-4391-81e3-d3d8e5cce686`. No earlier artifact was reused.
+
 - [x] **Step 4: Notarize, staple, audit, commit reusable code**
 
 Run the audit only after source app and PKG are notarized/stapled. Require source, expanded payload, and independent helper checks to pass.
@@ -312,6 +324,20 @@ the root `<pkg-info>` tag. The final focused suite passed 6 tests, focused forma
 and `git diff --check` passed, and the privilege/signing review found no
 alternate component traversal, followed top-level symlink, caller-controlled
 executable, ignored exit code, or raw failure-output evidence path.
+
+Current exact-head audit (`verified locally`, 2026-07-19): the stapled final
+v1 PKG SHA-256 is
+`f3b97cf91c6f56f6578a7df9594b3100915973d5e86338690ae2dc6b17767331`.
+The stapled final v2 recovery PKG SHA-256 is
+`26c8c7dd191677962d5ae6f427d8e9786a821e2e558aefe1e6c77eb943de049f`.
+System-context checks independently passed the source app, source main
+executable, source helper, expanded final-PKG app, expanded main executable,
+expanded helper, PKG signature, app and PKG staples, execute and install
+Gatekeeper assessments, Team ID, hardened runtime, bundle/version/build, fixed
+receipt metadata, and the single fixed recovery preinstall shape. A temporary
+sanitized artifact-trust document reports `verified locally` and binds the v2
+hash, exact HEAD, and final v2 PKG submission. It remains outside the repository
+until Tasks 3 and 4 can truthfully bind the complete four-report set.
 
 ### Task 3: Prove Typed Approval and Real Privileged Installation
 
@@ -497,6 +523,22 @@ No artifact was handed to the installer after that trust failure. Task 3 remains
 unaccepted; the target is still the known v2-app/v1-receipt recovery pair and no
 production claim is made from this candidate state.
 
+Exact-head target continuation (`blocked`, 2026-07-19): system-context checks
+now validate the smoke-owned installed app, main executable, helper, staple,
+Gatekeeper assessment, Team ID, hardened runtime, root:wheel ownership, and
+active LaunchDaemon. The target remains `2.7.1+271` with receipt `2.7.0`. The
+single retained provider journal reports typed
+`manualActionRequired/recoveryRequired`; its exact target lock is absent and no
+installer manager process remains. Registering the current signed helper made
+typed query/recovery available, but both the trusted installed host and current
+signed source host correctly rejected a new transaction with
+`installRecoveryRequired`. The source host also fails closed because its bundle
+is outside the sealed `/Applications` target root. No provider journal, target,
+receipt, or retained stage was removed or mutated out-of-band. The documented
+no-relaunch-after-manager-start recovery rule cannot safely recreate the old
+installer manager, and a verified new v1 target is unavailable. Therefore the
+real v1 baseline, typed approval, and v1-to-v2 elevation remain `not run`.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
@@ -630,6 +672,16 @@ files, and `git diff --check` passed. Adversarial review confirmed that the
 identifier now matches the packager default and installed app metadata and is
 used only to bind launchd PID/executable/start-identity checks; it adds no
 caller-controlled service or executable authority.
+
+Current target-host gate evidence (`blocked`, 2026-07-19): the exact-head v2
+recovery artifact is now notarized, stapled, and trusted, but Task 3 cannot
+produce the required verified v1 baseline while the retained provider journal
+is `manualActionRequired`. Fresh `MacVerifiedInstallerTransactionTests` passed
+18/18, including exact live-manager identity retention and no relaunch after
+manager start; fresh `MacPersistentRecoveryTests` passed 5/5. These tests
+confirm the fail-closed behavior, but the real installer-active crash sequence
+remains `not run` because starting it would require a new transaction against a
+target still blocked by the retained journal.
 
 - [ ] **Step 3: Implement and run the real sequence**
 
@@ -812,6 +864,20 @@ staple, and Gatekeeper checks fail closed; and the LaunchDaemon is not loaded.
 Consequently source/payload/PKG/installed trust cannot be accepted for current
 HEAD and this step remains open.
 
+Current exact-head review (`blocked`, 2026-07-19): source and final-payload
+app/main/helper signatures, hardened runtime, Team ID, app and PKG staples,
+Gatekeeper execute/install assessments, PKG signature, fixed component and
+recovery-script shape all pass for exact HEAD `464cef9b5d0e5f156cb1aaf597ac472bba1d2ed8`
+and v2 final SHA-256
+`26c8c7dd191677962d5ae6f427d8e9786a821e2e558aefe1e6c77eb943de049f`.
+The installed smoke target also passes app/main/helper trust, staple,
+Gatekeeper, ownership, and active-LaunchDaemon checks. This completion step is
+still blocked because the installed receipt is `2.7.0`, the target is
+`2.7.1+271`, and the retained provider journal is
+`manualActionRequired/recoveryRequired`; consequently typed approval, real
+elevation, terminal recovery, and completed-stage cleanup are not fresh
+acceptance evidence.
+
 - [x] **Step 3: Run fresh exhaustive adversarial review**
 
 Use `killcritic-complete-review` over:
@@ -848,13 +914,17 @@ macOS is `production-ready` only when current-head source/payload/installed sign
 If any gate fails or is not run, record `candidate-only / NO-GO` and leave this plan active.
 
 Final macOS verdict (`candidate-only / NO-GO`, 2026-07-19): exact-current v2
-artifact trust/notarization is `blocked`; typed target-host approval and real
-2.7.0+270 to 2.7.1+271 elevation are `not run`; installer-active daemon crash
-recovery is `not run`; and four-report evidence/CI publication is `blocked`.
-The last candidate recovery released the exact target lock without deleting the
-single retained provider journal; no accepted real crash point, terminal
-`completed/newTarget` result, or completed-stage cleanup exists. The plan stays
-active. Windows and Linux readiness were not changed.
+artifact trust/notarization is `verified locally`; typed target-host approval
+and real 2.7.0+270 to 2.7.1+271 elevation are `not run`; installer-active daemon
+crash recovery is `not run`; and four-report evidence/CI publication is
+`blocked`. The retained provider journal is
+`manualActionRequired/recoveryRequired`; its exact target lock is absent, its
+owned stage is retained, and no installer manager remains live. The fixed
+recovery authority does not relaunch an installer after manager start, so no
+safe in-scope path can produce the v1 baseline without prohibited out-of-band
+mutation. No accepted real crash point, terminal `completed/newTarget` result,
+or completed-stage cleanup exists. The plan stays active. Windows and Linux
+readiness were not changed.
 
 - [x] **Step 5: Commit and push final status**
 
