@@ -34,6 +34,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testSpawnBeforeJournalFailureClosesGateAndRollsBackOwnedStage()
@@ -70,6 +73,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: fixture.protectedTransactionStageURL.path
             )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
         )
     }
 
@@ -131,6 +137,12 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
             XCTAssertFalse(
                 FileManager.default.fileExists(
                     atPath: fixture.protectedTransactionStageURL.path
+                ),
+                point.rawValue
+            )
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: fixture.stageRootURL.path
                 ),
                 point.rawValue
             )
@@ -256,6 +268,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testInstallerActiveRecoveryWaitsThenResolvesExactManager()
@@ -321,6 +336,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
         let liveArtifacts = try fixture.transactionArtifacts()
         XCTAssertTrue(liveArtifacts.contains(fixture.journalName))
         XCTAssertTrue(liveArtifacts.contains { $0.hasSuffix(".commit") })
@@ -341,6 +359,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: fixture.protectedTransactionStageURL.path
             )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
         )
     }
 
@@ -395,6 +416,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testMutableSourcePackageIsNeverPassedToPrivilegedInstaller()
@@ -444,6 +468,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testInterruptedCompletedFlushQueriesAndRecoversAsCompleted() throws {
@@ -481,6 +508,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 atPath: fixture.protectedTransactionStageURL.path
             )
         )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testCommitAcceptedRecoveryRollsBackAndRemovesOwnedStage() throws {
@@ -513,6 +543,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: fixture.protectedTransactionStageURL.path
             )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
         )
     }
 
@@ -555,6 +588,9 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: fixture.protectedTransactionStageURL.path
             )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
         )
     }
 
@@ -653,6 +689,83 @@ final class MacVerifiedInstallerTransactionTests: XCTestCase {
                 .journalCorrupt
             )
         }
+    }
+
+    func testRecoveryRejectsTamperedSourceStageAuthority() throws {
+        let fixture = try ProviderTransactionFixture()
+        defer { fixture.remove() }
+        var transaction: MacVerifiedInstallerTransaction? = try fixture
+            .transaction(
+                checker: ProviderRecordingChecker(),
+                runner: ProviderRecordingRunner()
+            )
+        _ = try transaction?.prepare()
+        transaction = nil
+        let journalURL = fixture.installRootURL.appendingPathComponent(
+            fixture.journalName
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: journalURL))
+                as? [String: Any]
+        )
+        object["sourceInstallerStageName"] = "../attacker"
+        try NativeStrictJSON.canonicalize(
+            JSONSerialization.data(withJSONObject: object)
+        ).write(to: journalURL)
+
+        XCTAssertThrowsError(
+            try fixture.recoveryService(
+                checker: ProviderRecordingChecker()
+            ).query(transactionID: fixture.transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacPersistentRecoveryError,
+                .journalCorrupt
+            )
+        }
+    }
+
+    func testLegacyV1JournalRemainsRecoverableWithoutSourceCleanupAuthority()
+        throws
+    {
+        let fixture = try ProviderTransactionFixture()
+        defer { fixture.remove() }
+        var transaction: MacVerifiedInstallerTransaction? = try fixture
+            .transaction(
+                checker: ProviderRecordingChecker(),
+                runner: ProviderRecordingRunner()
+            )
+        _ = try transaction?.prepare()
+        transaction = nil
+        let journalURL = fixture.installRootURL.appendingPathComponent(
+            fixture.journalName
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: journalURL))
+                as? [String: Any]
+        )
+        object["schemaVersion"] = 1
+        for key in [
+            "sourceInstallerStageName", "sourceInstallerStageParentPath",
+            "sourceInstallerStageParentIdentity", "sourceInstallerStageIdentity",
+        ] {
+            object.removeValue(forKey: key)
+        }
+        try NativeStrictJSON.canonicalize(
+            JSONSerialization.data(withJSONObject: object)
+        ).write(to: journalURL)
+        let service = fixture.recoveryService(
+            checker: ProviderRecordingChecker()
+        )
+
+        let result = try service.recover(
+            transactionID: fixture.transactionID
+        )
+
+        XCTAssertEqual(result.resultCode, "rolledBack")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fixture.stageRootURL.path)
+        )
     }
 
     func testLiveTransactionRejectsPreparedDesiredIdentityTampering() throws {

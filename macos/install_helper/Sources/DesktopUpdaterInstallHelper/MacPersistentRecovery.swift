@@ -49,6 +49,7 @@ final class MacPersistentRecoveryService {
         let journal: MacVerifiedInstallerJournal
         let store: DurableMacVerifiedInstallerJournalStore
         let installerStageParentDirectory: MacTransactionDirectory
+        let sourceInstallerStageParentDirectory: MacTransactionDirectory?
         let journalSHA256: String
     }
 
@@ -345,6 +346,38 @@ final class MacPersistentRecoveryService {
                     )
                     let installerStageParentDirectory =
                         try MacTransactionDirectory(url: stageParentURL)
+                    var sourceInstallerStageParentDirectory:
+                        MacTransactionDirectory?
+                    if journal.schemaVersion
+                        == MacVerifiedInstallerJournal.schemaVersion {
+                        guard let sourceName =
+                                journal.sourceInstallerStageName,
+                              let sourceParentPath =
+                                journal.sourceInstallerStageParentPath,
+                              let sourceParentIdentity =
+                                journal.sourceInstallerStageParentIdentity,
+                              let sourceStageIdentity =
+                                journal.sourceInstallerStageIdentity,
+                              validPersistentSourceStageName(sourceName),
+                              sourceStageIdentity.mode & UInt16(S_IFMT)
+                                == UInt16(S_IFDIR) else {
+                            throw MacPersistentRecoveryError.journalCorrupt
+                        }
+                        let sourceParentURL = URL(
+                            fileURLWithPath: sourceParentPath
+                        ).standardizedFileURL
+                        let sourceParentDirectory =
+                            try MacTransactionDirectory(
+                                url: sourceParentURL
+                            )
+                        guard sourceParentURL.path == sourceParentPath,
+                              sourceParentDirectory.identity
+                                == sourceParentIdentity else {
+                            throw MacPersistentRecoveryError.journalCorrupt
+                        }
+                        sourceInstallerStageParentDirectory =
+                            sourceParentDirectory
+                    }
                     let protectedStage = try MacVerifiedInstallerProtectedStage
                         .plan(
                             baseURL: protectedInstallerStageBaseURL,
@@ -419,6 +452,8 @@ final class MacPersistentRecoveryService {
                             store: store,
                             installerStageParentDirectory:
                                 installerStageParentDirectory,
+                            sourceInstallerStageParentDirectory:
+                                sourceInstallerStageParentDirectory,
                             journalSHA256: try store.sha256()
                         )
                     )
@@ -627,6 +662,7 @@ final class MacPersistentRecoveryService {
     ) throws {
         if removeJournal {
             try removeInstallerStageIfPresent(located)
+            try removeSourceInstallerStageIfPresent(located)
         }
         if let owner = try MacTargetLock.owner(
             directory: located.directory,
@@ -663,6 +699,29 @@ final class MacPersistentRecoveryService {
                     located.journal.installerStageIdentity
                         == emptyPersistentProviderFileIdentity
                         ? nil : located.journal.installerStageIdentity
+            )
+        } catch {
+            throw MacPersistentRecoveryError.journalCorrupt
+        }
+    }
+
+    private func removeSourceInstallerStageIfPresent(
+        _ located: LocatedInstallerTransaction
+    ) throws {
+        guard located.journal.schemaVersion
+                == MacVerifiedInstallerJournal.schemaVersion,
+              let sourceName = located.journal.sourceInstallerStageName,
+              let sourceIdentity =
+                located.journal.sourceInstallerStageIdentity,
+              let sourceParent =
+                located.sourceInstallerStageParentDirectory else {
+            return
+        }
+        guard sourceParent.exists(name: sourceName) else { return }
+        do {
+            try sourceParent.removeTree(
+                name: sourceName,
+                expectedIdentity: sourceIdentity
             )
         } catch {
             throw MacPersistentRecoveryError.journalCorrupt
@@ -855,6 +914,13 @@ private func persistentPackageIdentifier(_ value: String) -> Bool {
 private func validPersistentInstallerStageName(_ value: String) -> Bool {
     value.range(
         of: #"^desktop-updater-stage-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+        options: .regularExpression
+    ) != nil
+}
+
+private func validPersistentSourceStageName(_ value: String) -> Bool {
+    value.range(
+        of: #"^desktop_updater_stage_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
         options: .regularExpression
     ) != nil
 }

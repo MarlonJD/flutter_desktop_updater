@@ -155,7 +155,7 @@ final class _PrivilegedPkgSmoke {
     await _inspectTarget(
       allowedVersions: const {(_v1Version, _v1Build), (_v2Version, _v2Build)},
       requireTrust: true,
-      requireLoadedService: true,
+      requireLoadedService: false,
     );
     final v1Payload = await _extractPackagePayload(
       request.v1Pkg,
@@ -194,6 +194,7 @@ final class _PrivilegedPkgSmoke {
           releaseBuild: int.parse(_v2Build),
           expectApproval: true,
         );
+        await _failFastAtApprovalBoundary(refresh);
         if (!await _waitForBundleIdentity(
           v2Payload.app,
           version: _v2Version,
@@ -203,7 +204,7 @@ final class _PrivilegedPkgSmoke {
           await _pauseIfApproval(refresh);
           throw const _SmokeFailure("fresh-v2-bootstrap-failed");
         }
-        await _waitForOwnedStageEmpty();
+        await _removeVerifiedBootstrapRefreshStage();
       }
 
       await _prepareSmokeRoot();
@@ -215,6 +216,7 @@ final class _PrivilegedPkgSmoke {
         currentVersion: "2.6.9",
         currentBuild: 269,
       );
+      await _failFastAtApprovalBoundary(downgrade);
       if (!await _waitForBundleIdentity(
         v1Payload.app,
         version: _v1Version,
@@ -246,7 +248,7 @@ final class _PrivilegedPkgSmoke {
     await _inspectTarget(
       allowedVersions: const {(_v1Version, _v1Build)},
       requireTrust: true,
-      requireLoadedService: true,
+      requireLoadedService: false,
     );
     final payload = await _extractPackagePayload(
       request.v1Pkg,
@@ -787,9 +789,25 @@ final class _PrivilegedPkgSmoke {
         result.output.contains(
           "Expected SMAppService admin approval requirement",
         ) ||
+        result.output.contains(
+          "Administrator approval is required before the privileged macOS "
+          "updater helper can run.",
+        ) ||
         result.output.contains(_approvalCode)) {
       if (request.openSettings) await _openBackgroundItemsSettings();
       throw const _ApprovalPause();
+    }
+  }
+
+  Future<void> _failFastAtApprovalBoundary(_RuntimeResult result) async {
+    if (result.output.contains(
+      "SMAppService helper unexpectedly avoided approval.",
+    )) {
+      return;
+    }
+    await _pauseIfApproval(result);
+    if (result.exitCode != 0) {
+      throw const _SmokeFailure("runtime-handoff-failed");
     }
   }
 
@@ -835,6 +853,46 @@ final class _PrivilegedPkgSmoke {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     throw const _SmokeFailure("completed-stage-not-removed");
+  }
+
+  Future<void> _removeVerifiedBootstrapRefreshStage() async {
+    // This is only the transition from a previously installed helper to the
+    // current helper. Final v1 -> v2 acceptance never calls this fallback.
+    await _inspectTarget(
+      allowedVersions: const {(_v2Version, _v2Build)},
+      requireTrust: true,
+      requireLoadedService: false,
+    );
+    final staging = Directory(path.join(request.smokeRoot.path, "staging"));
+    await _requireSafeDirectory(staging, create: false);
+    final entries = await staging.list(followLinks: false).toList();
+    if (entries.isEmpty) return;
+    if (entries.length != 1 ||
+        await FileSystemEntity.type(entries.single.path, followLinks: false) !=
+            FileSystemEntityType.directory ||
+        !path.basename(entries.single.path).startsWith(
+              desktopUpdaterStagingPrefix,
+            )) {
+      throw const _SmokeFailure("bootstrap-stage-authority-invalid");
+    }
+    final stage = Directory(entries.single.path);
+    final state = await readStagedUpdateProvenance(stageRoot: stage);
+    if (state.provenance.packageId != _bundleIdentifier ||
+        state.provenance.artifactSha256 != request.artifactSHA256) {
+      throw const _SmokeFailure("bootstrap-stage-provenance-mismatch");
+    }
+    await verifyStagedUpdateProvenance(
+      stageRoot: stage,
+      expectedMarkerSha256: state.markerSha256,
+    );
+    await deleteOwnedStagingDirectory(
+      parent: staging,
+      stageRoot: stage,
+      nonce: state.provenance.nonce,
+    );
+    if ((await staging.list(followLinks: false).toList()).isNotEmpty) {
+      throw const _SmokeFailure("bootstrap-stage-cleanup-incomplete");
+    }
   }
 
   Future<bool> _waitForTargetVersion({

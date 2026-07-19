@@ -422,6 +422,35 @@ enable the Desktop Updater smoke helper, then return to continue.
 
 The tool opens settings only with explicit `--open-settings`; it never toggles approval.
 
+Interim evidence (`candidate-only`, 2026-07-19): the first real target-host
+bootstrap failed closed before mutation because an on-demand registered daemon
+had no active PID; the precondition now requires an active PID only for the
+terminal v2 gate. A second candidate run installed the fresh `2.7.1+271`
+payload but exposed a validated P1: the root-protected provider stage was
+removed while the exact client-owned source stage remained after completion.
+The focused RED transaction run failed 9 of 16 tests at completed and verified
+rollback cleanup boundaries. The GREEN implementation journals the exact
+source stage name, parent path, parent identity, and stage identity; removes
+only that direct child after `completed` or verified rollback; retains both
+stages for `manualActionRequired` and while the exact manager PID/start identity
+is live; rejects tampered source-stage authority; and continues parsing legacy
+journal schema 1 without claiming source cleanup authority. The widened focused
+set passed 18/18. The bootstrap tool additionally permits exactly one
+provenance-, package-ID-, and artifact-hash-bound cleanup after the old helper
+has installed and the tool has independently verified the fresh v2 target;
+the final v1-to-v2 acceptance path cannot call this transition-only fallback.
+Its focused contract test was RED before the implementation and GREEN after
+it. This candidate run is not Task 3 acceptance evidence; a new artifact from
+the P1-fix commit is still required. Commit-gate widening passed the complete
+install-helper package at 136 tests with 1 intentional crash-harness skip,
+root-harness `UpdateClientTests` at 20/20, the approval/UI/smoke Flutter set at
+45/45, the macOS runtime Swift build, targeted Dart analysis and formatting,
+and `git diff --check`. Adversarial review confirmed that schema 2 accepts only
+the exact new identity fields, schema 1 remains read-only with respect to the
+source stage, deletion is an identity-bound direct-child `removefileat`,
+manual-action state retains both stages, and recovery cannot reach cleanup
+while the exact manager PID/start identity remains live.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

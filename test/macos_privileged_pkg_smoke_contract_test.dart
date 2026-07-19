@@ -68,4 +68,41 @@ void main() {
       expect(source, isNot(contains(forbidden)), reason: forbidden);
     }
   });
+
+  test("bootstrap cleanup is provenance-bound and excluded from final install",
+      () {
+    final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
+    if (!smokeFile.existsSync()) return;
+    final source = smokeFile.readAsStringSync();
+
+    expect(
+      RegExp(r"await _removeVerifiedBootstrapRefreshStage\(\);")
+          .allMatches(source),
+      hasLength(1),
+    );
+    expect(source, contains("readStagedUpdateProvenance("));
+    expect(source, contains("verifyStagedUpdateProvenance("));
+    expect(source, contains("deleteOwnedStagingDirectory("));
+    expect(source, contains("state.provenance.artifactSha256"));
+
+    final refreshIdentity = source.indexOf("fresh-v2-bootstrap-failed");
+    final bootstrapCleanup = source.indexOf(
+      "await _removeVerifiedBootstrapRefreshStage();",
+    );
+    final downgrade = source.indexOf("final downgrade = await _runRuntime(");
+    final finalInstall = source.indexOf("Future<void> install() async");
+    final validateInputs = source.indexOf(
+      "Future<void> _validateInputs",
+      finalInstall,
+    );
+    expect(refreshIdentity, isNonNegative);
+    expect(bootstrapCleanup, greaterThan(refreshIdentity));
+    expect(downgrade, greaterThan(bootstrapCleanup));
+    expect(finalInstall, greaterThan(downgrade));
+    expect(validateInputs, greaterThan(finalInstall));
+    expect(
+      source.substring(finalInstall, validateInputs),
+      isNot(contains("_removeVerifiedBootstrapRefreshStage")),
+    );
+  });
 }

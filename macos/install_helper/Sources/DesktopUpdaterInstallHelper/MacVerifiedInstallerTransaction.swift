@@ -38,7 +38,7 @@ enum MacVerifiedInstallerTransactionState: String, Codable, CaseIterable {
 }
 
 struct MacVerifiedInstallerJournal: Codable, Equatable {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     let schemaVersion: Int
     let transactionID: String
@@ -49,6 +49,10 @@ struct MacVerifiedInstallerJournal: Codable, Equatable {
     let targetName: String
     let parentIdentity: MacFileIdentity
     let targetIdentity: MacFileIdentity
+    let sourceInstallerStageName: String?
+    let sourceInstallerStageParentPath: String?
+    let sourceInstallerStageParentIdentity: MacFileIdentity?
+    let sourceInstallerStageIdentity: MacFileIdentity?
     let installerStageName: String
     let installerStageParentPath: String
     let installerStageParentIdentity: MacFileIdentity
@@ -82,6 +86,10 @@ struct MacVerifiedInstallerJournal: Codable, Equatable {
         targetName: String,
         parentIdentity: MacFileIdentity,
         targetIdentity: MacFileIdentity,
+        sourceInstallerStageName: String,
+        sourceInstallerStageParentPath: String,
+        sourceInstallerStageParentIdentity: MacFileIdentity,
+        sourceInstallerStageIdentity: MacFileIdentity,
         installerStageName: String,
         installerStageParentPath: String,
         installerStageParentIdentity: MacFileIdentity,
@@ -100,6 +108,11 @@ struct MacVerifiedInstallerJournal: Codable, Equatable {
         self.targetName = targetName
         self.parentIdentity = parentIdentity
         self.targetIdentity = targetIdentity
+        self.sourceInstallerStageName = sourceInstallerStageName
+        self.sourceInstallerStageParentPath = sourceInstallerStageParentPath
+        self.sourceInstallerStageParentIdentity =
+            sourceInstallerStageParentIdentity
+        self.sourceInstallerStageIdentity = sourceInstallerStageIdentity
         self.installerStageName = installerStageName
         self.installerStageParentPath = installerStageParentPath
         self.installerStageParentIdentity = installerStageParentIdentity
@@ -131,7 +144,10 @@ struct MacVerifiedInstallerJournal: Codable, Equatable {
         guard try NativeStrictJSON.canonicalize(data) == data,
               let object = try NativeStrictJSON.decode(data)
                 as? [String: Any],
-              Set(object.keys) == [
+              let version = object["schemaVersion"] as? Int else {
+            throw TransactionJournalError.invalidJournal
+        }
+        let legacyKeys: Set<String> = [
                   "schemaVersion", "transactionID",
                   "ownerProcessIdentifier", "ownerProcessStartIdentity",
                   "policyID", "policySHA256", "targetName",
@@ -148,18 +164,37 @@ struct MacVerifiedInstallerJournal: Codable, Equatable {
                   "provenanceSHA256", "reservationJournalSHA256",
                   "providerTransactionIdentity", "managerProcessIdentifier",
                   "managerProcessStartIdentity", "state",
-              ],
+              ]
+        let sourceStageKeys: Set<String> = [
+            "sourceInstallerStageName", "sourceInstallerStageParentPath",
+            "sourceInstallerStageParentIdentity",
+            "sourceInstallerStageIdentity",
+        ]
+        guard (version == 1 && Set(object.keys) == legacyKeys)
+                || (version == schemaVersion
+                    && Set(object.keys) == legacyKeys.union(sourceStageKeys)),
               exactIdentityKeys(object["parentIdentity"]),
               exactIdentityKeys(object["targetIdentity"]),
               exactIdentityKeys(object["installerStageParentIdentity"]),
               exactIdentityKeys(object["installerStageIdentity"]),
               exactIdentityKeys(object["installerIdentity"]),
-              object["schemaVersion"] as? Int == schemaVersion else {
+              version == 1 || (
+                exactIdentityKeys(object["sourceInstallerStageParentIdentity"])
+                    && exactIdentityKeys(
+                        object["sourceInstallerStageIdentity"]
+                    )
+              ) else {
             throw TransactionJournalError.invalidJournal
         }
         do {
             let value = try JSONDecoder().decode(Self.self, from: data)
-            guard value.schemaVersion == schemaVersion else {
+            guard value.schemaVersion == version,
+                  version == 1 || (
+                    value.sourceInstallerStageName != nil
+                        && value.sourceInstallerStageParentPath != nil
+                        && value.sourceInstallerStageParentIdentity != nil
+                        && value.sourceInstallerStageIdentity != nil
+                  ) else {
                 throw TransactionJournalError.invalidJournal
             }
             return value
@@ -478,6 +513,13 @@ final class MacVerifiedInstallerTransaction:
                 targetName: transactionPaths.targetName,
                 parentIdentity: targetDirectory.identity,
                 targetIdentity: initialTarget,
+                sourceInstallerStageName:
+                    sourceInstallerStage.lastPathComponent,
+                sourceInstallerStageParentPath:
+                    stageParentDirectory.url.path,
+                sourceInstallerStageParentIdentity:
+                    stageParentDirectory.identity,
+                sourceInstallerStageIdentity: stageIdentity,
                 installerStageName: ownedStage.stageName,
                 installerStageParentPath:
                     ownedStage.parentDirectory.url.path,
@@ -589,6 +631,7 @@ final class MacVerifiedInstallerTransaction:
             try store.persist(journal)
             try faultInjector.hit(.afterCompletedJournalFlush)
             try removeOwnedInstallerStageIfPresent()
+            try removeSourceOwnedStageIfPresent()
             try faultInjector.hit(.afterOwnedStageRemoval)
             try targetLock.release()
             try faultInjector.hit(.afterTargetLockRelease)
@@ -619,6 +662,7 @@ final class MacVerifiedInstallerTransaction:
             try store.persist(journal)
             try faultInjector.hit(.afterRolledBackJournalFlush)
             try removeOwnedInstallerStageIfPresent()
+            try removeSourceOwnedStageIfPresent()
             try faultInjector.hit(.afterOwnedStageRemoval)
             try targetLock.release()
             try faultInjector.hit(.afterTargetLockRelease)
@@ -683,6 +727,14 @@ final class MacVerifiedInstallerTransaction:
               journal.policySHA256 == policySHA256,
               journal.parentIdentity == directory.identity,
               journal.targetIdentity == targetIdentity,
+              journal.sourceInstallerStageName
+                == sourceInstallerDirectory.url.lastPathComponent,
+              journal.sourceInstallerStageParentPath
+                == sourceInstallerStageParentDirectory.url.path,
+              journal.sourceInstallerStageParentIdentity
+                == sourceInstallerStageParentDirectory.identity,
+              journal.sourceInstallerStageIdentity
+                == sourceInstallerStageIdentity,
               journal.installerStageName == protectedStage.stageName,
               journal.installerStageParentPath
                 == protectedStage.parentDirectory.url.path,
@@ -729,6 +781,18 @@ final class MacVerifiedInstallerTransaction:
     private func removeOwnedInstallerStageIfPresent() throws {
         try protectedStage.removeIfPresent(
             expectedIdentity: installerStageIdentity
+        )
+    }
+
+    private func removeSourceOwnedStageIfPresent() throws {
+        try sourceInstallerStageParentDirectory.validatePathIdentity()
+        let name = sourceInstallerDirectory.url.lastPathComponent
+        guard sourceInstallerStageParentDirectory.exists(name: name) else {
+            return
+        }
+        try sourceInstallerStageParentDirectory.removeTree(
+            name: name,
+            expectedIdentity: sourceInstallerStageIdentity
         )
     }
 
