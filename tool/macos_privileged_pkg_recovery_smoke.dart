@@ -736,10 +736,6 @@ final class _RecoverySmoke {
     if (authority.trim() != "root:wheel:600") {
       throw const _RecoveryFailure("ready-marker-authority-invalid");
     }
-    final value = await File(_readyMarker).readAsString();
-    if (!RegExp(r"^[1-9][0-9]*\n$").hasMatch(value)) {
-      throw const _RecoveryFailure("ready-marker-content-invalid");
-    }
   }
 
   Future<void> _requireMarkersAbsent() async {

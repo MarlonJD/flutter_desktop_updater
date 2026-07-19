@@ -873,6 +873,23 @@ confirm the fail-closed behavior, but the real installer-active crash sequence
 remains `not run` because starting it would require a new transaction against a
 target still blocked by the retained journal.
 
+Root-only gate continuation (`verified locally`, 2026-07-20): the real
+`78e83aa25db3095a669c71a959be9e23bf21dfa0` installer-active diagnostic reached
+the fixed preinstall and created the expected regular `root:wheel:600` ready
+marker, but exposed a P1 in the recovery harness: the unprivileged controller
+then attempted to read that root-only file. The marker content is not an
+authority input; the harness separately binds the unique manager PID, its
+microsecond start identity, the provider transaction UUID, exact fixed argv,
+and the unchanged source stage. The focused RED failed on the root-only read.
+The minimal GREEN preserves the marker's restrictive ownership and mode and
+uses only its fixed path, regular-node shape, and authority as readiness proof;
+it neither weakens the preinstall nor exposes the marker content. The focused
+test passed 1/1, all recovery contracts passed 8/8, targeted Dart analysis
+reported no issues, `MacVerifiedInstallerTransactionTests` passed 18/18,
+`MacInstallerWorkerTests` passed 4/4, `MacPersistentRecoveryTests` passed 5/5,
+the preinstall passed `sh -n`, and `git diff --check` passed. Fresh exact-fix
+target-host recovery remains required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

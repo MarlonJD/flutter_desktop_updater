@@ -41,6 +41,20 @@ void main() {
     expect(source, isNot(contains("eval")));
   });
 
+  test("recovery harness does not read the root-only ready marker", () {
+    final source = File(
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ).readAsStringSync();
+
+    expect(source, contains('authority.trim() != "root:wheel:600"'));
+    expect(
+      source,
+      isNot(contains("File(_readyMarker).readAsString()")),
+    );
+    expect(source, contains("_waitForUniqueInstaller("));
+    expect(source, contains("_sameLiveManager("));
+  });
+
   test("packager enables scripts only for the fixed recovery smoke flag", () {
     final source = File(
       "example/native/macos-runtime/package_smoke_app.sh",
@@ -63,7 +77,8 @@ void main() {
     ).readAsStringSync();
 
     expect(source, contains('optionalValue("--query-transaction")'));
-    expect(source, contains("MacInstallHelper().queryTransaction("));
+    expect(source, contains("let helper = MacInstallHelper()"));
+    expect(source, contains("helper.queryTransaction("));
     expect(source, contains("Select exactly one transaction operation."));
     expect(source, contains('"event": "query"'));
     expect(source, contains('"resultCode": recoveryResultName('));
