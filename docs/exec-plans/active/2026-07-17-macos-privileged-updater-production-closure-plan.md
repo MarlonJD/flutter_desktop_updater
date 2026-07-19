@@ -854,6 +854,39 @@ passed. The accepted `bbcb4ac` artifacts are diagnostic-only after this code
 change; fresh artifacts and both real target-host sequences remain required
 before checking Step 4 or Task 4 Step 3.
 
+Registration-retry continuation (`candidate-only`, 2026-07-20): exact HEAD
+`fdb86f4512e4eb9cf1ca8da2b2ceb971d274837b` produced fresh signed,
+accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submission IDs were
+`afd38af8-d8cf-4fc8-b076-d2fba8aff7ce` and
+`d66706b3-bc3c-43c4-a19f-cc17c21a597f`; the v2 app/PKG submission IDs were
+`f19fbc98-81d3-4a6a-90b1-ed0a0ee85e9b` and
+`192fb1e4-7244-41b5-bca1-5308b95faf26`. Their final PKG SHA-256 values were
+`b3833efc089d18c30b938b139ea9642ae9480e80267c68b31f2a5ba724e947f3`
+and
+`dcb26f9bb486e2fdac947c1760809ba71af43d50da7fdda64e54606dddd314e7`;
+both independent audits passed. Official bootstrap, v1 verification, and the
+user-controlled typed approval cycle passed against that exact commit and v2
+hash. The continuation installed `2.7.1+271`, updated the matching receipt, and
+left the app root-owned, then exposed a second activation P1: the asynchronous
+SMAppService unregister completion arrived before ServiceManagement would
+accept an immediate register, which returned `endpointUnavailable` and left no
+registered service. The same fixed signed health probe succeeded without any
+other mutation when repeated after that transient interval, confirming the
+registration race. No elevation report was written. The focused RED executed
+one test and failed with `endpointUnavailable`. The minimal GREEN retries only
+that exact registration error through the same fixed SMAppService installer,
+using the existing bounded 30-attempt, 100-ms activation delay. It never retries
+`privilegedHelperApprovalRequired`, malformed endpoint responses, or identity
+mismatches after registration, and it adds no executable, argument, provider,
+stage, journal, or approval authority. Both focused registration tests passed
+1/1, including the no-retry approval boundary; the complete isolated
+`MacPackagedHelperTransportTests` set passed 26/26; the Task 3 Flutter set
+passed 53/53; the runtime sample completed a release Swift build; and
+`git diff --check` passed. The accepted `fdb86f4` artifacts are diagnostic-only
+after this code change; fresh artifacts and both real target-host sequences
+remain required before checking Step 4 or Task 4 Step 3.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

@@ -1242,7 +1242,17 @@ final class PackagedMacInstallHelperTransport:
                 throw error
             }
         }
-        try privilegedInstaller.install()
+        for attempt in 0 ..< privilegedEndpointActivationAttempts {
+            do {
+                try privilegedInstaller.install()
+                break
+            } catch let error as MacInstallClientError
+                where error == .endpointUnavailable
+                    && attempt + 1 < privilegedEndpointActivationAttempts
+            {
+                privilegedEndpointActivationDelay()
+            }
+        }
         for attempt in 0 ..< privilegedEndpointActivationAttempts {
             do {
                 let installedEndpoint = try privilegedExchange

@@ -517,6 +517,76 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(installer.installCount, 1)
     }
 
+    func testPrivilegedEndpointRefreshRetriesUnavailableRegistration() throws {
+        let expectedIdentity = String(repeating: "d", count: 64)
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        var unavailableRegistrations = 1
+        let installer = RecordingPrivilegedHelperInstaller {
+            if unavailableRegistrations > 0 {
+                unavailableRegistrations -= 1
+                throw MacInstallClientError.endpointUnavailable
+            }
+            privileged.endpointIdentity = expectedIdentity
+        }
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(
+                identity: expectedIdentity
+            ),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        try transport.refreshPrivilegedEndpoint()
+
+        XCTAssertEqual(installer.installCount, 2)
+        XCTAssertEqual(privileged.validationCount, 2)
+        XCTAssertEqual(activationDelayCount, 1)
+    }
+
+    func testPrivilegedEndpointRefreshDoesNotRetryApprovalRequirement() {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        let installer = RecordingPrivilegedHelperInstaller {
+            throw MacInstallClientError.privilegedHelperApprovalRequired
+        }
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(try transport.refreshPrivilegedEndpoint()) {
+            XCTAssertEqual(
+                $0 as? MacInstallClientError,
+                .privilegedHelperApprovalRequired
+            )
+        }
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
+    }
+
     func testProtectedEndpointActivationRetriesAfterRegistration()
         throws
     {
@@ -830,16 +900,16 @@ final class MacPackagedHelperTransportTests: XCTestCase {
 private final class RecordingPrivilegedHelperInstaller:
     MacPrivilegedHelperInstalling
 {
-    private let onInstall: () -> Void
+    private let onInstall: () throws -> Void
     private(set) var installCount = 0
 
-    init(onInstall: @escaping () -> Void) {
+    init(onInstall: @escaping () throws -> Void) {
         self.onInstall = onInstall
     }
 
     func install() throws {
         installCount += 1
-        onInstall()
+        try onInstall()
     }
 }
 
