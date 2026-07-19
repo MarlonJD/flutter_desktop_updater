@@ -195,7 +195,7 @@ remains in this slice.
 - Consumes: source app, final PKG, expected Team ID/version/build/bundle/receipt, notary submission ID, and git commit.
 - Produces: sanitized schema-1 JSON with hashes, identifiers, booleans, and literal status; no paths or credential data.
 
-- [ ] **Step 1: Write the RED audit contract**
+- [x] **Step 1: Write the RED audit contract**
 
 Require options `--source-app`, `--pkg`, `--expected-team-id`, `--expected-version`, `--expected-build`, `--expected-bundle-id`, `--expected-receipt-id`, `--git-commit`, `--notarization-submission-id`, and `--evidence`.
 
@@ -207,7 +207,13 @@ flutter test --no-pub test/macos_pkg_artifact_audit_test.dart
 
 Expected: FAIL because the tool does not exist.
 
-- [ ] **Step 2: Implement fail-closed evidence**
+Evidence (`verified locally`, 2026-07-19): the first focused RED run failed
+because `tool/macos_pkg_artifact_audit.dart` did not exist. After the CLI/schema
+surface was introduced, a second behavioral RED run failed because the executor
+returned `audit-not-implemented` instead of verified evidence and did not
+classify an injected payload-helper signature failure.
+
+- [x] **Step 2: Implement fail-closed evidence**
 
 Write this shape only after every check passes:
 
@@ -236,7 +242,16 @@ Write this shape only after every check passes:
 
 On failure, write `candidate-only` plus a stable failure class, never stderr.
 
-- [ ] **Step 3: Validate Keychain and build fresh v1/v2 artifacts**
+Evidence (`verified locally`, 2026-07-19): 4 focused tests passed. The audit
+validates source and expanded-payload app/main/helper signatures independently,
+requires matching Team ID and hardened runtime, binds the fixed component
+receipt/version, checks the package signer, app/PKG staples, and execute/install
+Gatekeeper assessments, and writes only the exact sanitized success or failure
+schema. An injected helper failure containing an identity display name and
+private-looking Keychain path produced only
+`payload-helper-signature-invalid`.
+
+- [x] **Step 3: Validate Keychain and build fresh v1/v2 artifacts**
 
 Run:
 
@@ -257,7 +272,19 @@ allowed install root: /Applications
 
 Pass existing identity/profile environment values by reference. Never reuse the pre-`ccfbe52` fixture.
 
-- [ ] **Step 4: Notarize, staple, audit, commit reusable code**
+Evidence (`verified locally`, 2026-07-19): the sanitized production doctor
+confirmed the existing Developer ID Application identity, Developer ID Installer
+identity, and notary profile. Fresh smoke-owned `2.7.0+270` and `2.7.1+271`
+source apps and PKGs were built from exact implementation commit
+`53f01cc2a60872a878b22b253dd3544f9430a456`, package ID
+`net.monolib.updater`, receipt ID `net.monolib.updater.pkg`, and allowed root
+`/Applications`. Accepted submissions were
+`dede09ff-9c33-4290-99fa-dd0d05684dff` and
+`1081ff38-00ad-47fd-b4be-ef5122305863` for v1, and
+`6fc6647f-68ed-4756-ad10-2aadb45ad628` and
+`5559ae5f-09bc-4da2-999a-e9f8542729e9` for v2. No prior fixture was reused.
+
+- [x] **Step 4: Notarize, staple, audit, commit reusable code**
 
 Run the audit only after source app and PKG are notarized/stapled. Require source, expanded payload, and independent helper checks to pass.
 
@@ -270,6 +297,21 @@ git push origin feat/native-sdk-platform-split
 ```
 
 Do not commit evidence until Tasks 3 and 4 bind to the same commit/artifact hash.
+
+Evidence (`verified locally`, 2026-07-19): the v2 source app and final PKG were
+notarized and stapled, and the system trust-context audit passed with artifact
+SHA-256 `22debe73bf7381ce34a2bf3e3c29ba5c133f4775850d607c6d8b0a5a7b865143`.
+The sanitized `artifact-trust.json` reports `verified locally`, binds commit
+`53f01cc2a60872a878b22b253dd3544f9430a456`, contains no raw path, credential,
+environment, command, stdout, or stderr field, and matches the independently
+computed PKG hash. A sandbox-only `codesign` false negative was isolated by
+running the identical six app/main/helper checks in both contexts; all six
+passed in the required system trust context. A real PackageInfo XML-declaration
+parser defect was then reproduced RED and fixed GREEN by scoping attributes to
+the root `<pkg-info>` tag. The final focused suite passed 6 tests, focused format
+and `git diff --check` passed, and the privilege/signing review found no
+alternate component traversal, followed top-level symlink, caller-controlled
+executable, ignored exit code, or raw failure-output evidence path.
 
 ### Task 3: Prove Typed Approval and Real Privileged Installation
 
