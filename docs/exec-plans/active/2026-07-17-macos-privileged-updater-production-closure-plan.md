@@ -332,7 +332,7 @@ executable, ignored exit code, or raw failure-output evidence path.
 - Consumes: Task 2 v1 app/v2 PKG and existing typed runtime error.
 - Produces: typed approval evidence and verified `2.7.0+270` to `2.7.1+271` SMAppService/XPC installation.
 
-- [ ] **Step 1: Write RED typed smoke contracts**
+- [x] **Step 1: Write RED typed smoke contracts**
 
 Require this event without message matching:
 
@@ -357,7 +357,16 @@ flutter test --no-pub \
 
 Expected: new smoke contract FAILS; existing SDK/UI tests stay green.
 
-- [ ] **Step 2: Emit typed JSON from the smoke adapter**
+Evidence (`verified locally`, 2026-07-19): the first 44-test focused run
+reported exactly the two intended RED failures: the Swift smoke executable did
+not emit the typed diagnostic JSON and
+`tool/macos_privileged_pkg_smoke.dart` did not exist. The existing typed SDK,
+custom-client diagnostic, stock card, and dialog permission behavior remained
+green. A follow-up bootstrap-integrity RED failed until the smoke adapter
+accepted explicit current version/build inputs, preventing a test descriptor
+from misrepresenting the physical v1 PKG version.
+
+- [x] **Step 2: Emit typed JSON from the smoke adapter**
 
 Use existing typed values:
 
@@ -374,6 +383,22 @@ if let runtimeError = error as? RuntimeError,
 ```
 
 Keep it inside the smoke executable; add no second public API.
+
+Evidence (`verified locally`, 2026-07-19): the private Swift smoke adapter now
+serializes the existing typed diagnostic code and remediation values with
+`JSONSerialization`; it retains the existing human-readable line and adds no
+public SDK API. The fail-closed target-host tool fixes the target path, bundle,
+receipt, owner marker, Team ID, v1/v2 versions, schema-v3 PKG authority, and
+evidence schema. It performs no direct installer execution and exposes settings
+only behind explicit `--open-settings`. The semantic bootstrap first refreshes
+the exact current v2 package, then uses explicit smoke-only current-version
+inputs to install the physical `2.7.0+270` package with matching descriptor
+metadata. The Swift executable built successfully; 44 focused Flutter tests,
+20 root-harness `UpdateClientTests`, and targeted Dart analysis passed. The
+plan's nested `macos/desktop_updater` SwiftPM command remains unavailable
+outside a generated Flutter host because `FlutterMacOS` is not exposed by that
+generated package; the root package runs the same `DesktopUpdaterKit` sources
+and tests and passed 20/20.
 
 - [ ] **Step 3: Install verified v1 safely and exercise approval**
 

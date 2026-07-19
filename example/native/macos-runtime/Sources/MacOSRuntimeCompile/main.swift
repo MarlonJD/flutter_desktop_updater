@@ -44,8 +44,8 @@ struct MacOSRuntimeSmoke {
                 arguments.value("--app-archive-url")
             ),
             expectedPackageId: packageId,
-            currentVersion: "2.7.0",
-            currentBuildNumber: 270,
+            currentVersion: arguments.optionalValue("--current-version") ?? "2.7.0",
+            currentBuildNumber: arguments.optionalInt("--current-build-number") ?? 270,
             currentUpdaterVersion: "2.7.0",
             platform: "macos",
             installationIdentity: "macos-native-runtime-smoke",
@@ -92,6 +92,11 @@ struct MacOSRuntimeSmoke {
                 .openMacOSBackgroundItemsSettings
             )
         {
+            try emit([
+                "event": "installFailed",
+                "code": diagnostic.code.rawValue,
+                "remediationActions": diagnostic.remediationActions.map(\.rawValue),
+            ])
             print("Expected SMAppService admin approval requirement")
             return
         }
@@ -123,6 +128,10 @@ private struct Arguments {
             ] where optionalValue(option) == nil {
                 throw SmokeFailure("Missing required argument \(option).")
             }
+            if let build = optionalValue("--current-build-number"),
+               Int64(build).map({ $0 >= 0 }) != true {
+                throw SmokeFailure("Current build number must be non-negative.")
+            }
         }
     }
 
@@ -144,6 +153,10 @@ private struct Arguments {
               values.indices.contains(index + 1)
         else { return nil }
         return values[index + 1]
+    }
+
+    func optionalInt(_ option: String) -> Int64? {
+        optionalValue(option).flatMap(Int64.init)
     }
 }
 
@@ -177,4 +190,15 @@ private func writeDiagnostics(_ lines: [String], to file: URL) throws {
         atomically: true,
         encoding: .utf8
     )
+}
+
+private func emit(_ object: [String: Any]) throws {
+    let data = try JSONSerialization.data(
+        withJSONObject: object,
+        options: [.sortedKeys]
+    )
+    guard let line = String(data: data, encoding: .utf8) else {
+        throw SmokeFailure("Smoke JSON event could not be encoded as UTF-8.")
+    }
+    print(line)
 }

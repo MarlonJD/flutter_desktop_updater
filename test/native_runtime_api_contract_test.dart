@@ -80,6 +80,23 @@ void main() {
     expect(sample, contains("RuntimeError.diagnostic"));
     expect(sample, contains(".privilegedHelperApprovalRequired"));
     expect(sample, contains(".openMacOSBackgroundItemsSettings"));
+    expect(sample, contains('"event": "installFailed"'));
+    expect(sample, contains('"code": diagnostic.code.rawValue'));
+    expect(
+      sample,
+      contains(
+        '"remediationActions": diagnostic.remediationActions.map(\\.rawValue)',
+      ),
+    );
+    expect(sample, contains("JSONSerialization.data"));
+    expect(
+      sample,
+      contains('arguments.optionalValue("--current-version") ?? "2.7.0"'),
+    );
+    expect(
+      sample,
+      contains('arguments.optionalInt("--current-build-number") ?? 270'),
+    );
     expect(
       sample,
       isNot(contains(
