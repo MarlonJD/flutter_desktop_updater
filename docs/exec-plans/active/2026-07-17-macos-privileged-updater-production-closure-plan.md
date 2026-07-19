@@ -702,6 +702,33 @@ runtime and privileged-PKG contracts passed 16/16; the signed runtime sample
 completed a release Swift build; and `git diff --check` passed. Fresh artifacts
 from the eventual Task 3 fix commit remain required.
 
+Approval-continuation continuation (`verified locally`, 2026-07-19): the exact
+`78e83aa25db3095a669c71a959be9e23bf21dfa0` v2 artifact produced the required
+typed `PrivilegedHelperApprovalRequired` event and remediation, retained its
+owned source stage, and left the verified `2.7.0+270` target and receipt
+unchanged. After approval, two diagnostic installs reached a real fixed-argv
+installer and installed `2.7.1+271` with a matching receipt, root ownership,
+terminal provider cleanup, and an empty source stage. They also exposed a P1 in
+the test continuation: the recovery PKG gate required external release, the
+separate approval process left an earlier stage, and the on-demand helper exited
+before the harness's late PID check. Those runs are diagnostic-only and did not
+write elevation evidence. The focused RED failed both the approval-continuation
+and installed-helper probe contracts. The minimal GREEN now accepts cleanup
+authority only from the exact sanitized approval report and its inventory-bound
+stage provenance, resolves one provider transaction and only the fixed
+`/usr/sbin/installer -pkg <protected-stage>/installer.pkg -target /` process,
+releases the fixed smoke gate, and probes the installed helper through the
+fixed signed target host and authenticated typed XPC query while binding the
+observed launchd PID to the exact helper executable. The fixed probe has no
+caller-controlled executable, transaction, duration, or installer argument.
+Both focused tests passed 1/1; the widened Task 3 Flutter set passed 51/51; the
+root package's identical `UpdateClientTests` source set passed 20/20; targeted
+Dart analysis reported no issues; the runtime sample completed a release Swift
+build; and `git diff --check` passed. The nested package command retains its
+documented generated-host `FlutterMacOS` module blocker; it introduced no new
+test failure. Fresh exact-fix artifacts and the real approval/install rerun
+remain required before checking Step 4.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

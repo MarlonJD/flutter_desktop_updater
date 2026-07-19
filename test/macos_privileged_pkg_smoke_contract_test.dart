@@ -62,8 +62,6 @@ void main() {
       "sudo",
       "osascript",
       "Installer.app",
-      "/usr/sbin/installer",
-      "Process.start",
     ]) {
       expect(source, isNot(contains(forbidden)), reason: forbidden);
     }
@@ -103,6 +101,39 @@ void main() {
     expect(
       source.substring(finalInstall, validateInputs),
       isNot(contains("_removeVerifiedBootstrapRefreshStage")),
+    );
+  });
+
+  test("approval install resumes through the fixed recovery gate", () {
+    final source = File(
+      "tool/macos_privileged_pkg_smoke.dart",
+    ).readAsStringSync();
+
+    for (final value in [
+      "_removeVerifiedApprovalStage",
+      "approval.json",
+      "_waitForFixedInstallerManager",
+      "/usr/sbin/installer",
+      "/private/var/tmp/net.monolib.updater.pkg-recovery.ready",
+      "/private/var/tmp/net.monolib.updater.pkg-recovery.release",
+      "root:wheel:600",
+      "_probeInstalledLaunchDaemon",
+      "--hold-helper-active",
+    ]) {
+      expect(source, contains(value), reason: value);
+    }
+
+    expect(source, contains("readStagedUpdateProvenance("));
+    expect(source, contains("verifyStagedUpdateProvenance("));
+    expect(source, contains("deleteOwnedStagingDirectory("));
+    expect(source, contains("Process.start(host,"));
+    expect(
+      source,
+      isNot(contains('Process.run("/usr/sbin/installer"')),
+    );
+    expect(
+      source,
+      isNot(contains('Process.start("/usr/sbin/installer"')),
     );
   });
 

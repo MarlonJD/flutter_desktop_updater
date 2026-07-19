@@ -132,6 +132,23 @@ void main() {
     expect(source, isNot(contains('throw SmokeFailure("$sentinel")')));
   });
 
+  test("macOS signed smoke host can hold an authenticated helper probe", () {
+    final source = readRequiredFile(
+      "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
+    );
+
+    expect(source, contains('arguments.has("--hold-helper-active")'));
+    expect(source, contains("let helper = MacInstallHelper()"));
+    expect(
+      source,
+      contains("try await Task.sleep(nanoseconds: 15_000_000_000)"),
+    );
+    expect(
+      source,
+      contains("Helper hold is available only for transaction queries."),
+    );
+  });
+
   test("Windows runtime C ABI is versioned, sized, owned, and exception-safe",
       () {
     final header = readRequiredFile(

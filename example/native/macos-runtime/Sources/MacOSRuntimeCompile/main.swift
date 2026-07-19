@@ -40,8 +40,9 @@ struct MacOSRuntimeSmoke {
         if let transactionID = arguments.optionalValue(
             "--query-transaction"
         ) {
+            let helper = MacInstallHelper()
             do {
-                let status = try MacInstallHelper().queryTransaction(
+                let status = try helper.queryTransaction(
                     transactionID
                 )
                 try emit([
@@ -66,6 +67,9 @@ struct MacOSRuntimeSmoke {
                     "code": diagnostic.code.rawValue,
                     "remediationActions": diagnostic.remediationActions.map(\.rawValue),
                 ])
+            }
+            if arguments.has("--hold-helper-active") {
+                try await Task.sleep(nanoseconds: 15_000_000_000)
             }
             return
         }
@@ -187,6 +191,13 @@ private struct Arguments {
                 optionalValue("--query-transaction") == nil
         else {
             throw SmokeFailure("Select exactly one transaction operation.")
+        }
+        if has("--hold-helper-active") &&
+            optionalValue("--query-transaction") == nil
+        {
+            throw SmokeFailure(
+                "Helper hold is available only for transaction queries."
+            )
         }
         if optionalValue("--recover-transaction") != nil ||
             optionalValue("--query-transaction") != nil

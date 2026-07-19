@@ -27,6 +27,9 @@ const _settingsInstructions =
     "System Settings > General > Login Items & Extensions > "
     "Allow in the Background: enable the Desktop Updater smoke helper.";
 const _openSettingsOption = "--open-settings";
+const _readyMarker = "/private/var/tmp/net.monolib.updater.pkg-recovery.ready";
+const _releaseMarker =
+    "/private/var/tmp/net.monolib.updater.pkg-recovery.release";
 
 final _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
 final _commitPattern = RegExp(r"^[0-9a-f]{40}$");
@@ -254,7 +257,7 @@ final class _PrivilegedPkgSmoke {
       await _inspectTarget(
         allowedVersions: const {(_v1Version, _v1Build)},
         requireTrust: true,
-        requireLoadedService: true,
+        requireLoadedService: false,
       );
       await _waitForOwnedStageEmpty();
       await _recoverBlockingBootstrapTransaction(
@@ -349,7 +352,11 @@ final class _PrivilegedPkgSmoke {
 
   Future<void> install() async {
     await verifyV1();
-    await _prepareSmokeRoot(preserveExisting: true);
+    await _removeVerifiedApprovalStage();
+    await _prepareSmokeRoot();
+    if ((await _providerTransactionIDs()).isNotEmpty) {
+      throw const _SmokeFailure("provider-journal-already-present");
+    }
     final result = await _runRuntime(
       artifact: request.v2Pkg,
       releaseVersion: _v2Version,
@@ -364,6 +371,10 @@ final class _PrivilegedPkgSmoke {
       }
       throw const _SmokeFailure("privileged-install-not-scheduled");
     }
+    final manager = await _waitForFixedInstallerManager(
+      const Duration(seconds: 90),
+    );
+    await _releaseRecoveryGate(manager.processIdentifier);
     if (!await _waitForTargetVersion(
       version: _v2Version,
       build: _v2Build,
@@ -371,10 +382,15 @@ final class _PrivilegedPkgSmoke {
     )) {
       throw const _SmokeFailure("privileged-install-timeout");
     }
-    final installed = await _inspectTarget(
+    final installedServicePID = await _probeInstalledLaunchDaemon(
+      transactionID: manager.transactionID,
+      expectedVersion: _v2Version,
+      expectedBuild: _v2Build,
+    );
+    await _inspectTarget(
       allowedVersions: const {(_v2Version, _v2Build)},
       requireTrust: true,
-      requireLoadedService: true,
+      requireLoadedService: false,
     );
     final payload = await _extractPackagePayload(
       request.v2Pkg,
@@ -415,7 +431,7 @@ final class _PrivilegedPkgSmoke {
       "gatekeeperAccepted": true,
       "stapleValid": true,
       "launchDaemonActive": true,
-      "launchDaemonPID": installed.servicePID,
+      "launchDaemonPID": installedServicePID,
       "artifactKind": _artifactKind,
       "launchMode": _launchMode,
       "minimumUpdaterVersion": _minimumUpdaterVersion,
@@ -950,6 +966,257 @@ final class _PrivilegedPkgSmoke {
     }
   }
 
+  Future<void> _removeVerifiedApprovalStage() async {
+    final approval = File(
+      path.join(request.evidenceDirectory.path, "approval.json"),
+    );
+    await _requireNode(approval.path, FileSystemEntityType.file);
+    if (await approval.length() > 64 * 1024) {
+      throw const _SmokeFailure("approval-evidence-oversized");
+    }
+    final decoded = jsonDecode(await approval.readAsString());
+    if (decoded is! Map<String, Object?>) {
+      throw const _SmokeFailure("approval-evidence-invalid");
+    }
+    _validateEvidenceDocument(decoded, kind: "approval");
+    if (decoded["gitCommit"] != request.gitCommit ||
+        decoded["artifactSHA256"] != request.artifactSHA256 ||
+        decoded["notarizationSubmissionId"] !=
+            request.notarizationSubmissionId ||
+        decoded["bundleIdentifier"] != _bundleIdentifier ||
+        decoded["receiptIdentifier"] != _receiptIdentifier ||
+        decoded["event"] != "installFailed" ||
+        decoded["code"] != _approvalCode ||
+        _stringList(decoded["remediationActions"]).length != 1 ||
+        _stringList(decoded["remediationActions"]).single != _settingsAction ||
+        decoded["baselineVersion"] != _v1Version ||
+        decoded["baselineBuild"] != _v1Build ||
+        decoded["teamIdentifier"] != _teamIdentifier ||
+        decoded["approvalStatus"] != "requiresApproval" ||
+        decoded["stageRetained"] != true ||
+        decoded["artifactKind"] != _artifactKind ||
+        decoded["launchMode"] != _launchMode ||
+        decoded["minimumUpdaterVersion"] != _minimumUpdaterVersion) {
+      throw const _SmokeFailure("approval-evidence-authority-mismatch");
+    }
+    final staging = Directory(path.join(request.smokeRoot.path, "staging"));
+    await _requireSafeDirectory(staging, create: false);
+    final entries = await staging.list(followLinks: false).toList();
+    if (entries.length != 1 ||
+        await FileSystemEntity.type(entries.single.path, followLinks: false) !=
+            FileSystemEntityType.directory ||
+        !path.basename(entries.single.path).startsWith(
+              desktopUpdaterStagingPrefix,
+            )) {
+      throw const _SmokeFailure("approval-stage-authority-invalid");
+    }
+    final stage = Directory(entries.single.path);
+    final state = await readStagedUpdateProvenance(stageRoot: stage);
+    if (state.provenance.packageId != _bundleIdentifier ||
+        state.provenance.artifactSha256 != request.artifactSHA256) {
+      throw const _SmokeFailure("approval-stage-provenance-mismatch");
+    }
+    await verifyStagedUpdateProvenance(
+      stageRoot: stage,
+      expectedMarkerSha256: state.markerSha256,
+    );
+    await deleteOwnedStagingDirectory(
+      parent: staging,
+      stageRoot: stage,
+      nonce: state.provenance.nonce,
+    );
+  }
+
+  Future<_FixedInstallerManager> _waitForFixedInstallerManager(
+    Duration timeout,
+  ) async {
+    final readyDeadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(readyDeadline)) {
+      final type = await FileSystemEntity.type(
+        _readyMarker,
+        followLinks: false,
+      );
+      if (type == FileSystemEntityType.file) break;
+      if (type != FileSystemEntityType.notFound) {
+        throw const _SmokeFailure("recovery-ready-node-invalid");
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (await FileSystemEntity.type(_readyMarker, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw const _SmokeFailure("recovery-ready-timeout");
+    }
+    final authority = await _runChecked(
+      "/usr/bin/stat",
+      ["-f", "%Su:%Sg:%Lp", _readyMarker],
+      failureClass: "recovery-ready-authority-unavailable",
+    );
+    if (authority.output.trim() != "root:wheel:600") {
+      throw const _SmokeFailure("recovery-ready-authority-invalid");
+    }
+
+    final transactionDeadline = DateTime.now().add(
+      const Duration(seconds: 30),
+    );
+    while (DateTime.now().isBefore(transactionDeadline)) {
+      final transactions = await _providerTransactionIDs();
+      if (transactions.length > 1) {
+        throw const _SmokeFailure("provider-journal-ambiguous");
+      }
+      if (transactions.length == 1) {
+        final managers = await _fixedInstallerProcesses(
+          transactions.single,
+        );
+        if (managers.length > 1) {
+          throw const _SmokeFailure("installer-manager-ambiguous");
+        }
+        if (managers.length == 1) {
+          return _FixedInstallerManager(
+            processIdentifier: managers.single,
+            transactionID: transactions.single,
+          );
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw const _SmokeFailure("installer-manager-not-found");
+  }
+
+  Future<Set<String>> _providerTransactionIDs() async {
+    final targetName = path.basename(_targetPath);
+    final pattern = RegExp(
+      "^\\.${RegExp.escape(targetName)}\\.desktop-updater-"
+      "([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+      r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\.provider\.json$",
+    );
+    final transactions = <String>{};
+    await for (final entry in Directory("/Applications").list(
+      followLinks: false,
+    )) {
+      final match = pattern.firstMatch(path.basename(entry.path));
+      if (match == null) continue;
+      if (await FileSystemEntity.type(entry.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        throw const _SmokeFailure("provider-journal-node-invalid");
+      }
+      transactions.add(match.group(1)!);
+    }
+    return transactions;
+  }
+
+  Future<List<int>> _fixedInstallerProcesses(String transactionID) async {
+    final result = await _runChecked(
+      "/bin/ps",
+      ["-ww", "-axo", "pid=,command="],
+      failureClass: "process-inspection-failed",
+    );
+    final expected = RegExp(
+      r"^/usr/sbin/installer -pkg "
+      r"/Library/PrivilegedHelperTools/\.desktop-updater-stages-"
+      r"[0-9a-f]{64}/desktop-updater-stage-"
+      "${RegExp.escape(transactionID)}"
+      r"/installer\.pkg -target /$",
+    );
+    final linePattern = RegExp(r"^\s*([0-9]+)\s+(.+)$");
+    final matches = <int>[];
+    for (final line in result.output.split("\n")) {
+      final parsed = linePattern.firstMatch(line);
+      if (parsed != null && expected.hasMatch(parsed.group(2)!)) {
+        matches.add(int.parse(parsed.group(1)!));
+      }
+    }
+    return matches;
+  }
+
+  Future<void> _releaseRecoveryGate(int managerPID) async {
+    if (managerPID <= 0 ||
+        await FileSystemEntity.type(_releaseMarker, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+      throw const _SmokeFailure("recovery-release-authority-invalid");
+    }
+    final release = File(_releaseMarker);
+    await release.create(exclusive: true);
+    final handle = await release.open(mode: FileMode.write);
+    try {
+      await handle.writeString("$managerPID\n");
+      await handle.flush();
+    } finally {
+      await handle.close();
+    }
+  }
+
+  Future<int> _probeInstalledLaunchDaemon({
+    required String transactionID,
+    required String expectedVersion,
+    required String expectedBuild,
+  }) async {
+    if (!_uuidPattern.hasMatch(transactionID)) {
+      throw const _SmokeFailure("installed-helper-probe-transaction-invalid");
+    }
+    final metadata = await _readBundleMetadata(Directory(_targetPath));
+    if (metadata.bundleIdentifier != _bundleIdentifier ||
+        metadata.version != expectedVersion ||
+        metadata.build != expectedBuild) {
+      throw const _SmokeFailure("installed-helper-probe-target-invalid");
+    }
+    final host = path.join(
+      _targetPath,
+      "Contents",
+      "MacOS",
+      metadata.executable,
+    );
+    final helper = path.join(
+      _targetPath,
+      "Contents",
+      "Helpers",
+      "DesktopUpdaterInstallHelper",
+    );
+    final process = await Process.start(host, [
+      "--smoke",
+      "--query-transaction",
+      transactionID,
+      "--hold-helper-active",
+    ]);
+    final stdoutFuture = utf8.decoder.bind(process.stdout).join();
+    final stderrFuture = utf8.decoder.bind(process.stderr).join();
+    try {
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      int? servicePID;
+      while (DateTime.now().isBefore(deadline)) {
+        servicePID = await _launchDaemonPID(metadata.serviceIdentifier);
+        if (servicePID != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (servicePID == null) {
+        throw const _SmokeFailure("launch-daemon-not-active");
+      }
+      final command = await Process.run(
+        "/bin/ps",
+        ["-ww", "-p", "$servicePID", "-o", "command="],
+      );
+      if (command.exitCode != 0 || "${command.stdout}".trim() != helper) {
+        throw const _SmokeFailure("launch-daemon-executable-mismatch");
+      }
+      final code = await process.exitCode.timeout(
+        const Duration(seconds: 30),
+      );
+      final output = await stdoutFuture;
+      final errorOutput = await stderrFuture;
+      if (code != 0 ||
+          errorOutput.trim().isNotEmpty ||
+          !output.contains('"event":"query"')) {
+        throw const _SmokeFailure("installed-helper-probe-failed");
+      }
+      return servicePID;
+    } on Object {
+      process.kill(ProcessSignal.sigterm);
+      await process.exitCode;
+      await stdoutFuture;
+      await stderrFuture;
+      rethrow;
+    }
+  }
+
   Future<void> _prepareSmokeRoot({bool preserveExisting = false}) async {
     await _requireSafeDirectory(request.smokeRoot, create: true);
     final staging = Directory(path.join(request.smokeRoot.path, "staging"));
@@ -1374,6 +1641,16 @@ final class _InstalledTarget {
   final String build;
   final String receiptVersion;
   final int? servicePID;
+}
+
+final class _FixedInstallerManager {
+  const _FixedInstallerManager({
+    required this.processIdentifier,
+    required this.transactionID,
+  });
+
+  final int processIdentifier;
+  final String transactionID;
 }
 
 final class _PackagePayload {
