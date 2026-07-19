@@ -257,6 +257,84 @@ final class InstallStrategyTests: XCTestCase {
         XCTAssertEqual(evidence.bundleTreeSHA256, application.bundleTreeSHA256)
     }
 
+    func testSystemInstallerVerifierAcceptsSingleSignedPreinstallTopology()
+        throws
+    {
+        let application = try InstalledApplicationFixture(
+            includeFrameworks: true
+        )
+        defer { application.remove() }
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: output,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: output) }
+        let scripts = output.appendingPathComponent(
+            "scripts",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: scripts,
+            withIntermediateDirectories: false
+        )
+        let preinstall = scripts.appendingPathComponent("preinstall")
+        try Data(
+            """
+            #!/bin/sh
+            set -eu
+            /usr/bin/true
+
+            """.utf8
+        ).write(to: preinstall)
+        XCTAssertEqual(Darwin.chmod(preinstall.path, 0o755), 0)
+        let component = output.appendingPathComponent("component.pkg")
+        let installer = output.appendingPathComponent("installer.pkg")
+        _ = try runInstallerTestProcess(
+            "/usr/bin/pkgbuild",
+            [
+                "--root", application.rootURL.path,
+                "--scripts", scripts.path,
+                "--install-location", "/Applications",
+                "--identifier", "com.example.app.pkg",
+                "--version", "2.0.0",
+                component.path,
+            ]
+        )
+        _ = try runInstallerTestProcess(
+            "/usr/bin/productbuild",
+            ["--package", component.path, installer.path]
+        )
+        let bytes = try Data(contentsOf: installer, options: [.mappedIfSafe])
+        let expectation = MacVerifiedInstallerExpectation(
+            installerURL: installer,
+            kind: .pkg,
+            targetURL: URL(fileURLWithPath: "/Applications/Example.app"),
+            packageIdentifier: "com.example.app",
+            expectedVersion: "2.0.0",
+            expectedBuildNumber: 200,
+            designatedRequirement: "identifier com.example.app",
+            artifactSHA256: macPrivilegeSHA256(bytes),
+            artifactLength: Int64(bytes.count),
+            expectedPackageIdentifiers: ["com.example.app.pkg"],
+            descriptorSHA256: String(repeating: "d", count: 64),
+            provenanceSHA256: String(repeating: "a", count: 64)
+        )
+
+        let evidence = try SystemMacVerifiedInstallerChecker(
+            commandRunner: ProductbuildTopologyCommandRunner(),
+            ownershipValidator: AllowingInstallerOwnershipValidator()
+        ).verifyInstaller(expectation)
+
+        XCTAssertEqual(
+            evidence.receiptVersions,
+            ["com.example.app.pkg": "2.0.0"]
+        )
+        XCTAssertEqual(evidence.executableSHA256, application.executableSHA256)
+        XCTAssertEqual(evidence.bundleTreeSHA256, application.bundleTreeSHA256)
+    }
+
     func testSystemInstallerVerifierRejectsSpecialModesFromRealPackageBOM()
         throws
     {

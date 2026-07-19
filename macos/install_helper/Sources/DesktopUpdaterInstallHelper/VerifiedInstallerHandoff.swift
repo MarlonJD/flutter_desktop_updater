@@ -682,21 +682,33 @@ final class SystemMacVerifiedInstallerChecker:
             "component.pkg",
             isDirectory: true
         )
+        let componentEntries = try exactEntryNames(in: component)
+        let hasPreinstallScript = componentEntries == [
+            "Bom", "PackageInfo", "Payload", "Scripts",
+        ]
         guard try verifiedInstallerRealDirectory(component),
-              try exactEntryNames(in: component) == [
-                "Bom", "PackageInfo", "Payload",
-              ],
+              componentEntries == ["Bom", "PackageInfo", "Payload"]
+                || hasPreinstallScript,
               verifiedInstallerRegularFile(
                 component.appendingPathComponent("Bom"),
                 maximumLength: 64 * 1024 * 1024
               ) else {
             throw MacVerifiedInstallerHandoffError.invalidExpectation
         }
+        if hasPreinstallScript {
+            try validateScripts(
+                component.appendingPathComponent(
+                    "Scripts",
+                    isDirectory: true
+                )
+            )
+        }
         let packageInfo = try validatePackageInfo(
             component.appendingPathComponent("PackageInfo"),
             expectation: expectation,
             identifier: expectedIdentifier,
-            distributionBundles: distributionBundles
+            distributionBundles: distributionBundles,
+            hasPreinstallScript: hasPreinstallScript
         )
         let payload = component.appendingPathComponent(
             "Payload",
@@ -988,7 +1000,8 @@ final class SystemMacVerifiedInstallerChecker:
         _ url: URL,
         expectation: MacVerifiedInstallerExpectation,
         identifier: String,
-        distributionBundles: Set<MacInstallerBundleRecord>
+        distributionBundles: Set<MacInstallerBundleRecord>,
+        hasPreinstallScript: Bool
     ) throws -> (identifier: String, version: String) {
         guard verifiedInstallerRegularFile(url, maximumLength: 1_048_576)
         else {
@@ -1015,7 +1028,7 @@ final class SystemMacVerifiedInstallerChecker:
         let allowedChildren: Set<String> = [
             "payload", "bundle-version", "upgrade-bundle", "update-bundle",
             "atomic-update-bundle", "strict-identifier", "relocate",
-            "bundle",
+            "bundle", "scripts",
         ]
         guard root.children?.compactMap({ $0 as? XMLElement }).allSatisfy({
             guard let name = $0.name else { return false }
@@ -1036,10 +1049,37 @@ final class SystemMacVerifiedInstallerChecker:
         ).compactMap { $0 as? XMLElement }
         let allBundleElements = try document.nodes(forXPath: "//bundle")
             .compactMap { $0 as? XMLElement }
+        let scriptElements = try document.nodes(
+            forXPath: "/pkg-info/scripts"
+        ).compactMap { $0 as? XMLElement }
+        let preinstallElements = try document.nodes(
+            forXPath: "/pkg-info/scripts/preinstall"
+        ).compactMap { $0 as? XMLElement }
+        let scriptsAreBound = hasPreinstallScript
+            ? scriptElements.count == 1
+                && Set(
+                    scriptElements[0].attributes?.compactMap(\.name) ?? []
+                ).isEmpty
+                && scriptElements[0].children?
+                    .compactMap({ $0 as? XMLElement }).count == 1
+                && preinstallElements.count == 1
+                && Set(
+                    preinstallElements[0].attributes?.compactMap(\.name) ?? []
+                ) == ["file", "timeout"]
+                && preinstallElements[0].attribute(forName: "file")?
+                    .stringValue == "./preinstall"
+                && preinstallElements[0].attribute(forName: "timeout")?
+                    .stringValue == "600"
+                && (preinstallElements[0].children?
+                    .compactMap({ $0 as? XMLElement }).isEmpty ?? true)
+                && (preinstallElements[0].stringValue ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            : scriptElements.isEmpty && preinstallElements.isEmpty
         guard !directBundles.isEmpty,
               directBundles == distributionBundles,
               allBundleElements.count
                 == directBundleElements.count + referenceBundles.count,
+              scriptsAreBound,
               referenceBundles.allSatisfy({ element in
                   Set(element.attributes?.compactMap(\.name) ?? []) == ["id"]
                     && element.attribute(forName: "id")?.stringValue
@@ -1048,6 +1088,33 @@ final class SystemMacVerifiedInstallerChecker:
             throw MacVerifiedInstallerHandoffError.invalidExpectation
         }
         return (identifier, expectation.expectedVersion)
+    }
+
+    private func validateScripts(_ directory: URL) throws {
+        guard try verifiedInstallerRealDirectory(directory),
+              try exactEntryNames(in: directory) == ["preinstall"] else {
+            throw MacVerifiedInstallerHandoffError.invalidExpectation
+        }
+        let preinstall = directory.appendingPathComponent("preinstall")
+        guard verifiedInstallerExecutableFile(preinstall),
+              verifiedInstallerRegularFile(
+                preinstall,
+                maximumLength: 64 * 1024
+              ) else {
+            throw MacVerifiedInstallerHandoffError.invalidExpectation
+        }
+        let data = try macReadBoundedRegularFile(
+            preinstall,
+            maximumLength: 64 * 1024
+        )
+        guard !data.isEmpty,
+              let script = String(data: data, encoding: .utf8),
+              script.hasPrefix("#!/bin/sh\n"),
+              script.hasSuffix("\n"),
+              !script.contains("\0"),
+              !script.contains("\r") else {
+            throw MacVerifiedInstallerHandoffError.invalidExpectation
+        }
     }
 
     private func bundleRecord(

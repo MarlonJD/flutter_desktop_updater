@@ -629,6 +629,32 @@ canonical relative paths. `git diff --check` passed. The accepted `2de155e`
 artifacts are diagnostic-only after this code change; real target-host GREEN is
 `not run` until fresh artifacts are rebuilt from the fix commit.
 
+Preinstall-verifier continuation (`verified locally`, 2026-07-19): fresh
+accepted and stapled artifacts from `cc1e2a4c56d8597ad0b5a097743c2163f53d8712`
+passed independent source, payload, component, package-signature, staple, and
+Gatekeeper checks, then the target host reproduced `installRecoveryRequired`
+before any provider journal or protected stage was created. Expansion of the
+same v2 package isolated the P1: the helper's final-PKG verifier accepted only
+the scripts-free component shape even though the recovery artifact is required
+to contain the single fixed repository `preinstall`. The focused RED executed
+one test and failed with `invalidExpectation`. The minimal GREEN accepts either
+the original scripts-free component or exactly `Scripts/preinstall`, requires
+the script to be a non-symlink regular executable no larger than 64 KiB with a
+UTF-8 `#!/bin/sh` body, and binds PackageInfo to exactly one
+`<preinstall file="./preinstall" timeout="600"/>`. The signed release descriptor
+continues binding the complete PKG SHA-256, and the provider still invokes only
+`/usr/sbin/installer -pkg <owned-stage>/installer.pkg -target /` through the
+fixed-argv worker. The focused GREEN passed 1/1, the adversarial
+`InstallStrategyTests` passed 17/17, and the complete helper package executed
+138 tests with zero failures and one intentional crash-harness skip. The
+related PKG, recovery, helper, audit, and native-retail Flutter contracts passed
+31/31; both packaging scripts passed `sh -n`. Review confirmed that an empty or
+extra Scripts shape, a postinstall, a symlink/non-executable/unsafe-mode script,
+unexpected PackageInfo attributes or children, and caller-controlled installer
+arguments remain rejected. The `cc1e2a4` artifacts are diagnostic-only after
+this fix; real target-host GREEN remains `not run` until fresh artifacts are
+built from the eventual fix commit.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
