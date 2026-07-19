@@ -819,6 +819,41 @@ completed a release Swift build. The accepted `b72420c` artifacts are
 diagnostic-only after this signed-host change; fresh artifacts and both real
 target-host sequences remain required before checking Step 4 or Task 4 Step 3.
 
+Post-install registration continuation (`candidate-only`, 2026-07-20): exact
+HEAD `bbcb4ac53e5e05d641ac20cee9f59c77644e2190` produced fresh signed,
+accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submission IDs were
+`37a1d742-f62f-4038-9765-2e2ade1cb05a` and
+`7878402c-b20c-4dfa-8db5-199c47cddca6`; the v2 app/PKG submission IDs were
+`e51ebee3-a1a4-4860-a8a7-1778046e55d6` and
+`54a39311-4341-4e6e-80af-edd3156be631`. Their final PKG SHA-256 values were
+`ed1cfb6b17e52e442454b6e52836d42bf543a44a1ebf0702d9dfc81281db2878`
+and
+`9b1ff6ead7478778b623c38d5ce180ec0e3005aa9ece3964e4769efd6efafb73`;
+both independent audits passed. Official bootstrap and v1 verification passed,
+and the user-controlled approval cycle produced the exact typed code and
+remediation, retained one owned stage, and launched no installer. The
+continuation then installed `2.7.1+271`, updated the matching receipt, and left
+the app root-owned, but the final authenticated probe exposed a P1: launchd
+still held the v1 registration and running helper identity after the package
+atomically replaced the app. The v2 client correctly rejected that valid but
+stale endpoint identity as `invalidReservationResponse`; no elevation report
+was written. The focused RED failed on the missing refresh operation. The
+minimal GREEN keeps the no-mutation validation operation and adds a separate
+SPI-only, argument-free refresh operation for the signed smoke host. It first
+authenticates the current on-disk helper, accepts only an exact endpoint
+identity match, and on a valid stale identity uses the existing fixed
+SMAppService unregister/register path before requiring the exact new identity.
+It does not add an installer executable, installer argument, provider request,
+journal mutation, or approval bypass, and it does not retry malformed endpoint
+responses. The focused Flutter contract passed 1/1, the identity-refresh Swift
+test passed 1/1, the complete isolated `MacPackagedHelperTransportTests` set
+passed 24/24, the Task 3 Flutter set passed 53/53, and the runtime sample
+completed a release Swift build. Focused formatting and `git diff --check`
+passed. The accepted `bbcb4ac` artifacts are diagnostic-only after this code
+change; fresh artifacts and both real target-host sequences remain required
+before checking Step 4 or Task 4 Step 3.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

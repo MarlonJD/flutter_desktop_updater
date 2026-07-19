@@ -7,7 +7,7 @@ struct MacOSRuntimeSmoke {
         let arguments = try Arguments(CommandLine.arguments)
         if arguments.has("--probe-helper") {
             let helper = MacInstallHelper.smAppServiceSmokeHost()
-            try helper.validatePrivilegedEndpointForSmoke()
+            try helper.refreshPrivilegedEndpointForSmoke()
             try emit([
                 "event": "helperProbe",
                 "status": "healthy",

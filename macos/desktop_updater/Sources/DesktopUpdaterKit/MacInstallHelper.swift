@@ -181,6 +181,8 @@ protocol MacInstallHelperTransport: AnyObject {
 
     func validatePrivilegedEndpoint() throws
 
+    func refreshPrivilegedEndpoint() throws
+
     func prepareInstall(
         request: Data,
         transactionID: String
@@ -209,6 +211,10 @@ extension MacInstallHelperTransport {
     func validateEndpoint() throws {}
 
     func validatePrivilegedEndpoint() throws {
+        throw MacInstallClientError.endpointUnavailable
+    }
+
+    func refreshPrivilegedEndpoint() throws {
         throw MacInstallClientError.endpointUnavailable
     }
 }
@@ -868,6 +874,10 @@ final class PackagedMacInstallHelperTransport:
 
     func validatePrivilegedEndpoint() throws {
         _ = try authenticatedPrivilegedEndpoint(allowInstallation: false)
+    }
+
+    func refreshPrivilegedEndpoint() throws {
+        _ = try authenticatedPrivilegedEndpoint(allowInstallation: true)
     }
 
     func prepareInstall(
@@ -1594,8 +1604,8 @@ public struct MacInstallHelper {
     }
 
     @_spi(DesktopUpdaterSmoke)
-    public func validatePrivilegedEndpointForSmoke() throws {
-        try transport.validatePrivilegedEndpoint()
+    public func refreshPrivilegedEndpointForSmoke() throws {
+        try transport.refreshPrivilegedEndpoint()
     }
 
     @_spi(DesktopUpdaterSmoke)

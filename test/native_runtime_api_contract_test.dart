@@ -143,7 +143,7 @@ void main() {
     expect(source, contains('arguments.has("--hold-helper-active")'));
     expect(source, contains('arguments.has("--probe-helper")'));
     expect(source, contains("MacInstallHelper.smAppServiceSmokeHost()"));
-    expect(source, contains("validatePrivilegedEndpointForSmoke()"));
+    expect(source, contains("refreshPrivilegedEndpointForSmoke()"));
     expect(source, contains('"event": "helperProbe"'));
     expect(source, contains('"status": "healthy"'));
     expect(
@@ -154,10 +154,10 @@ void main() {
       source,
       contains("Helper hold is available only for helper probes."),
     );
-    expect(helper, contains("validatePrivilegedEndpointForSmoke()"));
+    expect(helper, contains("refreshPrivilegedEndpointForSmoke()"));
     expect(
       helper,
-      contains("authenticatedPrivilegedEndpoint(allowInstallation: false)"),
+      contains("authenticatedPrivilegedEndpoint(allowInstallation: true)"),
     );
   });
 

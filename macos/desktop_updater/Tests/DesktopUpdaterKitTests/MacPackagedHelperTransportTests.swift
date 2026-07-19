@@ -487,6 +487,36 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(installer.installCount, 0)
     }
 
+    func testPrivilegedEndpointRefreshesMismatchedRegistration() throws {
+        let expectedIdentity = String(repeating: "d", count: 64)
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {
+            privileged.endpointIdentity = expectedIdentity
+        }
+        let authenticator = RecordingEndpointAuthenticator(
+            identity: expectedIdentity
+        )
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: authenticator,
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true
+        )
+
+        try transport.refreshPrivilegedEndpoint()
+
+        XCTAssertEqual(authenticator.processIdentifiers, [nil])
+        XCTAssertEqual(privileged.validationCount, 2)
+        XCTAssertEqual(privileged.operations, [])
+        XCTAssertEqual(installer.installCount, 1)
+    }
+
     func testProtectedEndpointActivationRetriesAfterRegistration()
         throws
     {
@@ -848,6 +878,7 @@ private final class RecordingPrivilegedXPCExchange:
     MacPrivilegedXPCExchanging
 {
     var isInstalled = false
+    var endpointIdentity = String(repeating: "c", count: 64)
     var remainingActivationFailures = 0
     var activationError: MacInstallClientError?
     private var responses: [Data]
@@ -869,7 +900,7 @@ private final class RecordingPrivilegedXPCExchange:
         if let activationError {
             throw activationError
         }
-        return String(repeating: "c", count: 64)
+        return endpointIdentity
     }
 
     func exchange(
@@ -882,7 +913,7 @@ private final class RecordingPrivilegedXPCExchange:
         operations.append(operation)
         return (
             responses.removeFirst(),
-            String(repeating: "c", count: 64)
+            endpointIdentity
         )
     }
 }
