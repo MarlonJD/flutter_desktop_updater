@@ -729,6 +729,32 @@ documented generated-host `FlutterMacOS` module blocker; it introduced no new
 test failure. Fresh exact-fix artifacts and the real approval/install rerun
 remain required before checking Step 4.
 
+Bootstrap recovery-gate continuation (`verified locally`, 2026-07-20): exact
+HEAD `7318a42cd5d298819a2a4ca8d2daf99dddf79d71` produced fresh Developer ID
+signed, accepted, stapled, and Gatekeeper-approved v1 and v2 source apps and
+final PKGs. The v1 app/PKG submission IDs were
+`3b1869cd-3085-4e4a-b0f0-dc94bef1a56f` and
+`87446c9e-da20-4d38-8471-0e54021af0ec`; the v2 app/PKG submission IDs were
+`be2ddbcb-1067-4023-a2a7-7c2a3cc436e7` and
+`77693a74-f2fb-432f-b9bd-e5fe86a8a0dc`. Independent audits passed both final
+PKGs; their SHA-256 values were
+`ca922a409c44688c6f9e44494d1eeb558e90ab9e7e043feb6f24b1bd05a697a6` and
+`775556a1a32a80ec6e1acaa4ad259f0ccbd02289aa0cec6cd82578312befdbf0`.
+The real target-host bootstrap reached one exact fixed-argv installer and the
+root-only ready marker, then exposed a P1: the bootstrap refresh path did not
+release the recovery-only package gate. A diagnostic fixed-marker release let
+the official harness converge to the verified `2.7.0+270` baseline; that run is
+not acceptance evidence. The focused RED failed because no manager-bound
+release existed between refresh handoff and payload verification. The minimal
+GREEN reuses the existing exact provider transaction, fixed installer argv,
+and manager resolver and releases only the fixed marker with that manager PID.
+It adds no executable, argument, stage, journal, or installer authority. The
+focused GREEN passed 1/1 and the complete privileged-PKG smoke contract passed
+8/8; targeted analysis, format, and `git diff --check` passed. The accepted
+`7318a42` artifacts are diagnostic-only after this code change; fresh artifacts
+from the fix commit and the real approval/install rerun remain required before
+checking Step 4.
+
 - [ ] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:

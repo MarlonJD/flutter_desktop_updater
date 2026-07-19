@@ -223,6 +223,10 @@ final class _PrivilegedPkgSmoke {
           expectApproval: true,
         );
         await _failFastAtApprovalBoundary(refresh);
+        final refreshManager = await _waitForFixedInstallerManager(
+          const Duration(seconds: 90),
+        );
+        await _releaseRecoveryGate(refreshManager.processIdentifier);
         if (!await _waitForBundleIdentity(
           v2Payload.app,
           version: _v2Version,

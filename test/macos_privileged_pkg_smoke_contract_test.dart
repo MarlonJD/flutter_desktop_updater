@@ -137,6 +137,37 @@ void main() {
     );
   });
 
+  test("bootstrap refresh releases the fixed recovery gate", () {
+    final source = File(
+      "tool/macos_privileged_pkg_smoke.dart",
+    ).readAsStringSync();
+    final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
+    final verify = source.indexOf("Future<void> verifyV1() async");
+    final refresh = source.indexOf(
+      "final refresh = await _runRuntime(",
+      bootstrap,
+    );
+    final waitForManager = source.indexOf(
+      "final refreshManager = await _waitForFixedInstallerManager(",
+      refresh,
+    );
+    final release = source.indexOf(
+      "await _releaseRecoveryGate(refreshManager.processIdentifier);",
+      refresh,
+    );
+    final waitForBundle = source.indexOf(
+      "if (!await _waitForBundleIdentity(",
+      refresh,
+    );
+
+    expect(bootstrap, isNonNegative);
+    expect(refresh, greaterThan(bootstrap));
+    expect(waitForManager, greaterThan(refresh));
+    expect(release, greaterThan(waitForManager));
+    expect(waitForBundle, greaterThan(release));
+    expect(waitForBundle, lessThan(verify));
+  });
+
   test("only bootstrap accepts the known v2 app and v1 receipt recovery pair",
       () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
@@ -188,8 +219,10 @@ void main() {
     expect(source, contains("baseline-distribution.xml"));
     expect(source, contains("productbuild --synthesize"));
     expect(source, contains("baseline distribution bundle-version mismatch"));
-    expect(source,
-        contains("baseline final distribution retained bundle-version"));
+    expect(
+      source,
+      contains("baseline final distribution retained bundle-version"),
+    );
     expect(source, contains("--distribution"));
     expect(source, contains("pkgutil --flatten"));
     expect(source, contains("productsign"));
