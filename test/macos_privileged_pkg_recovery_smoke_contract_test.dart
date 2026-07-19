@@ -117,6 +117,15 @@ void main() {
     expect(source, isNot(contains("AuthorizationExecuteWithPrivileges")));
   });
 
+  test("recovery harness binds the packaged smoke helper service", () {
+    final source = File(
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ).readAsStringSync();
+
+    expect(source, contains('"net.monolib.updater.helper"'));
+    expect(source, isNot(contains('"net.monolib.updater.installer"')));
+  });
+
   test("recovery evidence is sanitized and excludes raw process identity", () {
     final harness = File("tool/macos_privileged_pkg_recovery_smoke.dart");
     if (!harness.existsSync()) return;

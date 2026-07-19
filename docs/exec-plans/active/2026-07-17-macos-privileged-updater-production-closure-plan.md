@@ -618,6 +618,19 @@ live, and excludes PID, start identity, command line, stage path, and helper log
 from evidence. The real sequence remains `not run` because no exact-current-HEAD
 v2 notarized artifact exists and the login Keychain trust context is unavailable.
 
+Final-review follow-up evidence (`verified locally`, 2026-07-19): exhaustive
+service-identity review found a validated P1 in the recovery harness: it bound
+launchd inspection to `net.monolib.updater.installer` while the fixed packager,
+sealed policy, signed helper, and installed smoke target use
+`net.monolib.updater.helper`. A focused RED run passed 6 contracts and failed
+the new packaged-service assertion; the minimal GREEN fix changed only the
+fixed service identifier. The widened recovery/runtime/install contract set
+passed 21/21, targeted analysis reported no issues, focused format changed no
+files, and `git diff --check` passed. Adversarial review confirmed that the
+identifier now matches the packager default and installed app metadata and is
+used only to bind launchd PID/executable/start-identity checks; it adds no
+caller-controlled service or executable authority.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:
