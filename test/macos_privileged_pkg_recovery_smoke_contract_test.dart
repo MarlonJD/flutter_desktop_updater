@@ -5,6 +5,59 @@ import "package:flutter_test/flutter_test.dart";
 import "../tool/macos_privileged_pkg_recovery_smoke.dart" as recovery;
 
 void main() {
+  test("manager query retries one activation transient", () async {
+    var attempts = 0;
+
+    final result =
+        await recovery.macOSRetryTransactionQueryActivationForTesting<String>(
+      () async {
+        attempts += 1;
+        return attempts == 1 ? null : "ready";
+      },
+      maximumAttempts: 3,
+      delay: Duration.zero,
+    );
+
+    expect(result, "ready");
+    expect(attempts, 2);
+  });
+
+  test("manager query retry is bounded", () async {
+    var attempts = 0;
+
+    await expectLater(
+      recovery.macOSRetryTransactionQueryActivationForTesting<String>(
+        () async {
+          attempts += 1;
+          return null;
+        },
+        maximumAttempts: 3,
+        delay: Duration.zero,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(attempts, 3);
+  });
+
+  test("manager query does not retry malformed typed output", () async {
+    var attempts = 0;
+
+    await expectLater(
+      recovery.macOSRetryTransactionQueryActivationForTesting<String>(
+        () async {
+          attempts += 1;
+          throw const FormatException("malformed typed output");
+        },
+        maximumAttempts: 3,
+        delay: Duration.zero,
+      ),
+      throwsFormatException,
+    );
+
+    expect(attempts, 1);
+  });
+
   test("process start identity matches the helper macOS identity shape", () {
     if (!Platform.isMacOS) return;
     final first = recovery.macOSProcessStartIdentityForTesting(pid);

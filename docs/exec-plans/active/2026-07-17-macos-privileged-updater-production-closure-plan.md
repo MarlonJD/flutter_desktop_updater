@@ -1227,6 +1227,45 @@ A fresh signed/notarized/stapled artifact
 from the resulting commit and the complete real sequence remain required
 before checking Step 3.
 
+Transaction-query activation continuation (`verified locally`, 2026-07-20):
+exact HEAD `a0be5663adfdbabb61d66f2f97a50eecfa53e5a7` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts and repeated the
+typed approval and real `2.7.0+270` to `2.7.1+271` target installation. The v1
+app/PKG submission IDs were `f8a1fc2a-c6b6-478f-aacb-a42c733296f1` and
+`35a4c98d-a627-471c-8668-f47ad7e26ea4`; its final PKG SHA-256 was
+`42f61d7c4fda989f000fd8ce4dd389adb123721f2a26e37447e47abf78434ba0`.
+The v2 app/PKG submission IDs were
+`d3eabc54-8db5-4ee4-a789-2a7aa4016b1c` and
+`5f015c89-397a-4f42-b9d6-45edb21a69ae`; its final PKG SHA-256 was
+`cb9484d4b528f7a20fba627ecaf8234d8e97b6a9da2cbfa9c0bec8f0f156ebb5`.
+Both independent audits passed source/payload app, main executable, helper,
+Team ID, hardened runtime, PKG signature, app and PKG staple, Gatekeeper, fixed
+receipt/version/build, and component-shape checks.
+
+The first real recovery attempt reached the fixed root gate and created one
+live fixed-argv installer manager, but the evidence harness treated the first
+signed-host transaction query's on-demand helper activation failure as fatal.
+The LaunchDaemon was then observed not running, while a later identical
+read-only signed-host query returned typed `commitAccepted/recoveryRequired`.
+The gated attempt was finalized only after revalidating the exact fixed argv,
+manager PID/microsecond start identity, unchanged source package, and
+`root:wheel:600` ready marker; only the fixed release marker was created, and
+authenticated XPC recovery converged to `completed`. Journal, lock, stage,
+markers, and installer process were all absent afterward, with target and
+receipt at `2.7.1+271`/`2.7.1`. This diagnostic attempt is not crash-recovery
+acceptance evidence.
+
+The focused RED failed three compile-time contracts because no bounded query
+activation retry existed. The minimal GREEN retries only a nonzero process
+exit from the initial read-only manager query, at most three times with two
+seconds between production attempts. Typed/malformed output, identity checks,
+the authenticated crash operation, recovery, and terminal queries are not
+retried by this boundary. The focused GREEN passed 13/13; the widened
+recovery/PKG contract set passed 23/23; targeted Dart analysis reported no
+issues; focused formatting changed no files; and `git diff --check` passed. A
+fresh exact-fix artifact and complete real sequence remain required before
+checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:
