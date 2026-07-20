@@ -1481,6 +1481,39 @@ SwiftPM passed 116/116; and the recovery/PKG/runtime Dart contracts passed
 31/31. A fresh signed/notarized/stapled artifact from this correction and the
 complete real sequence remain required before checking Step 3.
 
+Fresh-process transaction retry continuation (`verified locally`, 2026-07-20):
+exact HEAD `60ada8d7ad1afecc81d3a9022efb6a046b8a93a2` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `10b0ba9a-8fe4-4966-80d3-621a39e07ee7` and
+`86f0e636-cc7d-4cc4-a30b-958627c2c25f`; its final PKG SHA-256 was
+`1ee27524ea6caa907969490198a9c5eb104201a97684796ce8b4e26dfb51a5e1`.
+The v2 app/PKG submission IDs were
+`e5871804-6df3-481d-bf72-ea588266528b` and
+`f7d05ae4-1701-4325-bd95-f0a241bade93`; its final PKG SHA-256 was
+`a1b2931fe985ddc82496f8dc2bc7d181d69eaf3ebfa71fa5cda756e5cb609c02`.
+The typed approval gate and real `2.7.0+270` to `2.7.1+271` privileged install
+both passed on that exact artifact. Two official recovery attempts reached the
+live installer-manager/stage boundary but their first fresh signed status
+process failed with endpoint unavailability; the same signed idempotent query
+then succeeded immediately. Both diagnostic attempts were released only after
+verifying the exact manager PID/start identity, fixed installer authority,
+owned stage provenance/hash, and root-owned ready marker. Each reached
+authenticated terminal recovery with no journal, lock, stage, or smoke marker
+remaining. This validated a fresh-process transport P1 rather than Task 4
+acceptance.
+
+The focused RED failed 1/1 because the smoke adapter could not express typed
+endpoint unavailability and the harness could not replay the fresh process. The
+minimal GREEN emits only the three-field typed unavailable event and retries
+only `queryTransaction` and `recoverPendingInstall`, at most ten attempts with
+500 milliseconds between attempts. It never retries the authenticated
+helper-crash operation, install, registration, malformed output, or identity
+mismatch. The focused GREEN passed 1/1; the widened recovery/PKG/runtime Dart
+contracts passed 38/38; the signed runtime Release build succeeded; targeted
+analysis and formatting were clean; and `git diff --check` passed. A fresh
+signed/notarized/stapled artifact from the resulting commit and the complete
+real sequence remain required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

@@ -32,6 +32,14 @@ struct MacOSRuntimeSmoke {
                     ),
                 ])
             } catch let error as MacInstallClientError
+                where error == .endpointUnavailable
+            {
+                try emit([
+                    "event": "recovery",
+                    "state": "unknown",
+                    "resultCode": "endpointUnavailable",
+                ])
+            } catch let error as MacInstallClientError
                 where error == .privilegedHelperApprovalRequired
             {
                 let diagnostic = RuntimeDiagnostic(
@@ -75,6 +83,14 @@ struct MacOSRuntimeSmoke {
                     "resultCode": recoveryResultName(
                         status.resultCode
                     ),
+                ])
+            } catch let error as MacInstallClientError
+                where error == .endpointUnavailable
+            {
+                try emit([
+                    "event": "query",
+                    "state": "unknown",
+                    "resultCode": "endpointUnavailable",
                 ])
             } catch let error as MacInstallClientError
                 where error == .privilegedHelperApprovalRequired

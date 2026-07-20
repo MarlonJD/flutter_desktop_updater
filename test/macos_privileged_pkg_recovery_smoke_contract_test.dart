@@ -214,6 +214,39 @@ void main() {
     expect(runtime, contains('"event": "helperCrashScheduled"'));
   });
 
+  test("retries only typed replay-safe transaction transport failures", () {
+    final harness = File(
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ).readAsStringSync();
+    final runtime = File(
+      "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
+    ).readAsStringSync();
+
+    expect(
+      runtime,
+      contains("catch let error as MacInstallClientError"),
+    );
+    expect(runtime, contains("where error == .endpointUnavailable"));
+    expect(runtime, contains('"state": "unknown"'));
+    expect(runtime, contains('"resultCode": "endpointUnavailable"'));
+    expect(harness, contains("_transactionRetryAttempts"));
+    expect(harness, contains("_transactionRetryDelay"));
+    expect(harness, contains('"--query-transaction"'));
+    expect(harness, contains('"--recover-transaction"'));
+    final replaySafeStart = harness.indexOf(
+      "const _replaySafeTransactionOperations",
+    );
+    final replaySafeEnd = harness.indexOf("};", replaySafeStart);
+    expect(replaySafeStart, isNonNegative);
+    expect(replaySafeEnd, greaterThan(replaySafeStart));
+    expect(
+      harness.substring(replaySafeStart, replaySafeEnd),
+      isNot(contains("--terminate-helper-for-recovery-smoke")),
+    );
+    expect(harness, contains('event.state == "unknown"'));
+    expect(harness, contains('event.resultCode == "endpointUnavailable"'));
+  });
+
   test("recovery evidence is sanitized and excludes raw process identity", () {
     final harness = File("tool/macos_privileged_pkg_recovery_smoke.dart");
     if (!harness.existsSync()) return;

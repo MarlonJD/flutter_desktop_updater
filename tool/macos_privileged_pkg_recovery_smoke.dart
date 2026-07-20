@@ -23,6 +23,12 @@ const _artifactKind = "pkgInstaller";
 const _launchMode = "privilegedInstallerTool";
 const _minimumUpdaterVersion = "2.7.0";
 const _managerStartedEvent = "managerStarted";
+const _transactionRetryAttempts = 10;
+const _transactionRetryDelay = Duration(milliseconds: 500);
+const _replaySafeTransactionOperations = {
+  "--query-transaction",
+  "--recover-transaction",
+};
 const _readyMarker = "/private/var/tmp/net.monolib.updater.pkg-recovery.ready";
 const _releaseMarker =
     "/private/var/tmp/net.monolib.updater.pkg-recovery.release";
@@ -459,45 +465,57 @@ final class _RecoverySmoke {
     String operation,
     String transactionID,
   ) async {
-    final metadata = await _readBundleMetadata(request.app);
-    final result = await Process.run(
-      path.join(
-        request.app.path,
-        "Contents",
-        "MacOS",
-        metadata.executable,
-      ),
-      ["--smoke", operation, transactionID],
-    ).timeout(const Duration(seconds: 30));
-    if (result.exitCode != 0) {
-      throw const _RecoveryFailure("transaction-query-failed");
-    }
-    _TransactionEvent? event;
-    for (final line in "${result.stdout}\n${result.stderr}".split("\n")) {
-      try {
-        final value = jsonDecode(line.trim());
-        if (value is Map<String, Object?> &&
-            value.keys.toSet().difference(
-              const {"event", "state", "resultCode"},
-            ).isEmpty &&
-            value.keys.length == 3 &&
-            value["event"] is String &&
-            value["state"] is String &&
-            value["resultCode"] is String) {
-          event = _TransactionEvent(
-            event: value["event"]! as String,
-            state: value["state"]! as String,
-            resultCode: value["resultCode"]! as String,
-          );
-        }
-      } on FormatException {
-        // Ignore unrelated runtime output.
+    final operationIsReplaySafe = _replaySafeTransactionOperations.contains(
+      operation,
+    );
+    for (var attempt = 0; attempt < _transactionRetryAttempts; attempt += 1) {
+      final metadata = await _readBundleMetadata(request.app);
+      final result = await Process.run(
+        path.join(
+          request.app.path,
+          "Contents",
+          "MacOS",
+          metadata.executable,
+        ),
+        ["--smoke", operation, transactionID],
+      ).timeout(const Duration(seconds: 30));
+      if (result.exitCode != 0) {
+        throw const _RecoveryFailure("transaction-query-failed");
       }
+      _TransactionEvent? event;
+      for (final line in "${result.stdout}\n${result.stderr}".split("\n")) {
+        try {
+          final value = jsonDecode(line.trim());
+          if (value is Map<String, Object?> &&
+              value.keys.toSet().difference(
+                const {"event", "state", "resultCode"},
+              ).isEmpty &&
+              value.keys.length == 3 &&
+              value["event"] is String &&
+              value["state"] is String &&
+              value["resultCode"] is String) {
+            event = _TransactionEvent(
+              event: value["event"]! as String,
+              state: value["state"]! as String,
+              resultCode: value["resultCode"]! as String,
+            );
+          }
+        } on FormatException {
+          // Ignore unrelated runtime output.
+        }
+      }
+      if (event == null) {
+        throw const _RecoveryFailure("typed-transaction-event-missing");
+      }
+      final endpointUnavailable =
+          event.state == "unknown" && event.resultCode == "endpointUnavailable";
+      if (!endpointUnavailable) return event;
+      if (!operationIsReplaySafe || attempt + 1 >= _transactionRetryAttempts) {
+        throw const _RecoveryFailure("transaction-query-failed");
+      }
+      await Future<void>.delayed(_transactionRetryDelay);
     }
-    if (event == null) {
-      throw const _RecoveryFailure("typed-transaction-event-missing");
-    }
-    return event;
+    throw const _RecoveryFailure("transaction-query-failed");
   }
 
   Future<Set<String>> _providerTransactions() async {
