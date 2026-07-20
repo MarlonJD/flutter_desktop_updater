@@ -1558,6 +1558,55 @@ temporary root invalidates repo-relative fixture discovery. A fresh
 signed/notarized/stapled artifact from the resulting commit and the complete
 real sequence remain required before checking Step 3.
 
+Direct typed-event catch continuation (`verified locally`, 2026-07-21): exact
+HEAD `f5640931dd8d3d02e5d3c4630c4c5cc391a3bb70` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `b666aaba-d9a6-4c42-86f6-5667321b80a2` and
+`f658697a-d52e-4585-b2a5-b8c7fdc1545e`; its final PKG SHA-256 was
+`446d088af431d4179b0532fa37258a97522ee67f39a3a1d7f69b28bca7dff0ed`.
+The v2 app/PKG submission IDs were
+`50c6bc21-dd3e-4a79-aef2-5217d9a11427` and
+`4d136865-9059-49c6-a829-f44eb85d35bb`; its final PKG SHA-256 was
+`752e1c700991661d26628312441d321758ba5c49b066415e3609658dfed7fd61`.
+Both artifact audits passed. The same v2 artifact then passed the exact typed
+approval boundary and real privileged `2.7.0+270` to `2.7.1+271` installation.
+Independent installed-target verification passed the app/main/helper strict
+signatures, matching source main/helper hashes, three Team IDs, hardened
+runtime, matching receipt, active LaunchDaemon, `root:wheel` ownership, and
+zero journal, lock, client stage, protected stage, gate marker, or installer
+manager state.
+
+The subsequent official recovery attempt reached one fixed-argv installer
+manager at PID `46778`, exact start identity
+`macos:1784589777:536769`, and a root-owned `0600` ready marker. The exact
+manager identity, fixed argv, client-stage node, and v2 artifact hash remained
+stable across repeated live-manager observations. Its first fresh signed query
+process nevertheless crashed at top level (Crash Reporter incident
+`490CC96F-318B-4577-AB09-14C3EAC1DD98`). Unified logging identified the
+escaped error as the already typed
+`MacInstallClientError.endpointUnavailable`; consequently the external ten-attempt
+replay boundary never received a typed event and never began retrying. This is
+not Task 4 acceptance evidence.
+
+The focused RED failed 1/1 because the signed adapter used conditional
+existential catches rather than direct enum-case patterns. The minimal GREEN
+matches only `MacInstallClientError.endpointUnavailable` and
+`MacInstallClientError.privilegedHelperApprovalRequired` directly for query
+and recovery. It does not map arbitrary, malformed, authentication, or
+identity-mismatch errors; add retry authority; install/register a helper; or
+touch provider/stage state. The focused GREEN passed 1/1; the widened
+recovery/PKG/runtime/artifact-audit contracts passed 38/38; focused Dart
+formatting was clean; and the runtime Release build succeeded. A separate
+Developer ID signed, non-installed
+failure-injection candidate then returned the exact three-field
+`query/unknown/endpointUnavailable` event with exit zero while the original
+manager and stage were still retained. During diagnosis the gated installer
+subsequently reached its package timeout. Authenticated recovery correctly
+returned `manualActionRequired/recoveryRequired`, released no false success,
+and retained the stage; no direct journal or stage cleanup was performed. A
+fresh signed/notarized/stapled artifact from the resulting commit and the
+complete real sequence remain required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

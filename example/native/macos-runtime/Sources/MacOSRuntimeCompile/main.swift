@@ -31,17 +31,13 @@ struct MacOSRuntimeSmoke {
                         status.resultCode
                     ),
                 ])
-            } catch let error as MacInstallClientError
-                where error == .endpointUnavailable
-            {
+            } catch MacInstallClientError.endpointUnavailable {
                 try emit([
                     "event": "recovery",
                     "state": "unknown",
                     "resultCode": "endpointUnavailable",
                 ])
-            } catch let error as MacInstallClientError
-                where error == .privilegedHelperApprovalRequired
-            {
+            } catch MacInstallClientError.privilegedHelperApprovalRequired {
                 let diagnostic = RuntimeDiagnostic(
                     code: .privilegedHelperApprovalRequired,
                     message: "Administrator approval is required before the privileged macOS updater helper can run.",
@@ -84,17 +80,13 @@ struct MacOSRuntimeSmoke {
                         status.resultCode
                     ),
                 ])
-            } catch let error as MacInstallClientError
-                where error == .endpointUnavailable
-            {
+            } catch MacInstallClientError.endpointUnavailable {
                 try emit([
                     "event": "query",
                     "state": "unknown",
                     "resultCode": "endpointUnavailable",
                 ])
-            } catch let error as MacInstallClientError
-                where error == .privilegedHelperApprovalRequired
-            {
+            } catch MacInstallClientError.privilegedHelperApprovalRequired {
                 let diagnostic = RuntimeDiagnostic(
                     code: .privilegedHelperApprovalRequired,
                     message: "Administrator approval is required before the privileged macOS updater helper can run.",

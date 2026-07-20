@@ -223,10 +223,22 @@ void main() {
     ).readAsStringSync();
 
     expect(
-      runtime,
-      contains("catch let error as MacInstallClientError"),
+      "catch MacInstallClientError.endpointUnavailable"
+          .allMatches(runtime)
+          .length,
+      2,
     );
-    expect(runtime, contains("where error == .endpointUnavailable"));
+    expect(
+      "catch MacInstallClientError.privilegedHelperApprovalRequired"
+          .allMatches(runtime)
+          .length,
+      2,
+    );
+    expect(
+      runtime,
+      isNot(contains("catch let error as MacInstallClientError")),
+    );
+    expect(runtime, isNot(contains("where error == .endpointUnavailable")));
     expect(runtime, contains('"state": "unknown"'));
     expect(runtime, contains('"resultCode": "endpointUnavailable"'));
     expect(harness, contains("_transactionRetryAttempts"));
