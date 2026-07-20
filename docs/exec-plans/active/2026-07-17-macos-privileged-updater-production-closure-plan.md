@@ -1514,6 +1514,50 @@ analysis and formatting were clean; and `git diff --check` passed. A fresh
 signed/notarized/stapled artifact from the resulting commit and the complete
 real sequence remain required before checking Step 3.
 
+Typed privileged-query failure continuation (`verified locally`, 2026-07-21):
+exact HEAD `36845f64612612644731267ce8e4fab7735cc376` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `b60e9277-ffad-4078-8520-6c61cab1f205` and
+`7cdbf81a-f0f1-4765-8746-ccf7733fa575`; its final PKG SHA-256 was
+`f657d7c70f67f35eca90a01998a921ef17234635620b1aec381bd52f5690fc53`.
+The v2 app/PKG submission IDs were
+`1925e5d5-4a7c-478d-90da-b04ff5cbb78d` and
+`2c039b6a-6411-42ec-bf45-2ab6709e23a3`; its final PKG SHA-256 was
+`925a4c58e8ab7cc53cf61bbc041cec29a668c3bf82c5073b78589b702c951215`.
+The exact typed approval boundary and real privileged `2.7.0+270` to
+`2.7.1+271` installation passed on that artifact, including the matching
+receipt, Team ID, hardened runtime, active LaunchDaemon, `root:wheel`
+ownership, and completed stage cleanup.
+
+The official recovery attempt reached one root-owned ready marker, one owned
+stage whose PKG hash matched the v2 artifact, and exactly one fixed-argv
+installer manager. Its first fresh signed query process crashed with
+`swift_errorInMain` (Crash Reporter incident
+`39FC0484-50C0-4868-B57E-CD17631654C4`). A subsequent read-only query from the
+same signed artifact returned typed `commitAccepted/recoveryRequired`. The
+diagnostic attempt was released only after revalidating that the exact manager
+PID/start identity and fixed argv were unchanged and the stage hash remained
+stable. Authenticated recovery then returned `completed/succeeded`; journal,
+lock, stage, manager, and marker state were absent at terminal cleanup. This
+safe diagnostic closure is not Task 4 acceptance evidence.
+
+The validated P1 was in `queryTransaction`: after an arbitrary one-shot read
+failure, a transient privileged fallback failure was discarded and the first
+untyped Swift error was rethrown, preventing the signed adapter from emitting
+typed endpoint unavailability. The focused RED failed 1/1 because the returned
+error was not `MacInstallClientError.endpointUnavailable`. The minimal GREEN
+preserves the privileged fallback error after the fallback is attempted. It
+does not install or register a helper, submit a transaction operation, change
+installer authority, mutate stage/journal state, or expand retry authority.
+The focused GREEN passed 1/1; the complete packaged-transport suite passed
+39/39; the widened recovery/PKG/runtime/artifact-audit Dart contracts passed
+38/38; and the signed runtime Release build succeeded. Root SwiftPM remained
+blocked before test execution by the intentionally absent `FlutterMacOS`
+module; the full temporary isolated package was not counted because its
+temporary root invalidates repo-relative fixture discovery. A fresh
+signed/notarized/stapled artifact from the resulting commit and the complete
+real sequence remain required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

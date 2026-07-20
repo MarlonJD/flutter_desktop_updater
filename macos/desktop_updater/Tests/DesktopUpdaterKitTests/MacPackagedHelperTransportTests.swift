@@ -795,6 +795,47 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(status.resultCode, .succeeded)
     }
 
+    func testRegisteredQueryReturnsTypedPrivilegedFailureAfterArbitraryOneShotFailure() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(
+                responses: [],
+                readError: OneShotReadFailure.unavailable
+            )
+        )
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        privileged.remainingActivationFailures = 10
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(
+            try transport.queryTransaction(transactionID: transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
+        XCTAssertEqual(oneShot.launchCount, 1)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 3)
+        XCTAssertEqual(activationDelayCount, 2)
+        XCTAssertTrue(privileged.operations.isEmpty)
+    }
+
     func testRegisteredQueryRetriesEndpointActivationWithoutInstallation()
         throws
     {
@@ -1124,7 +1165,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
-                .invalidReservationResponse
+                .endpointUnavailable
             )
         }
         XCTAssertEqual(oneShot.launchCount, 1)
@@ -1566,11 +1607,13 @@ private final class RecordingMacOneShotClientSession:
 {
     let processIdentifier: Int32 = 4_242
     private var responses: [Data]
+    private let readError: Error?
     private(set) var requests: [Data] = []
     private(set) var didCloseInput = false
 
-    init(responses: [Data]) {
+    init(responses: [Data], readError: Error? = nil) {
         self.responses = responses
+        self.readError = readError
     }
 
     func writeFrame(_ data: Data) throws {
@@ -1579,6 +1622,7 @@ private final class RecordingMacOneShotClientSession:
 
     func readFrame() throws -> Data {
         guard !responses.isEmpty else {
+            if let readError { throw readError }
             throw MacInstallClientError.invalidReservationResponse
         }
         return responses.removeFirst()
@@ -1587,6 +1631,10 @@ private final class RecordingMacOneShotClientSession:
     func closeInput() {
         didCloseInput = true
     }
+}
+
+private enum OneShotReadFailure: Error {
+    case unavailable
 }
 
 private func reservationData(transactionID: String) -> Data {

@@ -1122,7 +1122,7 @@ final class PackagedMacInstallHelperTransport:
                 transactionID: transactionID,
                 endpointIdentitySHA256: endpoint
             )
-        } catch let unprivilegedError {
+        } catch {
             do {
                 return try persistentPrivilegedStatus(
                     operation: "queryTransaction",
@@ -1130,8 +1130,8 @@ final class PackagedMacInstallHelperTransport:
                     isRecovery: false,
                     allowInstallation: false
                 )
-            } catch {
-                throw unprivilegedError
+            } catch let privilegedError {
+                throw privilegedError
             }
         }
     }
