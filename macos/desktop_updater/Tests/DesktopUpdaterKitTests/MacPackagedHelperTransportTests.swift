@@ -841,6 +841,216 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(status.resultCode, .recoveryRequired)
     }
 
+    func testRegisteredQueryRetriesAuthenticatedExchangeWithoutInstallation()
+        throws
+    {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: "commitAccepted",
+                    resultCode: "recoveryRequired"
+                ),
+            ]
+        )
+        privileged.isInstalled = true
+        privileged.remainingExchangeFailures = 1
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        let status = try transport.queryTransaction(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 1)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 2)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 2)
+        XCTAssertEqual(activationDelayCount, 1)
+        XCTAssertEqual(privileged.operations, ["queryTransaction"])
+        XCTAssertEqual(status.state, .commitAccepted)
+        XCTAssertEqual(status.resultCode, .recoveryRequired)
+    }
+
+    func testRegisteredRecoveryRetriesAuthenticatedExchangeWithoutInstallation()
+        throws
+    {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [recoveryData(transactionID: transactionID)]
+        )
+        privileged.isInstalled = true
+        privileged.remainingExchangeFailures = 1
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        let status = try transport.recoverPendingInstall(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 2)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 2)
+        XCTAssertEqual(activationDelayCount, 1)
+        XCTAssertEqual(privileged.operations, ["recoverPendingInstall"])
+        XCTAssertEqual(status.state, .rolledBack)
+        XCTAssertEqual(status.resultCode, .succeeded)
+    }
+
+    func testRegisteredQueryAuthenticatedExchangeRetryIsBounded() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        privileged.remainingExchangeFailures = 10
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(
+            try transport.queryTransaction(transactionID: transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 3)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 3)
+        XCTAssertEqual(activationDelayCount, 2)
+        XCTAssertTrue(privileged.operations.isEmpty)
+    }
+
+    func testRegisteredQueryDoesNotRetryInvalidAuthenticatedExchange() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        privileged.exchangeError = .invalidReservationResponse
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            forcePrivilegedPersistentOperations: true,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(
+            try transport.queryTransaction(transactionID: transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .invalidReservationResponse
+            )
+        }
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 1)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
+        XCTAssertTrue(privileged.operations.isEmpty)
+    }
+
+    func testRecoverySmokeCrashOperationIsNeverReplayed() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        privileged.remainingExchangeFailures = 1
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegedEndpointActivationAttempts: 3,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        XCTAssertThrowsError(
+            try transport.terminateForRecoverySmoke(
+                transactionID: transactionID
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 1)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
+        XCTAssertTrue(privileged.operations.isEmpty)
+    }
+
     func testRegisteredQueryDefaultActivationBudgetCoversColdLaunchWindow()
         throws
     {
@@ -1256,9 +1466,12 @@ private final class RecordingPrivilegedXPCExchange:
     var endpointIdentity = String(repeating: "c", count: 64)
     var remainingActivationFailures = 0
     var remainingEndpointIdentityMismatches = 0
+    var remainingExchangeFailures = 0
     var activationError: MacInstallClientError?
+    var exchangeError: MacInstallClientError?
     private var responses: [Data]
     private(set) var validationCount = 0
+    private(set) var exchangeAttemptCount = 0
     private(set) var operations: [String] = []
 
     init(responses: [Data]) {
@@ -1287,6 +1500,14 @@ private final class RecordingPrivilegedXPCExchange:
         operation: String,
         payload _: Data
     ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+        exchangeAttemptCount += 1
+        if let exchangeError {
+            throw exchangeError
+        }
+        if remainingExchangeFailures > 0 {
+            remainingExchangeFailures -= 1
+            throw MacInstallClientError.endpointUnavailable
+        }
         guard isInstalled, !responses.isEmpty else {
             throw MacInstallClientError.endpointUnavailable
         }

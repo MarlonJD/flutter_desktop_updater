@@ -1251,18 +1251,16 @@ final class PackagedMacInstallHelperTransport:
         let expectedEndpoint = try authenticatedPrivilegedEndpoint(
             allowInstallation: allowInstallation
         )
-        let exchange = try privilegedExchange.exchange(
+        let exchange = try persistentPrivilegedExchange(
             operation: operation,
             payload: try canonicalData([
                 "operation": operation,
                 "policyId": policyID,
                 "protocolVersion": 1,
                 "transactionId": transactionID,
-            ])
+            ]),
+            expectedEndpoint: expectedEndpoint
         )
-        guard exchange.endpointIdentitySHA256 == expectedEndpoint else {
-            throw MacInstallClientError.invalidReservationResponse
-        }
         if isRecovery {
             return try parseRecoveryResult(
                 exchange.payload,
@@ -1275,6 +1273,59 @@ final class PackagedMacInstallHelperTransport:
             transactionID: transactionID,
             endpointIdentitySHA256: expectedEndpoint
         )
+    }
+
+    private func persistentPrivilegedExchange(
+        operation: String,
+        payload: Data,
+        expectedEndpoint: String
+    ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+        let operationIsReplaySafe = operation == "queryTransaction"
+            || operation == "recoverPendingInstall"
+        for attempt in 0 ..< privilegedEndpointActivationAttempts {
+            if attempt > 0 {
+                privilegedEndpointActivationDelay()
+                do {
+                    let runningEndpoint = try privilegedExchange
+                        .validateEndpoint()
+                    if runningEndpoint != expectedEndpoint {
+                        guard attempt + 1
+                                < privilegedEndpointActivationAttempts
+                        else {
+                            throw MacInstallClientError
+                                .invalidReservationResponse
+                        }
+                        continue
+                    }
+                } catch let error as MacInstallClientError {
+                    guard error == .endpointUnavailable,
+                          attempt + 1
+                              < privilegedEndpointActivationAttempts
+                    else {
+                        throw error
+                    }
+                    continue
+                }
+            }
+            do {
+                let exchange = try privilegedExchange.exchange(
+                    operation: operation,
+                    payload: payload
+                )
+                guard exchange.endpointIdentitySHA256 == expectedEndpoint else {
+                    throw MacInstallClientError.invalidReservationResponse
+                }
+                return exchange
+            } catch let error as MacInstallClientError {
+                guard operationIsReplaySafe,
+                      error == .endpointUnavailable,
+                      attempt + 1 < privilegedEndpointActivationAttempts
+                else {
+                    throw error
+                }
+            }
+        }
+        throw MacInstallClientError.endpointUnavailable
     }
 
     private func authenticatedPrivilegedEndpoint(

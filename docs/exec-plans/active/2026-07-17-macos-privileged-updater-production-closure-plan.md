@@ -1381,6 +1381,50 @@ contracts passed 20/20. A fresh signed/notarized/stapled artifact from this
 correction and the complete real sequence remain required before checking
 Step 3.
 
+Authenticated-exchange settlement continuation (`verified locally`,
+2026-07-20): exact HEAD `1333ea0e56700fbef6952345ed5dc138dfbf9fb1`
+produced fresh, accepted, stapled, and independently audited v1/v2 artifacts.
+The v1 app/PKG submission IDs were
+`9adf921b-411c-453d-a20c-50b89e265861` and
+`2bd0a337-f1dc-43ec-af13-02d708c2cb63`; its final PKG SHA-256 was
+`8c1c4ea95ae8f468d687f451d322ce4e6e84bec929388d0b3383eb8e7ec799aa`.
+The v2 app/PKG submission IDs were
+`bfa30a2a-651e-4b83-ab03-26735a21d214` and
+`321a70df-4873-4c1c-915b-8fe3815747fb`; its final PKG SHA-256 was
+`6a220411fc856473d17ec8dfd03b4e3e027fb836ddfb816f5b57a56df2331228`.
+Both independent audits passed source/payload app, main executable, helper,
+Team ID, hardened runtime, package signature, app/PKG staple, Gatekeeper,
+receipt, version/build, and fixed component shape. The same artifacts passed
+the exact typed approval boundary and real privileged `2.7.0+270` to
+`2.7.1+271` installation with the matching receipt, active LaunchDaemon,
+`root:wheel` ownership, and completed stage cleanup.
+
+The subsequent real recovery attempt again reached one live fixed-argv
+installer manager but the first signed-host manager query exited nonzero. A
+later identical authenticated query returned typed
+`commitAccepted/recoveryRequired`. Unified logging identified the exact initial
+product error as `MacInstallClientError.endpointUnavailable`: endpoint
+activation and signed-identity validation had succeeded, but the transaction
+exchange itself raced the remaining launchd settlement interval. The retained
+attempt was released only after a fail-closed gate revalidated the exact
+manager PID/start identity, fixed argv, unchanged source package hash, and
+root-only ready marker. Signed-host authenticated recovery then reached
+`completed/succeeded`; journal, target lock, stage, and fixed markers were all
+absent, and target/receipt were `2.7.1+271`/`2.7.1`. This diagnostic attempt is
+not crash-recovery acceptance evidence.
+
+The focused RED failed 1/1 because an authenticated exchange-level
+`endpointUnavailable` was not retried. The minimal GREEN reauthenticates the
+existing endpoint before each bounded replay and permits replay only for the
+idempotent `queryTransaction` and `recoverPendingInstall` operations. It never
+installs or registers during an exchange retry, never replays the smoke-only
+helper crash operation, immediately rejects malformed or identity-mismatched
+responses, and remains bounded by the injected activation budget. The focused
+GREEN passed 1/1; the complete packaged-transport suite passed 38/38; root
+SwiftPM passed 116/116; and the recovery/PKG/runtime Dart contracts passed
+31/31. A fresh signed/notarized/stapled artifact from this correction and the
+complete real sequence remain required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:
