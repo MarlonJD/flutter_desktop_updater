@@ -1336,11 +1336,14 @@ final class PackagedMacInstallHelperTransport:
             do {
                 let runningEndpoint = try privilegedExchange
                     .validateEndpoint()
-                guard runningEndpoint == expectedEndpoint else {
-                    throw MacInstallClientError
-                        .invalidReservationResponse
+                if runningEndpoint == expectedEndpoint {
+                    return runningEndpoint
                 }
-                return runningEndpoint
+                guard attempt + 1 < privilegedEndpointActivationAttempts
+                else {
+                    throw MacInstallClientError.invalidReservationResponse
+                }
+                privilegedEndpointActivationDelay()
             } catch let error as MacInstallClientError {
                 guard error == .endpointUnavailable,
                       attempt + 1 < privilegedEndpointActivationAttempts

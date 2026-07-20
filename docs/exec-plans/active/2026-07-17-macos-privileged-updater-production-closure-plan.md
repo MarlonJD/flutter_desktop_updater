@@ -1339,6 +1339,48 @@ recovery/PKG contracts passed 20/20. A fresh signed/notarized/stapled artifact
 from this correction and the complete real sequence remain required before
 checking Step 3.
 
+Stale-signed-endpoint continuation (`verified locally`, 2026-07-20): exact
+HEAD `15974725695686edde5b27cd786e29989b1baf23` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `cb1ea41d-8fed-45bf-a468-e6d4b06135c7` and
+`93792780-0441-4714-8aca-c52a85e8ecce`; its final PKG SHA-256 was
+`ac412bad5da0e34a1240553e74ba0e5b3bce97dfc983d78b56d2e3456143ae5b`.
+The v2 app/PKG submission IDs were
+`21cc2d87-0fbd-4ac5-b566-83bf1b88bf74` and
+`d282a721-ffaf-4381-a44c-174341da8e31`; its final PKG SHA-256 was
+`a2298dc0f016677cce7144f817b37d68f74b4172ab2fde1d770eb3b2dbec7c20`.
+Both independent audits passed, and the exact artifacts repeated typed
+approval plus the real privileged `2.7.0+270` to `2.7.1+271` installation with
+matching receipt, Team ID, hardened runtime, Gatekeeper/staple, active
+LaunchDaemon, `root:wheel` ownership, and completed stage cleanup.
+
+The next real recovery attempt still failed at the first manager query. A
+single timed repeat proved the entire install handoff, fixed gate, transaction
+creation, and failing query returned in 6.412 seconds, so it did not exhaust
+the new roughly fifteen-second endpoint-unavailable budget. The installed main
+and helper hashes matched the exact v1 artifact, launchd reported the service
+not running at the failure boundary, and a later identical signed query
+succeeded in 126 ms. Both diagnostics were released only after exact manager
+PID/start identity, fixed argv, unchanged package hash, and root-only marker
+validation; authenticated XPC recovery reached idempotent `completed`, and no
+journal, lock, stage, or marker remained. Neither attempt is crash-recovery
+acceptance evidence.
+
+This timing excluded the endpoint-unavailability budget. Among the remaining
+fail-fast activation paths, the package/service lifecycle and later immediate
+success are consistent with a valid-but-stale endpoint identity during
+settlement. The focused RED failed 1/1 on the first stale signed identity.
+The minimal GREEN retries only a well-formed health response whose exact helper
+hash is stale, never sends the transaction operation until the expected hash
+appears, never installs or registers from the read-only query path, and remains
+bounded by the activation budget. An explicit malformed
+`invalidReservationResponse` still fails on the first probe, while persistent
+stale identity fails closed at the injected bound. The complete packaged
+transport suite passed 33/33, root SwiftPM passed 111/111, and the recovery/PKG
+contracts passed 20/20. A fresh signed/notarized/stapled artifact from this
+correction and the complete real sequence remain required before checking
+Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:
