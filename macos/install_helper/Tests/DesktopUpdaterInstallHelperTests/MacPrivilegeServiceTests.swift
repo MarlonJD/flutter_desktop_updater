@@ -194,6 +194,46 @@ final class MacPrivilegeServiceTests: XCTestCase {
         XCTAssertEqual(recover.payload, recovery.response)
     }
 
+    func testPrivilegedHandlerSchedulesRecoverySmokeCrashOnlyAfterReply()
+        throws
+    {
+        let recovery = RecordingPrivilegedRecoveryHandler()
+        var crashCount = 0
+        let handler = MacPrivilegedTransactionHandler(
+            sessionFactory: { _ in RecordingPrivilegedInstallSession() },
+            monitorFactory: RecordingPrivilegedMonitorFactory(
+                monitor: RecordingPrivilegedCallerExitMonitor()
+            ),
+            recoveryHandler: recovery,
+            crashForRecoverySmoke: { crashCount += 1 }
+        )
+        let payload = Data(
+            #"{"operation":"terminateForRecoverySmoke"}"#.utf8
+        )
+
+        let response = try handler.handle(
+            operation: "terminateForRecoverySmoke",
+            payload: payload,
+            peerProcessIdentifier: 4_243
+        )
+
+        XCTAssertEqual(crashCount, 0)
+        XCTAssertEqual(response.payload, recovery.response)
+        XCTAssertEqual(recovery.requests, [payload])
+        let complete: () throws -> Void = try XCTUnwrap(
+            response.completeAfterReply
+        )
+        try complete()
+        XCTAssertEqual(crashCount, 1)
+        XCTAssertThrowsError(
+            try handler.handle(
+                operation: "terminateForRecoverySmoke",
+                payload: Data(#"{"operation":"queryTransaction"}"#.utf8),
+                peerProcessIdentifier: 4_243
+            )
+        )
+    }
+
     func testPrivilegedHandlerDropsReservationWhenCommitAcceptanceFails()
         throws
     {

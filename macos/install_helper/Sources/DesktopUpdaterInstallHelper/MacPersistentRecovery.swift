@@ -33,6 +33,7 @@ enum MacPersistentRecoveryError: Error, Equatable {
     case ambiguousTransaction
     case journalCorrupt
     case callerAuthenticationFailed
+    case recoverySmokeGateInactive
 }
 
 final class MacPersistentRecoveryService {
@@ -137,6 +138,36 @@ final class MacPersistentRecoveryService {
             resultCode: located.journal.state == .completed
                 ? "completed" : "recoveryRequired",
             journalSHA256: located.journalSHA256
+        )
+    }
+
+    func authorizeRecoverySmokeCrash(transactionID: String) throws
+        -> MacPersistentTransactionStatusV1
+    {
+        try authenticateAndValidate(transactionID)
+        guard persistentRecoverySmokeGateIsActive() else {
+            throw MacPersistentRecoveryError.recoverySmokeGateInactive
+        }
+        let file = try locate(transactionID: transactionID)
+        let installer = try locateInstaller(transactionID: transactionID)
+        guard file == nil,
+              let installer,
+              installer.journal.state == .managerStarted,
+              try validInstallerCommit(installer),
+              persistentOwnerIsLive(
+                  processIdentifier:
+                      installer.journal.managerProcessIdentifier,
+                  startIdentity:
+                      installer.journal.managerProcessStartIdentity
+              ) else {
+            throw MacPersistentRecoveryError.journalCorrupt
+        }
+        return MacPersistentTransactionStatusV1(
+            protocolVersion: 1,
+            transactionID: transactionID,
+            state: installer.journal.state.rawValue,
+            resultCode: "recoveryRequired",
+            journalSHA256: installer.journalSHA256
         )
     }
 
@@ -757,13 +788,20 @@ final class MacPersistentRecoveryRequestHandler:
               persistentInteger(request["protocolVersion"]) == 1,
               request["policyId"] as? String == service.policyID,
               let operation = request["operation"] as? String,
-              ["queryTransaction", "recoverPendingInstall"]
+              [
+                  "queryTransaction", "recoverPendingInstall",
+                  "terminateForRecoverySmoke",
+              ]
                 .contains(operation),
               let transactionID = request["transactionId"] as? String else {
             throw MacPersistentRecoveryWireError.invalidRequest
         }
-        if operation == "queryTransaction" {
-            let status = try service.query(transactionID: transactionID)
+        if operation != "recoverPendingInstall" {
+            let status = operation == "queryTransaction"
+                ? try service.query(transactionID: transactionID)
+                : try service.authorizeRecoverySmokeCrash(
+                    transactionID: transactionID
+                )
             return try persistentCanonicalData([
                 "protocolVersion": status.protocolVersion,
                 "transactionId": status.transactionID,
@@ -1010,6 +1048,25 @@ private func persistentOwnerIsLive(
     }
     return startIdentity
         == "macos:\(info.pbi_start_tvsec):\(info.pbi_start_tvusec)"
+}
+
+private func persistentRecoverySmokeGateIsActive() -> Bool {
+    let readyPath =
+        "/private/var/tmp/net.monolib.updater.pkg-recovery.ready"
+    let releasePath =
+        "/private/var/tmp/net.monolib.updater.pkg-recovery.release"
+    var ready = stat()
+    guard readyPath.withCString({ Darwin.lstat($0, &ready) }) == 0,
+          ready.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+          ready.st_uid == 0,
+          ready.st_gid == 0,
+          ready.st_mode & 0o777 == 0o600 else {
+        return false
+    }
+    var release = stat()
+    errno = 0
+    return releasePath.withCString({ Darwin.lstat($0, &release) }) == -1
+        && errno == ENOENT
 }
 
 private func waitForPersistentOwnerExit(

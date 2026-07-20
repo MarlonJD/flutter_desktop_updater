@@ -196,6 +196,35 @@ final class MacPersistentRecoveryTests: XCTestCase {
         )
         XCTAssertEqual(object["state"] as? String, "prepared")
     }
+
+    func testRecoverySmokeCrashRequestFailsClosedWithoutFixedRootGate()
+        throws
+    {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        _ = try fixture.makeTransaction().prepare()
+        let policy = persistentRecoveryPolicy(root: fixture.rootURL.path)
+        let handler = MacPersistentRecoveryRequestHandler(
+            service: MacPersistentRecoveryService(
+                policy: policy,
+                callerAuthenticator:
+                    RecordingRecoveryCallerAuthenticator(),
+                verifierFactory: FixtureRecoveryVerifierFactory(
+                    verifier: fixture.verifier
+                )
+            )
+        )
+        let request = try NativeStrictJSON.canonicalize(
+            JSONSerialization.data(withJSONObject: [
+                "operation": "terminateForRecoverySmoke",
+                "policyId": policy.policyID,
+                "protocolVersion": 1,
+                "transactionId": fixture.transactionID,
+            ])
+        )
+
+        XCTAssertThrowsError(try handler.response(for: request))
+    }
 }
 
 final class MacCrashProcessWorkerTests: XCTestCase {

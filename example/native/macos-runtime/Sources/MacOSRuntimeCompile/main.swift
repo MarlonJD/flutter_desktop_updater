@@ -50,6 +50,18 @@ struct MacOSRuntimeSmoke {
             return
         }
         if let transactionID = arguments.optionalValue(
+            "--terminate-helper-for-recovery-smoke"
+        ) {
+            let status = try MacInstallHelper()
+                .terminatePrivilegedHelperForRecoverySmoke(transactionID)
+            try emit([
+                "event": "helperCrashScheduled",
+                "state": recoveryStateName(status.state),
+                "resultCode": recoveryResultName(status.resultCode),
+            ])
+            return
+        }
+        if let transactionID = arguments.optionalValue(
             "--query-transaction"
         ) {
             let helper = MacInstallHelper()
@@ -199,6 +211,7 @@ private struct Arguments {
         let operationCount = [
             optionalValue("--recover-transaction") != nil,
             optionalValue("--query-transaction") != nil,
+            optionalValue("--terminate-helper-for-recovery-smoke") != nil,
             has("--probe-helper"),
         ].filter { $0 }.count
         guard operationCount <= 1 else {
@@ -213,6 +226,7 @@ private struct Arguments {
         }
         if optionalValue("--recover-transaction") != nil ||
             optionalValue("--query-transaction") != nil ||
+            optionalValue("--terminate-helper-for-recovery-smoke") != nil ||
             has("--probe-helper")
         {
             guard isSmoke else {

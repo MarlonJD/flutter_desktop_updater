@@ -265,6 +265,7 @@ final class MacPrivilegedTransactionHandler {
     private let monitorFactory: any MacCallerExitMonitorCreating
     private let recoveryHandler: any MacPrivilegedRecoveryRequestHandling
     private let terminateWhenIdle: () -> Void
+    private let crashForRecoverySmoke: () -> Void
     private let lock = NSLock()
     private var preparing: Set<String> = []
     private var pending: [String: PendingTransaction] = [:]
@@ -279,7 +280,8 @@ final class MacPrivilegedTransactionHandler {
             (Int32) throws -> any MacPrivilegedInstallSessionServing,
         monitorFactory: any MacCallerExitMonitorCreating,
         recoveryHandler: any MacPrivilegedRecoveryRequestHandling,
-        terminateWhenIdle: @escaping () -> Void = {}
+        terminateWhenIdle: @escaping () -> Void = {},
+        crashForRecoverySmoke: @escaping () -> Void = {}
     ) {
         self.helperEndpointIdentitySHA256 =
             helperEndpointIdentitySHA256
@@ -287,6 +289,7 @@ final class MacPrivilegedTransactionHandler {
         self.monitorFactory = monitorFactory
         self.recoveryHandler = recoveryHandler
         self.terminateWhenIdle = terminateWhenIdle
+        self.crashForRecoverySmoke = crashForRecoverySmoke
     }
 
     convenience init(
@@ -334,7 +337,10 @@ final class MacPrivilegedTransactionHandler {
             recoveryHandler: MacPersistentRecoveryRequestHandler(
                 service: recovery
             ),
-            terminateWhenIdle: { Darwin.exit(EXIT_SUCCESS) }
+            terminateWhenIdle: { Darwin.exit(EXIT_SUCCESS) },
+            crashForRecoverySmoke: {
+                _ = Darwin.kill(Darwin.getpid(), SIGKILL)
+            }
         )
     }
 
@@ -362,7 +368,8 @@ final class MacPrivilegedTransactionHandler {
                 payload: payload,
                 peerProcessIdentifier: peerProcessIdentifier
             )
-        case "queryTransaction", "recoverPendingInstall":
+        case "queryTransaction", "recoverPendingInstall",
+             "terminateForRecoverySmoke":
             guard try NativeStrictJSON.canonicalize(payload) == payload,
                   let object = try NativeStrictJSON.decode(payload)
                     as? [String: Any],
@@ -377,7 +384,8 @@ final class MacPrivilegedTransactionHandler {
                 payload: response,
                 helperEndpointIdentitySHA256:
                     helperEndpointIdentitySHA256,
-                completeAfterReply: nil
+                completeAfterReply: operation == "terminateForRecoverySmoke"
+                    ? crashForRecoverySmoke : nil
             )
         default:
             throw MacPrivilegedTransactionHandlerError.invalidOperation

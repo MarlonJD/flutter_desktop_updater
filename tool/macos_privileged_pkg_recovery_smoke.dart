@@ -243,8 +243,14 @@ final class _RecoverySmoke {
         )) {
       throw const _RecoveryFailure("launch-daemon-identity-invalid");
     }
-    if (!Process.killPid(helperPID, ProcessSignal.sigkill)) {
-      throw const _RecoveryFailure("launch-daemon-kill-failed");
+    final crash = await _transactionEvent(
+      "--terminate-helper-for-recovery-smoke",
+      transactionID,
+    );
+    if (crash.event != "helperCrashScheduled" ||
+        crash.state != "commitAccepted" ||
+        crash.resultCode != "recoveryRequired") {
+      throw const _RecoveryFailure("launch-daemon-crash-request-invalid");
     }
     await _waitForIdentityExit(helperIdentity, const Duration(seconds: 15));
 

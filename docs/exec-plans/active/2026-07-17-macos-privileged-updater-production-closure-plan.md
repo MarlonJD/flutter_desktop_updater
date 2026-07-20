@@ -1167,6 +1167,33 @@ same PID/start identity/fixed argv and were finalized through the signed host's
 authenticated XPC recovery; journal, lock, stage, and fixed markers were absent
 afterward.
 
+Daemon-crash injection continuation (`candidate-only`, 2026-07-20): the next
+fresh real attempt passed exact manager PID/start-identity and fixed-argv
+resolution, then failed at `launch-daemon-kill-failed` because macOS correctly
+denied an unprivileged process permission to signal the root SMAppService
+daemon. A service-scoped `launchctl kill` was independently denied as not
+privileged, so the harness does not rely on either weak path. The focused RED
+failed the new native post-reply crash-scheduling test and two recovery-smoke
+contracts. The minimal GREEN adds a typed, authenticated XPC
+`terminateForRecoverySmoke` operation that is authorized only when the fixed
+ready marker is a regular `root:wheel:600` node, the release marker is absent,
+the exact transaction is a committed `managerStarted` installer journal, and
+the journal's exact manager PID/microsecond start identity remains live. Only
+after the typed reply is sent does the helper signal itself with `SIGKILL`.
+The signed smoke host exposes this operation only through its smoke SPI, and
+the harness first revalidates launchd service PID/executable/start identity and
+then proves that exact identity exited; no caller-controlled executable,
+signal, service, or installer arguments were added. The focused native GREEN
+passed 1/1; all `MacPrivilegeServiceTests` passed 11/11; all
+`MacPersistentRecoveryTests` passed 6/6 including fail-closed behavior without
+the fixed root gate; the recovery/PKG contract set passed 20/20; and the Swift
+runtime adapter built successfully. The complete helper package then ran 141
+tests with zero failures and one crash-worker test skipped by its intentional
+harness-only guard; targeted Dart analysis and `git diff --check` were clean.
+A fresh signed/notarized/stapled artifact
+from the resulting commit and the complete real sequence remain required
+before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

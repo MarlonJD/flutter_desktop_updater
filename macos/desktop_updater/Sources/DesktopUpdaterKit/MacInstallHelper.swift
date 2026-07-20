@@ -205,6 +205,10 @@ protocol MacInstallHelperTransport: AnyObject {
     func recoverPendingInstall(
         transactionID: String
     ) throws -> InstallTransactionStatus
+
+    func terminateForRecoverySmoke(
+        transactionID: String
+    ) throws -> InstallTransactionStatus
 }
 
 extension MacInstallHelperTransport {
@@ -215,6 +219,12 @@ extension MacInstallHelperTransport {
     }
 
     func refreshPrivilegedEndpoint() throws {
+        throw MacInstallClientError.endpointUnavailable
+    }
+
+    func terminateForRecoverySmoke(
+        transactionID _: String
+    ) throws -> InstallTransactionStatus {
         throw MacInstallClientError.endpointUnavailable
     }
 }
@@ -628,7 +638,7 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
               [
                   "prepareInstall", "commitAfterExit",
                   "cancelReservation", "queryTransaction",
-                  "recoverPendingInstall",
+                  "recoverPendingInstall", "terminateForRecoverySmoke",
               ].contains(operation),
               (1 ... 1_048_576).contains(payload.count) else {
             throw MacInstallClientError.endpointUnavailable
@@ -1153,6 +1163,17 @@ final class PackagedMacInstallHelperTransport:
                 allowInstallation: true
             )
         }
+    }
+
+    func terminateForRecoverySmoke(
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        try persistentPrivilegedStatus(
+            operation: "terminateForRecoverySmoke",
+            transactionID: transactionID,
+            isRecovery: false,
+            allowInstallation: false
+        )
     }
 
     private func commitPrivileged(
@@ -1816,6 +1837,22 @@ public struct MacInstallHelper {
             transactionID: transactionID
         )
         try validate(status, transactionID: transactionID)
+        return status
+    }
+
+    @_spi(DesktopUpdaterSmoke)
+    public func terminatePrivilegedHelperForRecoverySmoke(
+        _ transactionID: String
+    ) throws -> InstallTransactionStatus {
+        try validateTransactionID(transactionID)
+        let status = try transport.terminateForRecoverySmoke(
+            transactionID: transactionID
+        )
+        try validate(status, transactionID: transactionID)
+        guard status.state == .commitAccepted,
+              status.resultCode == .recoveryRequired else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
         return status
     }
 

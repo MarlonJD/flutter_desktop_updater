@@ -166,7 +166,9 @@ void main() {
     expect(source, contains("_sameLaunchDaemonIdentity("));
     expect(source, contains("_fixedInstallerArguments("));
     expect(source, contains("_launchDaemonPID("));
-    expect(source, contains("ProcessSignal.sigkill"));
+    expect(source, contains('"--terminate-helper-for-recovery-smoke"'));
+    expect(source, contains('crash.event != "helperCrashScheduled"'));
+    expect(source, isNot(contains("Process.killPid")));
     expect(source, contains("followLinks: false"));
     expect(source, contains("_validateEvidence("));
     expect(source, isNot(contains("sudo")));
@@ -182,6 +184,34 @@ void main() {
 
     expect(source, contains('"net.monolib.updater.helper"'));
     expect(source, isNot(contains('"net.monolib.updater.installer"')));
+  });
+
+  test("recovery smoke self-crash is gate and manager identity bound", () {
+    final helper = File(
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/"
+      "MacPersistentRecovery.swift",
+    ).readAsStringSync();
+    final runtime = File(
+      "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
+    ).readAsStringSync();
+
+    expect(helper, contains("terminateForRecoverySmoke"));
+    expect(
+      helper,
+      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.ready"),
+    );
+    expect(
+      helper,
+      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.release"),
+    );
+    expect(helper, contains("lstat("));
+    expect(helper, contains(".managerStarted"));
+    expect(helper, contains("persistentOwnerIsLive("));
+    expect(
+      runtime,
+      contains('optionalValue("--terminate-helper-for-recovery-smoke")'),
+    );
+    expect(runtime, contains('"event": "helperCrashScheduled"'));
   });
 
   test("recovery evidence is sanitized and excludes raw process identity", () {
