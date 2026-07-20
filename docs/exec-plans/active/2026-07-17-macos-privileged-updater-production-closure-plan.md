@@ -1144,6 +1144,29 @@ reported no issues, `MacVerifiedInstallerTransactionTests` passed 18/18,
 the preinstall passed `sh -n`, and `git diff --check` passed. Fresh exact-fix
 target-host recovery remains required before checking Step 3.
 
+Root-manager identity continuation (`verified locally`, 2026-07-20): a fresh
+exact-`ab34f0c3d5d7994616a2c4ad789dab50f2669dc8` recovery attempt reached the
+fixed root-owned preinstall gate with exactly one fixed-argv installer, but the
+unprivileged harness could not read that root process through
+`PROC_PIDTBSDINFO` and stopped at `installer-manager-not-found`. A direct
+read-only probe confirmed that `proc_pidpath` still bound `/usr/sbin/installer`
+while `proc_pidinfo` returned no start identity. The focused RED failed because
+the new fixed-argv/start-identity behavior was absent. The minimal GREEN keeps
+`proc_pidinfo` as the primary path and falls back to the read-only
+`CTL_KERN/KERN_PROC/KERN_PROC_PID` kernel record, preserving the helper's
+`macos:<seconds>:<microseconds>` identity format without reading the root-only
+journal or exposing identity in evidence. It also behaviorally pins the one
+allowed installer argv and rejects executable, target, extra-argument,
+stage-owner, and transaction deviations. The focused GREEN passed 9/9 and a
+live root installer probe returned a stable microsecond-resolution identity.
+A second real attempt resolved the exact installer PID/start identity and then
+failed later at `launch-daemon-kill-failed`, proving this identity blocker is
+closed while leaving the separate daemon-crash injection boundary
+`candidate-only`. Both gated attempts were released only after revalidating the
+same PID/start identity/fixed argv and were finalized through the signed host's
+authenticated XPC recovery; journal, lock, stage, and fixed markers were absent
+afterward.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

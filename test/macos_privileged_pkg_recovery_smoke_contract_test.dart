@@ -13,6 +13,11 @@ void main() {
     expect(first, matches(RegExp(r"^macos:[0-9]+:[0-9]+$")));
     expect(second, first);
     expect(recovery.macOSProcessStartIdentityForTesting(-1), isNull);
+    expect(recovery.macOSKernProcessStartIdentityForTesting(pid), first);
+    expect(
+      recovery.macOSKernProcessStartIdentityForTesting(1),
+      matches(RegExp(r"^macos:[0-9]+:[0-9]+$")),
+    );
 
     final executable = recovery.macOSProcessExecutablePathForTesting(pid);
     expect(executable, isNotNull);
@@ -61,6 +66,36 @@ void main() {
     );
     expect(source, contains("_waitForUniqueInstaller("));
     expect(source, contains("_sameLiveManager("));
+  });
+
+  test("recovery harness recognizes only the fixed installer argv", () {
+    const stageOwner =
+        "a979abee7efd579fda2f2fce032782046d5511f530ec444342ef696ca1c505d9";
+    const transactionID = "c6de8ff0-a318-4062-8835-103a9dc57f3c";
+    const command = "/usr/sbin/installer -pkg "
+        "/Library/PrivilegedHelperTools/.desktop-updater-stages-$stageOwner/"
+        "desktop-updater-stage-$transactionID/installer.pkg -target /";
+
+    expect(
+      recovery.macOSFixedInstallerArgumentsForTesting(command, transactionID),
+      isTrue,
+    );
+    for (final rejected in <String>[
+      command.replaceFirst("/usr/sbin/installer", "/bin/sh"),
+      command.replaceFirst(" -target /", " -target CurrentUserHomeDirectory"),
+      "$command -verbose",
+      command.replaceFirst(stageOwner, "0" * 63),
+      command.replaceFirst(transactionID, "other-transaction"),
+    ]) {
+      expect(
+        recovery.macOSFixedInstallerArgumentsForTesting(
+          rejected,
+          transactionID,
+        ),
+        isFalse,
+        reason: rejected,
+      );
+    }
   });
 
   test("packager enables scripts only for the fixed recovery smoke flag", () {

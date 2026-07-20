@@ -63,6 +63,22 @@ typedef _MallocNative = Pointer<Void> Function(IntPtr);
 typedef _MallocDart = Pointer<Void> Function(int);
 typedef _FreeNative = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
+typedef _SysctlNative = Int32 Function(
+  Pointer<Int32>,
+  Uint32,
+  Pointer<Void>,
+  Pointer<UintPtr>,
+  Pointer<Void>,
+  UintPtr,
+);
+typedef _SysctlDart = int Function(
+  Pointer<Int32>,
+  int,
+  Pointer<Void>,
+  Pointer<UintPtr>,
+  Pointer<Void>,
+  int,
+);
 
 final _ProcPIDInfoDart _procPIDInfo = DynamicLibrary.process()
     .lookupFunction<_ProcPIDInfoNative, _ProcPIDInfoDart>("proc_pidinfo");
@@ -72,6 +88,8 @@ final _MallocDart _malloc = DynamicLibrary.process()
     .lookupFunction<_MallocNative, _MallocDart>("malloc");
 final _FreeDart _free =
     DynamicLibrary.process().lookupFunction<_FreeNative, _FreeDart>("free");
+final _SysctlDart _sysctl = DynamicLibrary.process()
+    .lookupFunction<_SysctlNative, _SysctlDart>("sysctl");
 
 Future<void> main(List<String> arguments) async {
   try {
@@ -561,14 +579,7 @@ final class _RecoverySmoke {
   }
 
   bool _fixedInstallerArguments(String command, String transactionID) {
-    final pattern = RegExp(
-      r"^/usr/sbin/installer -pkg "
-      r"/Library/PrivilegedHelperTools/\.desktop-updater-stages-"
-      r"[0-9a-f]{64}/desktop-updater-stage-"
-      "${RegExp.escape(transactionID)}"
-      r"/installer\.pkg -target /$",
-    );
-    return pattern.hasMatch(command);
+    return _hasFixedInstallerArguments(command, transactionID);
   }
 
   Future<bool> _sameLiveManager(
@@ -1102,13 +1113,60 @@ String? _processStartIdentity(int pid) {
       buffer,
       procBSDInfoSize,
     );
-    if (read != procBSDInfoSize) return null;
-    final bytes = buffer.cast<Uint8>();
-    final seconds = (bytes + startSecondsOffset).cast<Uint64>().value;
-    final microseconds = (bytes + startMicrosecondsOffset).cast<Uint64>().value;
-    return "macos:$seconds:$microseconds";
+    if (read == procBSDInfoSize) {
+      final bytes = buffer.cast<Uint8>();
+      final seconds = (bytes + startSecondsOffset).cast<Uint64>().value;
+      final microseconds =
+          (bytes + startMicrosecondsOffset).cast<Uint64>().value;
+      return "macos:$seconds:$microseconds";
+    }
   } finally {
     _free(buffer);
+  }
+  return _kernProcessStartIdentity(pid);
+}
+
+String? _kernProcessStartIdentity(int pid) {
+  const ctlKern = 1;
+  const kernProc = 14;
+  const kernProcPID = 1;
+  const timevalSize = 16;
+  if (pid <= 0) return null;
+  final mib = _malloc(4 * sizeOf<Int32>()).cast<Int32>();
+  final outputSize = _malloc(sizeOf<UintPtr>()).cast<UintPtr>();
+  if (mib.address == 0 || outputSize.address == 0) {
+    if (mib.address != 0) _free(mib.cast<Void>());
+    if (outputSize.address != 0) _free(outputSize.cast<Void>());
+    return null;
+  }
+  Pointer<Void> output = nullptr;
+  try {
+    mib[0] = ctlKern;
+    mib[1] = kernProc;
+    mib[2] = kernProcPID;
+    mib[3] = pid;
+    outputSize.value = 0;
+    if (_sysctl(mib, 4, nullptr, outputSize, nullptr, 0) != 0 ||
+        outputSize.value < timevalSize) {
+      return null;
+    }
+    output = _malloc(outputSize.value);
+    if (output.address == 0 ||
+        _sysctl(mib, 4, output, outputSize, nullptr, 0) != 0 ||
+        outputSize.value < timevalSize) {
+      return null;
+    }
+    final bytes = output.cast<Uint8>();
+    final seconds = bytes.cast<Uint64>().value;
+    final microseconds = (bytes + sizeOf<Uint64>()).cast<Int32>().value;
+    if (seconds <= 0 || microseconds < 0 || microseconds >= 1000000) {
+      return null;
+    }
+    return "macos:$seconds:$microseconds";
+  } finally {
+    if (output.address != 0) _free(output);
+    _free(outputSize.cast<Void>());
+    _free(mib.cast<Void>());
   }
 }
 
@@ -1137,8 +1195,28 @@ String? _processExecutablePath(int pid) {
 String? macOSProcessStartIdentityForTesting(int pid) =>
     _processStartIdentity(pid);
 
+String? macOSKernProcessStartIdentityForTesting(int pid) =>
+    _kernProcessStartIdentity(pid);
+
+bool macOSFixedInstallerArgumentsForTesting(
+  String command,
+  String transactionID,
+) =>
+    _hasFixedInstallerArguments(command, transactionID);
+
 String? macOSProcessExecutablePathForTesting(int pid) =>
     _processExecutablePath(pid);
+
+bool _hasFixedInstallerArguments(String command, String transactionID) {
+  final pattern = RegExp(
+    r"^/usr/sbin/installer -pkg "
+    r"/Library/PrivilegedHelperTools/\.desktop-updater-stages-"
+    r"[0-9a-f]{64}/desktop-updater-stage-"
+    "${RegExp.escape(transactionID)}"
+    r"/installer\.pkg -target /$",
+  );
+  return pattern.hasMatch(command);
+}
 
 final class _SmokeServer {
   const _SmokeServer({
