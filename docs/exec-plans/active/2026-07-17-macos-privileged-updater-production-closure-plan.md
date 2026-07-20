@@ -1266,6 +1266,41 @@ issues; focused formatting changed no files; and `git diff --check` passed. A
 fresh exact-fix artifact and complete real sequence remain required before
 checking Step 3.
 
+Registered-endpoint activation correction (`verified locally`, 2026-07-20):
+exact HEAD `994404174db73d54c7ba22bedde0574627af4554` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `544968e6-0483-4f42-b335-9769b655c99c` and
+`6b4c8245-24cd-420a-b435-bf03dea10892`; its final PKG SHA-256 was
+`e5508bdde11fcef80c0db69688dccd37b34a8f7753282ffdc1c9bd7a1ea250e5`.
+The v2 app/PKG submission IDs were
+`0524f3eb-14cf-457a-a337-e62ddec96be6` and
+`76323406-1cb5-4bca-9807-0b5a2091cce7`; its final PKG SHA-256 was
+`db9cace8d603e088777ce320db1202c8c7e44349c1b8be9af503209d107cf80a`.
+The exact v1-to-v2 approval and privileged installation sequence was repeated
+and independently verified. Two subsequent recovery diagnostics each reached
+one live fixed-argv installer manager, but every external Dart-process query
+retry failed before a later identical signed-host query succeeded. Each gate
+was released only after revalidating the exact manager PID/start identity,
+fixed argv, unchanged source package, and root-only marker; authenticated XPC
+recovery then removed the journal, lock, stage, and fixed markers. Neither
+diagnostic is crash-recovery acceptance evidence.
+
+The repeated real-host result localized the P1 below the Dart harness: a fresh
+transport first attempts the unprivileged one-shot recovery path, then its
+already-registered authenticated XPC fallback performed only one launchd
+activation probe when installation was forbidden. The focused RED ran three
+registered-query tests and failed the two missing retry behaviors. The minimal
+GREEN moves the bounded retry to that product boundary: it authenticates the
+fixed bundled helper first, retries only `endpointUnavailable` at most three
+times, never installs or registers from a read-only query, and immediately
+rejects endpoint-identity mismatch and every other error. The earlier external
+Dart retry and its tests were removed. Focused GREEN passed 3/3; the complete
+packaged-transport suite passed 30/30; root SwiftPM passed 108/108; the
+recovery/PKG contracts passed 20/20; targeted Dart analysis reported no issues;
+focused formatting changed no files; and `git diff --check` passed. A fresh
+signed/notarized/stapled artifact from this correction and the complete real
+sequence remain required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

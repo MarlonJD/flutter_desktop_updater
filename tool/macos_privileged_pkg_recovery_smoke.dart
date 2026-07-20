@@ -203,7 +203,7 @@ final class _RecoverySmoke {
       initialJournals,
       const Duration(seconds: 30),
     );
-    final query = await _managerStartedQuery(transactionID);
+    final query = await _transactionEvent("--query-transaction", transactionID);
     if (query.event != "query" ||
         query.state != "commitAccepted" ||
         query.resultCode != "recoveryRequired") {
@@ -498,28 +498,6 @@ final class _RecoverySmoke {
       throw const _RecoveryFailure("typed-transaction-event-missing");
     }
     return event;
-  }
-
-  Future<_TransactionEvent> _managerStartedQuery(String transactionID) async {
-    try {
-      return await _retryTransactionQueryActivation<_TransactionEvent>(
-        () async {
-          try {
-            return await _transactionEvent(
-              "--query-transaction",
-              transactionID,
-            );
-          } on _RecoveryFailure catch (error) {
-            if (error.failureClass == "transaction-query-failed") return null;
-            rethrow;
-          }
-        },
-        maximumAttempts: 3,
-        delay: const Duration(seconds: 2),
-      );
-    } on StateError {
-      throw const _RecoveryFailure("transaction-query-failed");
-    }
   }
 
   Future<Set<String>> _providerTransactions() async {
@@ -1234,35 +1212,6 @@ bool macOSFixedInstallerArgumentsForTesting(
 
 String? macOSProcessExecutablePathForTesting(int pid) =>
     _processExecutablePath(pid);
-
-Future<T> macOSRetryTransactionQueryActivationForTesting<T>(
-  Future<T?> Function() attempt, {
-  required int maximumAttempts,
-  required Duration delay,
-}) =>
-    _retryTransactionQueryActivation(
-      attempt,
-      maximumAttempts: maximumAttempts,
-      delay: delay,
-    );
-
-Future<T> _retryTransactionQueryActivation<T>(
-  Future<T?> Function() attempt, {
-  required int maximumAttempts,
-  required Duration delay,
-}) async {
-  if (maximumAttempts < 1 || delay.isNegative) {
-    throw ArgumentError("invalid transaction query retry policy");
-  }
-  for (var index = 0; index < maximumAttempts; index += 1) {
-    final result = await attempt();
-    if (result != null) return result;
-    if (index + 1 < maximumAttempts && delay > Duration.zero) {
-      await Future<void>.delayed(delay);
-    }
-  }
-  throw StateError("transaction query activation unavailable");
-}
 
 bool _hasFixedInstallerArguments(String command, String transactionID) {
   final pattern = RegExp(

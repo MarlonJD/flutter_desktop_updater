@@ -1281,18 +1281,19 @@ final class PackagedMacInstallHelperTransport:
             executableURL: helperURL,
             processIdentifier: nil
         )
+        if !allowInstallation {
+            return try authenticatedExistingPrivilegedEndpoint(
+                expectedEndpoint: expectedEndpoint
+            )
+        }
         do {
             let runningEndpoint = try privilegedExchange
                 .validateEndpoint()
             if runningEndpoint == expectedEndpoint {
                 return runningEndpoint
             }
-            guard allowInstallation else {
-                throw MacInstallClientError.invalidReservationResponse
-            }
         } catch let error as MacInstallClientError {
-            guard allowInstallation,
-                  error == .endpointUnavailable else {
+            guard error == .endpointUnavailable else {
                 throw error
             }
         }
@@ -1319,6 +1320,30 @@ final class PackagedMacInstallHelperTransport:
                 where error == .endpointUnavailable
                     && attempt + 1 < privilegedEndpointActivationAttempts
             {
+                privilegedEndpointActivationDelay()
+            }
+        }
+        throw MacInstallClientError.endpointUnavailable
+    }
+
+    private func authenticatedExistingPrivilegedEndpoint(
+        expectedEndpoint: String
+    ) throws -> String {
+        for attempt in 0 ..< privilegedEndpointActivationAttempts {
+            do {
+                let runningEndpoint = try privilegedExchange
+                    .validateEndpoint()
+                guard runningEndpoint == expectedEndpoint else {
+                    throw MacInstallClientError
+                        .invalidReservationResponse
+                }
+                return runningEndpoint
+            } catch let error as MacInstallClientError {
+                guard error == .endpointUnavailable,
+                      attempt + 1 < privilegedEndpointActivationAttempts
+                else {
+                    throw error
+                }
                 privilegedEndpointActivationDelay()
             }
         }
