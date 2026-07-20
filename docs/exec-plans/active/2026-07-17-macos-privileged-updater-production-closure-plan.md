@@ -357,6 +357,31 @@ binds only the v2 implementation commit, final package hash, and final package
 submission ID; it contains no identity name, credential/profile data, path,
 environment, command, stdout, or stderr field.
 
+Final current-implementation refresh (`verified locally`, 2026-07-20): exact
+HEAD `ac2d2dcdb737325a5751adc7a05150ffaa56c315` produced fresh signed v1
+and v2 source applications. Their app notarization submissions
+`bf83219b-16f9-4167-bf3a-2e91dfdc301d` and
+`1c9d3abe-f975-4ff9-a64b-ff1b98866d3e` were accepted and stapled before
+packaging. The final BOM-correct v1 and v2 packages were separately submitted
+as `bfaf3fdf-e023-4c19-8871-e06e0d9f7dfe` and
+`2ccf4099-60d8-407b-966b-55c9861e07a7`, accepted, and stapled; their final
+SHA-256 values are
+`7f87ff35982b22260b77e6ea325539cdc5172072279784e20c0a0579c17e4dfb`
+and
+`d771a55d469e030b895da3d7e8f5459c5974c6c19041a81880b101903e4de817`.
+Fresh independent audits passed each source and expanded-payload application,
+main executable, helper, Team ID, hardened runtime, package signature, app and
+package staple, Gatekeeper execute/install assessment, fixed receipt metadata,
+version/build, and payload shape. The sanitized v2 trust report binds only the
+exact implementation commit, final v2 hash, and final v2 package submission;
+the prior same-name packages with stale BOM inventories were rejected from
+acceptance evidence. The focused artifact-audit suite passed 6/6,
+`git diff --check` passed, and an explicit post-staple comparison confirmed
+that each final component BOM covers every non-directory payload node. The
+adversarial trust review found no extra component, unbound payload node,
+unsigned nested executable, raw trust output, credential value, or stale
+submission/hash accepted by this evidence boundary.
+
 ### Task 3: Prove Typed Approval and Real Privileged Installation
 
 **Files:**
