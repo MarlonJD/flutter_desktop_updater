@@ -139,6 +139,37 @@ void main() {
     );
   });
 
+  test("terminal install recovers before claiming owned stage cleanup", () {
+    final source = File(
+      "tool/macos_privileged_pkg_smoke.dart",
+    ).readAsStringSync();
+    final install = source.indexOf("Future<void> install() async");
+    final validateInputs = source.indexOf(
+      "Future<void> _validateInputs",
+      install,
+    );
+    final body = source.substring(install, validateInputs);
+    final probe = body.indexOf("await _probeInstalledLaunchDaemon(");
+    final recovery = body.indexOf(
+      "await _recoverBlockingBootstrapTransaction(",
+      probe,
+    );
+    final cleanup = body.indexOf("await _waitForOwnedStageEmpty();");
+
+    expect(install, isNonNegative);
+    expect(probe, isNonNegative);
+    expect(recovery, greaterThan(probe));
+    expect(cleanup, greaterThan(recovery));
+    expect(
+      body.substring(recovery, cleanup),
+      allOf(
+        contains('expectedState: "completed"'),
+        contains('expectedResultCode: "succeeded"'),
+        contains("required: false"),
+      ),
+    );
+  });
+
   test("launch daemon probes bind the kernel executable path", () {
     for (final harness in [
       "tool/macos_privileged_pkg_smoke.dart",

@@ -339,6 +339,24 @@ sanitized artifact-trust document reports `verified locally` and binds the v2
 hash, exact HEAD, and final v2 PKG submission. It remains outside the repository
 until Tasks 3 and 4 can truthfully bind the complete four-report set.
 
+Final implementation-head refresh (`verified locally`, 2026-07-20): exact
+HEAD `9e4bd55ca4257eded5a772f34e04d2b2cff7a57a` produced fresh signed,
+notarized, stapled, and Gatekeeper-approved v1 and v2 source apps and final
+PKGs. The v1 app/PKG submissions were
+`28e02b13-b1f1-46dd-8233-ba53501be42f` and
+`278da9df-f78b-44c8-9198-a93e691a95e8`, and its final PKG SHA-256 was
+`d8677422a56729228581ecb457c0f133c390cb576c342704097bef0955ba53da`.
+The v2 app/PKG submissions were
+`5fb2eec5-d2e8-4c21-9109-716ba91ba259` and
+`d6709b3c-3b40-4b7c-9aca-6c141e5945d4`, and its final PKG SHA-256 was
+`936b2bda3cfe2384b8f4225f8a506035fa443dba86a151506b564defae09faaf`.
+Both independent audits passed every source and extracted app/main/helper,
+Team ID, hardened runtime, package signature, staple, Gatekeeper, fixed receipt,
+version, build, and payload-shape check. The sanitized repository trust report
+binds only the v2 implementation commit, final package hash, and final package
+submission ID; it contains no identity name, credential/profile data, path,
+environment, command, stdout, or stderr field.
+
 ### Task 3: Prove Typed Approval and Real Privileged Installation
 
 **Files:**
@@ -926,7 +944,7 @@ artifacts are diagnostic-only after this code change; fresh exact-current-head
 artifacts and both real target-host sequences remain required before checking
 Step 4 or Task 4 Step 3.
 
-- [ ] **Step 4: Complete v2 elevation and verify terminal state**
+- [x] **Step 4: Complete v2 elevation and verify terminal state**
 
 Use `artifactKind=pkgInstaller`, `launchMode=privilegedInstallerTool`, and `minimumUpdaterVersion=2.7.0`. Require:
 
@@ -941,7 +959,7 @@ LaunchDaemon active PID=nonzero
 owned client stage empty after completed
 ```
 
-- [ ] **Step 5: Verify, review, commit, and push**
+- [x] **Step 5: Verify, review, commit, and push**
 
 ```sh
 swift test --package-path macos/desktop_updater --filter UpdateClientTests
@@ -964,6 +982,45 @@ git add tool/macos_privileged_pkg_smoke.dart \
 git commit -m "test(macos): prove privileged pkg target install"
 git push origin feat/native-sdk-platform-split
 ```
+
+Final target-host execution (`verified locally`, 2026-07-20): the exact
+implementation-head v1 package established and independently verified the
+smoke-owned `2.7.0+270` application and `2.7.0` receipt. With the Background
+Item disabled by the user, the fixed signed host returned exit 75 with only the
+typed `PrivilegedHelperApprovalRequired` code and
+`openMacOSBackgroundItemsSettings` remediation, retained exactly one owned
+stage, left the v1 target and receipt unchanged, and launched no installer.
+After the user enabled the same helper, the authenticated XPC path and fixed
+installer worker installed `2.7.1+271`; the matching receipt became `2.7.1`;
+the app, main executable, helper, and LaunchDaemon were `root:wheel`; the app,
+main, and helper strict signatures, Team ID `UPK4SC93AN`, hardened runtime,
+staple, Gatekeeper, payload code identity, and active v2 LaunchDaemon all
+passed. The new ServiceManagement settlement fix also passed its real terminal
+health probe without another approval cycle.
+
+The run then exposed a smoke-harness P1 rather than a product install failure:
+the harness deliberately disables relaunch but waited for the client stage to
+disappear without invoking the authenticated startup recovery that a relaunched
+application performs. It correctly stopped at `completed-stage-not-removed`
+and wrote no premature elevation report. A read-only query reported
+`commitAccepted/recoveryRequired`; the signed v2 host then requested recovery
+through authenticated XPC, which returned `completed/succeeded` only after the
+provider's exact live-manager guard allowed it. The owned journal, lock, and
+stage were absent afterward. Independent installed-target verification was
+repeated before writing the sanitized elevation report. The focused RED failed
+1/1 because terminal install had no recovery-before-cleanup call. The minimal
+GREEN reuses the existing signed-host recovery path after installed app/helper
+and payload verification and before stage-empty success; it performs no direct
+cleanup and cannot bypass the provider's PID/start-identity guard. The focused
+GREEN passed 1/1, the complete smoke contract set passed 10/10, the Task 3
+Flutter set passed 54/54, and the real isolated `UpdateClientTests` passed
+20/20. The repository SwiftPM wrapper still could not build the unrelated
+plugin test target without a local `FlutterMacOS` module, so no assertion from
+that failed integration build was counted as test evidence. Focused formatting
+and `git diff --check` passed. Adversarial review found no message-matching
+approval fallback, automatic approval, broad cleanup, alternate executable,
+caller-controlled installer arguments, premature success, or terminal-stage
+retention path.
 
 ### Task 4: Prove Installer-Active Crash Recovery
 

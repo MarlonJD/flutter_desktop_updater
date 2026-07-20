@@ -433,6 +433,11 @@ final class _PrivilegedPkgSmoke {
     } finally {
       await payload.close();
     }
+    await _recoverBlockingBootstrapTransaction(
+      expectedState: "completed",
+      expectedResultCode: "succeeded",
+      required: false,
+    );
     await _waitForOwnedStageEmpty();
     final evidence = <String, Object?>{
       "schemaVersion": 1,
