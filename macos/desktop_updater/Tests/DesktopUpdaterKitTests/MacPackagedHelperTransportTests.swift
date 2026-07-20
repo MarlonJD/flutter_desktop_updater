@@ -841,6 +841,51 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(status.resultCode, .recoveryRequired)
     }
 
+    func testRegisteredQueryDefaultActivationBudgetCoversColdLaunchWindow()
+        throws
+    {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(
+            responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: "commitAccepted",
+                    resultCode: "recoveryRequired"
+                ),
+            ]
+        )
+        privileged.isInstalled = true
+        privileged.remainingActivationFailures = 100
+        let installer = RecordingPrivilegedHelperInstaller {}
+        var activationDelayCount = 0
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegedEndpointActivationDelay: {
+                activationDelayCount += 1
+            }
+        )
+
+        let status = try transport.queryTransaction(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(oneShot.launchCount, 1)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 101)
+        XCTAssertEqual(activationDelayCount, 100)
+        XCTAssertEqual(privileged.operations, ["queryTransaction"])
+        XCTAssertEqual(status.state, .commitAccepted)
+        XCTAssertEqual(status.resultCode, .recoveryRequired)
+    }
+
     func testRegisteredQueryEndpointActivationRetryIsBounded() {
         let transactionID = "00000000-0000-4000-8000-000000000099"
         let oneShot = RecordingMacOneShotProcessLauncher(

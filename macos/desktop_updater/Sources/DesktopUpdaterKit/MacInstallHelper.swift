@@ -872,7 +872,10 @@ final class PackagedMacInstallHelperTransport:
         privilegedRegistrationDelay: @escaping () -> Void = {
             MacAppServiceRegistrationSettler().wait()
         },
-        privilegedEndpointActivationAttempts: Int = 30,
+        // A recently replaced launchd service can remain cold past the old
+        // three-second probe window. Keep activation bounded to roughly
+        // fifteen seconds at the default delay.
+        privilegedEndpointActivationAttempts: Int = 150,
         privilegedEndpointActivationDelay: @escaping () -> Void = {
             Thread.sleep(forTimeInterval: 0.1)
         }

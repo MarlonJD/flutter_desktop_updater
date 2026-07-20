@@ -1301,6 +1301,44 @@ focused formatting changed no files; and `git diff --check` passed. A fresh
 signed/notarized/stapled artifact from this correction and the complete real
 sequence remain required before checking Step 3.
 
+Cold-activation budget continuation (`verified locally`, 2026-07-20): exact
+HEAD `25f0be427cbdcc61585345f0f8c3a18e9308b816` produced fresh,
+accepted, stapled, and independently audited v1/v2 artifacts. The v1 app/PKG
+submission IDs were `3f8c4f1f-67c1-4cb0-a34a-7e7554bc4627` and
+`d4c09e75-b34c-4004-9803-ff434cc3de74`; its final PKG SHA-256 was
+`be554558add40fbcd9196d62fb7694b4169a3ea00fcb06a65fcc0db44d57692c`.
+The v2 app/PKG submission IDs were
+`eb128fda-1614-47f2-9cc3-aad4aef3be0f` and
+`c7622157-70b1-42b7-b250-64a69f94f277`; its final PKG SHA-256 was
+`c6dd773b711ae289c7c74b8a3fd27ff572e1bc6d67cf9f603a04b29e32705e9f`.
+Both audits passed source/payload app, main executable, helper, Team ID,
+hardened runtime, package signature, app/PKG staple, Gatekeeper, receipt,
+version/build, and fixed component shape. The same artifacts then passed typed
+approval and the real privileged `2.7.0+270` to `2.7.1+271` installation with
+matching receipt, active LaunchDaemon, `root:wheel` ownership, and completed
+stage cleanup.
+
+The subsequent real crash-recovery attempt reached one live fixed-argv
+installer manager but exhausted the product's old 30-by-100-ms cold endpoint
+activation budget before querying `managerStarted`. A later identical signed
+query succeeded immediately. The attempt was released only after revalidating
+the exact manager PID/start identity, fixed argv, unchanged package hash, and
+root-only gate; authenticated XPC recovery then reached `completed`, its repeat
+query was idempotent, and journal, lock, stage, and markers were absent. This
+attempt is not crash-recovery acceptance evidence.
+
+The focused RED failed 1/1 because the default activation budget could not
+survive 100 transient cold-launch probes. The minimal GREEN keeps the existing
+100-ms delay and raises only the bounded default from 30 to 150 attempts,
+providing roughly fifteen seconds for a recently replaced launchd service.
+Injected short bounds remain testable; identity mismatch and all errors other
+than endpoint unavailability remain fail-fast; and read-only query fallback
+still cannot install or register a helper. Focused registered-query GREEN passed 4/4, the complete
+packaged-transport suite passed 31/31, root SwiftPM passed 109/109, and the
+recovery/PKG contracts passed 20/20. A fresh signed/notarized/stapled artifact
+from this correction and the complete real sequence remain required before
+checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:
