@@ -1080,6 +1080,37 @@ reports bind the same implementation commit, v2 artifact SHA-256, and final
 PKG submission ID and contain no credential, identity, environment, private
 path, full command line, stdout, stderr, or helper-log field.
 
+Final current-implementation acceptance (`verified locally`, 2026-07-20):
+exact implementation commit `ac2d2dcdb737325a5751adc7a05150ffaa56c315`
+and final v2 package SHA-256
+`d771a55d469e030b895da3d7e8f5459c5974c6c19041a81880b101903e4de817`
+with accepted package submission `2ccf4099-60d8-407b-966b-55c9861e07a7`
+established the physical `2.7.0+270` baseline and matching `2.7.0` receipt.
+With the user disabling the exact Background Item once, the signed host exited
+75 with typed code `PrivilegedHelperApprovalRequired`, remediation
+`openMacOSBackgroundItemsSettings`, an unchanged baseline, and one retained
+provenance-bound stage containing the exact final v2 package. After the user
+enabled that helper once, authenticated XPC and the fixed-argv worker completed
+the real `2.7.0+270` to `2.7.1+271` installation. Independent terminal checks
+passed the installed app, main, and helper strict signatures; Team ID
+`UPK4SC93AN`; hardened runtime; app staple and Gatekeeper; matching
+`net.monolib.updater.pkg` receipt version `2.7.1`; active
+`system/net.monolib.updater.helper`; and `root:wheel` ownership of the app,
+main, helper, and LaunchDaemon. The elevation report captured active
+LaunchDaemon PID 62226. Provider completion recovery removed the journal,
+target lock, protected stage, and exact client-owned stage before success.
+Both sanitized reports bind the same implementation commit, final v2 hash, and
+final v2 package submission and expose no private path, complete command line,
+raw helper output, environment, identity name, or credential value. The Task 3
+Flutter set passed 54/54, root `UpdateClientTests` passed 20/20, and
+`git diff --check` passed. The adversarial review reconfirmed the single
+hard-coded installer executable and argument vector, no approval bypass,
+no provider shell, no alternate install executable, no premature success,
+manual-action retention, completed-state cleanup, and a clean terminal
+journal/lock/stage boundary. AppleScript references remain confined to older
+general-purpose smoke utilities and were not invoked by this SMAppService/XPC
+acceptance path.
+
 ### Task 4: Prove Installer-Active Crash Recovery
 
 **Files:**
