@@ -444,7 +444,7 @@ outside a generated Flutter host because `FlutterMacOS` is not exposed by that
 generated package; the root package runs the same `DesktopUpdaterKit` sources
 and tests and passed 20/20.
 
-- [ ] **Step 3: Install verified v1 safely and exercise approval**
+- [x] **Step 3: Install verified v1 safely and exercise approval**
 
 Before replacement require:
 
@@ -1021,6 +1021,39 @@ and `git diff --check` passed. Adversarial review found no message-matching
 approval fallback, automatic approval, broad cleanup, alternate executable,
 caller-controlled installer arguments, premature success, or terminal-stage
 retention path.
+
+Exact-current-head acceptance (`verified locally`, 2026-07-20): exact
+implementation commit `f3bf11af5f62b048b38c83d58b22d82b4b0ba635` produced
+fresh v1 and v2 source apps and final PKGs. The v1 app/PKG notarization
+submissions were `5d502a47-7fb4-4037-8348-b086a8d571e6` and
+`267f5228-3857-444f-a386-4c6e7c849594`; its final PKG SHA-256 was
+`1e1f8a5c7773f9e2330a31ae4ff94c50872d9406f3907c89bdbcb4ebd0c8bd0d`.
+The v2 app/PKG submissions were
+`73456311-1318-4e1f-b30a-422f753887be` and
+`90378ea2-7f2e-4e15-b261-2ab7ccb7c365`; its final PKG SHA-256 was
+`a697d5ff7f2e531ef0d3d10f7841574c1c4f32e492781180ef585ebff09d4a04`.
+Both independent final-artifact audits passed source and extracted app, main
+executable, helper, Team ID, hardened runtime, package signature, app and PKG
+staples, Gatekeeper, receipt metadata, version/build, and fixed component
+shape.
+
+The exact v1 package then established and independently verified the
+smoke-owned `net.monolib.updater` target at `2.7.0+270` with receipt
+`net.monolib.updater.pkg` version `2.7.0`. With the Background Item disabled by
+the user, the same fixed signed host returned exit 75 with typed code
+`PrivilegedHelperApprovalRequired`, remediation
+`openMacOSBackgroundItemsSettings`, one retained owned stage, an unchanged v1
+target/receipt, and no installer launch. After the user enabled that same
+helper once and left it enabled, authenticated XPC and the fixed-argv worker
+installed the exact v2 package. Independent terminal checks passed the
+installed app/main/helper strict signatures, Team ID `UPK4SC93AN`, hardened
+runtime, app and PKG Gatekeeper/staple, active SMAppService LaunchDaemon, and
+`root:wheel` ownership. The installed application and receipt both report
+`2.7.1+271`/`2.7.1`; the owned journal, lock, and stage are absent after
+authenticated completion recovery. The sanitized approval and elevation
+reports bind the same implementation commit, v2 artifact SHA-256, and final
+PKG submission ID and contain no credential, identity, environment, private
+path, full command line, stdout, stderr, or helper-log field.
 
 ### Task 4: Prove Installer-Active Crash Recovery
 
