@@ -246,21 +246,32 @@ Future<void> main(List<String> args) async {
       "$effectiveInstallRoot",
     );
 
-    await _waitFor(
-      () => _stagingRootCleaned(stagingRoot),
-      const Duration(seconds: 10),
-      "Timed out waiting for staging directory cleanup.",
-    );
+    if (Platform.isLinux && linuxStateHome != null) {
+      await _expectLinuxTransactionEvents(
+        stateHome: linuxStateHome,
+        diagnosticsLogPath: diagnosticsLogPath,
+        expectedEvents: const <String>[
+          "activation verified",
+          "transaction completed",
+        ],
+      );
+    } else {
+      await _waitFor(
+        () => !stagingRoot.existsSync(),
+        const Duration(seconds: 10),
+        "Timed out waiting for staging directory cleanup.",
+      );
 
-    await _expectDiagnosticsLog(
-      diagnosticsLogPath,
-      const <String>[
-        "helper scheduled",
-        "backup start",
-        "move start",
-        "cleanup success",
-      ],
-    );
+      await _expectDiagnosticsLog(
+        diagnosticsLogPath,
+        const <String>[
+          "helper scheduled",
+          "backup start",
+          "move start",
+          "cleanup success",
+        ],
+      );
+    }
 
     stdout
       ..writeln("Smoke update installed: ${installedSentinel.path}")
@@ -678,16 +689,6 @@ Future<_PreparedLinuxXauthority?> _prepareLinuxRelaunchXauthority() async {
   return _PreparedLinuxXauthority(target.path, shouldDelete: true);
 }
 
-bool _stagingRootCleaned(Directory stagingRoot) {
-  if (!stagingRoot.existsSync()) {
-    return true;
-  }
-  if (!Platform.isLinux) {
-    return false;
-  }
-  return stagingRoot.listSync(followLinks: false).isEmpty;
-}
-
 Future<SimpleKeyPair> _smokeKeyPair() {
   return Ed25519().newKeyPairFromSeed(
     List<int>.generate(32, (index) => 255 - index),
@@ -728,6 +729,40 @@ Future<void> _waitFor(
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
   throw TimeoutException(timeoutMessage);
+}
+
+Future<void> _expectLinuxTransactionEvents({
+  required Directory stateHome,
+  required String diagnosticsLogPath,
+  required List<String> expectedEvents,
+}) async {
+  final eventsLog = File(
+    _joinAll([
+      stateHome.path,
+      "desktop-updater",
+      "transactions",
+      "events.jsonl",
+    ]),
+  );
+
+  await _waitFor(
+    () {
+      if (!eventsLog.existsSync()) {
+        return false;
+      }
+      final contents = eventsLog.readAsStringSync();
+      return expectedEvents.every(
+        (event) => contents.contains('"event":"$event"'),
+      );
+    },
+    const Duration(seconds: 30),
+    "Timed out waiting for Linux transaction events at ${eventsLog.path}.",
+  );
+
+  await File(diagnosticsLogPath).writeAsString(
+    await eventsLog.readAsString(),
+    flush: true,
+  );
 }
 
 Future<void> _expectDiagnosticsLog(

@@ -547,7 +547,10 @@ void main() {
     expect(tool, contains("\"XDG_STATE_HOME\": linuxStateHome.path"));
     expect(tool, contains("_prepareLinuxRelaunchXauthority("));
     expect(tool, contains("\"XAUTHORITY\": linuxXauthority.path"));
-    expect(tool, contains("stagingRoot.listSync(followLinks: false).isEmpty"));
+    expect(tool, contains("_expectLinuxTransactionEvents("));
+    expect(tool, contains("\"events.jsonl\""));
+    expect(tool, contains("\"activation verified\""));
+    expect(tool, contains("\"transaction completed\""));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
     expect(
