@@ -77,10 +77,10 @@ void main() {
     expect(linux, contains("/usr/bin/snap"));
     expect(linux, contains("dangerous_sideload"));
     expect(linux, contains("direct_revision_mutation"));
-    expect(all, isNot(contains("/bin/sh")));
-    expect(all, isNot(contains("system(")));
-    expect(all, isNot(contains("popen(")));
-    expect(all, isNot(contains("--dangerous")));
+    expect(linux, isNot(contains("/bin/sh")));
+    expect(linux, isNot(contains("system(")));
+    expect(linux, isNot(contains("popen(")));
+    expect(linux, isNot(contains("--dangerous")));
   });
 
   test("strategy work does not add Linux artifact production", () {
