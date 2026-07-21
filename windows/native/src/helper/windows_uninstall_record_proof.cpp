@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cwchar>
 #include <cwctype>
 #include <limits>
 #include <memory>
@@ -45,27 +47,73 @@ class WindowsHandle {
   HANDLE handle_;
 };
 
+struct NativeUnicodeString {
+  USHORT length;
+  USHORT maximum_length;
+  PWSTR buffer;
+};
+
+struct NativeKeyValuePartialInformation {
+  ULONG title_index;
+  ULONG type;
+  ULONG data_length;
+  UCHAR data[1];
+};
+
+using NtQueryValueKeyFunction = LONG(NTAPI*)(
+    HANDLE, NativeUnicodeString*, ULONG, void*, ULONG, ULONG*);
+
 std::optional<std::wstring> ReadRegistryString(HKEY key,
                                                const wchar_t* value_name) {
-  DWORD type = 0;
-  DWORD size = 0;
-  if (RegQueryValueExW(key, value_name, nullptr, &type, nullptr, &size) !=
-          ERROR_SUCCESS ||
-      type != REG_SZ || size < sizeof(wchar_t) ||
-      size > 64 * 1024 || size % sizeof(wchar_t) != 0) {
+  constexpr std::size_t kMaximumBytes = 64 * 1024;
+  constexpr ULONG kKeyValuePartialInformation = 2;
+  if (key == nullptr || value_name == nullptr) return std::nullopt;
+  const std::size_t name_length = std::wcslen(value_name);
+  if (name_length == 0 ||
+      name_length > std::numeric_limits<USHORT>::max() / sizeof(wchar_t)) {
     return std::nullopt;
   }
-  std::vector<wchar_t> buffer(size / sizeof(wchar_t), L'\0');
-  DWORD received = size;
-  if (RegQueryValueExW(key, value_name, nullptr, &type,
-                       reinterpret_cast<BYTE*>(buffer.data()), &received) !=
-          ERROR_SUCCESS ||
-      type != REG_SZ || received != size || buffer.back() != L'\0' ||
-      std::find(buffer.begin(), buffer.end() - 1, L'\0') !=
-          buffer.end() - 1) {
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  const auto query = ntdll == nullptr
+                         ? nullptr
+                         : reinterpret_cast<NtQueryValueKeyFunction>(
+                               GetProcAddress(ntdll, "NtQueryValueKey"));
+  if (query == nullptr) return std::nullopt;
+
+  NativeUnicodeString name{
+      static_cast<USHORT>(name_length * sizeof(wchar_t)),
+      static_cast<USHORT>(name_length * sizeof(wchar_t)),
+      const_cast<PWSTR>(value_name),
+  };
+  constexpr std::size_t kDataOffset =
+      offsetof(NativeKeyValuePartialInformation, data);
+  std::vector<unsigned char> storage(kDataOffset + kMaximumBytes);
+  ULONG received = 0;
+  const LONG status = query(
+      reinterpret_cast<HANDLE>(key), &name, kKeyValuePartialInformation,
+      storage.data(), static_cast<ULONG>(storage.size()), &received);
+  if (status < 0 || received < kDataOffset || received > storage.size()) {
     return std::nullopt;
   }
-  return std::wstring(buffer.data(), buffer.size() - 1);
+  const auto* information =
+      reinterpret_cast<const NativeKeyValuePartialInformation*>(
+          storage.data());
+  if (information->type != REG_SZ ||
+      information->data_length < sizeof(wchar_t) ||
+      information->data_length > kMaximumBytes ||
+      information->data_length % sizeof(wchar_t) != 0 ||
+      information->data_length > received - kDataOffset) {
+    return std::nullopt;
+  }
+  const auto* value = reinterpret_cast<const wchar_t*>(information->data);
+  const std::size_t character_count =
+      information->data_length / sizeof(wchar_t);
+  if (value[character_count - 1] != L'\0' ||
+      std::find(value, value + character_count - 1, L'\0') !=
+          value + character_count - 1) {
+    return std::nullopt;
+  }
+  return std::wstring(value, character_count - 1);
 }
 
 bool CallerCanWriteRegistryKey(HKEY key, HANDLE caller_process) {

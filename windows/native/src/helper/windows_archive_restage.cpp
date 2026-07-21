@@ -1717,14 +1717,26 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
     WindowsPayloadSeal seal = BuildPayloadSeal(
         package_id, descriptor_sha256, artifact_sha256,
         std::move(payload_entries), limits.maximum_payload_seal_bytes);
+    auto retained_root = OpenRelativeNoReparse(
+        result->parent.get(), result->leaf,
+        GENERIC_READ | DELETE | FILE_LIST_DIRECTORY | FILE_TRAVERSE |
+            FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+        FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+    if (ReadWindowsFileIdentity(retained_root.get()) != result->root_identity) {
+      Fail("extracted payload root identity changed");
+    }
+    std::vector<UniqueWindowsHandle> retained_handles;
     const WindowsPayloadSeal actual = SealWindowsPayloadHandleBounded(
-        result->root.get(), package_id, descriptor_sha256, artifact_sha256,
-        &result->retained_handles, limits.maximum_payload_path_bytes,
+        retained_root.get(), package_id, descriptor_sha256, artifact_sha256,
+        &retained_handles, limits.maximum_payload_path_bytes,
         limits.maximum_payload_seal_bytes,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
     if (actual.sha256 != seal.sha256) {
       Fail("extracted payload differs from signed ZIP inventory");
     }
+    result->retained_handles = std::move(retained_handles);
+    result->root = std::move(retained_root);
     result->provenance = {restage_nonce, package_id, descriptor_sha256,
                           artifact_sha256, seal.entries};
     result->payload_seal_sha256 = std::move(seal.sha256);

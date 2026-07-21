@@ -524,6 +524,7 @@ void WriteSecureFile(HANDLE directory,
   RenameHandleRelative(next.get(), directory, leaf, true);
   fault->Hit(WindowsPortableTransactionStoreFaultPoint::
                  kAfterRenameBeforeDirectoryFlush);
+  next.reset();
   FlushWindowsDirectory(directory);
   const auto readback = ReadSecureFile(directory, leaf, next_leaf,
                                        maximum_bytes, expected_user, validate,
