@@ -176,11 +176,24 @@ public enum MacInstallClientError: Error, Equatable {
     case inactiveReservation
 }
 
+enum MacInstallOperationOutcome<Success> {
+    case success(Success)
+    case endpointUnavailable
+    case privilegedHelperApprovalRequired
+    case invalidResponse
+}
+
+enum MacPrivilegedEndpointPolicy: Equatable {
+    case existingOnly
+    case installIfNeeded
+}
+
 @_spi(DesktopUpdaterSmoke)
 public enum MacInstallSmokeTransactionOutcome {
     case status(InstallTransactionStatus)
     case endpointUnavailable
     case privilegedHelperApprovalRequired
+    case invalidResponse
 }
 
 protocol MacInstallHelperTransport: AnyObject {
@@ -206,12 +219,14 @@ protocol MacInstallHelperTransport: AnyObject {
     ) throws -> InstallTransactionStatus
 
     func queryTransaction(
-        transactionID: String
-    ) throws -> InstallTransactionStatus
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus>
 
     func recoverPendingInstall(
-        transactionID: String
-    ) throws -> InstallTransactionStatus
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus>
 
     func terminateForRecoverySmoke(
         transactionID: String
@@ -262,12 +277,17 @@ protocol MacPrivilegedHelperInstalling: AnyObject {
 }
 
 protocol MacPrivilegedXPCExchanging: AnyObject {
-    func validateEndpoint() throws -> String
+    func validateEndpoint() -> MacInstallOperationOutcome<String>
 
     func exchange(
         operation: String,
         payload: Data
-    ) throws -> (payload: Data, endpointIdentitySHA256: String)
+    ) -> MacInstallOperationOutcome<MacPrivilegedXPCResponse>
+}
+
+struct MacPrivilegedXPCResponse {
+    let payload: Data
+    let endpointIdentitySHA256: String
 }
 
 final class SystemMacOneShotEndpointAuthenticator:
@@ -624,23 +644,31 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         ] as? String ?? ""
     }
 
-    func validateEndpoint() throws -> String {
+    func validateEndpoint() -> MacInstallOperationOutcome<String> {
         guard #available(macOS 13.0, *) else {
-            throw MacInstallClientError.endpointUnavailable
+            return .endpointUnavailable
         }
-        let reply = try send(operation: "health", payload: nil)
-        guard xpc_dictionary_get_bool(reply, "ok"),
-              xpc_dictionary_get_int64(reply, "protocolVersion") == 1
-        else {
-            throw MacInstallClientError.endpointUnavailable
+        switch send(operation: "health", payload: nil) {
+        case let .success(reply):
+            guard xpc_dictionary_get_bool(reply, "ok"),
+                  xpc_dictionary_get_int64(reply, "protocolVersion") == 1
+            else {
+                return .invalidResponse
+            }
+            return endpointIdentity(from: reply)
+        case .endpointUnavailable:
+            return .endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            return .privilegedHelperApprovalRequired
+        case .invalidResponse:
+            return .invalidResponse
         }
-        return try endpointIdentity(from: reply)
     }
 
     func exchange(
         operation: String,
         payload: Data
-    ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+    ) -> MacInstallOperationOutcome<MacPrivilegedXPCResponse> {
         guard #available(macOS 13.0, *),
               [
                   "prepareInstall", "commitAfterExit",
@@ -648,33 +676,52 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
                   "recoverPendingInstall", "terminateForRecoverySmoke",
               ].contains(operation),
               (1 ... 1_048_576).contains(payload.count) else {
-            throw MacInstallClientError.endpointUnavailable
+            return .invalidResponse
         }
-        let reply = try send(operation: operation, payload: payload)
-        var length = 0
-        guard let bytes = xpc_dictionary_get_data(
-            reply,
-            "payload",
-            &length
-        ), (1 ... 1_048_576).contains(length) else {
-            throw MacInstallClientError.invalidReservationResponse
+        switch send(operation: operation, payload: payload) {
+        case let .success(reply):
+            var length = 0
+            guard let bytes = xpc_dictionary_get_data(
+                reply,
+                "payload",
+                &length
+            ), (1 ... 1_048_576).contains(length) else {
+                return .invalidResponse
+            }
+            switch endpointIdentity(from: reply) {
+            case let .success(endpointIdentitySHA256):
+                return .success(
+                    MacPrivilegedXPCResponse(
+                        payload: Data(bytes: bytes, count: length),
+                        endpointIdentitySHA256: endpointIdentitySHA256
+                    )
+                )
+            case .endpointUnavailable:
+                return .endpointUnavailable
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            case .invalidResponse:
+                return .invalidResponse
+            }
+        case .endpointUnavailable:
+            return .endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            return .privilegedHelperApprovalRequired
+        case .invalidResponse:
+            return .invalidResponse
         }
-        return (
-            Data(bytes: bytes, count: length),
-            try endpointIdentity(from: reply)
-        )
     }
 
     @available(macOS 13.0, *)
     private func send(
         operation: String,
         payload: Data?
-    ) throws -> xpc_object_t {
+    ) -> MacInstallOperationOutcome<xpc_object_t> {
         guard HelperProtocolValidation.isDottedIdentifier(serviceID),
               !helperRequirement.isEmpty,
               !helperRequirement.contains("\0"),
               !helperRequirement.contains("\n") else {
-            throw MacInstallClientError.endpointUnavailable
+            return .invalidResponse
         }
         let queue = DispatchQueue(label: "\(serviceID).client")
         let connection = serviceID.withCString {
@@ -688,7 +735,7 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         }
         guard status == 0 else {
             xpc_connection_cancel(connection)
-            throw MacInstallClientError.endpointUnavailable
+            return .invalidResponse
         }
         xpc_connection_set_event_handler(connection) { _ in }
         xpc_connection_resume(connection)
@@ -712,26 +759,38 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
             connection,
             message
         )
-        guard xpc_get_type(reply) == XPC_TYPE_DICTIONARY else {
-            throw MacInstallClientError.endpointUnavailable
+        return Self.classifyReply(reply)
+    }
+
+    static func classifyReply(
+        _ reply: xpc_object_t
+    ) -> MacInstallOperationOutcome<xpc_object_t> {
+        if xpc_get_type(reply) == XPC_TYPE_DICTIONARY {
+            return .success(reply)
         }
-        return reply
+        if xpc_get_type(reply) == XPC_TYPE_ERROR,
+           xpc_equal(reply, XPC_ERROR_CONNECTION_INTERRUPTED)
+            || xpc_equal(reply, XPC_ERROR_CONNECTION_INVALID)
+        {
+            return .endpointUnavailable
+        }
+        return .invalidResponse
     }
 
     private func endpointIdentity(
         from reply: xpc_object_t
-    ) throws -> String {
+    ) -> MacInstallOperationOutcome<String> {
         guard let value = xpc_dictionary_get_string(
             reply,
             "helperEndpointIdentitySha256"
         ) else {
-            throw MacInstallClientError.invalidReservationResponse
+            return .invalidResponse
         }
         let result = String(cString: value)
         guard HelperProtocolValidation.isSHA256(result) else {
-            throw MacInstallClientError.invalidReservationResponse
+            return .invalidResponse
         }
-        return result
+        return .success(result)
     }
 }
 
@@ -926,11 +985,15 @@ final class PackagedMacInstallHelperTransport:
     }
 
     func validatePrivilegedEndpoint() throws {
-        _ = try authenticatedPrivilegedEndpoint(allowInstallation: false)
+        _ = try throwingValue(
+            authenticatedPrivilegedEndpoint(policy: .existingOnly)
+        )
     }
 
     func refreshPrivilegedEndpoint() throws {
-        _ = try authenticatedPrivilegedEndpoint(allowInstallation: true)
+        _ = try throwingValue(
+            authenticatedPrivilegedEndpoint(allowInstallation: true)
+        )
     }
 
     func prepareInstall(
@@ -989,12 +1052,14 @@ final class PackagedMacInstallHelperTransport:
         request: Data,
         transactionID: String
     ) throws -> InstallReservationResponseV1 {
-        let runningEndpoint = try authenticatedPrivilegedEndpoint(
-            allowInstallation: true
+        let runningEndpoint = try throwingValue(
+            authenticatedPrivilegedEndpoint(policy: .installIfNeeded)
         )
-        let exchange = try privilegedExchange.exchange(
-            operation: "prepareInstall",
-            payload: request
+        let exchange = try throwingValue(
+            privilegedExchange.exchange(
+                operation: "prepareInstall",
+                payload: request
+            )
         )
         guard exchange.endpointIdentitySHA256 == runningEndpoint else {
             throw MacInstallClientError.invalidReservationResponse
@@ -1108,15 +1173,26 @@ final class PackagedMacInstallHelperTransport:
     }
 
     func queryTransaction(
-        transactionID: String
-    ) throws -> InstallTransactionStatus {
-        if forcePrivilegedPersistentOperations
-            || usesPrivilegedTransport(transactionID) {
-            return try persistentPrivilegedStatus(
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus> {
+        if endpointPolicy == .existingOnly {
+            return persistentPrivilegedStatus(
                 operation: "queryTransaction",
                 transactionID: transactionID,
                 isRecovery: false,
-                allowInstallation: forcePrivilegedPersistentOperations
+                endpointPolicy: .existingOnly
+            )
+        }
+        if forcePrivilegedPersistentOperations
+            || usesPrivilegedTransport(transactionID) {
+            return persistentPrivilegedStatus(
+                operation: "queryTransaction",
+                transactionID: transactionID,
+                isRecovery: false,
+                endpointPolicy: forcePrivilegedPersistentOperations
+                    ? .installIfNeeded
+                    : .existingOnly
             )
         }
         do {
@@ -1124,35 +1200,42 @@ final class PackagedMacInstallHelperTransport:
                 operation: "queryTransaction",
                 transactionID: transactionID
             )
-            return try parseTransactionStatus(
-                response,
-                transactionID: transactionID,
-                endpointIdentitySHA256: endpoint
+            return .success(
+                try parseTransactionStatus(
+                    response,
+                    transactionID: transactionID,
+                    endpointIdentitySHA256: endpoint
+                )
             )
         } catch {
-            do {
-                return try persistentPrivilegedStatus(
-                    operation: "queryTransaction",
-                    transactionID: transactionID,
-                    isRecovery: false,
-                    allowInstallation: false
-                )
-            } catch let privilegedError {
-                throw privilegedError
-            }
+            return persistentPrivilegedStatus(
+                operation: "queryTransaction",
+                transactionID: transactionID,
+                isRecovery: false,
+                endpointPolicy: .existingOnly
+            )
         }
     }
 
     func recoverPendingInstall(
-        transactionID: String
-    ) throws -> InstallTransactionStatus {
-        if forcePrivilegedPersistentOperations
-            || usesPrivilegedTransport(transactionID) {
-            return try persistentPrivilegedStatus(
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus> {
+        if endpointPolicy == .existingOnly {
+            return persistentPrivilegedStatus(
                 operation: "recoverPendingInstall",
                 transactionID: transactionID,
                 isRecovery: true,
-                allowInstallation: true
+                endpointPolicy: .existingOnly
+            )
+        }
+        if forcePrivilegedPersistentOperations
+            || usesPrivilegedTransport(transactionID) {
+            return persistentPrivilegedStatus(
+                operation: "recoverPendingInstall",
+                transactionID: transactionID,
+                isRecovery: true,
+                endpointPolicy: .installIfNeeded
             )
         }
         do {
@@ -1160,17 +1243,19 @@ final class PackagedMacInstallHelperTransport:
                 operation: "recoverPendingInstall",
                 transactionID: transactionID
             )
-            return try parseRecoveryResult(
-                response,
-                transactionID: transactionID,
-                endpointIdentitySHA256: endpoint
+            return .success(
+                try parseRecoveryResult(
+                    response,
+                    transactionID: transactionID,
+                    endpointIdentitySHA256: endpoint
+                )
             )
         } catch {
-            return try persistentPrivilegedStatus(
+            return persistentPrivilegedStatus(
                 operation: "recoverPendingInstall",
                 transactionID: transactionID,
                 isRecovery: true,
-                allowInstallation: true
+                endpointPolicy: .installIfNeeded
             )
         }
     }
@@ -1178,22 +1263,26 @@ final class PackagedMacInstallHelperTransport:
     func terminateForRecoverySmoke(
         transactionID: String
     ) throws -> InstallTransactionStatus {
-        try persistentPrivilegedStatus(
-            operation: "terminateForRecoverySmoke",
-            transactionID: transactionID,
-            isRecovery: false,
-            allowInstallation: false
+        try throwingValue(
+            persistentPrivilegedStatus(
+                operation: "terminateForRecoverySmoke",
+                transactionID: transactionID,
+                isRecovery: false,
+                endpointPolicy: .existingOnly
+            )
         )
     }
 
     private func commitPrivileged(
         _ session: ActiveSession
     ) throws -> InstallTransactionStatus {
-        let exchange = try privilegedExchange.exchange(
-            operation: "commitAfterExit",
-            payload: try commandData(
+        let exchange = try throwingValue(
+            privilegedExchange.exchange(
                 operation: "commitAfterExit",
-                reservation: session.reservation
+                payload: try commandData(
+                    operation: "commitAfterExit",
+                    reservation: session.reservation
+                )
             )
         )
         let acknowledgement = try parseReservation(
@@ -1219,11 +1308,13 @@ final class PackagedMacInstallHelperTransport:
     private func cancelPrivileged(
         _ session: ActiveSession
     ) throws -> InstallTransactionStatus {
-        let exchange = try privilegedExchange.exchange(
-            operation: "cancelReservation",
-            payload: try commandData(
+        let exchange = try throwingValue(
+            privilegedExchange.exchange(
                 operation: "cancelReservation",
-                reservation: session.reservation
+                payload: try commandData(
+                    operation: "cancelReservation",
+                    reservation: session.reservation
+                )
             )
         )
         guard exchange.endpointIdentitySHA256
@@ -1249,169 +1340,230 @@ final class PackagedMacInstallHelperTransport:
         operation: String,
         transactionID: String,
         isRecovery: Bool,
-        allowInstallation: Bool
-    ) throws -> InstallTransactionStatus {
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus> {
         guard let policyID,
               HelperProtocolValidation.isDottedIdentifier(policyID) else {
-            throw MacInstallClientError.endpointUnavailable
+            return .invalidResponse
         }
-        let expectedEndpoint = try authenticatedPrivilegedEndpoint(
-            allowInstallation: allowInstallation
-        )
-        let exchange = try persistentPrivilegedExchange(
-            operation: operation,
-            payload: try canonicalData([
+        let request: Data
+        do {
+            request = try canonicalData([
                 "operation": operation,
                 "policyId": policyID,
                 "protocolVersion": 1,
                 "transactionId": transactionID,
-            ]),
-            expectedEndpoint: expectedEndpoint
-        )
-        if isRecovery {
-            return try parseRecoveryResult(
-                exchange.payload,
-                transactionID: transactionID,
-                endpointIdentitySHA256: expectedEndpoint
-            )
+            ])
+        } catch {
+            return .invalidResponse
         }
-        return try parseTransactionStatus(
-            exchange.payload,
-            transactionID: transactionID,
-            endpointIdentitySHA256: expectedEndpoint
-        )
+        switch authenticatedPrivilegedEndpoint(policy: endpointPolicy) {
+        case let .success(expectedEndpoint):
+            switch persistentPrivilegedExchange(
+                operation: operation,
+                payload: request,
+                expectedEndpoint: expectedEndpoint
+            ) {
+            case let .success(exchange):
+                do {
+                    if isRecovery {
+                        return .success(
+                            try parseRecoveryResult(
+                                exchange.payload,
+                                transactionID: transactionID,
+                                endpointIdentitySHA256: expectedEndpoint
+                            )
+                        )
+                    }
+                    return .success(
+                        try parseTransactionStatus(
+                            exchange.payload,
+                            transactionID: transactionID,
+                            endpointIdentitySHA256: expectedEndpoint
+                        )
+                    )
+                } catch {
+                    return .invalidResponse
+                }
+            case .endpointUnavailable:
+                return .endpointUnavailable
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            case .invalidResponse:
+                return .invalidResponse
+            }
+        case .endpointUnavailable:
+            return .endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            return .privilegedHelperApprovalRequired
+        case .invalidResponse:
+            return .invalidResponse
+        }
     }
 
     private func persistentPrivilegedExchange(
         operation: String,
         payload: Data,
         expectedEndpoint: String
-    ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+    ) -> MacInstallOperationOutcome<MacPrivilegedXPCResponse> {
         let operationIsReplaySafe = operation == "queryTransaction"
             || operation == "recoverPendingInstall"
         for attempt in 0 ..< privilegedEndpointActivationAttempts {
             if attempt > 0 {
                 privilegedEndpointActivationDelay()
-                do {
-                    let runningEndpoint = try privilegedExchange
-                        .validateEndpoint()
-                    if runningEndpoint != expectedEndpoint {
-                        guard attempt + 1
-                                < privilegedEndpointActivationAttempts
-                        else {
-                            throw MacInstallClientError
-                                .invalidReservationResponse
-                        }
-                        continue
+                switch privilegedExchange.validateEndpoint() {
+                case let .success(runningEndpoint):
+                    guard runningEndpoint == expectedEndpoint else {
+                        return .invalidResponse
                     }
-                } catch let error as MacInstallClientError {
-                    guard error == .endpointUnavailable,
-                          attempt + 1
-                              < privilegedEndpointActivationAttempts
-                    else {
-                        throw error
+                case .endpointUnavailable:
+                    guard attempt + 1
+                            < privilegedEndpointActivationAttempts else {
+                        return .endpointUnavailable
                     }
                     continue
+                case .privilegedHelperApprovalRequired:
+                    return .privilegedHelperApprovalRequired
+                case .invalidResponse:
+                    return .invalidResponse
                 }
             }
-            do {
-                let exchange = try privilegedExchange.exchange(
-                    operation: operation,
-                    payload: payload
-                )
+            switch privilegedExchange.exchange(
+                operation: operation,
+                payload: payload
+            ) {
+            case let .success(exchange):
                 guard exchange.endpointIdentitySHA256 == expectedEndpoint else {
-                    throw MacInstallClientError.invalidReservationResponse
+                    return .invalidResponse
                 }
-                return exchange
-            } catch let error as MacInstallClientError {
+                return .success(exchange)
+            case .endpointUnavailable:
                 guard operationIsReplaySafe,
-                      error == .endpointUnavailable,
                       attempt + 1 < privilegedEndpointActivationAttempts
                 else {
-                    throw error
+                    return .endpointUnavailable
                 }
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            case .invalidResponse:
+                return .invalidResponse
             }
         }
-        throw MacInstallClientError.endpointUnavailable
+        return .endpointUnavailable
     }
 
     private func authenticatedPrivilegedEndpoint(
         allowInstallation: Bool
-    ) throws -> String {
-        let expectedEndpoint = try authenticator.authenticate(
-            executableURL: helperURL,
-            processIdentifier: nil
+    ) -> MacInstallOperationOutcome<String> {
+        authenticatedPrivilegedEndpoint(
+            policy: allowInstallation ? .installIfNeeded : .existingOnly
         )
-        if !allowInstallation {
-            return try authenticatedExistingPrivilegedEndpoint(
+    }
+
+    private func authenticatedPrivilegedEndpoint(
+        policy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<String> {
+        let expectedEndpoint: String
+        do {
+            expectedEndpoint = try authenticator.authenticate(
+                executableURL: helperURL,
+                processIdentifier: nil
+            )
+        } catch {
+            return .invalidResponse
+        }
+        if policy == .existingOnly {
+            return authenticatedExistingPrivilegedEndpoint(
                 expectedEndpoint: expectedEndpoint
             )
         }
-        do {
-            let runningEndpoint = try privilegedExchange
-                .validateEndpoint()
+        switch privilegedExchange.validateEndpoint() {
+        case let .success(runningEndpoint):
             if runningEndpoint == expectedEndpoint {
-                return runningEndpoint
+                return .success(runningEndpoint)
             }
-        } catch let error as MacInstallClientError {
-            guard error == .endpointUnavailable else {
-                throw error
-            }
+        case .endpointUnavailable:
+            break
+        case .privilegedHelperApprovalRequired:
+            return .privilegedHelperApprovalRequired
+        case .invalidResponse:
+            return .invalidResponse
         }
         for attempt in 0 ..< privilegedRegistrationAttempts {
             do {
                 try privilegedInstaller.install()
                 break
-            } catch let error as MacInstallClientError
-                where error == .endpointUnavailable
-                    && attempt + 1 < privilegedRegistrationAttempts
-            {
+            } catch MacInstallClientError.endpointUnavailable {
+                guard attempt + 1 < privilegedRegistrationAttempts else {
+                    return .endpointUnavailable
+                }
                 privilegedRegistrationDelay()
+            } catch MacInstallClientError.privilegedHelperApprovalRequired {
+                return .privilegedHelperApprovalRequired
+            } catch {
+                return .invalidResponse
             }
         }
         for attempt in 0 ..< privilegedEndpointActivationAttempts {
-            do {
-                let installedEndpoint = try privilegedExchange
-                    .validateEndpoint()
+            switch privilegedExchange.validateEndpoint() {
+            case let .success(installedEndpoint):
                 guard installedEndpoint == expectedEndpoint else {
-                    throw MacInstallClientError.invalidReservationResponse
+                    return .invalidResponse
                 }
-                return installedEndpoint
-            } catch let error as MacInstallClientError
-                where error == .endpointUnavailable
-                    && attempt + 1 < privilegedEndpointActivationAttempts
-            {
+                return .success(installedEndpoint)
+            case .endpointUnavailable:
+                guard attempt + 1
+                        < privilegedEndpointActivationAttempts else {
+                    return .endpointUnavailable
+                }
                 privilegedEndpointActivationDelay()
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            case .invalidResponse:
+                return .invalidResponse
             }
         }
-        throw MacInstallClientError.endpointUnavailable
+        return .endpointUnavailable
     }
 
     private func authenticatedExistingPrivilegedEndpoint(
         expectedEndpoint: String
-    ) throws -> String {
+    ) -> MacInstallOperationOutcome<String> {
         for attempt in 0 ..< privilegedEndpointActivationAttempts {
-            do {
-                let runningEndpoint = try privilegedExchange
-                    .validateEndpoint()
-                if runningEndpoint == expectedEndpoint {
-                    return runningEndpoint
+            switch privilegedExchange.validateEndpoint() {
+            case let .success(runningEndpoint):
+                guard runningEndpoint == expectedEndpoint else {
+                    return .invalidResponse
                 }
-                guard attempt + 1 < privilegedEndpointActivationAttempts
-                else {
-                    throw MacInstallClientError.invalidReservationResponse
-                }
-                privilegedEndpointActivationDelay()
-            } catch let error as MacInstallClientError {
-                guard error == .endpointUnavailable,
-                      attempt + 1 < privilegedEndpointActivationAttempts
-                else {
-                    throw error
+                return .success(runningEndpoint)
+            case .endpointUnavailable:
+                guard attempt + 1
+                        < privilegedEndpointActivationAttempts else {
+                    return .endpointUnavailable
                 }
                 privilegedEndpointActivationDelay()
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            case .invalidResponse:
+                return .invalidResponse
             }
         }
-        throw MacInstallClientError.endpointUnavailable
+        return .endpointUnavailable
+    }
+
+    private func throwingValue<Value>(
+        _ outcome: MacInstallOperationOutcome<Value>
+    ) throws -> Value {
+        switch outcome {
+        case let .success(value):
+            return value
+        case .endpointUnavailable:
+            throw MacInstallClientError.endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            throw MacInstallClientError.privilegedHelperApprovalRequired
+        case .invalidResponse:
+            throw MacInstallClientError.invalidReservationResponse
+        }
     }
 
     private func usesPrivilegedTransport(_ transactionID: String) -> Bool {
@@ -1911,40 +2063,58 @@ public struct MacInstallHelper {
         _ transactionID: String
     ) throws -> InstallTransactionStatus {
         try validateTransactionID(transactionID)
-        let status = try transport.queryTransaction(
+        return try throwingTransactionStatus(
+            transport.queryTransaction(
+                transactionID: transactionID,
+                endpointPolicy: .installIfNeeded
+            ),
             transactionID: transactionID
         )
-        try validate(status, transactionID: transactionID)
-        return status
     }
 
     public func recoverPendingInstall(
         _ transactionID: String
     ) throws -> InstallTransactionStatus {
         try validateTransactionID(transactionID)
-        let status = try transport.recoverPendingInstall(
+        return try throwingTransactionStatus(
+            transport.recoverPendingInstall(
+                transactionID: transactionID,
+                endpointPolicy: .installIfNeeded
+            ),
             transactionID: transactionID
         )
-        try validate(status, transactionID: transactionID)
-        return status
     }
 
     @_spi(DesktopUpdaterSmoke)
     public func queryTransactionForSmoke(
         _ transactionID: String
-    ) throws -> MacInstallSmokeTransactionOutcome {
-        try smokeTransactionOutcome {
-            try queryTransaction(transactionID)
+    ) -> MacInstallSmokeTransactionOutcome {
+        guard HelperProtocolValidation.isTransactionID(transactionID) else {
+            return .invalidResponse
         }
+        return smokeTransactionOutcome(
+            transport.queryTransaction(
+                transactionID: transactionID,
+                endpointPolicy: .existingOnly
+            ),
+            transactionID: transactionID
+        )
     }
 
     @_spi(DesktopUpdaterSmoke)
     public func recoverPendingInstallForSmoke(
         _ transactionID: String
-    ) throws -> MacInstallSmokeTransactionOutcome {
-        try smokeTransactionOutcome {
-            try recoverPendingInstall(transactionID)
+    ) -> MacInstallSmokeTransactionOutcome {
+        guard HelperProtocolValidation.isTransactionID(transactionID) else {
+            return .invalidResponse
         }
+        return smokeTransactionOutcome(
+            transport.recoverPendingInstall(
+                transactionID: transactionID,
+                endpointPolicy: .existingOnly
+            ),
+            transactionID: transactionID
+        )
     }
 
     @_spi(DesktopUpdaterSmoke)
@@ -1964,16 +2134,40 @@ public struct MacInstallHelper {
     }
 
     private func smokeTransactionOutcome(
-        _ operation: () throws -> InstallTransactionStatus
-    ) throws -> MacInstallSmokeTransactionOutcome {
-        do {
-            return .status(try operation())
-        } catch MacInstallClientError.endpointUnavailable {
+        _ outcome: MacInstallOperationOutcome<InstallTransactionStatus>,
+        transactionID: String
+    ) -> MacInstallSmokeTransactionOutcome {
+        switch outcome {
+        case let .success(status):
+            do {
+                try validate(status, transactionID: transactionID)
+                return .status(status)
+            } catch {
+                return .invalidResponse
+            }
+        case .endpointUnavailable:
             return .endpointUnavailable
-        } catch MacInstallClientError.privilegedHelperApprovalRequired {
+        case .privilegedHelperApprovalRequired:
             return .privilegedHelperApprovalRequired
-        } catch {
-            throw error
+        case .invalidResponse:
+            return .invalidResponse
+        }
+    }
+
+    private func throwingTransactionStatus(
+        _ outcome: MacInstallOperationOutcome<InstallTransactionStatus>,
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        switch outcome {
+        case let .success(status):
+            try validate(status, transactionID: transactionID)
+            return status
+        case .endpointUnavailable:
+            throw MacInstallClientError.endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            throw MacInstallClientError.privilegedHelperApprovalRequired
+        case .invalidResponse:
+            throw MacInstallClientError.invalidReservationResponse
         }
     }
 

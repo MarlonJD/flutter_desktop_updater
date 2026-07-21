@@ -1,9 +1,19 @@
 @_spi(DesktopUpdaterSmoke) import DesktopUpdaterKit
+import Darwin
 import Foundation
 
 @main
 struct MacOSRuntimeSmoke {
-    static func main() async throws {
+    static func main() async {
+        do {
+            try await run()
+        } catch {
+            emitSanitizedFailure()
+            Darwin.exit(EXIT_FAILURE)
+        }
+    }
+
+    private static func run() async throws {
         let arguments = try Arguments(CommandLine.arguments)
         if arguments.has("--probe-helper") {
             let helper = MacInstallHelper.smAppServiceSmokeHost()
@@ -20,7 +30,7 @@ struct MacOSRuntimeSmoke {
         if let transactionID = arguments.optionalValue(
             "--recover-transaction"
         ) {
-            let outcome = try MacInstallHelper()
+            let outcome = MacInstallHelper()
                 .recoverPendingInstallForSmoke(transactionID)
             try emitTransactionOutcome("recovery", outcome)
             return
@@ -40,7 +50,7 @@ struct MacOSRuntimeSmoke {
         if let transactionID = arguments.optionalValue(
             "--query-transaction"
         ) {
-            let outcome = try MacInstallHelper()
+            let outcome = MacInstallHelper()
                 .queryTransactionForSmoke(transactionID)
             try emitTransactionOutcome("query", outcome)
             return
@@ -285,9 +295,17 @@ private func emitTransactionOutcome(
             "code": diagnostic.code.rawValue,
             "remediationActions": diagnostic.remediationActions.map(\.rawValue),
         ])
+    case .invalidResponse:
+        emitSanitizedFailure()
+        Darwin.exit(EXIT_FAILURE)
     @unknown default:
-        throw SmokeFailure("Unsupported smoke transaction outcome.")
+        emitSanitizedFailure()
+        Darwin.exit(EXIT_FAILURE)
     }
+}
+
+private func emitSanitizedFailure() {
+    print(#"{"event":"smokeFailed","status":"failed"}"#)
 }
 
 private struct SmokeFailure: LocalizedError {

@@ -5,6 +5,97 @@ import "package:flutter_test/flutter_test.dart";
 import "../tool/macos_privileged_pkg_recovery_smoke.dart" as recovery;
 
 void main() {
+  test(
+    "runtime process contains smoke argument failures",
+    () async {
+      final tempRoot = await Directory(
+        "/private/tmp",
+      ).createTemp("desktop-updater-runtime-containment-");
+      final scratch = Directory("${tempRoot.path}/swiftpm-scratch");
+      final moduleCache = Directory("${tempRoot.path}/module-cache");
+      final runtimePackage = Directory(
+        "example/native/macos-runtime",
+      ).absolute;
+      final environment = <String, String>{
+        ...Platform.environment,
+        "CLANG_MODULE_CACHE_PATH": moduleCache.path,
+        "SWIFTPM_MODULECACHE_OVERRIDE": moduleCache.path,
+      };
+
+      try {
+        await moduleCache.create(recursive: true);
+        final build = await Process.run(
+          "swift",
+          [
+            "build",
+            "--package-path",
+            runtimePackage.path,
+            "--scratch-path",
+            scratch.path,
+            "--disable-sandbox",
+            "--product",
+            "MacOSRuntimeCompile",
+          ],
+          environment: environment,
+        );
+        expect(
+          build.exitCode,
+          0,
+          reason: "Fresh runtime build failed:\n${build.stdout}${build.stderr}",
+        );
+
+        final binPath = await Process.run(
+          "swift",
+          [
+            "build",
+            "--package-path",
+            runtimePackage.path,
+            "--scratch-path",
+            scratch.path,
+            "--disable-sandbox",
+            "--show-bin-path",
+          ],
+          environment: environment,
+        );
+        expect(
+          binPath.exitCode,
+          0,
+          reason: "Could not resolve the fresh build output path: "
+              "${binPath.stdout}${binPath.stderr}",
+        );
+
+        const sensitiveInput = "sensitive-raw-input-never-emit";
+        final executable = File(
+          "${(binPath.stdout as String).trim()}/MacOSRuntimeCompile",
+        );
+        expect(executable.existsSync(), isTrue);
+        final result = await Process.run(executable.path, [
+          "--smoke",
+          "--public-key-base64",
+          sensitiveInput,
+        ]);
+        final stdout = result.stdout as String;
+        final stderr = result.stderr as String;
+
+        expect(result.exitCode, 1);
+        expect(
+          stdout.trim().split("\n"),
+          [r'{"event":"smokeFailed","status":"failed"}'],
+        );
+        expect(stderr, isEmpty);
+        expect("$stdout$stderr", isNot(contains(sensitiveInput)));
+        expect("$stdout$stderr", isNot(contains("Missing required argument")));
+        expect("$stdout$stderr", isNot(contains("SmokeFailure")));
+      } finally {
+        if (tempRoot.existsSync()) {
+          await tempRoot.delete(recursive: true);
+        }
+      }
+    },
+    skip: !Platform.isMacOS,
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
+
   test("process start identity matches the helper macOS identity shape", () {
     if (!Platform.isMacOS) return;
     final first = recovery.macOSProcessStartIdentityForTesting(pid);
@@ -224,13 +315,33 @@ void main() {
     final runtime = File(
       "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
     ).readAsStringSync();
+    final helper = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
 
     expect(runtime, contains("queryTransactionForSmoke"));
     expect(runtime, contains("recoverPendingInstallForSmoke"));
     expect(runtime, contains("MacInstallSmokeTransactionOutcome"));
+    expect(runtime, contains("static func main() async {"));
+    expect(runtime, isNot(contains("static func main() async throws")));
     expect(runtime, isNot(contains("catch MacInstallClientError")));
+    expect(
+      runtime,
+      isNot(contains("let outcome = try MacInstallHelper()")),
+    );
     expect(runtime, contains('"state": "unknown"'));
     expect(runtime, contains('"resultCode": "endpointUnavailable"'));
+    expect(runtime, contains("smokeFailed"));
+    expect(runtime, isNot(contains("error.localizedDescription")));
+    expect(helper, contains("MacInstallOperationOutcome"));
+    expect(helper, contains("endpointPolicy: .existingOnly"));
+    expect(
+      helper,
+      isNot(
+        contains("_ operation: () throws -> InstallTransactionStatus"),
+      ),
+    );
+    expect(helper, isNot(contains(".get()")));
     expect(harness, contains("_transactionRetryAttempts"));
     expect(harness, contains("_transactionRetryDelay"));
     expect(harness, contains('"--query-transaction"'));

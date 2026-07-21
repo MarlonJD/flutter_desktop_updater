@@ -1,8 +1,67 @@
 import Foundation
+import XPC
 import XCTest
 @testable import DesktopUpdaterKit
 
 final class MacPackagedHelperTransportTests: XCTestCase {
+    func testRawXPCAvailabilityErrorsAreClassifiedBeforeThrowing() {
+        for reply in [
+            XPC_ERROR_CONNECTION_INTERRUPTED,
+            XPC_ERROR_CONNECTION_INVALID,
+        ] {
+            guard case .endpointUnavailable =
+                SystemMacPrivilegedXPCExchange.classifyReply(reply)
+            else {
+                return XCTFail("Expected a contained endpoint failure.")
+            }
+        }
+
+        let nonDictionary = xpc_string_create("not-a-reply")
+        guard case .invalidResponse =
+            SystemMacPrivilegedXPCExchange.classifyReply(nonDictionary)
+        else {
+            return XCTFail("Expected a non-dictionary invalid response.")
+        }
+    }
+
+    func testExistingOnlyQueryAndRecoveryNeverInstallOrLaunchOneShot() {
+        let queryID = "00000000-0000-4000-8000-000000000099"
+        let recoveryID = "00000000-0000-4000-8000-000000000100"
+        let oneShot = RecordingMacOneShotProcessLauncher(
+            session: RecordingMacOneShotClientSession(responses: [])
+        )
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        let installer = RecordingPrivilegedHelperInstaller {
+            XCTFail("Existing-only smoke must not install the helper.")
+        }
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: oneShot,
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged,
+            privilegedEndpointActivationAttempts: 1,
+            privilegedEndpointActivationDelay: {}
+        )
+
+        let query = transport.queryTransaction(
+            transactionID: queryID,
+            endpointPolicy: .existingOnly
+        )
+        let recovery = transport.recoverPendingInstall(
+            transactionID: recoveryID,
+            endpointPolicy: .existingOnly
+        )
+
+        guard case .endpointUnavailable = query,
+              case .endpointUnavailable = recovery else {
+            return XCTFail("Expected contained endpoint failures.")
+        }
+        XCTAssertEqual(oneShot.launchCount, 0)
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.exchangeAttemptCount, 0)
+    }
     func testSystemAuthenticatorBindsTheRunningFixedSignedHelper() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
@@ -333,7 +392,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             authenticator: authenticator
         )
 
-        let status = try transport.queryTransaction(
+        let status = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -382,7 +441,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             authenticator: RecordingEndpointAuthenticator()
         )
 
-        let status = try transport.queryTransaction(
+        let status = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -403,7 +462,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             authenticator: RecordingEndpointAuthenticator()
         )
 
-        let status = try transport.recoverPendingInstall(
+        let status = try transport.recoverPendingInstallThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -784,7 +843,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             privilegedExchange: privileged
         )
 
-        let status = try transport.recoverPendingInstall(
+        let status = try transport.recoverPendingInstallThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -822,7 +881,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -869,7 +928,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
         )
 
-        let status = try transport.queryTransaction(
+        let status = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -915,7 +974,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
         )
 
-        let status = try transport.queryTransaction(
+        let status = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -957,7 +1016,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
         )
 
-        let status = try transport.recoverPendingInstall(
+        let status = try transport.recoverPendingInstallThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -996,7 +1055,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -1036,7 +1095,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -1124,7 +1183,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
         )
 
-        let status = try transport.queryTransaction(
+        let status = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -1161,7 +1220,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -1199,7 +1258,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -1213,9 +1272,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertTrue(privileged.operations.isEmpty)
     }
 
-    func testRegisteredQueryRetriesStaleSignedEndpointIdentity()
-        throws
-    {
+    func testRegisteredQueryDoesNotRetryStaleSignedEndpointIdentity() {
         let transactionID = "00000000-0000-4000-8000-000000000099"
         let oneShot = RecordingMacOneShotProcessLauncher(
             session: RecordingMacOneShotClientSession(responses: [])
@@ -1246,20 +1303,23 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             }
         )
 
-        let status = try transport.queryTransaction(
-            transactionID: transactionID
-        )
+        XCTAssertThrowsError(
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .invalidReservationResponse
+            )
+        }
 
         XCTAssertEqual(oneShot.launchCount, 1)
         XCTAssertEqual(installer.installCount, 0)
-        XCTAssertEqual(privileged.validationCount, 3)
-        XCTAssertEqual(activationDelayCount, 2)
-        XCTAssertEqual(privileged.operations, ["queryTransaction"])
-        XCTAssertEqual(status.state, .commitAccepted)
-        XCTAssertEqual(status.resultCode, .recoveryRequired)
+        XCTAssertEqual(privileged.validationCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
+        XCTAssertTrue(privileged.operations.isEmpty)
     }
 
-    func testRegisteredQueryStaleSignedEndpointRetryIsBounded() {
+    func testRegisteredQueryRejectsStaleSignedEndpointIdentityImmediately() {
         let transactionID = "00000000-0000-4000-8000-000000000099"
         let oneShot = RecordingMacOneShotProcessLauncher(
             session: RecordingMacOneShotClientSession(responses: [])
@@ -1283,7 +1343,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try transport.queryTransaction(transactionID: transactionID)
+            try transport.queryTransactionThrowingForTesting(transactionID: transactionID)
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -1292,8 +1352,8 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         }
         XCTAssertEqual(oneShot.launchCount, 1)
         XCTAssertEqual(installer.installCount, 0)
-        XCTAssertEqual(privileged.validationCount, 3)
-        XCTAssertEqual(activationDelayCount, 2)
+        XCTAssertEqual(privileged.validationCount, 1)
+        XCTAssertEqual(activationDelayCount, 0)
         XCTAssertTrue(privileged.operations.isEmpty)
     }
 
@@ -1329,10 +1389,10 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             forcePrivilegedPersistentOperations: true
         )
 
-        let query = try transport.queryTransaction(
+        let query = try transport.queryTransactionThrowingForTesting(
             transactionID: queryTransactionID
         )
-        let recovery = try transport.recoverPendingInstall(
+        let recovery = try transport.recoverPendingInstallThrowingForTesting(
             transactionID: recoveryTransactionID
         )
 
@@ -1378,7 +1438,7 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             forcePrivilegedPersistentOperations: true
         )
 
-        let query = try transport.queryTransaction(
+        let query = try transport.queryTransactionThrowingForTesting(
             transactionID: transactionID
         )
 
@@ -1453,6 +1513,45 @@ final class MacPackagedHelperTransportTests: XCTestCase {
     }
 }
 
+private extension PackagedMacInstallHelperTransport {
+    func queryTransactionThrowingForTesting(
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        try outcomeValueForTesting(
+            queryTransaction(
+                transactionID: transactionID,
+                endpointPolicy: .installIfNeeded
+            )
+        )
+    }
+
+    func recoverPendingInstallThrowingForTesting(
+        transactionID: String
+    ) throws -> InstallTransactionStatus {
+        try outcomeValueForTesting(
+            recoverPendingInstall(
+                transactionID: transactionID,
+                endpointPolicy: .installIfNeeded
+            )
+        )
+    }
+
+    private func outcomeValueForTesting<Value>(
+        _ outcome: MacInstallOperationOutcome<Value>
+    ) throws -> Value {
+        switch outcome {
+        case let .success(value):
+            return value
+        case .endpointUnavailable:
+            throw MacInstallClientError.endpointUnavailable
+        case .privilegedHelperApprovalRequired:
+            throw MacInstallClientError.privilegedHelperApprovalRequired
+        case .invalidResponse:
+            throw MacInstallClientError.invalidReservationResponse
+        }
+    }
+}
+
 private final class RecordingPrivilegedHelperInstaller:
     MacPrivilegedHelperInstalling
 {
@@ -1519,43 +1618,59 @@ private final class RecordingPrivilegedXPCExchange:
         self.responses = responses
     }
 
-    func validateEndpoint() throws -> String {
+    func validateEndpoint() -> MacInstallOperationOutcome<String> {
         validationCount += 1
         guard isInstalled, remainingActivationFailures == 0 else {
             if isInstalled {
                 remainingActivationFailures -= 1
             }
-            throw MacInstallClientError.endpointUnavailable
+            return .endpointUnavailable
         }
         if let activationError {
-            throw activationError
+            switch activationError {
+            case .endpointUnavailable:
+                return .endpointUnavailable
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            default:
+                return .invalidResponse
+            }
         }
         if remainingEndpointIdentityMismatches > 0 {
             remainingEndpointIdentityMismatches -= 1
-            return String(repeating: "d", count: 64)
+            return .success(String(repeating: "d", count: 64))
         }
-        return endpointIdentity
+        return .success(endpointIdentity)
     }
 
     func exchange(
         operation: String,
         payload _: Data
-    ) throws -> (payload: Data, endpointIdentitySHA256: String) {
+    ) -> MacInstallOperationOutcome<MacPrivilegedXPCResponse> {
         exchangeAttemptCount += 1
         if let exchangeError {
-            throw exchangeError
+            switch exchangeError {
+            case .endpointUnavailable:
+                return .endpointUnavailable
+            case .privilegedHelperApprovalRequired:
+                return .privilegedHelperApprovalRequired
+            default:
+                return .invalidResponse
+            }
         }
         if remainingExchangeFailures > 0 {
             remainingExchangeFailures -= 1
-            throw MacInstallClientError.endpointUnavailable
+            return .endpointUnavailable
         }
         guard isInstalled, !responses.isEmpty else {
-            throw MacInstallClientError.endpointUnavailable
+            return .endpointUnavailable
         }
         operations.append(operation)
-        return (
-            responses.removeFirst(),
-            endpointIdentity
+        return .success(
+            MacPrivilegedXPCResponse(
+                payload: responses.removeFirst(),
+                endpointIdentitySHA256: endpointIdentity
+            )
         )
     }
 }

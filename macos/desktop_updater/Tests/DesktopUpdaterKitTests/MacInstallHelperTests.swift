@@ -267,9 +267,10 @@ final class MacInstallHelperTests: XCTestCase {
         }
     }
 
-    func testSmokeQueryContainsEndpointFailureInsideKitBoundary() throws {
+    func testSmokeAdaptersContainEndpointFailureInsideKitBoundary() {
         let transport = CapturingInstallHelperTransport()
-        transport.queryError = MacInstallClientError.endpointUnavailable
+        transport.queryOutcome = .endpointUnavailable
+        transport.recoveryOutcome = .endpointUnavailable
         let helper = MacInstallHelper(
             targetResolver: {
                 MacInstallTarget(
@@ -281,19 +282,24 @@ final class MacInstallHelperTests: XCTestCase {
             transport: transport
         )
 
-        let outcome = try helper.queryTransactionForSmoke(
+        let outcome = helper.queryTransactionForSmoke(
             "00000000-0000-4000-8000-000000000099"
         )
 
         guard case .endpointUnavailable = outcome else {
             return XCTFail("Expected a contained endpoint failure.")
         }
+        guard case .endpointUnavailable = helper.recoverPendingInstallForSmoke(
+            "00000000-0000-4000-8000-000000000100"
+        ) else {
+            return XCTFail("Expected a contained recovery endpoint failure.")
+        }
     }
 
-    func testSmokeRecoveryContainsApprovalFailureInsideKitBoundary() throws {
+    func testSmokeAdaptersContainApprovalFailureInsideKitBoundary() {
         let transport = CapturingInstallHelperTransport()
-        transport.recoveryError =
-            MacInstallClientError.privilegedHelperApprovalRequired
+        transport.queryOutcome = .privilegedHelperApprovalRequired
+        transport.recoveryOutcome = .privilegedHelperApprovalRequired
         let helper = MacInstallHelper(
             targetResolver: {
                 MacInstallTarget(
@@ -305,18 +311,81 @@ final class MacInstallHelperTests: XCTestCase {
             transport: transport
         )
 
-        let outcome = try helper.recoverPendingInstallForSmoke(
+        let outcome = helper.recoverPendingInstallForSmoke(
             "00000000-0000-4000-8000-000000000099"
         )
 
         guard case .privilegedHelperApprovalRequired = outcome else {
             return XCTFail("Expected a contained approval failure.")
         }
+        guard case .privilegedHelperApprovalRequired =
+            helper.queryTransactionForSmoke(
+                "00000000-0000-4000-8000-000000000100"
+            )
+        else {
+            return XCTFail("Expected a contained query approval failure.")
+        }
     }
 
-    func testSmokeQueryRethrowsNonReplaySafeClientFailure() throws {
+    func testSmokeAdaptersContainInvalidResponseInsideKitBoundary() {
         let transport = CapturingInstallHelperTransport()
-        transport.queryError = MacInstallClientError.installRecoveryRequired
+        transport.queryOutcome = .invalidResponse
+        transport.recoveryOutcome = .invalidResponse
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        let outcome = helper.queryTransactionForSmoke(
+            "00000000-0000-4000-8000-000000000099"
+        )
+
+        guard case .invalidResponse = outcome else {
+            return XCTFail("Expected a contained invalid response.")
+        }
+        guard case .invalidResponse = helper.recoverPendingInstallForSmoke(
+            "00000000-0000-4000-8000-000000000100"
+        ) else {
+            return XCTFail("Expected a contained recovery invalid response.")
+        }
+    }
+
+    func testSmokeAdaptersAlwaysRequestExistingEndpointOnly() {
+        let transport = CapturingInstallHelperTransport()
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        let query = helper.queryTransactionForSmoke(
+            "00000000-0000-4000-8000-000000000099"
+        )
+        let recovery = helper.recoverPendingInstallForSmoke(
+            "00000000-0000-4000-8000-000000000100"
+        )
+
+        guard case .status = query, case .status = recovery else {
+            return XCTFail("Expected successful smoke status outcomes.")
+        }
+        XCTAssertEqual(transport.queryEndpointPolicies, [.existingOnly])
+        XCTAssertEqual(transport.recoveryEndpointPolicies, [.existingOnly])
+    }
+
+    func testPublicQueryConvertsTypedEndpointOutcomeAtThrowingBoundary() {
+        let transport = CapturingInstallHelperTransport()
+        transport.queryOutcome = .endpointUnavailable
         let helper = MacInstallHelper(
             targetResolver: {
                 MacInstallTarget(
@@ -329,13 +398,36 @@ final class MacInstallHelperTests: XCTestCase {
         )
 
         XCTAssertThrowsError(
-            try helper.queryTransactionForSmoke(
+            try helper.queryTransaction(
+                "00000000-0000-4000-8000-000000000099"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MacInstallClientError, .endpointUnavailable)
+        }
+    }
+
+    func testPublicRecoveryConvertsTypedInvalidOutcomeAtThrowingBoundary() {
+        let transport = CapturingInstallHelperTransport()
+        transport.recoveryOutcome = .invalidResponse
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        XCTAssertThrowsError(
+            try helper.recoverPendingInstall(
                 "00000000-0000-4000-8000-000000000099"
             )
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
-                .installRecoveryRequired
+                .invalidReservationResponse
             )
         }
     }
@@ -609,8 +701,10 @@ private final class CapturingInstallHelperTransport: MacInstallHelperTransport {
     var preparedTransactionID: String?
     var prepareError: Error?
     var commitError: Error?
-    var queryError: Error?
-    var recoveryError: Error?
+    var queryOutcome: MacInstallOperationOutcome<InstallTransactionStatus>?
+    var recoveryOutcome: MacInstallOperationOutcome<InstallTransactionStatus>?
+    private(set) var queryEndpointPolicies: [MacPrivilegedEndpointPolicy] = []
+    private(set) var recoveryEndpointPolicies: [MacPrivilegedEndpointPolicy] = []
 
     func prepareInstall(
         request: Data,
@@ -649,21 +743,19 @@ private final class CapturingInstallHelperTransport: MacInstallHelperTransport {
     }
 
     func queryTransaction(
-        transactionID: String
-    ) throws -> InstallTransactionStatus {
-        if let queryError {
-            throw queryError
-        }
-        return status(transactionID: transactionID)
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus> {
+        queryEndpointPolicies.append(endpointPolicy)
+        return queryOutcome ?? .success(status(transactionID: transactionID))
     }
 
     func recoverPendingInstall(
-        transactionID: String
-    ) throws -> InstallTransactionStatus {
-        if let recoveryError {
-            throw recoveryError
-        }
-        return status(transactionID: transactionID)
+        transactionID: String,
+        endpointPolicy: MacPrivilegedEndpointPolicy
+    ) -> MacInstallOperationOutcome<InstallTransactionStatus> {
+        recoveryEndpointPolicies.append(endpointPolicy)
+        return recoveryOutcome ?? .success(status(transactionID: transactionID))
     }
 
     private func status(transactionID: String) -> InstallTransactionStatus {
