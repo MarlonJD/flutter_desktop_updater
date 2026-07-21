@@ -4,6 +4,7 @@
 #include <bcrypt.h>
 #include <sddl.h>
 #include <shlobj.h>
+#include <winternl.h>
 
 #include <algorithm>
 #include <array>

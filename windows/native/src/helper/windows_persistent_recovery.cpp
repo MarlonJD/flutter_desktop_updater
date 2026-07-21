@@ -2,9 +2,11 @@
 
 #include <aclapi.h>
 #include <sddl.h>
+#include <winternl.h>
 
 #include <algorithm>
 #include <array>
+#include <cwctype>
 #include <limits>
 #include <memory>
 #include <regex>
