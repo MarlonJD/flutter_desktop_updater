@@ -248,6 +248,11 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       (void)backupIdentityMismatch;
       return WindowsRecoveryOutcome::kManualActionRequired;
     }
+    if (backup_exists && journal.state == WindowsTransactionState::kPrepared) {
+      journal.state = WindowsTransactionState::kBackupCreated;
+      store.Persist(journal);
+      FlushMetadata(parent);
+    }
 
     if (!prepared_exists && stage_exists) {
       if (Identity(stage_parent.get(), journal.original_stage_name) !=
