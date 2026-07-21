@@ -1745,8 +1745,7 @@ TEST(LinuxNativeInstall, PublicRecoverConvergesAfterKilledCommitHelper) {
   }
 
   const int query_exit = RunControlFixture(
-      install_root / "linux_commit_caller_fixture", "--query",
-      transaction_id, query_result);
+      fixture_source, "--query", transaction_id, query_result);
   EXPECT_NE(0, query_exit);
   EXPECT_NE(std::string::npos, ReadFile(query_result).find("state\n1\n"))
       << ReadFile(query_result);
@@ -1758,8 +1757,7 @@ TEST(LinuxNativeInstall, PublicRecoverConvergesAfterKilledCommitHelper) {
       "DESKTOP_UPDATER_TEST_EXIT_AFTER_RECOVERY_TERMINAL_REGISTRY");
   terminal_recovery_exit.Set("1");
   const int interrupted_recovery = RunControlFixture(
-      install_root / "linux_commit_caller_fixture", "--recover",
-      transaction_id, recovery_result);
+      fixture_source, "--recover", transaction_id, recovery_result);
   terminal_recovery_exit.Unset();
   EXPECT_NE(0, interrupted_recovery) << ReadFile(recovery_result);
   EXPECT_NE(std::string::npos,
@@ -1771,9 +1769,8 @@ TEST(LinuxNativeInstall, PublicRecoverConvergesAfterKilledCommitHelper) {
   EXPECT_TRUE(fs::exists(control));
   EXPECT_FALSE(fs::exists(restage_record));
 
-  EXPECT_EQ(0, RunControlFixture(
-                   install_root / "linux_commit_caller_fixture", "--recover",
-                   transaction_id, recovery_result))
+  EXPECT_EQ(0, RunControlFixture(fixture_source, "--recover", transaction_id,
+                                 recovery_result))
       << ReadFile(recovery_result);
   EXPECT_FALSE(fs::exists(control));
   EXPECT_FALSE(fs::exists(restage_record));
@@ -1787,9 +1784,8 @@ TEST(LinuxNativeInstall, PublicRecoverConvergesAfterKilledCommitHelper) {
   struct stat recovered_root {};
   ASSERT_EQ(0, stat(install_root.c_str(), &recovered_root));
   EXPECT_EQ(0755, recovered_root.st_mode & 0777);
-  EXPECT_EQ(0, RunControlFixture(
-                   install_root / "linux_commit_caller_fixture", "--query",
-                   transaction_id, query_result))
+  EXPECT_EQ(0, RunControlFixture(fixture_source, "--query", transaction_id,
+                                 query_result))
       << ReadFile(query_result);
 
   if (old_runtime == nullptr) {
