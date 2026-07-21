@@ -98,8 +98,12 @@ void main() {
       contains('arguments.optionalInt("--current-build-number") ?? 270'),
     );
     expect(sample, contains('optionalValue("--recover-transaction")'));
-    expect(sample, contains("MacInstallHelper().recoverPendingInstall("));
-    expect(sample, contains('"event": "recovery"'));
+    expect(sample, contains(".recoverPendingInstallForSmoke(transactionID)"));
+    expect(sample, contains(".queryTransactionForSmoke(transactionID)"));
+    expect(
+      sample,
+      contains('emitTransactionOutcome("recovery", outcome)'),
+    );
     expect(sample, contains('"state": recoveryStateName(status.state)'));
     expect(sample, contains('"resultCode": recoveryResultName('));
     expect(sample, isNot(contains('"transactionID": transactionID')));

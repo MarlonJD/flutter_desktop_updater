@@ -1131,6 +1131,43 @@ journal/lock/stage boundary. AppleScript references remain confined to older
 general-purpose smoke utilities and were not invoked by this SMAppService/XPC
 acceptance path.
 
+Post-P1 exact-artifact acceptance (`verified locally`, 2026-07-21): exact
+implementation commit `af1d46194da7fbcc5b45b7ff9d7c7120906139ab` and final
+v2 PKG SHA-256
+`d5c7c9dfaf6c2516cf44187a88fe5af0a6f3428116436c402f378c51c7ae5e83`
+with accepted final-PKG submission
+`7487d5f7-5607-4a0f-98ed-1ef62c199019` established and independently
+verified the physical `2.7.0+270` baseline and matching `2.7.0` receipt. With
+the fixed Background Item disabled by the user, the signed host emitted only
+the typed `PrivilegedHelperApprovalRequired` diagnostic and
+`openMacOSBackgroundItemsSettings` remediation, entered its exit-75 approval
+path, retained exactly one provenance-bound owned stage, and left the baseline
+unchanged. After the user enabled that same helper, authenticated XPC and the
+fixed-argv worker completed the real `2.7.0+270` to `2.7.1+271` installation.
+Independent terminal checks passed three strict signatures and Team IDs, the
+hardened-runtime flag, two source-to-installed executable hashes, matching
+`net.monolib.updater.pkg` receipt version `2.7.1`, and `root:wheel` ownership
+for the app, main executable, helper, and embedded LaunchDaemon. The active
+`system/net.monolib.updater.helper` PID was `13539`; journal, target lock,
+client stage, gate marker, and fixed installer manager counts were all zero.
+Authenticated provider completion and the sanitized elevation report attest
+protected-stage removal. The approval and elevation reports bind the same
+implementation commit, final v2 artifact hash, and final PKG submission and
+expose no private path, complete command line, raw helper output, environment,
+identity display name, profile, or credential value.
+
+The Task 3 pre-commit suite then caught one contract-only P1: 53 tests passed
+and the remaining test first required the superseded executable-owned
+`recoverPendingInstall` call instead of the module-owned SPI containment
+introduced by `af1d461`. After that assertion was corrected, the same test
+exposed its second stale literal event assertion because recovery now routes
+through `emitTransactionOutcome`. The minimal GREEN requires both
+`recoverPendingInstallForSmoke` and `queryTransactionForSmoke` plus the typed
+recovery emitter; it changes no runtime, helper, authentication, installer,
+stage, journal, or retry authority. The focused runtime contract passed 11/11,
+the complete Task 3 Flutter set passed 54/54, and root `UpdateClientTests`
+passed 20/20.
+
 ### Task 4: Prove Installer-Active Crash Recovery
 
 **Files:**
