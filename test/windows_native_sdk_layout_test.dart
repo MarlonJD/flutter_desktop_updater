@@ -507,6 +507,9 @@ void main() {
 
   test("Windows helper emits fixed redacted protocol-v1 platform events", () {
     final cmake = readRequiredFile("windows/native/CMakeLists.txt");
+    final workflow = readRequiredFile(
+      ".github/workflows/desktop-updater-ci.yml",
+    );
     final diagnostics = readRequiredFile(
       "windows/native/src/helper/windows_helper_diagnostics.cpp",
     );
@@ -530,6 +533,14 @@ void main() {
     expect(diagnostics, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
     expect(diagnostics, isNot(contains("transaction_id")));
     expect(main, contains("WindowsHelperEvent::kHelperScheduled"));
+    expect(main, contains("WindowsHelperEvent::kPortableBootstrapFailure"));
+    expect(
+      main,
+      contains("WindowsHelperEvent::kPortableRecoveryHostFailure"),
+    );
+    expect(main, contains("WindowsHelperEvent::kPortableSessionFailure"));
+    expect(workflow, contains("Get-WinEvent"));
+    expect(workflow, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
     expect(transport, contains("WindowsHelperEvent::kWaitingForParentProcess"));
     expect(transport, contains("WindowsHelperEvent::kParentProcessExited"));
     expect(authorizer, contains("WindowsHelperEvent::kStagingPathValidation"));

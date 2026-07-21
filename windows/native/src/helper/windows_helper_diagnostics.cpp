@@ -39,6 +39,12 @@ constexpr std::array<WindowsHelperEventDescriptor,
         {1015, EVENTLOG_ERROR_TYPE, "cleanup failure", L"cleanup failure"},
         {1016, EVENTLOG_INFORMATION_TYPE, "relaunch attempt",
          L"relaunch attempt"},
+        {1017, EVENTLOG_ERROR_TYPE, "portable bootstrap failure",
+         L"portable bootstrap failure"},
+        {1018, EVENTLOG_ERROR_TYPE, "portable recovery host failure",
+         L"portable recovery host failure"},
+        {1019, EVENTLOG_ERROR_TYPE, "portable session failure",
+         L"portable session failure"},
     }};
 
 }  // namespace

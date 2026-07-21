@@ -173,18 +173,28 @@ int Run(int argument_count, wchar_t** arguments) {
     const std::wstring wide_nonce(arguments[4]);
     if (wide_nonce.size() != 43) return ERROR_BAD_ARGUMENTS;
     const std::string nonce(wide_nonce.begin(), wide_nonce.end());
+    enum class PortablePipeStage {
+      kConnect,
+      kBootstrap,
+      kRecoveryHost,
+      kSession,
+    };
+    PortablePipeStage stage = PortablePipeStage::kConnect;
     try {
       return desktop_updater::helper::ConnectPortableHelperToCallerPipe(
           pipe_name, nonce, 30'000,
-          [&nonce](HANDLE pipe,
-                   DWORD caller_process_id,
-                   HANDLE caller_process) {
+          [&nonce, &stage](HANDLE pipe,
+                           DWORD caller_process_id,
+                           HANDLE caller_process) {
+            stage = PortablePipeStage::kBootstrap;
             auto bootstrap = desktop_updater::helper::
                 LoadPortableWindowsHelperBootstrap(caller_process_id);
+            stage = PortablePipeStage::kRecoveryHost;
             const auto recovery_endpoint = desktop_updater::helper::
                 ProvisionPortableWindowsRecoveryHost(
                     bootstrap.policy(), bootstrap.helper_identity(),
                     caller_process);
+            stage = PortablePipeStage::kSession;
             desktop_updater::helper::RecordWindowsHelperEvent(
                 desktop_updater::helper::WindowsHelperEvent::kHelperScheduled);
             desktop_updater::helper::WindowsPortableInstallAuthorizer
@@ -199,6 +209,24 @@ int Run(int argument_count, wchar_t** arguments) {
                 300'000, 30'000);
           });
     } catch (const std::exception&) {
+      using desktop_updater::helper::RecordWindowsHelperEvent;
+      using desktop_updater::helper::WindowsHelperEvent;
+      switch (stage) {
+        case PortablePipeStage::kBootstrap:
+          RecordWindowsHelperEvent(
+              WindowsHelperEvent::kPortableBootstrapFailure);
+          break;
+        case PortablePipeStage::kRecoveryHost:
+          RecordWindowsHelperEvent(
+              WindowsHelperEvent::kPortableRecoveryHostFailure);
+          break;
+        case PortablePipeStage::kSession:
+          RecordWindowsHelperEvent(
+              WindowsHelperEvent::kPortableSessionFailure);
+          break;
+        case PortablePipeStage::kConnect:
+          break;
+      }
       return ERROR_ACCESS_DENIED;
     }
   }

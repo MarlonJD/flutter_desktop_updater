@@ -25,6 +25,9 @@ enum class WindowsHelperEvent : std::size_t {
   kCleanupSuccess,
   kCleanupFailure,
   kRelaunchAttempt,
+  kPortableBootstrapFailure,
+  kPortableRecoveryHostFailure,
+  kPortableSessionFailure,
   kCount,
 };
 

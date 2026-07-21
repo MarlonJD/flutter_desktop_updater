@@ -497,9 +497,21 @@ jobs:
             $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
             $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
             $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+            $helperEventStart = Get-Date
             Write-Host "Hosted Windows ZIP smoke update handoff is starting."
             & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log $diagnosticsPath
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $runtimeExit = $LASTEXITCODE
+            if ($runtimeExit -ne 0) {
+              Get-Content -LiteralPath $diagnosticsPath -ErrorAction SilentlyContinue
+              $helperEvents = @(
+                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
+                  Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" }
+              )
+              foreach ($helperEvent in $helperEvents) {
+                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
+              }
+              exit $runtimeExit
+            }
             Write-Host "Hosted Windows ZIP smoke update handoff returned."
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
             for ($attempt = 0; $attempt -lt 600; $attempt++) {
