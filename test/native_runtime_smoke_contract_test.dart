@@ -464,15 +464,40 @@ void main() {
 
   test("Windows ZIP smoke seals matching identity and portable policy", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final setupStart = workflow.indexOf(
+      "- name: Prepare hosted Windows ZIP smoke signing trust",
+    );
+    final setupEnd = setupStart < 0
+        ? -1
+        : workflow.indexOf(
+            "- name: Configure standalone Windows native SDK tests",
+            setupStart,
+          );
     final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
     final end = workflow.indexOf(
       "- name: Windows native runtime Inno smoke",
       start,
     );
+    final cleanupStart = workflow.indexOf(
+      "- name: Cleanup hosted Windows ZIP smoke signing trust",
+      end,
+    );
+    final cleanupEnd = cleanupStart < 0
+        ? -1
+        : workflow.indexOf(
+            "\n\n  windows-elevated-helper:",
+            cleanupStart,
+          );
 
+    expect(setupStart, greaterThanOrEqualTo(0));
+    expect(setupEnd, greaterThan(setupStart));
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
+    expect(cleanupStart, greaterThan(end));
+    expect(cleanupEnd, greaterThan(cleanupStart));
+    final setupLane = workflow.substring(setupStart, setupEnd);
     final lane = workflow.substring(start, end);
+    final cleanupLane = workflow.substring(cleanupStart, cleanupEnd);
     expect(
       RegExp(
         RegExp.escape(".desktop_updater_install_identity.json"),
@@ -488,37 +513,51 @@ void main() {
     expect(lane, contains("DesktopUpdater.RuntimeCompile.exe"));
     expect(lane, contains("desktop_updater_install_helper.exe"));
     expect(
-      lane,
+      setupLane,
       contains(
         "[System.Security.Cryptography.X509Certificates.CertificateRequest]::new",
       ),
     );
     expect(
-      lane,
+      setupLane,
       contains(
         "[System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new",
       ),
     );
-    expect(lane, contains("1.3.6.1.5.5.7.3.3"));
+    expect(setupLane, contains("timeout-minutes: 2"));
+    expect(setupLane, contains("native-runtime-windows-zip-signing"));
+    expect(setupLane, contains("1.3.6.1.5.5.7.3.3"));
     expect(
-      lane,
+      setupLane,
       contains(
         "[System.Security.Cryptography.X509Certificates.X509Store]::new",
       ),
     );
-    expect(lane, contains(r"$store.Add($publicCertificate)"));
+    expect(setupLane, contains(r"$store.Add($publicCertificate)"));
+    expect(setupLane, contains("RSA key is ready"));
+    expect(setupLane, contains("certificate is ready"));
+    expect(setupLane, contains(r'$storeName trust is ready'));
     expect(lane, contains("signtool.exe"));
+    expect(lane, contains(r'$signingRoot = Join-Path $env:RUNNER_TEMP'));
+    expect(lane, contains(r'Join-Path $signingRoot "hosted-smoke.pfx"'));
     expect(
       lane,
       contains(r"sign /fd SHA256 /f $pfx /p $pfxPassword $binary"),
     );
     expect(lane, isNot(contains("Set-AuthenticodeSignature")));
     expect(lane, contains(r"failed to trust ${binary}:"));
-    expect(lane, contains(r"$store.Remove($certificate)"));
-    expect(lane, isNot(contains("New-SelfSignedCertificate")));
-    expect(lane, isNot(contains("Import-Certificate")));
-    expect(lane, isNot(contains(r"Cert:\CurrentUser")));
-    expect(lane, isNot(contains("using namespace")));
+    expect(cleanupLane, contains("if: always()"));
+    expect(cleanupLane, contains(r"$store.Remove($certificate)"));
+    expect(
+      cleanupLane,
+      contains(
+        r"Remove-Item -LiteralPath $signingRoot -Recurse -Force",
+      ),
+    );
+    expect(setupLane, isNot(contains("New-SelfSignedCertificate")));
+    expect(setupLane, isNot(contains("Import-Certificate")));
+    expect(setupLane, isNot(contains(r"Cert:\CurrentUser")));
+    expect(setupLane, isNot(contains("using namespace")));
     expect(lane, contains("allowedApplicationSigner"));
     expect(lane, contains("allowedHelperSigner"));
     expect(lane, contains("native-runtime-smoke-stable"));
@@ -562,12 +601,13 @@ void main() {
     final versionFailure = lane.indexOf(
       "Windows ZIP runtime smoke did not install version 2.7.1.",
     );
-    final smokeCleanup = lane.indexOf(
+    final smokeCleanup = workflow.indexOf(
       r"Remove-Item -LiteralPath $smokeRoot -Recurse -Force",
+      end,
     );
     expect(diagnosticsDump, greaterThanOrEqualTo(0));
     expect(versionFailure, greaterThan(diagnosticsDump));
-    expect(smokeCleanup, greaterThan(versionFailure));
+    expect(smokeCleanup, greaterThan(end));
   });
 
   test("direct Flutter smokes hand off owned verified provenance", () {
