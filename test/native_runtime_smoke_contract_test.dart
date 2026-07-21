@@ -534,7 +534,7 @@ void main() {
     expect(tool, contains(".desktop_updater_release_manifest.json"));
     expect(tool, contains("ReleaseDescriptor("));
     expect(tool, contains("Ed25519().sign("));
-    expect(tool, contains("_retainMinimalLinuxStage("));
+    expect(tool, isNot(contains("_retainMinimalLinuxStage(")));
     expect(tool, contains("releaseRootPublicKeys"));
     expect(tool, contains("desktop-updater-helper.policy.json"));
     expect(tool, contains("await _chmod(helper.parent.path, \"755\")"));
