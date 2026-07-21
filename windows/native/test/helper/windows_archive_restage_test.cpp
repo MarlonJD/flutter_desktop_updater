@@ -335,13 +335,18 @@ TEST(WindowsArchiveRestage,
       FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   EXPECT_EQ(1U,
             ReadWindowsFileIdentity(executable_handle.get()).number_of_links);
+  executable_handle.reset();
+  sealed_handles.clear();
 
   const WindowsVerifiedPayloadIdentity expected = ExpectedIdentity(restage);
   ExactArchivePayloadVerifier verifier(expected);
   WindowsFileTransaction transaction(target, restage.path(), kTransactionId,
                                      GetCurrentProcessId(), expected, verifier,
                                      restage.parent_handle(),
-                                     restage.root_handle());
+                                     restage.root_handle(), nullptr, {},
+                                     std::nullopt, {}, [&restage]() {
+                                       restage.ReleaseToTransaction();
+                                     });
   EXPECT_EQ(WindowsFileTransactionResult::kCompleted,
             transaction.Execute());
   EXPECT_FALSE(std::filesystem::exists(target / L"caller-injected.dll"));

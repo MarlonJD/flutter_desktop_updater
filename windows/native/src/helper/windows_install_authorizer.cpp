@@ -472,7 +472,9 @@ class WindowsPortableDirectoryPreparedTransaction final
                                                "oldTarget");
                         DisarmRecoveryHost();
                       }},
-                     executor_process_start_identity_),
+                     executor_process_start_identity_, {}, [this]() {
+                       restage_.ReleaseToTransaction();
+                     }),
         launcher_(caller_process),
         relaunch_service_(std::move(expected_payload_identity), verifier_,
                           launcher_) {}
@@ -500,7 +502,6 @@ class WindowsPortableDirectoryPreparedTransaction final
         },
         [this]() {
           transaction_.Prepare();
-          restage_.ReleaseToTransaction();
           const std::string prepared =
               transaction_.prepared_journal_canonical();
           index_.PersistActive(transaction_id_, prepared);
@@ -637,6 +638,9 @@ class WindowsDirectoryPreparedTransaction final
                      executor_process_start_identity_,
                      [](HANDLE directory) {
                        FlushWindowsVolume(directory);
+                     },
+                     [this]() {
+                       restage_.ReleaseToTransaction();
                      }),
         launcher_(caller_process),
         relaunch_service_(std::move(expected_payload_identity), verifier_,
@@ -658,7 +662,6 @@ class WindowsDirectoryPreparedTransaction final
     recovery_host_.ArmAndStart(recovery_host_definition_, 30'000);
     recovery_host_armed_ = true;
     transaction_.Prepare();
-    restage_.ReleaseToTransaction();
     const std::string prepared = transaction_.prepared_journal_canonical();
     index_.PersistActive(transaction_id_, prepared);
     return prepared;

@@ -5,7 +5,9 @@
 #include <aclapi.h>
 
 #include <array>
+#include <cwchar>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +17,42 @@
 
 namespace desktop_updater::helper {
 namespace {
+
+struct NativeUnicodeString {
+  USHORT length;
+  USHORT maximum_length;
+  PWSTR buffer;
+};
+
+using NtSetValueKeyFunction = LONG(NTAPI*)(HANDLE, NativeUnicodeString*, ULONG,
+                                           ULONG, void*, ULONG);
+
+bool SetRawRegistryString(HKEY key,
+                          const wchar_t* value_name,
+                          const void* bytes,
+                          ULONG byte_count) {
+  if (key == nullptr || value_name == nullptr || bytes == nullptr) {
+    return false;
+  }
+  const std::size_t name_length = std::wcslen(value_name);
+  if (name_length == 0 ||
+      name_length > std::numeric_limits<USHORT>::max() / sizeof(wchar_t)) {
+    return false;
+  }
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  const auto set_value = ntdll == nullptr
+                             ? nullptr
+                             : reinterpret_cast<NtSetValueKeyFunction>(
+                                   GetProcAddress(ntdll, "NtSetValueKey"));
+  if (set_value == nullptr) return false;
+  NativeUnicodeString name{
+      static_cast<USHORT>(name_length * sizeof(wchar_t)),
+      static_cast<USHORT>(name_length * sizeof(wchar_t)),
+      const_cast<PWSTR>(value_name),
+  };
+  return set_value(reinterpret_cast<HANDLE>(key), &name, 0, REG_SZ,
+                   const_cast<void*>(bytes), byte_count) >= 0;
+}
 
 class ScopedRegistryKey {
  public:
@@ -224,11 +262,9 @@ TEST_F(WindowsUninstallRecordProofTest, RejectsAnOddLengthRegistryString) {
 TEST_F(WindowsUninstallRecordProofTest,
        RejectsARegistryStringWithoutATerminator) {
   const std::wstring target = target_.wstring();
-  ASSERT_EQ(ERROR_SUCCESS,
-            RegSetValueExW(
-                record_.get(), L"InstallLocation", 0, REG_SZ,
-                reinterpret_cast<const BYTE*>(target.data()),
-                static_cast<DWORD>(target.size() * sizeof(wchar_t))));
+  ASSERT_TRUE(SetRawRegistryString(
+      record_.get(), L"InstallLocation", target.data(),
+      static_cast<ULONG>(target.size() * sizeof(wchar_t))));
   ProtectRecordFromCallerWrites();
 
   EXPECT_FALSE(FindProof().has_value());

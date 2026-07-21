@@ -460,11 +460,11 @@ std::optional<std::string> ReadSecureFile(
       [[fallthrough]];
     case WindowsPortableDurableFileDecision::kPromoteNext: {
       const std::string promoted = next_file.canonical;
+      final_file.handle.reset();
       RenameHandleRelative(
           next_file.handle.get(), directory, leaf,
           final_file.probe != WindowsPortableDurableFileProbe::kMissing);
       next_file.handle.reset();
-      final_file.handle.reset();
       FlushWindowsDirectory(directory);
       const auto readback = ReadSecureFile(
           directory, leaf, next_leaf, maximum_bytes, expected_user, validate,

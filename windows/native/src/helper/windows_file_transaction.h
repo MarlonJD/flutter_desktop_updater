@@ -71,7 +71,8 @@ class WindowsFileTransaction {
       WindowsTransactionTerminalCallbacks terminal_callbacks = {},
       std::optional<std::uint64_t> retained_owner_start_identity =
           std::nullopt,
-      std::function<void(HANDLE)> durability_barrier = {});
+      std::function<void(HANDLE)> durability_barrier = {},
+      std::function<void()> before_stage_rename = {});
   WindowsFileTransaction(
       const std::filesystem::path& target_path,
       const std::filesystem::path& stage_path,
@@ -85,7 +86,8 @@ class WindowsFileTransaction {
       WindowsTransactionTerminalCallbacks terminal_callbacks = {},
       std::optional<std::uint64_t> retained_owner_start_identity =
           std::nullopt,
-      std::function<void(HANDLE)> durability_barrier = {});
+      std::function<void(HANDLE)> durability_barrier = {},
+      std::function<void()> before_stage_rename = {});
   ~WindowsFileTransaction();
   WindowsFileTransaction(const WindowsFileTransaction&) = delete;
   WindowsFileTransaction& operator=(const WindowsFileTransaction&) = delete;
@@ -132,6 +134,7 @@ class WindowsFileTransaction {
   WindowsTransactionFaultInjector* fault_injector_;
   WindowsTransactionTerminalCallbacks terminal_callbacks_;
   std::function<void(HANDLE)> durability_barrier_;
+  std::function<void()> before_stage_rename_;
   UniqueWindowsHandle parent_;
   UniqueWindowsHandle stage_parent_;
   UniqueWindowsHandle target_;

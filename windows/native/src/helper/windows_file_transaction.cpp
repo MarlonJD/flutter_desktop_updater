@@ -106,7 +106,8 @@ WindowsFileTransaction::WindowsFileTransaction(
     WindowsTransactionFaultInjector* fault_injector,
     WindowsTransactionTerminalCallbacks terminal_callbacks,
     std::optional<std::uint64_t> retained_owner_start_identity,
-    std::function<void(HANDLE)> durability_barrier)
+    std::function<void(HANDLE)> durability_barrier,
+    std::function<void()> before_stage_rename)
     : parent_locator_(
           std::filesystem::absolute(target_path.parent_path()).lexically_normal()),
       stage_parent_locator_(
@@ -125,6 +126,7 @@ WindowsFileTransaction::WindowsFileTransaction(
                                                : fault_injector),
       terminal_callbacks_(std::move(terminal_callbacks)),
       durability_barrier_(std::move(durability_barrier)),
+      before_stage_rename_(std::move(before_stage_rename)),
       parent_(OpenAbsoluteDirectoryNoReparse(parent_locator_)),
       stage_parent_(OpenAbsoluteDirectoryNoReparse(stage_parent_locator_)) {
   if (stage_name_.empty() || stage_name_ == paths_.target_name ||
@@ -194,7 +196,8 @@ WindowsFileTransaction::WindowsFileTransaction(
     WindowsTransactionFaultInjector* fault_injector,
     WindowsTransactionTerminalCallbacks terminal_callbacks,
     std::optional<std::uint64_t> retained_owner_start_identity,
-    std::function<void(HANDLE)> durability_barrier)
+    std::function<void(HANDLE)> durability_barrier,
+    std::function<void()> before_stage_rename)
     : parent_locator_(
           std::filesystem::absolute(target_path.parent_path()).lexically_normal()),
       stage_parent_locator_(
@@ -213,6 +216,7 @@ WindowsFileTransaction::WindowsFileTransaction(
                                                : fault_injector),
       terminal_callbacks_(std::move(terminal_callbacks)),
       durability_barrier_(std::move(durability_barrier)),
+      before_stage_rename_(std::move(before_stage_rename)),
       parent_(DuplicateRetainedHandle(pinned_parent,
                                       "pinned target parent is invalid")),
       stage_parent_(DuplicateRetainedHandle(
@@ -475,6 +479,7 @@ void WindowsFileTransaction::Prepare() {
   ValidateIdentity(stage_parent_.get(), stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
   ValidatePayload(stage_parent_.get(), stage_name_);
+  if (before_stage_rename_) before_stage_rename_();
   DurableRename(stage_.get(), paths_.prepared_name,
                 WindowsTransactionFaultPoint::kBeforeStageRename,
                 WindowsTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush,

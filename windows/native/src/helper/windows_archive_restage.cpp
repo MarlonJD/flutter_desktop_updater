@@ -1470,6 +1470,7 @@ void WindowsVerifiedArchiveRestage::ReleaseToTransaction() {
     impl_->fault_injector->Hit(
         WindowsArchiveRestageFaultPoint::kDuringPostJournalControlCleanup);
   }
+  impl_->retained_handles.clear();
   if (impl_->control.valid()) {
     DeleteHandleExact(impl_->control.get());
     impl_->control.reset();
