@@ -326,15 +326,18 @@ jobs:
           dotnet (Join-Path $build "DesktopUpdater.Consumer.dll")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Windows native runtime ZIP smoke
+        timeout-minutes: 12
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $ConfirmPreference = "None"
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
           $packageSource = (Resolve-Path windows/native/artifacts).Path
           $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
           $build = Join-Path $smokeRoot "build"
           & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Hosted Windows ZIP smoke runtime consumer is ready."
           $smokeCertificate = New-SelfSignedCertificate `
             -Type CodeSigningCert `
             -Subject "CN=Desktop Updater Hosted ZIP Smoke" `
@@ -357,6 +360,7 @@ jobs:
               throw "Hosted Windows ZIP smoke failed to trust ${binary}: $($signature.Status)"
             }
           }
+          Write-Host "Hosted Windows ZIP smoke signing trust is ready."
           $install = Join-Path $smokeRoot "install"
           $payload = Join-Path $smokeRoot "payload"
           Copy-Item -LiteralPath $build -Destination $install -Recurse
@@ -432,8 +436,10 @@ jobs:
             $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
             $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
             $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+            Write-Host "Hosted Windows ZIP smoke update handoff is starting."
             & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log $diagnosticsPath
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Write-Host "Hosted Windows ZIP smoke update handoff returned."
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
             for ($attempt = 0; $attempt -lt 600; $attempt++) {
               $versionFile = Join-Path $install "version.txt"
@@ -471,7 +477,7 @@ jobs:
             foreach ($storeName in @("TrustedPublisher", "Root", "My")) {
               $certificatePath = "Cert:\CurrentUser\$storeName\$($smokeCertificate.Thumbprint)"
               if (Test-Path -LiteralPath $certificatePath) {
-                Remove-Item -LiteralPath $certificatePath -Force
+                Remove-Item -LiteralPath $certificatePath -Confirm:$false
               }
             }
             Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue

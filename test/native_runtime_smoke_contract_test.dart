@@ -492,7 +492,12 @@ void main() {
     expect(lane, contains(r"failed to trust ${binary}:"));
     expect(lane, contains(r"Cert:\CurrentUser\Root"));
     expect(lane, contains(r"Cert:\CurrentUser\TrustedPublisher"));
-    expect(lane, contains(r"Remove-Item -LiteralPath $certificatePath"));
+    expect(
+      lane,
+      contains(
+        r"Remove-Item -LiteralPath $certificatePath -Confirm:$false",
+      ),
+    );
     expect(lane, contains("allowedApplicationSigner"));
     expect(lane, contains("allowedHelperSigner"));
     expect(lane, contains("native-runtime-smoke-stable"));
@@ -523,6 +528,8 @@ void main() {
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
     final lane = workflow.substring(start, end);
+    expect(lane, contains("timeout-minutes: 12"));
+    expect(lane, contains(r'$ConfirmPreference = "None"'));
     expect(
       lane,
       contains(r"for ($attempt = 0; $attempt -lt 600; $attempt++)"),
