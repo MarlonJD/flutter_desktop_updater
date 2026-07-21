@@ -453,10 +453,11 @@ void main() {
     expect(lane, isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
     expect(lane, isNot(contains('"event":"move success"')));
     expect(lane, isNot(contains('"event":"cleanup success"')));
-    expect(helperMain, contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS"));
+    expect(helperMain,
+        isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
     expect(
       helperMain,
-      contains("desktop-updater-helper test diagnostic"),
+      isNot(contains("desktop-updater-helper test diagnostic")),
     );
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });
@@ -541,6 +542,9 @@ void main() {
     expect(tool, contains("nativeStageControl?.descriptorSha256"));
     expect(tool, contains("nativeStageControl?.artifactSha256"));
     expect(tool, contains("writeStagedUpdateProvenance("));
+    expect(tool, contains("Directory(_join(tempRoot.path, \"state\"))"));
+    expect(tool, contains("await _chmod(linuxStateHome.path, \"700\")"));
+    expect(tool, contains("\"XDG_STATE_HOME\": linuxStateHome.path"));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
     expect(

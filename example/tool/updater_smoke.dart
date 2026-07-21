@@ -109,6 +109,12 @@ Future<void> main(List<String> args) async {
   if (await diagnosticsLog.exists()) {
     await diagnosticsLog.delete();
   }
+  final linuxStateHome =
+      Platform.isLinux ? Directory(_join(tempRoot.path, "state")) : null;
+  if (linuxStateHome != null) {
+    await linuxStateHome.create();
+    await _chmod(linuxStateHome.path, "700");
+  }
   final sentinelRelativePath = Platform.isMacOS
       ? _join("Resources", "desktop_updater_smoke.txt")
       : "desktop_updater_smoke.txt";
@@ -179,7 +185,7 @@ Future<void> main(List<String> args) async {
         "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
             nativeTargetContext.executableRelativePath,
       },
-      if (Platform.isLinux) "DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS": "1",
+      if (linuxStateHome != null) "XDG_STATE_HOME": linuxStateHome.path,
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
