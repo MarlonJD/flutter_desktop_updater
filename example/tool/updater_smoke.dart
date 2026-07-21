@@ -389,6 +389,18 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
   if (!await File(stagedHelperPath).exists()) {
     throw StateError("Staged Linux helper not found: $stagedHelperPath");
   }
+  await _retainMinimalLinuxStage(
+    stagingRoot: stagingRoot,
+    keepRelativePaths: {
+      _relativePathUnderRoot(
+        File(executablePath).resolveSymbolicLinksSync(),
+        installRoot,
+      ),
+      helperRelativePath,
+      _installedIdentityFileName,
+      "desktop_updater_smoke.txt",
+    },
+  );
   for (final helper in [File(helperPath), File(stagedHelperPath)]) {
     await _chmod(helper.parent.path, "755");
     await _chmod(helper.path, "755");
@@ -509,6 +521,28 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
     descriptorSha256: crypto.sha256.convert(manifestBytes).toString(),
     artifactSha256: artifactSha256,
   );
+}
+
+Future<void> _retainMinimalLinuxStage({
+  required String stagingRoot,
+  required Set<String> keepRelativePaths,
+}) async {
+  final entities = await Directory(stagingRoot)
+      .list(recursive: true, followLinks: false)
+      .toList();
+  entities.sort((left, right) => right.path.length.compareTo(left.path.length));
+  for (final entity in entities) {
+    final relativePath = _relativePathUnderRoot(entity.path, stagingRoot);
+    if (entity is File || entity is Link) {
+      if (!keepRelativePaths.contains(relativePath)) {
+        await entity.delete();
+      }
+      continue;
+    }
+    if (entity is Directory && await entity.list().isEmpty) {
+      await entity.delete();
+    }
+  }
 }
 
 Future<void> _writeLinuxArtifactZip({
