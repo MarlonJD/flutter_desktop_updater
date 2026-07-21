@@ -1687,6 +1687,7 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          export DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS=1
           "$smoke_root/install/runtime_compile" \
             --smoke \
             --verify-protected-root \
