@@ -189,6 +189,15 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(helperSource, isNot(contains("SMPrivilegedExecutables")));
     expect(helperSource, contains("SecCodeCopyGuestWithAttributes"));
     expect(helperSource, contains("helperEndpointIdentitySHA256"));
+    expect(helperSource, contains("dlsym("));
+    expect(
+      helperSource,
+      contains('"xpc_connection_set_peer_team_identity_requirement"'),
+    );
+    expect(
+      helperSource,
+      isNot(contains("xpc_connection_set_peer_team_identity_requirement(")),
+    );
     expect(embedTool, contains("--options runtime --timestamp"));
     expect(embedTool, contains("DesktopUpdaterInstallHelperServiceID"));
     expect(embedTool, contains("DESKTOP_UPDATER_SEALED_POLICY_SHA256"));

@@ -212,6 +212,8 @@ void main() {
 
     expect(source, contains('optionalValue("--query-transaction")'));
     expect(source, contains("queryTransactionForSmoke"));
+    expect(source, contains("refreshMismatchedPrivilegedEndpointForSmoke"));
+    expect(source, contains('has("--refresh-mismatched-helper")'));
     expect(source, contains("emitTransactionOutcome"));
     expect(source, contains('emitTransactionOutcome("query", outcome)'));
     expect(source, contains("Select exactly one transaction operation."));
@@ -278,6 +280,55 @@ void main() {
 
     expect(source, contains('"net.monolib.updater.helper"'));
     expect(source, isNot(contains('"net.monolib.updater.installer"')));
+  });
+
+  test("recovery refreshes the installed helper after manager exit", () {
+    final source = File(
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ).readAsStringSync();
+
+    final release = source.indexOf("await _createReleaseMarker(manager.pid)");
+    final managerExit = release < 0
+        ? -1
+        : source.indexOf("await _waitForIdentityExit(manager", release);
+    final refresh = managerExit < 0
+        ? -1
+        : source.indexOf(
+            "await _refreshInstalledLaunchDaemon(",
+            managerExit,
+          );
+    final terminalRecovery = refresh < 0
+        ? -1
+        : source.indexOf("await _waitForCompletedRecovery(", refresh);
+
+    expect(release, isNonNegative);
+    expect(managerExit, greaterThan(release));
+    expect(refresh, greaterThan(managerExit));
+    expect(terminalRecovery, greaterThan(refresh));
+    expect(source, contains('"--refresh-mismatched-helper"'));
+    expect(source, contains("Process.start(host,"));
+    expect(source, contains("_waitForCurrentLaunchDaemon("));
+    expect(source, contains("_terminateOwnedChild("));
+    expect(source, contains("ProcessSignal.sigkill"));
+    expect(source, isNot(contains("refreshedHelper.pid == manager.pid")));
+    expect(source, contains("installed-helper-refresh-target-invalid"));
+    expect(source, contains("installed-helper-refresh-failed"));
+
+    final refreshBodyStart = source.indexOf(
+      "Future<_ProcessStartIdentity> _refreshInstalledLaunchDaemon(",
+    );
+    final refreshBodyEnd = refreshBodyStart < 0
+        ? -1
+        : source.indexOf(
+            "Future<_TransactionEvent> _waitForCompletedRecovery(",
+            refreshBodyStart,
+          );
+    expect(refreshBodyStart, isNonNegative);
+    expect(refreshBodyEnd, greaterThan(refreshBodyStart));
+    final refreshBody = source.substring(refreshBodyStart, refreshBodyEnd);
+    expect(refreshBody, isNot(contains("_waitForIdentityExit(")));
+    expect(refreshBody, isNot(contains('"--hold-helper-active"')));
+    expect(refreshBody, contains("const Duration(seconds: 90)"));
   });
 
   test("recovery smoke self-crash is gate and manager identity bound", () {

@@ -286,6 +286,18 @@ final class _RecoverySmoke {
 
     await _createReleaseMarker(manager.pid);
     await _waitForIdentityExit(manager, const Duration(minutes: 3));
+    await _refreshInstalledLaunchDaemon(
+      expectedVersion: request.expectedVersion,
+      expectedBuild: request.expectedBuild,
+    );
+    final refreshedTransactions = await _providerTransactions();
+    if (!await _sameOwnedStage(stage) ||
+        refreshedTransactions.length != 1 ||
+        !refreshedTransactions.contains(transactionID)) {
+      throw const _RecoveryFailure(
+        "installed-helper-refresh-mutated-owned-state",
+      );
+    }
     final terminal = await _waitForCompletedRecovery(
       transactionID,
       const Duration(minutes: 2),
@@ -716,6 +728,114 @@ final class _RecoverySmoke {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     throw const _RecoveryFailure("launch-daemon-not-restarted");
+  }
+
+  Future<_ProcessStartIdentity> _refreshInstalledLaunchDaemon({
+    required String expectedVersion,
+    required String expectedBuild,
+  }) async {
+    final metadata = await _readBundleMetadata(request.app);
+    if (metadata.bundleIdentifier != _bundleIdentifier ||
+        metadata.version != expectedVersion ||
+        metadata.build != expectedBuild) {
+      throw const _RecoveryFailure("installed-helper-refresh-target-invalid");
+    }
+    final host = path.join(
+      request.app.path,
+      "Contents",
+      "MacOS",
+      metadata.executable,
+    );
+    final helper = path.join(
+      request.app.path,
+      "Contents",
+      "Helpers",
+      "DesktopUpdaterInstallHelper",
+    );
+    await _inspectTarget(
+      expectedVersion: expectedVersion,
+      expectedBuild: expectedBuild,
+    );
+    final process = await Process.start(host, [
+      "--smoke",
+      "--refresh-mismatched-helper",
+    ]);
+    final stdoutFuture = utf8.decoder.bind(process.stdout).join();
+    final stderrFuture = utf8.decoder.bind(process.stderr).join();
+    var processExited = false;
+    try {
+      final code = await process.exitCode.timeout(const Duration(seconds: 90));
+      processExited = true;
+      final outputs = await Future.wait<String>([
+        stdoutFuture,
+        stderrFuture,
+      ]).timeout(const Duration(seconds: 5));
+      final output = outputs[0];
+      final errorOutput = outputs[1];
+      if (code != 0 ||
+          errorOutput.trim().isNotEmpty ||
+          output.trim() != '{"event":"helperProbe","status":"healthy"}') {
+        throw const _RecoveryFailure("installed-helper-refresh-failed");
+      }
+      return await _waitForCurrentLaunchDaemon(
+        metadata.serviceIdentifier,
+        helper,
+        const Duration(seconds: 15),
+      );
+    } on Object {
+      if (!processExited) await _terminateOwnedChild(process);
+      try {
+        await Future.wait<String>([
+          stdoutFuture,
+          stderrFuture,
+        ]).timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        throw const _RecoveryFailure(
+          "installed-helper-refresh-stream-cleanup-timeout",
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<_ProcessStartIdentity> _waitForCurrentLaunchDaemon(
+    String serviceIdentifier,
+    String expectedExecutable,
+    Duration timeout,
+  ) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final pid = await _launchDaemonPID(serviceIdentifier);
+      if (pid != null) {
+        final current = await _processIdentity(pid, expectedExecutable);
+        if (current != null) return current;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw const _RecoveryFailure("launch-daemon-not-running");
+  }
+
+  Future<void> _terminateOwnedChild(Process process) async {
+    try {
+      await process.exitCode.timeout(const Duration(milliseconds: 100));
+      return;
+    } on TimeoutException {
+      // The exact child is still live; begin bounded termination.
+    }
+    process.kill(ProcessSignal.sigterm);
+    try {
+      await process.exitCode.timeout(const Duration(seconds: 3));
+      return;
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+    }
+    try {
+      await process.exitCode.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      throw const _RecoveryFailure(
+        "installed-helper-refresh-child-cleanup-timeout",
+      );
+    }
   }
 
   Future<_TransactionEvent> _waitForCompletedRecovery(

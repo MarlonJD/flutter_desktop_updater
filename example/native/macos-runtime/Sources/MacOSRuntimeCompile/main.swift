@@ -15,9 +15,15 @@ struct MacOSRuntimeSmoke {
 
     private static func run() async throws {
         let arguments = try Arguments(CommandLine.arguments)
-        if arguments.has("--probe-helper") {
+        if arguments.has("--probe-helper") ||
+            arguments.has("--refresh-mismatched-helper")
+        {
             let helper = MacInstallHelper.smAppServiceSmokeHost()
-            try helper.refreshPrivilegedEndpointForSmoke()
+            if arguments.has("--refresh-mismatched-helper") {
+                try helper.refreshMismatchedPrivilegedEndpointForSmoke()
+            } else {
+                try helper.refreshPrivilegedEndpointForSmoke()
+            }
             try emit([
                 "event": "helperProbe",
                 "status": "healthy",
@@ -174,12 +180,14 @@ private struct Arguments {
             optionalValue("--query-transaction") != nil,
             optionalValue("--terminate-helper-for-recovery-smoke") != nil,
             has("--probe-helper"),
+            has("--refresh-mismatched-helper"),
         ].filter { $0 }.count
         guard operationCount <= 1 else {
             throw SmokeFailure("Select exactly one transaction operation.")
         }
         if has("--hold-helper-active") &&
-            !has("--probe-helper")
+            !has("--probe-helper") &&
+            !has("--refresh-mismatched-helper")
         {
             throw SmokeFailure(
                 "Helper hold is available only for helper probes."
@@ -188,7 +196,8 @@ private struct Arguments {
         if optionalValue("--recover-transaction") != nil ||
             optionalValue("--query-transaction") != nil ||
             optionalValue("--terminate-helper-for-recovery-smoke") != nil ||
-            has("--probe-helper")
+            has("--probe-helper") ||
+            has("--refresh-mismatched-helper")
         {
             guard isSmoke else {
                 throw SmokeFailure("Transaction inspection is available only in smoke mode.")

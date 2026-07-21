@@ -22,6 +22,108 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         else {
             return XCTFail("Expected a non-dictionary invalid response.")
         }
+
+        if #available(macOS 15.0, *) {
+            guard case .invalidResponse =
+                SystemMacPrivilegedXPCExchange.classifyReply(
+                    XPC_ERROR_PEER_CODE_SIGNING_REQUIREMENT
+                )
+            else {
+                return XCTFail(
+                    "Peer authentication rejection must remain fail-closed."
+                )
+            }
+        }
+    }
+
+    func testPrivilegedXPCSelectsTeamIdentityWithLegacyFallback() {
+        let serviceID = "com.example.desktop-updater.helper"
+        let requirement =
+            "identifier \"com.example.desktop-updater.helper\""
+
+        XCTAssertEqual(
+            SystemMacPrivilegedXPCExchange.peerAuthenticationRequirement(
+                serviceID: serviceID,
+                helperRequirement: requirement,
+                supportsTeamIdentity: true
+            ),
+            .teamIdentity(signingIdentifier: serviceID)
+        )
+        XCTAssertEqual(
+            SystemMacPrivilegedXPCExchange.peerAuthenticationRequirement(
+                serviceID: serviceID,
+                helperRequirement: requirement,
+                supportsTeamIdentity: false
+            ),
+            .designatedRequirement(requirement)
+        )
+    }
+
+    func testPrivilegedXPCRequirementSetterFailureIsFailClosed() {
+        guard case .invalidResponse = SystemMacPrivilegedXPCExchange
+            .classifyPeerAuthenticationRequirementStatus(EINVAL)
+        else {
+            return XCTFail("A requirement setter failure must fail closed.")
+        }
+    }
+
+    func testPrivilegedXPCTeamSetterFailureNeverFallsBackToLegacy() {
+        guard #available(macOS 13.0, *) else { return }
+        let serviceID = "com.example.desktop-updater.helper"
+        var appliedRequirements: [MacXPCPeerAuthenticationRequirement] = []
+        let exchange = SystemMacPrivilegedXPCExchange(
+            infoDictionary: [
+                "DesktopUpdaterInstallHelperServiceID": serviceID,
+                "DesktopUpdaterInstallHelperRequirement":
+                    "identifier \"\(serviceID)\"",
+            ],
+            supportsTeamIdentity: { true },
+            applyPeerAuthenticationRequirement: { _, requirement in
+                appliedRequirements.append(requirement)
+                return EINVAL
+            }
+        )
+
+        guard case .invalidResponse = exchange.validateEndpoint() else {
+            return XCTFail("A team requirement failure must fail closed.")
+        }
+        XCTAssertEqual(
+            appliedRequirements,
+            [.teamIdentity(signingIdentifier: serviceID)]
+        )
+    }
+
+    func testPrivilegedXPCTeamIdentityEligibilityRejectsAdHocSigning() {
+        XCTAssertTrue(
+            SystemMacPrivilegedXPCExchange.isEligibleTeamIdentity(
+                teamIdentifier: "EXAMPLETEAM",
+                signatureFlags: 0
+            )
+        )
+        XCTAssertFalse(
+            SystemMacPrivilegedXPCExchange.isEligibleTeamIdentity(
+                teamIdentifier: "EXAMPLETEAM",
+                signatureFlags: 0x0002
+            )
+        )
+        XCTAssertFalse(
+            SystemMacPrivilegedXPCExchange.isEligibleTeamIdentity(
+                teamIdentifier: nil,
+                signatureFlags: 0
+            )
+        )
+        XCTAssertFalse(
+            SystemMacPrivilegedXPCExchange.isEligibleTeamIdentity(
+                teamIdentifier: "",
+                signatureFlags: 0
+            )
+        )
+        XCTAssertFalse(
+            SystemMacPrivilegedXPCExchange.isEligibleTeamIdentity(
+                teamIdentifier: "EXAMPLETEAM",
+                signatureFlags: nil
+            )
+        )
     }
 
     func testExistingOnlyQueryAndRecoveryNeverInstallOrLaunchOneShot() {
@@ -584,6 +686,139 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertEqual(privileged.validationCount, 2)
         XCTAssertEqual(privileged.operations, [])
         XCTAssertEqual(installer.installCount, 1)
+    }
+
+    func testMismatchOnlyRefreshesAuthenticatedEndpointIdentityMismatch()
+        throws
+    {
+        let expectedIdentity = String(repeating: "d", count: 64)
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {
+            privileged.endpointIdentity = expectedIdentity
+        }
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(
+                identity: expectedIdentity
+            ),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        try transport.refreshMismatchedPrivilegedEndpoint()
+
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(privileged.validationCount, 2)
+    }
+
+    func testMismatchOnlyRefreshDoesNotInstallUnavailableEndpoint() {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        XCTAssertThrowsError(
+            try transport.refreshMismatchedPrivilegedEndpoint()
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .endpointUnavailable
+            )
+        }
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 1)
+    }
+
+    func testMismatchOnlyRefreshDoesNotInstallInvalidEndpoint() {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        privileged.activationError = .invalidReservationResponse
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        XCTAssertThrowsError(
+            try transport.refreshMismatchedPrivilegedEndpoint()
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .invalidReservationResponse
+            )
+        }
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 1)
+    }
+
+    func testMismatchOnlyRefreshLeavesCurrentEndpointRegistered() throws {
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        try transport.refreshMismatchedPrivilegedEndpoint()
+
+        XCTAssertEqual(installer.installCount, 0)
+        XCTAssertEqual(privileged.validationCount, 1)
+    }
+
+    func testMismatchOnlyRefreshRejectsPersistentIdentityMismatch() {
+        let expectedIdentity = String(repeating: "d", count: 64)
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        privileged.isInstalled = true
+        let installer = RecordingPrivilegedHelperInstaller {}
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(
+                session: RecordingMacOneShotClientSession(responses: [])
+            ),
+            authenticator: RecordingEndpointAuthenticator(
+                identity: expectedIdentity
+            ),
+            privilegedInstaller: installer,
+            privilegedExchange: privileged
+        )
+
+        XCTAssertThrowsError(
+            try transport.refreshMismatchedPrivilegedEndpoint()
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .invalidReservationResponse
+            )
+        }
+        XCTAssertEqual(installer.installCount, 1)
+        XCTAssertEqual(privileged.validationCount, 2)
     }
 
     func testPrivilegedEndpointRefreshRetriesUnavailableRegistration() throws {

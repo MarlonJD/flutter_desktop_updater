@@ -186,6 +186,7 @@ enum MacInstallOperationOutcome<Success> {
 enum MacPrivilegedEndpointPolicy: Equatable {
     case existingOnly
     case installIfNeeded
+    case refreshMismatched
 }
 
 @_spi(DesktopUpdaterSmoke)
@@ -202,6 +203,8 @@ protocol MacInstallHelperTransport: AnyObject {
     func validatePrivilegedEndpoint() throws
 
     func refreshPrivilegedEndpoint() throws
+
+    func refreshMismatchedPrivilegedEndpoint() throws
 
     func prepareInstall(
         request: Data,
@@ -241,6 +244,10 @@ extension MacInstallHelperTransport {
     }
 
     func refreshPrivilegedEndpoint() throws {
+        throw MacInstallClientError.endpointUnavailable
+    }
+
+    func refreshMismatchedPrivilegedEndpoint() throws {
         throw MacInstallClientError.endpointUnavailable
     }
 
@@ -629,11 +636,45 @@ final class SystemMacPrivilegedHelperInstaller:
     }
 }
 
+enum MacXPCPeerAuthenticationRequirement: Equatable {
+    case designatedRequirement(String)
+    case teamIdentity(signingIdentifier: String)
+}
+
 final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
+    private typealias TeamIdentityRequirementSetter = @convention(c) (
+        xpc_connection_t,
+        UnsafePointer<CChar>?
+    ) -> Int32
+
     private let serviceID: String
     private let helperRequirement: String
+    private let supportsTeamIdentity: () -> Bool
+    private let applyPeerAuthenticationRequirement:
+        (xpc_connection_t, MacXPCPeerAuthenticationRequirement) -> Int32
 
-    init(infoDictionary: [String: Any]? = Bundle.main.infoDictionary) {
+    convenience init(
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) {
+        self.init(
+            infoDictionary: infoDictionary,
+            supportsTeamIdentity: {
+                if #available(macOS 14.4, *) {
+                    return Self.currentProcessHasEligibleTeamIdentity()
+                }
+                return false
+            },
+            applyPeerAuthenticationRequirement: Self
+                .applySystemPeerAuthenticationRequirement
+        )
+    }
+
+    init(
+        infoDictionary: [String: Any]?,
+        supportsTeamIdentity: @escaping () -> Bool,
+        applyPeerAuthenticationRequirement: @escaping
+            (xpc_connection_t, MacXPCPeerAuthenticationRequirement) -> Int32
+    ) {
         let info = infoDictionary ?? [:]
         let identifier = info[
             "DesktopUpdaterInstallHelperServiceID"
@@ -642,6 +683,116 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         helperRequirement = info[
             "DesktopUpdaterInstallHelperRequirement"
         ] as? String ?? ""
+        self.supportsTeamIdentity = supportsTeamIdentity
+        self.applyPeerAuthenticationRequirement =
+            applyPeerAuthenticationRequirement
+    }
+
+    static func isEligibleTeamIdentity(
+        teamIdentifier: String?,
+        signatureFlags: UInt32?
+    ) -> Bool {
+        guard let teamIdentifier,
+              !teamIdentifier.isEmpty,
+              let signatureFlags else {
+            return false
+        }
+        // Security's Swift overlay does not expose kSecCodeSignatureAdhoc.
+        let adHocSignatureFlag: UInt32 = 0x0002
+        return signatureFlags & adHocSignatureFlag == 0
+    }
+
+    private static func currentProcessHasEligibleTeamIdentity() -> Bool {
+        var dynamicCode: SecCode?
+        guard SecCodeCopySelf([], &dynamicCode) == errSecSuccess,
+              let dynamicCode else {
+            return false
+        }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(dynamicCode, [], &staticCode)
+            == errSecSuccess,
+            let staticCode else {
+            return false
+        }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+            let values = information as? [String: Any] else {
+            return false
+        }
+        return isEligibleTeamIdentity(
+            teamIdentifier: values[
+                kSecCodeInfoTeamIdentifier as String
+            ] as? String,
+            signatureFlags: (values[
+                kSecCodeInfoFlags as String
+            ] as? NSNumber)?.uint32Value
+        )
+    }
+
+    static func peerAuthenticationRequirement(
+        serviceID: String,
+        helperRequirement: String,
+        supportsTeamIdentity: Bool
+    ) -> MacXPCPeerAuthenticationRequirement? {
+        guard HelperProtocolValidation.isDottedIdentifier(serviceID),
+              !helperRequirement.isEmpty,
+              !helperRequirement.contains("\0"),
+              !helperRequirement.contains("\n") else {
+            return nil
+        }
+        if supportsTeamIdentity {
+            return .teamIdentity(signingIdentifier: serviceID)
+        }
+        return .designatedRequirement(helperRequirement)
+    }
+
+    static func classifyPeerAuthenticationRequirementStatus(
+        _ status: Int32
+    ) -> MacInstallOperationOutcome<Void> {
+        status == 0 ? .success(()) : .invalidResponse
+    }
+
+    private static func applySystemPeerAuthenticationRequirement(
+        connection: xpc_connection_t,
+        requirement: MacXPCPeerAuthenticationRequirement
+    ) -> Int32 {
+        guard #available(macOS 12.0, *) else {
+            return Int32(ENOTSUP)
+        }
+        switch requirement {
+        case let .designatedRequirement(value):
+            return value.withCString {
+                xpc_connection_set_peer_code_signing_requirement(
+                    connection,
+                    $0
+                )
+            }
+        case let .teamIdentity(signingIdentifier):
+            guard #available(macOS 14.4, *) else {
+                return Int32(ENOTSUP)
+            }
+            guard let handle = dlopen(nil, RTLD_LAZY) else {
+                return Int32(ENOTSUP)
+            }
+            defer { dlclose(handle) }
+            guard let symbol = dlsym(
+                handle,
+                "xpc_connection_set_peer_team_identity_requirement"
+            ) else {
+                return Int32(ENOTSUP)
+            }
+            let setter = unsafeBitCast(
+                symbol,
+                to: TeamIdentityRequirementSetter.self
+            )
+            return signingIdentifier.withCString {
+                setter(connection, $0)
+            }
+        }
     }
 
     func validateEndpoint() -> MacInstallOperationOutcome<String> {
@@ -717,23 +868,27 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
         operation: String,
         payload: Data?
     ) -> MacInstallOperationOutcome<xpc_object_t> {
-        guard HelperProtocolValidation.isDottedIdentifier(serviceID),
-              !helperRequirement.isEmpty,
-              !helperRequirement.contains("\0"),
-              !helperRequirement.contains("\n") else {
+        guard let requirement = Self.peerAuthenticationRequirement(
+            serviceID: serviceID,
+            helperRequirement: helperRequirement,
+            supportsTeamIdentity: supportsTeamIdentity()
+        ) else {
             return .invalidResponse
         }
         let queue = DispatchQueue(label: "\(serviceID).client")
         let connection = serviceID.withCString {
             xpc_connection_create_mach_service($0, queue, 0)
         }
-        let status = helperRequirement.withCString {
-            xpc_connection_set_peer_code_signing_requirement(
-                connection,
-                $0
-            )
-        }
-        guard status == 0 else {
+        let status = applyPeerAuthenticationRequirement(
+            connection,
+            requirement
+        )
+        guard case .success = Self
+            .classifyPeerAuthenticationRequirementStatus(status) else {
+            // An XPC connection must be activated before cancellation. No
+            // message is sent on this fail-closed lifecycle path.
+            xpc_connection_set_event_handler(connection) { _ in }
+            xpc_connection_resume(connection)
             xpc_connection_cancel(connection)
             return .invalidResponse
         }
@@ -993,6 +1148,12 @@ final class PackagedMacInstallHelperTransport:
     func refreshPrivilegedEndpoint() throws {
         _ = try throwingValue(
             authenticatedPrivilegedEndpoint(allowInstallation: true)
+        )
+    }
+
+    func refreshMismatchedPrivilegedEndpoint() throws {
+        _ = try throwingValue(
+            authenticatedPrivilegedEndpoint(policy: .refreshMismatched)
         )
     }
 
@@ -1483,6 +1644,9 @@ final class PackagedMacInstallHelperTransport:
                 return .success(runningEndpoint)
             }
         case .endpointUnavailable:
+            if policy == .refreshMismatched {
+                return .endpointUnavailable
+            }
             break
         case .privilegedHelperApprovalRequired:
             return .privilegedHelperApprovalRequired
@@ -1911,6 +2075,11 @@ public struct MacInstallHelper {
     @_spi(DesktopUpdaterSmoke)
     public func refreshPrivilegedEndpointForSmoke() throws {
         try transport.refreshPrivilegedEndpoint()
+    }
+
+    @_spi(DesktopUpdaterSmoke)
+    public func refreshMismatchedPrivilegedEndpointForSmoke() throws {
+        try transport.refreshMismatchedPrivilegedEndpoint()
     }
 
     @_spi(DesktopUpdaterSmoke)
