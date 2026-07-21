@@ -411,6 +411,19 @@ std::string ReadFile(const fs::path& path) {
                      std::istreambuf_iterator<char>());
 }
 
+bool LinuxProcessIsStopped(pid_t process_id) {
+  std::ifstream status(fs::path("/proc") / std::to_string(process_id) /
+                       "status");
+  std::string line;
+  while (std::getline(status, line)) {
+    if (line.rfind("State:", 0) != 0) continue;
+    const std::size_t state = line.find_first_not_of(" \t", 6);
+    return state != std::string::npos &&
+           (line[state] == 'T' || line[state] == 't');
+  }
+  return false;
+}
+
 std::string TransactionIdFromResult(const fs::path& path) {
   const std::string bytes = ReadFile(path);
   const std::string label = "transaction\n";
@@ -1701,6 +1714,16 @@ TEST(LinuxNativeInstall, PublicRecoverConvergesAfterKilledCommitHelper) {
     usleep(1'000);
   }
   ASSERT_GT(helper_pid, 0) << "prepared transaction was not observable";
+  bool helper_stopped = false;
+  for (int attempt = 0; attempt < 10'000; ++attempt) {
+    if (LinuxProcessIsStopped(helper_pid)) {
+      helper_stopped = true;
+      break;
+    }
+    usleep(1'000);
+  }
+  ASSERT_TRUE(helper_stopped)
+      << "helper did not reach the after-backup fault point";
   stop_after_backup.Unset();
   ASSERT_EQ(helper_start,
             helper::LinuxProcessStartIdentity(helper_pid));
