@@ -1,6 +1,16 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import "dart:async";
+import "dart:convert";
 import "dart:io";
 
+import "package:archive/archive.dart";
+import "package:crypto/crypto.dart" as crypto;
+import "package:cryptography_plus/cryptography_plus.dart";
+// The direct Linux helper smoke writes the same schema-v3 signed release
+// descriptor the native helper consumes after the public staging API runs.
+// ignore: implementation_imports
+import "package:desktop_updater/src/core/release_descriptor.dart";
 // The direct helper smoke intentionally exercises the package's internal
 // provenance handoff instead of expanding the released Flutter API.
 // ignore: implementation_imports
@@ -8,13 +18,17 @@ import "package:desktop_updater/src/core/staged_update_provenance.dart";
 
 const _smokePackageId = "com.example.desktop_updater";
 const _smokeStageNonce = "123e4567-e89b-42d3-a456-426614174000";
+const _smokePublicKeyId = "native-runtime-smoke-stable";
 const _smokeDescriptorSha256 =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const _smokeArtifactSha256 =
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const _linuxArtifactFileName = ".desktop_updater_artifact.zip";
+const _releaseManifestFileName = ".desktop_updater_release_manifest.json";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _installedIdentity =
     '{"packageId":"com.example.desktop_updater","schemaVersion":1}';
+final _windowsPathSeparator = String.fromCharCode(92);
 
 class _NativeTargetContext {
   const _NativeTargetContext({
@@ -130,12 +144,21 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  final nativeStageControl = Platform.isLinux
+      ? await _writeLinuxNativeStageControl(
+          installRoot: effectiveInstallRoot,
+          stagingRoot: stagingRoot.path,
+          executablePath: executablePath,
+        )
+      : null;
+
   final provenance = await writeStagedUpdateProvenance(
     stageRoot: ownedStageRoot,
     nonce: _smokeStageNonce,
     packageId: _smokePackageId,
-    descriptorSha256: _smokeDescriptorSha256,
-    artifactSha256: _smokeArtifactSha256,
+    descriptorSha256:
+        nativeStageControl?.descriptorSha256 ?? _smokeDescriptorSha256,
+    artifactSha256: nativeStageControl?.artifactSha256 ?? _smokeArtifactSha256,
   );
 
   stdout
@@ -343,6 +366,249 @@ Future<void> _copyInstallTree({
       result.exitCode,
     );
   }
+}
+
+class _NativeStageControl {
+  const _NativeStageControl({
+    required this.descriptorSha256,
+    required this.artifactSha256,
+  });
+
+  final String descriptorSha256;
+  final String artifactSha256;
+}
+
+Future<_NativeStageControl> _writeLinuxNativeStageControl({
+  required String installRoot,
+  required String stagingRoot,
+  required String executablePath,
+}) async {
+  final helperPath = _locateLinuxPortableHelper(installRoot);
+  final helperRelativePath = _relativePathUnderRoot(helperPath, installRoot);
+  final stagedHelperPath = _join(stagingRoot, helperRelativePath);
+  if (!await File(stagedHelperPath).exists()) {
+    throw StateError("Staged Linux helper not found: $stagedHelperPath");
+  }
+
+  final publicKey = await _smokeKeyPair().then(
+    (keyPair) => keyPair.extractPublicKey(),
+  );
+  final policy = _canonicalJson({
+    "allowedApplicationSigner": {
+      "kind": "sha256",
+      "value": await _sha256File(File(executablePath)),
+    },
+    "allowedHelperSigner": {
+      "kind": "sha256",
+      "value": await _sha256File(File(helperPath)),
+    },
+    "allowedInstallRoots": <Object?>[],
+    "allowedStrategies": [
+      {
+        "provider": "platformDirectory",
+        "strategy": "directoryReplace",
+      },
+    ],
+    "allowedTargetClasses": ["sameUserWritable"],
+    "applicationPackageId": _smokePackageId,
+    "helperServiceId": "com.example.desktop-updater.helper",
+    "minimumHelperProtocolVersion": 1,
+    "policyId": "com.example.desktop-updater.portable",
+    "policyVersion": 1,
+    "releaseRootPublicKeys": [
+      {
+        "algorithm": "ed25519",
+        "keyId": _smokePublicKeyId,
+        "publicKeyBase64": base64Encode(publicKey.bytes),
+      },
+    ],
+  });
+
+  for (final policyFile in [
+    File(
+      _join(
+        File(helperPath).parent.path,
+        "desktop-updater-helper.policy.json",
+      ),
+    ),
+    File(
+      _join(
+        File(stagedHelperPath).parent.path,
+        "desktop-updater-helper.policy.json",
+      ),
+    ),
+  ]) {
+    await policyFile.writeAsString(policy, flush: true);
+    await _chmod(policyFile.path, "600");
+  }
+
+  final artifact = File(_join(stagingRoot, _linuxArtifactFileName));
+  await _writeLinuxArtifactZip(stagingRoot: stagingRoot, artifact: artifact);
+  await _chmod(artifact.path, "600");
+
+  final artifactBytes = await artifact.readAsBytes();
+  final artifactSha256 = crypto.sha256.convert(artifactBytes).toString();
+  final descriptor = ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: _smokePackageId,
+    appName: "desktop_updater smoke",
+    version: "2.7.1",
+    buildNumber: 271,
+    platform: "linux",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: Uri.parse("https://example.invalid/desktop-updater-smoke.zip"),
+      sha256: artifactSha256,
+      length: artifactBytes.length,
+    ),
+    install: const ReleaseInstall(strategy: "wholeDirectoryReplace"),
+    signature: const ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: "",
+    ),
+    minimumUpdaterVersion: "2.0.0",
+    minimumOS: const {"linux": "glibc-2.35"},
+    generatedAt: DateTime.utc(2026),
+  )..validate();
+  final signature = await Ed25519().sign(
+    descriptor.canonicalSignatureBytes(),
+    keyPair: await _smokeKeyPair(),
+  );
+  final signedDescriptor = ReleaseDescriptor(
+    schemaVersion: descriptor.schemaVersion,
+    packageId: descriptor.packageId,
+    appName: descriptor.appName,
+    version: descriptor.version,
+    buildNumber: descriptor.buildNumber,
+    platform: descriptor.platform,
+    channel: descriptor.channel,
+    artifact: descriptor.artifact,
+    install: descriptor.install,
+    signature: ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: base64Encode(signature.bytes),
+    ),
+    minimumUpdaterVersion: descriptor.minimumUpdaterVersion,
+    minimumOS: descriptor.minimumOS,
+    generatedAt: descriptor.generatedAt,
+  )..validate();
+  final manifestBytes = utf8.encode(_canonicalJson(signedDescriptor.toJson()));
+  await File(_join(stagingRoot, _releaseManifestFileName)).writeAsBytes(
+    manifestBytes,
+    flush: true,
+  );
+
+  return _NativeStageControl(
+    descriptorSha256: crypto.sha256.convert(manifestBytes).toString(),
+    artifactSha256: artifactSha256,
+  );
+}
+
+Future<void> _writeLinuxArtifactZip({
+  required String stagingRoot,
+  required File artifact,
+}) async {
+  final archive = Archive();
+  final files = <File>[];
+  await for (final entity in Directory(stagingRoot).list(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is! File) {
+      continue;
+    }
+    final relativePath = _relativePathUnderRoot(entity.path, stagingRoot);
+    if (_isLinuxStageControlPath(relativePath)) {
+      continue;
+    }
+    files.add(entity);
+  }
+  files.sort((left, right) {
+    return _relativePathUnderRoot(left.path, stagingRoot)
+        .compareTo(_relativePathUnderRoot(right.path, stagingRoot));
+  });
+  for (final file in files) {
+    final relativePath = _relativePathUnderRoot(
+      file.path,
+      stagingRoot,
+    ).replaceAll(_windowsPathSeparator, "/");
+    final mode = (await file.stat()).mode;
+    final entry = ArchiveFile.bytes(relativePath, await file.readAsBytes())
+      ..mode = mode;
+    archive.addFile(entry);
+  }
+  await artifact.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+}
+
+bool _isLinuxStageControlPath(String relativePath) {
+  final normalized = relativePath.replaceAll(_windowsPathSeparator, "/");
+  return normalized == _linuxArtifactFileName ||
+      normalized == _releaseManifestFileName ||
+      normalized == ".desktop_updater_stage_provenance.json" ||
+      normalized == ".desktop_updater_payload_seal.json";
+}
+
+String _locateLinuxPortableHelper(String installRoot) {
+  final candidates = [
+    _joinAll([installRoot, "lib", "desktop-updater-helper"]),
+    _join(installRoot, "desktop-updater-helper"),
+  ];
+  if (_basename(installRoot) == "bin") {
+    candidates.add(
+      _joinAll([
+        Directory(installRoot).parent.path,
+        "libexec",
+        "desktop-updater-helper",
+      ]),
+    );
+  }
+  for (final candidate in candidates) {
+    if (File(candidate).existsSync()) {
+      return File(candidate).resolveSymbolicLinksSync();
+    }
+  }
+  throw StateError("Packaged Linux install helper is unavailable.");
+}
+
+String _relativePathUnderRoot(String path, String root) {
+  final rootWithSeparator = root.endsWith(Platform.pathSeparator)
+      ? root
+      : "$root${Platform.pathSeparator}";
+  if (!path.startsWith(rootWithSeparator)) {
+    throw StateError("$path is outside $root");
+  }
+  return path.substring(rootWithSeparator.length);
+}
+
+String _canonicalJson(Object? value) {
+  return jsonEncode(sortJsonValue(value));
+}
+
+Future<String> _sha256File(File file) async {
+  return crypto.sha256.bind(file.openRead()).first.then((digest) {
+    return digest.toString();
+  });
+}
+
+Future<void> _chmod(String path, String mode) async {
+  final result = await Process.run("/bin/chmod", [mode, path]);
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      "/bin/chmod",
+      [mode, path],
+      "${result.stdout}${result.stderr}",
+      result.exitCode,
+    );
+  }
+}
+
+Future<SimpleKeyPair> _smokeKeyPair() {
+  return Ed25519().newKeyPairFromSeed(
+    List<int>.generate(32, (index) => 255 - index),
+  );
 }
 
 String _stagingContentRoot(String stagingPath) {

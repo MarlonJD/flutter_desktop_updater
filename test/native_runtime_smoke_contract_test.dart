@@ -528,6 +528,16 @@ void main() {
     expect(tool, contains("Process.run(executable, arguments)"));
     expect(tool, contains(".desktop_updater_install_identity.json"));
     expect(tool, contains("Platform.isWindows || Platform.isLinux"));
+    expect(tool, contains("Platform.isLinux"));
+    expect(tool, contains("_writeLinuxNativeStageControl("));
+    expect(tool, contains(".desktop_updater_artifact.zip"));
+    expect(tool, contains(".desktop_updater_release_manifest.json"));
+    expect(tool, contains("ReleaseDescriptor("));
+    expect(tool, contains("Ed25519().sign("));
+    expect(tool, contains("releaseRootPublicKeys"));
+    expect(tool, contains("desktop-updater-helper.policy.json"));
+    expect(tool, contains("nativeStageControl?.descriptorSha256"));
+    expect(tool, contains("nativeStageControl?.artifactSha256"));
     expect(tool, contains("writeStagedUpdateProvenance("));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
