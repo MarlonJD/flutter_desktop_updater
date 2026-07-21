@@ -344,6 +344,39 @@ jobs:
           $installedIdentity = '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}'
           $installedIdentity | Set-Content -LiteralPath (Join-Path $install ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
           $installedIdentity | Set-Content -LiteralPath (Join-Path $payload ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
+          foreach ($root in @($install, $payload)) {
+            $caller = Join-Path $root "DesktopUpdater.RuntimeCompile.exe"
+            $helper = Join-Path $root "desktop_updater_install_helper.exe"
+            $callerSha256 = (Get-FileHash -LiteralPath $caller -Algorithm SHA256).Hash.ToLowerInvariant()
+            $helperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+            $portablePolicy = [ordered]@{
+              allowedApplicationSigner = [ordered]@{ kind = "sha256"; value = $callerSha256 }
+              allowedHelperSigner = [ordered]@{ kind = "sha256"; value = $helperSha256 }
+              allowedInstallRoots = @()
+              allowedStrategies = @(
+                [ordered]@{ provider = "platformDirectory"; strategy = "directoryReplace" }
+              )
+              allowedTargetClasses = @("sameUserWritable")
+              applicationPackageId = "com.example.native-runtime-smoke"
+              helperServiceId = "com.example.desktop-updater.helper"
+              minimumHelperProtocolVersion = 1
+              policyId = "com.example.desktop-updater.portable"
+              policyVersion = 1
+              releaseRootPublicKeys = @(
+                [ordered]@{
+                  algorithm = "ed25519"
+                  keyId = "native-runtime-smoke-stable"
+                  publicKeyBase64 = "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y="
+                }
+              )
+            }
+            $canonicalPolicy = $portablePolicy | ConvertTo-Json -Compress -Depth 8
+            [IO.File]::WriteAllText(
+              (Join-Path $root "desktop_updater_helper_policy.json"),
+              $canonicalPolicy,
+              [Text.UTF8Encoding]::new($false)
+            )
+          }
           $artifact = Join-Path $smokeRoot "update.zip"
           Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $artifact
           $ready = Join-Path $smokeRoot "ready.json"

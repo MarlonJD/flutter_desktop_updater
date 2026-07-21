@@ -462,7 +462,7 @@ void main() {
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });
 
-  test("Windows ZIP smoke seeds matching installed identity", () {
+  test("Windows ZIP smoke seals matching identity and portable policy", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
     final end = workflow.indexOf(
@@ -482,6 +482,21 @@ void main() {
     expect(lane, contains(r'"packageId":"com.example.native-runtime-smoke"'));
     expect(
       lane.indexOf(".desktop_updater_install_identity.json"),
+      lessThan(lane.indexOf("Compress-Archive")),
+    );
+    expect(lane, contains(r"foreach ($root in @($install, $payload))"));
+    expect(lane, contains("DesktopUpdater.RuntimeCompile.exe"));
+    expect(lane, contains("desktop_updater_install_helper.exe"));
+    expect(lane, contains("allowedApplicationSigner"));
+    expect(lane, contains("allowedHelperSigner"));
+    expect(lane, contains("native-runtime-smoke-stable"));
+    expect(
+      lane,
+      contains("uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y="),
+    );
+    expect(lane, contains("desktop_updater_helper_policy.json"));
+    expect(
+      lane.indexOf("desktop_updater_helper_policy.json"),
       lessThan(lane.indexOf("Compress-Archive")),
     );
   });
