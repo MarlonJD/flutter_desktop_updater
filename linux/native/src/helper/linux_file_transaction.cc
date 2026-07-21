@@ -114,8 +114,8 @@ LinuxFileTransaction::~LinuxFileTransaction() {
 
 void LinuxFileTransaction::ValidateParentLocator() const {
   auto observed = OpenLinuxDirectory(parent_locator_.string());
-  if (ReadLinuxFileIdentity(observed.get()) !=
-      mount_guard_.parent_identity()) {
+  if (!HasStableLinuxIdentity(ReadLinuxFileIdentity(observed.get()),
+                              mount_guard_.parent_identity())) {
     throw LinuxFileTransactionError("target parent replacement rejected");
   }
 }
@@ -125,7 +125,8 @@ void LinuxFileTransaction::ValidateRelativeIdentity(
     const LinuxFileIdentity& expected,
     const char* detail) const {
   if (!LinuxRelativeExistsNoFollow(parent_.get(), leaf) ||
-      ReadLinuxRelativeIdentity(parent_.get(), leaf) != expected) {
+      !HasExactLinuxIdentity(ReadLinuxRelativeIdentity(parent_.get(), leaf),
+                             expected)) {
     throw LinuxFileTransactionError(detail);
   }
 }
@@ -213,6 +214,9 @@ LinuxFileTransactionResult LinuxFileTransaction::Execute() {
   fault_injector_->Hit(
       LinuxTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush);
   SyncLinuxDirectory(parent_.get());
+  journal.stage_identity =
+      ReadLinuxRelativeIdentity(parent_.get(), paths_.prepared_name);
+  store.Persist(journal);
   fault_injector_->Hit(LinuxTransactionFaultPoint::kAfterStageRename);
 
   fault_injector_->Hit(LinuxTransactionFaultPoint::kBeforeBackupRename);
@@ -227,9 +231,11 @@ LinuxFileTransactionResult LinuxFileTransaction::Execute() {
   fault_injector_->Hit(
       LinuxTransactionFaultPoint::kAfterBackupRenameBeforeDirectoryFlush);
   SyncLinuxDirectory(parent_.get());
-  fault_injector_->Hit(LinuxTransactionFaultPoint::kAfterBackupRename);
+  journal.target_identity =
+      ReadLinuxRelativeIdentity(parent_.get(), paths_.backup_name);
   journal.state = LinuxTransactionState::kBackupCreated;
   store.Persist(journal);
+  fault_injector_->Hit(LinuxTransactionFaultPoint::kAfterBackupRename);
 
   fault_injector_->Hit(LinuxTransactionFaultPoint::kBeforeActivationRename);
   ValidateParentLocator();
@@ -243,9 +249,11 @@ LinuxFileTransactionResult LinuxFileTransaction::Execute() {
   fault_injector_->Hit(
       LinuxTransactionFaultPoint::kAfterActivationRenameBeforeDirectoryFlush);
   SyncLinuxDirectory(parent_.get());
-  fault_injector_->Hit(LinuxTransactionFaultPoint::kAfterActivationRename);
+  journal.stage_identity =
+      ReadLinuxRelativeIdentity(parent_.get(), paths_.target_name);
   journal.state = LinuxTransactionState::kTargetActivated;
   store.Persist(journal);
+  fault_injector_->Hit(LinuxTransactionFaultPoint::kAfterActivationRename);
 
   ValidateParentLocator();
   verifier_.FinalizeActivatedPayloadRoot(parent_.get(), paths_.target_name,

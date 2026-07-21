@@ -202,6 +202,8 @@ LinuxFileIdentity ReadLinuxFileIdentity(int fd) {
       static_cast<std::uint32_t>(status.st_uid),
       static_cast<std::uint32_t>(status.st_gid),
       static_cast<std::uint64_t>(status.st_nlink),
+      static_cast<std::int64_t>(status.st_ctim.tv_sec),
+      static_cast<std::int64_t>(status.st_ctim.tv_nsec),
       S_ISDIR(status.st_mode),
   };
 }
@@ -210,6 +212,23 @@ LinuxFileIdentity ReadLinuxRelativeIdentity(int parent,
                                            const std::string& leaf) {
   auto handle = OpenLinuxRelativeNoFollow(parent, leaf, O_PATH);
   return ReadLinuxFileIdentity(handle.get());
+}
+
+bool HasStableLinuxIdentity(const LinuxFileIdentity& observed,
+                            const LinuxFileIdentity& expected) {
+  return observed.device == expected.device &&
+         observed.inode == expected.inode &&
+         observed.mount_id == expected.mount_id &&
+         observed.mode == expected.mode && observed.uid == expected.uid &&
+         observed.gid == expected.gid &&
+         observed.directory == expected.directory;
+}
+
+bool HasExactLinuxIdentity(const LinuxFileIdentity& observed,
+                           const LinuxFileIdentity& expected) {
+  return observed == expected &&
+         observed.change_time_seconds == expected.change_time_seconds &&
+         observed.change_time_nanoseconds == expected.change_time_nanoseconds;
 }
 
 bool LinuxRelativeExistsNoFollow(int parent, const std::string& leaf) {
@@ -225,7 +244,7 @@ bool LinuxRelativeExistsNoFollow(int parent, const std::string& leaf) {
 void ValidateLinuxIdentity(int fd,
                            const LinuxFileIdentity& retained,
                            const char* detail) {
-  if (ReadLinuxFileIdentity(fd) != retained) {
+  if (!HasExactLinuxIdentity(ReadLinuxFileIdentity(fd), retained)) {
     throw LinuxMountGuardError(detail);
   }
 }
@@ -252,7 +271,9 @@ LinuxMountGuard::LinuxMountGuard(int parent, int target, int stage)
 }
 
 void LinuxMountGuard::Validate(int parent, int target, int stage) const {
-  ValidateLinuxIdentity(parent, parent_, "target parent identity changed");
+  if (!HasStableLinuxIdentity(ReadLinuxFileIdentity(parent), parent_)) {
+    throw LinuxMountGuardError("target parent identity changed");
+  }
   ValidateLinuxIdentity(target, target_, "target identity or permissions changed");
   ValidateLinuxIdentity(stage, stage_, "stage identity or permissions changed");
   ValidateLinuxMountRelationship(parent_, ReadLinuxFileIdentity(target),

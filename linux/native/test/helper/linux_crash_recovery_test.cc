@@ -194,6 +194,7 @@ TEST(LinuxCrashRecovery, InvalidBackupIdentityIsManual) {
   EXPECT_EQ(LinuxRecoveryOutcome::kManualActionRequired,
             fixture.Recovery(dead).Recover());
   EXPECT_TRUE(std::filesystem::exists(backup));
+  EXPECT_EQ("attacker", fixture.Read(backup));
 }
 
 TEST(LinuxCrashRecovery, LiveOwnerPreventsRecoveryOwnership) {

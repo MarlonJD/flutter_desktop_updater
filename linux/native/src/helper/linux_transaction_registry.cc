@@ -369,7 +369,8 @@ UniqueLinuxFd OpenRetainedRegistryDirectory(
     throw LinuxTransactionRegistryError(
         "transaction state directory open failed");
   }
-  if (ReadLinuxFileIdentity(directory.get()) != expected) {
+  if (!HasStableLinuxIdentity(ReadLinuxFileIdentity(directory.get()),
+                              expected)) {
     throw LinuxTransactionRegistryError(
         "transaction state directory identity changed");
   }

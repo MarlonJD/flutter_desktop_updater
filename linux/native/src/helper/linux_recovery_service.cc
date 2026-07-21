@@ -25,7 +25,8 @@ bool Matches(int parent,
              const std::string& leaf,
              const LinuxFileIdentity& identity) {
   return LinuxRelativeExistsNoFollow(parent, leaf) &&
-         ReadLinuxRelativeIdentity(parent, leaf) == identity;
+         HasExactLinuxIdentity(ReadLinuxRelativeIdentity(parent, leaf),
+                               identity);
 }
 
 bool CompatibleObservation(const LinuxTransactionJournal& journal,
@@ -163,7 +164,8 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
         journal.prepared_name != paths_.prepared_name ||
         journal.backup_name != paths_.backup_name ||
         journal.lock_name != paths_.lock_name ||
-        journal.parent_identity != ReadLinuxFileIdentity(parent.get()) ||
+        !HasStableLinuxIdentity(ReadLinuxFileIdentity(parent.get()),
+                                journal.parent_identity) ||
         journal.expected_payload_identity != expected_payload_identity_) {
       return LinuxRecoveryOutcome::kManualActionRequired;
     }

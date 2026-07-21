@@ -107,7 +107,7 @@ struct LinuxTransactionLockRecord {
 };
 
 struct LinuxTransactionJournal {
-  static constexpr std::int64_t kSchemaVersion = 1;
+  static constexpr std::int64_t kSchemaVersion = 2;
 
   std::int64_t schema_version = kSchemaVersion;
   std::string transaction_id;

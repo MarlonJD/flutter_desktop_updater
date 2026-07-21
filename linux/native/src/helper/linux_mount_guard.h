@@ -41,6 +41,8 @@ struct LinuxFileIdentity {
   std::uint32_t uid = 0;
   std::uint32_t gid = 0;
   std::uint64_t link_count = 0;
+  std::int64_t change_time_seconds = 0;
+  std::int64_t change_time_nanoseconds = 0;
   bool directory = false;
 
   bool operator==(const LinuxFileIdentity& other) const;
@@ -60,6 +62,10 @@ UniqueLinuxFd OpenLinuxRelativeNoFollow(int parent,
 LinuxFileIdentity ReadLinuxFileIdentity(int fd);
 LinuxFileIdentity ReadLinuxRelativeIdentity(int parent,
                                            const std::string& leaf);
+bool HasStableLinuxIdentity(const LinuxFileIdentity& observed,
+                            const LinuxFileIdentity& expected);
+bool HasExactLinuxIdentity(const LinuxFileIdentity& observed,
+                           const LinuxFileIdentity& expected);
 bool LinuxRelativeExistsNoFollow(int parent, const std::string& leaf);
 void ValidateLinuxIdentity(int fd,
                            const LinuxFileIdentity& retained,

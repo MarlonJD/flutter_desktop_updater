@@ -49,6 +49,9 @@ void RequireKeys(const JsonValue& value,
 JsonValue EncodeIdentity(const LinuxFileIdentity& identity) {
   JsonValue::Object result;
   result.emplace("device", JsonValue(static_cast<std::int64_t>(identity.device)));
+  result.emplace("changeTimeNanoseconds",
+                 JsonValue(identity.change_time_nanoseconds));
+  result.emplace("changeTimeSeconds", JsonValue(identity.change_time_seconds));
   result.emplace("directory", JsonValue(identity.directory));
   result.emplace("gid", JsonValue(static_cast<std::int64_t>(identity.gid)));
   result.emplace("inode", JsonValue(static_cast<std::int64_t>(identity.inode)));
@@ -62,8 +65,9 @@ JsonValue EncodeIdentity(const LinuxFileIdentity& identity) {
 }
 
 LinuxFileIdentity DecodeIdentity(const JsonValue& value) {
-  RequireKeys(value, {"device", "directory", "gid", "inode", "linkCount",
-                      "mode", "mountId", "uid"});
+  RequireKeys(value, {"changeTimeNanoseconds", "changeTimeSeconds", "device",
+                      "directory", "gid", "inode", "linkCount", "mode",
+                      "mountId", "uid"});
   LinuxFileIdentity identity{
       static_cast<std::uint64_t>(value.at("device").integer()),
       static_cast<std::uint64_t>(value.at("inode").integer()),
@@ -72,10 +76,14 @@ LinuxFileIdentity DecodeIdentity(const JsonValue& value) {
       static_cast<std::uint32_t>(value.at("uid").integer()),
       static_cast<std::uint32_t>(value.at("gid").integer()),
       static_cast<std::uint64_t>(value.at("linkCount").integer()),
+      value.at("changeTimeSeconds").integer(),
+      value.at("changeTimeNanoseconds").integer(),
       value.at("directory").boolean(),
   };
   if (identity.inode == 0 || identity.mount_id == 0 ||
-      identity.link_count == 0) {
+      identity.link_count == 0 || identity.change_time_seconds <= 0 ||
+      identity.change_time_nanoseconds < 0 ||
+      identity.change_time_nanoseconds >= 1000000000) {
     throw LinuxTransactionJournalError("invalid file identity");
   }
   return identity;
