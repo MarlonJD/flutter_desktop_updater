@@ -122,6 +122,7 @@ class Fixture {
 
 TEST(WindowsCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
   for (const auto point : WindowsTransactionCrashInjectionPoints()) {
+    SCOPED_TRACE(static_cast<int>(point));
     Fixture fixture;
     OneShotFault fault(point);
     auto transaction = fixture.Transaction(&fault);
@@ -225,11 +226,13 @@ TEST(WindowsCrashRecovery,
   auto transaction = fixture.Transaction(nullptr);
   transaction->Prepare();
   const auto paths = transaction->paths();
-  std::ifstream final_input(fixture.root / paths.journal_name,
-                            std::ios::binary);
-  const std::string final_canonical{
-      std::istreambuf_iterator<char>(final_input),
-      std::istreambuf_iterator<char>()};
+  std::string final_canonical;
+  {
+    std::ifstream final_input(fixture.root / paths.journal_name,
+                              std::ios::binary);
+    final_canonical.assign(std::istreambuf_iterator<char>(final_input),
+                           std::istreambuf_iterator<char>());
+  }
   ASSERT_GT(final_canonical.size(), 16U);
   std::ofstream(fixture.root / paths.journal_next_name,
                 std::ios::binary | std::ios::trunc)

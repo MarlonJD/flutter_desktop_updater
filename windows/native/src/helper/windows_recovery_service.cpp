@@ -303,12 +303,14 @@ WindowsRecoveryOutcome WindowsRecoveryService::RecoverOwned(
       if (Identity(parent, paths_.backup_name) != journal.target_identity) {
         return WindowsRecoveryOutcome::kManualActionRequired;
       }
-      journal.state = WindowsTransactionState::kTargetActivated;
-      store.Persist(journal);
-      FlushMetadata(parent);
-      journal.state = WindowsTransactionState::kCompleted;
-      store.Persist(journal);
-      FlushMetadata(parent);
+      if (journal.state != WindowsTransactionState::kCompleted) {
+        journal.state = WindowsTransactionState::kTargetActivated;
+        store.Persist(journal);
+        FlushMetadata(parent);
+        journal.state = WindowsTransactionState::kCompleted;
+        store.Persist(journal);
+        FlushMetadata(parent);
+      }
       // Backup deletion is authorized only after the activated payload's
       // package identity, executable proof, stageProvenanceSha256,
       // artifactSha256, and authenticodePublisher all matched above.
