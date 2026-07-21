@@ -382,6 +382,26 @@ adversarial trust review found no extra component, unbound payload node,
 unsigned nested executable, raw trust output, credential value, or stale
 submission/hash accepted by this evidence boundary.
 
+Post-P1 exact-implementation refresh (`verified locally`, 2026-07-21): exact
+implementation HEAD `af1d46194da7fbcc5b45b7ff9d7c7120906139ab` produced fresh
+signed v1 `2.7.0+270` and v2 `2.7.1+271` source applications. Their application
+notarization submissions `f30822a8-a9ed-40fe-b0b8-f2c1e331ca69` and
+`84ed3e51-f8dc-4a1d-9af9-6b6624663fd2` were accepted and stapled before final
+packaging. Final v1 and v2 PKG submissions
+`d20a2ee1-2a90-415d-9552-45ff0c0266c2` and
+`7487d5f7-5607-4a0f-98ed-1ef62c199019` were accepted and stapled; their final
+SHA-256 values are
+`c5046d9f30d332e2b67adfdc7472b3d49e74174da7213fffc2983f702c4f4166`
+and
+`d5c7c9dfaf6c2516cf44187a88fe5af0a6f3428116436c402f378c51c7ae5e83`.
+Both independent audits passed the source and extracted application, main
+executable, embedded helper, Team ID, hardened runtime, package signature,
+application and package staple, Gatekeeper execute/install assessment, fixed
+receipt metadata, version, build, and payload shape. The sanitized v2 trust
+report binds only the exact implementation commit, final v2 artifact hash, and
+final v2 package submission ID; it contains no raw path, identity display name,
+credential/profile data, environment, command, stdout, or stderr field.
+
 ### Task 3: Prove Typed Approval and Real Privileged Installation
 
 **Files:**
