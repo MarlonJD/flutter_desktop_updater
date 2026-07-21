@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <windows.h>
+#include <winternl.h>
+
 #include <functional>
 #include <filesystem>
 #include <fstream>

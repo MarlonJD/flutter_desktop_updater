@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <aclapi.h>
+#include <winternl.h>
 
 #include <algorithm>
 #include <array>
