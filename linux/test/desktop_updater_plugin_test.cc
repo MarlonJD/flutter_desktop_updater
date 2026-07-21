@@ -1,6 +1,7 @@
 #include <flutter_linux/flutter_linux.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -37,11 +38,17 @@ TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
 }
 
 TEST(DesktopUpdaterPlugin, InstallUpdateRequiresExistingStagingDirectory) {
+  char current_directory[PATH_MAX];
+  ASSERT_NE(realpath(".", current_directory), nullptr);
+  const std::string install_root =
+      std::string(current_directory) + "/desktop_updater_missing_target_" +
+      std::to_string(getpid());
+
   InstallRequest request = {
       LinuxInstallOperation::kInstall,
       "/tmp/desktop_updater_missing_staging",
-      "",
-      "",
+      install_root,
+      "bin/my-app",
       "com.example.app",
       {},
       "",
@@ -232,12 +239,17 @@ TEST(LinuxInstallTarget, RemovedTraversalCreatesNoHelperScript) {
   const std::string script_path =
       "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
   unlink(script_path.c_str());
+  char current_directory[PATH_MAX];
+  ASSERT_NE(realpath(".", current_directory), nullptr);
+  const std::string install_root =
+      std::string(current_directory) + "/desktop_updater_removed_target_" +
+      std::to_string(getpid());
 
   const auto result = native::ScheduleInstallAndRelaunch({
       LinuxInstallOperation::kInstall,
       "/tmp",
-      "",
-      "",
+      install_root,
+      "bin/my-app",
       "com.example.app",
       {"../escape"},
       "",
