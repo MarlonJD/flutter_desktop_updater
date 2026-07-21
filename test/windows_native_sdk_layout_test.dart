@@ -467,6 +467,7 @@ void main() {
     expect(header, contains("RunWindowsOneShotPipeSession"));
     expect(source, contains("ReadFrameUntil"));
     expect(source, contains("WaitForMultipleObjects"));
+    expect(source, isNot(contains("FlushFileBuffers(pipe_)")));
     expect(source, contains("GetProcessTimes"));
     expect(source, contains("VerifyWindowsExecutableStillMatches"));
     expect(source, contains("caller.executable_sha256"));

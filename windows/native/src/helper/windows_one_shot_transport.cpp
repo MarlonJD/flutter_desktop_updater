@@ -286,9 +286,10 @@ void WindowsOneShotPipeChannel::WriteFrame(
       NowUnixMilliseconds() + 30'000;
   TransferExact(true, encoded.data(),
                 static_cast<std::uint32_t>(encoded.size()), deadline);
-  if (!FlushFileBuffers(pipe_)) {
-    throw WindowsOneShotTransportError("one-shot pipe flush failed");
-  }
+  // TransferExact waits for the overlapped write to complete. A synchronous
+  // FlushFileBuffers call would then block the server end until the peer reads
+  // the frame and can race a peer that reads and closes immediately. Protocol
+  // acknowledgement frames provide the required delivery synchronization.
 }
 
 WindowsCallerExitMonitorFactory::WindowsCallerExitMonitorFactory(
