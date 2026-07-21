@@ -233,7 +233,7 @@ std::string PortablePolicyGenerationBinding(
 
 std::vector<unsigned char> ProcessUserSid(HANDLE process) {
   HANDLE raw_token = nullptr;
-  if (process == nullptr || process == INVALID_HANDLE_VALUE ||
+  if (process == nullptr ||
       !OpenProcessToken(process, TOKEN_QUERY, &raw_token)) {
     Fail("process token is unavailable");
   }
@@ -270,7 +270,7 @@ std::wstring SidText(PSID sid) {
 }
 
 void RequireCallerUser(HANDLE caller_process, PSID expected_user) {
-  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+  if (caller_process == nullptr) {
     return;
   }
   std::vector<unsigned char> caller = ProcessUserSid(caller_process);

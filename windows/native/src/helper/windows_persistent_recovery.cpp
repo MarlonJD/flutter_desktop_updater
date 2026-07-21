@@ -164,7 +164,7 @@ std::filesystem::path CanonicalAbsolutePath(const std::string& encoded) {
 }
 
 std::filesystem::path ProcessExecutablePath(HANDLE process) {
-  if (process == nullptr || process == INVALID_HANDLE_VALUE) {
+  if (process == nullptr) {
     throw WindowsPersistentRecoveryError(
         "recovery caller process is unavailable");
   }
@@ -262,7 +262,7 @@ bool ApplicationIdentityMatchesPolicy(
 }
 
 UniqueWindowsHandle CallerImpersonationToken(HANDLE caller_process) {
-  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+  if (caller_process == nullptr) {
     throw WindowsPersistentRecoveryError(
         "persistent index caller process is unavailable");
   }
@@ -357,7 +357,7 @@ void RejectCallerWritableRegistryKey(HKEY key, HANDLE caller_process) {
     throw WindowsPersistentRecoveryError(
         "persistent index trusted principals lack full control");
   }
-  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+  if (caller_process == nullptr) {
     return;
   }
   UniqueWindowsHandle caller_token = CallerImpersonationToken(caller_process);
@@ -743,7 +743,7 @@ bool VerifyInstalledTargetAuthority(
       return false;
     }
     const auto uninstall_record =
-        caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE
+        caller_process == nullptr
             ? FindCanonicalWindowsUninstallRecordProofForTrustedHost(
                   record.target_path_hint, record.package_id)
             : FindCanonicalWindowsUninstallRecordProof(
@@ -1788,7 +1788,7 @@ WindowsPersistentRecoveryService::WindowsPersistentRecoveryService(
     : policy_(policy), caller_process_(nullptr) {}
 
 void WindowsPersistentRecoveryService::AuthenticateCaller() const {
-  if (caller_process_ == nullptr || caller_process_ == INVALID_HANDLE_VALUE) {
+  if (caller_process_ == nullptr) {
     throw WindowsPersistentRecoveryError("recovery caller process is invalid");
   }
   const std::filesystem::path executable =

@@ -78,7 +78,7 @@ std::uint64_t WindowsProcessStartIdentity(DWORD process_id) {
 }
 
 std::uint64_t WindowsProcessStartIdentity(HANDLE process) {
-  if (process == nullptr || process == INVALID_HANDLE_VALUE) {
+  if (process == nullptr) {
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
         "owner process handle is invalid");

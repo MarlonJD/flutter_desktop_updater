@@ -146,7 +146,7 @@ std::filesystem::path FinalPath(HANDLE handle) {
 
 std::vector<unsigned char> TokenUserSid(HANDLE process) {
   HANDLE raw_token = nullptr;
-  if (process == nullptr || process == INVALID_HANDLE_VALUE ||
+  if (process == nullptr ||
       !OpenProcessToken(process, TOKEN_QUERY, &raw_token)) {
     Fail("portable recovery process token is unavailable");
   }

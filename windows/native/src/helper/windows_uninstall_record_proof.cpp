@@ -69,8 +69,7 @@ std::optional<std::wstring> ReadRegistryString(HKEY key,
 }
 
 bool CallerCanWriteRegistryKey(HKEY key, HANDLE caller_process) {
-  if (key == nullptr || caller_process == nullptr ||
-      caller_process == INVALID_HANDLE_VALUE) {
+  if (key == nullptr || caller_process == nullptr) {
     return true;
   }
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
@@ -237,9 +236,7 @@ std::optional<std::string> FindCanonicalWindowsUninstallRecordProofInternal(
     HANDLE caller_process,
     bool trusted_host) {
   if (!canonical_target.is_absolute() || package_id.empty() ||
-      (!trusted_host &&
-       (caller_process == nullptr ||
-        caller_process == INVALID_HANDLE_VALUE))) {
+      (!trusted_host && caller_process == nullptr)) {
     return std::nullopt;
   }
   constexpr wchar_t kUninstallPath[] =

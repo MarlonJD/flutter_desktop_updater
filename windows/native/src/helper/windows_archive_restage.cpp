@@ -374,7 +374,7 @@ std::string RandomUuidV4() {
 }
 
 std::wstring CallerUserSid(HANDLE caller_process) {
-  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+  if (caller_process == nullptr) {
     Fail("portable restage caller process is unavailable");
   }
   HANDLE raw_token = nullptr;

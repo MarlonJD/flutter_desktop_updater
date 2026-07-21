@@ -502,7 +502,7 @@ void CreateProcessWindowsLauncher::Launch(
 
 CallerTokenWindowsLauncher::CallerTokenWindowsLauncher(
     HANDLE caller_process) {
-  if (caller_process == nullptr || caller_process == INVALID_HANDLE_VALUE) {
+  if (caller_process == nullptr) {
     throw WindowsRelaunchError("caller process token source is unavailable");
   }
   HANDLE raw_token = nullptr;
