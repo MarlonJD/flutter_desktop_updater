@@ -439,9 +439,13 @@ LoadedPolicy LoadPolicy(const fs::path& helper_executable,
     struct stat target {};
     struct stat parent {};
     const fs::path target_path(request.target.path_hint);
-    if (lstat(target_path.c_str(), &target) != 0 ||
+    const bool target_exists = lstat(target_path.c_str(), &target) == 0;
+    const bool recovery_target_absent =
+        !target_exists && errno == ENOENT && recovery_caller;
+    if ((!target_exists && !recovery_target_absent) ||
         lstat(target_path.parent_path().c_str(), &parent) != 0 ||
-        target.st_uid != peer.uid || parent.st_uid != peer.uid ||
+        (target_exists && target.st_uid != peer.uid) ||
+        parent.st_uid != peer.uid ||
         access(target_path.parent_path().c_str(), W_OK | X_OK) != 0) {
       throw LinuxHelperPolicyError(
           "same-user-writable target proof rejected");
@@ -1117,9 +1121,6 @@ void RunLinuxNativeInstallControlService(
       control.caller_executable_sha256;
   stored_request.caller.signer_identity = control.caller_signer_identity;
   const fs::path target_path(record.target_path);
-  auto authenticated_target = OpenLinuxDirectory(target_path.string());
-  ProveAuthenticatedLinuxInstallTarget(peer, stored_request,
-                                       authenticated_target.get());
   LoadedPolicy loaded_policy = LoadPolicy(
       helper_executable, broker_mode, stored_request, peer,
       record.expected_payload_identity.executable_sha256,
