@@ -487,6 +487,11 @@ void main() {
     expect(lane, contains(r"foreach ($root in @($install, $payload))"));
     expect(lane, contains("DesktopUpdater.RuntimeCompile.exe"));
     expect(lane, contains("desktop_updater_install_helper.exe"));
+    expect(lane, contains("New-SelfSignedCertificate"));
+    expect(lane, contains("Set-AuthenticodeSignature"));
+    expect(lane, contains(r"Cert:\CurrentUser\Root"));
+    expect(lane, contains(r"Cert:\CurrentUser\TrustedPublisher"));
+    expect(lane, contains(r"Remove-Item -LiteralPath $certificatePath"));
     expect(lane, contains("allowedApplicationSigner"));
     expect(lane, contains("allowedHelperSigner"));
     expect(lane, contains("native-runtime-smoke-stable"));
@@ -498,6 +503,10 @@ void main() {
     expect(
       lane.indexOf("desktop_updater_helper_policy.json"),
       lessThan(lane.indexOf("Compress-Archive")),
+    );
+    expect(
+      lane.indexOf("Set-AuthenticodeSignature"),
+      lessThan(lane.indexOf(r"Get-FileHash -LiteralPath $caller")),
     );
   });
 

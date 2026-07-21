@@ -335,6 +335,28 @@ jobs:
           $build = Join-Path $smokeRoot "build"
           & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smokeCertificate = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=Desktop Updater Hosted ZIP Smoke" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddHours(2)
+          $certificateFile = Join-Path $smokeRoot "hosted-smoke.cer"
+          Export-Certificate -Cert $smokeCertificate -FilePath $certificateFile | Out-Null
+          Import-Certificate -FilePath $certificateFile -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+          Import-Certificate -FilePath $certificateFile -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
+          foreach ($binary in @(
+            (Join-Path $build "DesktopUpdater.RuntimeCompile.exe"),
+            (Join-Path $build "desktop_updater_install_helper.exe")
+          )) {
+            Set-AuthenticodeSignature -FilePath $binary -Certificate $smokeCertificate -HashAlgorithm SHA256 | Out-Null
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Hosted Windows ZIP smoke failed to trust $binary: $($signature.Status)"
+            }
+          }
           $install = Join-Path $smokeRoot "install"
           $payload = Join-Path $smokeRoot "payload"
           Copy-Item -LiteralPath $build -Destination $install -Recurse
@@ -446,6 +468,12 @@ jobs:
             }
             if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            foreach ($storeName in @("TrustedPublisher", "Root", "My")) {
+              $certificatePath = "Cert:\CurrentUser\$storeName\$($smokeCertificate.Thumbprint)"
+              if (Test-Path -LiteralPath $certificatePath) {
+                Remove-Item -LiteralPath $certificatePath -Force
+              }
+            }
             Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Windows native runtime Inno smoke
