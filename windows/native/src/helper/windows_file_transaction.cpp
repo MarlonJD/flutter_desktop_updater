@@ -36,7 +36,7 @@ UniqueWindowsHandle OpenAbsoluteDirectoryNoReparse(
   return result;
 }
 
-void ThrowFilesystem(const char* detail) {
+void ThrowFilesystem(const std::string& detail) {
   const DWORD error = GetLastError();
   const auto code = error == ERROR_SHARING_VIOLATION ||
                             error == ERROR_LOCK_VIOLATION
@@ -462,8 +462,9 @@ void WindowsFileTransaction::Prepare() {
       }
       throw;
     }
-  } catch (const WindowsTransactionJournalError&) {
-    ThrowFilesystem("exclusive target lock acquisition failed");
+  } catch (const WindowsTransactionJournalError& error) {
+    ThrowFilesystem(std::string("exclusive target lock acquisition failed: ") +
+                    error.what());
   }
   journal_store_ = std::make_unique<DurableWindowsTransactionJournalStore>(
       parent_.get(), paths_, fault_injector_);
