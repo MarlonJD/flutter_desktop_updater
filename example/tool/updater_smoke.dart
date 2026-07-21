@@ -179,6 +179,7 @@ Future<void> main(List<String> args) async {
         "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
             nativeTargetContext.executableRelativePath,
       },
+      if (Platform.isLinux) "DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS": "1",
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",

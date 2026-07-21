@@ -453,11 +453,10 @@ void main() {
     expect(lane, isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
     expect(lane, isNot(contains('"event":"move success"')));
     expect(lane, isNot(contains('"event":"cleanup success"')));
-    expect(helperMain,
-        isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
+    expect(helperMain, contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS"));
     expect(
       helperMain,
-      isNot(contains("desktop-updater-helper test diagnostic")),
+      contains("desktop-updater-helper test diagnostic"),
     );
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });

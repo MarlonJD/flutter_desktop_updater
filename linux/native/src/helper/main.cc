@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <iostream>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -112,7 +114,11 @@ int Run(int argc, char** argv) {
 int main(int argc, char** argv) {
   try {
     return Run(argc, argv);
-  } catch (const std::exception&) {
+  } catch (const std::exception& error) {
+    if (std::getenv("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS") != nullptr) {
+      std::cerr << "desktop-updater-helper test diagnostic: " << error.what()
+                << std::endl;
+    }
     return 77;
   }
 }
