@@ -40,6 +40,27 @@ class _NativeTargetContext {
   final String executableRelativePath;
 }
 
+class _PreparedLinuxXauthority {
+  const _PreparedLinuxXauthority(this.path, {required this.shouldDelete});
+
+  final String path;
+  final bool shouldDelete;
+
+  Future<void> dispose() async {
+    if (!shouldDelete) {
+      return;
+    }
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on FileSystemException {
+      // Best-effort cleanup for a throwaway smoke-test auth copy.
+    }
+  }
+}
+
 Future<void> main(List<String> args) async {
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
@@ -167,80 +188,93 @@ Future<void> main(List<String> args) async {
     artifactSha256: nativeStageControl?.artifactSha256 ?? _smokeArtifactSha256,
   );
 
-  stdout
-    ..writeln("Launching $executablePath")
-    ..writeln("Staging update in ${stagingRoot.path}");
+  final linuxXauthority =
+      Platform.isLinux ? await _prepareLinuxRelaunchXauthority() : null;
+  try {
+    stdout
+      ..writeln("Launching $executablePath")
+      ..writeln("Staging update in ${stagingRoot.path}");
 
-  final process = await Process.start(
-    executablePath,
-    const [],
-    environment: {
-      "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
-      "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
-      "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
-      "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": _smokePackageId,
-      "DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256": provenance.markerSha256,
-      if (nativeTargetContext != null) ...{
-        "DESKTOP_UPDATER_SMOKE_INSTALL_ROOT": nativeTargetContext.installRoot,
-        "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
-            nativeTargetContext.executableRelativePath,
+    final process = await Process.start(
+      executablePath,
+      const [],
+      environment: {
+        "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
+        "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
+        "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
+        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": _smokePackageId,
+        "DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256": provenance.markerSha256,
+        if (nativeTargetContext != null) ...{
+          "DESKTOP_UPDATER_SMOKE_INSTALL_ROOT": nativeTargetContext.installRoot,
+          "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
+              nativeTargetContext.executableRelativePath,
+        },
+        if (linuxStateHome != null) "XDG_STATE_HOME": linuxStateHome.path,
+        if (linuxXauthority != null) "XAUTHORITY": linuxXauthority.path,
+        if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
+        if (Platform.isMacOS && !productionGates)
+          "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
       },
-      if (linuxStateHome != null) "XDG_STATE_HOME": linuxStateHome.path,
-      if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
-      if (Platform.isMacOS && !productionGates)
-        "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
-    },
-    mode: ProcessStartMode.normal,
-    workingDirectory: File(executablePath).parent.path,
-  );
-
-  process.stdout.listen(stdout.add);
-  process.stderr.listen(stderr.add);
-
-  await _waitForFileText(markerPath, "installing", const Duration(seconds: 15));
-  stdout.writeln("App scheduled native installation and is closing...");
-
-  final exitCode = await process.exitCode.timeout(
-    const Duration(seconds: 30),
-    onTimeout: () {
-      process.kill();
-      throw TimeoutException("App did not exit after scheduling update.");
-    },
-  );
-
-  stdout.writeln("Initial app process exited with code $exitCode");
-
-  await _waitFor(
-    installedSentinel.existsSync,
-    const Duration(seconds: 45),
-    "Timed out waiting for staged file to be copied into "
-    "$effectiveInstallRoot",
-  );
-
-  await _waitFor(
-    () => !stagingRoot.existsSync(),
-    const Duration(seconds: 10),
-    "Timed out waiting for staging directory cleanup.",
-  );
-
-  await _expectDiagnosticsLog(
-    diagnosticsLogPath,
-    const <String>[
-      "helper scheduled",
-      "backup start",
-      "move start",
-      "cleanup success",
-    ],
-  );
-
-  stdout
-    ..writeln("Smoke update installed: ${installedSentinel.path}")
-    ..writeln("Helper diagnostics log: $diagnosticsLogPath")
-    ..writeln(
-      relaunch
-          ? "Relaunch was enabled; close the relaunched example app manually."
-          : "Relaunch was skipped for test cleanup. Pass --relaunch to test it.",
+      mode: ProcessStartMode.normal,
+      workingDirectory: File(executablePath).parent.path,
     );
+
+    process.stdout.listen(stdout.add);
+    process.stderr.listen(stderr.add);
+
+    await _waitForFileText(
+      markerPath,
+      "installing",
+      const Duration(seconds: 15),
+    );
+    stdout.writeln("App scheduled native installation and is closing...");
+
+    final exitCode = await process.exitCode.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        process.kill();
+        throw TimeoutException("App did not exit after scheduling update.");
+      },
+    );
+
+    stdout.writeln("Initial app process exited with code $exitCode");
+
+    await _waitFor(
+      installedSentinel.existsSync,
+      const Duration(seconds: 45),
+      "Timed out waiting for staged file to be copied into "
+      "$effectiveInstallRoot",
+    );
+
+    await _waitFor(
+      () => _stagingRootCleaned(stagingRoot),
+      const Duration(seconds: 10),
+      "Timed out waiting for staging directory cleanup.",
+    );
+
+    await _expectDiagnosticsLog(
+      diagnosticsLogPath,
+      const <String>[
+        "helper scheduled",
+        "backup start",
+        "move start",
+        "cleanup success",
+      ],
+    );
+
+    stdout
+      ..writeln("Smoke update installed: ${installedSentinel.path}")
+      ..writeln("Helper diagnostics log: $diagnosticsLogPath")
+      ..writeln(
+        relaunch
+            ? "Relaunch was enabled; close the relaunched example app manually."
+            : "Relaunch was skipped for test cleanup. Pass --relaunch to test it.",
+      );
+  } finally {
+    if (linuxXauthority != null) {
+      await linuxXauthority.dispose();
+    }
+  }
 }
 
 String? _defaultAppPath(String config) {
@@ -614,6 +648,44 @@ Future<void> _chmod(String path, String mode) async {
       result.exitCode,
     );
   }
+}
+
+Future<_PreparedLinuxXauthority?> _prepareLinuxRelaunchXauthority() async {
+  final sourcePath = Platform.environment["XAUTHORITY"];
+  if (sourcePath == null || sourcePath.isEmpty) {
+    return null;
+  }
+  final source = File(sourcePath);
+  if (!await source.exists()) {
+    return null;
+  }
+  final home = Platform.environment["HOME"];
+  if (home == null || home.isEmpty) {
+    return null;
+  }
+  final homeRoot = Directory(home).absolute.path;
+  final directory = Directory(_join(homeRoot, ".desktop_updater_smoke"));
+  await directory.create(recursive: true);
+  await _chmod(directory.path, "700");
+  final target = File(
+    _join(
+      directory.path,
+      "xauthority-$pid-${DateTime.now().microsecondsSinceEpoch}",
+    ),
+  );
+  await target.writeAsBytes(await source.readAsBytes(), flush: true);
+  await _chmod(target.path, "600");
+  return _PreparedLinuxXauthority(target.path, shouldDelete: true);
+}
+
+bool _stagingRootCleaned(Directory stagingRoot) {
+  if (!stagingRoot.existsSync()) {
+    return true;
+  }
+  if (!Platform.isLinux) {
+    return false;
+  }
+  return stagingRoot.listSync(followLinks: false).isEmpty;
 }
 
 Future<SimpleKeyPair> _smokeKeyPair() {
