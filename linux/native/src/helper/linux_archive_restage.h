@@ -148,7 +148,8 @@ class LinuxArchiveRestagedPayload {
       LinuxFileIdentity payload_identity,
       LinuxFileIdentity control_identity,
       std::string recovery_record_leaf,
-      LinuxFileIdentity recovery_record_identity);
+      LinuxFileIdentity recovery_record_identity,
+      UniqueLinuxFd recovery_record);
 
   bool CleanupPayloadNoThrow();
   bool CleanupControlNoThrow();
@@ -165,6 +166,7 @@ class LinuxArchiveRestagedPayload {
   LinuxFileIdentity control_identity_;
   std::string recovery_record_leaf_;
   LinuxFileIdentity recovery_record_identity_;
+  UniqueLinuxFd recovery_record_;
   bool automatic_cleanup_ = true;
   bool payload_present_ = true;
   bool control_present_ = true;

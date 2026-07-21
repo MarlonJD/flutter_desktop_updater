@@ -594,9 +594,15 @@ LinuxFileIdentity PersistRecoveryRecord(
 
 void RemoveRecoveryRecordExact(int parent,
                                const std::string& leaf,
-                               const LinuxFileIdentity& expected) {
+                               const LinuxFileIdentity& expected,
+                               int retained) {
+  if (retained < 0 ||
+      !HasExactLinuxIdentity(ReadLinuxFileIdentity(retained), expected)) {
+    throw LinuxArchiveRestageError("retained restage recovery identity changed");
+  }
   const LinuxFileIdentity observed = ReadLinuxRelativeIdentity(parent, leaf);
-  if (observed != expected || observed.directory || observed.link_count != 1) {
+  if (!HasExactLinuxIdentity(observed, expected) || observed.directory ||
+      observed.link_count != 1) {
     throw LinuxArchiveRestageError("restage recovery identity changed");
   }
   if (unlinkat(parent, leaf.c_str(), 0) != 0) {
@@ -827,7 +833,9 @@ void ReconcileRecoveryRecord(int parent,
   }
   SyncDirectory(parent);
   file.reset();
-  RemoveRecoveryRecordExact(parent, record_leaf, record_identity);
+  auto retained = OpenLinuxRelativeNoFollow(parent, record_leaf, O_RDONLY);
+  RemoveRecoveryRecordExact(parent, record_leaf, record_identity,
+                            retained.get());
 }
 
 void HitRestageFault(const LinuxArchiveRestageRequest& request,
@@ -1451,7 +1459,8 @@ LinuxArchiveRestagedPayload::LinuxArchiveRestagedPayload(
     LinuxFileIdentity payload_identity,
     LinuxFileIdentity control_identity,
     std::string recovery_record_leaf,
-    LinuxFileIdentity recovery_record_identity)
+    LinuxFileIdentity recovery_record_identity,
+    UniqueLinuxFd recovery_record)
     : path_(std::move(path)),
       control_path_(std::move(control_path)),
       payload_leaf_(std::move(payload_leaf)),
@@ -1462,7 +1471,8 @@ LinuxArchiveRestagedPayload::LinuxArchiveRestagedPayload(
       payload_identity_(payload_identity),
       control_identity_(control_identity),
       recovery_record_leaf_(std::move(recovery_record_leaf)),
-      recovery_record_identity_(recovery_record_identity) {}
+      recovery_record_identity_(recovery_record_identity),
+      recovery_record_(std::move(recovery_record)) {}
 
 LinuxArchiveRestagedPayload::~LinuxArchiveRestagedPayload() {
   if (automatic_cleanup_) {
@@ -1521,7 +1531,8 @@ bool LinuxArchiveRestagedPayload::CleanupRecoveryRecordNoThrow() {
     if (LinuxRelativeExistsNoFollow(target_parent_.get(),
                                     recovery_record_leaf_)) {
       RemoveRecoveryRecordExact(target_parent_.get(), recovery_record_leaf_,
-                                recovery_record_identity_);
+                                recovery_record_identity_,
+                                recovery_record_.get());
     }
     recovery_record_present_ = false;
     return true;
@@ -1772,13 +1783,22 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
     if (!target_parent.valid()) {
       throw LinuxArchiveRestageError("restage descriptor duplication failed");
     }
+    auto retained_recovery_record = OpenLinuxRelativeNoFollow(
+        request.target_parent_fd, recovery_record_leaf, O_RDONLY);
+    RequireRecoveryRecordFile(retained_recovery_record.get(),
+                              request.payload_uid, request.payload_gid);
+    if (!HasExactLinuxIdentity(
+            ReadLinuxFileIdentity(retained_recovery_record.get()),
+            recovery_record_identity)) {
+      throw LinuxArchiveRestageError("restage recovery identity changed");
+    }
     return std::unique_ptr<LinuxArchiveRestagedPayload>(
         new LinuxArchiveRestagedPayload(
             request.target_parent_path / payload_leaf,
             request.target_parent_path / control_leaf, payload_leaf,
             control_leaf, seal_sha, copied_sha, std::move(target_parent),
             payload_identity, control_identity, recovery_record_leaf,
-            recovery_record_identity));
+            recovery_record_identity, std::move(retained_recovery_record)));
   } catch (...) {
     const std::exception_ptr original_error = std::current_exception();
     bool payload_clean = !payload_created;
@@ -1811,9 +1831,12 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
       try {
         if (LinuxRelativeExistsNoFollow(request.target_parent_fd,
                                         recovery_record_leaf)) {
+          auto retained = OpenLinuxRelativeNoFollow(
+              request.target_parent_fd, recovery_record_leaf, O_RDONLY);
           RemoveRecoveryRecordExact(request.target_parent_fd,
                                     recovery_record_leaf,
-                                    recovery_record_identity);
+                                    recovery_record_identity,
+                                    retained.get());
         }
       } catch (...) {
       }
@@ -2037,7 +2060,10 @@ void CleanupLinuxArchiveRestageRecord(
         record.payload_leaf, record.control_leaf, record_leaf);
   }
   file.reset();
-  RemoveRecoveryRecordExact(target_parent_fd, record_leaf, identity);
+  auto retained =
+      OpenLinuxRelativeNoFollow(target_parent_fd, record_leaf, O_RDONLY);
+  RemoveRecoveryRecordExact(target_parent_fd, record_leaf, identity,
+                            retained.get());
 }
 
 }  // namespace desktop_updater::helper
