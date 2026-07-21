@@ -51,8 +51,9 @@ std::filesystem::path CurrentExecutablePath() {
   }
 }
 
-bool EnvironmentHandleIsClosed(const wchar_t* name) {
-  const std::wstring encoded = EnvironmentValue(name);
+bool EnvironmentHandleWasNotInherited(const wchar_t* handle_name,
+                                      const wchar_t* event_name) {
+  const std::wstring encoded = EnvironmentValue(handle_name);
   if (encoded.empty()) return false;
   std::uintptr_t value = 0;
   for (const wchar_t character : encoded) {
@@ -65,9 +66,21 @@ bool EnvironmentHandleIsClosed(const wchar_t* name) {
   }
   DWORD flags = 0;
   SetLastError(ERROR_SUCCESS);
-  return value != 0 &&
-         !GetHandleInformation(reinterpret_cast<HANDLE>(value), &flags) &&
-         GetLastError() == ERROR_INVALID_HANDLE;
+  const HANDLE candidate = reinterpret_cast<HANDLE>(value);
+  if (value == 0) return false;
+  if (!GetHandleInformation(candidate, &flags)) {
+    return GetLastError() == ERROR_INVALID_HANDLE;
+  }
+  const std::wstring expected_name = EnvironmentValue(event_name);
+  if (expected_name.empty()) return false;
+  const HANDLE reference =
+      OpenEventW(SYNCHRONIZE, FALSE, expected_name.c_str());
+  if (reference == nullptr) {
+    return GetLastError() == ERROR_FILE_NOT_FOUND;
+  }
+  const bool same_object = CompareObjectHandles(candidate, reference) != FALSE;
+  CloseHandle(reference);
+  return !same_object;
 }
 
 }  // namespace
@@ -93,8 +106,9 @@ int wmain(int argument_count, wchar_t** arguments) {
                                ? "restarted-after-exit\n"
                                : "restarted-before-exit\n") +
                    "unrelated-handle-closed=" +
-                   (EnvironmentHandleIsClosed(
-                        L"DESKTOP_UPDATER_TEST_RESTART_UNRELATED_HANDLE")
+                   (EnvironmentHandleWasNotInherited(
+                        L"DESKTOP_UPDATER_TEST_RESTART_UNRELATED_HANDLE",
+                        L"DESKTOP_UPDATER_TEST_RESTART_UNRELATED_EVENT")
                         ? "true\n"
                         : "false\n") +
                    "exact-executable=" +
@@ -107,11 +121,18 @@ int wmain(int argument_count, wchar_t** arguments) {
     SECURITY_ATTRIBUTES attributes{};
     attributes.nLength = sizeof(attributes);
     attributes.bInheritHandle = TRUE;
-    const HANDLE unrelated = CreateEventW(&attributes, TRUE, FALSE, nullptr);
+    const std::wstring unrelated_name =
+        L"Local\\DesktopUpdaterRestartUnrelated-" +
+        std::to_wstring(GetCurrentProcessId()) + L"-" +
+        std::to_wstring(GetTickCount64());
+    const HANDLE unrelated =
+        CreateEventW(&attributes, TRUE, FALSE, unrelated_name.c_str());
     if (unrelated == nullptr) return 6;
     SetEnvironmentVariableW(
         L"DESKTOP_UPDATER_TEST_RESTART_UNRELATED_HANDLE",
         std::to_wstring(reinterpret_cast<std::uintptr_t>(unrelated)).c_str());
+    SetEnvironmentVariableW(L"DESKTOP_UPDATER_TEST_RESTART_UNRELATED_EVENT",
+                            unrelated_name.c_str());
     SetEnvironmentVariableW(
         L"DESKTOP_UPDATER_TEST_RESTART_EXECUTABLE",
         CurrentExecutablePath().c_str());
