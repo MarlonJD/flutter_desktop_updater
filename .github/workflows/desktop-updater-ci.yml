@@ -329,6 +329,8 @@ jobs:
         timeout-minutes: 12
         shell: pwsh
         run: |
+          using namespace System.Security.Cryptography
+          using namespace System.Security.Cryptography.X509Certificates
           $ErrorActionPreference = "Stop"
           $ConfirmPreference = "None"
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
@@ -338,23 +340,69 @@ jobs:
           & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "Hosted Windows ZIP smoke runtime consumer is ready."
-          $smokeCertificate = New-SelfSignedCertificate `
-            -Type CodeSigningCert `
-            -Subject "CN=Desktop Updater Hosted ZIP Smoke" `
-            -CertStoreLocation "Cert:\CurrentUser\My" `
-            -KeyAlgorithm RSA `
-            -KeyLength 2048 `
-            -HashAlgorithm SHA256 `
-            -NotAfter (Get-Date).AddHours(2)
-          $certificateFile = Join-Path $smokeRoot "hosted-smoke.cer"
-          Export-Certificate -Cert $smokeCertificate -FilePath $certificateFile | Out-Null
-          Import-Certificate -FilePath $certificateFile -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
-          Import-Certificate -FilePath $certificateFile -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
+          $rsa = [RSA]::Create(2048)
+          $certificateRequest = [CertificateRequest]::new(
+            [X500DistinguishedName]::new("CN=Desktop Updater Hosted ZIP Smoke"),
+            $rsa,
+            [HashAlgorithmName]::SHA256,
+            [RSASignaturePadding]::Pkcs1
+          )
+          $codeSigningOids = [OidCollection]::new()
+          $codeSigningOids.Add([Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [X509EnhancedKeyUsageExtension]::new($codeSigningOids, $true)
+          ) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [X509KeyUsageExtension]::new(
+              [X509KeyUsageFlags]::DigitalSignature,
+              $true
+            )
+          ) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [X509BasicConstraintsExtension]::new($false, $false, 0, $true)
+          ) | Out-Null
+          $smokeCertificate = $certificateRequest.CreateSelfSigned(
+            ([DateTimeOffset]::UtcNow).AddMinutes(-5),
+            ([DateTimeOffset]::UtcNow).AddHours(2)
+          )
+          if (-not $smokeCertificate.HasPrivateKey) {
+            throw "Hosted Windows ZIP smoke certificate has no private key."
+          }
+          $publicCertificate = [X509Certificate2]::new(
+            $smokeCertificate.Export([X509ContentType]::Cert)
+          )
+          try {
+            foreach ($storeName in @("Root", "TrustedPublisher")) {
+              $store = [X509Store]::new($storeName, [StoreLocation]::CurrentUser)
+              try {
+                $store.Open([OpenFlags]::ReadWrite)
+                $store.Add($publicCertificate)
+              } finally {
+                $store.Dispose()
+              }
+            }
+          } finally {
+            $publicCertificate.Dispose()
+          }
+          Write-Host "Hosted Windows ZIP smoke certificate trust is ready."
+          $pfx = Join-Path $smokeRoot "hosted-smoke.pfx"
+          $pfxPassword = [Convert]::ToBase64String(
+            [RandomNumberGenerator]::GetBytes(24)
+          )
+          [IO.File]::WriteAllBytes(
+            $pfx,
+            $smokeCertificate.Export([X509ContentType]::Pfx, $pfxPassword)
+          )
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found for hosted Windows ZIP smoke."
+          }
           foreach ($binary in @(
             (Join-Path $build "DesktopUpdater.RuntimeCompile.exe"),
             (Join-Path $build "desktop_updater_install_helper.exe")
           )) {
-            Set-AuthenticodeSignature -FilePath $binary -Certificate $smokeCertificate -HashAlgorithm SHA256 | Out-Null
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $signature = Get-AuthenticodeSignature -FilePath $binary
             if ($signature.Status -ne "Valid") {
               throw "Hosted Windows ZIP smoke failed to trust ${binary}: $($signature.Status)"
@@ -474,12 +522,25 @@ jobs:
             }
             if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
-            foreach ($storeName in @("TrustedPublisher", "Root", "My")) {
-              $certificatePath = "Cert:\CurrentUser\$storeName\$($smokeCertificate.Thumbprint)"
-              if (Test-Path -LiteralPath $certificatePath) {
-                Remove-Item -LiteralPath $certificatePath -Confirm:$false
+            foreach ($storeName in @("TrustedPublisher", "Root")) {
+              $store = [X509Store]::new($storeName, [StoreLocation]::CurrentUser)
+              try {
+                $store.Open([OpenFlags]::ReadWrite)
+                $certificates = $store.Certificates.Find(
+                  [X509FindType]::FindByThumbprint,
+                  $smokeCertificate.Thumbprint,
+                  $false
+                )
+                foreach ($certificate in $certificates) {
+                  $store.Remove($certificate)
+                  $certificate.Dispose()
+                }
+              } finally {
+                $store.Dispose()
               }
             }
+            $smokeCertificate.Dispose()
+            $rsa.Dispose()
             Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Windows native runtime Inno smoke
