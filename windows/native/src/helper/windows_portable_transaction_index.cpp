@@ -1,5 +1,7 @@
 #include "windows_portable_transaction_index.h"
 
+#include <winternl.h>
+
 #include <aclapi.h>
 #include <bcrypt.h>
 #include <sddl.h>
