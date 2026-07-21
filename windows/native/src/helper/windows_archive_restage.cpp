@@ -1,5 +1,8 @@
 #include "windows_archive_restage.h"
 
+#include <objbase.h>
+#include <winternl.h>
+
 #include <aclapi.h>
 #include <bcrypt.h>
 #include <sddl.h>
