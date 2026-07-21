@@ -1607,6 +1607,50 @@ and retained the stage; no direct journal or stage cleanup was performed. A
 fresh signed/notarized/stapled artifact from the resulting commit and the
 complete real sequence remain required before checking Step 3.
 
+Cross-module Release containment continuation (`candidate-only`, 2026-07-21):
+exact HEAD `241ed560f9ef69e19b4b5f29b610763b08b16542` produced fresh,
+accepted, stapled, and independently audited v1/v2 source apps and final PKGs.
+The v1 app/PKG submission IDs were
+`66f6a8f3-9288-47e0-a8ce-29862a63993a` and
+`738c4159-6d08-407f-85e7-0e65b085a68c`; its final PKG SHA-256 was
+`72a29d6628154dd8054c17cafdd3b58cde91a7f5ec235140f6d328deb518c22a`.
+The v2 app/PKG submission IDs were
+`12f9eddb-ac17-4b69-922b-a9154787a715` and
+`28147998-af78-4404-b44c-5bd953c07271`; its final PKG SHA-256 was
+`ee76353f0b8f972900f1b8e7acfa3705be236630702c3d130fbb1748f4120983`.
+The same artifact passed typed approval with exit 75 and the exact diagnostic
+and remediation action, then passed the real privileged `2.7.0+270` to
+`2.7.1+271` installation with matching receipt, Team ID, hardened runtime,
+active LaunchDaemon, `root:wheel` ownership, and completed owned-state cleanup.
+
+The official recovery attempt then reached exactly one fixed-argv installer
+manager and one provider journal, but the fresh query process crashed before
+the helper-crash operation (Crash Reporter incident
+`56F6230B-01AD-46BF-A0A5-D0031520DE10`). Unified logging again identified the
+escaped value as `DesktopUpdaterKit.MacInstallClientError.endpointUnavailable`.
+The manager was released only after exact fixed-argv/PID revalidation; the
+installed current-head v2 signed host returned `completed/succeeded`, and
+journal, lock, client stage, and gate-marker state were all absent afterward.
+This safe closure is not Task 4 acceptance evidence.
+
+The validated P1 is a cross-module optimized-Release boundary: enum catches in
+the executable did not reliably contain an `Error` value thrown by
+`DesktopUpdaterKit`, so the process exited before the external replay-safe
+retry loop could inspect a typed event. The focused Dart RED failed 1/1 on the
+missing module-owned adapter; the focused Swift RED failed compilation at the
+three missing smoke outcome calls. The minimal GREEN adds only SPI query and
+recovery adapters that map endpoint unavailability and approval inside
+`DesktopUpdaterKit`; every other error is rethrown. The executable now switches
+on that typed outcome without catching imported errors. Focused GREEN passed
+1/1 Dart and 3/3 Swift tests, the complete root Swift suite passed 120/120, and
+the widened recovery/PKG/artifact contracts passed 27/27. An actual optimized
+Release executable reproduced the unavailable endpoint and exited zero with
+the exact three-field `query/unknown/endpointUnavailable` event. No helper
+installation/registration, XPC authentication, installer argv, provider,
+stage, journal, or retry authority changed. A fresh signed/notarized/stapled
+artifact from the resulting P1 commit and the complete real sequence remain
+required before checking Step 3.
+
 - [ ] **Step 3: Implement and run the real sequence**
 
 The fixed sequence:

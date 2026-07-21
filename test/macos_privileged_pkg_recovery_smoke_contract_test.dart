@@ -120,11 +120,14 @@ void main() {
     ).readAsStringSync();
 
     expect(source, contains('optionalValue("--query-transaction")'));
-    expect(source, contains("let helper = MacInstallHelper()"));
-    expect(source, contains("helper.queryTransaction("));
+    expect(source, contains("queryTransactionForSmoke"));
+    expect(source, contains("emitTransactionOutcome"));
+    expect(source, contains('emitTransactionOutcome("query", outcome)'));
     expect(source, contains("Select exactly one transaction operation."));
-    expect(source, contains('"event": "query"'));
-    expect(source, contains('"resultCode": recoveryResultName('));
+    expect(
+      source,
+      contains('"resultCode": recoveryResultName(status.resultCode)'),
+    );
     expect(source, isNot(contains('"transactionID": transactionID')));
     expect(source, isNot(contains('"managerPID"')));
     expect(source, isNot(contains('"managerStartIdentity"')));
@@ -222,23 +225,10 @@ void main() {
       "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
     ).readAsStringSync();
 
-    expect(
-      "catch MacInstallClientError.endpointUnavailable"
-          .allMatches(runtime)
-          .length,
-      2,
-    );
-    expect(
-      "catch MacInstallClientError.privilegedHelperApprovalRequired"
-          .allMatches(runtime)
-          .length,
-      2,
-    );
-    expect(
-      runtime,
-      isNot(contains("catch let error as MacInstallClientError")),
-    );
-    expect(runtime, isNot(contains("where error == .endpointUnavailable")));
+    expect(runtime, contains("queryTransactionForSmoke"));
+    expect(runtime, contains("recoverPendingInstallForSmoke"));
+    expect(runtime, contains("MacInstallSmokeTransactionOutcome"));
+    expect(runtime, isNot(contains("catch MacInstallClientError")));
     expect(runtime, contains('"state": "unknown"'));
     expect(runtime, contains('"resultCode": "endpointUnavailable"'));
     expect(harness, contains("_transactionRetryAttempts"));

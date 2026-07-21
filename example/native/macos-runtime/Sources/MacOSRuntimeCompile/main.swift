@@ -20,37 +20,9 @@ struct MacOSRuntimeSmoke {
         if let transactionID = arguments.optionalValue(
             "--recover-transaction"
         ) {
-            do {
-                let status = try MacInstallHelper().recoverPendingInstall(
-                    transactionID
-                )
-                try emit([
-                    "event": "recovery",
-                    "state": recoveryStateName(status.state),
-                    "resultCode": recoveryResultName(
-                        status.resultCode
-                    ),
-                ])
-            } catch MacInstallClientError.endpointUnavailable {
-                try emit([
-                    "event": "recovery",
-                    "state": "unknown",
-                    "resultCode": "endpointUnavailable",
-                ])
-            } catch MacInstallClientError.privilegedHelperApprovalRequired {
-                let diagnostic = RuntimeDiagnostic(
-                    code: .privilegedHelperApprovalRequired,
-                    message: "Administrator approval is required before the privileged macOS updater helper can run.",
-                    remediationActions: [
-                        .openMacOSBackgroundItemsSettings
-                    ]
-                )
-                try emit([
-                    "event": "installFailed",
-                    "code": diagnostic.code.rawValue,
-                    "remediationActions": diagnostic.remediationActions.map(\.rawValue),
-                ])
-            }
+            let outcome = try MacInstallHelper()
+                .recoverPendingInstallForSmoke(transactionID)
+            try emitTransactionOutcome("recovery", outcome)
             return
         }
         if let transactionID = arguments.optionalValue(
@@ -68,38 +40,9 @@ struct MacOSRuntimeSmoke {
         if let transactionID = arguments.optionalValue(
             "--query-transaction"
         ) {
-            let helper = MacInstallHelper()
-            do {
-                let status = try helper.queryTransaction(
-                    transactionID
-                )
-                try emit([
-                    "event": "query",
-                    "state": recoveryStateName(status.state),
-                    "resultCode": recoveryResultName(
-                        status.resultCode
-                    ),
-                ])
-            } catch MacInstallClientError.endpointUnavailable {
-                try emit([
-                    "event": "query",
-                    "state": "unknown",
-                    "resultCode": "endpointUnavailable",
-                ])
-            } catch MacInstallClientError.privilegedHelperApprovalRequired {
-                let diagnostic = RuntimeDiagnostic(
-                    code: .privilegedHelperApprovalRequired,
-                    message: "Administrator approval is required before the privileged macOS updater helper can run.",
-                    remediationActions: [
-                        .openMacOSBackgroundItemsSettings
-                    ]
-                )
-                try emit([
-                    "event": "installFailed",
-                    "code": diagnostic.code.rawValue,
-                    "remediationActions": diagnostic.remediationActions.map(\.rawValue),
-                ])
-            }
+            let outcome = try MacInstallHelper()
+                .queryTransactionForSmoke(transactionID)
+            try emitTransactionOutcome("query", outcome)
             return
         }
         guard arguments.isSmoke else {
@@ -311,6 +254,39 @@ private func recoveryResultName(
     case .invalidResponse: "invalidResponse"
     case .recoveryRequired: "recoveryRequired"
     @unknown default: "invalidResponse"
+    }
+}
+
+private func emitTransactionOutcome(
+    _ event: String,
+    _ outcome: MacInstallSmokeTransactionOutcome
+) throws {
+    switch outcome {
+    case let .status(status):
+        try emit([
+            "event": event,
+            "state": recoveryStateName(status.state),
+            "resultCode": recoveryResultName(status.resultCode),
+        ])
+    case .endpointUnavailable:
+        try emit([
+            "event": event,
+            "state": "unknown",
+            "resultCode": "endpointUnavailable",
+        ])
+    case .privilegedHelperApprovalRequired:
+        let diagnostic = RuntimeDiagnostic(
+            code: .privilegedHelperApprovalRequired,
+            message: "Administrator approval is required before the privileged macOS updater helper can run.",
+            remediationActions: [.openMacOSBackgroundItemsSettings]
+        )
+        try emit([
+            "event": "installFailed",
+            "code": diagnostic.code.rawValue,
+            "remediationActions": diagnostic.remediationActions.map(\.rawValue),
+        ])
+    @unknown default:
+        throw SmokeFailure("Unsupported smoke transaction outcome.")
     }
 }
 

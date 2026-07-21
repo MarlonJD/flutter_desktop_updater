@@ -176,6 +176,13 @@ public enum MacInstallClientError: Error, Equatable {
     case inactiveReservation
 }
 
+@_spi(DesktopUpdaterSmoke)
+public enum MacInstallSmokeTransactionOutcome {
+    case status(InstallTransactionStatus)
+    case endpointUnavailable
+    case privilegedHelperApprovalRequired
+}
+
 protocol MacInstallHelperTransport: AnyObject {
     func validateEndpoint() throws
 
@@ -1923,6 +1930,24 @@ public struct MacInstallHelper {
     }
 
     @_spi(DesktopUpdaterSmoke)
+    public func queryTransactionForSmoke(
+        _ transactionID: String
+    ) throws -> MacInstallSmokeTransactionOutcome {
+        try smokeTransactionOutcome {
+            try queryTransaction(transactionID)
+        }
+    }
+
+    @_spi(DesktopUpdaterSmoke)
+    public func recoverPendingInstallForSmoke(
+        _ transactionID: String
+    ) throws -> MacInstallSmokeTransactionOutcome {
+        try smokeTransactionOutcome {
+            try recoverPendingInstall(transactionID)
+        }
+    }
+
+    @_spi(DesktopUpdaterSmoke)
     public func terminatePrivilegedHelperForRecoverySmoke(
         _ transactionID: String
     ) throws -> InstallTransactionStatus {
@@ -1936,6 +1961,20 @@ public struct MacInstallHelper {
             throw MacInstallClientError.invalidReservationResponse
         }
         return status
+    }
+
+    private func smokeTransactionOutcome(
+        _ operation: () throws -> InstallTransactionStatus
+    ) throws -> MacInstallSmokeTransactionOutcome {
+        do {
+            return .status(try operation())
+        } catch MacInstallClientError.endpointUnavailable {
+            return .endpointUnavailable
+        } catch MacInstallClientError.privilegedHelperApprovalRequired {
+            return .privilegedHelperApprovalRequired
+        } catch {
+            throw error
+        }
     }
 
     private func validateTransactionID(_ value: String) throws {

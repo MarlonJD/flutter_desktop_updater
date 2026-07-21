@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import DesktopUpdaterKit
+@_spi(DesktopUpdaterSmoke) @testable import DesktopUpdaterKit
 
 final class MacInstallHelperTests: XCTestCase {
     func testTopLevelStagingSymlinkIsRejectedBeforeScheduling() throws {
@@ -263,6 +263,79 @@ final class MacInstallHelperTests: XCTestCase {
             XCTAssertEqual(
                 error as? MacInstallClientError,
                 .endpointUnavailable
+            )
+        }
+    }
+
+    func testSmokeQueryContainsEndpointFailureInsideKitBoundary() throws {
+        let transport = CapturingInstallHelperTransport()
+        transport.queryError = MacInstallClientError.endpointUnavailable
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        let outcome = try helper.queryTransactionForSmoke(
+            "00000000-0000-4000-8000-000000000099"
+        )
+
+        guard case .endpointUnavailable = outcome else {
+            return XCTFail("Expected a contained endpoint failure.")
+        }
+    }
+
+    func testSmokeRecoveryContainsApprovalFailureInsideKitBoundary() throws {
+        let transport = CapturingInstallHelperTransport()
+        transport.recoveryError =
+            MacInstallClientError.privilegedHelperApprovalRequired
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        let outcome = try helper.recoverPendingInstallForSmoke(
+            "00000000-0000-4000-8000-000000000099"
+        )
+
+        guard case .privilegedHelperApprovalRequired = outcome else {
+            return XCTFail("Expected a contained approval failure.")
+        }
+    }
+
+    func testSmokeQueryRethrowsNonReplaySafeClientFailure() throws {
+        let transport = CapturingInstallHelperTransport()
+        transport.queryError = MacInstallClientError.installRecoveryRequired
+        let helper = MacInstallHelper(
+            targetResolver: {
+                MacInstallTarget(
+                    processIdentifier: 4_243,
+                    bundleURL: URL(fileURLWithPath: "/Applications/Example.app")
+                )
+            },
+            evidenceBuilder: FixedInstallRequestEvidenceBuilder(),
+            transport: transport
+        )
+
+        XCTAssertThrowsError(
+            try helper.queryTransactionForSmoke(
+                "00000000-0000-4000-8000-000000000099"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? MacInstallClientError,
+                .installRecoveryRequired
             )
         }
     }
@@ -536,6 +609,8 @@ private final class CapturingInstallHelperTransport: MacInstallHelperTransport {
     var preparedTransactionID: String?
     var prepareError: Error?
     var commitError: Error?
+    var queryError: Error?
+    var recoveryError: Error?
 
     func prepareInstall(
         request: Data,
@@ -570,19 +645,25 @@ private final class CapturingInstallHelperTransport: MacInstallHelperTransport {
         transactionID: String,
         readyToken _: String
     ) throws -> InstallTransactionStatus {
-        status(transactionID: transactionID)
+        return status(transactionID: transactionID)
     }
 
     func queryTransaction(
         transactionID: String
     ) throws -> InstallTransactionStatus {
-        status(transactionID: transactionID)
+        if let queryError {
+            throw queryError
+        }
+        return status(transactionID: transactionID)
     }
 
     func recoverPendingInstall(
         transactionID: String
     ) throws -> InstallTransactionStatus {
-        status(transactionID: transactionID)
+        if let recoveryError {
+            throw recoveryError
+        }
+        return status(transactionID: transactionID)
     }
 
     private func status(transactionID: String) -> InstallTransactionStatus {
