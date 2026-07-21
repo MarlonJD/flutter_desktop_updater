@@ -489,6 +489,7 @@ void main() {
     expect(lane, contains("desktop_updater_install_helper.exe"));
     expect(lane, contains("New-SelfSignedCertificate"));
     expect(lane, contains("Set-AuthenticodeSignature"));
+    expect(lane, contains(r"failed to trust ${binary}:"));
     expect(lane, contains(r"Cert:\CurrentUser\Root"));
     expect(lane, contains(r"Cert:\CurrentUser\TrustedPublisher"));
     expect(lane, contains(r"Remove-Item -LiteralPath $certificatePath"));

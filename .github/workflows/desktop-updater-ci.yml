@@ -354,7 +354,7 @@ jobs:
             Set-AuthenticodeSignature -FilePath $binary -Certificate $smokeCertificate -HashAlgorithm SHA256 | Out-Null
             $signature = Get-AuthenticodeSignature -FilePath $binary
             if ($signature.Status -ne "Valid") {
-              throw "Hosted Windows ZIP smoke failed to trust $binary: $($signature.Status)"
+              throw "Hosted Windows ZIP smoke failed to trust ${binary}: $($signature.Status)"
             }
           }
           $install = Join-Path $smokeRoot "install"
