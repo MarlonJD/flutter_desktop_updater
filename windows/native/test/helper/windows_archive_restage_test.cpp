@@ -355,7 +355,7 @@ TEST(WindowsArchiveRestage,
 
   auto active_root = OpenRelativeNoReparse(
       restage.parent_handle(), target.filename().wstring(),
-      READ_CONTROL | WRITE_DAC | SYNCHRONIZE,
+      FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   AddAdministratorsFullControl(active_root.get());
