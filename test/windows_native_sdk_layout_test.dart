@@ -383,6 +383,7 @@ void main() {
     expect(journal, contains("open_component"));
     expect(journal, contains("FILE_DIRECTORY_FILE"));
     expect(journal, contains("FILE_OPEN_REPARSE_POINT"));
+    expect(journal, contains("sizeof(FILE_RENAME_INFO) + name_bytes"));
     expect(transactionBoundary, contains("FileIdInfo"));
     expect(journal, contains("stageParentIdentity"));
     expect(transaction, contains("stage_parent_"));

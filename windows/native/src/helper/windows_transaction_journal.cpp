@@ -773,8 +773,7 @@ void RenameHandleRelative(HANDLE source,
   ValidateSimpleName(destination);
   const DWORD name_bytes =
       static_cast<DWORD>(destination.size() * sizeof(wchar_t));
-  std::vector<unsigned char> storage(
-      offsetof(FILE_RENAME_INFO, FileName) + name_bytes);
+  std::vector<unsigned char> storage(sizeof(FILE_RENAME_INFO) + name_bytes);
   auto* info = reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
   info->Flags = replace_existing ? FILE_RENAME_FLAG_REPLACE_IF_EXISTS : 0;
   info->RootDirectory = RootDirectory;
