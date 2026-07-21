@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "verified locally",
+  "gitCommit": "6d8ec6aeef0e1cdfa95b0c231bbc000320afe214",
+  "artifactSHA256": "ba9d55c24bf11d6c0e983d9138c1e72da263705c58302e82b4f1fb5ed6d1c818",
+  "bundleIdentifier": "net.monolib.updater",
+  "receiptIdentifier": "net.monolib.updater.pkg",
+  "version": "2.7.1",
+  "build": "271",
+  "teamIdentifier": "UPK4SC93AN",
+  "sourceAppSignatureValid": true,
+  "payloadAppSignatureValid": true,
+  "payloadHelperSignatureValid": true,
+  "packageSignatureValid": true,
+  "appStapleValid": true,
+  "packageStapleValid": true,
+  "gatekeeperExecuteAccepted": true,
+  "gatekeeperInstallAccepted": true,
+  "notarizationSubmissionId": "e41542e7-f1f5-4a6e-8087-ded9206c9c0c"
+}
