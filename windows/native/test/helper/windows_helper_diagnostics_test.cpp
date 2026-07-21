@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 17> expected = {
+  constexpr std::array<const char*, 20> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -27,6 +27,9 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "cleanup success",
       "cleanup failure",
       "relaunch attempt",
+      "portable bootstrap failure",
+      "portable recovery host failure",
+      "portable session failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -50,6 +53,20 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
   EXPECT_EQ(EVENTLOG_ERROR_TYPE,
             DescribeWindowsHelperEvent(WindowsHelperEvent::kCleanupFailure)
                 .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableBootstrapFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableRecoveryHostFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(WindowsHelperEvent::kPortableSessionFailure)
+          .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),
       std::out_of_range);
