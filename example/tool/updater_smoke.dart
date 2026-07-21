@@ -389,6 +389,10 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
   if (!await File(stagedHelperPath).exists()) {
     throw StateError("Staged Linux helper not found: $stagedHelperPath");
   }
+  for (final helper in [File(helperPath), File(stagedHelperPath)]) {
+    await _chmod(helper.parent.path, "755");
+    await _chmod(helper.path, "755");
+  }
 
   final publicKey = await _smokeKeyPair().then(
     (keyPair) => keyPair.extractPublicKey(),

@@ -536,6 +536,8 @@ void main() {
     expect(tool, contains("Ed25519().sign("));
     expect(tool, contains("releaseRootPublicKeys"));
     expect(tool, contains("desktop-updater-helper.policy.json"));
+    expect(tool, contains("await _chmod(helper.parent.path, \"755\")"));
+    expect(tool, contains("await _chmod(helper.path, \"755\")"));
     expect(tool, contains("nativeStageControl?.descriptorSha256"));
     expect(tool, contains("nativeStageControl?.artifactSha256"));
     expect(tool, contains("writeStagedUpdateProvenance("));
