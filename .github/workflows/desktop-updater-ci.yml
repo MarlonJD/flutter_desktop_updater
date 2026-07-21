@@ -169,24 +169,24 @@ jobs:
             (Join-Path $signingRoot "hosted-smoke.pfx"),
             $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $pfxPassword)
           )
-          $smokeCertificate.Thumbprint | Set-Content -LiteralPath (Join-Path $signingRoot "hosted-smoke.thumbprint") -NoNewline
-          Write-Host "Hosted Windows ZIP smoke certificate is ready."
-          $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+          $certificatePath = Join-Path $signingRoot "hosted-smoke.cer"
+          [System.IO.File]::WriteAllBytes(
+            $certificatePath,
             $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
           )
+          $smokeCertificate.Thumbprint | Set-Content -LiteralPath (Join-Path $signingRoot "hosted-smoke.thumbprint") -NoNewline
+          Write-Host "Hosted Windows ZIP smoke certificate is ready."
           try {
+            $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
             foreach ($storeName in @("Root", "TrustedPublisher")) {
-              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-              try {
-                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                $store.Add($publicCertificate)
-                Write-Host "Hosted Windows ZIP smoke $storeName trust is ready."
-              } finally {
-                $store.Dispose()
+              & certutil.exe -user -f -addstore $storeName $certificatePath
+              if ($LASTEXITCODE -ne 0) {
+                throw "certutil failed to add hosted Windows ZIP smoke trust to $storeName."
               }
+              $storeName | Add-Content -LiteralPath $trustedStoresPath
+              Write-Host "Hosted Windows ZIP smoke $storeName trust is ready."
             }
           } finally {
-            $publicCertificate.Dispose()
             $smokeCertificate.Dispose()
             $rsa.Dispose()
           }
@@ -713,30 +713,29 @@ jobs:
           if-no-files-found: ignore
       - name: Cleanup hosted Windows ZIP smoke signing trust
         if: always()
+        timeout-minutes: 2
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
           $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
           $thumbprintPath = Join-Path $signingRoot "hosted-smoke.thumbprint"
-          if (Test-Path -LiteralPath $thumbprintPath -PathType Leaf) {
+          $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
+          if (
+            (Test-Path -LiteralPath $thumbprintPath -PathType Leaf) -and
+            (Test-Path -LiteralPath $trustedStoresPath -PathType Leaf)
+          ) {
             $thumbprint = (Get-Content -Raw -LiteralPath $thumbprintPath).Trim()
             if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
-              foreach ($storeName in @("TrustedPublisher", "Root")) {
-                $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-                try {
-                  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                  $certificates = $store.Certificates.Find(
-                    [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-                    $thumbprint,
-                    $false
-                  )
-                  foreach ($certificate in $certificates) {
-                    $store.Remove($certificate)
-                    $certificate.Dispose()
-                  }
-                } finally {
-                  $store.Dispose()
+              $trustedStores = @(Get-Content -LiteralPath $trustedStoresPath)
+              [array]::Reverse($trustedStores)
+              foreach ($storeName in $trustedStores) {
+                if ($storeName -notin @("Root", "TrustedPublisher")) {
+                  throw "Unexpected hosted Windows ZIP smoke certificate store: $storeName"
+                }
+                & certutil.exe -user -f -delstore $storeName $thumbprint
+                if ($LASTEXITCODE -ne 0) {
+                  throw "certutil failed to remove hosted Windows ZIP smoke trust from $storeName."
                 }
               }
             }

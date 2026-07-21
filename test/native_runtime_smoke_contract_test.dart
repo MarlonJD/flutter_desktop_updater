@@ -527,13 +527,12 @@ void main() {
     expect(setupLane, contains("timeout-minutes: 2"));
     expect(setupLane, contains("native-runtime-windows-zip-signing"));
     expect(setupLane, contains("1.3.6.1.5.5.7.3.3"));
-    expect(
-      setupLane,
-      contains(
-        "[System.Security.Cryptography.X509Certificates.X509Store]::new",
-      ),
-    );
-    expect(setupLane, contains(r"$store.Add($publicCertificate)"));
+    expect(setupLane, contains("certutil.exe"));
+    expect(setupLane, contains("-addstore"));
+    expect(setupLane,
+        contains('foreach (\$storeName in @("Root", "TrustedPublisher"))'));
+    expect(setupLane, isNot(contains("X509Store")));
+    expect(setupLane, isNot(contains(r"$store.Add($publicCertificate)")));
     expect(setupLane, contains("RSA key is ready"));
     expect(setupLane, contains("certificate is ready"));
     expect(setupLane, contains(r'$storeName trust is ready'));
@@ -547,7 +546,11 @@ void main() {
     expect(lane, isNot(contains("Set-AuthenticodeSignature")));
     expect(lane, contains(r"failed to trust ${binary}:"));
     expect(cleanupLane, contains("if: always()"));
-    expect(cleanupLane, contains(r"$store.Remove($certificate)"));
+    expect(cleanupLane, contains("timeout-minutes: 2"));
+    expect(cleanupLane, contains("certutil.exe"));
+    expect(cleanupLane, contains("-delstore"));
+    expect(cleanupLane, isNot(contains("X509Store")));
+    expect(cleanupLane, isNot(contains(r"$store.Remove($certificate)")));
     expect(
       cleanupLane,
       contains(
