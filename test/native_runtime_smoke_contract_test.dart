@@ -487,10 +487,25 @@ void main() {
     expect(lane, contains(r"foreach ($root in @($install, $payload))"));
     expect(lane, contains("DesktopUpdater.RuntimeCompile.exe"));
     expect(lane, contains("desktop_updater_install_helper.exe"));
-    expect(lane, contains("[CertificateRequest]::new"));
-    expect(lane, contains("[X509EnhancedKeyUsageExtension]::new"));
+    expect(
+      lane,
+      contains(
+        "[System.Security.Cryptography.X509Certificates.CertificateRequest]::new",
+      ),
+    );
+    expect(
+      lane,
+      contains(
+        "[System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new",
+      ),
+    );
     expect(lane, contains("1.3.6.1.5.5.7.3.3"));
-    expect(lane, contains("[X509Store]::new"));
+    expect(
+      lane,
+      contains(
+        "[System.Security.Cryptography.X509Certificates.X509Store]::new",
+      ),
+    );
     expect(lane, contains(r"$store.Add($publicCertificate)"));
     expect(lane, contains("signtool.exe"));
     expect(
@@ -503,6 +518,7 @@ void main() {
     expect(lane, isNot(contains("New-SelfSignedCertificate")));
     expect(lane, isNot(contains("Import-Certificate")));
     expect(lane, isNot(contains(r"Cert:\CurrentUser")));
+    expect(lane, isNot(contains("using namespace")));
     expect(lane, contains("allowedApplicationSigner"));
     expect(lane, contains("allowedHelperSigner"));
     expect(lane, contains("native-runtime-smoke-stable"));

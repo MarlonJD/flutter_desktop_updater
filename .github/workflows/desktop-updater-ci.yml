@@ -329,8 +329,6 @@ jobs:
         timeout-minutes: 12
         shell: pwsh
         run: |
-          using namespace System.Security.Cryptography
-          using namespace System.Security.Cryptography.X509Certificates
           $ErrorActionPreference = "Stop"
           $ConfirmPreference = "None"
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
@@ -340,42 +338,42 @@ jobs:
           & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "Hosted Windows ZIP smoke runtime consumer is ready."
-          $rsa = [RSA]::Create(2048)
-          $certificateRequest = [CertificateRequest]::new(
-            [X500DistinguishedName]::new("CN=Desktop Updater Hosted ZIP Smoke"),
+          $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+          $certificateRequest = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+            [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new("CN=Desktop Updater Hosted ZIP Smoke"),
             $rsa,
-            [HashAlgorithmName]::SHA256,
-            [RSASignaturePadding]::Pkcs1
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
           )
-          $codeSigningOids = [OidCollection]::new()
-          $codeSigningOids.Add([Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
+          $codeSigningOids = [System.Security.Cryptography.OidCollection]::new()
+          $codeSigningOids.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
           $certificateRequest.CertificateExtensions.Add(
-            [X509EnhancedKeyUsageExtension]::new($codeSigningOids, $true)
+            [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($codeSigningOids, $true)
           ) | Out-Null
           $certificateRequest.CertificateExtensions.Add(
-            [X509KeyUsageExtension]::new(
-              [X509KeyUsageFlags]::DigitalSignature,
+            [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
+              [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature,
               $true
             )
           ) | Out-Null
           $certificateRequest.CertificateExtensions.Add(
-            [X509BasicConstraintsExtension]::new($false, $false, 0, $true)
+            [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true)
           ) | Out-Null
           $smokeCertificate = $certificateRequest.CreateSelfSigned(
-            ([DateTimeOffset]::UtcNow).AddMinutes(-5),
-            ([DateTimeOffset]::UtcNow).AddHours(2)
+            ([System.DateTimeOffset]::UtcNow).AddMinutes(-5),
+            ([System.DateTimeOffset]::UtcNow).AddHours(2)
           )
           if (-not $smokeCertificate.HasPrivateKey) {
             throw "Hosted Windows ZIP smoke certificate has no private key."
           }
-          $publicCertificate = [X509Certificate2]::new(
-            $smokeCertificate.Export([X509ContentType]::Cert)
+          $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
           )
           try {
             foreach ($storeName in @("Root", "TrustedPublisher")) {
-              $store = [X509Store]::new($storeName, [StoreLocation]::CurrentUser)
+              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
               try {
-                $store.Open([OpenFlags]::ReadWrite)
+                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
                 $store.Add($publicCertificate)
               } finally {
                 $store.Dispose()
@@ -386,12 +384,12 @@ jobs:
           }
           Write-Host "Hosted Windows ZIP smoke certificate trust is ready."
           $pfx = Join-Path $smokeRoot "hosted-smoke.pfx"
-          $pfxPassword = [Convert]::ToBase64String(
-            [RandomNumberGenerator]::GetBytes(24)
+          $pfxPassword = [System.Convert]::ToBase64String(
+            [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24)
           )
-          [IO.File]::WriteAllBytes(
+          [System.IO.File]::WriteAllBytes(
             $pfx,
-            $smokeCertificate.Export([X509ContentType]::Pfx, $pfxPassword)
+            $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $pfxPassword)
           )
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
           if ($null -eq $signtool) {
@@ -523,11 +521,11 @@ jobs:
             if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
             foreach ($storeName in @("TrustedPublisher", "Root")) {
-              $store = [X509Store]::new($storeName, [StoreLocation]::CurrentUser)
+              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
               try {
-                $store.Open([OpenFlags]::ReadWrite)
+                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
                 $certificates = $store.Certificates.Find(
-                  [X509FindType]::FindByThumbprint,
+                  [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
                   $smokeCertificate.Thumbprint,
                   $false
                 )
