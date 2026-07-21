@@ -219,8 +219,8 @@ Future<void> main(List<String> args) async {
       workingDirectory: File(executablePath).parent.path,
     );
 
-    process.stdout.listen(stdout.add);
-    process.stderr.listen(stderr.add);
+    final stdoutSubscription = process.stdout.listen(stdout.add);
+    final stderrSubscription = process.stderr.listen(stderr.add);
 
     await _waitForFileText(
       markerPath,
@@ -238,6 +238,8 @@ Future<void> main(List<String> args) async {
     );
 
     stdout.writeln("Initial app process exited with code $exitCode");
+    await stdoutSubscription.cancel();
+    await stderrSubscription.cancel();
 
     await _waitFor(
       installedSentinel.existsSync,
