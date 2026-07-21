@@ -1647,6 +1647,8 @@ jobs:
               linux/native/build/linux_polkit_e2e_fixture \
                 --canonical-portable-consumer-policy \
                 "$caller_sha" "$helper_sha" "$package_id" \
+                native-runtime-smoke-stable \
+                uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y= \
                 > "$root/desktop-updater-helper.policy.json"
             )
             test "$(stat -c '%a' "$root/runtime_compile")" = 755
@@ -1687,7 +1689,6 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          export DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS=1
           "$smoke_root/install/runtime_compile" \
             --smoke \
             --verify-protected-root \

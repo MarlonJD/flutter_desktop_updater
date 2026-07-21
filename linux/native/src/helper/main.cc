@@ -2,9 +2,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <regex>
 #include <string>
 
@@ -114,13 +112,7 @@ int Run(int argc, char** argv) {
 int main(int argc, char** argv) {
   try {
     return Run(argc, argv);
-  } catch (const std::exception& error) {
-    const char* test_diagnostics =
-        std::getenv("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS");
-    if (test_diagnostics != nullptr && std::string(test_diagnostics) == "1") {
-      std::cerr << "desktop-updater-helper test diagnostic: " << error.what()
-                << std::endl;
-    }
+  } catch (const std::exception&) {
     return 77;
   }
 }

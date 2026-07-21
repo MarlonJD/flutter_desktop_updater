@@ -367,10 +367,13 @@ std::string CanonicalPolicyForTarget(
     const std::string& policy_id,
     const std::string& helper_service_id,
     const std::string& target_class,
-    JsonValue::Array allowed_install_roots) {
+    JsonValue::Array allowed_install_roots,
+    const std::string& release_key_id,
+    const std::string& release_key_base64) {
   if (!IsLowerSha256(caller_sha256) || !IsLowerSha256(helper_sha256) ||
       package_id.empty() || policy_id.empty() || helper_service_id.empty() ||
-      target_class.empty()) {
+      target_class.empty() || release_key_id.empty() ||
+      release_key_base64.empty()) {
     Fail("canonical policy inputs are invalid");
   }
   JsonValue::Object caller;
@@ -379,13 +382,10 @@ std::string CanonicalPolicyForTarget(
   JsonValue::Object helper;
   helper.emplace("kind", JsonValue(std::string("sha256")));
   helper.emplace("value", JsonValue(helper_sha256));
-  const TestReleaseKey key = DeterministicTestReleaseKey();
   JsonValue::Object release_key;
   release_key.emplace("algorithm", JsonValue(std::string("ed25519")));
-  release_key.emplace("keyId", JsonValue(std::string(kReleaseKeyId)));
-  release_key.emplace(
-      "publicKeyBase64",
-      JsonValue(Base64(key.public_key.data(), key.public_key.size())));
+  release_key.emplace("keyId", JsonValue(release_key_id));
+  release_key.emplace("publicKeyBase64", JsonValue(release_key_base64));
   JsonValue::Object strategy;
   strategy.emplace("provider", JsonValue(std::string("platformDirectory")));
   strategy.emplace("strategy", JsonValue(std::string("directoryReplace")));
@@ -418,20 +418,30 @@ std::string CanonicalPolicy(const std::string& caller_sha256,
       allowed_root.lexically_normal() != allowed_root) {
     Fail("canonical policy inputs are invalid");
   }
+  const TestReleaseKey key = DeterministicTestReleaseKey();
   return CanonicalPolicyForTarget(
       caller_sha256, helper_sha256, kPackageId, kPolicyId,
       "com.desktopupdater.install", "protectedApplication",
-      JsonValue::Array{JsonValue(allowed_root.string())});
+      JsonValue::Array{JsonValue(allowed_root.string())}, kReleaseKeyId,
+      Base64(key.public_key.data(), key.public_key.size()));
 }
 
 std::string CanonicalPortableConsumerPolicy(
     const std::string& caller_sha256,
     const std::string& helper_sha256,
-    const std::string& package_id) {
+    const std::string& package_id,
+    const std::string& release_key_id = kReleaseKeyId,
+    const std::string& release_key_base64 = "") {
+  const TestReleaseKey key = DeterministicTestReleaseKey();
+  const std::string encoded_key =
+      release_key_base64.empty()
+          ? Base64(key.public_key.data(), key.public_key.size())
+          : release_key_base64;
   return CanonicalPolicyForTarget(
       caller_sha256, helper_sha256, package_id,
       "com.example.desktop-updater.installed-consumer.portable",
-      "com.example.desktop-updater.helper", "sameUserWritable", {});
+      "com.example.desktop-updater.helper", "sameUserWritable", {},
+      release_key_id, encoded_key);
 }
 
 void WriteStatus(const fs::path& output,
@@ -512,6 +522,12 @@ int Run(int argc, char** argv) {
   if (argc == 5 &&
       std::string(argv[1]) == "--canonical-portable-consumer-policy") {
     std::cout << CanonicalPortableConsumerPolicy(argv[2], argv[3], argv[4]);
+    return std::cout.good() ? 0 : 1;
+  }
+  if (argc == 7 &&
+      std::string(argv[1]) == "--canonical-portable-consumer-policy") {
+    std::cout << CanonicalPortableConsumerPolicy(argv[2], argv[3], argv[4],
+                                                 argv[5], argv[6]);
     return std::cout.good() ? 0 : 1;
   }
   if (argc == 5 && std::string(argv[1]) == "--install") {
