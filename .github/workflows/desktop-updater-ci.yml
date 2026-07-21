@@ -469,6 +469,8 @@ jobs:
           $ready = Join-Path $smokeRoot "ready.json"
           $serverOut = Join-Path $smokeRoot "server.out"
           $serverErr = Join-Path $smokeRoot "server.err"
+          $smokeUser = $null
+          $smokeUserCreated = $false
           $server = Start-Process dart -ArgumentList @(
             "run", "tool/native_runtime_smoke_server.dart",
             "--artifact", $artifact,
@@ -497,10 +499,61 @@ jobs:
             $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
             $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
             $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+            $smokeUserName = "duzip$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+            $smokePasswordText = "Du!9$([Guid]::NewGuid().ToString('N'))"
+            $smokePassword = ConvertTo-SecureString $smokePasswordText -AsPlainText -Force
+            $smokeUser = New-LocalUser -Name $smokeUserName -Password $smokePassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword
+            $smokeUserCreated = $true
+            $users = Get-LocalGroup -SID "S-1-5-32-545"
+            $isUser = @(
+              Get-LocalGroupMember -Group $users.Name |
+                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
+            ).Count -ne 0
+            if (-not $isUser) {
+              Add-LocalGroupMember -Group $users.Name -Member $smokeUser
+            }
+            $administrators = Get-LocalGroup -SID "S-1-5-32-544"
+            $isAdministrator = @(
+              Get-LocalGroupMember -Group $administrators.Name |
+                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
+            ).Count -ne 0
+            if ($isAdministrator) {
+              throw "Hosted Windows ZIP smoke account unexpectedly has administrator authority."
+            }
+            & icacls.exe $smokeRoot /grant:r "*$($smokeUser.SID.Value):(OI)(CI)F" /T /C | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Hosted Windows ZIP smoke account could not own its disposable lane."
+            }
+            $userTemp = Join-Path $smokeRoot "user-temp"
+            New-Item -ItemType Directory -Path $userTemp -Force | Out-Null
+            $smokeCredential = [System.Management.Automation.PSCredential]::new(
+              "$env:COMPUTERNAME\$smokeUserName",
+              $smokePassword
+            )
+            $smokePasswordText = $null
             $helperEventStart = Get-Date
             Write-Host "Hosted Windows ZIP smoke update handoff is starting."
-            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log $diagnosticsPath
-            $runtimeExit = $LASTEXITCODE
+            $runtimeOut = Join-Path $smokeRoot "runtime.out"
+            $runtimeErr = Join-Path $smokeRoot "runtime.err"
+            $originalTemp = $env:TEMP
+            $originalTmp = $env:TMP
+            try {
+              $env:TEMP = $userTemp
+              $env:TMP = $userTemp
+              $runtimeProcess = Start-Process -FilePath (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") -ArgumentList @(
+                "--smoke",
+                "--app-archive-url", $serverInfo.appArchiveUrl,
+                "--public-key-base64", $serverInfo.publicKeyBase64,
+                "--package-id", "com.example.native-runtime-smoke",
+                "--smoke-root", (Join-Path $smokeRoot "runtime"),
+                "--diagnostics-log", $diagnosticsPath
+              ) -Credential $smokeCredential -LoadUserProfile -WorkingDirectory $install -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr -Wait -PassThru
+            } finally {
+              $env:TEMP = $originalTemp
+              $env:TMP = $originalTmp
+            }
+            Get-Content $runtimeOut, $runtimeErr -ErrorAction SilentlyContinue
+            $runtimeExit = $runtimeProcess.ExitCode
             if ($runtimeExit -ne 0) {
               Get-Content -LiteralPath $diagnosticsPath -ErrorAction SilentlyContinue
               $helperEvents = @(
@@ -510,7 +563,7 @@ jobs:
               foreach ($helperEvent in $helperEvents) {
                 Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
               }
-              exit $runtimeExit
+              throw "Hosted Windows ZIP smoke standard-user runtime exited with code $runtimeExit."
             }
             Write-Host "Hosted Windows ZIP smoke update handoff returned."
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
@@ -547,6 +600,9 @@ jobs:
             }
             if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            if ($smokeUserCreated) {
+              Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+            }
           }
       - name: Windows native runtime Inno smoke
         if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'

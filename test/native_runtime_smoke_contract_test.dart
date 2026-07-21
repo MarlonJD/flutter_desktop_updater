@@ -538,6 +538,20 @@ void main() {
     expect(setupLane, contains("certificate is ready"));
     expect(setupLane, contains(r'$storeName trust is ready'));
     expect(lane, contains("signtool.exe"));
+    expect(lane, contains("New-LocalUser"));
+    expect(lane, contains('Get-LocalGroup -SID "S-1-5-32-544"'));
+    expect(lane, contains('Get-LocalGroup -SID "S-1-5-32-545"'));
+    expect(lane, contains(r"-Credential $smokeCredential"));
+    expect(lane, contains("-LoadUserProfile"));
+    expect(lane, contains("Remove-LocalUser"));
+    expect(
+      lane,
+      isNot(
+        contains(
+          r'& (Join-Path $install "DesktopUpdater.RuntimeCompile.exe")',
+        ),
+      ),
+    );
     expect(lane, contains(r'$signingRoot = Join-Path $env:RUNNER_TEMP'));
     expect(lane, contains(r'Join-Path $signingRoot "hosted-smoke.pfx"'));
     expect(
