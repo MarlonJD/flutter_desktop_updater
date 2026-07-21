@@ -366,6 +366,7 @@ void main() {
 
   test("Linux ZIP smoke packages the executable helper and sealed policy", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final helperMain = readFile("linux/native/src/helper/main.cc");
     final start = workflow.indexOf("- name: Linux native runtime ZIP smoke");
     final end = workflow.indexOf("- name: Enable Linux desktop", start);
 
@@ -438,6 +439,25 @@ void main() {
       lane,
       contains(
           r'test -f "$smoke_root/install/desktop-updater-helper.policy.json"'),
+    );
+    expect(lane, contains(r'export XDG_STATE_HOME="$smoke_root/state"'));
+    expect(lane, contains(r'mkdir -p "$XDG_STATE_HOME"'));
+    expect(lane, contains(r'chmod 700 "$XDG_STATE_HOME"'));
+    expect(
+      lane,
+      contains(
+          r'events_log="$smoke_root/state/desktop-updater/transactions/events.jsonl"'),
+    );
+    expect(lane, contains(r'grep -q "\"event\":\"activation verified\""'));
+    expect(lane, contains(r'grep -q "\"event\":\"transaction completed\""'));
+    expect(lane, isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
+    expect(lane, isNot(contains('"event":"move success"')));
+    expect(lane, isNot(contains('"event":"cleanup success"')));
+    expect(helperMain,
+        isNot(contains("DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS")));
+    expect(
+      helperMain,
+      isNot(contains("desktop-updater-helper test diagnostic")),
     );
     expect(lane, isNot(contains(r'"$smoke_root/install/bin/runtime_compile"')));
   });

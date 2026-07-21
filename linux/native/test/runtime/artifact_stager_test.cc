@@ -1,4 +1,5 @@
 #include "artifact_stager_linux.h"
+#include "sha256_openssl.h"
 
 #include <limits.h>
 #include <sys/stat.h>
@@ -99,7 +100,9 @@ int main(int argument_count, char** arguments) {
   using desktop_updater::runtime::internal::ArchiveLimits;
   using desktop_updater::runtime::internal::ParseReleaseDescriptor;
   using desktop_updater::runtime::internal::RemoveStagingDirectory;
+  using desktop_updater::runtime::internal::OpenSSLSha256;
   using desktop_updater::runtime::internal::StageLinuxZip;
+  using desktop_updater::runtime::internal::StageBytesToHex;
 
   const std::string archive = TemporaryPath(".zip");
   const std::string source = TemporaryPath("_source");
@@ -132,6 +135,11 @@ int main(int argument_count, char** arguments) {
         destination + "/.desktop_updater_release_manifest.json");
     if (manifest.find("com.example.native-contract") == std::string::npos) {
       throw std::runtime_error("Linux release manifest is not identity-bound.");
+    }
+    if (StageBytesToHex(OpenSSLSha256(manifest)) !=
+        staged.provenance.marker.descriptor_sha256) {
+      throw std::runtime_error(
+          "Linux release manifest bytes do not match provenance.");
     }
     const auto valid_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(

@@ -1689,7 +1689,9 @@ jobs:
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
-          export DESKTOP_UPDATER_TEST_REPORT_HELPER_ERRORS=1
+          export XDG_STATE_HOME="$smoke_root/state"
+          mkdir -p "$XDG_STATE_HOME"
+          chmod 700 "$XDG_STATE_HOME"
           "$smoke_root/install/runtime_compile" \
             --smoke \
             --verify-protected-root \
@@ -1713,8 +1715,13 @@ jobs:
           test "$(stat -c '%u:%g' "$smoke_root/install/desktop-updater-helper.policy.json")" = "$(id -u):$(id -g)"
           test -d "$smoke_root/runtime/staging"
           test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
-          grep -q '"event":"move success"' "$smoke_root/helper-diagnostics.jsonl"
-          grep -q '"event":"cleanup success"' "$smoke_root/helper-diagnostics.jsonl"
+          events_log="$smoke_root/state/desktop-updater/transactions/events.jsonl"
+          for attempt in $(seq 1 120); do
+            if grep -q "\"event\":\"transaction completed\"" "$events_log" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          grep -q "\"event\":\"activation verified\"" "$events_log"
+          grep -q "\"event\":\"transaction completed\"" "$events_log"
           test -s "$smoke_root/runtime/runtime-diagnostics.log"
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop

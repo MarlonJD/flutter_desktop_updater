@@ -319,6 +319,16 @@ class UpdateClient::Impl {
       return Result("installHandoffFailure",
                     "Linux helper handoff confirmation failed.");
     }
+    try {
+      internal::RemoveStagingDirectory(install_handoff.staged_path);
+    } catch (const std::exception& error) {
+      Record("stage", "warning",
+             std::string("Linux handoff staging cleanup failed: ") +
+                 error.what());
+    } catch (...) {
+      Record("stage", "warning",
+             "Linux handoff staging cleanup failed.");
+    }
     return Result("updateAvailable", "Linux helper handoff scheduled.");
   }
 

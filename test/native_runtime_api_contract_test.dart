@@ -354,6 +354,11 @@ void main() {
     expect(header, contains("support_policy_status"));
     expect(client, contains("ClientLifecycleState lifecycle_"));
     expect(client, contains("SchedulingRollbackGuard rollback"));
+    expect(
+      client,
+      contains("RemoveStagingDirectory(install_handoff.staged_path)"),
+    );
+    expect(client, contains("Linux handoff staging cleanup failed"));
     expect(lifecycle, contains("selection_generation_"));
     expect(lifecycle, contains("check_generation_"));
     expect(lifecycle, contains("stage_attempt_"));
