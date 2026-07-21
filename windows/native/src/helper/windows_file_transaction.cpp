@@ -46,7 +46,9 @@ void ThrowFilesystem(const char* detail) {
                             error == ERROR_LOCK_VIOLATION
                         ? WindowsFileTransactionError::Code::kSharingViolation
                         : WindowsFileTransactionError::Code::kFilesystemOperationFailed;
-  throw WindowsFileTransactionError(code, detail);
+  throw WindowsFileTransactionError(
+      code, std::string(detail) + " (Win32 error " +
+                std::to_string(error) + ")");
 }
 
 UniqueWindowsHandle DuplicateRetainedHandle(HANDLE source,
