@@ -10,6 +10,7 @@
 #include <array>
 #include <cctype>
 #include <cwctype>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <regex>
@@ -19,6 +20,7 @@
 
 #include "json_value.h"
 #include "windows_helper_bootstrap.h"
+#include "windows_helper_diagnostics.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_transaction_journal.h"
 
@@ -54,6 +56,48 @@ const IID kPortableILogonTriggerIid = {
     0xfae4,
     0x4b3e,
     {0xba, 0xf4, 0x5d, 0x00, 0x9a, 0xf0, 0x2b, 0x1c}};
+
+enum class PortableRecoveryProvisionStage {
+  kAuthority,
+  kSource,
+  kStorage,
+  kArtifact,
+};
+
+class PortableRecoveryProvisionDiagnostics final {
+ public:
+  PortableRecoveryProvisionDiagnostics()
+      : uncaught_exceptions_(std::uncaught_exceptions()) {}
+
+  ~PortableRecoveryProvisionDiagnostics() {
+    if (std::uncaught_exceptions() <= uncaught_exceptions_) return;
+    switch (stage_) {
+      case PortableRecoveryProvisionStage::kAuthority:
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
+        break;
+      case PortableRecoveryProvisionStage::kSource:
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoverySourceFailure);
+        break;
+      case PortableRecoveryProvisionStage::kStorage:
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryStorageFailure);
+        break;
+      case PortableRecoveryProvisionStage::kArtifact:
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryArtifactFailure);
+        break;
+    }
+  }
+
+  void Advance(PortableRecoveryProvisionStage stage) { stage_ = stage; }
+
+ private:
+  int uncaught_exceptions_;
+  PortableRecoveryProvisionStage stage_ =
+      PortableRecoveryProvisionStage::kAuthority;
+};
 
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
@@ -1328,6 +1372,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
     const WindowsHelperPolicy& policy,
     const VerifiedWindowsExecutable& source_helper_identity,
     HANDLE authenticated_caller_process) {
+  PortableRecoveryProvisionDiagnostics diagnostics;
   const CurrentTokenFacts current = ReadCurrentTokenFacts();
   const auto caller = TokenUserSid(authenticated_caller_process);
   RequirePortableWindowsRecoveryTokenAuthority(
@@ -1337,6 +1382,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
       !EqualSid(SidPointer(caller), SidPointer(current.user))) {
     Fail("portable recovery caller is another user");
   }
+  diagnostics.Advance(PortableRecoveryProvisionStage::kSource);
   ValidateWindowsHelperIdentity(source_helper_identity, policy, false);
   if (!VerifyWindowsExecutableStillMatches(
           source_helper_identity.final_path, source_helper_identity)) {
@@ -1357,6 +1403,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
   if (!PoliciesEqual(policy, parsed)) {
     Fail("portable recovery source policy binding changed");
   }
+  diagnostics.Advance(PortableRecoveryProvisionStage::kStorage);
   std::filesystem::path local_app_data_path;
   UniqueWindowsHandle local_app_data =
       OpenKnownLocalAppData(&local_app_data_path);
@@ -1366,6 +1413,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
   switch (DecidePortableWindowsRecoveryHostSource(
       endpoint, source_helper_identity.final_path, source_policy_final)) {
     case PortableWindowsRecoveryHostSourceDecision::kReuseExactStable: {
+      diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
       PortableWindowsRecoveryHostBootstrap stable =
           LoadPortableWindowsRecoveryHostBootstrap();
       if (!PoliciesEqual(policy, stable.policy) ||
@@ -1413,6 +1461,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
   if (!tree.endpoint.valid()) {
     Fail("portable recovery stable endpoint is unavailable");
   }
+  diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   auto provision_and_read_back = [&]() {
     EnsureStablePolicy(tree.endpoint.get(), SidPointer(current.user),
                        current.user_sid, canonical_policy);

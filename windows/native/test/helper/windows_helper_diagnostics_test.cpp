@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 20> expected = {
+  constexpr std::array<const char*, 24> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -30,6 +30,10 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable bootstrap failure",
       "portable recovery host failure",
       "portable session failure",
+      "portable recovery authority failure",
+      "portable recovery source failure",
+      "portable recovery storage failure",
+      "portable recovery artifact failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -67,6 +71,22 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       EVENTLOG_ERROR_TYPE,
       DescribeWindowsHelperEvent(WindowsHelperEvent::kPortableSessionFailure)
           .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kPortableRecoveryAuthorityFailure)
+                .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kPortableRecoverySourceFailure)
+                .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kPortableRecoveryStorageFailure)
+                .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kPortableRecoveryArtifactFailure)
+                .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),
       std::out_of_range);

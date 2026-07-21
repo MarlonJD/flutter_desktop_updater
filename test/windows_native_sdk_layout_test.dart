@@ -514,6 +514,9 @@ void main() {
       "windows/native/src/helper/windows_helper_diagnostics.cpp",
     );
     final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final recoveryHost = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.cpp",
+    );
     final transport = readRequiredFile(
       "windows/native/src/helper/windows_one_shot_transport.cpp",
     );
@@ -539,6 +542,22 @@ void main() {
       contains("WindowsHelperEvent::kPortableRecoveryHostFailure"),
     );
     expect(main, contains("WindowsHelperEvent::kPortableSessionFailure"));
+    expect(
+      recoveryHost,
+      contains("WindowsHelperEvent::kPortableRecoveryAuthorityFailure"),
+    );
+    expect(
+      recoveryHost,
+      contains("WindowsHelperEvent::kPortableRecoverySourceFailure"),
+    );
+    expect(
+      recoveryHost,
+      contains("WindowsHelperEvent::kPortableRecoveryStorageFailure"),
+    );
+    expect(
+      recoveryHost,
+      contains("WindowsHelperEvent::kPortableRecoveryArtifactFailure"),
+    );
     expect(workflow, contains("Get-WinEvent"));
     expect(workflow, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
     expect(transport, contains("WindowsHelperEvent::kWaitingForParentProcess"));
