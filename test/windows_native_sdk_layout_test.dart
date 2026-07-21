@@ -379,7 +379,10 @@ void main() {
     expect(journal, contains("FileRenameInfoEx"));
     expect(journal, contains("FlushFileBuffers"));
     expect(journal, contains("EncodeCanonicalJson"));
-    expect(transactionBoundary, contains("OBJ_DONT_REPARSE"));
+    expect(transactionBoundary, isNot(contains("OBJ_DONT_REPARSE")));
+    expect(journal, contains("open_component"));
+    expect(journal, contains("FILE_DIRECTORY_FILE"));
+    expect(journal, contains("FILE_OPEN_REPARSE_POINT"));
     expect(transactionBoundary, contains("FileIdInfo"));
     expect(journal, contains("stageParentIdentity"));
     expect(transaction, contains("stage_parent_"));

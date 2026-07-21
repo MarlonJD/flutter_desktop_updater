@@ -35,7 +35,7 @@ void ValidatePortableWindowsExactUserAclFacts(
     const std::vector<PortableWindowsExactUserAclAceFacts>& aces);
 
 // Retains LocalAppData by walking every component from a fixed drive root
-// using handle-relative OBJ_DONT_REPARSE opens.
+// using handle-relative component opens that reject reparse points.
 UniqueWindowsHandle OpenPortableWindowsExactUserLocalAppData(
     std::filesystem::path* retained_path = nullptr);
 

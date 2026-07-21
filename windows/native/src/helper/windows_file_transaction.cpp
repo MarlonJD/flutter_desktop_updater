@@ -7,10 +7,6 @@
 
 #include "windows_helper_diagnostics.h"
 
-#ifndef OBJ_DONT_REPARSE
-#define OBJ_DONT_REPARSE 0x00001000L
-#endif
-
 namespace desktop_updater::helper {
 namespace {
 

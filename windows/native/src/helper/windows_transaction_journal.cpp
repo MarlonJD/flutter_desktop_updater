@@ -13,12 +13,9 @@
 #include <set>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include "json_value.h"
-
-#ifndef OBJ_DONT_REPARSE
-#define OBJ_DONT_REPARSE 0x00001000L
-#endif
 
 namespace desktop_updater::helper {
 namespace {
@@ -561,37 +558,74 @@ UniqueWindowsHandle OpenRelativeNoReparse(
                                              std::wstring::npos) {
     ThrowOpenError(ERROR_INVALID_NAME, "relative authority path rejected");
   }
-  UNICODE_STRING name{};
-  if (relative_path.size() > USHRT_MAX / sizeof(wchar_t)) {
-    ThrowOpenError(ERROR_FILENAME_EXCED_RANGE, "relative path is too long");
-  }
-  name.Buffer = const_cast<PWSTR>(relative_path.data());
-  name.Length = static_cast<USHORT>(relative_path.size() * sizeof(wchar_t));
-  name.MaximumLength = name.Length;
-  OBJECT_ATTRIBUTES attributes{};
-  InitializeObjectAttributes(&attributes, &name,
-                             OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
-                             RootDirectory, create_security_descriptor);
-  IO_STATUS_BLOCK status_block{};
-  HANDLE handle = INVALID_HANDLE_VALUE;
   const auto nt_create_file = ResolveNtCreateFile();
   if (nt_create_file == nullptr) {
     ThrowOpenError(ERROR_PROC_NOT_FOUND, "NtCreateFile is unavailable");
   }
-  const NTSTATUS status = nt_create_file(
-      &handle, desired_access, &attributes, &status_block, nullptr,
-      file_attributes, share_access, create_disposition,
-      create_options | FILE_OPEN_REPARSE_POINT, nullptr, 0);
-  if (status < 0) {
-    ThrowOpenError(NtStatusToError(status), "NtCreateFile relative open failed");
+
+  const auto open_component = [&](HANDLE parent, const std::wstring& name,
+                                  ACCESS_MASK access, ULONG share,
+                                  ULONG disposition, ULONG options,
+                                  ULONG attributes_value,
+                                  PSECURITY_DESCRIPTOR security_descriptor) {
+    ValidateSimpleName(name);
+    if (name.size() > USHRT_MAX / sizeof(wchar_t)) {
+      ThrowOpenError(ERROR_FILENAME_EXCED_RANGE, "relative path is too long");
+    }
+    UNICODE_STRING unicode_name{};
+    unicode_name.Buffer = const_cast<PWSTR>(name.data());
+    unicode_name.Length =
+        static_cast<USHORT>(name.size() * sizeof(wchar_t));
+    unicode_name.MaximumLength = unicode_name.Length;
+    OBJECT_ATTRIBUTES object_attributes{};
+    InitializeObjectAttributes(&object_attributes, &unicode_name,
+                               OBJ_CASE_INSENSITIVE, parent,
+                               security_descriptor);
+    IO_STATUS_BLOCK status_block{};
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    const NTSTATUS status = nt_create_file(
+        &handle, access, &object_attributes, &status_block, nullptr,
+        attributes_value, share, disposition,
+        options | FILE_OPEN_REPARSE_POINT, nullptr, 0);
+    if (status < 0) {
+      ThrowOpenError(NtStatusToError(status),
+                     "NtCreateFile relative open failed");
+    }
+    UniqueWindowsHandle result(handle);
+    const WindowsFileIdentity identity = ReadWindowsFileIdentity(result.get());
+    if ((identity.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      ThrowOpenError(ERROR_CANT_ACCESS_FILE,
+                     "relative path resolved to a reparse point");
+    }
+    return result;
+  };
+
+  std::vector<std::wstring> components;
+  std::size_t start = 0;
+  for (std::size_t index = 0; index <= relative_path.size(); ++index) {
+    if (index != relative_path.size() && relative_path[index] != L'\\' &&
+        relative_path[index] != L'/') {
+      continue;
+    }
+    components.push_back(relative_path.substr(start, index - start));
+    start = index + 1;
   }
-  UniqueWindowsHandle result(handle);
-  const WindowsFileIdentity identity = ReadWindowsFileIdentity(result.get());
-  if ((identity.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-    ThrowOpenError(ERROR_CANT_ACCESS_FILE,
-                   "relative path resolved to a reparse point");
+
+  UniqueWindowsHandle parent;
+  HANDLE current_parent = RootDirectory;
+  for (std::size_t index = 0; index + 1 < components.size(); ++index) {
+    auto next_parent = open_component(
+        current_parent, components[index],
+        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+        FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    parent = std::move(next_parent);
+    current_parent = parent.get();
   }
-  return result;
+  return open_component(current_parent, components.back(), desired_access,
+                        share_access, create_disposition, create_options,
+                        file_attributes, create_security_descriptor);
 }
 
 WindowsFileIdentity ReadWindowsFileIdentity(HANDLE handle) {
