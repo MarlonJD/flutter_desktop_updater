@@ -179,7 +179,7 @@ jobs:
           try {
             $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
             foreach ($storeName in @("Root", "TrustedPublisher")) {
-              & certutil.exe -user -f -addstore $storeName $certificatePath
+              & certutil.exe -f -addstore $storeName $certificatePath
               if ($LASTEXITCODE -ne 0) {
                 throw "certutil failed to add hosted Windows ZIP smoke trust to $storeName."
               }
@@ -733,7 +733,7 @@ jobs:
                 if ($storeName -notin @("Root", "TrustedPublisher")) {
                   throw "Unexpected hosted Windows ZIP smoke certificate store: $storeName"
                 }
-                & certutil.exe -user -f -delstore $storeName $thumbprint
+                & certutil.exe -f -delstore $storeName $thumbprint
                 if ($LASTEXITCODE -ne 0) {
                   throw "certutil failed to remove hosted Windows ZIP smoke trust from $storeName."
                 }
