@@ -376,7 +376,8 @@ void main() {
     expect(cmake, contains("windows_crash_recovery"));
     expect(journal, contains("NtCreateFile"));
     expect(journal, contains("RootDirectory"));
-    expect(journal, contains("FileRenameInfoEx"));
+    expect(journal, contains("NtSetInformationFile"));
+    expect(journal, contains("kNativeFileRenameInformationEx"));
     expect(journal, contains("FlushFileBuffers"));
     expect(journal, contains("EncodeCanonicalJson"));
     expect(transactionBoundary, isNot(contains("OBJ_DONT_REPARSE")));

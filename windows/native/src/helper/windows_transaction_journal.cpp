@@ -37,23 +37,38 @@ using NtCreateFileFunction = NTSTATUS(NTAPI*)(
     ULONG,
     PVOID,
     ULONG);
+using NtSetInformationFileFunction = NTSTATUS(NTAPI*)(
+    HANDLE,
+    PIO_STATUS_BLOCK,
+    PVOID,
+    ULONG,
+    FILE_INFORMATION_CLASS);
 using RtlNtStatusToDosErrorFunction = ULONG(WINAPI*)(NTSTATUS);
 
 const std::regex kTransactionId(
     "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 const std::regex kSha256("^[0-9a-f]{64}$");
-// FILE_INFO_BY_HANDLE_CLASS values are ABI-stable, but older MinGW headers
-// omit the two extended enum names while still exposing their structures.
+// These information-class values are ABI-stable, but older MinGW headers omit
+// the extended enum names while still exposing their structures.
 constexpr FILE_INFO_BY_HANDLE_CLASS kFileDispositionInfoExClass =
     static_cast<FILE_INFO_BY_HANDLE_CLASS>(21);
-constexpr FILE_INFO_BY_HANDLE_CLASS kFileRenameInfoExClass =
-    static_cast<FILE_INFO_BY_HANDLE_CLASS>(22);
+constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformation =
+    static_cast<FILE_INFORMATION_CLASS>(10);
+constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformationEx =
+    static_cast<FILE_INFORMATION_CLASS>(65);
 
 NtCreateFileFunction ResolveNtCreateFile() {
   const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
   if (ntdll == nullptr) return nullptr;
   return reinterpret_cast<NtCreateFileFunction>(
       GetProcAddress(ntdll, "NtCreateFile"));
+}
+
+NtSetInformationFileFunction ResolveNtSetInformationFile() {
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) return nullptr;
+  return reinterpret_cast<NtSetInformationFileFunction>(
+      GetProcAddress(ntdll, "NtSetInformationFile"));
 }
 
 DWORD NtStatusToError(NTSTATUS status) {
@@ -779,20 +794,32 @@ void RenameHandleRelative(HANDLE source,
   info->RootDirectory = RootDirectory;
   info->FileNameLength = name_bytes;
   std::memcpy(info->FileName, destination.data(), name_bytes);
-  if (SetFileInformationByHandle(
-          source, kFileRenameInfoExClass, info,
-                                 static_cast<DWORD>(storage.size()))) {
+  const auto set_information = ResolveNtSetInformationFile();
+  if (set_information == nullptr) {
+    throw WindowsTransactionJournalError(
+        WindowsTransactionJournalError::Code::kPersistenceFailed,
+        "NtSetInformationFile is unavailable");
+  }
+  IO_STATUS_BLOCK status_block{};
+  NTSTATUS status = set_information(
+      source, &status_block, info, static_cast<ULONG>(storage.size()),
+      kNativeFileRenameInformationEx);
+  if (status >= 0) {
     return;
   }
-  const DWORD extended_error = GetLastError();
+  const DWORD extended_error = NtStatusToError(status);
   if (extended_error != ERROR_INVALID_PARAMETER &&
       extended_error != ERROR_NOT_SUPPORTED) {
     ThrowOpenError(extended_error, "handle-relative rename failed");
   }
   info->ReplaceIfExists = replace_existing ? TRUE : FALSE;
-  if (!SetFileInformationByHandle(source, FileRenameInfo, info,
-                                  static_cast<DWORD>(storage.size()))) {
-    ThrowOpenError(GetLastError(), "handle-relative rename fallback failed");
+  status_block = {};
+  status = set_information(source, &status_block, info,
+                           static_cast<ULONG>(storage.size()),
+                           kNativeFileRenameInformation);
+  if (status < 0) {
+    ThrowOpenError(NtStatusToError(status),
+                   "handle-relative rename fallback failed");
   }
 }
 
