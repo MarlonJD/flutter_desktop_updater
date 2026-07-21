@@ -1296,8 +1296,20 @@ void RunLinuxNativeInstallControlService(
       record.journal_sha256 = actual_journal_sha256;
       registry.Persist(record);
     } else if (record.journal_sha256 != actual_journal_sha256) {
-      throw LinuxArchiveRestageError(
-          "registry and durable journal binding changed");
+      const LinuxTransactionJournal advanced =
+          LinuxTransactionJournal::DecodeStrict(journal);
+      if (advanced.transaction_id != record.transaction_id ||
+          advanced.target_name != transaction_paths.target_name ||
+          advanced.prepared_name != transaction_paths.prepared_name ||
+          advanced.backup_name != transaction_paths.backup_name ||
+          advanced.lock_name != transaction_paths.lock_name ||
+          advanced.expected_payload_identity !=
+              record.expected_payload_identity ||
+          !HasStableLinuxIdentity(ReadLinuxFileIdentity(target_parent.get()),
+                                  advanced.parent_identity)) {
+        throw LinuxArchiveRestageError(
+            "registry and durable journal authority changed");
+      }
     }
   }
   LinuxRecoveryOutcome outcome = LinuxRecoveryOutcome::kNothingToRecover;
