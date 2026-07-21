@@ -78,9 +78,17 @@ bool EnvironmentHandleWasNotInherited(const wchar_t* handle_name,
   if (reference == nullptr) {
     return GetLastError() == ERROR_FILE_NOT_FOUND;
   }
-  const bool same_object = CompareObjectHandles(candidate, reference) != FALSE;
+  using CompareObjectHandlesFunction = BOOL(WINAPI*)(HANDLE, HANDLE);
+  const HMODULE kernelbase = GetModuleHandleW(L"kernelbase.dll");
+  const auto compare =
+      kernelbase == nullptr
+          ? nullptr
+          : reinterpret_cast<CompareObjectHandlesFunction>(
+                GetProcAddress(kernelbase, "CompareObjectHandles"));
+  const bool same_object =
+      compare != nullptr && compare(candidate, reference) != FALSE;
   CloseHandle(reference);
-  return !same_object;
+  return compare != nullptr && !same_object;
 }
 
 }  // namespace
