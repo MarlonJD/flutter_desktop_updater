@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -338,6 +339,9 @@ JsonValue EncodeIdentity(const std::optional<LinuxFileIdentity>& identity) {
   if (!identity.has_value()) return JsonValue();
   JsonValue::Object value;
   value.emplace("device", JsonValue(std::to_string(identity->device)));
+  value.emplace("changeTimeNanoseconds",
+                JsonValue(identity->change_time_nanoseconds));
+  value.emplace("changeTimeSeconds", JsonValue(identity->change_time_seconds));
   value.emplace("directory", JsonValue(identity->directory));
   value.emplace("gid", JsonValue(static_cast<std::int64_t>(identity->gid)));
   value.emplace("inode", JsonValue(std::to_string(identity->inode)));
@@ -366,13 +370,16 @@ std::uint64_t ParseCanonicalUint64(const std::string& value) {
 
 std::optional<LinuxFileIdentity> DecodeIdentity(const JsonValue& value) {
   if (value.type() == JsonValue::Type::kNull) return std::nullopt;
-  if (value.type() != JsonValue::Type::kObject || value.object().size() != 8) {
+  if (value.type() != JsonValue::Type::kObject || value.object().size() != 10) {
     throw LinuxArchiveRestageError("restage recovery identity rejected");
   }
   LinuxFileIdentity identity;
   identity.device = ParseCanonicalUint64(value.at("device").string());
   identity.inode = ParseCanonicalUint64(value.at("inode").string());
   identity.mount_id = ParseCanonicalUint64(value.at("mountId").string());
+  identity.change_time_seconds = value.at("changeTimeSeconds").integer();
+  identity.change_time_nanoseconds =
+      value.at("changeTimeNanoseconds").integer();
   const std::int64_t mode = value.at("mode").integer();
   const std::int64_t uid = value.at("uid").integer();
   const std::int64_t gid = value.at("gid").integer();
@@ -380,8 +387,10 @@ std::optional<LinuxFileIdentity> DecodeIdentity(const JsonValue& value) {
       ParseCanonicalUint64(value.at("linkCount").string());
   identity.directory = value.at("directory").boolean();
   if (mode < 0 || mode > UINT32_MAX || uid < 0 || uid > UINT32_MAX ||
-      gid < 0 || gid > UINT32_MAX || identity.device == 0 ||
-      identity.inode == 0 || identity.mount_id == 0 ||
+      gid < 0 || gid > UINT32_MAX || identity.change_time_seconds <= 0 ||
+      identity.change_time_nanoseconds < 0 ||
+      identity.change_time_nanoseconds >= 1'000'000'000 ||
+      identity.device == 0 || identity.inode == 0 || identity.mount_id == 0 ||
       !identity.directory) {
     throw LinuxArchiveRestageError("restage recovery identity rejected");
   }
@@ -411,7 +420,7 @@ std::string EncodeRecoveryRecord(const RestageRecoveryRecord& record) {
   value.emplace("payloadLeaf", JsonValue(record.payload_leaf));
   value.emplace("payloadUid",
                 JsonValue(static_cast<std::int64_t>(record.payload_uid)));
-  value.emplace("schemaVersion", JsonValue(std::int64_t{1}));
+  value.emplace("schemaVersion", JsonValue(std::int64_t{2}));
   value.emplace("targetName", JsonValue(record.target_name));
   value.emplace("transactionId", JsonValue(record.transaction_id));
   return EncodeCanonicalJson(JsonValue(std::move(value)));
@@ -421,7 +430,7 @@ RestageRecoveryRecord DecodeRecoveryRecord(const std::string& bytes) {
   try {
     const JsonValue value = runtime::internal::ParseJson(bytes);
     if (EncodeCanonicalJson(value) != bytes || value.object().size() != 17 ||
-        value.at("schemaVersion").integer() != 1) {
+        value.at("schemaVersion").integer() != 2) {
       throw LinuxArchiveRestageError("restage recovery record rejected");
     }
     const std::int64_t owner = value.at("ownerProcessId").integer();
@@ -751,12 +760,20 @@ void RemoveRecordedDirectory(int parent,
                              const LinuxArchiveRestageRequest& expected) {
   if (!LinuxRelativeExistsNoFollow(parent, leaf)) return;
   if (identity.has_value()) {
-    if (ReadLinuxRelativeIdentity(parent, leaf) != *identity) {
+    const LinuxFileIdentity observed = ReadLinuxRelativeIdentity(parent, leaf);
+    if (HasExactLinuxIdentity(observed, *identity)) {
+      RemoveLinuxTreeExact(parent, leaf, observed);
+      return;
+    }
+    try {
+      const LinuxFileIdentity owned = VerifyCleanupCookieDirectory(
+          parent, leaf, record.cleanup_cookie, expected);
+      RemoveLinuxTreeExact(parent, leaf, owned);
+      return;
+    } catch (...) {
       throw LinuxArchiveRestageError(
           "restage recovery replacement identity rejected");
     }
-    RemoveLinuxTreeExact(parent, leaf, *identity);
-    return;
   }
   try {
     const LinuxFileIdentity observed = VerifyCleanupCookieDirectory(
@@ -1089,7 +1106,8 @@ std::vector<SealEntry> ExtractArchive(
     uid_t uid,
     gid_t gid,
     bool broker_mode,
-    const LinuxArchiveRestageRequest& request) {
+    const LinuxArchiveRestageRequest& request,
+    const std::function<void()>& before_first_entry_fault) {
   struct DirectoryMode {
     std::vector<std::string> segments;
     mode_t mode = 0755;
@@ -1135,6 +1153,7 @@ std::vector<SealEntry> ExtractArchive(
          static_cast<std::uint32_t>(uid), static_cast<std::uint32_t>(gid)});
     if (!extracted_file) {
       extracted_file = true;
+      before_first_entry_fault();
       HitRestageFault(request,
                       LinuxArchiveRestageFaultPoint::kAfterFirstExtractedEntry);
     }
@@ -1639,8 +1658,6 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
     recovery_record_identity = PersistRecoveryRecord(
         request.target_parent_fd, recovery_record_leaf, recovery_record, false,
         request);
-    RemoveCleanupCookie(payload.get(), recovery_record.cleanup_cookie,
-                        request.payload_uid, request.payload_gid);
     control = CreateRecoverableDirectoryAt(
         request.target_parent_fd, control_leaf,
         recovery_record.cleanup_cookie, request.payload_uid,
@@ -1655,8 +1672,6 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
     recovery_record_identity = PersistRecoveryRecord(
         request.target_parent_fd, recovery_record_leaf, recovery_record, false,
         request);
-    RemoveCleanupCookie(control.get(), recovery_record.cleanup_cookie,
-                        request.payload_uid, request.payload_gid);
 
     auto protected_archive = CreateFileAt(
         control.get(), kLinuxRetainedArtifactName, request.payload_uid,
@@ -1667,6 +1682,13 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
       throw LinuxArchiveRestageError("signed ZIP SHA-256 mismatch");
     }
     SyncDirectory(control.get());
+    payload_identity = ReadLinuxFileIdentity(payload.get());
+    control_identity = ReadLinuxFileIdentity(control.get());
+    recovery_record.payload_identity = payload_identity;
+    recovery_record.control_identity = control_identity;
+    recovery_record_identity = PersistRecoveryRecord(
+        request.target_parent_fd, recovery_record_leaf, recovery_record, false,
+        request);
     HitRestageFault(request,
                     LinuxArchiveRestageFaultPoint::kAfterProtectedCopy);
 
@@ -1690,7 +1712,15 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
                       LinuxArchiveRestageFaultPoint::kAfterArchivePreflight);
       expected_inventory = ExtractArchive(
           &archive, entries, payload.get(), request.payload_uid,
-          request.payload_gid, request.broker_mode, request);
+          request.payload_gid, request.broker_mode, request, [&]() {
+            payload_identity = ReadLinuxFileIdentity(payload.get());
+            control_identity = ReadLinuxFileIdentity(control.get());
+            recovery_record.payload_identity = payload_identity;
+            recovery_record.control_identity = control_identity;
+            recovery_record_identity = PersistRecoveryRecord(
+                request.target_parent_fd, recovery_record_leaf,
+                recovery_record, false, request);
+          });
       mz_zip_reader_end(&archive);
       fclose(archive_file);
     } catch (...) {
@@ -1698,6 +1728,11 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
       fclose(archive_file);
       throw;
     }
+
+    RemoveCleanupCookie(payload.get(), recovery_record.cleanup_cookie,
+                        request.payload_uid, request.payload_gid);
+    RemoveCleanupCookie(control.get(), recovery_record.cleanup_cookie,
+                        request.payload_uid, request.payload_gid);
 
     RequireExecutable(payload.get(), request.executable_relative_path,
                       request.payload_uid, request.payload_gid);
@@ -1723,6 +1758,13 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
     SyncDirectory(payload.get());
     SyncDirectory(control.get());
     SyncLinuxDirectory(request.target_parent_fd);
+    payload_identity = ReadLinuxFileIdentity(payload.get());
+    control_identity = ReadLinuxFileIdentity(control.get());
+    recovery_record.payload_identity = payload_identity;
+    recovery_record.control_identity = control_identity;
+    recovery_record_identity = PersistRecoveryRecord(
+        request.target_parent_fd, recovery_record_leaf, recovery_record, false,
+        request);
     HitRestageFault(request,
                     LinuxArchiveRestageFaultPoint::kAfterPayloadSeal);
 
@@ -1745,6 +1787,7 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
       try {
         if (LinuxRelativeExistsNoFollow(request.target_parent_fd,
                                         payload_leaf)) {
+          payload_identity = ReadLinuxFileIdentity(payload.get());
           RemoveLinuxTreeExact(request.target_parent_fd, payload_leaf,
                                payload_identity);
         }
@@ -1756,6 +1799,7 @@ std::unique_ptr<LinuxArchiveRestagedPayload> RestageLinuxSignedZip(
       try {
         if (LinuxRelativeExistsNoFollow(request.target_parent_fd,
                                         control_leaf)) {
+          control_identity = ReadLinuxFileIdentity(control.get());
           RemoveLinuxTreeExact(request.target_parent_fd, control_leaf,
                                control_identity);
         }

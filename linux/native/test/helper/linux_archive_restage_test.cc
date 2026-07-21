@@ -449,6 +449,7 @@ TEST(LinuxArchiveRestage,
            LinuxArchiveRestageFaultPoint::kAfterArchivePreflight,
            LinuxArchiveRestageFaultPoint::kAfterFirstExtractedEntry,
            LinuxArchiveRestageFaultPoint::kAfterPayloadSeal}) {
+    SCOPED_TRACE(static_cast<int>(point));
     Fixture fixture;
     auto request = fixture.Request(
         {{"bin/example", "signed executable", 0100755},
@@ -471,7 +472,13 @@ TEST(LinuxArchiveRestage,
     ASSERT_EQ(91, WEXITSTATUS(status));
 
     request.fault_injector = nullptr;
-    auto recovered = RestageLinuxSignedZip(request);
+    std::unique_ptr<LinuxArchiveRestagedPayload> recovered;
+    try {
+      recovered = RestageLinuxSignedZip(request);
+    } catch (const std::exception& error) {
+      FAIL() << "fault point " << static_cast<int>(point) << ": "
+             << error.what();
+    }
     ASSERT_NE(nullptr, recovered);
     EXPECT_EQ("signed executable",
               ReadFile(recovered->path() / "bin/example"));
