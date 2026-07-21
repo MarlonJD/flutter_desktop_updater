@@ -530,7 +530,14 @@ void main() {
     expect(tool, contains("Platform.isWindows || Platform.isLinux"));
     expect(tool, contains("writeStagedUpdateProvenance("));
     expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
+    expect(tool, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
+    expect(
+      tool,
+      contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
+    );
     expect(app, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
+    expect(app, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
+    expect(app, contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"));
     expect(app, contains("verifyStagedUpdateProvenance("));
     expect(
       app,
@@ -540,6 +547,8 @@ void main() {
     expect(app, contains("stageProvenanceNonce:"));
     expect(app, contains("stageProvenanceEntries:"));
     expect(app, contains("expectedArtifactSha256:"));
+    expect(app, contains("installRoot: installRoot"));
+    expect(app, contains("executableRelativePath: executableRelativePath"));
   });
 
   test("Windows ZIP handoff does not read Inno signer metadata", () {

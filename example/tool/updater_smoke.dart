@@ -16,6 +16,16 @@ const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _installedIdentity =
     '{"packageId":"com.example.desktop_updater","schemaVersion":1}';
 
+class _NativeTargetContext {
+  const _NativeTargetContext({
+    required this.installRoot,
+    required this.executableRelativePath,
+  });
+
+  final String installRoot;
+  final String executableRelativePath;
+}
+
 Future<void> main(List<String> args) async {
   final relaunch = args.contains("--relaunch");
   final productionGates = args.contains("--production-gates");
@@ -53,11 +63,15 @@ Future<void> main(List<String> args) async {
     exit(66);
   }
 
+  final nativeTargetContext = Platform.isWindows || Platform.isLinux
+      ? _nativeTargetContext(executablePath)
+      : null;
+  final effectiveInstallRoot = nativeTargetContext?.installRoot ?? installRoot;
+
   if (Platform.isWindows || Platform.isLinux) {
-    await File(_join(installRoot, _installedIdentityFileName)).writeAsString(
-      _installedIdentity,
-      flush: true,
-    );
+    await File(
+      _join(effectiveInstallRoot, _installedIdentityFileName),
+    ).writeAsString(_installedIdentity, flush: true);
   }
 
   final tempRoot = await Directory.systemTemp.createTemp(
@@ -87,7 +101,8 @@ Future<void> main(List<String> args) async {
   final stagedSentinel = File(
     _join(_stagingContentRoot(stagingRoot.path), sentinelRelativePath),
   );
-  final installedSentinel = File(_join(installRoot, sentinelRelativePath));
+  final installedSentinel =
+      File(_join(effectiveInstallRoot, sentinelRelativePath));
 
   if (installedSentinel.existsSync()) {
     if (productionGates) {
@@ -136,6 +151,11 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
       "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": _smokePackageId,
       "DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256": provenance.markerSha256,
+      if (nativeTargetContext != null) ...{
+        "DESKTOP_UPDATER_SMOKE_INSTALL_ROOT": nativeTargetContext.installRoot,
+        "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
+            nativeTargetContext.executableRelativePath,
+      },
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
       if (Platform.isMacOS && !productionGates)
         "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
@@ -163,7 +183,8 @@ Future<void> main(List<String> args) async {
   await _waitFor(
     installedSentinel.existsSync,
     const Duration(seconds: 45),
-    "Timed out waiting for staged file to be copied into $installRoot",
+    "Timed out waiting for staged file to be copied into "
+    "$effectiveInstallRoot",
   );
 
   await _waitFor(
@@ -243,6 +264,16 @@ String _installRoot(String appPath) {
   }
 
   return File(appPath).parent.path;
+}
+
+_NativeTargetContext _nativeTargetContext(String executablePath) {
+  final canonicalExecutable = File(executablePath).resolveSymbolicLinksSync();
+  final installRoot = Directory(File(canonicalExecutable).parent.path)
+      .resolveSymbolicLinksSync();
+  return _NativeTargetContext(
+    installRoot: installRoot,
+    executableRelativePath: _basename(canonicalExecutable),
+  );
 }
 
 Future<Directory> _prepareStagingRoot({

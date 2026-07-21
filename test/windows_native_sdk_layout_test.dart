@@ -421,6 +421,19 @@ void main() {
     expect(smoke, contains('ValidateSet("Unprivileged", "Elevated")'));
     expect(smoke, contains("desktop_updater_install_helper.exe"));
     expect(
+      smoke,
+      contains(
+        r'Start-Process -FilePath $helper -ArgumentList "--version" '
+        "-Wait -PassThru",
+      ),
+    );
+    expect(
+      smoke,
+      contains(
+        "The fixed helper executable failed its version probe with exit code",
+      ),
+    );
+    expect(
       workflow,
       contains(
         r'$filter = "(WindowsHelperAuth|WindowsOneShotTransport|WindowsInstallAuthorizer|WindowsFileTransaction|WindowsCrashRecovery)"',

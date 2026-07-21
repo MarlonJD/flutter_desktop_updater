@@ -13,9 +13,9 @@ if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
 }
 
 if ($Mode -eq "Unprivileged") {
-  & $helper --version
-  if ($LASTEXITCODE -ne 0) {
-    throw "The fixed helper executable failed its version probe."
+  $process = Start-Process -FilePath $helper -ArgumentList "--version" -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw "The fixed helper executable failed its version probe with exit code $($process.ExitCode)."
   }
   $output = & ctest --test-dir $build -C Release -R "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)" --output-on-failure --no-tests=error 2>&1
   $exitCode = $LASTEXITCODE

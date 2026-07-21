@@ -197,6 +197,11 @@ class _HomePageState extends State<HomePage> {
     final packageId = Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"];
     final expectedProvenanceSha256 =
         Platform.environment["DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"];
+    final installRoot =
+        _smokeEnvironmentValue("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT");
+    final executableRelativePath = _smokeEnvironmentValue(
+      "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH",
+    );
     final stagingDirectory = Directory(stagingPath);
 
     if (!await stagingDirectory.exists() ||
@@ -218,6 +223,8 @@ class _HomePageState extends State<HomePage> {
     await DesktopUpdaterPlatform.instance.installUpdateWithContext(
       stagingPath: stagingPath,
       diagnosticsLogPath: diagnosticsLogPath,
+      installRoot: installRoot,
+      executableRelativePath: executableRelativePath,
       packageId: packageId,
       stageProvenanceSha256: expectedProvenanceSha256,
       stageProvenanceNonce: provenance.nonce,
@@ -226,6 +233,14 @@ class _HomePageState extends State<HomePage> {
           .toList(growable: false),
       expectedArtifactSha256: provenance.artifactSha256,
     );
+  }
+
+  String? _smokeEnvironmentValue(String name) {
+    final value = Platform.environment[name];
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
   }
 
   Future<void> _runHostedSmokeTestCommand() async {
