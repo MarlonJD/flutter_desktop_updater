@@ -62,14 +62,6 @@ void main() {
       requiredFile("linux/native/src/helper/system_package_transaction.cc"),
       requiredFile("linux/native/src/helper/external_managed_refresh.cc"),
     ].join("\n");
-    final windows = requiredFile(
-      "windows/native/src/helper/verified_installer_handoff.cpp",
-    );
-    final mac = requiredFile(
-      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/VerifiedInstallerHandoff.swift",
-    );
-    final all = "$linux\n$windows\n$mac";
-
     expect(linux, contains("LinuxFileTransaction"));
     expect(linux, contains("/usr/bin/apt-get"));
     expect(linux, contains("/usr/bin/dnf"));
