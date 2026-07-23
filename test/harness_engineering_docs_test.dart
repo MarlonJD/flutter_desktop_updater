@@ -12,21 +12,33 @@ const oldActiveHarnessPlanPath =
 void main() {
   test("agent harness entrypoints stay discoverable", () {
     final agents = File("AGENTS.md").readAsStringSync();
+    final architecture = File("ARCHITECTURE.md").readAsStringSync();
     final harness = File("docs/harness-engineering.md").readAsStringSync();
     final plansIndex = File("docs/exec-plans/index.md").readAsStringSync();
     final readme = File("README.md").readAsStringSync();
 
-    expect(agents, contains("docs/harness-engineering.md"));
-    expect(agents, contains("docs/exec-plans/index.md"));
+    expect(agents, contains("[architecture map](ARCHITECTURE.md)"));
+    expect(
+      agents,
+      contains("[harness operating model](docs/harness-engineering.md)"),
+    );
+    expect(
+      agents,
+      contains("[execution-plan ledger](docs/exec-plans/index.md)"),
+    );
     expect(agents, isNot(contains("docs/plans")));
     expect(agents, contains("flutter test --no-pub"));
     expect(agents, isNot(contains("OpenAI Harness Engineering")));
 
+    expect(architecture, contains("# Architecture"));
+    expect(architecture, contains("Dependency Direction"));
+    expect(architecture, contains("Update Flow"));
     expect(harness, contains("# Harness Engineering For desktop_updater"));
     expect(harness, contains("Agent-Readable Repository Map"));
     expect(harness, contains("Mechanical Quality Gates"));
-    expect(harness, contains("Staged Adoption Plan"));
+    expect(harness, contains("Agent Feedback Loops"));
     expect(harness, contains("test/harness_engineering_docs_test.dart"));
+    expect(harness, isNot(contains("Staged Adoption Plan")));
     expect(harness, isNot(contains("docs/plans")));
 
     expect(
@@ -114,6 +126,21 @@ void main() {
     expect(File("docs/migration/agent-prompt.md").existsSync(), isFalse);
     expect(File(oldActiveHarnessPlanPath).existsSync(), isFalse);
     expect(Directory("agent-harness").existsSync(), isFalse);
+    expect(Directory("docs/superpowers").existsSync(), isFalse);
+    expect(
+      File(
+        "docs/design-docs/"
+        "2026-07-11-cross-platform-privileged-install-helper-design.md",
+      ).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(
+        "docs/exec-plans/active/"
+        "2026-07-21-windows-linux-production-readiness.md",
+      ).existsSync(),
+      isTrue,
+    );
     expect(completedPlan.split("\n"), hasLength(lessThanOrEqualTo(120)));
     expect(completedPlan, isNot(contains("Non-Negotiable Constraints")));
     expect(completedPlan, isNot(contains("REQUIRED SUB-SKILL")));

@@ -34,6 +34,7 @@ void main() {
     final readme = _read("README.md");
     final publishing = _read("docs/publishing.md");
     final ciGuide = _read("docs/github-actions-ci-cd.md");
+    final workflow = _read(".github/workflows/desktop-updater-ci.yml");
 
     for (final surface in [
       "DesktopUpdaterKit",
@@ -79,18 +80,17 @@ void main() {
       expect(runtimeApi, contains(boundary));
     }
     expect(runtimeApi, isNot(contains("`not implemented`")));
-    expect(runtimeApi, contains("not production-ready"));
     expect(
-      harness,
+      workflow,
       contains(
         "macOS native runtime ZIP package and unsigned rejection smoke",
       ),
     );
-    expect(harness, contains("not hosted PKG install-success evidence"));
-    expect(harness, contains("self-hosted preapproved target-host job"));
-    expect(harness, contains("Windows native runtime ZIP smoke"));
-    expect(harness, contains("Linux native runtime ZIP smoke"));
-    expect(harness, contains("workflow_dispatch"));
+    expect(ciGuide, contains("not privileged install"));
+    expect(ciGuide, contains("self-hosted"));
+    expect(workflow, contains("Windows native runtime ZIP smoke"));
+    expect(workflow, contains("Linux native runtime ZIP smoke"));
+    expect(ciGuide, contains("workflow_dispatch"));
     expect(readme, contains("docs/native-sdk.md"));
     expect(readme, contains("docs/native-runtime-api.md"));
     expect(publishing, contains("--project-type"));

@@ -1,7 +1,5 @@
 # Windows and Linux Privileged Updater Production Readiness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Bring Windows and Linux native privileged updater readiness to evidence-backed completion in the fastest safe order: unblock Windows compilation, fix and verify Linux in Docker/hosted CI, complete Linux polkit VM evidence, then harden and prove Windows smoke/UAC/Inno—without regressing the production-ready macOS scope.
 
 **Architecture:** Preserve the existing fail-closed, descriptor-relative native transaction architecture and fix only demonstrated defects. Hosted secretless gates precede privileged target-host work; Docker proves Linux mechanics but never substitutes for a real polkit host, and hosted signed Inno never substitutes for interactive UAC. Readiness documentation remains platform-scoped and literal until exact-revision evidence exists.
@@ -18,6 +16,8 @@
 - Do not start signing, UAC, polkit, or release-costly loops until hosted/secretless prerequisites are green.
 - Never weaken a test or security check to obtain green; preserve fail-closed/manual behavior and hostile backup retention.
 - Do not post GitHub comments or reviews through connector identities.
+- The plan does not grant commit, push, branch, release, or external-write
+  authority; current user and repository instructions remain authoritative.
 - Use the narrowest test first, widen before commit, and run fresh verification immediately before every success claim.
 
 ## Baseline Evidence
@@ -54,7 +54,7 @@
 ### Task 1: Phase 0 — Baseline, Plan, and Evidence Ledger
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-07-21-windows-linux-production-readiness.md`
+- Create: `docs/exec-plans/active/2026-07-21-windows-linux-production-readiness.md`
 
 **Interfaces:**
 - Consumes: current branch, remote tracking ref, Actions run `29813766489`.

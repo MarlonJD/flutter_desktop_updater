@@ -4,6 +4,8 @@
 
 **Status:** Approved for implementation planning
 
+**Authority:** Durable design record for the privileged install-helper system.
+
 **Related blocker:** Task 6 in
 `docs/exec-plans/active/2026-07-10-native-runtime-merge-blocker-remediation-plan.md`
 

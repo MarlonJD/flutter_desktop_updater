@@ -7,9 +7,12 @@ knowledge belongs in `docs/`.
 
 - Read this file first, then follow the most local instruction file that applies
   to the files you touch.
-- Use `docs/harness-engineering.md` for the agent harness model, validation
-  ladder, and staged adoption plan.
-- Use `docs/exec-plans/index.md` to find active and completed execution plans.
+- Use the [architecture map](ARCHITECTURE.md) for system boundaries and
+  dependency direction.
+- Use the [harness operating model](docs/harness-engineering.md) for validation,
+  evidence, and maintenance rules.
+- Use the [execution-plan ledger](docs/exec-plans/index.md) to find active and
+  completed work.
 - Do not create, switch, rename, or delete branches unless the user explicitly
   asks for that branch action.
 - Do not post GitHub comments or PR reviews through connector identities. Draft
@@ -26,7 +29,9 @@ knowledge belongs in `docs/`.
 - Native plugin code: `macos/`, `windows/`, and `linux/`.
 - Example host app and platform smoke tools: `example/`.
 - Package docs: `README.md`, `docs/`, and `doc/`.
-- Repository-backed execution plans: `docs/exec-plans/`.
+- Durable design decisions: [docs/design-docs/](docs/design-docs/).
+- Repository-backed execution plans:
+  [docs/exec-plans/](docs/exec-plans/index.md).
 
 ## Validation Ladder
 

@@ -2,7 +2,7 @@
 
 This document is the normative wire-contract reference for the packaged native
 install helpers. It implements the common contract in the
-[approved privileged-helper design](superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md).
+[approved privileged-helper design](design-docs/2026-07-11-cross-platform-privileged-install-helper-design.md).
 The machine-readable request schema is
 [`schemas/native-install-helper-v1.schema.json`](../schemas/native-install-helper-v1.schema.json),
 and the generated cross-language fixtures are under

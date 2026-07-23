@@ -27,7 +27,7 @@ APIs/pidfd/polkit/Unix sockets, XCTest, GoogleTest, .NET P/Invoke, CocoaPods,
 SwiftPM, NuGet, pkg-config, and GitHub Actions.
 
 **Approved Design:**
-`docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md`
+`docs/design-docs/2026-07-11-cross-platform-privileged-install-helper-design.md`
 
 ## Global Constraints
 

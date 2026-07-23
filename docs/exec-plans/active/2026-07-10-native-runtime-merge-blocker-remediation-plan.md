@@ -1961,7 +1961,7 @@ Durable native transaction recovery remains `blocked`. The reviewed
 script-helper candidate was reverted because it could not provide safe
 fd/handle-relative mutation, serialized recovery, and crash-safe journal
 ownership. The approved packaged standalone-helper design is recorded in
-`docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md`,
+`docs/design-docs/2026-07-11-cross-platform-privileged-install-helper-design.md`,
 but its implementation and target-host evidence are pending. The runtime
 therefore remains `candidate-only`, and PR #65 is not merge-ready.
 ~~~
@@ -2125,7 +2125,7 @@ Fresh-review evidence on 2026-07-11:
   provenance tuple now fails before helper-script creation.
 - Task 6 architecture: `blocked / implementation pending`. The approved design
   is
-  `docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md`.
+  `docs/design-docs/2026-07-11-cross-platform-privileged-install-helper-design.md`.
   Per user direction it is not implemented in this execution pass. Until its
   reservation, packaged helper, lock, durable journal, fd/handle-relative
   mutation, recovery, and target-host gates exist, the runtime remains

@@ -110,7 +110,7 @@ void main() {
 
   test("approved follow-on mapping remains documented and future-only", () {
     final design = requiredFile(
-      "docs/superpowers/specs/2026-07-11-cross-platform-privileged-install-helper-design.md",
+      "docs/design-docs/2026-07-11-cross-platform-privileged-install-helper-design.md",
     );
     final followOnPlan = requiredFile(
       "docs/exec-plans/active/2026-07-11-linux-distribution-artifacts-plan.md",
