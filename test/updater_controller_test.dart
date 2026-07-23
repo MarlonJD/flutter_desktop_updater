@@ -497,7 +497,7 @@ void main() {
           isA<UnsupportedError>().having(
             (error) => error.message,
             "message",
-            contains("privileged native installation"),
+            contains("native install handoff"),
           ),
         ),
       );

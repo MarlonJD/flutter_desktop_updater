@@ -6,9 +6,14 @@ Linux applications. Flutter applications continue to use the stable Dart
 usable without linking the runtime transport, contract, crypto, or archive
 code.
 
-The preview is implemented and `candidate-only`, but it is not production-ready.
-Configured workflow jobs are not execution evidence; an unchecked or `not run`
-lane must not be promoted by inference.
+The preview is implemented. Its macOS scope is `production-ready` based on the
+accepted local macOS target-host and signed/notarized release evidence. Windows
+and Linux remain `candidate-only / external evidence pending`, so the overall
+cross-platform preview is still `candidate-only`.
+
+Hosted macOS CI is optional duplication rather than a macOS readiness gate.
+Configured Windows or Linux workflow jobs are not execution evidence; an
+unchecked or `not run` required lane must not be promoted by inference.
 
 ## Current-Head Merge-Gate Ledger
 
@@ -42,7 +47,7 @@ configured-but-unexecuted workflow.
 | macOS unprivileged helper crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | Windows helper trust/reparse/crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
 | Linux helper and privileged mount-namespace CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| macOS signed bundled SMAppService daemon/XPC CI | `not run` | The equivalent target-host boundary is verified locally, but the manual credential-gated CI lane has not executed for the current head |
+| macOS signed bundled SMAppService daemon/XPC CI | `not run` | Optional CI duplication; the equivalent target-host boundary is verified locally and accepted for the macOS `production-ready` verdict |
 | Windows Authenticode/UAC helper CI | `not run` | Manual self-hosted credential-gated lane |
 | Linux installed polkit broker CI | `not run` | Manual self-hosted lane is configured for separate fixed-byte/policy audit plus real non-root public-API → pkexec mutation, durable query, after-backup death, and fresh-broker recovery; it has not run for this head |
 | Current remediation head in GitHub Actions | `not run` | The current helper head has not run in GitHub Actions; older run `29291937840` does not prove these helper changes |

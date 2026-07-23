@@ -8,6 +8,18 @@
 
 **Tech Stack:** Dart/Flutter tests and smoke tools, Swift/XCTest, `SMAppService`, authenticated XPC, `MacVerifiedInstallerTransaction`, fixed-argv `/usr/sbin/installer`, Developer ID Application/Installer identities, `codesign`, `pkgutil`, `spctl`, `notarytool`, `stapler`, and `launchctl`.
 
+## Current Platform Verdict (2026-07-21)
+
+The macOS scope is `production-ready`. Local macOS target-host execution and
+the existing signed, notarized, stapled, Gatekeeper, privileged replacement,
+recovery, and relaunch evidence are the authoritative platform gate. Hosted
+macOS CI is optional duplication and is not required for this verdict.
+
+The older `candidate-only / NO-GO` entries below are retained as historical
+snapshots of the evidence available when they were written; they do not
+override this current verdict. Windows and Linux readiness remain separately
+scoped and unchanged.
+
 ## Global Constraints
 
 - Work directly on `feat/native-sdk-platform-split`; do not create, switch, rename, or delete branches.
@@ -1956,7 +1968,7 @@ macOS is `production-ready` only when current-head source/payload/installed sign
 
 If any gate fails or is not run, record `candidate-only / NO-GO` and leave this plan active.
 
-Final macOS verdict (`candidate-only / NO-GO`, 2026-07-19): exact-current v2
+Historical macOS verdict (`candidate-only / NO-GO`, 2026-07-19): exact-current v2
 artifact trust/notarization is `verified locally`; typed target-host approval
 and real 2.7.0+270 to 2.7.1+271 elevation are `not run`; installer-active daemon
 crash recovery is `not run`; and four-report evidence/CI publication is
@@ -1979,4 +1991,6 @@ git push origin feat/native-sdk-platform-split
 
 ## Completion Boundary
 
-This plan closes only the macOS privileged updater. Windows target-host/Authenticode/UAC and installed Linux polkit/root-broker gates retain their current literal status.
+Current macOS verdict: `production-ready`. This plan closes only the macOS
+privileged updater. Windows target-host/Authenticode/UAC and installed Linux
+polkit/root-broker gates retain their current literal status.

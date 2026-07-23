@@ -243,8 +243,8 @@ Supplying `trustedReleasePublicKeys` requires valid Ed25519 signatures on the
 final `app-archive.json` and selected `release.json` before selection or
 artifact download. Leaving it null preserves the released unsigned 2.x
 compatibility behavior for checks and downloads and is not
-production-authenticated. Privileged native installation still requires a
-signed descriptor whose key is sealed into the helper policy. Key rotation can
+production-authenticated. Native install handoff still requires a signed
+descriptor whose key is sealed into the helper policy. Key rotation can
 temporarily pin both the old and new public key IDs in the same map.
 
 ## Update Policy Modes

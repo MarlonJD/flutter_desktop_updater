@@ -238,15 +238,15 @@ class DesktopUpdaterController extends ChangeNotifier {
   ///
   /// When null, the released 2.x unsigned-metadata compatibility behavior is
   /// preserved. Supplying a map requires valid signatures on both metadata
-  /// documents before release selection or artifact download. Privileged
-  /// native installation still requires a signed release descriptor.
+  /// documents before release selection or artifact download. Native install
+  /// handoff still requires a signed release descriptor.
   final Map<String, String>? trustedReleasePublicKeys;
 
   /// Legacy compatibility flag for the former unsigned macOS install path.
   ///
-  /// Privileged native installation rejects this flag because the sealed
-  /// helper trust policy requires signed release metadata and signed code.
-  /// Keep this false and publish signed, notarized macOS updates.
+  /// Native install handoff rejects this flag because the sealed helper trust
+  /// policy requires signed release metadata. Keep this false and publish
+  /// signed, notarized macOS updates for macOS privileged installation.
   final bool allowUnsignedMacOSUpdates;
 
   Uri? _appArchiveUrl;
@@ -847,8 +847,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   void _validateNativeInstallTrust() {
     if (allowUnsignedMacOSUpdates) {
       throw UnsupportedError(
-        "allowUnsignedMacOSUpdates is incompatible with privileged native "
-        "installation. Publish a signed and notarized macOS update instead.",
+        "allowUnsignedMacOSUpdates is incompatible with native install "
+        "handoff. Publish a signed and notarized macOS update instead.",
       );
     }
 
@@ -858,7 +858,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         signature.publicKeyId.trim().isEmpty ||
         signature.value.trim().isEmpty) {
       throw StateError(
-        "Privileged native installation requires a signed release.json "
+        "Native install handoff requires a signed release.json "
         "descriptor using Ed25519. Unsigned 2.x metadata remains supported "
         "for update checks and downloads only.",
       );

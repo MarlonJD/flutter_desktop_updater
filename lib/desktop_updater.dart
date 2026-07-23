@@ -52,10 +52,11 @@ class DesktopUpdater {
     /// Optional staged update path to install before restarting.
     String? stagingPath,
 
-    /// Legacy compatibility flag rejected by privileged macOS installation.
+    /// Legacy compatibility flag rejected before native install handoff.
     ///
-    /// Keep this false. Privileged installs require signed release metadata
-    /// and signed, notarized application code.
+    /// Keep this false. Native install handoff requires signed release
+    /// metadata; privileged macOS installs also require signed, notarized
+    /// application code.
     bool allowUnsignedMacOSUpdates = false,
 
     /// Compatibility-only diagnostics path. Standalone helpers use their
@@ -93,10 +94,11 @@ class DesktopUpdater {
     /// Legacy-compatible list of files removed during install.
     List<String> removedFiles = const [],
 
-    /// Legacy compatibility flag rejected by privileged macOS installation.
+    /// Legacy compatibility flag rejected before native install handoff.
     ///
-    /// Keep this false. Privileged installs require signed release metadata
-    /// and signed, notarized application code.
+    /// Keep this false. Native install handoff requires signed release
+    /// metadata; privileged macOS installs also require signed, notarized
+    /// application code.
     bool allowUnsignedMacOSUpdates = false,
 
     /// Compatibility-only diagnostics path. Standalone helpers use their
