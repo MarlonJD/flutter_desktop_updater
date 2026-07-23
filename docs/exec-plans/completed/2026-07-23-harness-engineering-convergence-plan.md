@@ -1,9 +1,9 @@
 <!-- harness-plan:v1
 id: 2026-07-23-harness-engineering-convergence-plan
-status: active
+status: completed
 created: 2026-07-23
 updated: 2026-07-23
-completed:
+completed: 2026-07-23
 owner: Repository maintainers
 -->
 
@@ -43,9 +43,19 @@ commit, a direct-child attestation commit, fresh HMAC-v2 evidence, and `CERT000`
 - [x] (2026-07-23 13:34Z) Reran the structural gate, focused docs suite, and
   focused Dart analysis: structural validation passed, all ten tests passed,
   and both harness tools reported no analyzer issues.
-- [ ] Run focused and broader applicable verification; record exact outcomes.
-- [ ] Create the source/attestation commit pair and obtain `CERT000`, or leave
-  the plan active with the exact source-control or authority blocker.
+- [x] (2026-07-23 13:42Z) Ran the complete clean-source harness ladder:
+  structural gate, non-mutating format, analyze, version check, focused harness
+  test, full Flutter suite, and publish dry-run all exited zero.
+- [x] (2026-07-23 13:44Z) Created source/attestation pair
+  `1becd53407df33ef0b109e8725b2e55d7fa3c7d4` /
+  `04ee6e7329683dd2d9e2563b09c42bec31a1f442`; final native gate, external
+  warning-intolerant check, and external certification passed with `CERT000`.
+- [x] (2026-07-23 13:47Z) Fast-forwarded the attestation commit onto
+  `feat/native-sdk-platform-split` and pushed it to `origin` without staging or
+  modifying the user's unrelated working-tree changes.
+- [x] (2026-07-23 13:51Z) Closed this living plan, repaired the focused
+  coverage test to recognize both pre-attestation and linked attestation
+  statuses, and reran its ten tests successfully before renewing evidence.
 
 ## Surprises & Discoveries
 
@@ -74,6 +84,23 @@ commit, a direct-child attestation commit, fresh HMAC-v2 evidence, and `CERT000`
   Evidence: every canonical row was intentionally `candidate` or `blocked`
   before source-bound evidence generation; routing, config, links, and table
   structure produced no warning.
+- Observation: The prospective gate exposed two implementation defects before
+  certification: trimmed Git porcelain paths and a manifest issuance timestamp
+  older than the finalized project-gate observation.
+  Evidence: both candidate attempts failed closed, the implementation was
+  corrected in source commits `3e7d867` and `1becd53`, and the full ladder was
+  rerun after each source change.
+- Observation: The external certifier rejects ignored dependency and report
+  outputs in its certification worktree even when Git status is otherwise
+  clean.
+  Evidence: the first external run returned `CERT014`; certification was rerun
+  read-only in a second detached worktree with no ignored files and returned
+  `CERT000`.
+- Observation: The focused coverage test recognized plain `candidate` rows but
+  not the evidence-linked `[verified](...)` form produced by successful
+  attestation.
+  Evidence: the post-attestation focused run found zero canonical rows; its
+  parser now accepts both lifecycle forms and all ten tests pass.
 
 ## Decision Log
 
@@ -102,12 +129,26 @@ commit, a direct-child attestation commit, fresh HMAC-v2 evidence, and `CERT000`
   snapshot in an isolated worktree prevents those edits from contaminating
   evidence while avoiding a branch create/switch operation.
   Date/Author: 2026-07-23 / Repository harness maintainer.
+- Decision: Separate broad command execution from the final external
+  certification worktree.
+  Rationale: Flutter dependency resolution and the ignored harness report are
+  necessary for broad verification but violate the certifier's zero-extra-file
+  boundary. A second read-only detached worktree preserves the exact same
+  attestation commit without copied or deleted evidence.
+  Date/Author: 2026-07-23 / Repository harness maintainer.
 
 ## Outcomes & Retrospective
 
-Work is in progress. The final entry must distinguish locally verified
-structure from the source/attestation-bound `harness-ready` claim and list any
-authority-dependent gaps without weakening the gate.
+The repository now has a concise router, mapped canonical authorities, a
+complete 31-row inventory, deterministic HMAC-v2 evidence generation, a
+three-mode Dart-native gate, manual maintenance rules, and a clean
+source/direct-child attestation that returned `CERT000`.
+
+The result is `harness-ready` for the bounded commit pair and evidence window;
+it is not production attestation. Hosted CI automation, provider-authenticated
+production proof, privileged target-host work, release, and deployment remain
+outside this adoption. The user's unrelated API, release-documentation, and
+test changes remained uncommitted and untouched.
 
 ## Context and Orientation
 
@@ -143,8 +184,8 @@ Finally run the focused docs/gate tests, create a harness-only source commit,
 and exercise the broad runner from a clean detached worktree at that commit.
 Prepare the evidence overlay, run its prospective gate, record that result,
 commit the direct-child attestation, and run both final native and external
-certification. If isolation or Git state stops satisfying the exact boundary,
-keep certification blocked and this plan active.
+certification. This sequence completed and was pushed; future changes must
+repeat it because any later source commit invalidates the bounded claim.
 
 ## Concrete Steps
 
@@ -194,9 +235,12 @@ and resume after the tree has a trusted clean source boundary.
 
 ## Artifacts and Notes
 
-The existing baseline focused test passed eight tests on 2026-07-23. The
-adaptive audit returned `0 error(s), 0 warning(s), 5 info item(s)`. These are
-baseline discovery signals, not certification evidence.
+The baseline focused test passed eight tests before adoption. The final focused
+suite passed ten tests. The final broad report recorded seven zero-exit stages,
+including the full Flutter suite and publish dry-run. The adaptive external
+check returned `0 error(s), 0 warning(s)`, and external certification emitted
+`CERT000`. HMAC records under `docs/agent-harness/evidence/` retain the bounded
+source observation; the raw key remains outside the repository.
 
 ## Interfaces and Dependencies
 
@@ -223,3 +267,12 @@ declare `exec_plan_index`.
   verification, and detached-worktree certification strategy.
   Reason: Keep the plan synchronized with the observed migration state before
   creating the source snapshot.
+- (2026-07-23 13:47Z) Change: Recorded broad verification, fail-closed
+  convergence fixes, `CERT000`, branch integration, push, remaining production
+  boundaries, and completed the plan.
+  Reason: Close the repo-native lifecycle with literal observed evidence while
+  keeping future manual revalidation explicit.
+- (2026-07-23 13:51Z) Change: Recorded the post-attestation focused-test parser
+  repair and moved the plan into the completed ledger.
+  Reason: Keep the durable plan synchronized with the last local feedback loop
+  before issuing its successor source-bound evidence.

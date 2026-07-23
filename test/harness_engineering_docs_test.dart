@@ -224,7 +224,7 @@ void main() {
     final coverage =
         File("docs/agent-harness/coverage-matrix.md").readAsStringSync();
     final statusRows = RegExp(
-      r"^\| .+ \| .+ \| .+ \| (?:verified|candidate|blocked|N/A)\b",
+      r"^\| .+ \| .+ \| .+ \| (?:\[(?:verified|candidate|blocked|N/A)\]\([^)]+\)|(?:verified|candidate|blocked|N/A))(?:\s|$)",
       multiLine: true,
     ).allMatches(coverage);
 

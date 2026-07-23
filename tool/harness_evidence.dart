@@ -30,8 +30,8 @@ const _specs = <_EvidenceSpec>[
     "reusable-steps",
     _EvidenceStatus.verified,
     "The convergence plan records restartable milestones and proof.",
-    "review the active harness convergence ExecPlan milestones and evidence",
-    "docs/exec-plans/active/2026-07-23-harness-engineering-convergence-plan.md",
+    "review the completed harness convergence ExecPlan milestones and evidence",
+    "docs/exec-plans/completed/2026-07-23-harness-engineering-convergence-plan.md",
   ),
   _EvidenceSpec(
     "Agents can self-review and respond to feedback",
@@ -368,11 +368,20 @@ void _prepare({
   }
 
   final coverageFile = File(_coveragePath);
-  final updatedCoverage = const LineSplitter()
+  final coverageLines = const LineSplitter()
       .convert(coverageFile.readAsStringSync())
       .map((line) => _replaceStatusCell(line, statusCells))
-      .join("\n");
-  coverageFile.writeAsStringSync("$updatedCoverage\n");
+      .toList();
+  final sourceMarker = "<!-- harness-evidence-source: $sourceCommit -->";
+  final markerIndex = coverageLines.indexWhere(
+    (line) => line.startsWith("<!-- harness-evidence-source:"),
+  );
+  if (markerIndex == -1) {
+    coverageLines.insert(2, sourceMarker);
+  } else {
+    coverageLines[markerIndex] = sourceMarker;
+  }
+  coverageFile.writeAsStringSync("${coverageLines.join("\n")}\n");
 
   _writeNamedRecord(
     path: "$_evidenceRoot/continuous-maintenance.json",
