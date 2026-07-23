@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
   "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
   "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
   "capabilities": [
@@ -9,13 +9,13 @@
   "environment": "local-macos-workspace",
   "command": "review AGENTS.md and docs/agent-harness/operating-loop.md authority boundaries",
   "exit_code": 0,
-  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "observed_at": "2026-07-23T13:55:13.451466Z",
   "result": "passed",
   "artifacts": [
-    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:docs/agent-harness/operating-loop.md",
-    "validation-report-sha256:b080bf2a0f01508f23181d8fb75d460a051575c6ab968ce95af0615005360b02:reports/harness-check.md"
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:docs/agent-harness/operating-loop.md",
+    "validation-report-sha256:600d48e89f64d189ed76b3697e17df1383fd00d952c9191e1b919b32843b055d:reports/harness-check.md"
   ],
   "issuer": "repository-native-harness-evidence-generator",
   "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
-  "signature": "418eddd27c110cfb40e9afdb31bcdc9169cb548c27e33607716f1ead30c0c951"
+  "signature": "c648a270160c101b543414bfc6c1a5424c89dd8a329551b1b2dbc6ebf2c8edeb"
 }

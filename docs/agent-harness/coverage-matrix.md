@@ -1,5 +1,6 @@
 # Harness Engineering Coverage Matrix
 
+<!-- harness-evidence-source: 014cd2276dad7d0840c8308d30a3ddeabdfd769c -->
 This is the complete 31-capability inventory. During adoption, `candidate` and
 `blocked` keep incomplete evidence visible. A `harness-ready` attestation may
 contain only `verified` or justified `N/A` rows, each linked from the status

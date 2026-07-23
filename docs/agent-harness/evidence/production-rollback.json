@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
   "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
   "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
   "capabilities": [
@@ -9,13 +9,13 @@
   "environment": "local-macos-workspace",
   "command": "review publishing recovery and release rollback ownership",
   "exit_code": 0,
-  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "observed_at": "2026-07-23T13:55:13.451466Z",
   "result": "passed",
   "artifacts": [
-    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:docs/publishing.md",
-    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:docs/diagnostics-and-recovery.md"
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:docs/publishing.md",
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:docs/diagnostics-and-recovery.md"
   ],
   "issuer": "repository-native-harness-evidence-generator",
   "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
-  "signature": "976725d518efe40aebc2675a44cf077c9e1bbec9fd6215d5c4185de0820f41f9"
+  "signature": "f05309b079d758d9433180981f8a00041475b48010bd031e810bc6f98c5e94a5"
 }
