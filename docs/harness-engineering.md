@@ -9,7 +9,10 @@ history.
 [AGENTS.md](../AGENTS.md) is the concise entrypoint.
 [ARCHITECTURE.md](../ARCHITECTURE.md) owns system boundaries and dependency
 direction. [README.md](../README.md) owns the package overview and common user
-flows. Deeper product and operational guidance lives in `docs/` and `doc/`.
+flows. The [documentation map](index.md) routes deeper product and operational
+guidance in `docs/` and `doc/`. The
+[agent harness](agent-harness/index.md) owns repository-native capability,
+verification, evidence, and certification contracts.
 
 Use the [execution-plan ledger](exec-plans/index.md) for restartable work and
 [GitHub Actions CI/CD](github-actions-ci-cd.md) for the current platform-lane,
@@ -22,7 +25,7 @@ Run the narrowest useful command first:
 
 ```sh
 flutter test --no-pub test/<focused_test>.dart
-dart format --set-exit-if-changed .
+dart format --output=none --set-exit-if-changed .
 flutter analyze --no-fatal-infos
 flutter test --no-pub
 dart pub publish --dry-run
@@ -43,6 +46,19 @@ mutation remain in the CI or manual lanes documented by
 
 `test/harness_engineering_docs_test.dart` mechanically protects the repository
 routes, plan index, local runner, and evidence naming contract.
+
+For a harness authority or contract change, run the read-only structural gate
+first:
+
+```sh
+dart run tool/harness_gate.dart --structural
+```
+
+The structural mode checks routing, authority configuration, the complete
+31-capability inventory, manifest shape, and scaffold-marker removal. Full
+certification uses `dart run tool/harness_gate.dart --attestation-key-file
+"$HARNESS_ATTESTATION_KEY_FILE"` from a clean direct-child attestation commit.
+See [Harness-ready certification](agent-harness/certification.md).
 
 ## Evidence Contract
 
@@ -92,3 +108,16 @@ The completed
 [agent harness engineering plan](exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md)
 retains adoption history; this operating document contains only the current
 contract.
+
+## Certification Boundary
+
+`verified locally` means the named local command passed. It does not mean
+`harness-ready`. That bounded claim requires every row in the
+[coverage matrix](agent-harness/coverage-matrix.md) to have fresh HMAC-v2
+evidence bound to a source commit, a clean direct-child attestation commit, the
+repository-native full gate, and an external skill result of `CERT000`.
+
+The default maintenance mode is manual. Installation of an external skill does
+not run checks, schedule maintenance, grant Git or production authority, or
+certify this repository. Hosted CI automation is not part of the current
+adoption.

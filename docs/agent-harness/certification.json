@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "claim": "harness-ready",
+  "profile": "adaptive",
+  "repository_commit": "a9bc11268164f907110de0b478bbf796a3540536",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "environment": "local-macos-workspace",
+  "issued_at": "2026-07-23T13:16:25Z",
+  "expires_at": "2026-07-30T13:16:25Z",
+  "coverage_sha256": "7427aa91a9fb82fd0dbde68e62bac6cb75496de4c71a7988ec03ca43402f501a",
+  "evidence_root": "docs/agent-harness/evidence",
+  "project_native_gate": {
+    "command": "dart run tool/harness_gate.dart --candidate --attestation-key-file \"$HARNESS_ATTESTATION_KEY_FILE\"",
+    "evidence": "docs/agent-harness/evidence/project-native-gate.json"
+  },
+  "maintenance": {
+    "command": "dart run tool/harness_gate.dart --attestation-key-file \"$HARNESS_ATTESTATION_KEY_FILE\"",
+    "triggers": [
+      "manual"
+    ],
+    "max_age_hours": 168,
+    "evidence": "docs/agent-harness/evidence/continuous-maintenance.json"
+  },
+  "production_authority": {
+    "owner": null,
+    "approval_evidence": null,
+    "rollback_evidence": null
+  }
+}
