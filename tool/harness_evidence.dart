@@ -461,13 +461,13 @@ void _recordProjectGate({
   if (projectGate["command"] != _projectGateCommand) {
     _fail("Certification manifest project gate command has drifted.");
   }
-  final observedAt = DateTime.now().toUtc().toIso8601String();
+  final observedAt = DateTime.now().toUtc();
   _writeNamedRecord(
     path: projectGate["evidence"] as String,
     sourceCommit: sourceCommit,
     capability: "project-native-harness-gate",
     command: _projectGateCommand,
-    observedAt: observedAt,
+    observedAt: observedAt.toIso8601String(),
     artifacts: [
       "candidate-gate:$candidateObservation",
       "git:$sourceCommit:tool/harness_gate.dart",
@@ -475,6 +475,10 @@ void _recordProjectGate({
     keyId: sha256.convert(keyBytes).toString(),
     keyBytes: keyBytes,
   );
+  manifest["issued_at"] = observedAt.toIso8601String();
+  manifest["expires_at"] =
+      observedAt.add(const Duration(days: 7)).toIso8601String();
+  _writeJson(_certificationPath, manifest);
 }
 
 void _writeNamedRecord({
