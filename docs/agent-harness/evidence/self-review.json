@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "Agents can self-review and respond to feedback"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "run the harness checks and review actionable failures before refresh",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "result": "passed",
+  "artifacts": [
+    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:docs/agent-harness/operating-loop.md",
+    "validation-report-sha256:b080bf2a0f01508f23181d8fb75d460a051575c6ab968ce95af0615005360b02:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "2a4003582bbed879e7a14383e960231c9bbc01b862df55da083b745f4c0c85dc"
+}

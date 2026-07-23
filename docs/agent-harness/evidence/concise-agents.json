@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "`AGENTS.md` is a concise map, not an encyclopedia"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "run the structural gate instruction size and route checks",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "result": "passed",
+  "artifacts": [
+    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:AGENTS.md",
+    "validation-report-sha256:b080bf2a0f01508f23181d8fb75d460a051575c6ab968ce95af0615005360b02:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "97ac429a9a0c71a03e84874f3171e2d9219cedd5d062d06e143cf6d659d61c4b"
+}

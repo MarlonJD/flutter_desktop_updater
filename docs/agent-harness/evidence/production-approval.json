@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "production-authority-approval"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "review SECURITY.md docs/publishing.md and CI approval boundaries",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "result": "passed",
+  "artifacts": [
+    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:SECURITY.md",
+    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:docs/github-actions-ci-cd.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "1fe39546058485efe0b95b953fc6eb359a326730c8c26039af77dce6104294f4"
+}

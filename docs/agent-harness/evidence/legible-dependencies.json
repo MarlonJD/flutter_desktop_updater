@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "1becd53407df33ef0b109e8725b2e55d7fa3c7d4",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "Dependencies and abstractions remain agent-legible"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "review architecture and execute the repository validation report",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:42:06.443525Z",
+  "result": "passed",
+  "artifacts": [
+    "git:1becd53407df33ef0b109e8725b2e55d7fa3c7d4:fixtures/compat/native-contract/README.md",
+    "validation-report-sha256:b080bf2a0f01508f23181d8fb75d460a051575c6ab968ce95af0615005360b02:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "bdce85f2408b21195291e707521c51c7d8fc6c5ac20c25242ef4a8719f94df27"
+}
