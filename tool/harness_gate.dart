@@ -698,11 +698,19 @@ Set<String> _workingTreePaths(
 ) {
   final paths = <String>{};
   for (final line in const LineSplitter().convert(porcelain)) {
-    if (line.length < 4) {
+    final String path;
+    if (line.startsWith("?? ") && line.length > 3) {
+      path = line.substring(3);
+    } else if (line.length > 3 && line[2] == " ") {
+      path = line.substring(3);
+    } else if (line.length > 2 && line[1] == " ") {
+      // `_git` trims the complete stdout string, so the leading workspace
+      // status space on the first porcelain line may be absent.
+      path = line.substring(2);
+    } else {
       failures.add("Cannot parse Git status line: $line");
       continue;
     }
-    final path = line.substring(3);
     if (path.startsWith("\"") || path.contains(" -> ")) {
       failures.add(
         "Candidate attestation paths must not be quoted or renamed: $line",
