@@ -662,7 +662,7 @@ git commit -m "feat: add standalone macos updater kit"
 - Modify: `windows/test/desktop_updater_plugin_test.cpp`
 - Modify: `test/native_helper_script_test.dart`
 
-- [ ] **Step 4.1: Add internal C++ helper API**
+- [x] **Step 4.1: Add internal C++ helper API**
 
 Create `desktop_updater_native.h`:
 
@@ -690,7 +690,7 @@ InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
 }  // namespace desktop_updater_native
 ```
 
-- [ ] **Step 4.2: Add stable public C ABI**
+- [x] **Step 4.2: Add stable public C ABI**
 
 Create `desktop_updater_native_c.h`:
 
@@ -747,7 +747,7 @@ Return heap-owned error strings only through desktop_updater_result.
 Always release result-owned memory through desktop_updater_result_free.
 ```
 
-- [ ] **Step 4.3: Add first-class .NET P/Invoke wrapper**
+- [x] **Step 4.3: Add first-class .NET P/Invoke wrapper**
 
 Create `windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj`:
 
@@ -833,7 +833,7 @@ public static class DesktopUpdaterNative
 The .NET package is part of the first Windows native SDK release and must use
 the C ABI, not the internal C++ API.
 
-- [ ] **Step 4.4: Move helper-only functions into native library**
+- [x] **Step 4.4: Move helper-only functions into native library**
 
 Move these Flutter-free functions from `windows/desktop_updater_plugin.cpp` into `desktop_updater_native.cpp`:
 
@@ -859,7 +859,7 @@ ScheduleInstallAndRelaunch
 
 Keep Flutter-specific MethodChannel parsing in `windows/desktop_updater_plugin.cpp`.
 
-- [ ] **Step 4.5: Link Flutter plugin against native target**
+- [x] **Step 4.5: Link Flutter plugin against native target**
 
 Modify `windows/CMakeLists.txt`:
 
@@ -870,7 +870,10 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
 
 The plugin target still includes `desktop_updater_plugin_c_api.cpp` and keeps `DesktopUpdaterPluginCApi`.
 
-- [ ] **Step 4.6: Guard native tests behind an explicit CMake option**
+Implemented with `add_subdirectory("native")` because the native target
+`CMakeLists.txt` lives directly at `windows/native/CMakeLists.txt`.
+
+- [x] **Step 4.6: Guard native tests behind an explicit CMake option**
 
 In `windows/native/CMakeLists.txt`, add:
 
@@ -901,7 +904,7 @@ endif()
 
 Flutter plugin builds must not build or fetch native SDK GoogleTest targets.
 
-- [ ] **Step 4.7: Add Windows native tests**
+- [x] **Step 4.7: Add Windows native tests**
 
 Create GoogleTest cases:
 
@@ -920,7 +923,7 @@ TEST(DesktopUpdaterNative, ProgramFilesInstallDirectoryIsProtected) {
 }
 ```
 
-- [ ] **Step 4.8: Add ABI tests**
+- [x] **Step 4.8: Add ABI tests**
 
 Add tests that call the C ABI directly:
 
@@ -935,7 +938,7 @@ TEST(DesktopUpdaterNativeCAbi, NullRequestFailsWithoutThrowing) {
 }
 ```
 
-- [ ] **Step 4.9: Add .NET wrapper tests**
+- [x] **Step 4.9: Add .NET wrapper tests**
 
 Create `windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdaterNativeTests.cs`:
 
@@ -957,7 +960,7 @@ public sealed class DesktopUpdaterNativeTests
 This first test does not load the native DLL. Add host-specific P/Invoke tests
 after the C ABI build artifact is copied into the test output directory.
 
-- [ ] **Step 4.10: Keep Flutter plugin tests**
+- [x] **Step 4.10: Keep Flutter plugin tests**
 
 Update `windows/test/desktop_updater_plugin_test.cpp` so it still verifies:
 
@@ -976,11 +979,18 @@ Run on Windows:
 flutter build windows --debug
 cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
 ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+cmake --build windows/native/build --config Debug
+ctest --test-dir windows/native/build -C Debug --output-on-failure
 dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
 flutter test integration_test -d windows
 ```
 
 Expected: Flutter plugin and native helper behavior unchanged.
+
+Local status: not run; VMware guest IP is reachable, but the Windows MCP guest
+agent is not consuming queued command requests, so Windows build/test execution
+is still pending.
 
 - [ ] **Step 4.12: Commit Windows SDK extraction**
 

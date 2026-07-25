@@ -5,29 +5,8 @@
 #include <flutter/plugin_registrar_windows.h>
 
 #include <memory>
-#include <string>
-#include <vector>
 
 namespace desktop_updater {
-
-enum class ProductVersionBuildParseResult {
-  kBuildNumber,
-  kNoBuildNumber,
-  kInvalid,
-};
-
-ProductVersionBuildParseResult ParseProductVersionBuildNumber(
-    const std::wstring& product_version,
-    std::wstring* build_number);
-
-bool IsStrictChildPathForTesting(const std::wstring& root,
-                                 const std::wstring& candidate);
-
-bool IsKnownProtectedInstallDirectoryForTesting(
-    const std::wstring& directory,
-    const std::vector<std::wstring>& protected_roots);
-
-bool IsInstallerOwnedWindowsFileForTesting(const std::wstring& file_name);
 
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:

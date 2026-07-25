@@ -2,62 +2,75 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+String readWindowsNativeHelperSource() {
+  return File(
+    "windows/native/src/desktop_updater_native.cpp",
+  ).readAsStringSync();
+}
+
 void main() {
-  test("Linux helper uses bash when the generated script uses bash features",
-      () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+  test(
+    "Linux helper uses bash when the generated script uses bash features",
+    () {
+      final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
 
-    expect(
-      source,
-      contains('execl("/bin/bash", "bash", script_path.c_str(), nullptr);'),
-    );
-    expect(source, contains("#!/bin/bash"));
-    expect(source, contains("set -euo pipefail"));
-    expect(source, contains("removed=("));
-  });
+      expect(
+        source,
+        contains('execl("/bin/bash", "bash", script_path.c_str(), nullptr);'),
+      );
+      expect(source, contains("#!/bin/bash"));
+      expect(source, contains("set -euo pipefail"));
+      expect(source, contains("removed=("));
+    },
+  );
 
-  test("native helpers append diagnostics only when an explicit path is passed",
-      () {
-    final macosSource = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-    ).readAsStringSync();
-    final linuxSource =
-        File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    final windowsSource =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+  test(
+    "native helpers append diagnostics only when an explicit path is passed",
+    () {
+      final macosSource = File(
+        "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      ).readAsStringSync();
+      final linuxSource = File(
+        "linux/desktop_updater_plugin.cc",
+      ).readAsStringSync();
+      final windowsPluginSource = File(
+        "windows/desktop_updater_plugin.cpp",
+      ).readAsStringSync();
+      final windowsSource = readWindowsNativeHelperSource();
 
-    expect(macosSource, contains("diagnosticsLogPath"));
-    expect(macosSource, contains("DIAGNOSTICS_LOG="));
-    expect(macosSource, contains("log_event \"helper scheduled\""));
-    expect(macosSource, contains(r'[ -n "$DIAGNOSTICS_LOG" ] || return 0'));
+      expect(macosSource, contains("diagnosticsLogPath"));
+      expect(macosSource, contains("DIAGNOSTICS_LOG="));
+      expect(macosSource, contains("log_event \"helper scheduled\""));
+      expect(macosSource, contains(r'[ -n "$DIAGNOSTICS_LOG" ] || return 0'));
 
-    expect(linuxSource, contains("diagnosticsLogPath"));
-    expect(linuxSource, contains("diagnostics_log="));
-    expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
-    expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
+      expect(linuxSource, contains("diagnosticsLogPath"));
+      expect(linuxSource, contains("diagnostics_log="));
+      expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
+      expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
 
-    expect(windowsSource, contains("diagnosticsLogPath"));
-    expect(windowsSource, contains(r"$diagnosticsLog = "));
-    expect(
-      windowsSource,
-      contains("Write-DiagnosticsEvent 'helper scheduled'"),
-    );
-    expect(
-      windowsSource,
-      contains(
-        r"if ([string]::IsNullOrWhiteSpace($diagnosticsLog)) { return }",
-      ),
-    );
-  });
+      expect(windowsPluginSource, contains("diagnosticsLogPath"));
+      expect(windowsSource, contains(r"$diagnosticsLog = "));
+      expect(
+        windowsSource,
+        contains("Write-DiagnosticsEvent 'helper scheduled'"),
+      );
+      expect(
+        windowsSource,
+        contains(
+          r"if ([string]::IsNullOrWhiteSpace($diagnosticsLog)) { return }",
+        ),
+      );
+    },
+  );
 
   test("native helpers include failure events for support diagnostics", () {
     final macosSource = File(
       "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
     ).readAsStringSync();
-    final linuxSource =
-        File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    final windowsSource =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final linuxSource = File(
+      "linux/desktop_updater_plugin.cc",
+    ).readAsStringSync();
+    final windowsSource = readWindowsNativeHelperSource();
 
     for (final source in <String>[macosSource, linuxSource, windowsSource]) {
       expect(source, contains("backup failure"));
@@ -68,8 +81,9 @@ void main() {
   });
 
   test("Linux native test header exposes diagnostics log path scheduling", () {
-    final source =
-        File("linux/desktop_updater_plugin_private.h").readAsStringSync();
+    final source = File(
+      "linux/desktop_updater_plugin_private.h",
+    ).readAsStringSync();
 
     expect(source, contains("diagnostics_log_path"));
   });
@@ -96,7 +110,7 @@ void main() {
     const missingExecutableSnippet =
         r'[ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]';
     const cleanupSnippet = r'rm -rf \"$backup\"';
-    const trapDisabledSnippet = r'trap - ERR';
+    const trapDisabledSnippet = r"trap - ERR";
     const relaunchSnippet = r'\"$exe\" &';
 
     final copyIndex = source.indexOf(copySnippet);
@@ -105,8 +119,10 @@ void main() {
     final missingExecutableIndex = source.indexOf(missingExecutableSnippet);
     final restoreSearchStart = restoreIndex < 0 ? 0 : restoreIndex;
     final cleanupIndex = source.indexOf(cleanupSnippet, restoreSearchStart);
-    final trapDisabledIndex =
-        source.indexOf(trapDisabledSnippet, restoreSearchStart);
+    final trapDisabledIndex = source.indexOf(
+      trapDisabledSnippet,
+      restoreSearchStart,
+    );
     final relaunchIndex = source.indexOf(relaunchSnippet);
 
     expect(copyIndex, isNonNegative);
@@ -125,15 +141,15 @@ void main() {
   });
 
   test("Windows helper prunes target before whole directory overlay", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
     const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
     const copySnippet =
         r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
 
     final pruneIndex = source.indexOf(pruneSnippet);
-    final removeIndex =
-        source.indexOf(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force");
+    final removeIndex = source.indexOf(
+      r"Remove-Item -LiteralPath $_.FullName -Recurse -Force",
+    );
     final copyIndex = source.indexOf(copySnippet);
 
     expect(pruneIndex, isNonNegative);
@@ -147,8 +163,7 @@ void main() {
   });
 
   test("Windows helper preserves Inno uninstall artifacts during prune", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
     const predicateSnippet = "function Test-InstallerOwnedWindowsFile";
     const preserveCondition =
         r"$_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)";
@@ -174,8 +189,7 @@ void main() {
   });
 
   test("Windows helper retries staging cleanup after successful copy", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
     const cleanupFunction = "function Remove-StagingDirectoryWithRetry";
     const retryEvent = "Write-DiagnosticsEvent 'cleanup retry'";
     const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $staging";
@@ -199,8 +213,7 @@ void main() {
   });
 
   test("Windows helper updates uninstall DisplayVersion after overlay", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
     const copySnippet =
         r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
     const registrySnippet = r"Update-UninstallDisplayVersion -Version";
@@ -219,8 +232,7 @@ void main() {
   });
 
   test("Windows helper executes staged Inno installer from manifest", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
 
     const manifestSnippet =
         r"$manifest = Join-Path $staging '.desktop_updater_release_manifest.json'";
@@ -250,28 +262,29 @@ void main() {
   });
 
   test(
-      "macOS helper opens staged PKG installers without silent privilege escalation",
-      () {
-    final source = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-    ).readAsStringSync();
+    "macOS helper opens staged PKG installers without silent privilege escalation",
+    () {
+      final source = File(
+        "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      ).readAsStringSync();
 
-    expect(source, contains("pkgInstaller"));
-    expect(source, contains("launchMode"));
-    expect(source, contains("installerApp"));
-    expect(source, contains("installer.pkg"));
-    expect(source, contains("pkg installer open"));
-    expect(source, contains("/usr/bin/open"));
-    expect(source, isNot(contains("/usr/sbin/installer -pkg")));
-    expect(source, isNot(contains("sudo")));
-    expect(source, isNot(contains("osascript")));
+      expect(source, contains("pkgInstaller"));
+      expect(source, contains("launchMode"));
+      expect(source, contains("installerApp"));
+      expect(source, contains("installer.pkg"));
+      expect(source, contains("pkg installer open"));
+      expect(source, contains("/usr/bin/open"));
+      expect(source, isNot(contains("/usr/sbin/installer -pkg")));
+      expect(source, isNot(contains("sudo")));
+      expect(source, isNot(contains("osascript")));
 
-    final pkgBranchIndex = source.indexOf("pkg manifest loaded");
-    final appValidationIndex = source.indexOf(r'case "$STAGING" in');
-    expect(pkgBranchIndex, isNonNegative);
-    expect(appValidationIndex, isNonNegative);
-    expect(pkgBranchIndex, lessThan(appValidationIndex));
-  });
+      final pkgBranchIndex = source.indexOf("pkg manifest loaded");
+      final appValidationIndex = source.indexOf(r'case "$STAGING" in');
+      expect(pkgBranchIndex, isNonNegative);
+      expect(appValidationIndex, isNonNegative);
+      expect(pkgBranchIndex, lessThan(appValidationIndex));
+    },
+  );
 
   test("macOS move to Applications avoids destructive replacement", () {
     final source = File(
@@ -282,55 +295,61 @@ void main() {
     expect(source, contains("desktop_updater_move_staging"));
     expect(source, contains("desktop_updater_move_backup"));
     expect(source, contains("restoreMoveBackup"));
-    expect(source,
-        isNot(contains("try fileManager.removeItem(at: destinationURL)")));
-  });
-
-  test("Windows helper verifies Authenticode thumbprints for Inno installers",
-      () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
-
-    expect(source, contains("function Test-AuthenticodePolicy"));
-    expect(source, contains(r"Get-AuthenticodeSignature -FilePath $installer"));
-    expect(source, contains("SignerCertificate"));
-    expect(source, contains("Thumbprint"));
-    expect(source, contains("inno authenticode verified"));
-    expect(source, contains("inno authenticode failure"));
-  });
-
-  test("Windows helper requests UAC with verified script for protected targets",
-      () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
-
-    expect(source, contains("#include <shellapi.h>"));
-    expect(source, contains("IsProcessElevated"));
-    expect(source, contains("CanWriteDirectory"));
-    expect(source, contains("StartElevatedPowerShell"));
-    expect(source, contains('launch_mode == PowerShellLaunchMode::kElevated'));
-    expect(source, contains("ShellExecuteExW"));
-    expect(source, contains('L"runas"'));
-    expect(source, contains("-EncodedCommand"));
-    expect(source, contains("SHA256"));
-    expect(source, contains(r"Invoke-Expression $scriptText"));
-    expect(source, contains("Write-DiagnosticsEvent 'elevation requested'"));
     expect(
       source,
-      contains(
-        "Target directory is protected or not writable. "
-        "Requesting UAC elevation.",
-      ),
-    );
-    expect(
-      source,
-      contains("User cancelled the Windows UAC update prompt."),
+      isNot(contains("try fileManager.removeItem(at: destinationURL)")),
     );
   });
+
+  test(
+    "Windows helper verifies Authenticode thumbprints for Inno installers",
+    () {
+      final source = readWindowsNativeHelperSource();
+
+      expect(source, contains("function Test-AuthenticodePolicy"));
+      expect(
+        source,
+        contains(r"Get-AuthenticodeSignature -FilePath $installer"),
+      );
+      expect(source, contains("SignerCertificate"));
+      expect(source, contains("Thumbprint"));
+      expect(source, contains("inno authenticode verified"));
+      expect(source, contains("inno authenticode failure"));
+    },
+  );
+
+  test(
+    "Windows helper requests UAC with verified script for protected targets",
+    () {
+      final source = readWindowsNativeHelperSource();
+
+      expect(source, contains("#include <shellapi.h>"));
+      expect(source, contains("IsProcessElevated"));
+      expect(source, contains("CanWriteDirectory"));
+      expect(source, contains("StartElevatedPowerShell"));
+      expect(
+        source,
+        contains("launch_mode == PowerShellLaunchMode::kElevated"),
+      );
+      expect(source, contains("ShellExecuteExW"));
+      expect(source, contains('L"runas"'));
+      expect(source, contains("-EncodedCommand"));
+      expect(source, contains("SHA256"));
+      expect(source, contains(r"Invoke-Expression $scriptText"));
+      expect(source, contains("Write-DiagnosticsEvent 'elevation requested'"));
+      expect(
+        source,
+        contains(
+          "Target directory is protected or not writable. "
+          "Requesting UAC elevation.",
+        ),
+      );
+      expect(source, contains("User cancelled the Windows UAC update prompt."));
+    },
+  );
 
   test("Windows helper treats Program Files roots as protected installs", () {
-    final source =
-        File("windows/desktop_updater_plugin.cpp").readAsStringSync();
+    final source = readWindowsNativeHelperSource();
 
     expect(source, contains("IsKnownProtectedInstallDirectory"));
     expect(source, contains("ProtectedInstallRootPaths"));
