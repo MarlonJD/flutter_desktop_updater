@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -41,5 +42,20 @@ public sealed class DesktopUpdaterNativeTests
         {
             Marshal.FreeHGlobal(messagePointer);
         }
+    }
+
+    [Fact]
+    public void CallsRealNativeAbiAndDecodesItsError()
+    {
+        var missingStagingPath = Path.Combine(
+            Path.GetTempPath(),
+            $"desktop_updater_missing_{Guid.NewGuid():N}");
+
+        var error = Assert.Throws<DesktopUpdaterException>(
+            () => DesktopUpdaterNative.ScheduleInstallAndRelaunch(
+                missingStagingPath,
+                diagnosticsLogPath: null));
+
+        Assert.Equal("Staged update directory does not exist.", error.Message);
     }
 }

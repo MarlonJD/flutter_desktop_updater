@@ -6,6 +6,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <NativeDesktopUpdaterDll>$(MSBuildProjectDirectory)\..\..\build\$(Configuration)\desktop_updater_native.dll</NativeDesktopUpdaterDll>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
     <PackageReference Include="xunit" Version="2.8.1" />
@@ -18,4 +22,18 @@
   <ItemGroup>
     <ProjectReference Include="..\DesktopUpdater.Native\DesktopUpdater.Native.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(NativeDesktopUpdaterDll)"
+      Link="desktop_updater_native.dll"
+      CopyToOutputDirectory="PreserveNewest"
+      CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="RequireNativeDesktopUpdaterDll" BeforeTargets="PrepareForBuild">
+    <Error
+      Condition="!Exists('$(NativeDesktopUpdaterDll)')"
+      Text="Build windows/native/build for $(Configuration) before running DesktopUpdater.Native.Tests." />
+  </Target>
 </Project>
