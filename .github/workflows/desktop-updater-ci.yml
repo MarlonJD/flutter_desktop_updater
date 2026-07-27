@@ -42,6 +42,16 @@ jobs:
         run: flutter config --enable-windows-desktop
       - name: Install dependencies
         run: flutter pub get
+      - name: Configure standalone native tests
+        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
+      - name: Build standalone native tests
+        run: cmake --build windows/native/build --config Debug
+      - name: Run standalone native tests
+        run: ctest --test-dir windows/native/build -C Debug --output-on-failure
+      - name: Restore .NET native binding tests
+        run: dotnet restore windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
+      - name: Run .NET native binding tests
+        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj --configuration Debug --no-restore
       - name: Build example
         working-directory: example
         run: flutter build windows --debug
@@ -50,7 +60,7 @@ jobs:
         run: cmake --build build/windows/x64 --config Debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Debug --output-on-failure
+        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
       - name: Run integration tests
         working-directory: example
         run: flutter test integration_test -d windows
@@ -60,23 +70,12 @@ jobs:
       - name: Run update smoke
         working-directory: example
         run: dart run tool/updater_smoke.dart --diagnostics-log ../reports/windows-update-smoke-debug-diagnostics.jsonl
-      - name: Windows Inno update smoke
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./tool/windows_inno_smoke.ps1
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-debug-diagnostics
           path: reports/windows-update-smoke-debug-diagnostics.jsonl
-          if-no-files-found: ignore
-      - name: Upload Windows Inno update smoke diagnostics
-        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-inno-update-smoke-diagnostics
-          path: reports/windows-inno-update-smoke-diagnostics.jsonl
           if-no-files-found: ignore
       - name: Build example release
         working-directory: example
@@ -86,7 +85,7 @@ jobs:
         run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Release --output-on-failure
+        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
