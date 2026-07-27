@@ -971,14 +971,16 @@ TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
 }
 ```
 
-- [ ] **Step 4.11: Run Windows lane**
+- [x] **Step 4.11: Run Windows lane**
 
 Run on Windows:
 
 ```sh
+cd example
 flutter build windows --debug
+cd ..
 cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
 cmake --build windows/native/build --config Debug
 ctest --test-dir windows/native/build -C Debug --output-on-failure
@@ -988,11 +990,13 @@ flutter test integration_test -d windows
 
 Expected: Flutter plugin and native helper behavior unchanged.
 
-Local status: not run; VMware guest IP is reachable, but the Windows MCP guest
-agent is not consuming queued command requests, so Windows build/test execution
-is still pending.
+Local status: passed on 2026-07-27 in the Windows 11 Arm VMware guest with
+Visual Studio Community 2022 17.14.37516.0 and Windows SDK 10.0.26100.0.
+The Flutter debug build succeeded, the plugin C++ test passed (1/1), the
+standalone native tests passed (7/7), the .NET tests passed (2/2), and the
+Flutter Windows integration tests passed (2/2).
 
-- [ ] **Step 4.12: Commit Windows SDK extraction**
+- [x] **Step 4.12: Commit Windows SDK extraction**
 
 Commit message:
 

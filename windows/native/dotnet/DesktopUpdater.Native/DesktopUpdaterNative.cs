@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace DesktopUpdater.Native;
 
@@ -26,7 +27,7 @@ public static class DesktopUpdaterNative
         {
             if (result.ok == 0)
             {
-                var message = Marshal.PtrToStringUTF8(result.errorMessage)
+                var message = DecodeUtf8(result.errorMessage)
                     ?? "desktop_updater native call failed.";
                 throw new DesktopUpdaterException(message);
             }
@@ -35,6 +36,24 @@ public static class DesktopUpdaterNative
         {
             desktop_updater_result_free(result);
         }
+    }
+
+    private static string? DecodeUtf8(IntPtr value)
+    {
+        if (value == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var length = 0;
+        while (Marshal.ReadByte(value, length) != 0)
+        {
+            length += 1;
+        }
+
+        var bytes = new byte[length];
+        Marshal.Copy(value, bytes, 0, length);
+        return Encoding.UTF8.GetString(bytes);
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

@@ -1,3 +1,7 @@
+using System;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using DesktopUpdater.Native;
 using Xunit;
 
@@ -11,5 +15,31 @@ public sealed class DesktopUpdaterNativeTests
         var error = new DesktopUpdaterException("example");
 
         Assert.Equal("example", error.Message);
+    }
+
+    [Fact]
+    public void DecodesUtf8AbiErrorMessage()
+    {
+        const string message = "İstanbul update failed";
+        var utf8Bytes = Encoding.UTF8.GetBytes(message + "\0");
+        var messagePointer = Marshal.AllocHGlobal(utf8Bytes.Length);
+
+        try
+        {
+            Marshal.Copy(utf8Bytes, 0, messagePointer, utf8Bytes.Length);
+            var decodeMethod = typeof(DesktopUpdaterNative).GetMethod(
+                "DecodeUtf8",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(decodeMethod);
+            var decoded =
+                (string?)decodeMethod!.Invoke(null, new object[] { messagePointer });
+
+            Assert.Equal(message, decoded);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(messagePointer);
+        }
     }
 }

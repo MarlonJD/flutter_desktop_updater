@@ -20,6 +20,15 @@ namespace fs = std::filesystem;
 
 namespace desktop_updater_native {
 
+namespace {
+
+enum class PowerShellLaunchMode {
+  kNormal,
+  kElevated,
+};
+
+}  // namespace
+
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
     return L"";

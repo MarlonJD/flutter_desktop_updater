@@ -12,10 +12,12 @@ option(
   OFF
 )
 
-add_library(desktop_updater_native STATIC
+set(DESKTOP_UPDATER_NATIVE_SOURCES
   "src/desktop_updater_native.cpp"
   "src/desktop_updater_native_c.cpp"
 )
+
+add_library(desktop_updater_native STATIC ${DESKTOP_UPDATER_NATIVE_SOURCES})
 
 target_compile_features(desktop_updater_native PUBLIC cxx_std_17)
 target_compile_definitions(desktop_updater_native PUBLIC
@@ -25,6 +27,32 @@ target_include_directories(desktop_updater_native PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_link_libraries(desktop_updater_native PRIVATE bcrypt shell32 version)
+
+# Keep Flutter linked to the static target above, while producing a separately
+# consumable DLL for the .NET C ABI wrapper from the same source files.
+add_library(
+  desktop_updater_native_shared
+  SHARED
+  ${DESKTOP_UPDATER_NATIVE_SOURCES}
+)
+set_target_properties(desktop_updater_native_shared PROPERTIES
+  OUTPUT_NAME "desktop_updater_native"
+  ARCHIVE_OUTPUT_NAME "desktop_updater_native_shared"
+)
+target_compile_features(desktop_updater_native_shared PUBLIC cxx_std_17)
+target_compile_definitions(desktop_updater_native_shared PRIVATE
+  DESKTOP_UPDATER_NATIVE_BUILDING_DLL
+)
+target_include_directories(desktop_updater_native_shared PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(
+  desktop_updater_native_shared
+  PRIVATE
+  bcrypt
+  shell32
+  version
+)
 
 if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   enable_testing()
