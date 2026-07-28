@@ -87,11 +87,18 @@ Future<(NativeSdkVersions, List<VersionFileChange>)> planVersionSync({
   for (final entry in expected.entries) {
     final file = File(_join(root.path, entry.key));
     final current = await file.exists() ? await file.readAsString() : null;
-    if (current != entry.value) {
+    if (current == null || !versionSourcesMatch(current, entry.value)) {
       changes.add(VersionFileChange(path: entry.key, expected: entry.value));
     }
   }
   return (versions, List<VersionFileChange>.unmodifiable(changes));
+}
+
+/// Compares generated source while treating Git's LF and CRLF checkouts as
+/// equivalent.
+bool versionSourcesMatch(String current, String expected) {
+  String normalize(String source) => source.replaceAll("\r\n", "\n");
+  return normalize(current) == normalize(expected);
 }
 
 /// Synchronizes generated native version surfaces from root `pubspec.yaml`.
@@ -217,9 +224,14 @@ Future<String> _nugetProject(
 ) async {
   const relativePath = "windows/native/dotnet/DesktopUpdater.Native/"
       "DesktopUpdater.Native.csproj";
-  final source = await File(_join(root.path, relativePath)).readAsString();
+  final source = (await File(_join(root.path, relativePath)).readAsString())
+      .replaceAll("\r\n", "\n")
+      .replaceAll("\r", "\n");
   final versionLine = "    <Version>${versions.nuget}</Version>";
-  final pattern = RegExp(r"^\s*<Version>.*</Version>$", multiLine: true);
+  final pattern = RegExp(
+    r"^[ \t]*<Version>[^\r\n]*</Version>$",
+    multiLine: true,
+  );
   if (pattern.hasMatch(source)) {
     return source.replaceFirst(pattern, versionLine);
   }

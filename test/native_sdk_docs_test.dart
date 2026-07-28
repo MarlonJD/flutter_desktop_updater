@@ -2,11 +2,24 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+import "../tool/sync_versions.dart";
+
 void main() {
+  test("version sync treats CRLF and LF as equivalent", () {
+    expect(
+      versionSourcesMatch("version: 2.7.0\r\n", "version: 2.7.0\n"),
+      isTrue,
+    );
+    expect(
+      versionSourcesMatch("version: 2.7.0\r\n", "version: 2.7.1\n"),
+      isFalse,
+    );
+  });
+
   test("checked native SDK versions match the canonical pubspec version",
       () async {
     final result = await Process.run(
-      "dart",
+      Platform.isWindows ? "dart.bat" : "dart",
       const ["run", "tool/version_check.dart"],
     );
 
@@ -25,6 +38,8 @@ void main() {
     expect(source, isNot(contains("CHANGELOG.md")));
     expect(source, isNot(contains("git tag")));
     expect(source, isNot(contains("writeAsString(pubspec")));
+    expect(source, contains(r"^[ \t]*<Version>[^\r\n]*</Version>$"));
+    expect(source, isNot(contains(r"^\s*<Version>")));
   });
 
   test("native SDK guide publishes helper and preview runtime boundaries", () {
@@ -120,7 +135,7 @@ void main() {
       ),
     );
     expect(workflow, contains("cmake --install linux/native/build"));
-    expect(workflow, contains("Windows Inno update smoke"));
+    expect(workflow, isNot(contains("run: ./tool/windows_inno_smoke.ps1")));
     expect(workflow, contains("Run update smoke release"));
     expect(harness, contains("Version check"));
     expect(harness, contains("tool/version_check.dart"));
