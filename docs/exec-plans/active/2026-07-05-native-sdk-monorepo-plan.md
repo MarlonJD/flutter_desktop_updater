@@ -990,11 +990,12 @@ flutter test integration_test -d windows
 
 Expected: Flutter plugin and native helper behavior unchanged.
 
-Local status: passed on 2026-07-27 in the Windows 11 Arm VMware guest with
+Local status: passed on 2026-07-28 in the Windows 11 ARM VMware guest with
 Visual Studio Community 2022 17.14.37516.0 and Windows SDK 10.0.26100.0.
-The Flutter debug build succeeded, the plugin C++ test passed (1/1), the
-standalone native tests passed (7/7), the .NET tests passed (2/2), and the
-Flutter Windows integration tests passed (2/2).
+The Flutter debug build succeeded, the Flutter plugin C++ test passed (1/1),
+the standalone native tests passed (7/7), the .NET tests passed (3/3,
+including real native DLL P/Invoke), and the Flutter Windows integration tests
+passed (2/2).
 
 - [x] **Step 4.12: Commit Windows SDK extraction**
 
@@ -1792,7 +1793,7 @@ flutter build macos --debug
 flutter test integration_test -d macos
 flutter build windows --debug
 cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 flutter build linux --debug
 cmake --build example/build/linux/x64/debug --target desktop_updater_test
 ctest --test-dir example/build/linux/x64/debug --output-on-failure

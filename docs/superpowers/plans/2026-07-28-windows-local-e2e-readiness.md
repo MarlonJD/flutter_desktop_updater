@@ -8,6 +8,13 @@
 
 **Tech Stack:** PowerShell 7, Windows PowerShell UAC bridge, Winget, Inno Setup 6, Flutter 3.44+, Dart 3.12+, CMake/MSBuild/CTest, C++17/GoogleTest, .NET 8/xUnit, GitHub Actions.
 
+**Status (2026-07-28):** Complete and verified locally in the Windows 11 ARM
+VM. The final gate covered Debug and Release Flutter builds, plugin CTest,
+standalone native CTest, real .NET P/Invoke, Windows integration tests,
+direct-zip updates, the full Inno install-update-uninstall transaction, release
+publishing, focused tests, the full serial Dart test suite, analysis, format,
+and package dry-run validation.
+
 ## Global Constraints
 
 - Do not create, switch, rename, or delete branches.
@@ -60,7 +67,7 @@
 - Consumes: fetched `origin/main` commit `3d2a295` or its successor.
 - Produces: local `main` containing upstream history plus the approved design commit, with local evidence/build paths ignored.
 
-- [ ] **Step 1: Record the exact divergence and working-tree paths**
+- [x] **Step 1: Record the exact divergence and working-tree paths**
 
 Run:
 
@@ -82,7 +89,7 @@ Verify that the native source changes are already present in `origin/main`,
 while the remaining differences are the approved design, plan-status text,
 format-only CMake/C# differences, and Flutter-generated lock/registrant noise.
 
-- [ ] **Step 2: Rebase the design commit onto fetched `origin/main`**
+- [x] **Step 2: Rebase the design commit onto fetched `origin/main`**
 
 Run:
 
@@ -102,7 +109,7 @@ For native changes already present upstream, keep the `origin/main` version.
 For the design document, keep the local committed version. Do not resolve any
 file until its diff has been classified.
 
-- [ ] **Step 3: Restore only verified Flutter-generated tracked noise**
+- [x] **Step 3: Restore only verified Flutter-generated tracked noise**
 
 After the rebase, inspect:
 
@@ -133,7 +140,7 @@ git restore --source=HEAD -- `
   example/windows/flutter/generated_plugins.cmake
 ```
 
-- [ ] **Step 4: Add scoped ignore rules**
+- [x] **Step 4: Add scoped ignore rules**
 
 Append these exact entries to `.gitignore`:
 
@@ -147,7 +154,7 @@ reports/windows-inno-update-smoke-diagnostics.jsonl
 /windows/native/dotnet/**/obj/
 ```
 
-- [ ] **Step 5: Verify the ignore behavior**
+- [x] **Step 5: Verify the ignore behavior**
 
 Run:
 
@@ -163,7 +170,7 @@ git diff --check
 Expected: every local artifact resolves to the new scoped rule and
 `git diff --check` exits 0.
 
-- [ ] **Step 6: Commit the artifact policy**
+- [x] **Step 6: Commit the artifact policy**
 
 ```powershell
 git add .gitignore
@@ -185,7 +192,7 @@ git commit -m "chore: ignore local windows e2e artifacts"
 - Produces: `C:\Program Files\PowerShell\7\pwsh.exe` and an installed
   `ISCC.exe` under the Inno Setup 6 program directory.
 
-- [ ] **Step 1: Verify the bridge and elevated application**
+- [x] **Step 1: Verify the bridge and elevated application**
 
 Run without printing the bridge secret:
 
@@ -213,7 +220,7 @@ if ($signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Windows(,|$)') 
 Expected: bridge exists, secret presence is checked without disclosure, and the
 signature/publisher checks pass.
 
-- [ ] **Step 2: Resolve the official Winget client**
+- [x] **Step 2: Resolve the official Winget client**
 
 ```powershell
 $winget = Get-Command winget.exe -ErrorAction Stop
@@ -223,7 +230,7 @@ winget show --id JRSoftware.InnoSetup --exact
 
 Expected: both exact package IDs resolve.
 
-- [ ] **Step 3: Submit one fresh signed UAC request and start installation**
+- [x] **Step 3: Submit one fresh signed UAC request and start installation**
 
 ```powershell
 $installScript = @"
@@ -251,7 +258,7 @@ $encodedCommand = [Convert]::ToBase64String(
 The helper writes a fresh signed request and starts elevation immediately. Do
 not create or reuse a request JSON manually.
 
-- [ ] **Step 4: Wait on installed files, not a fixed long sleep**
+- [x] **Step 4: Wait on installed files, not a fixed long sleep**
 
 Poll in intervals shorter than 60 seconds:
 
@@ -281,7 +288,7 @@ if (-not $isccPath) {
 }
 ```
 
-- [ ] **Step 5: Verify both installed executables**
+- [x] **Step 5: Verify both installed executables**
 
 ```powershell
 $toolSignatures = @(
@@ -316,7 +323,7 @@ both installed binaries have valid Authenticode signatures.
 - Produces: an xUnit test that fails if DLL discovery, architecture, struct
   marshalling, C ABI execution, UTF-8 decoding, or result freeing regresses.
 
-- [ ] **Step 1: Build the current standalone native DLL**
+- [x] **Step 1: Build the current standalone native DLL**
 
 ```powershell
 cmake -S windows/native -B windows/native/build `
@@ -330,7 +337,7 @@ Expected:
 windows\native\build\Debug\desktop_updater_native.dll
 ```
 
-- [ ] **Step 2: Write the failing native-call test**
+- [x] **Step 2: Write the failing native-call test**
 
 Add `using System.IO;` and this test to
 `DesktopUpdaterNativeTests.cs`:
@@ -355,7 +362,7 @@ public void CallsRealNativeAbiAndDecodesItsError()
 This mutation catches removal of the DLL copy, a wrong `DllImport` name, ABI
 layout drift, or managed fallback behavior.
 
-- [ ] **Step 3: Run the test and verify RED**
+- [x] **Step 3: Run the test and verify RED**
 
 Ensure no native DLL is already in the test output, then run:
 
@@ -373,7 +380,7 @@ dotnet test `
 Expected: `CallsRealNativeAbiAndDecodesItsError` fails with
 `DllNotFoundException`.
 
-- [ ] **Step 4: Add the minimal native DLL copy contract**
+- [x] **Step 4: Add the minimal native DLL copy contract**
 
 Add to the test project:
 
@@ -397,7 +404,7 @@ Add to the test project:
   </Target>
 ```
 
-- [ ] **Step 5: Run the .NET test and verify GREEN**
+- [x] **Step 5: Run the .NET test and verify GREEN**
 
 ```powershell
 dotnet test `
@@ -409,7 +416,7 @@ dotnet test `
 
 Expected: 3 tests pass, including the real native-call test.
 
-- [ ] **Step 6: Verify the missing-DLL error is precise**
+- [x] **Step 6: Verify the missing-DLL error is precise**
 
 Temporarily move only the built native DLL to a sibling filename, run the
 build, and restore it in `finally`:
@@ -437,7 +444,7 @@ Expected error contains:
 Build windows/native/build for Debug before running DesktopUpdater.Native.Tests.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add `
@@ -462,7 +469,7 @@ git commit -m "test: exercise windows native dll through dotnet"
 - Produces: non-zero plugin test discovery in Debug and Release, a standalone
   native/.NET job segment, and no false CI claim for the local-only Inno smoke.
 
-- [ ] **Step 1: Update the workflow contract test first**
+- [x] **Step 1: Update the workflow contract test first**
 
 Replace the old root CTest expectation and add Debug, standalone native, .NET,
 and local-only Inno assertions:
@@ -506,7 +513,7 @@ and local-only Inno assertions:
     expect(workflow, isNot(contains("windows_inno_smoke.ps1")));
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 ```powershell
 flutter test --no-pub test/windows_release_smoke_config_test.dart
@@ -515,7 +522,7 @@ flutter test --no-pub test/windows_release_smoke_config_test.dart
 Expected: failure because the workflow still uses the root CTest directory,
 does not run standalone .NET coverage, and still invokes the Inno scaffold.
 
-- [ ] **Step 3: Change the Debug and Release plugin CTest directories**
+- [x] **Step 3: Change the Debug and Release plugin CTest directories**
 
 Use:
 
@@ -529,7 +536,7 @@ Use:
         run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure
 ```
 
-- [ ] **Step 4: Add standalone native and .NET steps**
+- [x] **Step 4: Add standalone native and .NET steps**
 
 Add after dependency installation and before the example build:
 
@@ -549,7 +556,7 @@ Add after dependency installation and before the example build:
 The explicit restore makes `--no-restore` deterministic and keeps the test step
 focused on build and execution.
 
-- [ ] **Step 5: Remove the Inno CI scaffold and its artifact upload**
+- [x] **Step 5: Remove the Inno CI scaffold and its artifact upload**
 
 Remove only:
 
@@ -563,7 +570,7 @@ Remove only:
 and the `windows-inno-update-smoke-diagnostics` artifact step. Direct-zip
 Debug/Release smoke uploads remain unchanged.
 
-- [ ] **Step 6: Run the focused test and verify GREEN**
+- [x] **Step 6: Run the focused test and verify GREEN**
 
 ```powershell
 flutter test --no-pub test/windows_release_smoke_config_test.dart
@@ -571,7 +578,7 @@ flutter test --no-pub test/windows_release_smoke_config_test.dart
 
 Expected: all tests in the file pass.
 
-- [ ] **Step 7: Prove the corrected CTest path discovers a test locally**
+- [x] **Step 7: Prove the corrected CTest path discovers a test locally**
 
 ```powershell
 cmake --build example/build/windows/x64 `
@@ -589,7 +596,7 @@ Expected:
 100% tests passed, 0 tests failed out of 1
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add .github/workflows/desktop-updater-ci.yml `
@@ -613,7 +620,7 @@ git commit -m "ci: run real windows native tests"
 - Produces: `reports/windows-inno-update-smoke-diagnostics.jsonl` and a
   successful install → updater-driven update → uninstall proof.
 
-- [ ] **Step 1: Verify the existing scaffold fails to produce E2E evidence**
+- [x] **Step 1: Verify the existing scaffold fails to produce E2E evidence**
 
 Remove only the prior report, run the scaffold, and require the final evidence
 events:
@@ -640,7 +647,7 @@ foreach ($event in @(
 Expected before implementation: failure because the scaffold only prints
 prerequisites and creates no report.
 
-- [ ] **Step 2: Add strict parameters, path resolution, and helpers**
+- [x] **Step 2: Add strict parameters, path resolution, and helpers**
 
 Replace the scaffold header with:
 
@@ -716,7 +723,7 @@ function Resolve-Iscc([string] $ExplicitPath) {
 }
 ```
 
-- [ ] **Step 3: Add publish fixture creation**
+- [x] **Step 3: Add publish fixture creation**
 
 Add:
 
@@ -802,7 +809,7 @@ additionalFiles:
 }
 ```
 
-- [ ] **Step 4: Add installed-app update handoff**
+- [x] **Step 4: Add installed-app update handoff**
 
 Add:
 
@@ -846,7 +853,7 @@ function Invoke-InstalledAppUpdate(
 }
 ```
 
-- [ ] **Step 5: Add the complete main transaction and safe cleanup**
+- [x] **Step 5: Add the complete main transaction and safe cleanup**
 
 Use this main sequence after the helper functions:
 
@@ -985,7 +992,7 @@ try {
 }
 ```
 
-- [ ] **Step 6: Run the full smoke and verify GREEN**
+- [x] **Step 6: Run the full smoke and verify GREEN**
 
 ```powershell
 pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
@@ -1015,7 +1022,7 @@ foreach ($event in @(
 }
 ```
 
-- [ ] **Step 7: Update local-only documentation**
+- [x] **Step 7: Update local-only documentation**
 
 Replace the scaffold/CI paragraph in
 `docs/windows-inno-installer-updates.md` with:
@@ -1037,7 +1044,7 @@ the disposable fixture after a failure. This lane is intentionally local-only
 and does not require production Authenticode credentials.
 ````
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add tool/windows_inno_smoke.ps1 `
@@ -1059,7 +1066,7 @@ git commit -m "test: run full windows inno smoke locally"
 - Consumes: fresh command output from Tasks 3–5.
 - Produces: accurate repository-backed status without stale non-Windows claims.
 
-- [ ] **Step 1: Update the native SDK Windows lane**
+- [x] **Step 1: Update the native SDK Windows lane**
 
 Keep Step 4.11 checked and record exact fresh counts:
 
@@ -1078,7 +1085,7 @@ Use the corrected plugin CTest command:
 ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 ```
 
-- [ ] **Step 2: Update the full Inno plan**
+- [x] **Step 2: Update the full Inno plan**
 
 Mark Step 12.5 and the final Windows Inno smoke item checked. Replace the stale
 host status with:
@@ -1097,7 +1104,7 @@ Correct every root plugin CTest example in this plan to:
 ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 ```
 
-- [ ] **Step 3: Run docs and plan guards**
+- [x] **Step 3: Run docs and plan guards**
 
 ```powershell
 flutter test --no-pub `
@@ -1108,7 +1115,7 @@ flutter test --no-pub `
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add `
@@ -1132,7 +1139,7 @@ git commit -m "docs: record windows e2e evidence"
 - Produces: fresh Debug, Release, Inno, .NET, Dart, and repository-cleanliness
   evidence.
 
-- [ ] **Step 1: Run Debug build and plugin test**
+- [x] **Step 1: Run Debug build and plugin test**
 
 ```powershell
 Push-Location example
@@ -1151,7 +1158,7 @@ try {
 
 Expected: build succeeds and CTest reports 1/1.
 
-- [ ] **Step 2: Run standalone native and real .NET tests**
+- [x] **Step 2: Run standalone native and real .NET tests**
 
 ```powershell
 cmake -S windows/native -B windows/native/build `
@@ -1166,7 +1173,7 @@ dotnet test `
 
 Expected: standalone CTest reports 7/7 and .NET reports 3/3.
 
-- [ ] **Step 3: Run Debug integration and direct-zip smoke in the required order**
+- [x] **Step 3: Run Debug integration and direct-zip smoke in the required order**
 
 ```powershell
 Push-Location example
@@ -1183,7 +1190,7 @@ try {
 The rebuild after integration is mandatory because the integration runner
 overwrites the Debug application entrypoint.
 
-- [ ] **Step 4: Run the full local Inno smoke**
+- [x] **Step 4: Run the full local Inno smoke**
 
 ```powershell
 pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
@@ -1191,7 +1198,7 @@ pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
 
 Expected: install, updater-driven update, uninstall, and cleanup pass.
 
-- [ ] **Step 5: Run Release build, plugin test, integration, publish, and smoke**
+- [x] **Step 5: Run Release build, plugin test, integration, publish, and smoke**
 
 ```powershell
 Push-Location example
@@ -1216,7 +1223,7 @@ try {
 Expected: Release CTest reports 1/1, integration reports 2/2, publish reaches
 hosted validation success, and update smoke reports cleanup success.
 
-- [ ] **Step 6: Run focused Dart tests**
+- [x] **Step 6: Run focused Dart tests**
 
 ```powershell
 flutter test --no-pub `
@@ -1230,7 +1237,7 @@ flutter test --no-pub `
 
 Expected: all pass.
 
-- [ ] **Step 7: Run the repository validation ladder**
+- [x] **Step 7: Run the repository validation ladder**
 
 ```powershell
 dart format --set-exit-if-changed .
@@ -1243,7 +1250,7 @@ Expected: every command exits 0. If formatting changes a file, run
 `dart format .`, inspect and commit the formatting, then rerun the
 `--set-exit-if-changed` command.
 
-- [ ] **Step 8: Remove only regenerated tracked Flutter noise**
+- [x] **Step 8: Remove only regenerated tracked Flutter noise**
 
 Inspect first:
 
@@ -1261,7 +1268,7 @@ git diff -- example/pubspec.lock `
 If the diff is again only SDK-generated lock/registrant noise, restore the
 same exact paths from `HEAD` with `git restore --source=HEAD -- <paths>`.
 
-- [ ] **Step 9: Verify final Git state and upstream ancestry**
+- [x] **Step 9: Verify final Git state and upstream ancestry**
 
 ```powershell
 git fetch origin
