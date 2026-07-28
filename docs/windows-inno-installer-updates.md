@@ -95,6 +95,9 @@ Important fields:
 
 Generated mode also accepts `setupIcon`, `licenseFile`,
 `architecturesAllowed`, and `architecturesInstallIn64BitMode`.
+Use `x64compatible` for both architecture fields when an x64 Flutter build
+should also install on Arm64 Windows 11 through x64 emulation. The legacy
+`x64` identifier matches x64 Windows only.
 
 Set the same protected directory before the Windows native client is
 configured. For a native CMake build, pass it directly:
@@ -278,16 +281,20 @@ dart run desktop_updater:release validate --manifest dist/desktop_updater/.deskt
 dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json
 ```
 
-CI can also run the scaffolded Windows Inno smoke:
+Run the full Inno smoke locally on a Windows machine with PowerShell 7 and
+Inno Setup 6:
 
 ```powershell
-pwsh ./tool/windows_inno_smoke.ps1
+pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
 ```
 
-The scaffold exits with `not run` on non-Windows hosts or when ISCC is missing.
-On a Windows runner with Inno Setup available, it prepares
-`reports/windows-inno-update-smoke-diagnostics.jsonl` for the full install,
-update, uninstall, and cleanup smoke flow.
+The smoke publishes two installer versions through the release CLI, installs
+version 1 into a disposable per-user directory, asks the installed example app
+to hand version 2 to the Windows native Inno updater, verifies helper
+diagnostics and staging cleanup, then runs the generated Inno uninstaller and
+verifies that the version 2 payload is removed. Pass `-KeepArtifacts` to retain
+the disposable fixture after a failure. This lane is intentionally local-only
+and does not require production Authenticode credentials.
 
 The repository's source and Dart tests verify the generated contract only.
 Authenticode validation, the resulting owner/DACL metadata, nonzero

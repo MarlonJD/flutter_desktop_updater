@@ -37,3 +37,10 @@ Frameworks
 Frameworks/
 macos/FlutterFramework
 macos/FlutterFramework/
+
+# Local Windows E2E evidence and machine-only build state.
+reports/windows-update-smoke-*-diagnostics.jsonl
+reports/windows-inno-update-smoke-diagnostics.jsonl
+/uac-bridge/
+/windows/native/dotnet/**/bin/
+/windows/native/dotnet/**/obj/

@@ -92,7 +92,16 @@ void main() {
     expect(profile.flutterBuildArgs, ["build", "macos", "--release"]);
     expect(
       profile.defaultInputPath("Example"),
-      endsWith("build/macos/Build/Products/Release/Example.app"),
+      endsWith(
+        path.join(
+          "build",
+          "macos",
+          "Build",
+          "Products",
+          "Release",
+          "Example.app",
+        ),
+      ),
     );
     expect(profile.installStrategy, "wholeBundleReplace");
   });

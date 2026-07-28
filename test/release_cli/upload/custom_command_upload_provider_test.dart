@@ -11,13 +11,25 @@ void main() {
     final tempDir = await Directory.systemTemp.createTemp("custom_upload_");
     try {
       final logFile = File(path.join(tempDir.path, "env.log"));
-      final script = File(path.join(tempDir.path, "upload.sh"));
-      await script.writeAsString("""
+      final script = File(
+        path.join(
+          tempDir.path,
+          Platform.isWindows ? "upload.cmd" : "upload.sh",
+        ),
+      );
+      if (Platform.isWindows) {
+        await script.writeAsString("""
+@echo off
+if not "%~x0"==".cmd" exit /b 65
+> "${logFile.path}" echo %DESKTOP_UPDATER_PUBLISH_MANIFEST%
+>> "${logFile.path}" echo %DESKTOP_UPDATER_ARTIFACT_KIND%
+""");
+      } else {
+        await script.writeAsString("""
 #!/bin/sh
 printf '%s\\n' "\$DESKTOP_UPDATER_PUBLISH_MANIFEST" > "${logFile.path}"
 printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
 """);
-      if (!Platform.isWindows) {
         final chmod = await Process.run("chmod", ["+x", script.path]);
         expect(chmod.exitCode, 0);
       }
@@ -81,7 +93,7 @@ printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
       expect(calls.single.executable, "cmd");
       expect(
         calls.single.arguments.take(4),
-        ["/d", "/e:off", "/v:off", "/c"],
+        ["/d", "/e:on", "/v:off", "/c"],
       );
       expect(calls.single.arguments.last, endsWith("upload.cmd"));
       expect(

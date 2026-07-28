@@ -338,6 +338,7 @@ String _readAll(Iterable<String> paths) =>
     paths.map((path) => File(path).readAsStringSync()).join("\n");
 
 String _functionBody(String source, String functionName) {
+  source = source.replaceAll("\r\n", "\n");
   final start = source.indexOf(functionName);
   expect(start, isNonNegative, reason: functionName);
   final nextFunction = source.indexOf("\n}\n\n", start);

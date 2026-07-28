@@ -22,24 +22,31 @@ class PublishLayout {
   final Uri artifactUrl;
 
   File get manifestFile {
-    return File(
-      path.join(outputDirectory.path, ".desktop_updater_publish.json"),
-    );
+    return _localFile(".desktop_updater_publish.json");
   }
 
   File get appArchiveFile {
-    return File(path.join(outputDirectory.path, appArchiveRelativePath));
+    return _localFile(appArchiveRelativePath);
   }
 
   File get releaseFile {
-    return File(path.join(outputDirectory.path, releaseRelativePath));
+    return _localFile(releaseRelativePath);
   }
 
   File get artifactFile {
-    return File(path.join(outputDirectory.path, artifactRelativePath));
+    return _localFile(artifactRelativePath);
   }
 
   Directory get releaseDirectory => releaseFile.parent;
+
+  File _localFile(String relativePath) {
+    return File(
+      path.joinAll([
+        outputDirectory.path,
+        ...path.posix.split(relativePath),
+      ]),
+    );
+  }
 
   static PublishLayout create({
     required Directory outputDirectory,

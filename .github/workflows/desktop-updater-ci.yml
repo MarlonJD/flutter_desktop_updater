@@ -705,7 +705,7 @@ jobs:
         working-directory: example
         shell: pwsh
         run: |
-          $output = & ctest --test-dir build/windows/x64 -C Debug --output-on-failure 2>&1
+          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure 2>&1
           $exitCode = $LASTEXITCODE
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) { exit $exitCode }
@@ -721,23 +721,12 @@ jobs:
       - name: Run update smoke
         working-directory: example
         run: dart run tool/updater_smoke.dart --diagnostics-log ../reports/windows-update-smoke-debug-diagnostics.jsonl
-      - name: Windows Inno update smoke
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./tool/windows_inno_smoke.ps1
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-debug-diagnostics
           path: reports/windows-update-smoke-debug-diagnostics.jsonl
-          if-no-files-found: ignore
-      - name: Upload Windows Inno update smoke diagnostics
-        if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-inno-update-smoke-diagnostics
-          path: reports/windows-inno-update-smoke-diagnostics.jsonl
           if-no-files-found: ignore
       - name: Build example release
         working-directory: example
@@ -749,7 +738,7 @@ jobs:
         working-directory: example
         shell: pwsh
         run: |
-          $output = & ctest --test-dir build/windows/x64 -C Release --output-on-failure 2>&1
+          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure 2>&1
           $exitCode = $LASTEXITCODE
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) { exit $exitCode }

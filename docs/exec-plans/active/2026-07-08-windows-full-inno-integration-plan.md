@@ -900,17 +900,18 @@ Expected after implementation: PASS.
 
 - [x] **Step 3.6: Run Windows native tests**
 
-`not run` locally: Windows native build/CMake tests require a Windows host.
-
-Run on Windows or wait for CI:
+Run on Windows:
 
 ```sh
 flutter build windows --debug
 cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 ```
 
 Expected: PASS for existing Windows native helper tests. If this cannot be run locally, record it as `not run` and rely on CI.
+
+Local status: passed on 2026-07-28 in the Windows 11 ARM VMware guest. The
+Flutter debug build succeeded and the plugin C++ test passed (1/1).
 
 - [x] **Step 3.7: Commit Windows Inno execution**
 
@@ -2421,17 +2422,23 @@ flutter test --no-pub test/harness_engineering_docs_test.dart
 
 Expected: PASS after report path docs and workflow stay aligned.
 
-- [ ] **Step 12.5: Run smoke manually on Windows**
+- [x] **Step 12.5: Run smoke manually on Windows**
 
 Run on Windows:
 
 ```powershell
-pwsh ./tool/windows_inno_smoke.ps1
+pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
 ```
 
-Expected without ISCC: `not run: Inno Setup Compiler is not installed.` Expected with ISCC: script continues to the real smoke once the implementation fills in app build/install/update assertions.
+Expected: the script publishes two Inno installers, installs version 1, hands
+version 2 to the native updater, verifies diagnostics and staging cleanup, and
+uninstalls the version 2 payload.
 
-Local status: not run; this host is not Windows and does not provide the Windows Inno Setup Compiler lane.
+Local status: passed on 2026-07-28 in the Windows 11 ARM VMware guest. The
+release CLI produced version 1 and version 2 Inno installers with one stable
+AppId, the installed example app handed version 2 to the native updater, the
+helper reported `inno installer success`, staging cleanup completed, and the
+Inno uninstaller removed the version 2 payload.
 
 - [x] **Step 12.6: Commit smoke scaffolding**
 
@@ -2490,31 +2497,41 @@ flutter analyze --no-fatal-infos
 flutter test --no-pub
 ```
 
-- [ ] Run publish dry run:
+- [x] Run publish dry run:
 
 ```sh
 dart pub publish --dry-run
 ```
 
-Local status: blocked by pre-existing modified checked-in file `test/harness_engineering_docs_test.dart`; command reached package validation and exited 65.
+Local status: passed on 2026-07-28 after the completed changes were committed.
+Package validation reported zero warnings and one existing version-selection
+hint.
 
-- [ ] Run Windows native tests on Windows or mark `not run` locally:
+- [x] Run Windows native tests on Windows or mark `not run` locally:
 
 ```sh
 flutter build windows --debug
 cmake --build example/build/windows/x64 --config Debug --target desktop_updater_test
-ctest --test-dir example/build/windows/x64 -C Debug --output-on-failure
+ctest --test-dir example/build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
 ```
 
-Local status: not run; this host is not Windows.
+Local status: passed on 2026-07-28 in the Windows 11 ARM VMware guest. The
+Flutter debug build succeeded, the plugin C++ test passed (1/1), the
+standalone native tests passed (7/7), the .NET tests passed (3/3, including
+real native DLL P/Invoke), and the Flutter Windows integration tests passed
+(2/2).
 
-- [ ] Run Windows Inno smoke on Windows with ISCC installed or mark `not run` locally:
+- [x] Run Windows Inno smoke on Windows with ISCC installed or mark `not run` locally:
 
 ```powershell
-pwsh ./tool/windows_inno_smoke.ps1
+pwsh -NoProfile -File ./tool/windows_inno_smoke.ps1
 ```
 
-Local status: not run; this host is not Windows and ISCC is unavailable locally.
+Local status: passed on 2026-07-28 in the Windows 11 ARM VMware guest. The
+release CLI produced version 1 and version 2 Inno installers with one stable
+AppId, the installed example app handed version 2 to the native updater, the
+helper reported `inno installer success`, staging cleanup completed, and the
+Inno uninstaller removed the version 2 payload.
 
 ## Issue 60 Response Draft
 

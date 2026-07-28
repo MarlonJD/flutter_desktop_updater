@@ -7,29 +7,38 @@ import "package:flutter_test/flutter_test.dart";
 
 void main() {
   test("manual provider prints folder, validate command, and docs", () async {
-    final output = StringBuffer();
+    final localRoot = await Directory.systemTemp.createTemp("manual_upload_");
+    try {
+      final output = StringBuffer();
 
-    await const ManualUploadProvider().upload(
-      localRoot: Directory("/tmp/dist/desktop_updater"),
-      manifest: testPublishManifest(),
-      config: const ManualUploadConfig(),
-      output: output,
-    );
+      await const ManualUploadProvider().upload(
+        localRoot: localRoot,
+        manifest: testPublishManifest(localRoot: localRoot.path),
+        config: const ManualUploadConfig(),
+        output: output,
+      );
 
-    expect(output.toString(), contains("Manual publish package is ready."));
-    expect(output.toString(), contains("file:///tmp/dist/desktop_updater/"));
-    expect(output.toString(), contains("Expected remote root:"));
-    expect(output.toString(), contains("Artifact kind: zip"));
-    expect(output.toString(), contains("release validate --manifest"));
-    expect(output.toString(), contains("docs/publishing.md"));
+      final folderUri = localRoot.absolute.uri.toString();
+      expect(output.toString(), contains("Manual publish package is ready."));
+      expect(
+        output.toString(),
+        contains(folderUri.endsWith("/") ? folderUri : "$folderUri/"),
+      );
+      expect(output.toString(), contains("Expected remote root:"));
+      expect(output.toString(), contains("Artifact kind: zip"));
+      expect(output.toString(), contains("release validate --manifest"));
+      expect(output.toString(), contains("docs/publishing.md"));
+    } finally {
+      await localRoot.delete(recursive: true);
+    }
   });
 }
 
-PublishManifest testPublishManifest() {
+PublishManifest testPublishManifest({required String localRoot}) {
   return PublishManifest(
     schemaVersion: 1,
     baseUrl: Uri.parse("https://updates.example.com/"),
-    localRoot: "/tmp/dist/desktop_updater",
+    localRoot: localRoot,
     appArchive: PublishManifestFile(
       path: "app-archive.json",
       url: Uri.parse("https://updates.example.com/app-archive.json"),

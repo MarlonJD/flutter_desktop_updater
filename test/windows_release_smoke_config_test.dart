@@ -35,10 +35,45 @@ void main() {
         "--target desktop_updater_test",
       ),
     );
+    const pluginCTestDirectory = "build/windows/x64/plugins/desktop_updater";
     expect(
       workflow,
-      contains("ctest --test-dir build/windows/x64 -C Release"),
+      contains(
+        "ctest --test-dir $pluginCTestDirectory "
+        "-C Debug --output-on-failure",
+      ),
     );
+    expect(
+      workflow,
+      contains(
+        "ctest --test-dir $pluginCTestDirectory "
+        "-C Release --output-on-failure",
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        "cmake -S windows/native -B windows/native/build "
+        "-DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON",
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        "ctest --test-dir windows/native/build -C Release "
+        "--output-on-failure",
+      ),
+    );
+    expect(workflow, contains("--no-tests=error"));
+    expect(
+      workflow,
+      contains(
+        "dotnet test "
+        "windows/native/dotnet/DesktopUpdater.Native.Tests/"
+        "DesktopUpdater.Native.Tests.csproj",
+      ),
+    );
+    expect(workflow, isNot(contains("windows_inno_smoke.ps1")));
     expect(
       workflow,
       contains("dart run tool/updater_smoke.dart --config Release"),

@@ -2,6 +2,7 @@ import "dart:io";
 
 import "package:desktop_updater/src/release_cli/publish_layout.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:path/path.dart" as path;
 
 void main() {
   test("creates stable local and remote release paths", () {
@@ -22,6 +23,16 @@ void main() {
     expect(
       layout.releaseUrl.toString(),
       "https://updates.example.com/releases/2.0.1/macos/release.json",
+    );
+    expect(
+      layout.releaseFile.path,
+      path.join(
+        layout.outputDirectory.path,
+        "releases",
+        "2.0.1",
+        "macos",
+        "release.json",
+      ),
     );
   });
 
