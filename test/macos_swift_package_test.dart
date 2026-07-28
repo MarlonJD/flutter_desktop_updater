@@ -210,6 +210,21 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(privilegeSource, contains("signedIdentityMismatch"));
     expect(privilegeSource, isNot(contains("SMJobBless")));
     expect(privilegeSource, isNot(contains("SMAuthorizedClients")));
+    expect(
+      privilegeSource,
+      contains("try response.payload.withUnsafeBytes"),
+    );
+    expect(
+      privilegeSource,
+      contains(".maximumFrameLength).contains(bytes.count)"),
+    );
+    expect(privilegeSource, isNot(contains("bytes.baseAddress,")));
+    expect(
+      helperSource,
+      contains("let payloadWasSet = payload.withUnsafeBytes"),
+    );
+    expect(helperSource, contains("guard payloadWasSet else"));
+    expect(helperSource, isNot(contains("bytes.baseAddress,")));
     expect(artifactVerifier, contains("/usr/bin/codesign"));
     expect(artifactVerifier, contains("/usr/sbin/spctl"));
     expect(artifactVerifier, contains("stapler"));

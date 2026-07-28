@@ -780,11 +780,18 @@ private final class MacPrivilegedXPCServer {
                         peerProcessIdentifier:
                             xpc_connection_get_pid(connection)
                     )
-                    response.payload.withUnsafeBytes { bytes in
+                    try response.payload.withUnsafeBytes { bytes in
+                        guard
+                            (1 ... MacLengthPrefixedFileHandleChannel
+                                .maximumFrameLength).contains(bytes.count),
+                            let baseAddress = bytes.baseAddress
+                        else {
+                            throw MacOneShotWireError.invalidFrameLength
+                        }
                         xpc_dictionary_set_data(
                             reply,
                             "payload",
-                            bytes.baseAddress,
+                            baseAddress,
                             bytes.count
                         )
                     }

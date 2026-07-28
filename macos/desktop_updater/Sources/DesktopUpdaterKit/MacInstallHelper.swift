@@ -901,13 +901,20 @@ final class SystemMacPrivilegedXPCExchange: MacPrivilegedXPCExchanging {
             xpc_dictionary_set_string(message, "operation", $0)
         }
         if let payload {
-            payload.withUnsafeBytes { bytes in
+            let payloadWasSet = payload.withUnsafeBytes { bytes -> Bool in
+                guard let baseAddress = bytes.baseAddress else {
+                    return false
+                }
                 xpc_dictionary_set_data(
                     message,
                     "payload",
-                    bytes.baseAddress,
+                    baseAddress,
                     bytes.count
                 )
+                return true
+            }
+            guard payloadWasSet else {
+                return .invalidResponse
             }
         }
         let reply = xpc_connection_send_message_with_reply_sync(
