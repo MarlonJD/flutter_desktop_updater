@@ -184,6 +184,10 @@ Fixed Windows Event Log names include:
   `portable target read authority failure`,
   `portable parent mutation authority failure`,
   `portable target marker failure`
+- `portable directory handle failure`,
+  `portable security descriptor failure`, `portable caller token failure`,
+  `portable impersonation token failure`, `portable access check failure`,
+  `portable directory access denied`
 
 Fixed Linux names include `helper authenticated`, `target lock acquired`,
 `transaction journal persisted`, `caller exit observed`, `recovery detected`,

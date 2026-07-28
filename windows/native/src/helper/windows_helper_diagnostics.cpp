@@ -79,6 +79,18 @@ constexpr std::array<WindowsHelperEventDescriptor,
          L"portable parent mutation authority failure"},
         {1035, EVENTLOG_ERROR_TYPE, "portable target marker failure",
          L"portable target marker failure"},
+        {1036, EVENTLOG_ERROR_TYPE, "portable directory handle failure",
+         L"portable directory handle failure"},
+        {1037, EVENTLOG_ERROR_TYPE, "portable security descriptor failure",
+         L"portable security descriptor failure"},
+        {1038, EVENTLOG_ERROR_TYPE, "portable caller token failure",
+         L"portable caller token failure"},
+        {1039, EVENTLOG_ERROR_TYPE, "portable impersonation token failure",
+         L"portable impersonation token failure"},
+        {1040, EVENTLOG_ERROR_TYPE, "portable access check failure",
+         L"portable access check failure"},
+        {1041, EVENTLOG_ERROR_TYPE, "portable directory access denied",
+         L"portable directory access denied"},
     }};
 
 }  // namespace

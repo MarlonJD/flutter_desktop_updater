@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 36> expected = {
+  constexpr std::array<const char*, 42> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -46,6 +46,12 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable target read authority failure",
       "portable parent mutation authority failure",
       "portable target marker failure",
+      "portable directory handle failure",
+      "portable security descriptor failure",
+      "portable caller token failure",
+      "portable impersonation token failure",
+      "portable access check failure",
+      "portable directory access denied",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -155,6 +161,36 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       EVENTLOG_ERROR_TYPE,
       DescribeWindowsHelperEvent(
           WindowsHelperEvent::kPortableTargetMarkerFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableDirectoryHandleFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableSecurityDescriptorFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableCallerTokenFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableImpersonationTokenFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableAccessCheckFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableDirectoryAccessDenied)
           .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),

@@ -611,6 +611,30 @@ void main() {
       authorizer,
       contains("WindowsHelperEvent::kPortableTargetMarkerFailure"),
     );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableDirectoryHandleFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableSecurityDescriptorFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableCallerTokenFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableImpersonationTokenFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableAccessCheckFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableDirectoryAccessDenied"),
+    );
     expect(transaction, contains("WindowsHelperEvent::kBackupStart"));
     expect(transaction, contains("WindowsHelperEvent::kMoveStart"));
     expect(transaction, contains("WindowsHelperEvent::kRollbackStart"));

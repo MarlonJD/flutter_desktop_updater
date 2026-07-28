@@ -293,20 +293,54 @@ void ValidateRelativeExecutable(const std::filesystem::path& path) {
   }
 }
 
-bool CallerTokenHasDirectoryAccess(const std::filesystem::path& path,
-                                   HANDLE caller_process,
-                                   DWORD desired_access) {
+enum class CallerDirectoryAccessResult {
+  kGranted,
+  kDirectoryHandleFailure,
+  kSecurityDescriptorFailure,
+  kCallerTokenFailure,
+  kImpersonationTokenFailure,
+  kAccessCheckFailure,
+  kAccessDenied,
+};
+
+WindowsHelperEvent DirectoryAccessFailureEvent(
+    CallerDirectoryAccessResult result) {
+  switch (result) {
+    case CallerDirectoryAccessResult::kDirectoryHandleFailure:
+      return WindowsHelperEvent::kPortableDirectoryHandleFailure;
+    case CallerDirectoryAccessResult::kSecurityDescriptorFailure:
+      return WindowsHelperEvent::kPortableSecurityDescriptorFailure;
+    case CallerDirectoryAccessResult::kCallerTokenFailure:
+      return WindowsHelperEvent::kPortableCallerTokenFailure;
+    case CallerDirectoryAccessResult::kImpersonationTokenFailure:
+      return WindowsHelperEvent::kPortableImpersonationTokenFailure;
+    case CallerDirectoryAccessResult::kAccessCheckFailure:
+      return WindowsHelperEvent::kPortableAccessCheckFailure;
+    case CallerDirectoryAccessResult::kAccessDenied:
+      return WindowsHelperEvent::kPortableDirectoryAccessDenied;
+    case CallerDirectoryAccessResult::kGranted:
+      break;
+  }
+  return WindowsHelperEvent::kPortableAccessCheckFailure;
+}
+
+CallerDirectoryAccessResult CallerTokenDirectoryAccess(
+    const std::filesystem::path& path,
+    HANDLE caller_process,
+    DWORD desired_access) {
   UniqueWindowsHandle directory(CreateFileW(
       path.c_str(), READ_CONTROL | FILE_READ_ATTRIBUTES,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
       OPEN_EXISTING,
       FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-  if (!directory.valid()) return false;
+  if (!directory.valid()) {
+    return CallerDirectoryAccessResult::kDirectoryHandleFailure;
+  }
   BY_HANDLE_FILE_INFORMATION information{};
   if (!GetFileInformationByHandle(directory.get(), &information) ||
       (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
       (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-    return false;
+    return CallerDirectoryAccessResult::kDirectoryHandleFailure;
   }
 
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
@@ -316,20 +350,20 @@ bool CallerTokenHasDirectoryAccess(const std::filesystem::path& path,
       nullptr, &dacl, nullptr, &raw_descriptor);
   if (security != ERROR_SUCCESS || raw_descriptor == nullptr) {
     if (raw_descriptor != nullptr) LocalFree(raw_descriptor);
-    return false;
+    return CallerDirectoryAccessResult::kSecurityDescriptorFailure;
   }
   std::unique_ptr<void, decltype(&LocalFree)> descriptor(raw_descriptor,
                                                          LocalFree);
   HANDLE raw_token = nullptr;
   if (!OpenProcessToken(caller_process, TOKEN_QUERY | TOKEN_DUPLICATE,
                         &raw_token)) {
-    return false;
+    return CallerDirectoryAccessResult::kCallerTokenFailure;
   }
   UniqueWindowsHandle token(raw_token);
   HANDLE raw_impersonation = nullptr;
   if (!DuplicateToken(token.get(), SecurityImpersonation,
                       &raw_impersonation)) {
-    return false;
+    return CallerDirectoryAccessResult::kImpersonationTokenFailure;
   }
   UniqueWindowsHandle impersonation(raw_impersonation);
   GENERIC_MAPPING mapping{FILE_GENERIC_READ, FILE_GENERIC_WRITE,
@@ -343,9 +377,11 @@ bool CallerTokenHasDirectoryAccess(const std::filesystem::path& path,
           raw_descriptor, impersonation.get(), desired_access, &mapping,
           reinterpret_cast<PRIVILEGE_SET*>(privileges.data()),
           &privileges_size, &granted, &access)) {
-    return false;
+    return CallerDirectoryAccessResult::kAccessCheckFailure;
   }
-  return access == TRUE && (granted & desired_access) == desired_access;
+  return access == TRUE && (granted & desired_access) == desired_access
+             ? CallerDirectoryAccessResult::kGranted
+             : CallerDirectoryAccessResult::kAccessDenied;
 }
 
 void ValidatePortableWindowsTargetAuthority(
@@ -358,10 +394,14 @@ void ValidatePortableWindowsTargetAuthority(
   constexpr DWORD kParentAccess =
       GENERIC_READ | GENERIC_WRITE | FILE_TRAVERSE | FILE_DELETE_CHILD |
       SYNCHRONIZE;
-  const bool target_writable =
-      CallerTokenHasDirectoryAccess(target, caller_process, kTargetAccess);
-  const bool parent_writable = CallerTokenHasDirectoryAccess(
+  const CallerDirectoryAccessResult target_access =
+      CallerTokenDirectoryAccess(target, caller_process, kTargetAccess);
+  const CallerDirectoryAccessResult parent_access = CallerTokenDirectoryAccess(
       target.parent_path(), caller_process, kParentAccess);
+  const bool target_writable =
+      target_access == CallerDirectoryAccessResult::kGranted;
+  const bool parent_writable =
+      parent_access == CallerDirectoryAccessResult::kGranted;
   const std::filesystem::path executable_path(caller_executable);
   if (failure_stage != nullptr) {
     if (target.empty() || executable_path.empty() ||
@@ -373,9 +413,11 @@ void ValidatePortableWindowsTargetAuthority(
     } else if (!target_writable) {
       failure_stage->Advance(
           WindowsHelperEvent::kPortableTargetReadAuthorityFailure);
+      RecordWindowsHelperEvent(DirectoryAccessFailureEvent(target_access));
     } else if (!parent_writable) {
       failure_stage->Advance(
           WindowsHelperEvent::kPortableParentMutationAuthorityFailure);
+      RecordWindowsHelperEvent(DirectoryAccessFailureEvent(parent_access));
     }
   }
   ValidatePortableWindowsTargetAuthorityFacts(
