@@ -966,7 +966,26 @@ private final class SignedRunningApplicationFixture {
         process.executableURL = executableURL
         process.arguments = ["5"]
         try process.run()
-        return process
+        let deadline = Date().addingTimeInterval(2)
+        var pathBuffer = [CChar](
+            repeating: 0,
+            count: Int(MAXPATHLEN) * 4
+        )
+        repeat {
+            if proc_pidpath(
+                process.processIdentifier,
+                &pathBuffer,
+                UInt32(pathBuffer.count)
+            ) > 0 {
+                return process
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        } while process.isRunning && Date() < deadline
+        if process.isRunning {
+            process.terminate()
+        }
+        process.waitUntilExit()
+        throw CocoaError(.executableNotLoadable)
     }
 
     func remove() {
