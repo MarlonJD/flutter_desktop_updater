@@ -29,6 +29,7 @@ void main() {
       report.toPlainText(),
       File("fixtures/compat/problem-report-redacted.txt")
           .readAsStringSync()
+          .replaceAll("\r\n", "\n")
           .trimRight(),
     );
   });

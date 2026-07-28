@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
+import "package:path/path.dart" as path;
 
 void main() {
   test("unused rewrite leftovers are not kept in the repository", () {
@@ -33,11 +34,12 @@ void main() {
   });
 
   test("public 2.x runtime does not expose legacy folder update API", () {
+    final migrationRoot = path.join("lib", "src", "migrate");
     final checkedFiles = Directory("lib")
         .listSync(recursive: true)
         .whereType<File>()
         .where((file) => file.path.endsWith(".dart"))
-        .where((file) => !file.path.contains("lib/src/migrate/"))
+        .where((file) => !path.isWithin(migrationRoot, file.path))
         .toList(growable: false);
     const forbiddenTokens = <String>[
       "versionCheck",

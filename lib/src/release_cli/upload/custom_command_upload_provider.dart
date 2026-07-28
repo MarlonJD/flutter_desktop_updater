@@ -102,7 +102,7 @@ class CustomCommandUploadProvider implements UploadProvider {
       await script.writeAsString("@echo off\r\n$command\r\n");
       return await _runProcess(
         "cmd",
-        ["/d", "/e:off", "/v:off", "/c", script.path],
+        ["/d", "/e:on", "/v:off", "/c", script.path],
         environment: environment,
       );
     } finally {
