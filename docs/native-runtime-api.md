@@ -15,6 +15,21 @@ Hosted macOS CI is optional duplication rather than a macOS readiness gate.
 Configured Windows or Linux workflow jobs are not execution evidence; an
 unchecked or `not run` required lane must not be promoted by inference.
 
+## Linux Scope For This Release
+
+Linux is preview-only in this release and is not production-ready. The supported
+release shape is the source-first native SDK with a direct-ZIP update bundle.
+That direct-ZIP preview still requires signed release authority, stable package
+identity, and the documented helper trust checks; preview does not weaken those
+boundaries.
+
+AppImage, deb/APT, rpm/DNF, Flatpak/Flathub, and Snap/Snap Store/Brand Store
+distribution are out of scope for this release. Those channels remain
+`candidate-only` and `not run` under the separate Linux distribution plan. A
+green Docker or hosted Linux job verifies portable mechanics only; it is not
+store approval, repository publication, or installed-polkit target-host
+evidence.
+
 ## Current-Head Merge-Gate Ledger
 
 This table describes the current remediation head, not an earlier commit or a
@@ -74,7 +89,7 @@ to the current-head ledger above.
 | macOS | `pkgInstaller` | Bundled `SMAppService` root daemon executes the fixed `/usr/sbin/installer` handoff |
 | Windows | `zip` | Directory helper replacement |
 | Windows | `innoInstaller` | Authenticode-verified installer handoff |
-| Linux | `zip` | Validated install-root replacement |
+| Linux | `zip` | Preview direct-ZIP install-root replacement |
 
 ## Three-Stage Lifecycle
 
@@ -315,5 +330,6 @@ the packaged third-party notices.
 Delta artifacts remain descriptor metadata only; the preview does not download,
 apply, or fall back from a delta payload. Linux prebuilt binary distribution
 remains outside this preview until an ABI, glibc, architecture, toolchain, and
-support policy is approved. Linux is source-first and makes no stable binary
-ABI promise.
+support policy is approved. AppImage, deb/APT, rpm/DNF, Flatpak/Flathub, and
+Snap store delivery remain future work under the separate distribution plan.
+Linux is source-first and makes no stable binary ABI promise.

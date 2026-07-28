@@ -7,6 +7,17 @@ It is release-engineering guidance, not legal advice. Signing availability,
 store policies, sanctions, export controls, and certificate rules change over
 time. Re-check the official provider documentation before a production launch.
 
+## Current Release Scope
+
+Linux is `preview` and direct-ZIP only in this release. It remains
+`candidate-only` and is not `production-ready`. AppImage, deb/APT, rpm/DNF,
+Flatpak/Flathub, and Snap Store or Brand Store publication are out of scope for
+this release and are tracked by the separate Linux distribution plan.
+
+Passing source builds, Docker tests, or hosted Linux CI does not promote those
+deferred channels and does not substitute for repository/store publication or
+real installed-polkit target-host evidence.
+
 ## Quick Recommendation
 
 For `desktop_updater` direct zip updates:

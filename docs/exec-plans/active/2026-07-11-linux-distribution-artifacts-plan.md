@@ -36,6 +36,14 @@ checkbox was bypassed. Re-run the prerequisite only after the helper plan has
 working packaged prepare/commit/mutation/query/recovery paths and all mandatory
 secretless target-host gates.
 
+Current release decision as of 2026-07-28: this entire plan is out of scope for
+the current version. Linux ships only as a source-first native SDK and
+direct-ZIP `preview`; it remains `candidate-only` and is not
+`production-ready`. AppImage, deb/APT, rpm/DNF, Flatpak/Flathub, public Snap
+Store, and Brand Store work stays here for a future release. None of the
+unchecked distribution or store steps is silently complete, and none is a
+merge or publication gate for the current scoped release.
+
 ## Global Constraints
 
 - **Hard execution dependency:** Do not start Task 1 until
@@ -255,6 +263,8 @@ class ReleaseLinuxInstall {
 
 **Evidence:**
 
+- Current release scope: Linux direct-ZIP `preview` only; distribution/store
+  channels out of scope
 - Prerequisite helper plan: `blocked`
 - RED: `not run`
 - Dart/Swift/C++ conformance: `not run`

@@ -6,6 +6,20 @@
 
 **Tech Stack:** Flutter/Dart tests, C++17, CMake/CTest/GoogleTest, Win32/NT APIs, Linux `openat`/`renameat`/identity checks, Docker, GitHub Actions, polkit/pkexec, PowerShell, Inno Setup, Authenticode.
 
+## Current Release Scope Decision
+
+As of 2026-07-28, Linux production distribution is outside the current release
+scope. This release exposes Linux only as a source-first native SDK and
+direct-ZIP `preview`; it remains `candidate-only` and is not
+`production-ready`. AppImage, deb/APT, rpm/DNF, Flatpak/Flathub, Snap
+Store/Brand Store, and installed-polkit production closure remain future work.
+
+Accordingly, Task 7 and the Linux distribution-artifacts plan are not merge or
+publication gates for this scoped release. Their unchecked steps remain
+literal `not run`; Docker and hosted Linux CI can verify portable mechanics but
+must not be relabeled as store, repository, or real-polkit evidence. Windows
+readiness and ordinary Linux direct-ZIP preview regressions remain in scope.
+
 ## Global Constraints
 
 - Work only on `feat/native-sdk-platform-split`; do not create, switch, rename, or delete branches.
@@ -394,9 +408,13 @@ Prove UAC cancel/no mutation, elevation success, machine-wide protected Program 
 
 Bind run/job URLs, exact SHA, runner/OS, signing certificate fingerprint (never secret material), artifact hashes/submission IDs, transaction outcomes, and cleanup. Commit/push evidence separately. Update Windows scoped readiness only after all target-host gates pass.
 
-- [ ] **Step 5: Re-evaluate overall native runtime**
+- [ ] **Step 5: Re-evaluate the scoped native runtime**
 
-Overall production-ready requires macOS + Linux + Windows required gates simultaneously. If Linux distribution evidence, polkit, UAC, signing, or any exact-host gate is absent, retain overall `candidate-only / NO-GO` and list the external evidence pending.
+The current release may be evaluated with macOS and Windows as production
+platforms while Linux is explicitly shipped only as a direct-ZIP `preview`.
+Linux distribution and installed-polkit evidence must not be inferred, and the
+overall cross-platform native preview remains `candidate-only` while Linux is
+not `production-ready`.
 
 **Exit criterion:** Windows has exact-revision signed target-host UAC/Inno evidence, or all safe hosted work is complete with literal `candidate-only / external evidence pending`.
 

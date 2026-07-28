@@ -1362,6 +1362,11 @@ and migration guidance, see
 
 ### Linux
 
+Release status for this version: Linux is a `preview`, `candidate-only`
+direct-ZIP channel and is not `production-ready`. AppImage, deb/APT, rpm/DNF,
+Flatpak/Flathub, and Snap store publication are out of scope for this release
+and remain tracked as future distribution work.
+
 Command:
 
 ```sh

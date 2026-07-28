@@ -113,6 +113,11 @@ keeps the packaged artifact consistent with platform signing and trust gates.
 
 ## Linux Zip Permissions
 
+Linux is `preview` and direct-ZIP only for this release; it is
+`candidate-only`, not `production-ready`. AppImage, deb/APT, rpm/DNF,
+Flatpak/Flathub, and Snap store delivery are explicitly outside this release
+scope and remain future work.
+
 Linux update zips must keep Unix file mode metadata for executable files in the
 bundle. `release publish --platform linux` creates artifacts with those modes,
 and the updater restores them while staging the verified zip before the native

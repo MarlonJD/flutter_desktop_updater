@@ -339,8 +339,9 @@ system-broker install uses the fixed paths `/usr/libexec/desktop-updater-helper`
 `/usr/share/polkit-1/actions/com.desktopupdater.install.policy`, and
 `/etc/desktop-updater/policies/<package-id>.json`; use the packaging system's
 staging mechanism such as `DESTDIR` rather than relocating those absolute
-paths. This repository does not add AppImage, deb, rpm, Flatpak, or Snap
-packagers in this task.
+paths. For this release, Linux is a direct-ZIP `preview` only; AppImage,
+deb/APT, rpm/DNF, Flatpak/Flathub, and Snap store packaging remain out of
+scope and `candidate-only`.
 
 Use the installed CMake package:
 

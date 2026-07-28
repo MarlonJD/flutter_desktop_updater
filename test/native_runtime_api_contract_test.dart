@@ -32,6 +32,18 @@ void main() {
     expect(docs, contains("not production-ready"));
     expect(docs, contains("candidate-only"));
     expect(docs, contains("not run"));
+    expect(docs, contains("Linux is preview-only in this release"));
+    expect(docs, contains("direct-ZIP"));
+    expect(docs, contains("out of scope for this release"));
+    for (final deferredChannel in <String>[
+      "AppImage",
+      "deb",
+      "rpm",
+      "Flatpak",
+      "Snap",
+    ]) {
+      expect(docs, contains(deferredChannel));
+    }
     expect(docs, isNot(contains("`not implemented`")));
   });
 
