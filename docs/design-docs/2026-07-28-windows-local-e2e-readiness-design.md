@@ -1,5 +1,7 @@
 # Windows Local E2E Readiness Design
 
+Status: implemented and verified locally on 2026-07-28.
+
 ## Goal
 
 Make the Windows 11 ARM virtual machine a trustworthy local end-to-end test

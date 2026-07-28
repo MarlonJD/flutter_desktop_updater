@@ -60,7 +60,7 @@ and package dry-run validation.
 **Files:**
 
 - Modify: `.gitignore`
-- Preserve: `docs/superpowers/specs/2026-07-28-windows-local-e2e-readiness-design.md`
+- Preserve: `docs/design-docs/2026-07-28-windows-local-e2e-readiness-design.md`
 
 **Interfaces:**
 
