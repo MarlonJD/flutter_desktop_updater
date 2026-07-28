@@ -540,6 +540,37 @@ jobs:
             try {
               $env:TEMP = $userTemp
               $env:TMP = $userTemp
+              $profileProbeOut = Join-Path $smokeRoot "profile-probe.out"
+              $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
+              $profileProbeScript = @(
+                '$ErrorActionPreference = "Stop"'
+                '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
+                'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
+                '  throw "LocalApplicationData is unavailable."'
+                '}'
+                '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
+                '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
+                'try {'
+                '  [IO.File]::WriteAllText($probe, "ready", [Text.UTF8Encoding]::new($false))'
+                '} finally {'
+                '  Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue'
+                '}'
+                'Write-Output "Hosted Windows ZIP smoke LocalAppData is ready."'
+              ) -join [Environment]::NewLine
+              $profileProbeCommand = [Convert]::ToBase64String(
+                [Text.Encoding]::Unicode.GetBytes($profileProbeScript)
+              )
+              $profileProbeShell = (Get-Process -Id $PID).Path
+              $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand", $profileProbeCommand
+              ) -Credential $smokeCredential -LoadUserProfile -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
+              Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
+              if ($profileProbeProcess.ExitCode -ne 0) {
+                throw "Hosted Windows ZIP smoke could not initialize LocalAppData for the standard user."
+              }
               $runtimeProcess = Start-Process -FilePath (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") -ArgumentList @(
                 "--smoke",
                 "--app-archive-url", $serverInfo.appArchiveUrl,

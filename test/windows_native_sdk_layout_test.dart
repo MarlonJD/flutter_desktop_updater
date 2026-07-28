@@ -669,6 +669,9 @@ void main() {
     final portableHost = readRequiredFile(
       "windows/native/src/helper/windows_portable_recovery_host.cpp",
     );
+    final portableStorage = readRequiredFile(
+      "windows/native/src/helper/windows_portable_user_storage.cpp",
+    );
     final portableTransaction = _functionBody(
       authorizer,
       "class WindowsPortableDirectoryPreparedTransaction",
@@ -705,6 +708,11 @@ void main() {
     expect(portableHost, isNot(contains("ApplyExactUserSecurity")));
     expect(portableHost.toLowerCase(), isNot(contains("powershell")));
     expect(portableHost, isNot(contains("RunOnce")));
+    expect(
+      portableStorage,
+      contains("FOLDERID_LocalAppData, KF_FLAG_CREATE"),
+    );
+    expect(portableStorage, isNot(contains("KF_FLAG_DEFAULT")));
   });
 
   test("Windows client validates canonical reservation and commit ACK", () {

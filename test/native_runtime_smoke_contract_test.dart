@@ -543,6 +543,27 @@ void main() {
     expect(lane, contains('Get-LocalGroup -SID "S-1-5-32-545"'));
     expect(lane, contains(r"-Credential $smokeCredential"));
     expect(lane, contains("-LoadUserProfile"));
+    expect(
+      lane,
+      contains(
+        "[Environment]::GetFolderPath("
+        "[Environment+SpecialFolder]::LocalApplicationData, "
+        "[Environment+SpecialFolderOption]::Create)",
+      ),
+    );
+    expect(
+      lane,
+      contains("[IO.Directory]::CreateDirectory(\$localAppData)"),
+    );
+    expect(
+      lane.indexOf("Hosted Windows ZIP smoke LocalAppData is ready."),
+      lessThan(
+        lane.indexOf(
+          r'$runtimeProcess = Start-Process -FilePath '
+          r'(Join-Path $install "DesktopUpdater.RuntimeCompile.exe")',
+        ),
+      ),
+    );
     expect(lane, contains("Remove-LocalUser"));
     expect(
       lane,
@@ -718,7 +739,9 @@ void main() {
 String readFile(String path) {
   final file = File(path);
   expect(file.existsSync(), isTrue, reason: "$path must exist");
-  return file.existsSync() ? file.readAsStringSync() : "";
+  return file.existsSync()
+      ? file.readAsStringSync().replaceAll("\r\n", "\n")
+      : "";
 }
 
 String readDirectory(String path) {

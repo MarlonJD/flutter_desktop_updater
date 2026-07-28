@@ -132,7 +132,7 @@ void ValidatePortableWindowsExactUserAclFacts(
 UniqueWindowsHandle OpenPortableWindowsExactUserLocalAppData(
     std::filesystem::path* retained_path) {
   PWSTR raw_path = nullptr;
-  if (SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr,
+  if (SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr,
                            &raw_path) != S_OK ||
       raw_path == nullptr) {
     Fail("LocalAppData is unavailable");
