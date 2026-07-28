@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 30> expected = {
+  constexpr std::array<const char*, 36> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -40,6 +40,12 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable caller identity failure",
       "portable target authority failure",
       "portable stage authorization failure",
+      "portable target request failure",
+      "portable target executable identity failure",
+      "portable target caller root failure",
+      "portable target read authority failure",
+      "portable parent mutation authority failure",
+      "portable target marker failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -119,6 +125,36 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       EVENTLOG_ERROR_TYPE,
       DescribeWindowsHelperEvent(
           WindowsHelperEvent::kPortableStageAuthorizationFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetRequestFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetExecutableIdentityFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetCallerRootFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetReadAuthorityFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableParentMutationAuthorityFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetMarkerFailure)
           .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),

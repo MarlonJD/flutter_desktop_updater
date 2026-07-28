@@ -351,7 +351,8 @@ bool CallerTokenHasDirectoryAccess(const std::filesystem::path& path,
 void ValidatePortableWindowsTargetAuthority(
     const std::filesystem::path& target,
     const std::filesystem::path& caller_executable,
-    HANDLE caller_process) {
+    HANDLE caller_process,
+    ScopedWindowsHelperFailureEvent* failure_stage) {
   constexpr DWORD kTargetAccess =
       FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
   constexpr DWORD kParentAccess =
@@ -361,6 +362,22 @@ void ValidatePortableWindowsTargetAuthority(
       CallerTokenHasDirectoryAccess(target, caller_process, kTargetAccess);
   const bool parent_writable = CallerTokenHasDirectoryAccess(
       target.parent_path(), caller_process, kParentAccess);
+  const std::filesystem::path executable_path(caller_executable);
+  if (failure_stage != nullptr) {
+    if (target.empty() || executable_path.empty() ||
+        target.filename().empty() || executable_path.filename().empty() ||
+        NormalizePath(target) !=
+            NormalizePath(executable_path.parent_path())) {
+      failure_stage->Advance(
+          WindowsHelperEvent::kPortableTargetCallerRootFailure);
+    } else if (!target_writable) {
+      failure_stage->Advance(
+          WindowsHelperEvent::kPortableTargetReadAuthorityFailure);
+    } else if (!parent_writable) {
+      failure_stage->Advance(
+          WindowsHelperEvent::kPortableParentMutationAuthorityFailure);
+    }
+  }
   ValidatePortableWindowsTargetAuthorityFacts(
       target.wstring(), caller_executable.wstring(), target_writable,
       parent_writable);
@@ -369,7 +386,9 @@ void ValidatePortableWindowsTargetAuthority(
 void ValidateTargetAuthority(const std::filesystem::path& target,
                              const NativeInstallTransactionRequestV1& request,
                              const WindowsHelperPolicy& policy,
-                             HANDLE caller_process) {
+                             HANDLE caller_process,
+                             ScopedWindowsHelperFailureEvent* failure_stage =
+                                 nullptr) {
   if (!policy.is_portable()) {
     const bool allowed_root = std::any_of(
         policy.allowed_install_roots().begin(),
@@ -389,6 +408,10 @@ void ValidateTargetAuthority(const std::filesystem::path& target,
       std::filesystem::path(Utf8ToWide(
           request.target.executable_relative_path, "target executable"));
   ValidateRelativeExecutable(executable_relative);
+  if (failure_stage != nullptr) {
+    failure_stage->Advance(
+        WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
+  }
   const std::filesystem::path executable_path = target / executable_relative;
   const VerifiedWindowsExecutable executable =
       VerifyWindowsExecutable(executable_path);
@@ -409,9 +432,13 @@ void ValidateTargetAuthority(const std::filesystem::path& target,
   }
 
   if (policy.is_portable()) {
+    if (failure_stage != nullptr) {
+      failure_stage->Advance(
+          WindowsHelperEvent::kPortableTargetCallerRootFailure);
+    }
     ValidatePortableWindowsTargetAuthority(
         target, RetainedProcessExecutablePath(caller_process),
-        caller_process);
+        caller_process, failure_stage);
   }
 
   if (!policy.is_portable()) {
@@ -424,6 +451,10 @@ void ValidateTargetAuthority(const std::filesystem::path& target,
     }
   }
 
+  if (failure_stage != nullptr) {
+    failure_stage->Advance(
+        WindowsHelperEvent::kPortableTargetMarkerFailure);
+  }
   const std::string marker = ReadRegularFileNoReparse(
       target / L".desktop_updater_install_identity.json", 64 * 1024);
   const JsonValue marker_value = ParseJson(marker);
@@ -958,7 +989,12 @@ WindowsPortableInstallAuthorizer::Authorize(
   ValidateRetainedCaller(caller_process_, target, request, policy_);
   authorization_stage.Advance(
       WindowsHelperEvent::kPortableTargetAuthorityFailure);
-  ValidateTargetAuthority(target, request, policy_, caller_process_);
+  {
+    ScopedWindowsHelperFailureEvent target_authority_stage(
+        WindowsHelperEvent::kPortableTargetRequestFailure);
+    ValidateTargetAuthority(target, request, policy_, caller_process_,
+                            &target_authority_stage);
+  }
   authorization_stage.Advance(
       WindowsHelperEvent::kPortableStageAuthorizationFailure);
 

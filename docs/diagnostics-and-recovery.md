@@ -178,6 +178,12 @@ Fixed Windows Event Log names include:
 - `portable authorization failure`, `portable preparation failure`
 - `portable request validation failure`, `portable caller identity failure`,
   `portable target authority failure`, `portable stage authorization failure`
+- `portable target request failure`,
+  `portable target executable identity failure`,
+  `portable target caller root failure`,
+  `portable target read authority failure`,
+  `portable parent mutation authority failure`,
+  `portable target marker failure`
 
 Fixed Linux names include `helper authenticated`, `target lock acquired`,
 `transaction journal persisted`, `caller exit observed`, `recovery detected`,

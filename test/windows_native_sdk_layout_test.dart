@@ -587,6 +587,30 @@ void main() {
       authorizer,
       contains("WindowsHelperEvent::kPortableStageAuthorizationFailure"),
     );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableTargetRequestFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableTargetExecutableIdentityFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableTargetCallerRootFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableTargetReadAuthorityFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableParentMutationAuthorityFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableTargetMarkerFailure"),
+    );
     expect(transaction, contains("WindowsHelperEvent::kBackupStart"));
     expect(transaction, contains("WindowsHelperEvent::kMoveStart"));
     expect(transaction, contains("WindowsHelperEvent::kRollbackStart"));
