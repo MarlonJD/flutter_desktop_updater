@@ -806,7 +806,7 @@ final class SystemMacVerifiedInstallerChecker:
         guard expandedOnly.isEmpty,
               bomOnly.allSatisfy({ path in
                   guard let mode = bomModes[path],
-                        mode & UInt32(S_IFMT) == UInt32(S_IFREG) else {
+                        mode & 0o7000 == 0 else {
                       return false
                   }
                   let separator = path.lastIndex(of: "/")
@@ -819,7 +819,13 @@ final class SystemMacVerifiedInstallerChecker:
                   let sibling = separator.map {
                       String(path[...$0]) + String(name.dropFirst(2))
                   } ?? String(name.dropFirst(2))
-                  return expandedModes[sibling] != nil
+                  guard let siblingMode = expandedModes[sibling] else {
+                      return false
+                  }
+                  // Older BOMs report AppleDouble metadata as regular files.
+                  // Newer BOMs mirror the sibling's safe mode and file type.
+                  return mode & UInt32(S_IFMT) == UInt32(S_IFREG)
+                      || mode == siblingMode
               }) else {
             throw MacVerifiedInstallerHandoffError.invalidExpectation
         }

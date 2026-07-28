@@ -557,15 +557,20 @@ jobs:
                 '}'
                 'Write-Output "Hosted Windows ZIP smoke LocalAppData is ready."'
               ) -join [Environment]::NewLine
-              $profileProbeCommand = [Convert]::ToBase64String(
-                [Text.Encoding]::Unicode.GetBytes($profileProbeScript)
+              $profileProbePath = Join-Path $smokeRoot "profile-probe.ps1"
+              [IO.File]::WriteAllText(
+                $profileProbePath,
+                $profileProbeScript,
+                [Text.UTF8Encoding]::new($false)
               )
               $profileProbeShell = (Get-Process -Id $PID).Path
+              # CreateProcessWithLogonW limits credentialed command lines to
+              # 1024 characters, so keep the probe body out of ArgumentList.
               $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
-                "-EncodedCommand", $profileProbeCommand
+                "-File", $profileProbePath
               ) -Credential $smokeCredential -LoadUserProfile -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
               Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
               if ($profileProbeProcess.ExitCode -ne 0) {

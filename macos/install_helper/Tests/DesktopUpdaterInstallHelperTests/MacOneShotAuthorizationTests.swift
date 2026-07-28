@@ -972,11 +972,18 @@ private final class SignedRunningApplicationFixture {
             count: Int(MAXPATHLEN) * 4
         )
         repeat {
-            if proc_pidpath(
-                process.processIdentifier,
-                &pathBuffer,
-                UInt32(pathBuffer.count)
-            ) > 0 {
+            let pathCount = pathBuffer.withUnsafeMutableBufferPointer {
+                storage -> Int32 in
+                guard let baseAddress = storage.baseAddress else {
+                    return 0
+                }
+                return proc_pidpath(
+                    process.processIdentifier,
+                    baseAddress,
+                    UInt32(storage.count)
+                )
+            }
+            if pathCount > 0 {
                 return process
             }
             Thread.sleep(forTimeInterval: 0.01)

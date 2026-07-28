@@ -164,6 +164,10 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
       "macos/install_helper/Sources/DesktopUpdaterInstallHelper/"
       "MacPrivilegeService.swift",
     ).readAsStringSync();
+    final callerSource = File(
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/"
+      "MacOneShotAuthorization.swift",
+    ).readAsStringSync();
     final artifactVerifier = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/Runtime/"
       "ArtifactStager.swift",
@@ -225,6 +229,16 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     );
     expect(helperSource, contains("guard payloadWasSet else"));
     expect(helperSource, isNot(contains("bytes.baseAddress,")));
+    expect(
+      helperSource,
+      contains("pathBuffer.withUnsafeMutableBufferPointer"),
+    );
+    expect(helperSource, isNot(contains("&pathBuffer")));
+    expect(
+      callerSource,
+      contains("buffer.withUnsafeMutableBufferPointer"),
+    );
+    expect(callerSource, isNot(contains("proc_pidpath(pid, &buffer")));
     expect(artifactVerifier, contains("/usr/bin/codesign"));
     expect(artifactVerifier, contains("/usr/sbin/spctl"));
     expect(artifactVerifier, contains("stapler"));

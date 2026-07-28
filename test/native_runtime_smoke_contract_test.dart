@@ -556,6 +556,17 @@ void main() {
       contains("[IO.Directory]::CreateDirectory(\$localAppData)"),
     );
     expect(
+      lane,
+      contains(
+        r"[IO.File]::WriteAllText("
+        "\n"
+        r"                $profileProbePath,",
+      ),
+    );
+    expect(lane, contains(r'"-File", $profileProbePath'));
+    expect(lane, isNot(contains("-EncodedCommand")));
+    expect(lane, isNot(contains("ToBase64String")));
+    expect(
       lane.indexOf("Hosted Windows ZIP smoke LocalAppData is ready."),
       lessThan(
         lane.indexOf(

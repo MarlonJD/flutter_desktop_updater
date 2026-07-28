@@ -338,11 +338,18 @@ final class SystemMacOneShotEndpointAuthenticator:
                 repeating: 0,
                 count: Int(MAXPATHLEN) * 4
             )
-            guard proc_pidpath(
-                processIdentifier,
-                &pathBuffer,
-                UInt32(pathBuffer.count)
-            ) > 0,
+            let pathCount = pathBuffer.withUnsafeMutableBufferPointer {
+                storage -> Int32 in
+                guard let baseAddress = storage.baseAddress else {
+                    return 0
+                }
+                return proc_pidpath(
+                    processIdentifier,
+                    baseAddress,
+                    UInt32(storage.count)
+                )
+            }
+            guard pathCount > 0,
                 URL(fileURLWithPath: String(cString: pathBuffer))
                     .resolvingSymlinksInPath().path
                     == executableURL.resolvingSymlinksInPath().path else {

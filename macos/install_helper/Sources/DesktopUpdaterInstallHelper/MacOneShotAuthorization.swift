@@ -101,7 +101,16 @@ final class SystemMacCallerInstallEvidenceInspector:
             repeating: 0,
             count: Int(MAXPATHLEN) * 4
         )
-        let count = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        let count = buffer.withUnsafeMutableBufferPointer { storage -> Int32 in
+            guard let baseAddress = storage.baseAddress else {
+                return 0
+            }
+            return proc_pidpath(
+                pid,
+                baseAddress,
+                UInt32(storage.count)
+            )
+        }
         guard count > 0 else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }

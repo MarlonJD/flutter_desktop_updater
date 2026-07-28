@@ -1107,7 +1107,9 @@ private final class RecordingInstallerCommandRunner:
             }
             return try installerTestBOMListing(
                 payload: expandedPayload,
-                injectSetuidResource: expandedMutation == .setuidBOM
+                injectSetuidResource: expandedMutation == .setuidBOM,
+                injectAppleDoubleTypeMismatch:
+                    expandedMutation == .appleDoubleTypeMismatch
             )
         }
         return Data()
@@ -1136,11 +1138,13 @@ private enum ExpandedPackageMutation: String, CaseIterable {
     case extraPayload
     case escapedBundlePath
     case setuidBOM
+    case appleDoubleTypeMismatch
 }
 
 private func installerTestBOMListing(
     payload: URL,
-    injectSetuidResource: Bool
+    injectSetuidResource: Bool,
+    injectAppleDoubleTypeMismatch: Bool = false
 ) throws -> Data {
     var canonicalBuffer = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard payload.path.withCString({ Darwin.realpath($0, &canonicalBuffer) })
@@ -1180,6 +1184,14 @@ private func installerTestBOMListing(
             mode |= 0o4000
         }
         lines.append("./\(relative)\t\(String(mode, radix: 8))\t0\t0")
+        if relative == "Example.app" {
+            let appleDoubleMode = injectAppleDoubleTypeMismatch
+                ? UInt32(S_IFLNK) | 0o777 : mode
+            lines.append(
+                "./._Example.app\t"
+                    + "\(String(appleDoubleMode, radix: 8))\t0\t0"
+            )
+        }
     }
     return Data((lines.joined(separator: "\n") + "\n").utf8)
 }
