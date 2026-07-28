@@ -57,6 +57,14 @@ constexpr std::array<WindowsHelperEventDescriptor,
          L"portable authorization failure"},
         {1025, EVENTLOG_ERROR_TYPE, "portable preparation failure",
          L"portable preparation failure"},
+        {1026, EVENTLOG_ERROR_TYPE, "portable request validation failure",
+         L"portable request validation failure"},
+        {1027, EVENTLOG_ERROR_TYPE, "portable caller identity failure",
+         L"portable caller identity failure"},
+        {1028, EVENTLOG_ERROR_TYPE, "portable target authority failure",
+         L"portable target authority failure"},
+        {1029, EVENTLOG_ERROR_TYPE, "portable stage authorization failure",
+         L"portable stage authorization failure"},
     }};
 
 }  // namespace

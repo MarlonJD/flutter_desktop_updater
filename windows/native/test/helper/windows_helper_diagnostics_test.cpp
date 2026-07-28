@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 26> expected = {
+  constexpr std::array<const char*, 30> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -36,6 +36,10 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable recovery artifact failure",
       "portable authorization failure",
       "portable preparation failure",
+      "portable request validation failure",
+      "portable caller identity failure",
+      "portable target authority failure",
+      "portable stage authorization failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -97,6 +101,25 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
             DescribeWindowsHelperEvent(
                 WindowsHelperEvent::kPortablePreparationFailure)
                 .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kPortableRequestValidationFailure)
+                .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableCallerIdentityFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetAuthorityFailure)
+          .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kPortableStageAuthorizationFailure)
+          .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),
       std::out_of_range);

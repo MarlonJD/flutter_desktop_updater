@@ -79,6 +79,8 @@ class ScopedWindowsHelperFailureEvent final {
     }
   }
 
+  void Advance(WindowsHelperEvent event) noexcept { event_ = event; }
+
  private:
   WindowsHelperEvent event_;
   int uncaught_exceptions_;
@@ -931,6 +933,8 @@ WindowsPortableInstallAuthorizer::Authorize(
     const NativeInstallTransactionRequestV1& request) {
   const ScopedWindowsHelperFailureEvent failure_event(
       WindowsHelperEvent::kPortableAuthorizationFailure);
+  ScopedWindowsHelperFailureEvent authorization_stage(
+      WindowsHelperEvent::kPortableRequestValidationFailure);
   if (request.target.target_class != "sameUserWritable" ||
       request.strategy != "directoryReplace" ||
       request.provider != "platformDirectory" ||
@@ -949,8 +953,14 @@ WindowsPortableInstallAuthorizer::Authorize(
   }
   RequirePortableWindowsRecoveryHostOutsideMutationRoots(endpoint_, target,
                                                          stage);
+  authorization_stage.Advance(
+      WindowsHelperEvent::kPortableCallerIdentityFailure);
   ValidateRetainedCaller(caller_process_, target, request, policy_);
+  authorization_stage.Advance(
+      WindowsHelperEvent::kPortableTargetAuthorityFailure);
   ValidateTargetAuthority(target, request, policy_, caller_process_);
+  authorization_stage.Advance(
+      WindowsHelperEvent::kPortableStageAuthorizationFailure);
 
   const StageProvenanceMarker marker = VerifyStageProvenance(
       stage, request.stage.provenance_sha256, BCryptSha256Bytes);
