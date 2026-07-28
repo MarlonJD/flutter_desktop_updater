@@ -30,8 +30,7 @@ void main() {
         "--target desktop_updater_test",
       ),
     );
-    const pluginCTestDirectory =
-        "build/windows/x64/plugins/desktop_updater";
+    const pluginCTestDirectory = "build/windows/x64/plugins/desktop_updater";
     expect(
       workflow,
       contains(
