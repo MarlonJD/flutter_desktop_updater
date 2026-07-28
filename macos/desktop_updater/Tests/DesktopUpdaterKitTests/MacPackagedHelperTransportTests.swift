@@ -175,10 +175,20 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: root) }
         let helper = root.appendingPathComponent("DesktopUpdaterInstallHelper")
-        try FileManager.default.copyItem(
-            at: URL(fileURLWithPath: "/bin/sleep"),
-            to: helper
-        )
+        let source = root.appendingPathComponent("helper.c")
+        try Data(
+            "#include <unistd.h>\n"
+                .appending("int main(void) { sleep(5); return 0; }\n").utf8
+        ).write(to: source)
+        let compile = Process()
+        compile.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
+        compile.arguments = [source.path, "-o", helper.path]
+        try compile.run()
+        compile.waitUntilExit()
+        guard compile.terminationStatus == 0 else {
+            throw CocoaError(.executableNotLoadable)
+        }
+        try FileManager.default.removeItem(at: source)
         let requirement =
             "identifier \"com.example.desktop-updater.helper\""
         let sign = Process()

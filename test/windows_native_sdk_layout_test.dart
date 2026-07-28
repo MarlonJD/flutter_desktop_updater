@@ -563,6 +563,14 @@ void main() {
     expect(transport, contains("WindowsHelperEvent::kWaitingForParentProcess"));
     expect(transport, contains("WindowsHelperEvent::kParentProcessExited"));
     expect(authorizer, contains("WindowsHelperEvent::kStagingPathValidation"));
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableAuthorizationFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortablePreparationFailure"),
+    );
     expect(transaction, contains("WindowsHelperEvent::kBackupStart"));
     expect(transaction, contains("WindowsHelperEvent::kMoveStart"));
     expect(transaction, contains("WindowsHelperEvent::kRollbackStart"));

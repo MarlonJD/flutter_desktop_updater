@@ -53,6 +53,10 @@ constexpr std::array<WindowsHelperEventDescriptor,
          L"portable recovery storage failure"},
         {1023, EVENTLOG_ERROR_TYPE, "portable recovery artifact failure",
          L"portable recovery artifact failure"},
+        {1024, EVENTLOG_ERROR_TYPE, "portable authorization failure",
+         L"portable authorization failure"},
+        {1025, EVENTLOG_ERROR_TYPE, "portable preparation failure",
+         L"portable preparation failure"},
     }};
 
 }  // namespace

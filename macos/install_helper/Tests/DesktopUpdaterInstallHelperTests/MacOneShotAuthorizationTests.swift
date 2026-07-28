@@ -928,10 +928,24 @@ private final class SignedRunningApplicationFixture {
             at: executableURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try FileManager.default.copyItem(
-            at: URL(fileURLWithPath: "/bin/sleep"),
-            to: executableURL
-        )
+        let sourceURL = rootURL.appendingPathComponent("Example.c")
+        try Data(
+            "#include <unistd.h>\n"
+                .appending("int main(void) { sleep(5); return 0; }\n").utf8
+        ).write(to: sourceURL)
+        let compile = Process()
+        compile.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
+        compile.arguments = [
+            sourceURL.path,
+            "-o",
+            executableURL.path,
+        ]
+        try compile.run()
+        compile.waitUntilExit()
+        guard compile.terminationStatus == 0 else {
+            throw CocoaError(.executableNotLoadable)
+        }
+        try FileManager.default.removeItem(at: sourceURL)
         let info = try PropertyListSerialization.data(
             fromPropertyList: [
                 "CFBundleIdentifier": "com.example.app",

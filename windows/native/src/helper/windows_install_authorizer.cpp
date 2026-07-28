@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cwctype>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -66,6 +67,22 @@ using desktop_updater::runtime::internal::StageProvenanceState;
 using desktop_updater::runtime::internal::VerifyStageProvenance;
 
 constexpr std::size_t kMaximumHelperMetadataBytes = 16 * 1024 * 1024;
+
+class ScopedWindowsHelperFailureEvent final {
+ public:
+  explicit ScopedWindowsHelperFailureEvent(WindowsHelperEvent event)
+      : event_(event), uncaught_exceptions_(std::uncaught_exceptions()) {}
+
+  ~ScopedWindowsHelperFailureEvent() {
+    if (std::uncaught_exceptions() > uncaught_exceptions_) {
+      RecordWindowsHelperEvent(event_);
+    }
+  }
+
+ private:
+  WindowsHelperEvent event_;
+  int uncaught_exceptions_;
+};
 
 [[noreturn]] void Fail(const std::string& detail) {
   throw desktop_updater::runtime::internal::NativeInstallAuthorizationError(
@@ -484,6 +501,8 @@ class WindowsPortableDirectoryPreparedTransaction final
   }
 
   std::string PrepareDurableJournal() override {
+    const ScopedWindowsHelperFailureEvent failure_event(
+        WindowsHelperEvent::kPortablePreparationFailure);
     const std::string frozen = transaction_.initial_journal_canonical();
     return RunPortableWindowsRecoveryPrepareBoundary(
         [this, &frozen]() {
@@ -910,6 +929,8 @@ WindowsPortableInstallAuthorizer::helper_endpoint_identity_sha256() const {
 std::unique_ptr<NativeInstallPreparedTransactionV1>
 WindowsPortableInstallAuthorizer::Authorize(
     const NativeInstallTransactionRequestV1& request) {
+  const ScopedWindowsHelperFailureEvent failure_event(
+      WindowsHelperEvent::kPortableAuthorizationFailure);
   if (request.target.target_class != "sameUserWritable" ||
       request.strategy != "directoryReplace" ||
       request.provider != "platformDirectory" ||

@@ -32,6 +32,8 @@ enum class WindowsHelperEvent : std::size_t {
   kPortableRecoverySourceFailure,
   kPortableRecoveryStorageFailure,
   kPortableRecoveryArtifactFailure,
+  kPortableAuthorizationFailure,
+  kPortablePreparationFailure,
   kCount,
 };
 

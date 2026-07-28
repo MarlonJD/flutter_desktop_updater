@@ -142,7 +142,7 @@ final controller = DesktopUpdaterController(
 The standalone protocol-v1 Windows helper emits best-effort support events to
 the Windows Application Event Log
 under the source `DesktopUpdater.InstallHelper.ProtocolV1`. It writes only
-fixed protocol-v1 event names and IDs (1000 through 1016): no caller-provided
+fixed protocol-v1 event names and IDs (1000 through 1025): no caller-provided
 text, paths, tokens, headers, or transaction payloads are accepted by this
 sink. An Event Log write failure never changes install or recovery outcome.
 Windows UAC and real helper execution: `not run`.
@@ -171,6 +171,11 @@ Fixed Windows Event Log names include:
 - `rollback start`, `rollback success`, `rollback failure`
 - `cleanup start`, `cleanup success`, `cleanup failure`
 - `relaunch attempt`
+- `portable bootstrap failure`, `portable recovery host failure`,
+  `portable session failure`
+- `portable recovery authority failure`, `portable recovery source failure`,
+  `portable recovery storage failure`, `portable recovery artifact failure`
+- `portable authorization failure`, `portable preparation failure`
 
 Fixed Linux names include `helper authenticated`, `target lock acquired`,
 `transaction journal persisted`, `caller exit observed`, `recovery detected`,
