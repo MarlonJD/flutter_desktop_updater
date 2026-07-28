@@ -567,6 +567,25 @@ void main() {
     expect(lane, isNot(contains("-EncodedCommand")));
     expect(lane, isNot(contains("ToBase64String")));
     expect(
+      lane,
+      contains(
+        r"DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData",
+      ),
+    );
+    expect(
+      lane,
+      contains(
+        r"LocalApplicationData resolved outside the standard-user profile.",
+      ),
+    );
+    expect(
+      RegExp(
+        r"-Credential \$smokeCredential -LoadUserProfile "
+        r"-Environment \$smokeEnvironment",
+      ).allMatches(lane),
+      hasLength(2),
+    );
+    expect(
       lane.indexOf("Hosted Windows ZIP smoke LocalAppData is ready."),
       lessThan(
         lane.indexOf(

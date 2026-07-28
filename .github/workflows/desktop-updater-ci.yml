@@ -530,6 +530,25 @@ jobs:
               "$env:COMPUTERNAME\$smokeUserName",
               $smokePassword
             )
+            $profilesDirectory = [Environment]::ExpandEnvironmentVariables(
+              (Get-ItemProperty -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" -Name ProfilesDirectory).ProfilesDirectory
+            )
+            $smokeUserProfile = Join-Path $profilesDirectory $smokeUserName
+            $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
+            $smokeEnvironment = @{
+              APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
+              DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
+              DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+              HOME = $smokeUserProfile
+              HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
+              HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
+              LOCALAPPDATA = $smokeLocalAppData
+              TEMP = $userTemp
+              TMP = $userTemp
+              USERDOMAIN = $env:COMPUTERNAME
+              USERNAME = $smokeUserName
+              USERPROFILE = $smokeUserProfile
+            }
             $smokePasswordText = $null
             $helperEventStart = Get-Date
             Write-Host "Hosted Windows ZIP smoke update handoff is starting."
@@ -547,6 +566,10 @@ jobs:
                 '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
                 'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
                 '  throw "LocalApplicationData is unavailable."'
+                '}'
+                '$expectedLocalAppData = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA'
+                'if (-not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath($localAppData), [IO.Path]::GetFullPath($expectedLocalAppData))) {'
+                '  throw "LocalApplicationData resolved outside the standard-user profile."'
                 '}'
                 '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
                 '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
@@ -571,7 +594,7 @@ jobs:
                 "-NoProfile",
                 "-NonInteractive",
                 "-File", $profileProbePath
-              ) -Credential $smokeCredential -LoadUserProfile -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
+              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
               Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
               if ($profileProbeProcess.ExitCode -ne 0) {
                 throw "Hosted Windows ZIP smoke could not initialize LocalAppData for the standard user."
@@ -583,7 +606,7 @@ jobs:
                 "--package-id", "com.example.native-runtime-smoke",
                 "--smoke-root", (Join-Path $smokeRoot "runtime"),
                 "--diagnostics-log", $diagnosticsPath
-              ) -Credential $smokeCredential -LoadUserProfile -WorkingDirectory $install -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr -Wait -PassThru
+              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr -Wait -PassThru
             } finally {
               $env:TEMP = $originalTemp
               $env:TMP = $originalTmp

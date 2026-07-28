@@ -967,6 +967,8 @@ private final class SignedRunningApplicationFixture {
         process.arguments = ["5"]
         try process.run()
         let deadline = Date().addingTimeInterval(2)
+        let expectedPath = executableURL.resolvingSymlinksInPath().path
+        var stablePathObservations = 0
         var pathBuffer = [CChar](
             repeating: 0,
             count: Int(MAXPATHLEN) * 4
@@ -983,8 +985,15 @@ private final class SignedRunningApplicationFixture {
                     UInt32(storage.count)
                 )
             }
-            if pathCount > 0 {
-                return process
+            if pathCount > 0,
+               URL(fileURLWithPath: String(cString: pathBuffer))
+                .resolvingSymlinksInPath().path == expectedPath {
+                stablePathObservations += 1
+                if stablePathObservations >= 5 {
+                    return process
+                }
+            } else {
+                stablePathObservations = 0
             }
             Thread.sleep(forTimeInterval: 0.01)
         } while process.isRunning && Date() < deadline

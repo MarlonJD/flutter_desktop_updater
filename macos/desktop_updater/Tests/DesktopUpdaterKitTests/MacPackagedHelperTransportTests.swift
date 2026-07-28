@@ -199,6 +199,40 @@ final class MacPackagedHelperTransportTests: XCTestCase {
             if process.isRunning { process.terminate() }
             process.waitUntilExit()
         }
+        let readinessDeadline = Date().addingTimeInterval(2)
+        let expectedPath = helper.resolvingSymlinksInPath().path
+        var stablePathObservations = 0
+        var pathBuffer = [CChar](
+            repeating: 0,
+            count: Int(MAXPATHLEN) * 4
+        )
+        repeat {
+            let pathCount = pathBuffer.withUnsafeMutableBufferPointer {
+                storage -> Int32 in
+                guard let baseAddress = storage.baseAddress else {
+                    return 0
+                }
+                return proc_pidpath(
+                    process.processIdentifier,
+                    baseAddress,
+                    UInt32(storage.count)
+                )
+            }
+            if pathCount > 0,
+               URL(fileURLWithPath: String(cString: pathBuffer))
+                .resolvingSymlinksInPath().path == expectedPath {
+                stablePathObservations += 1
+                if stablePathObservations >= 5 {
+                    break
+                }
+            } else {
+                stablePathObservations = 0
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        } while process.isRunning && Date() < readinessDeadline
+        guard stablePathObservations >= 5 else {
+            throw CocoaError(.executableNotLoadable)
+        }
         let authenticator = SystemMacOneShotEndpointAuthenticator(
             infoDictionary: [
                 "DesktopUpdaterInstallHelperServiceID":
