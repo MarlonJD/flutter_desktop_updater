@@ -2497,13 +2497,15 @@ flutter analyze --no-fatal-infos
 flutter test --no-pub
 ```
 
-- [ ] Run publish dry run:
+- [x] Run publish dry run:
 
 ```sh
 dart pub publish --dry-run
 ```
 
-Local status: blocked by pre-existing modified checked-in file `test/harness_engineering_docs_test.dart`; command reached package validation and exited 65.
+Local status: passed on 2026-07-28 after the completed changes were committed.
+Package validation reported zero warnings and one existing version-selection
+hint.
 
 - [x] Run Windows native tests on Windows or mark `not run` locally:
 
