@@ -1852,9 +1852,11 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
 
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedVariant parameters;
+  ScopedBstr run_user(AccountNameForSid(definition.principal_user_id));
   ComPtr<IRunningTask> running;
   const HRESULT start = registered.get()->RunEx(
-      parameters.value(), definition.run_flags, 0, nullptr, running.put());
+      parameters.value(), definition.run_flags, 0, run_user.get(),
+      running.put());
   if (FAILED(start)) {
     RecordPortableRecoveryProbe(24400u,
                                  static_cast<DWORD>(start) & 0xFFFFu);
