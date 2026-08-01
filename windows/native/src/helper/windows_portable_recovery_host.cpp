@@ -1708,7 +1708,13 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   ConfigureTask(task.get(), definition);
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedBstr task_path(definition.task_path);
-  ScopedVariant user(definition.principal_user_id);
+  // The principal on the task definition is already bound to the exact SID.
+  // Passing that SID again as registration credentials makes Task Scheduler
+  // resolve an interactive logon for a credentialed standard-user process;
+  // that process may have no active Winlogon session (for example, a service
+  // or CI-launched user process).  An empty user VARIANT keeps registration
+  // in the caller's security context while preserving the exact principal.
+  ScopedVariant user;
   ScopedVariant password;
   ScopedVariant security(definition.security_descriptor);
   ComPtr<IRegisteredTask> registered;
@@ -1754,10 +1760,9 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
 
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedVariant parameters;
-  ScopedBstr run_user(definition.principal_user_id);
   ComPtr<IRunningTask> running;
   Check(registered.get()->RunEx(parameters.value(), definition.run_flags, 0,
-                                run_user.get(), running.put()),
+                                nullptr, running.put()),
         "Task Scheduler portable recovery start failed");
   const ULONGLONG started = GetTickCount64();
   for (;;) {
