@@ -1926,8 +1926,10 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     // session, so Task Scheduler cannot start its INTERACTIVE_TOKEN task.
     // Start the same verified helper directly in the current exact token and
     // keep the task registered for the next real user logon.
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
     RecordPortableRecoveryProbe(24800u, 0);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
     RecordPortableRecoveryProbe(24800u, 1);
   }
   const ULONGLONG started = GetTickCount64();
@@ -1938,6 +1940,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       if (process_wait == WAIT_OBJECT_0) {
         DWORD exit_code = 0;
         (void)GetExitCodeProcess(direct_process.get(), &exit_code);
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
         RecordPortableRecoveryProbe(24900u, exit_code & 0xFFFFu);
         Fail("portable recovery host exited before readiness");
       }
@@ -1958,6 +1962,10 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       }
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
+      if (direct_process.valid()) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryStorageFailure);
+      }
       if (direct_process.valid()) RecordPortableRecoveryProbe(25000u, 0);
       RecordPortableRecoveryProbe(24700u, 0);
       Fail("portable recovery host startup timed out");
