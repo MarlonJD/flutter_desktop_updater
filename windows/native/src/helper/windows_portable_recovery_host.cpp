@@ -116,6 +116,22 @@ void RecordPortableRecoveryRegistrationProbe(HRESULT result) noexcept {
   (void)DeregisterEventSource(source);
 }
 
+void RecordPortableRecoveryRegistrationCandidateProbe(std::size_t candidate,
+                                                      HRESULT result) noexcept {
+  HANDLE source = RegisterEventSourceW(
+      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
+  if (source == nullptr) return;
+  const wchar_t* message[] = {
+      L"portable recovery registration candidate probe",
+  };
+  const DWORD event_id =
+      30000u + static_cast<DWORD>(candidate) * 65536u +
+      (static_cast<DWORD>(result) & static_cast<DWORD>(0xFFFFu));
+  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
+                     message, nullptr);
+  (void)DeregisterEventSource(source);
+}
+
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1053,6 +1069,105 @@ void ConfigureTask(
         "Task Scheduler argument binding failed");
 }
 
+HRESULT MutatePortableRecoveryLogonTrigger(
+    ITaskDefinition* task, const std::wstring* user,
+    const std::wstring* delay) {
+  ComPtr<ITriggerCollection> triggers;
+  HRESULT result = task->get_Triggers(triggers.put());
+  if (FAILED(result)) return result;
+  ComPtr<ITrigger> raw_trigger;
+  result = triggers.get()->get_Item(1, raw_trigger.put());
+  if (FAILED(result)) return result;
+  ComPtr<PortableILogonTrigger> logon;
+  result = raw_trigger.get()->QueryInterface(
+      kPortableILogonTriggerIid, reinterpret_cast<void**>(logon.put()));
+  if (FAILED(result)) return result;
+  if (user != nullptr) {
+    ScopedBstr value(*user);
+    result = logon.get()->put_UserId(value.get());
+    if (FAILED(result)) return result;
+  }
+  if (delay != nullptr) {
+    ScopedBstr value(*delay);
+    result = logon.get()->put_Delay(value.get());
+  }
+  return result;
+}
+
+HRESULT MutatePortableRecoveryPrincipal(
+    ITaskDefinition* task, const std::wstring* user,
+    const TASK_LOGON_TYPE* logon_type) {
+  ComPtr<IPrincipal> principal;
+  HRESULT result = task->get_Principal(principal.put());
+  if (FAILED(result)) return result;
+  if (user != nullptr) {
+    ScopedBstr value(*user);
+    result = principal.get()->put_UserId(value.get());
+    if (FAILED(result)) return result;
+  }
+  if (logon_type != nullptr) {
+    result = principal.get()->put_LogonType(*logon_type);
+  }
+  return result;
+}
+
+HRESULT MutatePortableRecoveryExecutionLimit(ITaskDefinition* task,
+                                              const std::wstring& value) {
+  ComPtr<ITaskSettings> settings;
+  HRESULT result = task->get_Settings(settings.put());
+  if (FAILED(result)) return result;
+  ScopedBstr limit(value);
+  return settings.get()->put_ExecutionTimeLimit(limit.get());
+}
+
+using PortableRecoveryTaskDefinitionMutator =
+    std::function<HRESULT(ITaskDefinition*)>;
+
+void ProbePortableRecoveryTaskRegistration(
+    ITaskService* service, ITaskFolder* folder,
+    const PortableWindowsRecoveryHostTaskDefinition& definition,
+    std::size_t candidate, LONG registration_flags,
+    TASK_LOGON_TYPE registration_logon_type,
+    const PortableRecoveryTaskDefinitionMutator& mutate,
+    bool custom_security) noexcept {
+  HRESULT result = E_FAIL;
+  std::wstring probe_path;
+  try {
+    ComPtr<ITaskDefinition> task;
+    result = service->NewTask(0, task.put());
+    if (FAILED(result)) throw WindowsPortableRecoveryHostError("probe");
+    ConfigureTask(task.get(), definition);
+    if (mutate) {
+      result = mutate(task.get());
+      if (FAILED(result)) throw WindowsPortableRecoveryHostError("probe");
+    }
+    probe_path = definition.task_path + L"-Probe-" +
+                 std::to_wstring(candidate);
+    ScopedBstr path(probe_path);
+    ScopedVariant user;
+    ScopedVariant password;
+    ScopedVariant empty_security;
+    std::unique_ptr<ScopedVariant> custom_security_value;
+    if (custom_security) {
+      custom_security_value = std::make_unique<ScopedVariant>(
+          definition.security_descriptor);
+    }
+    ComPtr<IRegisteredTask> registered;
+    result = folder->RegisterTaskDefinition(
+        path.get(), task.get(), registration_flags, user.value(),
+        password.value(), registration_logon_type,
+        custom_security_value != nullptr ? custom_security_value->value()
+                                         : empty_security.value(),
+        registered.put());
+    if (SUCCEEDED(result)) {
+      (void)folder->DeleteTask(path.get(), 0);
+    }
+  } catch (...) {
+    if (result == S_OK) result = E_FAIL;
+  }
+  RecordPortableRecoveryRegistrationCandidateProbe(candidate, result);
+}
+
 void ValidateTaskSecurity(IRegisteredTask* task,
                           const std::wstring& expected_user_sid) {
   ReceivedBstr encoded;
@@ -1819,6 +1934,80 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         security.value(), registered.put());
     if (registration != S_OK) {
       RecordPortableRecoveryRegistrationProbe(registration);
+      if (registration == static_cast<HRESULT>(0x80041318L)) {
+        // Temporary hosted-run matrix for the Task Scheduler XML value
+        // rejection. Candidate event IDs encode candidate*65536 + HRESULT
+        // low 16 bits; remove this matrix after the invalid field is fixed.
+        const std::wstring empty;
+        const std::wstring zero_seconds = L"PT0S";
+        const std::wstring sid = definition.principal_user_id;
+        const TASK_LOGON_TYPE s4u = TASK_LOGON_S4U;
+        const auto no_delay = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryLogonTrigger(candidate_task, nullptr,
+                                                     &empty);
+        };
+        const auto zero_delay = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryLogonTrigger(candidate_task, nullptr,
+                                                     &zero_seconds);
+        };
+        const auto no_trigger_user = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryLogonTrigger(candidate_task, &empty,
+                                                     nullptr);
+        };
+        const auto sid_principal = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryPrincipal(candidate_task, &sid, nullptr);
+        };
+        const auto sid_everywhere = [&](ITaskDefinition* candidate_task) {
+          HRESULT result =
+              MutatePortableRecoveryPrincipal(candidate_task, &sid, nullptr);
+          if (FAILED(result)) return result;
+          return MutatePortableRecoveryLogonTrigger(candidate_task, &sid,
+                                                     nullptr);
+        };
+        const auto s4u_principal = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryPrincipal(candidate_task, nullptr, &s4u);
+        };
+        const auto no_execution_limit = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryExecutionLimit(candidate_task, empty);
+        };
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 1,
+            definition.registration_flags, definition.logon_type, nullptr,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 2,
+            definition.registration_flags, definition.logon_type, no_delay,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 3,
+            definition.registration_flags, definition.logon_type, zero_delay,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 4,
+            definition.registration_flags, definition.logon_type,
+            no_trigger_user, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 5,
+            definition.registration_flags, definition.logon_type, sid_principal,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 6,
+            definition.registration_flags, definition.logon_type,
+            sid_everywhere, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 7, TASK_CREATE,
+            definition.logon_type, nullptr, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 8, TASK_CREATE,
+            definition.logon_type, nullptr, false);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 9,
+            definition.registration_flags, TASK_LOGON_S4U, s4u_principal, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 10,
+            definition.registration_flags, definition.logon_type,
+            no_execution_limit, true);
+      }
       // Keep the broad storage event for the stable contract, and add a
       // bounded category for the hosted standard-user registration failure.
       // The Task Scheduler HRESULT itself is deliberately not written to the
