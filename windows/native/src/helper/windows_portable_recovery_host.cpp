@@ -1899,6 +1899,13 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   if (FAILED(start)) {
     RecordPortableRecoveryProbe(24400u,
                                  static_cast<DWORD>(start) & 0xFFFFu);
+    const DWORD start_code = static_cast<DWORD>(start);
+    RecordPortableRecoveryProbe(25100u, (start_code >> 24) & 0xFFu);
+    RecordPortableRecoveryProbe(25200u, (start_code >> 16) & 0xFFu);
+    RecordPortableRecoveryProbe(25300u, (start_code >> 8) & 0xFFu);
+    RecordPortableRecoveryProbe(25400u, start_code & 0xFFu);
+    RecordPortableRecoveryProbe(
+        25500u, IsPortableWindowsRecoveryTaskStartFallback(start) ? 1 : 0);
     if (!IsPortableWindowsRecoveryTaskStartFallback(start)) {
       Check(start, "Task Scheduler portable recovery start failed");
     }
