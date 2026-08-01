@@ -1503,16 +1503,22 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
     HANDLE caller_process,
     const WindowsArchiveRestageLimits& limits,
     WindowsArchiveRestageFaultInjector* fault_injector) {
-  ValidateRestageLimits(limits);
-  if (!std::regex_match(transaction_id, kTransactionId) ||
-      package_id.empty() || !std::regex_match(descriptor_sha256, kSha256) ||
-      !std::regex_match(artifact_sha256, kSha256) || artifact_length <= 0 ||
-      canonical_release_manifest.empty() ||
-      EncodeCanonicalJson(ParseJson(canonical_release_manifest)) !=
-          canonical_release_manifest ||
-      Sha256Bytes(canonical_release_manifest) != descriptor_sha256) {
-    Fail("signed archive restage binding is invalid");
-  }
+  RunRestagePhase(WindowsHelperEvent::kPortableStageRequestBindingFailure,
+                  [&]() {
+                    ValidateRestageLimits(limits);
+                    if (!std::regex_match(transaction_id, kTransactionId) ||
+                        package_id.empty() ||
+                        !std::regex_match(descriptor_sha256, kSha256) ||
+                        !std::regex_match(artifact_sha256, kSha256) ||
+                        artifact_length <= 0 ||
+                        canonical_release_manifest.empty() ||
+                        EncodeCanonicalJson(ParseJson(canonical_release_manifest)) !=
+                            canonical_release_manifest ||
+                        Sha256Bytes(canonical_release_manifest) !=
+                            descriptor_sha256) {
+                      Fail("signed archive restage binding is invalid");
+                    }
+                  });
 
   auto result = std::make_unique<WindowsVerifiedArchiveRestage::Impl>();
   result->fault_injector = fault_injector;
