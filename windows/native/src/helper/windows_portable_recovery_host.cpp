@@ -1720,9 +1720,16 @@ bool IsPortableWindowsRecoveryTaskStartFallback(HRESULT result) {
   // Windows builds as well.
   constexpr HRESULT task_interactive_token_unavailable_legacy =
       static_cast<HRESULT>(0x8004136FUL);
+  // Task Scheduler may wrap the same scheduler start failure with either its
+  // own facility or the Win32 facility. The stable error code is 0x136F.
+  constexpr DWORD task_interactive_token_error_code = 0x136Fu;
+  const bool task_interactive_token_error =
+      (static_cast<DWORD>(result) & 0xFFFFu) ==
+      task_interactive_token_error_code;
   return result == task_user_not_logged_on ||
          result == task_interactive_token_unavailable ||
-         result == task_interactive_token_unavailable_legacy;
+         result == task_interactive_token_unavailable_legacy ||
+         task_interactive_token_error;
 }
 
 std::string RunPortableWindowsRecoveryPrepareBoundary(
