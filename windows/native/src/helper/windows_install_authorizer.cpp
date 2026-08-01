@@ -63,7 +63,7 @@ std::uint64_t PortablePreparationProcessStartIdentity(HANDLE process) {
 }
 
 PortableWindowsRecoveryHostTaskDefinition
-BuildPortablePreparationRecoveryHostTaskDefinition(
+BuildPortableWindowsRecoveryHostTaskDefinitionWithDiagnostics(
     const PortableWindowsRecoveryHostEndpointV1& endpoint,
     const std::string& transaction_id, const std::string& ready_nonce) {
   try {
@@ -554,7 +554,7 @@ class WindowsPortableDirectoryPreparedTransaction final
         endpoint_(std::move(endpoint)),
         recovery_ready_nonce_(SecureWindowsReadyToken()),
         recovery_host_definition_(
-            BuildPortablePreparationRecoveryHostTaskDefinition(
+            BuildPortableWindowsRecoveryHostTaskDefinitionWithDiagnostics(
                 endpoint_, transaction_id_, recovery_ready_nonce_)),
         executor_process_id_(GetCurrentProcessId()),
         executor_process_start_identity_(
