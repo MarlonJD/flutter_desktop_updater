@@ -1924,6 +1924,30 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
+        DWORD exit_code = 0;
+        (void)GetExitCodeProcess(direct_process.get(), &exit_code);
+        switch (exit_code) {
+          case ERROR_ACCESS_DENIED:
+            RecordWindowsHelperEvent(
+                WindowsHelperEvent::kPortableStageProvenanceFailure);
+            break;
+          case ERROR_ELEVATION_REQUIRED:
+            RecordWindowsHelperEvent(
+                WindowsHelperEvent::kPortableStageManifestFailure);
+            break;
+          case ERROR_FILE_NOT_FOUND:
+            RecordWindowsHelperEvent(
+                WindowsHelperEvent::kPortableStageRequestBindingFailure);
+            break;
+          case ERROR_RETRY:
+            RecordWindowsHelperEvent(
+                WindowsHelperEvent::kPortableStageRestageFailure);
+            break;
+          default:
+            RecordWindowsHelperEvent(
+                WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
+            break;
+        }
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableTargetRequestFailure);
         RecordWindowsHelperEvent(
