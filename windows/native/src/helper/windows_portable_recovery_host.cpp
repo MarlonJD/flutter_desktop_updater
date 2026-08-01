@@ -1142,6 +1142,7 @@ void ValidateRegisteredTask(
     Fail("Task Scheduler task path changed");
   }
   ValidateTaskSecurity(registered, expected.principal_user_id);
+  RecordPortableRecoveryAclProbe(8);
 
   ComPtr<ITaskDefinition> definition;
   Check(registered->get_Definition(definition.put()),
@@ -1189,6 +1190,7 @@ void ValidateRegisteredTask(
       logon_type != expected.logon_type || run_level != expected.run_level) {
     Fail("Task Scheduler principal authority changed");
   }
+  RecordPortableRecoveryAclProbe(9);
 
   ComPtr<ITriggerCollection> triggers;
   Check(definition.get()->get_Triggers(triggers.put()),
@@ -1241,6 +1243,7 @@ void ValidateRegisteredTask(
        trigger_delay.value(),
        trigger_start_boundary.value(),
        trigger_end_boundary.value()});
+  RecordPortableRecoveryAclProbe(10);
 
   ComPtr<IActionCollection> actions;
   Check(definition.get()->get_Actions(actions.put()),
@@ -1275,6 +1278,7 @@ void ValidateRegisteredTask(
       !working_directory.value().empty()) {
     Fail("Task Scheduler fixed action changed");
   }
+  RecordPortableRecoveryAclProbe(11);
 }
 
 }  // namespace
