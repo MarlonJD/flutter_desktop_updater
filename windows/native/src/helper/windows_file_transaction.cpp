@@ -460,18 +460,28 @@ void WindowsFileTransaction::DurableRename(
 }
 
 void WindowsFileTransaction::Prepare() {
+  ScopedWindowsFileTransactionFailureEvent failure_event(
+      WindowsHelperEvent::kPortableTargetRequestFailure);
   if (prepared_ || cancelled_ || completed_) {
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
         "transaction cannot be prepared twice");
   }
+  failure_event.Advance(WindowsHelperEvent::kPortableStageAuthorizationFailure);
   ValidateParentLocator();
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetRequestFailure);
   ValidateStageParentLocator();
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   ValidateIdentity(stage_parent_.get(), stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
+  failure_event.Advance(
+      WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
   ValidatePayload(stage_parent_.get(), stage_name_);
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
   ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
+  failure_event.Advance(
+      WindowsHelperEvent::kPortableParentMutationAuthorityFailure);
   for (const std::wstring& name : {
            paths_.prepared_name,
            paths_.backup_name,
@@ -485,6 +495,7 @@ void WindowsFileTransaction::Prepare() {
           "derived transaction artifact already exists");
     }
   }
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   try {
     UniqueWindowsHandle candidate = OpenRelativeNoReparse(
         parent_.get(), paths_.lock_candidate_name,
@@ -517,14 +528,21 @@ void WindowsFileTransaction::Prepare() {
   }
   journal_store_ = std::make_unique<DurableWindowsTransactionJournalStore>(
       parent_.get(), paths_, fault_injector_);
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetRequestFailure);
   journal_store_->Persist(journal_);
   FlushMetadata(parent_.get());
   journal_persisted_ = true;
+  failure_event.Advance(WindowsHelperEvent::kPortableStageAuthorizationFailure);
   ValidateStageParentLocator();
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   ValidateIdentity(stage_parent_.get(), stage_name_, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
+  failure_event.Advance(
+      WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
   ValidatePayload(stage_parent_.get(), stage_name_);
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
   if (before_stage_rename_) before_stage_rename_();
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   DurableRename(stage_.get(), paths_.prepared_name,
                 WindowsTransactionFaultPoint::kBeforeStageRename,
                 WindowsTransactionFaultPoint::kAfterStageRenameBeforeDirectoryFlush,
