@@ -1570,13 +1570,19 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
 
 PortableWindowsRecoveryHostBootstrap
 LoadPortableWindowsRecoveryHostBootstrap() {
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableTargetCallerRootFailure);
   const CurrentTokenFacts current = ReadCurrentTokenFacts();
   RequirePortableWindowsRecoveryTokenAuthority(
       current.user_sid, current.user_sid, current.elevated,
       current.local_system);
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableTargetReadAuthorityFailure);
   const std::filesystem::path current_path = CurrentExecutablePath();
   const VerifiedWindowsExecutable helper =
       VerifyWindowsExecutable(current_path);
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableParentMutationAuthorityFailure);
   const std::filesystem::path policy_path =
       helper.final_path.parent_path() / kPolicyFileName;
   const std::string canonical_policy =
@@ -1587,6 +1593,7 @@ LoadPortableWindowsRecoveryHostBootstrap() {
   if (!VerifyWindowsExecutableStillMatches(current_path, helper)) {
     Fail("portable recovery stable helper identity changed");
   }
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableTargetMarkerFailure);
   std::filesystem::path local_app_data_path;
   UniqueWindowsHandle local_app_data =
       OpenKnownLocalAppData(&local_app_data_path);
@@ -1597,12 +1604,16 @@ LoadPortableWindowsRecoveryHostBootstrap() {
       NormalizePath(policy_path) != NormalizePath(endpoint.policy_path)) {
     Fail("portable recovery process is outside the stable endpoint");
   }
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableDirectoryHandleFailure);
   StableTreeHandles tree = OpenStableTree(
       local_app_data.get(), endpoint, SidPointer(current.user), false);
   if (!tree.root.valid() || !tree.binding.valid() ||
       !tree.endpoint.valid()) {
     Fail("portable recovery stable endpoint is unavailable");
   }
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableSecurityDescriptorFailure);
   UniqueWindowsHandle helper_file = OpenSecureFile(
       tree.endpoint.get(), kHelperFileName, GENERIC_READ);
   UniqueWindowsHandle policy_file = OpenSecureFile(
@@ -1611,6 +1622,7 @@ LoadPortableWindowsRecoveryHostBootstrap() {
                             false);
   ValidateExactUserSecurity(policy_file.get(), SidPointer(current.user),
                             false);
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableCallerTokenFailure);
   const WindowsFileIdentity policy_identity =
       ReadWindowsFileIdentity(policy_file.get());
   ValidatePortableWindowsRetainedHelperFacts(
@@ -1624,6 +1636,8 @@ LoadPortableWindowsRecoveryHostBootstrap() {
           NormalizePath(endpoint.policy_path)) {
     Fail("portable recovery stable endpoint readback changed");
   }
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableImpersonationTokenFailure);
   return {std::move(policy), helper, std::move(endpoint)};
 }
 
