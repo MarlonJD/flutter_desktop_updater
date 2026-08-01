@@ -261,14 +261,18 @@ WindowsFileTransaction::WindowsFileTransaction(
         WindowsFileTransactionError::Code::kStageIdentityChanged,
         "pinned target and stage parent identities differ");
   }
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetRequestFailure);
   ValidateParentLocator();
+  failure_event.Advance(WindowsHelperEvent::kPortableStageAuthorizationFailure);
   ValidateStageParentLocator();
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
   target_ = OpenRelativeNoReparse(
       parent_.get(), paths_.target_name,
       DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   target_identity_ = ReadWindowsFileIdentity(target_.get());
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   stage_identity_ = ReadWindowsFileIdentity(stage_.get());
   if (!stage_identity_.directory) {
     throw WindowsFileTransactionError(
