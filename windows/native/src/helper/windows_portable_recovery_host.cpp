@@ -1914,6 +1914,13 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       std::min<DWORD>(startup_timeout_milliseconds, 5'000);
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
+    const ULONGLONG elapsed = GetTickCount64() - started;
+    if (!direct_process.valid() &&
+        elapsed >= task_fallback_grace_milliseconds) {
+      launch_direct_fallback();
+      started = GetTickCount64();
+      continue;
+    }
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
@@ -1926,26 +1933,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       if (process_wait == WAIT_FAILED) {
         Fail("portable recovery direct process state read failed");
       }
-    } else {
-      TASK_STATE state = TASK_STATE_UNKNOWN;
-      const HRESULT state_result = running.get()->get_State(&state);
-      if (FAILED(state_result)) {
-        Fail("Task Scheduler portable recovery state read failed");
-      }
-      if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
-        launch_direct_fallback();
-        started = GetTickCount64();
-        continue;
-      }
     }
-    const ULONGLONG elapsed = GetTickCount64() - started;
-    if (!direct_process.valid() &&
-        elapsed >= task_fallback_grace_milliseconds) {
-      launch_direct_fallback();
-      started = GetTickCount64();
-      continue;
-    }
-    if (elapsed >= startup_timeout_milliseconds) {
+    if (GetTickCount64() - started >= startup_timeout_milliseconds) {
       if (direct_process.valid()) {
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
