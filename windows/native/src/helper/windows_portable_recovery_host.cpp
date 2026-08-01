@@ -749,10 +749,17 @@ StableTreeHandles OpenStableTree(
   result.root = OpenSecureDirectory(local_app_data, kStableRootName, user,
                                     endpoint.user_sid, create_if_missing);
   if (!result.root.valid()) return result;
+  if (!create_if_missing) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAccessCheckFailure);
+  }
   result.binding = OpenSecureDirectory(
       result.root.get(), Utf8ToWide(endpoint.binding_sha256), user,
       endpoint.user_sid, create_if_missing);
   if (!result.binding.valid()) return result;
+  if (!create_if_missing) {
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableDirectoryAccessDenied);
+  }
   const std::wstring endpoint_leaf =
       Utf8ToWide(endpoint.helper_sha256);
   const bool existed =
@@ -761,6 +768,10 @@ StableTreeHandles OpenStableTree(
   result.endpoint = OpenSecureDirectory(
       result.binding.get(), endpoint_leaf, user, endpoint.user_sid,
       create_if_missing);
+  if (!create_if_missing && result.endpoint.valid()) {
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableStageManifestFailure);
+  }
   return result;
 }
 
