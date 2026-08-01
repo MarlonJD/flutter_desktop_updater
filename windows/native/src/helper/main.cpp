@@ -77,12 +77,21 @@ int Run(int argument_count, wchar_t** arguments) {
       auto bootstrap = desktop_updater::helper::
           LoadPortableWindowsRecoveryHostBootstrap();
       desktop_updater::helper::RecordWindowsHelperEvent(
+          desktop_updater::helper::WindowsHelperEvent::
+              kPortableStageProvenanceFailure);
+      desktop_updater::helper::RecordWindowsHelperEvent(
           desktop_updater::helper::WindowsHelperEvent::kHelperScheduled);
       auto definition = desktop_updater::helper::
           BuildPortableWindowsRecoveryHostTaskDefinition(
               bootstrap.endpoint, transaction_id, std::string(43, 'A'));
+      desktop_updater::helper::RecordWindowsHelperEvent(
+          desktop_updater::helper::WindowsHelperEvent::
+              kPortableStageManifestFailure);
       desktop_updater::helper::WindowsPersistentRecoveryService recovery(
           bootstrap.policy);
+      desktop_updater::helper::RecordWindowsHelperEvent(
+          desktop_updater::helper::WindowsHelperEvent::
+              kPortableStageRequestBindingFailure);
       desktop_updater::helper::
           TaskSchedulerPortableWindowsRecoveryHostController controller;
       desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
@@ -92,6 +101,9 @@ int Run(int argument_count, wchar_t** arguments) {
               controller, definition,
               [&bootstrap, &definition, &recovery, &result,
                &transaction_id]() {
+                desktop_updater::helper::RecordWindowsHelperEvent(
+                    desktop_updater::helper::WindowsHelperEvent::
+                        kPortableStageRestageFailure);
                 result = recovery.RecoverAutonomously(
                     transaction_id,
                     [&bootstrap, &definition, &transaction_id](
@@ -103,6 +115,9 @@ int Run(int argument_count, wchar_t** arguments) {
                       desktop_updater::helper::
                           SignalPortableWindowsRecoveryHostReady(definition);
                     });
+                desktop_updater::helper::RecordWindowsHelperEvent(
+                    desktop_updater::helper::WindowsHelperEvent::
+                        kPortableStagePayloadIdentityFailure);
                 return desktop_updater::helper::
                     PortableWindowsRecoveryResolution{
                         result.result_code, result.verified_outcome};
