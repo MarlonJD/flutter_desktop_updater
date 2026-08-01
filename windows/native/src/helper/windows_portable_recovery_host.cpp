@@ -1877,6 +1877,16 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   ScopedBstr run_user(AccountNameForSid(definition.principal_user_id));
   ComPtr<IRunningTask> running;
   UniqueWindowsHandle direct_process;
+  const auto launch_direct_fallback = [&]() {
+    if (direct_process.valid()) return;
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
+    direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableTargetAuthorityFailure);
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableRecoverySourceFailure);
+  };
   RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoveryStorageFailure);
   const HRESULT start = registered.get()->RunEx(
       parameters.value(), definition.run_flags, 0, run_user.get(),
@@ -1897,14 +1907,9 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     // session, so Task Scheduler cannot start its INTERACTIVE_TOKEN task.
     // Start the same verified helper directly in the current exact token and
     // keep the task registered for the next real user logon.
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
-    direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableTargetAuthorityFailure);
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
+    launch_direct_fallback();
   }
-  const ULONGLONG started = GetTickCount64();
+  ULONGLONG started = GetTickCount64();
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
     if (direct_process.valid()) {
@@ -1926,7 +1931,9 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         Fail("Task Scheduler portable recovery state read failed");
       }
       if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
-        Fail("portable recovery host exited before readiness");
+        launch_direct_fallback();
+        started = GetTickCount64();
+        continue;
       }
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
