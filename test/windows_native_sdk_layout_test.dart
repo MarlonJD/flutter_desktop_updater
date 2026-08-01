@@ -1010,7 +1010,7 @@ void main() {
     expect(recovery, contains("WaitForSingleObject(executor.get(), INFINITE)"));
   });
 
-  test("Windows client accepts the staged canonical manifest terminator", () {
+  test("Windows stager writes the canonical manifest without a terminator", () {
     final stager = readRequiredFile(
       "windows/native/src/runtime/artifact_stager_windows.cpp",
     );
@@ -1018,7 +1018,7 @@ void main() {
       "windows/native/src/desktop_updater_native.cpp",
     );
 
-    expect(stager, contains('EncodeCanonicalJson(descriptor.raw) << "\\n"'));
+    expect(stager, contains('EncodeCanonicalJson(descriptor.raw);'));
     expect(client, contains("allow_single_trailing_newline"));
     expect(
       client,
