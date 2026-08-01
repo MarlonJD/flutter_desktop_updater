@@ -261,6 +261,50 @@ std::vector<unsigned char> ParseSid(const std::wstring& text) {
   return result;
 }
 
+std::wstring AccountNameForSid(const std::wstring& sid_text) {
+  const auto sid = ParseSid(sid_text);
+  DWORD name_length = 0;
+  DWORD domain_length = 0;
+  SID_NAME_USE use = SidTypeUnknown;
+  (void)LookupAccountSidW(nullptr, const_cast<unsigned char*>(sid.data()),
+                           nullptr, &name_length,
+                           nullptr, &domain_length, &use);
+  if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || name_length == 0) {
+    Fail("portable recovery account name is unavailable");
+  }
+  std::vector<wchar_t> name(name_length + 1, L'\0');
+  std::vector<wchar_t> domain(domain_length + 1, L'\0');
+  if (!LookupAccountSidW(nullptr, const_cast<unsigned char*>(sid.data()),
+                         name.data(), &name_length,
+                         domain.data(), &domain_length, &use)) {
+    Fail("portable recovery account name is unavailable");
+  }
+  if (domain_length == 0) return std::wstring(name.data(), name_length);
+  return std::wstring(domain.data(), domain_length) + L"\\" +
+         std::wstring(name.data(), name_length);
+}
+
+bool CaseInsensitiveEqual(const std::wstring& left,
+                          const std::wstring& right) {
+  if (left.size() != right.size()) return false;
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    if (std::towlower(left[index]) != std::towlower(right[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool TaskPrincipalMatchesSid(const std::wstring& actual,
+                             const std::wstring& expected_sid) {
+  if (actual == expected_sid) return true;
+  const std::wstring account = AccountNameForSid(expected_sid);
+  if (CaseInsensitiveEqual(actual, account)) return true;
+  const std::size_t separator = account.find(L'\\');
+  return separator != std::wstring::npos &&
+         CaseInsensitiveEqual(actual, account.substr(separator + 1));
+}
+
 bool IsLocalSystemSid(PSID sid) {
   std::array<unsigned char, SECURITY_MAX_SID_SIZE> system{};
   DWORD size = static_cast<DWORD>(system.size());
@@ -940,7 +984,12 @@ void ConfigureTask(
   ComPtr<IPrincipal> principal;
   Check(task->get_Principal(principal.put()),
         "Task Scheduler principal is unavailable");
-  ScopedBstr user(definition.principal_user_id);
+  // Task Scheduler accepts a SID in many elevated/admin contexts, but a
+  // standard-user registration can reject the same definition as
+  // SCHED_E_INVALIDVALUE. Resolve the already-authorized SID to its canonical
+  // account name for the task XML while retaining the SID as the security and
+  // validation authority.
+  ScopedBstr user(AccountNameForSid(definition.principal_user_id));
   Check(principal.get()->put_UserId(user.get()),
         "Task Scheduler exact-user principal failed");
   Check(principal.get()->put_LogonType(definition.logon_type),
@@ -1115,7 +1164,8 @@ void ValidateRegisteredTask(
         "Task Scheduler logon type readback failed");
   Check(principal.get()->get_RunLevel(&run_level),
         "Task Scheduler run level readback failed");
-  if (principal_user.value() != expected.principal_user_id ||
+  if (!TaskPrincipalMatchesSid(principal_user.value(),
+                               expected.principal_user_id) ||
       logon_type != expected.logon_type || run_level != expected.run_level) {
     Fail("Task Scheduler principal authority changed");
   }
@@ -1154,7 +1204,8 @@ void ValidateRegisteredTask(
   Check(logon.get()->get_Delay(trigger_delay.put()),
         "Task Scheduler logon trigger delay readback failed");
   if (trigger_type != expected.trigger_type ||
-      trigger_user.value() != expected.principal_user_id) {
+      !TaskPrincipalMatchesSid(trigger_user.value(),
+                               expected.principal_user_id)) {
     Fail("Task Scheduler logon trigger authority changed");
   }
   ValidatePortableWindowsRecoveryTaskSemanticFacts(
