@@ -386,9 +386,16 @@ void WindowsFileTransaction::ValidatePayload(
           WindowsFileTransactionError::Code::kStagePayloadChanged,
           "payload identity changed");
     }
-  } catch (const WindowsFileTransactionError&) {
+  } catch (const WindowsFileTransactionError& error) {
+    if (error.code() ==
+        WindowsFileTransactionError::Code::kStagePayloadChanged) {
+      RecordWindowsHelperEvent(
+          WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
+    }
     throw;
   } catch (const std::exception&) {
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kStagePayloadChanged,
         "payload verification failed");

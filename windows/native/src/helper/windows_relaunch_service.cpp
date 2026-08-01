@@ -502,27 +502,32 @@ void CreateProcessWindowsLauncher::Launch(
 
 CallerTokenWindowsLauncher::CallerTokenWindowsLauncher(
     HANDLE caller_process) {
-  if (caller_process == nullptr) {
-    throw WindowsRelaunchError("caller process token source is unavailable");
+  try {
+    if (caller_process == nullptr) {
+      throw WindowsRelaunchError("caller process token source is unavailable");
+    }
+    HANDLE raw_token = nullptr;
+    if (!OpenProcessToken(caller_process, TOKEN_QUERY | TOKEN_DUPLICATE,
+                          &raw_token)) {
+      throw WindowsRelaunchError("caller process token cannot be opened");
+    }
+    UniqueWindowsHandle token(raw_token);
+    HANDLE raw_primary = nullptr;
+    // CreateProcessWithTokenW only requires these three rights on the primary
+    // token. Requesting token-adjustment rights as well makes duplication fail
+    // for standard-user tokens whose DACL intentionally omits them.
+    constexpr DWORD desired_access =
+        TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY;
+    if (!DuplicateTokenEx(token.get(), desired_access, nullptr,
+                          SecurityImpersonation, TokenPrimary, &raw_primary)) {
+      throw WindowsRelaunchError(
+          "caller process primary token cannot be duplicated");
+    }
+    caller_primary_token_.reset(raw_primary);
+  } catch (...) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableCallerTokenFailure);
+    throw;
   }
-  HANDLE raw_token = nullptr;
-  if (!OpenProcessToken(caller_process, TOKEN_QUERY | TOKEN_DUPLICATE,
-                        &raw_token)) {
-    throw WindowsRelaunchError("caller process token cannot be opened");
-  }
-  UniqueWindowsHandle token(raw_token);
-  HANDLE raw_primary = nullptr;
-  // CreateProcessWithTokenW only requires these three rights on the primary
-  // token. Requesting token-adjustment rights as well makes duplication fail
-  // for standard-user tokens whose DACL intentionally omits them.
-  constexpr DWORD desired_access =
-      TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY;
-  if (!DuplicateTokenEx(token.get(), desired_access, nullptr,
-                        SecurityImpersonation, TokenPrimary, &raw_primary)) {
-    throw WindowsRelaunchError(
-        "caller process primary token cannot be duplicated");
-  }
-  caller_primary_token_.reset(raw_primary);
 }
 
 void CallerTokenWindowsLauncher::Launch(

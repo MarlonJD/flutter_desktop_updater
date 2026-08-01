@@ -17,6 +17,7 @@
 #include "helper_authenticode.h"
 #include "json_value.h"
 #include "windows_helper_bootstrap.h"
+#include "windows_helper_diagnostics.h"
 #include "windows_portable_recovery_host.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_recovery_service.h"
@@ -1366,11 +1367,19 @@ WindowsPersistentTransactionIndex::WindowsPersistentTransactionIndex(
       policy_id_(policy.policy_id()),
       package_id_(policy.application_package_id()),
       helper_endpoint_identity_sha256_(policy.helper_sha256()) {
-  if (portable_) {
-    portable_store_ = std::make_unique<WindowsPortableTransactionStore>(
-        policy, caller_process, create_if_missing);
-  } else {
-    key_ = OpenPersistentIndexKey(policy, caller_process, create_if_missing);
+  try {
+    if (portable_) {
+      portable_store_ = std::make_unique<WindowsPortableTransactionStore>(
+          policy, caller_process, create_if_missing);
+    } else {
+      key_ = OpenPersistentIndexKey(policy, caller_process, create_if_missing);
+    }
+  } catch (...) {
+    if (portable_) {
+      RecordWindowsHelperEvent(
+          WindowsHelperEvent::kPortableRecoveryStorageFailure);
+    }
+    throw;
   }
 }
 
