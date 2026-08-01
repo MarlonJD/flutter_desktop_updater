@@ -1813,6 +1813,7 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
 void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     const PortableWindowsRecoveryHostTaskDefinition& definition,
     DWORD startup_timeout_milliseconds) {
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
   PortableRecoveryProvisionDiagnostics diagnostics;
   ValidateTaskDefinition(definition);
   if (startup_timeout_milliseconds == 0) {
