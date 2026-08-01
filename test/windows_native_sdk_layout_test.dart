@@ -723,6 +723,14 @@ void main() {
     );
     expect(authorizer, contains("ValidatePortableWindowsTargetAuthority"));
     expect(authorizer, contains("AccessCheck"));
+    expect(
+      authorizer,
+      allOf(
+        contains("OWNER_SECURITY_INFORMATION"),
+        contains("GROUP_SECURITY_INFORMATION"),
+        contains("DACL_SECURITY_INFORMATION"),
+      ),
+    );
     expect(authorizer, contains("WindowsPersistentTransactionIndex"));
     expect(authorizer, contains("PersistPreparing"));
     expect(authorizer, contains("PersistActive"));

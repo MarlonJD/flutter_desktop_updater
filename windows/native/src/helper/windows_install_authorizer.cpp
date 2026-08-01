@@ -346,8 +346,10 @@ CallerDirectoryAccessResult CallerTokenDirectoryAccess(
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
   PACL dacl = nullptr;
   const DWORD security = GetSecurityInfo(
-      directory.get(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr,
-      nullptr, &dacl, nullptr, &raw_descriptor);
+      directory.get(), SE_FILE_OBJECT,
+      OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
+          DACL_SECURITY_INFORMATION,
+      nullptr, nullptr, &dacl, nullptr, &raw_descriptor);
   if (security != ERROR_SUCCESS || raw_descriptor == nullptr) {
     if (raw_descriptor != nullptr) LocalFree(raw_descriptor);
     return CallerDirectoryAccessResult::kSecurityDescriptorFailure;
