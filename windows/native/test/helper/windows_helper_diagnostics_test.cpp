@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 42> expected = {
+  constexpr std::array<const char*, 47> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -52,6 +52,11 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable impersonation token failure",
       "portable access check failure",
       "portable directory access denied",
+      "portable stage provenance failure",
+      "portable stage manifest failure",
+      "portable stage request binding failure",
+      "portable stage restage failure",
+      "portable stage payload identity failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));

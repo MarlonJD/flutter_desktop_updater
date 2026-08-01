@@ -1042,29 +1042,46 @@ WindowsPortableInstallAuthorizer::Authorize(
   authorization_stage.Advance(
       WindowsHelperEvent::kPortableStageAuthorizationFailure);
 
-  const StageProvenanceMarker marker = VerifyStageProvenance(
-      stage, request.stage.provenance_sha256, BCryptSha256Bytes);
-  const std::string release_manifest = ReadRegularFileNoReparse(
-      stage / L".desktop_updater_release_manifest.json",
-      kMaximumHelperMetadataBytes);
-  const AuthorizedNativeInstallRequestV1 authorized =
-      AuthorizeNativeInstallTransactionRequestV1(
-          request, BuildWindowsNativeInstallAuthorizationPolicy(policy_),
-          "windows", release_manifest, marker,
-          request.stage.provenance_sha256, BCryptSha256Hex);
+  const StageProvenanceMarker marker = [&]() {
+    const ScopedWindowsHelperFailureEvent stage_detail(
+        WindowsHelperEvent::kPortableStageProvenanceFailure);
+    return VerifyStageProvenance(stage, request.stage.provenance_sha256,
+                                 BCryptSha256Bytes);
+  }();
+  const std::string release_manifest = [&]() {
+    const ScopedWindowsHelperFailureEvent stage_detail(
+        WindowsHelperEvent::kPortableStageManifestFailure);
+    return ReadRegularFileNoReparse(
+        stage / L".desktop_updater_release_manifest.json",
+        kMaximumHelperMetadataBytes);
+  }();
+  const AuthorizedNativeInstallRequestV1 authorized = [&]() {
+    const ScopedWindowsHelperFailureEvent stage_detail(
+        WindowsHelperEvent::kPortableStageRequestBindingFailure);
+    return AuthorizeNativeInstallTransactionRequestV1(
+        request, BuildWindowsNativeInstallAuthorizationPolicy(policy_),
+        "windows", release_manifest, marker, request.stage.provenance_sha256,
+        BCryptSha256Hex);
+  }();
   if (authorized.descriptor.artifact.kind != "zip") {
     Fail("portable directory replacement requires a signed Windows ZIP");
   }
-  WindowsVerifiedArchiveRestage restage = RestageVerifiedWindowsZip(
-      stage, target.parent_path(), request.transaction_id,
-      request.package_id, request.signed_descriptor.canonical_sha256,
-      request.stage.artifact_sha256, request.stage.artifact_length,
-      release_manifest, WindowsArchiveRestageAuthority::kPortableExactCaller,
-      caller_process_);
-  WindowsVerifiedPayloadIdentity expected =
-      BuildWindowsExpectedPayloadIdentity(
-          request, restage.provenance(), restage.payload_seal_sha256(),
-          policy_);
+  WindowsVerifiedArchiveRestage restage = [&]() {
+    const ScopedWindowsHelperFailureEvent stage_detail(
+        WindowsHelperEvent::kPortableStageRestageFailure);
+    return RestageVerifiedWindowsZip(
+        stage, target.parent_path(), request.transaction_id,
+        request.package_id, request.signed_descriptor.canonical_sha256,
+        request.stage.artifact_sha256, request.stage.artifact_length,
+        release_manifest, WindowsArchiveRestageAuthority::kPortableExactCaller,
+        caller_process_);
+  }();
+  WindowsVerifiedPayloadIdentity expected = [&]() {
+    const ScopedWindowsHelperFailureEvent stage_detail(
+        WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
+    return BuildWindowsExpectedPayloadIdentity(
+        request, restage.provenance(), restage.payload_seal_sha256(), policy_);
+  }();
   return std::make_unique<WindowsPortableDirectoryPreparedTransaction>(
       target, std::move(restage), request.transaction_id,
       std::move(expected), policy_, endpoint_, caller_process_);

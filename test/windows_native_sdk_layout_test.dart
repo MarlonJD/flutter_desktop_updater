@@ -635,6 +635,26 @@ void main() {
       authorizer,
       contains("WindowsHelperEvent::kPortableDirectoryAccessDenied"),
     );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableStageProvenanceFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableStageManifestFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableStageRequestBindingFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableStageRestageFailure"),
+    );
+    expect(
+      authorizer,
+      contains("WindowsHelperEvent::kPortableStagePayloadIdentityFailure"),
+    );
     expect(transaction, contains("WindowsHelperEvent::kBackupStart"));
     expect(transaction, contains("WindowsHelperEvent::kMoveStart"));
     expect(transaction, contains("WindowsHelperEvent::kRollbackStart"));

@@ -91,6 +91,17 @@ constexpr std::array<WindowsHelperEventDescriptor,
          L"portable access check failure"},
         {1041, EVENTLOG_ERROR_TYPE, "portable directory access denied",
          L"portable directory access denied"},
+        {1042, EVENTLOG_ERROR_TYPE, "portable stage provenance failure",
+         L"portable stage provenance failure"},
+        {1043, EVENTLOG_ERROR_TYPE, "portable stage manifest failure",
+         L"portable stage manifest failure"},
+        {1044, EVENTLOG_ERROR_TYPE, "portable stage request binding failure",
+         L"portable stage request binding failure"},
+        {1045, EVENTLOG_ERROR_TYPE, "portable stage restage failure",
+         L"portable stage restage failure"},
+        {1046, EVENTLOG_ERROR_TYPE,
+         "portable stage payload identity failure",
+         L"portable stage payload identity failure"},
     }};
 
 }  // namespace
