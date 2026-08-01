@@ -1082,9 +1082,14 @@ WindowsPortableInstallAuthorizer::Authorize(
     return BuildWindowsExpectedPayloadIdentity(
         request, restage.provenance(), restage.payload_seal_sha256(), policy_);
   }();
-  return std::make_unique<WindowsPortableDirectoryPreparedTransaction>(
-      target, std::move(restage), request.transaction_id,
-      std::move(expected), policy_, endpoint_, caller_process_);
+  try {
+    return std::make_unique<WindowsPortableDirectoryPreparedTransaction>(
+        target, std::move(restage), request.transaction_id,
+        std::move(expected), policy_, endpoint_, caller_process_);
+  } catch (...) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortablePreparationFailure);
+    throw;
+  }
 }
 
 }  // namespace desktop_updater::helper
