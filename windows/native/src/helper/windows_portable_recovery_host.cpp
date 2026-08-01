@@ -1715,9 +1715,14 @@ bool IsPortableWindowsRecoveryTaskStartFallback(HRESULT result) {
   // all definition readbacks are exact. Keep this empirical compatibility
   // path narrowly scoped to the same interactive-token start operation.
   constexpr HRESULT task_interactive_token_unavailable =
+      static_cast<HRESULT>(0x8007136FUL);
+  // Keep accepting the Task Scheduler-facility form observed on older
+  // Windows builds as well.
+  constexpr HRESULT task_interactive_token_unavailable_legacy =
       static_cast<HRESULT>(0x8004136FUL);
   return result == task_user_not_logged_on ||
-         result == task_interactive_token_unavailable;
+         result == task_interactive_token_unavailable ||
+         result == task_interactive_token_unavailable_legacy;
 }
 
 std::string RunPortableWindowsRecoveryPrepareBoundary(

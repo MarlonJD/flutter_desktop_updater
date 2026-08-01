@@ -214,6 +214,8 @@ TEST(WindowsPortableRecoveryHost,
       static_cast<HRESULT>(0x80041320UL)));
   EXPECT_TRUE(IsPortableWindowsRecoveryTaskStartFallback(
       static_cast<HRESULT>(0x8004136FUL)));
+  EXPECT_TRUE(IsPortableWindowsRecoveryTaskStartFallback(
+      static_cast<HRESULT>(0x8007136FUL)));
   EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(E_ACCESSDENIED));
   EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(E_INVALIDARG));
   EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(S_OK));
