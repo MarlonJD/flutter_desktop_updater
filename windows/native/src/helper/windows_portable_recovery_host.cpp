@@ -99,6 +99,20 @@ class PortableRecoveryProvisionDiagnostics final {
       PortableRecoveryProvisionStage::kAuthority;
 };
 
+// Temporary hosted-run diagnostic for the standard-user Task Scheduler
+// registration failure. Remove after the HRESULT is captured.
+void RecordPortableRecoveryRegistrationProbe(HRESULT result) noexcept {
+  HANDLE source = RegisterEventSourceW(
+      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
+  if (source == nullptr) return;
+  const wchar_t* message[] = {L"portable recovery registration HRESULT probe"};
+  const DWORD event_id =
+      20000u + (static_cast<DWORD>(result) & static_cast<DWORD>(0xFFFFu));
+  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
+                     message, nullptr);
+  (void)DeregisterEventSource(source);
+}
+
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1804,6 +1818,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         user.value(), password.value(), definition.logon_type,
         security.value(), registered.put());
     if (registration != S_OK) {
+      RecordPortableRecoveryRegistrationProbe(registration);
       // TASK_CREATE never overwrites a concurrently-created task. A retry
       // must reopen and verify that exact task before any mutation proceeds.
       Fail("Task Scheduler portable recovery registration was incomplete");
