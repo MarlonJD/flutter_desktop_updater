@@ -10,7 +10,6 @@
 #include <array>
 #include <cctype>
 #include <cwctype>
-#include <cstdio>
 #include <exception>
 #include <limits>
 #include <memory>
@@ -99,6 +98,23 @@ class PortableRecoveryProvisionDiagnostics final {
   PortableRecoveryProvisionStage stage_ =
       PortableRecoveryProvisionStage::kAuthority;
 };
+
+// Temporary hosted-run probe. The fixed diagnostic sink deliberately omits
+// raw HRESULTs; this bounded event-id encoding lets one CI run identify the
+// registration family and is removed after diagnosis.
+void RecordPortableRecoveryRegistrationProbe(HRESULT result) noexcept {
+  HANDLE source = RegisterEventSourceW(
+      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
+  if (source == nullptr) return;
+  const wchar_t* message[] = {
+      L"portable recovery registration HRESULT probe",
+  };
+  const DWORD event_id =
+      20000u + (static_cast<DWORD>(result) & static_cast<DWORD>(0xFFFFu));
+  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
+                     message, nullptr);
+  (void)DeregisterEventSource(source);
+}
 
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
@@ -1751,12 +1767,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         user.value(), password.value(), definition.logon_type,
         security.value(), registered.put());
     if (registration != S_OK) {
-      // Temporary hosted-run evidence; remove after the registration family
-      // is identified. The stable event sink below remains redacted.
-      std::fprintf(stderr,
-                   "Task Scheduler portable recovery registration HRESULT=0x%08lX\n",
-                   static_cast<unsigned long>(registration));
-      std::fflush(stderr);
+      RecordPortableRecoveryRegistrationProbe(registration);
       // Keep the broad storage event for the stable contract, and add a
       // bounded category for the hosted standard-user registration failure.
       // The Task Scheduler HRESULT itself is deliberately not written to the
