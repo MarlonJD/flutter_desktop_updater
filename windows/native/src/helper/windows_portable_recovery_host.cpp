@@ -1875,9 +1875,11 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   ScopedBstr run_user(AccountNameForSid(definition.principal_user_id));
   ComPtr<IRunningTask> running;
   UniqueWindowsHandle direct_process;
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoveryStorageFailure);
   const HRESULT start = registered.get()->RunEx(
       parameters.value(), definition.run_flags, 0, run_user.get(),
       running.put());
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
   if (FAILED(start)) {
     const bool use_direct_fallback =
         IsPortableWindowsRecoveryTaskStartFallback(start);
