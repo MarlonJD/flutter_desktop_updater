@@ -124,9 +124,8 @@ void RecordPortableRecoveryRegistrationCandidateProbe(std::size_t candidate,
   const wchar_t* message[] = {
       L"portable recovery registration candidate probe",
   };
-  const DWORD event_id =
-      30000u + static_cast<DWORD>(candidate) * 65536u +
-      (static_cast<DWORD>(result) & static_cast<DWORD>(0xFFFFu));
+  const DWORD event_id = 30000u + static_cast<DWORD>(candidate) * 256u +
+                         (static_cast<DWORD>(result) & 0xFFu);
   (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
                      message, nullptr);
   (void)DeregisterEventSource(source);
@@ -1120,6 +1119,74 @@ HRESULT MutatePortableRecoveryExecutionLimit(ITaskDefinition* task,
   return settings.get()->put_ExecutionTimeLimit(limit.get());
 }
 
+HRESULT MutatePortableRecoverySettings(ITaskDefinition* task,
+                                        VARIANT_BOOL allow_demand_start,
+                                        VARIANT_BOOL start_when_available,
+                                        VARIANT_BOOL disallow_battery,
+                                        VARIANT_BOOL stop_on_battery,
+                                        TASK_INSTANCES_POLICY instances) {
+  ComPtr<ITaskSettings> settings;
+  HRESULT result = task->get_Settings(settings.put());
+  if (FAILED(result)) return result;
+  result = settings.get()->put_AllowDemandStart(allow_demand_start);
+  if (FAILED(result)) return result;
+  result = settings.get()->put_StartWhenAvailable(start_when_available);
+  if (FAILED(result)) return result;
+  result = settings.get()->put_DisallowStartIfOnBatteries(disallow_battery);
+  if (FAILED(result)) return result;
+  result = settings.get()->put_StopIfGoingOnBatteries(stop_on_battery);
+  if (FAILED(result)) return result;
+  return settings.get()->put_MultipleInstances(instances);
+}
+
+HRESULT MutatePortableRecoveryAction(ITaskDefinition* task,
+                                      const std::wstring& path,
+                                      const std::wstring& arguments) {
+  ComPtr<IActionCollection> actions;
+  HRESULT result = task->get_Actions(actions.put());
+  if (FAILED(result)) return result;
+  ComPtr<IAction> raw_action;
+  result = actions.get()->get_Item(1, raw_action.put());
+  if (FAILED(result)) return result;
+  ComPtr<IExecAction> executable;
+  result = raw_action.get()->QueryInterface(
+      IID_IExecAction, reinterpret_cast<void**>(executable.put()));
+  if (FAILED(result)) return result;
+  ScopedBstr executable_path(path);
+  ScopedBstr executable_arguments(arguments);
+  result = executable.get()->put_Path(executable_path.get());
+  if (FAILED(result)) return result;
+  return executable.get()->put_Arguments(executable_arguments.get());
+}
+
+HRESULT MutatePortableRecoveryAuthor(ITaskDefinition* task,
+                                      const std::wstring& author) {
+  ComPtr<IRegistrationInfo> registration;
+  HRESULT result = task->get_RegistrationInfo(registration.put());
+  if (FAILED(result)) return result;
+  ScopedBstr value(author);
+  return registration.get()->put_Author(value.get());
+}
+
+HRESULT MutatePortableRecoveryTriggerEnabled(ITaskDefinition* task,
+                                              VARIANT_BOOL enabled) {
+  ComPtr<ITriggerCollection> triggers;
+  HRESULT result = task->get_Triggers(triggers.put());
+  if (FAILED(result)) return result;
+  ComPtr<ITrigger> trigger;
+  result = triggers.get()->get_Item(1, trigger.put());
+  if (FAILED(result)) return result;
+  return trigger.get()->put_Enabled(enabled);
+}
+
+HRESULT MutatePortableRecoveryRunLevel(ITaskDefinition* task,
+                                        TASK_RUNLEVEL_TYPE run_level) {
+  ComPtr<IPrincipal> principal;
+  HRESULT result = task->get_Principal(principal.put());
+  if (FAILED(result)) return result;
+  return principal.get()->put_RunLevel(run_level);
+}
+
 using PortableRecoveryTaskDefinitionMutator =
     std::function<HRESULT(ITaskDefinition*)>;
 
@@ -1141,8 +1208,10 @@ void ProbePortableRecoveryTaskRegistration(
       result = mutate(task.get());
       if (FAILED(result)) throw WindowsPortableRecoveryHostError("probe");
     }
-    probe_path = definition.task_path + L"-Probe-" +
-                 std::to_wstring(candidate);
+    probe_path = candidate == 20
+                     ? L"\\CodexPortableRecoveryProbeSimple"
+                     : definition.task_path + L"-Probe-" +
+                           std::to_wstring(candidate);
     ScopedBstr path(probe_path);
     ScopedVariant user;
     ScopedVariant password;
@@ -1936,8 +2005,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       RecordPortableRecoveryRegistrationProbe(registration);
       if (registration == static_cast<HRESULT>(0x80041318L)) {
         // Temporary hosted-run matrix for the Task Scheduler XML value
-        // rejection. Candidate event IDs encode candidate*65536 + HRESULT
-        // low 16 bits; remove this matrix after the invalid field is fixed.
+        // rejection. Candidate event IDs encode candidate*256 + HRESULT low
+        // byte; remove this matrix after the invalid field is fixed.
         const std::wstring empty;
         const std::wstring zero_seconds = L"PT0S";
         const std::wstring sid = definition.principal_user_id;
@@ -1969,6 +2038,47 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         };
         const auto no_execution_limit = [&](ITaskDefinition* candidate_task) {
           return MutatePortableRecoveryExecutionLimit(candidate_task, empty);
+        };
+        const auto notepad_action = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryAction(
+              candidate_task, L"C:\\Windows\\System32\\notepad.exe",
+              definition.arguments);
+        };
+        const auto no_action_arguments = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryAction(candidate_task,
+                                              definition.executable_path.wstring(),
+                                              empty);
+        };
+        const auto empty_author = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryAuthor(candidate_task, empty);
+        };
+        const auto disabled_trigger = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryTriggerEnabled(candidate_task,
+                                                       VARIANT_FALSE);
+        };
+        const auto highest_run_level = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoveryRunLevel(candidate_task,
+                                                 TASK_RUNLEVEL_HIGHEST);
+        };
+        const auto demand_disabled = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoverySettings(
+              candidate_task, VARIANT_FALSE, VARIANT_TRUE, VARIANT_FALSE,
+              VARIANT_FALSE, TASK_INSTANCES_IGNORE_NEW);
+        };
+        const auto available_disabled = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoverySettings(
+              candidate_task, VARIANT_TRUE, VARIANT_FALSE, VARIANT_FALSE,
+              VARIANT_FALSE, TASK_INSTANCES_IGNORE_NEW);
+        };
+        const auto battery_restricted = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoverySettings(
+              candidate_task, VARIANT_TRUE, VARIANT_TRUE, VARIANT_TRUE,
+              VARIANT_TRUE, TASK_INSTANCES_IGNORE_NEW);
+        };
+        const auto parallel_instances = [&](ITaskDefinition* candidate_task) {
+          return MutatePortableRecoverySettings(
+              candidate_task, VARIANT_TRUE, VARIANT_TRUE, VARIANT_FALSE,
+              VARIANT_FALSE, TASK_INSTANCES_PARALLEL);
         };
         ProbePortableRecoveryTaskRegistration(
             service.get(), folder.get(), definition, 1,
@@ -2007,6 +2117,45 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
             service.get(), folder.get(), definition, 10,
             definition.registration_flags, definition.logon_type,
             no_execution_limit, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 20,
+            definition.registration_flags, definition.logon_type, nullptr, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 21,
+            definition.registration_flags, definition.logon_type, notepad_action,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 22,
+            definition.registration_flags, definition.logon_type,
+            no_action_arguments, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 23,
+            definition.registration_flags, definition.logon_type, empty_author,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 24,
+            definition.registration_flags, definition.logon_type,
+            disabled_trigger, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 25,
+            definition.registration_flags, definition.logon_type,
+            highest_run_level, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 26,
+            definition.registration_flags, definition.logon_type, demand_disabled,
+            true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 27,
+            definition.registration_flags, definition.logon_type,
+            available_disabled, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 28,
+            definition.registration_flags, definition.logon_type,
+            battery_restricted, true);
+        ProbePortableRecoveryTaskRegistration(
+            service.get(), folder.get(), definition, 29,
+            definition.registration_flags, definition.logon_type,
+            parallel_instances, true);
       }
       // Keep the broad storage event for the stable contract, and add a
       // bounded category for the hosted standard-user registration failure.
