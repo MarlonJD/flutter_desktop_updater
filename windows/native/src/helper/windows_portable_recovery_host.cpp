@@ -1770,6 +1770,8 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
           nullptr, definition.executable_path.parent_path().c_str(), &startup,
           &process)) {
     RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableRequestValidationFailure);
+    RecordWindowsHelperEvent(
         WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
     Fail("portable recovery direct process launch failed");
   }
@@ -1896,7 +1898,10 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     // Start the same verified helper directly in the current exact token and
     // keep the task registered for the next real user logon.
     RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableTargetAuthorityFailure);
     RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
   }
   const ULONGLONG started = GetTickCount64();
@@ -1905,6 +1910,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableTargetRequestFailure);
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
         Fail("portable recovery host exited before readiness");
@@ -1924,6 +1931,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
       if (direct_process.valid()) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableRecoveryStorageFailure);
       }
