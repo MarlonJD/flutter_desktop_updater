@@ -1671,6 +1671,7 @@ void SignalPortableWindowsRecoveryHostReady(
 void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     const PortableWindowsRecoveryHostTaskDefinition& definition,
     DWORD startup_timeout_milliseconds) {
+  PortableRecoveryProvisionDiagnostics diagnostics;
   ValidateTaskDefinition(definition);
   if (startup_timeout_milliseconds == 0) {
     Fail("portable recovery startup timeout is invalid");
@@ -1679,6 +1680,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   RequirePortableWindowsRecoveryTokenAuthority(
       definition.principal_user_id, current.user_sid, current.elevated,
       current.local_system);
+  diagnostics.Advance(PortableRecoveryProvisionStage::kSource);
   PSECURITY_DESCRIPTOR raw_event_descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
           definition.security_descriptor.c_str(), SDDL_REVISION_1,
@@ -1704,6 +1706,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   Check(service.get()->NewTask(0, task.put()),
         "Task Scheduler definition creation failed");
   ConfigureTask(task.get(), definition);
+  diagnostics.Advance(PortableRecoveryProvisionStage::kStorage);
   ScopedBstr task_path(definition.task_path);
   ScopedVariant user(definition.principal_user_id);
   ScopedVariant password;
@@ -1747,6 +1750,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     ValidateRegisteredTask(registered.get(), definition);
   }
 
+  diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedVariant parameters;
   ScopedBstr run_user(definition.principal_user_id);
   ComPtr<IRunningTask> running;
