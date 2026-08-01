@@ -512,9 +512,11 @@ CallerTokenWindowsLauncher::CallerTokenWindowsLauncher(
   }
   UniqueWindowsHandle token(raw_token);
   HANDLE raw_primary = nullptr;
+  // CreateProcessWithTokenW only requires these three rights on the primary
+  // token. Requesting token-adjustment rights as well makes duplication fail
+  // for standard-user tokens whose DACL intentionally omits them.
   constexpr DWORD desired_access =
-      TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY |
-      TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID;
+      TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY;
   if (!DuplicateTokenEx(token.get(), desired_access, nullptr,
                         SecurityImpersonation, TokenPrimary, &raw_primary)) {
     throw WindowsRelaunchError(
