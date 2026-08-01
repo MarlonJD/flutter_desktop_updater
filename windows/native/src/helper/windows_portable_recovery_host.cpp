@@ -1910,6 +1910,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     launch_direct_fallback();
   }
   ULONGLONG started = GetTickCount64();
+  const ULONGLONG task_fallback_grace_milliseconds =
+      std::min<DWORD>(startup_timeout_milliseconds, 5'000);
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
     if (direct_process.valid()) {
@@ -1936,7 +1938,14 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         continue;
       }
     }
-    if (GetTickCount64() - started >= startup_timeout_milliseconds) {
+    const ULONGLONG elapsed = GetTickCount64() - started;
+    if (!direct_process.valid() &&
+        elapsed >= task_fallback_grace_milliseconds) {
+      launch_direct_fallback();
+      started = GetTickCount64();
+      continue;
+    }
+    if (elapsed >= startup_timeout_milliseconds) {
       if (direct_process.valid()) {
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
