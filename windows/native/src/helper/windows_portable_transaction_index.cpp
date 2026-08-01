@@ -575,9 +575,12 @@ ResolvedWindowsPortableTransactionEndpointV1 ResolveStableEndpointPaths(
     Fail("portable transaction stable endpoint root is invalid");
   }
   const std::string binding = StableHostBinding(locator, user_sid);
+  // The binding directory already includes both digests and the user SID;
+  // omitting the repeated policy digest keeps the recovery executable path
+  // usable by Task Scheduler on long profile paths.
   const std::filesystem::path endpoint_path =
       local_app_data_path / kStableHostRootName / Utf8ToWide(binding) /
-      Utf8ToWide(locator.helper_sha256 + "-" + locator.policy_sha256);
+      Utf8ToWide(locator.helper_sha256);
   return {locator,
           user_sid,
           local_app_data_path,
@@ -623,8 +626,7 @@ void ValidateStableEndpointStorage(
   }
   auto endpoint_directory = OpenSecureDirectory(
       binding_directory.get(),
-      Utf8ToWide(endpoint.locator.helper_sha256 + "-" +
-                 endpoint.locator.policy_sha256),
+      Utf8ToWide(endpoint.locator.helper_sha256),
       FILE_OPEN, user, endpoint.user_sid);
   if (!endpoint_directory.valid()) {
     Fail("portable stable host endpoint is unavailable");

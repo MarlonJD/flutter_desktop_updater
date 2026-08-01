@@ -92,8 +92,9 @@ TEST(WindowsPortableRecoveryHost, EndpointIsVersionAndDigestAddressed) {
                 L"desktop_updater_portable_recovery_host_v1"));
   EXPECT_NE(std::wstring::npos,
             endpoint.helper_path.wstring().find(std::wstring(64, L'b')));
-  EXPECT_NE(std::wstring::npos,
+  EXPECT_EQ(std::wstring::npos,
             endpoint.helper_path.wstring().find(std::wstring(64, L'c')));
+  EXPECT_LT(endpoint.helper_path.wstring().size(), 260u);
   EXPECT_EQ(std::wstring::npos,
             endpoint.helper_path.wstring().find(L"Program Files"));
 }
