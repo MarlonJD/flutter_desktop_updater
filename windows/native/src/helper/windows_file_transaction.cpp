@@ -245,7 +245,7 @@ WindowsFileTransaction::WindowsFileTransaction(
       stage_(DuplicateRetainedHandle(pinned_stage,
                                      "pinned stage root is invalid")) {
   ScopedWindowsFileTransactionFailureEvent failure_event(
-      WindowsHelperEvent::kPortableDirectoryHandleFailure);
+      WindowsHelperEvent::kPortableTargetRequestFailure);
   if (stage_parent_locator_ != parent_locator_ || stage_name_.empty() ||
       stage_name_ == paths_.target_name ||
       stage_name_.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) {
@@ -255,6 +255,7 @@ WindowsFileTransaction::WindowsFileTransaction(
   }
   parent_identity_ = ReadWindowsFileIdentity(parent_.get());
   stage_parent_identity_ = ReadWindowsFileIdentity(stage_parent_.get());
+  failure_event.Advance(WindowsHelperEvent::kPortableStageAuthorizationFailure);
   if (parent_identity_ != stage_parent_identity_) {
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kStageIdentityChanged,
@@ -289,7 +290,7 @@ WindowsFileTransaction::WindowsFileTransaction(
   failure_event.Advance(
       WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
   ValidatePayload(stage_parent_.get(), stage_name_);
-  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
+  failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
 
   journal_.transaction_id = paths_.transaction_id;
   journal_.owner_process_id = owner_process_id_;
