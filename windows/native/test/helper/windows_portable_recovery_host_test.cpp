@@ -208,6 +208,17 @@ TEST(WindowsPortableRecoveryHost,
             definition.arguments.find(L"RunOnce"));
 }
 
+TEST(WindowsPortableRecoveryHost,
+     DirectStartFallbackOnlyMatchesInteractiveTokenUnavailable) {
+  EXPECT_TRUE(IsPortableWindowsRecoveryTaskStartFallback(
+      static_cast<HRESULT>(0x80041320UL)));
+  EXPECT_TRUE(IsPortableWindowsRecoveryTaskStartFallback(
+      static_cast<HRESULT>(0x8004136FUL)));
+  EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(E_ACCESSDENIED));
+  EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(E_INVALIDARG));
+  EXPECT_FALSE(IsPortableWindowsRecoveryTaskStartFallback(S_OK));
+}
+
 TEST(WindowsPortableRecoveryHost, TokenAuthorityRejectsSystemOrElevation) {
   EXPECT_NO_THROW(RequirePortableWindowsRecoveryTokenAuthority(
       kUserSid, kUserSid, false, false));

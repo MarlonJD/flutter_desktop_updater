@@ -99,8 +99,7 @@ class PortableRecoveryProvisionDiagnostics final {
       PortableRecoveryProvisionStage::kAuthority;
 };
 
-// Temporary ACL readback diagnostic; remove after the hosted mismatch is
-// classified.
+// Temporary diagnostic; remove after the hosted start path is verified.
 void RecordPortableRecoveryProbe(DWORD base, DWORD code) noexcept {
   HANDLE source = RegisterEventSourceW(
       nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
@@ -1707,6 +1706,20 @@ BuildPortableWindowsRecoveryHostTaskDefinition(
   return definition;
 }
 
+bool IsPortableWindowsRecoveryTaskStartFallback(HRESULT result) {
+  // SCHED_E_USER_NOT_LOGGED_ON is the documented interactive-token failure.
+  constexpr HRESULT task_user_not_logged_on =
+      static_cast<HRESULT>(0x80041320UL);
+  // Hosted Windows standard-user runs created with CreateProcessWithLogonW
+  // return this Task Scheduler result even though the task registration and
+  // all definition readbacks are exact. Keep this empirical compatibility
+  // path narrowly scoped to the same interactive-token start operation.
+  constexpr HRESULT task_interactive_token_unavailable =
+      static_cast<HRESULT>(0x8004136FUL);
+  return result == task_user_not_logged_on ||
+         result == task_interactive_token_unavailable;
+}
+
 std::string RunPortableWindowsRecoveryPrepareBoundary(
     std::function<void()> persist_preparing,
     std::function<void()> arm_and_read_back,
@@ -1759,6 +1772,31 @@ void SignalPortableWindowsRecoveryHostReady(
     Fail("portable recovery readiness event cannot signal");
   }
 }
+
+namespace {
+
+UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
+    const PortableWindowsRecoveryHostTaskDefinition& definition) {
+  std::wstring command_line = L"\"" + definition.executable_path.wstring() +
+                              L"\" " + definition.arguments;
+  std::vector<wchar_t> mutable_command(command_line.begin(),
+                                       command_line.end());
+  mutable_command.push_back(L'\0');
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(
+          definition.executable_path.c_str(), mutable_command.data(), nullptr,
+          nullptr, FALSE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+          nullptr, definition.executable_path.parent_path().c_str(), &startup,
+          &process)) {
+    Fail("portable recovery direct process launch failed");
+  }
+  UniqueWindowsHandle thread(process.hThread);
+  return UniqueWindowsHandle(process.hProcess);
+}
+
+}  // namespace
 
 void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     const PortableWindowsRecoveryHostTaskDefinition& definition,
@@ -1854,27 +1892,46 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   ScopedVariant parameters;
   ScopedBstr run_user(AccountNameForSid(definition.principal_user_id));
   ComPtr<IRunningTask> running;
+  UniqueWindowsHandle direct_process;
   const HRESULT start = registered.get()->RunEx(
       parameters.value(), definition.run_flags, 0, run_user.get(),
       running.put());
   if (FAILED(start)) {
     RecordPortableRecoveryProbe(24400u,
                                  static_cast<DWORD>(start) & 0xFFFFu);
-    Check(start, "Task Scheduler portable recovery start failed");
+    if (!IsPortableWindowsRecoveryTaskStartFallback(start)) {
+      Check(start, "Task Scheduler portable recovery start failed");
+    }
+    // The durable task has already passed exact registration/readback. A
+    // credential-created standard-user process can still lack a Winlogon
+    // session, so Task Scheduler cannot start its INTERACTIVE_TOKEN task.
+    // Start the same verified helper directly in the current exact token and
+    // keep the task registered for the next real user logon.
+    direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
   }
   const ULONGLONG started = GetTickCount64();
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
-    TASK_STATE state = TASK_STATE_UNKNOWN;
-    const HRESULT state_result = running.get()->get_State(&state);
-    if (FAILED(state_result)) {
-      RecordPortableRecoveryProbe(
-          24500u, static_cast<DWORD>(state_result) & 0xFFFFu);
-      Fail("Task Scheduler portable recovery state read failed");
-    }
-    if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
-      RecordPortableRecoveryProbe(24600u, static_cast<DWORD>(state));
-      Fail("portable recovery host exited before readiness");
+    if (direct_process.valid()) {
+      const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
+      if (process_wait == WAIT_OBJECT_0) {
+        Fail("portable recovery host exited before readiness");
+      }
+      if (process_wait == WAIT_FAILED) {
+        Fail("portable recovery direct process state read failed");
+      }
+    } else {
+      TASK_STATE state = TASK_STATE_UNKNOWN;
+      const HRESULT state_result = running.get()->get_State(&state);
+      if (FAILED(state_result)) {
+        RecordPortableRecoveryProbe(
+            24500u, static_cast<DWORD>(state_result) & 0xFFFFu);
+        Fail("Task Scheduler portable recovery state read failed");
+      }
+      if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
+        RecordPortableRecoveryProbe(24600u, static_cast<DWORD>(state));
+        Fail("portable recovery host exited before readiness");
+      }
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
       RecordPortableRecoveryProbe(24700u, 0);

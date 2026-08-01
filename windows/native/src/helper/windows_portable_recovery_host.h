@@ -193,6 +193,12 @@ struct PortableWindowsRecoveryTaskSemanticFacts {
 void ValidatePortableWindowsRecoveryTaskSemanticFacts(
     const PortableWindowsRecoveryTaskSemanticFacts& facts);
 
+// Task Scheduler's interactive-token start can fail when the caller was
+// created with credentials but has no Winlogon session. Those are the only
+// failures for which the already-validated helper may be started directly in
+// the caller's exact non-elevated token.
+bool IsPortableWindowsRecoveryTaskStartFallback(HRESULT result);
+
 std::string RunPortableWindowsRecoveryPrepareBoundary(
     std::function<void()> persist_preparing,
     std::function<void()> arm_and_read_back,
