@@ -113,6 +113,17 @@ void RecordPortableRecoveryRegistrationProbe(HRESULT result) noexcept {
   (void)DeregisterEventSource(source);
 }
 
+void RecordPortableRecoveryStartProbe(DWORD family, DWORD value) noexcept {
+  HANDLE source = RegisterEventSourceW(
+      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
+  if (source == nullptr) return;
+  const wchar_t* message[] = {L"portable recovery start probe"};
+  const DWORD event_id = family + (value & 0xFFu);
+  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
+                     message, nullptr);
+  (void)DeregisterEventSource(source);
+}
+
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1830,18 +1841,30 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedVariant parameters;
   ComPtr<IRunningTask> running;
-  Check(registered.get()->RunEx(parameters.value(), definition.run_flags, 0,
-                                nullptr, running.put()),
-        "Task Scheduler portable recovery start failed");
+  const HRESULT start = registered.get()->RunEx(
+      parameters.value(), definition.run_flags, 0, nullptr, running.put());
+  if (FAILED(start)) {
+    RecordPortableRecoveryStartProbe(
+        21000u, static_cast<DWORD>(start) & 0xFFFFu);
+    Check(start, "Task Scheduler portable recovery start failed");
+  }
   const ULONGLONG started = GetTickCount64();
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
     TASK_STATE state = TASK_STATE_UNKNOWN;
-    if (FAILED(running.get()->get_State(&state)) ||
-        state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
+    const HRESULT state_result = running.get()->get_State(&state);
+    if (FAILED(state_result)) {
+      RecordPortableRecoveryStartProbe(
+          22000u, static_cast<DWORD>(state_result) & 0xFFu);
+      Fail("Task Scheduler portable recovery state read failed");
+    }
+    if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
+      RecordPortableRecoveryStartProbe(22000u,
+                                       static_cast<DWORD>(state));
       Fail("portable recovery host exited before readiness");
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
+      RecordPortableRecoveryStartProbe(23000u, 0);
       Fail("portable recovery host startup timed out");
     }
   }
