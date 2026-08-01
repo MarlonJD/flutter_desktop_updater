@@ -53,6 +53,29 @@ std::filesystem::path RetainedProcessExecutablePath(HANDLE process) {
   return std::filesystem::path(std::wstring(buffer.data(), length));
 }
 
+std::uint64_t PortablePreparationProcessStartIdentity(HANDLE process) {
+  try {
+    return WindowsProcessStartIdentity(process);
+  } catch (...) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableCallerIdentityFailure);
+    throw;
+  }
+}
+
+PortableWindowsRecoveryHostTaskDefinition
+BuildPortablePreparationRecoveryHostTaskDefinition(
+    const PortableWindowsRecoveryHostEndpointV1& endpoint,
+    const std::string& transaction_id, const std::string& ready_nonce) {
+  try {
+    return BuildPortableWindowsRecoveryHostTaskDefinition(endpoint,
+                                                          transaction_id,
+                                                          ready_nonce);
+  } catch (...) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoveryHostFailure);
+    throw;
+  }
+}
+
 using desktop_updater::runtime::internal::AuthorizedNativeInstallRequestV1;
 using desktop_updater::runtime::internal::AuthorizeNativeInstallTransactionRequestV1;
 using desktop_updater::runtime::internal::EncodeCanonicalJson;
@@ -531,14 +554,14 @@ class WindowsPortableDirectoryPreparedTransaction final
         endpoint_(std::move(endpoint)),
         recovery_ready_nonce_(SecureWindowsReadyToken()),
         recovery_host_definition_(
-            BuildPortableWindowsRecoveryHostTaskDefinition(
+            BuildPortablePreparationRecoveryHostTaskDefinition(
                 endpoint_, transaction_id_, recovery_ready_nonce_)),
         executor_process_id_(GetCurrentProcessId()),
         executor_process_start_identity_(
-            WindowsProcessStartIdentity(GetCurrentProcess())),
+            PortablePreparationProcessStartIdentity(GetCurrentProcess())),
         caller_process_id_(GetProcessId(caller_process)),
         caller_process_start_identity_(
-            WindowsProcessStartIdentity(caller_process)),
+            PortablePreparationProcessStartIdentity(caller_process)),
         caller_process_(caller_process),
         index_(policy_, caller_process),
         restage_(std::move(restage)),

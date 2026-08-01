@@ -3,6 +3,7 @@
 #include <winternl.h>
 
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 #include "windows_helper_diagnostics.h"
@@ -12,6 +13,24 @@ namespace {
 
 constexpr char alternateDataStreamRejected[] = "alternateDataStreamRejected";
 constexpr char beforeActivationRename[] = "beforeActivationRename";
+
+class ScopedWindowsFileTransactionFailureEvent final {
+ public:
+  explicit ScopedWindowsFileTransactionFailureEvent(WindowsHelperEvent event)
+      : event_(event), uncaught_exceptions_(std::uncaught_exceptions()) {}
+
+  ~ScopedWindowsFileTransactionFailureEvent() {
+    if (std::uncaught_exceptions() > uncaught_exceptions_) {
+      RecordWindowsHelperEvent(event_);
+    }
+  }
+
+  void Advance(WindowsHelperEvent event) noexcept { event_ = event; }
+
+ private:
+  WindowsHelperEvent event_;
+  int uncaught_exceptions_;
+};
 
 UniqueWindowsHandle OpenAbsoluteDirectoryNoReparse(
     const std::filesystem::path& path) {
@@ -50,6 +69,7 @@ void ThrowFilesystem(const std::string& detail) {
 UniqueWindowsHandle DuplicateRetainedHandle(HANDLE source,
                                             const char* detail) {
   if (source == nullptr || source == INVALID_HANDLE_VALUE) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableDirectoryHandleFailure);
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
         detail);
@@ -57,6 +77,7 @@ UniqueWindowsHandle DuplicateRetainedHandle(HANDLE source,
   HANDLE duplicate = INVALID_HANDLE_VALUE;
   if (!DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(),
                        &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableDirectoryHandleFailure);
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kInvalidPathOrTransaction,
         detail);
@@ -223,6 +244,8 @@ WindowsFileTransaction::WindowsFileTransaction(
           pinned_parent, "pinned stage parent is invalid")),
       stage_(DuplicateRetainedHandle(pinned_stage,
                                      "pinned stage root is invalid")) {
+  ScopedWindowsFileTransactionFailureEvent failure_event(
+      WindowsHelperEvent::kPortableDirectoryHandleFailure);
   if (stage_parent_locator_ != parent_locator_ || stage_name_.empty() ||
       stage_name_ == paths_.target_name ||
       stage_name_.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) {
@@ -263,7 +286,10 @@ WindowsFileTransaction::WindowsFileTransaction(
   }
   ValidateSameVolume(target_identity_.volume_serial,
                      stage_identity_.volume_serial);
+  failure_event.Advance(
+      WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
   ValidatePayload(stage_parent_.get(), stage_name_);
+  failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
 
   journal_.transaction_id = paths_.transaction_id;
   journal_.owner_process_id = owner_process_id_;
@@ -386,16 +412,9 @@ void WindowsFileTransaction::ValidatePayload(
           WindowsFileTransactionError::Code::kStagePayloadChanged,
           "payload identity changed");
     }
-  } catch (const WindowsFileTransactionError& error) {
-    if (error.code() ==
-        WindowsFileTransactionError::Code::kStagePayloadChanged) {
-      RecordWindowsHelperEvent(
-          WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
-    }
+  } catch (const WindowsFileTransactionError&) {
     throw;
   } catch (const std::exception&) {
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kStagePayloadChanged,
         "payload verification failed");
