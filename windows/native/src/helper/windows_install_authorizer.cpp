@@ -601,13 +601,18 @@ class WindowsPortableDirectoryPreparedTransaction final
   }
 
   std::string PrepareDurableJournal() override {
-    const ScopedWindowsHelperFailureEvent failure_event(
+    ScopedWindowsHelperFailureEvent failure_event(
         WindowsHelperEvent::kPortablePreparationFailure);
+    failure_event.Advance(WindowsHelperEvent::kPortableTargetRequestFailure);
     const std::string frozen = transaction_.initial_journal_canonical();
     return RunPortableWindowsRecoveryPrepareBoundary(
-        [this, &frozen]() {
+        [this, &frozen, &failure_event]() {
+          failure_event.Advance(
+              WindowsHelperEvent::kPortableTargetRequestFailure);
           BindWindowsPortableTransactionEndpoint(
               transaction_id_, policy_, endpoint_, caller_process_);
+          failure_event.Advance(
+              WindowsHelperEvent::kPortableRecoveryStorageFailure);
           index_.PersistPreparing(transaction_id_, target_path_, frozen,
                                   executor_process_id_,
                                   executor_process_start_identity_,
@@ -615,12 +620,18 @@ class WindowsPortableDirectoryPreparedTransaction final
                                   caller_process_start_identity_,
                                   recovery_ready_nonce_);
         },
-        [this]() {
+        [this, &failure_event]() {
+          failure_event.Advance(
+              WindowsHelperEvent::kPortableRecoveryHostFailure);
           recovery_host_.ArmAndStart(recovery_host_definition_, 30'000);
           recovery_host_armed_ = true;
         },
-        [this]() {
+        [this, &failure_event]() {
+          failure_event.Advance(
+              WindowsHelperEvent::kPortableTargetMarkerFailure);
           transaction_.Prepare();
+          failure_event.Advance(
+              WindowsHelperEvent::kPortableRecoveryStorageFailure);
           const std::string prepared =
               transaction_.prepared_journal_canonical();
           index_.PersistActive(transaction_id_, prepared);
