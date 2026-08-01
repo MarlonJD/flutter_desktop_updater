@@ -25,6 +25,7 @@
 #include "json_value.h"
 #include "miniz.h"
 #include "windows_helper_bootstrap.h"
+#include "windows_helper_diagnostics.h"
 
 namespace desktop_updater::helper {
 namespace {
@@ -528,6 +529,17 @@ class ExactCreateSecurityDescriptor {
  private:
   PSECURITY_DESCRIPTOR descriptor_ = nullptr;
 };
+
+template <typename Function>
+auto RunRestagePhase(WindowsHelperEvent failure_event, Function&& function)
+    -> decltype(function()) {
+  try {
+    return function();
+  } catch (...) {
+    RecordWindowsHelperEvent(failure_event);
+    throw;
+  }
+}
 
 std::string AuthorityName(WindowsArchiveRestageAuthority authority) {
   return authority == WindowsArchiveRestageAuthority::kInstallerProtected
@@ -1524,18 +1536,25 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
       FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
       READ_CONTROL | WRITE_DAC | WRITE_OWNER | SYNCHRONIZE;
-  result->parent =
-      OpenAbsoluteDirectoryNoReparse(target_parent, kParentAccess);
+  result->parent = RunRestagePhase(
+      WindowsHelperEvent::kPortableDirectoryHandleFailure, [&]() {
+        return OpenAbsoluteDirectoryNoReparse(target_parent, kParentAccess);
+      });
 
-  CleanupPriorRestage(result->parent.get(), transaction_id, package_id,
-                      descriptor_sha256, artifact_sha256, authority,
-                      caller_process, limits);
+  RunRestagePhase(WindowsHelperEvent::kPortableTargetMarkerFailure, [&]() {
+    CleanupPriorRestage(result->parent.get(), transaction_id, package_id,
+                        descriptor_sha256, artifact_sha256, authority,
+                        caller_process, limits);
+  });
   const std::string restage_nonce = RandomUuidV4();
-  result->control = CreateRestageControl(
-      result->parent.get(),
-      {transaction_id, restage_nonce, package_id, descriptor_sha256,
-       artifact_sha256, AuthorityName(authority)},
-      authority, caller_process, create_security.get(), fault_injector);
+  result->control = RunRestagePhase(
+      WindowsHelperEvent::kPortableTargetMarkerFailure, [&]() {
+        return CreateRestageControl(
+            result->parent.get(),
+            {transaction_id, restage_nonce, package_id, descriptor_sha256,
+             artifact_sha256, AuthorityName(authority)},
+            authority, caller_process, create_security.get(), fault_injector);
+      });
   auto hit = [&](WindowsArchiveRestageFaultPoint point) {
     if (fault_injector == nullptr) return;
     try {
@@ -1550,16 +1569,23 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
   };
 
   const std::wstring archive_leaf = RestageArchiveLeaf(restage_nonce);
-  result->archive = OpenRelativeNoReparse(
-      result->parent.get(), archive_leaf,
-      GENERIC_READ | GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES |
-          READ_CONTROL | WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
-      FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
-      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
-          FILE_WRITE_THROUGH,
-      FILE_ATTRIBUTE_HIDDEN, create_security.get());
+  result->archive = RunRestagePhase(
+      WindowsHelperEvent::kPortableSecurityDescriptorFailure, [&]() {
+        return OpenRelativeNoReparse(
+            result->parent.get(), archive_leaf,
+            GENERIC_READ | GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES |
+                READ_CONTROL | WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+                FILE_WRITE_THROUGH,
+            FILE_ATTRIBUTE_HIDDEN, create_security.get());
+      });
   hit(WindowsArchiveRestageFaultPoint::kAfterArchiveFileCreate);
-  VerifyObjectSecurity(result->archive.get(), authority, caller_process);
+  RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
+                  [&]() {
+                    VerifyObjectSecurity(result->archive.get(), authority,
+                                         caller_process);
+                  });
 
   LARGE_INTEGER beginning{};
   if (!SetFilePointerEx(source_archive.get(), beginning, nullptr, FILE_BEGIN)) {
@@ -1602,19 +1628,26 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
   hit(WindowsArchiveRestageFaultPoint::kAfterArchiveCopyBeforePreflight);
 
   result->leaf = RestagePayloadLeaf(restage_nonce);
-  result->root = OpenRelativeNoReparse(
-      result->parent.get(), result->leaf,
-      GENERIC_READ | GENERIC_WRITE | DELETE | FILE_LIST_DIRECTORY |
-          FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
-          FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | READ_CONTROL |
-          WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
-      FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
-      FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
-          FILE_WRITE_THROUGH,
-      FILE_ATTRIBUTE_HIDDEN, create_security.get());
+  result->root = RunRestagePhase(
+      WindowsHelperEvent::kPortableSecurityDescriptorFailure, [&]() {
+        return OpenRelativeNoReparse(
+            result->parent.get(), result->leaf,
+            GENERIC_READ | GENERIC_WRITE | DELETE | FILE_LIST_DIRECTORY |
+                FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
+                FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | READ_CONTROL |
+                WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
+            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+                FILE_WRITE_THROUGH,
+            FILE_ATTRIBUTE_HIDDEN, create_security.get());
+      });
   hit(WindowsArchiveRestageFaultPoint::kAfterPayloadRootDirectoryCreate);
   result->root_identity = ReadWindowsFileIdentity(result->root.get());
-  VerifyObjectSecurity(result->root.get(), authority, caller_process);
+  RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
+                  [&]() {
+                    VerifyObjectSecurity(result->root.get(), authority,
+                                         caller_process);
+                  });
   result->path = target_parent / result->leaf;
 
   mz_zip_archive archive{};
@@ -1649,18 +1682,25 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
       HANDLE parent_handle = DirectoryHandle(
           parent_path, result->root.get(), directory_indices,
           result->retained_handles);
-      auto handle = OpenRelativeNoReparse(
-          parent_handle, LeafName(directory->path.windows),
-          GENERIC_READ | GENERIC_WRITE | DELETE | FILE_LIST_DIRECTORY |
-              FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
-              FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | READ_CONTROL |
-              WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
-          FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
-          FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
-              FILE_WRITE_THROUGH,
-          FILE_ATTRIBUTE_NORMAL, create_security.get());
+      auto handle = RunRestagePhase(
+          WindowsHelperEvent::kPortableSecurityDescriptorFailure, [&]() {
+            return OpenRelativeNoReparse(
+                parent_handle, LeafName(directory->path.windows),
+                GENERIC_READ | GENERIC_WRITE | DELETE | FILE_LIST_DIRECTORY |
+                    FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
+                    FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
+                    READ_CONTROL | WRITE_DAC | WRITE_OWNER | SYNCHRONIZE,
+                FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
+                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+                    FILE_WRITE_THROUGH,
+                FILE_ATTRIBUTE_NORMAL, create_security.get());
+          });
       hit(WindowsArchiveRestageFaultPoint::kAfterPayloadDirectoryCreate);
-      VerifyObjectSecurity(handle.get(), authority, caller_process);
+      RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
+                      [&]() {
+                        VerifyObjectSecurity(handle.get(), authority,
+                                             caller_process);
+                      });
       VerifyNoAlternateDataStreams(handle.get());
       if (!ReadWindowsFileIdentity(handle.get()).directory) {
         Fail("helper-created ZIP directory identity changed");
@@ -1678,17 +1718,24 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
       HANDLE parent_handle = DirectoryHandle(
           parent_path, result->root.get(), directory_indices,
           result->retained_handles);
-      auto file = OpenRelativeNoReparse(
-          parent_handle, LeafName(entry.path.windows),
-          GENERIC_READ | GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES |
-              FILE_WRITE_ATTRIBUTES | READ_CONTROL | WRITE_DAC |
-              WRITE_OWNER | SYNCHRONIZE,
-          FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
-          FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
-              FILE_WRITE_THROUGH,
-          FILE_ATTRIBUTE_NORMAL, create_security.get());
+      auto file = RunRestagePhase(
+          WindowsHelperEvent::kPortableSecurityDescriptorFailure, [&]() {
+            return OpenRelativeNoReparse(
+                parent_handle, LeafName(entry.path.windows),
+                GENERIC_READ | GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES |
+                    FILE_WRITE_ATTRIBUTES | READ_CONTROL | WRITE_DAC |
+                    WRITE_OWNER | SYNCHRONIZE,
+                FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
+                FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+                    FILE_WRITE_THROUGH,
+                FILE_ATTRIBUTE_NORMAL, create_security.get());
+          });
       hit(WindowsArchiveRestageFaultPoint::kAfterPayloadFileCreate);
-      VerifyObjectSecurity(file.get(), authority, caller_process);
+      RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
+                      [&]() {
+                        VerifyObjectSecurity(file.get(), authority,
+                                             caller_process);
+                      });
       ExtractionSink sink{file.get(), 0};
       if (!mz_zip_reader_extract_to_callback(
               &archive, entry.index, WriteExtractedBytes, &sink, 0) ||
