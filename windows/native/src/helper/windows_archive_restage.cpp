@@ -1516,21 +1516,38 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
 
   auto result = std::make_unique<WindowsVerifiedArchiveRestage::Impl>();
   result->fault_injector = fault_injector;
-  ExactCreateSecurityDescriptor create_security(authority, caller_process);
-  auto caller_root = OpenAbsoluteDirectoryNoReparse(
-      caller_stage, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE);
-  auto source_archive = OpenRelativeNoReparse(
-      caller_root.get(), kArtifactLeaf,
-      GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-      FILE_SHARE_READ, FILE_OPEN,
-      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
-  const WindowsFileIdentity source_identity =
-      ReadWindowsFileIdentity(source_archive.get());
-  VerifyNoAlternateDataStreams(source_archive.get());
-  if (source_identity.directory || FileLength(source_archive.get()) !=
-                                       artifact_length) {
-    Fail("retained signed ZIP length changed");
-  }
+  auto create_security = RunRestagePhase(
+      WindowsHelperEvent::kPortableSecurityDescriptorFailure, [&]() {
+        return std::make_unique<ExactCreateSecurityDescriptor>(
+            authority, caller_process);
+      });
+  auto caller_root = RunRestagePhase(
+      WindowsHelperEvent::kPortableStageProvenanceFailure, [&]() {
+        return OpenAbsoluteDirectoryNoReparse(
+            caller_stage, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
+                              SYNCHRONIZE);
+      });
+  auto source_archive = RunRestagePhase(
+      WindowsHelperEvent::kPortableStageManifestFailure, [&]() {
+        return OpenRelativeNoReparse(
+            caller_root.get(), kArtifactLeaf,
+            GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ, FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+      });
+  const WindowsFileIdentity source_identity = RunRestagePhase(
+      WindowsHelperEvent::kPortableStageRequestBindingFailure, [&]() {
+        return ReadWindowsFileIdentity(source_archive.get());
+      });
+  RunRestagePhase(WindowsHelperEvent::kPortableStageRequestBindingFailure,
+                  [&]() { VerifyNoAlternateDataStreams(source_archive.get()); });
+  RunRestagePhase(WindowsHelperEvent::kPortableStageRequestBindingFailure,
+                  [&]() {
+                    if (source_identity.directory ||
+                        FileLength(source_archive.get()) != artifact_length) {
+                      Fail("retained signed ZIP length changed");
+                    }
+                  });
 
   constexpr ACCESS_MASK kParentAccess =
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
@@ -1553,7 +1570,8 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
             result->parent.get(),
             {transaction_id, restage_nonce, package_id, descriptor_sha256,
              artifact_sha256, AuthorityName(authority)},
-            authority, caller_process, create_security.get(), fault_injector);
+            authority, caller_process, create_security->get(),
+            fault_injector);
       });
   auto hit = [&](WindowsArchiveRestageFaultPoint point) {
     if (fault_injector == nullptr) return;
@@ -1578,7 +1596,7 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
             FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
             FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
                 FILE_WRITE_THROUGH,
-            FILE_ATTRIBUTE_HIDDEN, create_security.get());
+            FILE_ATTRIBUTE_HIDDEN, create_security->get());
       });
   hit(WindowsArchiveRestageFaultPoint::kAfterArchiveFileCreate);
   RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
@@ -1639,7 +1657,7 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
             FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
             FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
                 FILE_WRITE_THROUGH,
-            FILE_ATTRIBUTE_HIDDEN, create_security.get());
+            FILE_ATTRIBUTE_HIDDEN, create_security->get());
       });
   hit(WindowsArchiveRestageFaultPoint::kAfterPayloadRootDirectoryCreate);
   result->root_identity = ReadWindowsFileIdentity(result->root.get());
@@ -1693,7 +1711,7 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
                 FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
                 FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
                     FILE_WRITE_THROUGH,
-                FILE_ATTRIBUTE_NORMAL, create_security.get());
+                FILE_ATTRIBUTE_NORMAL, create_security->get());
           });
       hit(WindowsArchiveRestageFaultPoint::kAfterPayloadDirectoryCreate);
       RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
@@ -1728,7 +1746,7 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
                 FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_CREATE,
                 FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
                     FILE_WRITE_THROUGH,
-                FILE_ATTRIBUTE_NORMAL, create_security.get());
+                FILE_ATTRIBUTE_NORMAL, create_security->get());
           });
       hit(WindowsArchiveRestageFaultPoint::kAfterPayloadFileCreate);
       RunRestagePhase(WindowsHelperEvent::kPortableSecurityDescriptorFailure,
