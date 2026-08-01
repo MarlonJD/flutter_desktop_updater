@@ -1706,7 +1706,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   Check(service.get()->NewTask(0, task.put()),
         "Task Scheduler definition creation failed");
   ConfigureTask(task.get(), definition);
-  diagnostics.Advance(PortableRecoveryProvisionStage::kStorage);
+  diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedBstr task_path(definition.task_path);
   ScopedVariant user(definition.principal_user_id);
   ScopedVariant password;
@@ -1738,6 +1738,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         PortableWindowsRecoveryTaskRegistrationDecision::kRegisterNew) {
       Fail("Task Scheduler missing task cannot be registered");
     }
+    diagnostics.Advance(PortableRecoveryProvisionStage::kStorage);
     const HRESULT registration = folder.get()->RegisterTaskDefinition(
         task_path.get(), task.get(), definition.registration_flags,
         user.value(), password.value(), definition.logon_type,
@@ -1747,6 +1748,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       // must reopen and verify that exact task before any mutation proceeds.
       Fail("Task Scheduler portable recovery registration was incomplete");
     }
+    diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
     ValidateRegisteredTask(registered.get(), definition);
   }
 
