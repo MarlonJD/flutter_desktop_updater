@@ -348,8 +348,7 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
   }
   constexpr ACCESS_MASK access =
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
-      FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC | WRITE_OWNER | DELETE |
-      SYNCHRONIZE;
+      FILE_READ_ATTRIBUTES | READ_CONTROL | DELETE | SYNCHRONIZE;
   constexpr ULONG share =
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
   constexpr ULONG options =
@@ -749,17 +748,10 @@ StableTreeHandles OpenStableTree(
   result.root = OpenSecureDirectory(local_app_data, kStableRootName, user,
                                     endpoint.user_sid, create_if_missing);
   if (!result.root.valid()) return result;
-  if (!create_if_missing) {
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAccessCheckFailure);
-  }
   result.binding = OpenSecureDirectory(
       result.root.get(), Utf8ToWide(endpoint.binding_sha256), user,
       endpoint.user_sid, create_if_missing);
   if (!result.binding.valid()) return result;
-  if (!create_if_missing) {
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableDirectoryAccessDenied);
-  }
   const std::wstring endpoint_leaf =
       Utf8ToWide(endpoint.helper_sha256);
   const bool existed =
@@ -768,10 +760,6 @@ StableTreeHandles OpenStableTree(
   result.endpoint = OpenSecureDirectory(
       result.binding.get(), endpoint_leaf, user, endpoint.user_sid,
       create_if_missing);
-  if (!create_if_missing && result.endpoint.valid()) {
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableStageManifestFailure);
-  }
   return result;
 }
 
@@ -1581,19 +1569,13 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
 
 PortableWindowsRecoveryHostBootstrap
 LoadPortableWindowsRecoveryHostBootstrap() {
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableTargetCallerRootFailure);
   const CurrentTokenFacts current = ReadCurrentTokenFacts();
   RequirePortableWindowsRecoveryTokenAuthority(
       current.user_sid, current.user_sid, current.elevated,
       current.local_system);
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableTargetReadAuthorityFailure);
   const std::filesystem::path current_path = CurrentExecutablePath();
   const VerifiedWindowsExecutable helper =
       VerifyWindowsExecutable(current_path);
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableParentMutationAuthorityFailure);
   const std::filesystem::path policy_path =
       helper.final_path.parent_path() / kPolicyFileName;
   const std::string canonical_policy =
@@ -1604,7 +1586,6 @@ LoadPortableWindowsRecoveryHostBootstrap() {
   if (!VerifyWindowsExecutableStillMatches(current_path, helper)) {
     Fail("portable recovery stable helper identity changed");
   }
-  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableTargetMarkerFailure);
   std::filesystem::path local_app_data_path;
   UniqueWindowsHandle local_app_data =
       OpenKnownLocalAppData(&local_app_data_path);
@@ -1615,16 +1596,12 @@ LoadPortableWindowsRecoveryHostBootstrap() {
       NormalizePath(policy_path) != NormalizePath(endpoint.policy_path)) {
     Fail("portable recovery process is outside the stable endpoint");
   }
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableDirectoryHandleFailure);
   StableTreeHandles tree = OpenStableTree(
       local_app_data.get(), endpoint, SidPointer(current.user), false);
   if (!tree.root.valid() || !tree.binding.valid() ||
       !tree.endpoint.valid()) {
     Fail("portable recovery stable endpoint is unavailable");
   }
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableSecurityDescriptorFailure);
   UniqueWindowsHandle helper_file = OpenSecureFile(
       tree.endpoint.get(), kHelperFileName, GENERIC_READ);
   UniqueWindowsHandle policy_file = OpenSecureFile(
@@ -1633,7 +1610,6 @@ LoadPortableWindowsRecoveryHostBootstrap() {
                             false);
   ValidateExactUserSecurity(policy_file.get(), SidPointer(current.user),
                             false);
-  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableCallerTokenFailure);
   const WindowsFileIdentity policy_identity =
       ReadWindowsFileIdentity(policy_file.get());
   ValidatePortableWindowsRetainedHelperFacts(
@@ -1647,8 +1623,6 @@ LoadPortableWindowsRecoveryHostBootstrap() {
           NormalizePath(endpoint.policy_path)) {
     Fail("portable recovery stable endpoint readback changed");
   }
-  RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableImpersonationTokenFailure);
   return {std::move(policy), helper, std::move(endpoint)};
 }
 
@@ -1794,10 +1768,6 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
           nullptr, FALSE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
           nullptr, definition.executable_path.parent_path().c_str(), &startup,
           &process)) {
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableRequestValidationFailure);
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
     Fail("portable recovery direct process launch failed");
   }
   UniqueWindowsHandle thread(process.hThread);
@@ -1809,7 +1779,6 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
 void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     const PortableWindowsRecoveryHostTaskDefinition& definition,
     DWORD startup_timeout_milliseconds) {
-  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
   PortableRecoveryProvisionDiagnostics diagnostics;
   ValidateTaskDefinition(definition);
   if (startup_timeout_milliseconds == 0) {
@@ -1904,26 +1873,14 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   UniqueWindowsHandle direct_process;
   const auto launch_direct_fallback = [&]() {
     if (direct_process.valid()) return;
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableTargetAuthorityFailure);
-    RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableRecoverySourceFailure);
   };
-  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoveryStorageFailure);
   const HRESULT start = registered.get()->RunEx(
       parameters.value(), definition.run_flags, 0, run_user.get(),
       running.put());
-  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
   if (FAILED(start)) {
     const bool use_direct_fallback =
         IsPortableWindowsRecoveryTaskStartFallback(start);
-    RecordWindowsHelperEvent(
-        use_direct_fallback
-            ? WindowsHelperEvent::kPortableRecoverySourceFailure
-            : WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
     if (!use_direct_fallback) {
       Check(start, "Task Scheduler portable recovery start failed");
     }
@@ -1949,34 +1906,6 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
-        DWORD exit_code = 0;
-        (void)GetExitCodeProcess(direct_process.get(), &exit_code);
-        switch (exit_code) {
-          case ERROR_ACCESS_DENIED:
-            RecordWindowsHelperEvent(
-                WindowsHelperEvent::kPortableStageProvenanceFailure);
-            break;
-          case ERROR_ELEVATION_REQUIRED:
-            RecordWindowsHelperEvent(
-                WindowsHelperEvent::kPortableStageManifestFailure);
-            break;
-          case ERROR_FILE_NOT_FOUND:
-            RecordWindowsHelperEvent(
-                WindowsHelperEvent::kPortableStageRequestBindingFailure);
-            break;
-          case ERROR_RETRY:
-            RecordWindowsHelperEvent(
-                WindowsHelperEvent::kPortableStageRestageFailure);
-            break;
-          default:
-            RecordWindowsHelperEvent(
-                WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
-            break;
-        }
-        RecordWindowsHelperEvent(
-            WindowsHelperEvent::kPortableTargetRequestFailure);
-        RecordWindowsHelperEvent(
-            WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
         Fail("portable recovery host exited before readiness");
       }
       if (process_wait == WAIT_FAILED) {
@@ -1984,12 +1913,6 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       }
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
-      if (direct_process.valid()) {
-        RecordWindowsHelperEvent(
-            WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
-        RecordWindowsHelperEvent(
-            WindowsHelperEvent::kPortableRecoveryStorageFailure);
-      }
       Fail("portable recovery host startup timed out");
     }
   }
