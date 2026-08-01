@@ -160,7 +160,7 @@ WindowsFileTransaction::WindowsFileTransaction(
   stage_parent_identity_ = ReadWindowsFileIdentity(stage_parent_.get());
   target_ = OpenRelativeNoReparse(
       parent_.get(), paths_.target_name,
-      DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   stage_ = OpenRelativeNoReparse(
@@ -268,7 +268,7 @@ WindowsFileTransaction::WindowsFileTransaction(
   failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
   target_ = OpenRelativeNoReparse(
       parent_.get(), paths_.target_name,
-      DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
   target_identity_ = ReadWindowsFileIdentity(target_.get());
@@ -384,6 +384,20 @@ void WindowsFileTransaction::ValidateStageParentLocator() const {
     throw WindowsFileTransactionError(
         WindowsFileTransactionError::Code::kStageIdentityChanged,
         "stage parent path identity changed");
+  }
+}
+
+void WindowsFileTransaction::ReopenTargetForMutation() {
+  target_.reset();
+  target_ = OpenRelativeNoReparse(
+      parent_.get(), paths_.target_name,
+      DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+      FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+  if (ReadWindowsFileIdentity(target_.get()) != target_identity_) {
+    throw WindowsFileTransactionError(
+        WindowsFileTransactionError::Code::kTargetIdentityChanged,
+        "target identity changed before mutation");
   }
 }
 
@@ -554,6 +568,7 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   ValidatePayload(parent_.get(), paths_.prepared_name);
 
   ValidateParentLocator();
+  ReopenTargetForMutation();
   ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                    WindowsFileTransactionError::Code::kTargetIdentityChanged);
   RecordWindowsHelperEvent(WindowsHelperEvent::kBackupStart);

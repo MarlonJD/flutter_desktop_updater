@@ -108,6 +108,7 @@ class WindowsFileTransaction {
  private:
   void ValidateParentLocator() const;
   void ValidateStageParentLocator() const;
+  void ReopenTargetForMutation();
   void ValidateIdentity(HANDLE parent,
                         const std::wstring& name,
                         const WindowsFileIdentity& expected,
