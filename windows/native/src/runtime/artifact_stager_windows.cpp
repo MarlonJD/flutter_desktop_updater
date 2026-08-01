@@ -34,7 +34,7 @@ void WriteReleaseManifest(const std::filesystem::path& destination_path,
   std::ofstream manifest(destination_path /
                              L".desktop_updater_release_manifest.json",
                          std::ios::binary);
-  manifest << EncodeCanonicalJson(descriptor.raw) << "\n";
+  manifest << EncodeCanonicalJson(descriptor.raw);
   if (!manifest) throw std::runtime_error("Unable to write release manifest.");
 }
 

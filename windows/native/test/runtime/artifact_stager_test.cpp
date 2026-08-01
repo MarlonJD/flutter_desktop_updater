@@ -55,6 +55,7 @@ void WriteZip(const std::filesystem::path& path) {
 int main(int argument_count, char** arguments) {
   if (argument_count != 2) return 2;
   using desktop_updater::runtime::internal::ArchiveLimits;
+  using desktop_updater::runtime::internal::EncodeCanonicalJson;
   using desktop_updater::runtime::internal::ParseReleaseDescriptor;
   using desktop_updater::runtime::internal::RemoveStagingDirectory;
   using desktop_updater::runtime::internal::StageWindowsInnoInstaller;
@@ -85,7 +86,7 @@ int main(int argument_count, char** arguments) {
     const std::filesystem::path staged_path = destination;
     const std::string manifest = ReadFile(
         staged_path / L".desktop_updater_release_manifest.json");
-    if (manifest.find("com.example.native-contract") == std::string::npos ||
+    if (manifest != EncodeCanonicalJson(zip_descriptor.raw) ||
         ReadFile(staged_path / L"Example.exe") != "fixture" ||
         !std::filesystem::exists(
             staged_path / L".desktop_updater_stage_provenance.json") ||
