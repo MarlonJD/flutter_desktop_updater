@@ -99,17 +99,6 @@ class PortableRecoveryProvisionDiagnostics final {
       PortableRecoveryProvisionStage::kAuthority;
 };
 
-// Temporary diagnostic; remove after the hosted start path is verified.
-void RecordPortableRecoveryProbe(DWORD base, DWORD code) noexcept {
-  HANDLE source = RegisterEventSourceW(
-      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
-  if (source == nullptr) return;
-  const wchar_t* message[] = {L"portable recovery ACL probe"};
-  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, base + code, nullptr,
-                     1, 0, message, nullptr);
-  (void)DeregisterEventSource(source);
-}
-
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1109,21 +1098,6 @@ void ValidateTaskSecurity(IRegisteredTask* task,
         (control & SE_DACL_PROTECTED) != 0, FILE_ALL_ACCESS, 0, aces);
   } catch (const std::exception& error) {
     const std::string detail = error.what();
-    DWORD code = 7;
-    if (detail.find("owner, group, or protected") != std::string::npos) {
-      code = 1;
-    } else if (detail.find("DACL mask or flags") != std::string::npos) {
-      code = 2;
-    } else if (detail.find("user ACE is duplicated") != std::string::npos) {
-      code = 3;
-    } else if (detail.find("SYSTEM ACE is duplicated") != std::string::npos) {
-      code = 4;
-    } else if (detail.find("another principal") != std::string::npos) {
-      code = 5;
-    } else if (detail.find("DACL is incomplete") != std::string::npos) {
-      code = 6;
-    }
-    RecordPortableRecoveryProbe(24200u, code);
     throw;
   }
 }
@@ -1141,8 +1115,6 @@ void ValidateRegisteredTask(
     Fail("Task Scheduler task path changed");
   }
   ValidateTaskSecurity(registered, expected.principal_user_id);
-  RecordPortableRecoveryProbe(24200u, 8);
-
   ComPtr<ITaskDefinition> definition;
   Check(registered->get_Definition(definition.put()),
         "Task Scheduler definition readback failed");
@@ -1189,8 +1161,6 @@ void ValidateRegisteredTask(
       logon_type != expected.logon_type || run_level != expected.run_level) {
     Fail("Task Scheduler principal authority changed");
   }
-  RecordPortableRecoveryProbe(24200u, 9);
-
   ComPtr<ITriggerCollection> triggers;
   Check(definition.get()->get_Triggers(triggers.put()),
         "Task Scheduler trigger readback failed");
@@ -1242,8 +1212,6 @@ void ValidateRegisteredTask(
        trigger_delay.value(),
        trigger_start_boundary.value(),
        trigger_end_boundary.value()});
-  RecordPortableRecoveryProbe(24200u, 10);
-
   ComPtr<IActionCollection> actions;
   Check(definition.get()->get_Actions(actions.put()),
         "Task Scheduler action readback failed");
@@ -1277,7 +1245,6 @@ void ValidateRegisteredTask(
       !working_directory.value().empty()) {
     Fail("Task Scheduler fixed action changed");
   }
-  RecordPortableRecoveryProbe(24200u, 11);
 }
 
 }  // namespace
@@ -1804,7 +1771,6 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
           &process)) {
     RecordWindowsHelperEvent(
         WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
-    RecordPortableRecoveryProbe(24800u, GetLastError() & 0xFFFFu);
     Fail("portable recovery direct process launch failed");
   }
   UniqueWindowsHandle thread(process.hThread);
@@ -1913,8 +1879,6 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       parameters.value(), definition.run_flags, 0, run_user.get(),
       running.put());
   if (FAILED(start)) {
-    RecordPortableRecoveryProbe(24400u,
-                                 static_cast<DWORD>(start) & 0xFFFFu);
     const bool use_direct_fallback =
         IsPortableWindowsRecoveryTaskStartFallback(start);
     RecordWindowsHelperEvent(
@@ -1930,10 +1894,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     // Start the same verified helper directly in the current exact token and
     // keep the task registered for the next real user logon.
     RecordWindowsHelperEvent(WindowsHelperEvent::kPortableBootstrapFailure);
-    RecordPortableRecoveryProbe(24800u, 0);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
     RecordWindowsHelperEvent(WindowsHelperEvent::kPortableRecoverySourceFailure);
-    RecordPortableRecoveryProbe(24800u, 1);
   }
   const ULONGLONG started = GetTickCount64();
   for (;;) {
@@ -1941,11 +1903,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
-        DWORD exit_code = 0;
-        (void)GetExitCodeProcess(direct_process.get(), &exit_code);
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
-        RecordPortableRecoveryProbe(24900u, exit_code & 0xFFFFu);
         Fail("portable recovery host exited before readiness");
       }
       if (process_wait == WAIT_FAILED) {
@@ -1955,12 +1914,9 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       TASK_STATE state = TASK_STATE_UNKNOWN;
       const HRESULT state_result = running.get()->get_State(&state);
       if (FAILED(state_result)) {
-        RecordPortableRecoveryProbe(
-            24500u, static_cast<DWORD>(state_result) & 0xFFFFu);
         Fail("Task Scheduler portable recovery state read failed");
       }
       if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
-        RecordPortableRecoveryProbe(24600u, static_cast<DWORD>(state));
         Fail("portable recovery host exited before readiness");
       }
     }
@@ -1969,8 +1925,6 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         RecordWindowsHelperEvent(
             WindowsHelperEvent::kPortableRecoveryStorageFailure);
       }
-      if (direct_process.valid()) RecordPortableRecoveryProbe(25000u, 0);
-      RecordPortableRecoveryProbe(24700u, 0);
       Fail("portable recovery host startup timed out");
     }
   }
