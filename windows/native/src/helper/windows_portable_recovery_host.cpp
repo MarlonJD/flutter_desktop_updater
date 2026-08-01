@@ -99,6 +99,18 @@ class PortableRecoveryProvisionDiagnostics final {
       PortableRecoveryProvisionStage::kAuthority;
 };
 
+// Temporary ACL readback diagnostic; remove after the hosted mismatch is
+// classified.
+void RecordPortableRecoveryAclProbe(DWORD code) noexcept {
+  HANDLE source = RegisterEventSourceW(
+      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
+  if (source == nullptr) return;
+  const wchar_t* message[] = {L"portable recovery ACL probe"};
+  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, 24200u + code, nullptr,
+                     1, 0, message, nullptr);
+  (void)DeregisterEventSource(source);
+}
+
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1092,9 +1104,29 @@ void ValidateTaskSecurity(IRegisteredTask* task,
   }
   // Task Scheduler expands GA ACEs in the registered task descriptor to the
   // FILE_ALL_ACCESS mask during readback.
-  ValidatePortableWindowsRecoveryExactAclFacts(
-      expected_user_sid, SidText(owner), SidText(group),
-      (control & SE_DACL_PROTECTED) != 0, FILE_ALL_ACCESS, 0, aces);
+  try {
+    ValidatePortableWindowsRecoveryExactAclFacts(
+        expected_user_sid, SidText(owner), SidText(group),
+        (control & SE_DACL_PROTECTED) != 0, FILE_ALL_ACCESS, 0, aces);
+  } catch (const std::exception& error) {
+    const std::string detail = error.what();
+    DWORD code = 7;
+    if (detail.find("owner, group, or protected") != std::string::npos) {
+      code = 1;
+    } else if (detail.find("DACL mask or flags") != std::string::npos) {
+      code = 2;
+    } else if (detail.find("user ACE is duplicated") != std::string::npos) {
+      code = 3;
+    } else if (detail.find("SYSTEM ACE is duplicated") != std::string::npos) {
+      code = 4;
+    } else if (detail.find("another principal") != std::string::npos) {
+      code = 5;
+    } else if (detail.find("DACL is incomplete") != std::string::npos) {
+      code = 6;
+    }
+    RecordPortableRecoveryAclProbe(code);
+    throw;
+  }
 }
 
 void ValidateRegisteredTask(
