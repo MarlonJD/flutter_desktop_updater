@@ -1066,12 +1066,14 @@ void ConfigureTask(
 
 void ValidateTaskSecurity(IRegisteredTask* task,
                           const std::wstring& expected_user_sid) {
+  RecordPortableRecoveryStartProbe(24100u, 1);
   ReceivedBstr encoded;
   Check(task->GetSecurityDescriptor(
-            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
+        OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
                 DACL_SECURITY_INFORMATION,
             encoded.put()),
         "Task Scheduler DACL readback failed");
+  RecordPortableRecoveryStartProbe(24100u, 2);
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
   if (encoded.value().empty() ||
       !ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -1080,6 +1082,7 @@ void ValidateTaskSecurity(IRegisteredTask* task,
       raw_descriptor == nullptr) {
     Fail("Task Scheduler DACL readback is invalid");
   }
+  RecordPortableRecoveryStartProbe(24100u, 3);
   std::unique_ptr<void, decltype(&LocalFree)> descriptor(raw_descriptor,
                                                          LocalFree);
   PSID owner = nullptr;
@@ -1098,6 +1101,7 @@ void ValidateTaskSecurity(IRegisteredTask* task,
       owner == nullptr || group == nullptr) {
     Fail("Task Scheduler exact-user DACL changed");
   }
+  RecordPortableRecoveryStartProbe(24100u, 4);
   std::vector<PortableWindowsRecoveryAclAceFacts> aces;
   aces.reserve(dacl->AceCount);
   for (DWORD index = 0; index < dacl->AceCount; ++index) {
@@ -1115,9 +1119,11 @@ void ValidateTaskSecurity(IRegisteredTask* task,
     aces.push_back({SidText(sid), ace->Mask, header->AceFlags,
                     header->AceType == ACCESS_ALLOWED_ACE_TYPE});
   }
+  RecordPortableRecoveryStartProbe(24100u, 5);
   ValidatePortableWindowsRecoveryExactAclFacts(
       expected_user_sid, SidText(owner), SidText(group),
       (control & SE_DACL_PROTECTED) != 0, GENERIC_ALL, 0, aces);
+  RecordPortableRecoveryStartProbe(24100u, 6);
 }
 
 void ValidateRegisteredTask(
