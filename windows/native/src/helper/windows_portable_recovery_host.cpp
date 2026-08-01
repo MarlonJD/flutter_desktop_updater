@@ -99,31 +99,6 @@ class PortableRecoveryProvisionDiagnostics final {
       PortableRecoveryProvisionStage::kAuthority;
 };
 
-// Temporary hosted-run diagnostic for the standard-user Task Scheduler
-// registration failure. Remove after the HRESULT is captured.
-void RecordPortableRecoveryRegistrationProbe(HRESULT result) noexcept {
-  HANDLE source = RegisterEventSourceW(
-      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
-  if (source == nullptr) return;
-  const wchar_t* message[] = {L"portable recovery registration HRESULT probe"};
-  const DWORD event_id =
-      20000u + (static_cast<DWORD>(result) & static_cast<DWORD>(0xFFFFu));
-  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
-                     message, nullptr);
-  (void)DeregisterEventSource(source);
-}
-
-void RecordPortableRecoveryStartProbe(DWORD family, DWORD value) noexcept {
-  HANDLE source = RegisterEventSourceW(
-      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
-  if (source == nullptr) return;
-  const wchar_t* message[] = {L"portable recovery start probe"};
-  const DWORD event_id = family + (value & 0xFFu);
-  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
-                     message, nullptr);
-  (void)DeregisterEventSource(source);
-}
-
 [[noreturn]] void Fail(const std::string& detail) {
   throw WindowsPortableRecoveryHostError(detail);
 }
@@ -1066,14 +1041,12 @@ void ConfigureTask(
 
 void ValidateTaskSecurity(IRegisteredTask* task,
                           const std::wstring& expected_user_sid) {
-  RecordPortableRecoveryStartProbe(24100u, 1);
   ReceivedBstr encoded;
   Check(task->GetSecurityDescriptor(
         OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
                 DACL_SECURITY_INFORMATION,
             encoded.put()),
         "Task Scheduler DACL readback failed");
-  RecordPortableRecoveryStartProbe(24100u, 2);
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
   if (encoded.value().empty() ||
       !ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -1082,7 +1055,6 @@ void ValidateTaskSecurity(IRegisteredTask* task,
       raw_descriptor == nullptr) {
     Fail("Task Scheduler DACL readback is invalid");
   }
-  RecordPortableRecoveryStartProbe(24100u, 3);
   std::unique_ptr<void, decltype(&LocalFree)> descriptor(raw_descriptor,
                                                          LocalFree);
   PSID owner = nullptr;
@@ -1101,7 +1073,6 @@ void ValidateTaskSecurity(IRegisteredTask* task,
       owner == nullptr || group == nullptr) {
     Fail("Task Scheduler exact-user DACL changed");
   }
-  RecordPortableRecoveryStartProbe(24100u, 4);
   std::vector<PortableWindowsRecoveryAclAceFacts> aces;
   aces.reserve(dacl->AceCount);
   for (DWORD index = 0; index < dacl->AceCount; ++index) {
@@ -1119,17 +1090,16 @@ void ValidateTaskSecurity(IRegisteredTask* task,
     aces.push_back({SidText(sid), ace->Mask, header->AceFlags,
                     header->AceType == ACCESS_ALLOWED_ACE_TYPE});
   }
-  RecordPortableRecoveryStartProbe(24100u, 5);
+  // Task Scheduler expands GA ACEs in the registered task descriptor to the
+  // FILE_ALL_ACCESS mask during readback.
   ValidatePortableWindowsRecoveryExactAclFacts(
       expected_user_sid, SidText(owner), SidText(group),
-      (control & SE_DACL_PROTECTED) != 0, GENERIC_ALL, 0, aces);
-  RecordPortableRecoveryStartProbe(24100u, 6);
+      (control & SE_DACL_PROTECTED) != 0, FILE_ALL_ACCESS, 0, aces);
 }
 
 void ValidateRegisteredTask(
     IRegisteredTask* registered,
     const PortableWindowsRecoveryHostTaskDefinition& expected) {
-  RecordPortableRecoveryStartProbe(24000u, 1);
   ReceivedBstr path;
   VARIANT_BOOL registered_enabled = VARIANT_FALSE;
   Check(registered->get_Path(path.put()),
@@ -1140,7 +1110,6 @@ void ValidateRegisteredTask(
     Fail("Task Scheduler task path changed");
   }
   ValidateTaskSecurity(registered, expected.principal_user_id);
-  RecordPortableRecoveryStartProbe(24000u, 2);
 
   ComPtr<ITaskDefinition> definition;
   Check(registered->get_Definition(definition.put()),
@@ -1188,7 +1157,6 @@ void ValidateRegisteredTask(
       logon_type != expected.logon_type || run_level != expected.run_level) {
     Fail("Task Scheduler principal authority changed");
   }
-  RecordPortableRecoveryStartProbe(24000u, 3);
 
   ComPtr<ITriggerCollection> triggers;
   Check(definition.get()->get_Triggers(triggers.put()),
@@ -1241,7 +1209,6 @@ void ValidateRegisteredTask(
        trigger_delay.value(),
        trigger_start_boundary.value(),
        trigger_end_boundary.value()});
-  RecordPortableRecoveryStartProbe(24000u, 4);
 
   ComPtr<IActionCollection> actions;
   Check(definition.get()->get_Actions(actions.put()),
@@ -1276,7 +1243,6 @@ void ValidateRegisteredTask(
       !working_directory.value().empty()) {
     Fail("Task Scheduler fixed action changed");
   }
-  RecordPortableRecoveryStartProbe(24000u, 5);
 }
 
 }  // namespace
@@ -1840,7 +1806,6 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         user.value(), password.value(), definition.logon_type,
         security.value(), registered.put());
     if (registration != S_OK) {
-      RecordPortableRecoveryRegistrationProbe(registration);
       // TASK_CREATE never overwrites a concurrently-created task. A retry
       // must reopen and verify that exact task before any mutation proceeds.
       Fail("Task Scheduler portable recovery registration was incomplete");
@@ -1852,30 +1817,18 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
   ScopedVariant parameters;
   ComPtr<IRunningTask> running;
-  const HRESULT start = registered.get()->RunEx(
-      parameters.value(), definition.run_flags, 0, nullptr, running.put());
-  if (FAILED(start)) {
-    RecordPortableRecoveryStartProbe(
-        21000u, static_cast<DWORD>(start) & 0xFFFFu);
-    Check(start, "Task Scheduler portable recovery start failed");
-  }
+  Check(registered.get()->RunEx(parameters.value(), definition.run_flags, 0,
+                                nullptr, running.put()),
+        "Task Scheduler portable recovery start failed");
   const ULONGLONG started = GetTickCount64();
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
     TASK_STATE state = TASK_STATE_UNKNOWN;
-    const HRESULT state_result = running.get()->get_State(&state);
-    if (FAILED(state_result)) {
-      RecordPortableRecoveryStartProbe(
-          22000u, static_cast<DWORD>(state_result) & 0xFFu);
-      Fail("Task Scheduler portable recovery state read failed");
-    }
-    if (state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
-      RecordPortableRecoveryStartProbe(22000u,
-                                       static_cast<DWORD>(state));
+    if (FAILED(running.get()->get_State(&state)) ||
+        state == TASK_STATE_DISABLED || state == TASK_STATE_READY) {
       Fail("portable recovery host exited before readiness");
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
-      RecordPortableRecoveryStartProbe(23000u, 0);
       Fail("portable recovery host startup timed out");
     }
   }
