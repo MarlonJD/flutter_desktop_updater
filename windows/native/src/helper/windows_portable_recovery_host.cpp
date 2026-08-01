@@ -1750,6 +1750,21 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
         user.value(), password.value(), definition.logon_type,
         security.value(), registered.put());
     if (registration != S_OK) {
+      // Keep the broad storage event for the stable contract, and add a
+      // bounded category for the hosted standard-user registration failure.
+      // The Task Scheduler HRESULT itself is deliberately not written to the
+      // fixed event-log sink.
+      if (registration == E_ACCESSDENIED) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryAuthorityFailure);
+      } else if (registration == static_cast<HRESULT>(0x80041320L)) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoverySourceFailure);
+      } else if (registration == static_cast<HRESULT>(0x80041310L) ||
+                 registration == static_cast<HRESULT>(0x8004130FL)) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableRecoveryArtifactFailure);
+      }
       // TASK_CREATE never overwrites a concurrently-created task. A retry
       // must reopen and verify that exact task before any mutation proceeds.
       Fail("Task Scheduler portable recovery registration was incomplete");
