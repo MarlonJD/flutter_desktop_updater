@@ -346,9 +346,13 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
       leaf.find_first_of(L"\\/") != std::wstring::npos) {
     Fail("portable recovery directory leaf is invalid");
   }
-  constexpr ACCESS_MASK access =
+  constexpr ACCESS_MASK writable_access =
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
       FILE_READ_ATTRIBUTES | READ_CONTROL | DELETE | SYNCHRONIZE;
+  const ACCESS_MASK open_access =
+      create_if_missing ? writable_access
+                        : FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
+                              READ_CONTROL | SYNCHRONIZE;
   constexpr ULONG share =
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
   constexpr ULONG options =
@@ -364,7 +368,7 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
     return directory;
   };
   auto open_existing = [&]() {
-    return validate(OpenRelativeNoReparse(parent, leaf, access, share,
+    return validate(OpenRelativeNoReparse(parent, leaf, open_access, share,
                                           FILE_OPEN, options,
                                           FILE_ATTRIBUTE_HIDDEN));
   };
@@ -372,7 +376,8 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
     UniqueWindowsHandle directory;
     try {
       directory = CreatePortableWindowsExactUserDirectory(
-          parent, leaf, access, share, options, FILE_ATTRIBUTE_HIDDEN, user,
+          parent, leaf, writable_access, share, options,
+          FILE_ATTRIBUTE_HIDDEN, user,
           user_sid);
     } catch (...) {
       // Only an atomic FILE_CREATE collision can be recovered by reopening.

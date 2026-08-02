@@ -288,14 +288,20 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
                                         const std::wstring& leaf,
                                         ULONG disposition,
                                         PSID expected_user,
-                                        const std::wstring& user_sid) {
+                                        const std::wstring& user_sid,
+                                        bool writable = false) {
   if (disposition != FILE_OPEN && disposition != FILE_CREATE &&
       disposition != FILE_OPEN_IF) {
     Fail("index directory disposition is invalid");
   }
-  constexpr ACCESS_MASK access =
+  constexpr ACCESS_MASK writable_access =
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
       FILE_READ_ATTRIBUTES | READ_CONTROL | DELETE | SYNCHRONIZE;
+  const ACCESS_MASK open_access =
+      (disposition != FILE_OPEN || writable)
+          ? writable_access
+          : FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | READ_CONTROL |
+                SYNCHRONIZE;
   constexpr ULONG share =
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
   constexpr ULONG options =
@@ -309,7 +315,7 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
     return directory;
   };
   auto open_existing = [&]() {
-    return validate(OpenRelativeNoReparse(parent, leaf, access, share,
+    return validate(OpenRelativeNoReparse(parent, leaf, open_access, share,
                                           FILE_OPEN, options,
                                           FILE_ATTRIBUTE_HIDDEN));
   };
@@ -317,7 +323,7 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
     UniqueWindowsHandle directory;
     try {
       directory = CreatePortableWindowsExactUserDirectory(
-          parent, leaf, access, share, options, FILE_ATTRIBUTE_HIDDEN,
+          parent, leaf, writable_access, share, options, FILE_ATTRIBUTE_HIDDEN,
           expected_user, user_sid);
     } catch (...) {
       // Only the atomic FILE_CREATE is race-recoverable. Validation and the
@@ -1240,7 +1246,7 @@ class WindowsPortableTransactionStore::Impl {
     if (!binding_.valid()) return UniqueWindowsHandle();
     return OpenSecureDirectory(binding_.get(), Utf8ToWide(transaction_id),
                                create ? FILE_CREATE : FILE_OPEN, user_sid(),
-                               user_sid_);
+                               user_sid_, true);
   }
 
   PSID user_sid() const {
