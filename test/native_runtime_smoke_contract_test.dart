@@ -720,6 +720,10 @@ void main() {
     expect(tool, contains("_writeLinuxNativeStageControl("));
     expect(tool, contains("Platform.isWindows"));
     expect(tool, contains("_writeWindowsNativeStageControl("));
+    expect(tool, contains("_writeWindowsPortableHelperPolicy("));
+    expect(tool, contains('"desktop_updater_helper_policy.json"'));
+    expect(tool, contains('"allowedApplicationSigner"'));
+    expect(tool, contains('"allowedHelperSigner"'));
     expect(tool, contains('platform: "windows"'));
     expect(tool, contains(".desktop_updater_artifact.zip"));
     expect(tool, contains(".desktop_updater_release_manifest.json"));
@@ -764,6 +768,16 @@ void main() {
     expect(app, contains("expectedArtifactSha256:"));
     expect(app, contains("installRoot: installRoot"));
     expect(app, contains("executableRelativePath: executableRelativePath"));
+  });
+
+  test("Windows Flutter smokes sign both caller and helper before handoff", () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    expect(workflow, contains("Sign Windows debug smoke binaries"));
+    expect(workflow, contains("Sign Windows release smoke binaries"));
+    expect(workflow, contains("Debug/desktop_updater_example.exe"));
+    expect(workflow, contains("Debug/desktop_updater_install_helper.exe"));
+    expect(workflow, contains("Release/desktop_updater_example.exe"));
+    expect(workflow, contains("Release/desktop_updater_install_helper.exe"));
   });
 
   test("Windows ZIP handoff does not read Inno signer metadata", () {

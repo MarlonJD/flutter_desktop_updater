@@ -830,6 +830,29 @@ jobs:
       - name: Rebuild example for smoke
         working-directory: example
         run: flutter build windows --debug
+      - name: Sign Windows debug smoke binaries
+        working-directory: example
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pfx = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing/hosted-smoke.pfx"
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found for Windows debug smoke." }
+          foreach ($binary in @(
+            "build/windows/x64/runner/Debug/desktop_updater_example.exe",
+            "build/windows/x64/runner/Debug/desktop_updater_install_helper.exe"
+          )) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Windows debug smoke binary is missing: $binary"
+            }
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Windows debug smoke binary is not trusted: ${binary}: $($signature.Status)"
+            }
+          }
       - name: Run update smoke
         working-directory: example
         run: dart run tool/updater_smoke.dart --diagnostics-log ../reports/windows-update-smoke-debug-diagnostics.jsonl
@@ -843,6 +866,29 @@ jobs:
       - name: Build example release
         working-directory: example
         run: flutter build windows --release
+      - name: Sign Windows release smoke binaries
+        working-directory: example
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pfx = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing/hosted-smoke.pfx"
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found for Windows release smoke." }
+          foreach ($binary in @(
+            "build/windows/x64/runner/Release/desktop_updater_example.exe",
+            "build/windows/x64/runner/Release/desktop_updater_install_helper.exe"
+          )) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Windows release smoke binary is missing: $binary"
+            }
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Windows release smoke binary is not trusted: ${binary}: $($signature.Status)"
+            }
+          }
       - name: Build native tests release
         working-directory: example
         run: cmake --build build/windows/x64 --config Release --target desktop_updater_test

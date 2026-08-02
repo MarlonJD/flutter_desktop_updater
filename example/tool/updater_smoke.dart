@@ -178,7 +178,11 @@ Future<void> main(List<String> args) async {
           executablePath: executablePath,
         )
       : Platform.isWindows
-          ? await _writeWindowsNativeStageControl(stagingRoot: stagingRoot.path)
+          ? await _writeWindowsNativeStageControl(
+              installRoot: effectiveInstallRoot,
+              stagingRoot: stagingRoot.path,
+              executablePath: executablePath,
+            )
           : null;
 
   final provenance = await writeStagedUpdateProvenance(
@@ -510,13 +514,87 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
 }
 
 Future<_NativeStageControl> _writeWindowsNativeStageControl({
+  required String installRoot,
   required String stagingRoot,
-}) {
+  required String executablePath,
+}) async {
+  await _writeWindowsPortableHelperPolicy(
+    installRoot: installRoot,
+    stagingRoot: stagingRoot,
+    executablePath: executablePath,
+  );
   return _writeSignedNativeStageControl(
     stagingRoot: stagingRoot,
     platform: "windows",
     minimumOS: "10.0.19045",
   );
+}
+
+Future<void> _writeWindowsPortableHelperPolicy({
+  required String installRoot,
+  required String stagingRoot,
+  required String executablePath,
+}) async {
+  final executable = File(executablePath);
+  final helperPath = _join(
+    installRoot,
+    "desktop_updater_install_helper.exe",
+  );
+  final helper = File(helperPath);
+  if (!await helper.exists()) {
+    throw StateError("Packaged Windows install helper is unavailable: $helperPath");
+  }
+  final stagedHelperPath = _join(
+    stagingRoot,
+    _relativePathUnderRoot(helperPath, installRoot),
+  );
+  if (!await File(stagedHelperPath).exists()) {
+    throw StateError(
+      "Staged Windows install helper is unavailable: $stagedHelperPath",
+    );
+  }
+  final publicKey = await (await _smokeKeyPair()).extractPublicKey();
+  final policy = _canonicalJson({
+    "allowedApplicationSigner": {
+      "kind": "sha256",
+      "value": await _sha256File(executable),
+    },
+    "allowedHelperSigner": {
+      "kind": "sha256",
+      "value": await _sha256File(helper),
+    },
+    "allowedInstallRoots": <Object?>[],
+    "allowedStrategies": [
+      {
+        "provider": "platformDirectory",
+        "strategy": "directoryReplace",
+      },
+      {
+        "provider": "platformFile",
+        "strategy": "singleFileReplace",
+      },
+    ],
+    "allowedTargetClasses": ["sameUserWritable"],
+    "applicationPackageId": _smokePackageId,
+    "helperServiceId": "com.example.desktop-updater.helper",
+    "minimumHelperProtocolVersion": 1,
+    "policyId": "com.example.desktop-updater.portable",
+    "policyVersion": 1,
+    "releaseRootPublicKeys": [
+      {
+        "algorithm": "ed25519",
+        "keyId": _smokePublicKeyId,
+        "publicKeyBase64": base64Encode(publicKey.bytes),
+      },
+    ],
+  });
+  final policyPaths = <String>{
+    _join(installRoot, "desktop_updater_helper_policy.json"),
+    _join(stagingRoot, "desktop_updater_helper_policy.json"),
+  };
+  for (final policyPath in policyPaths) {
+    await File(policyPath).writeAsString(policy, flush: true);
+  }
 }
 
 Future<_NativeStageControl> _writeSignedNativeStageControl({
