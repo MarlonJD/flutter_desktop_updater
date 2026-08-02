@@ -583,7 +583,19 @@ void main() {
         r"-Credential \$smokeCredential -LoadUserProfile "
         r"-Environment \$smokeEnvironment",
       ).allMatches(lane),
-      hasLength(2),
+      hasLength(3),
+    );
+    expect(lane, contains("Portable restage deliberately protects"));
+    expect(
+      lane,
+      contains(
+        r'$smokeEnvironment["DESKTOP_UPDATER_SMOKE_INSTALL"] = $install',
+      ),
+    );
+    expect(lane, contains('"post-smoke-verify.ps1"'));
+    expect(
+      lane,
+      contains("Standard-user ZIP smoke did not observe version 2.7.1."),
     );
     expect(
       lane.indexOf("Hosted Windows ZIP smoke LocalAppData is ready."),

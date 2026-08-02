@@ -626,12 +626,62 @@ jobs:
             }
             Write-Host "Hosted Windows ZIP smoke update handoff returned."
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
+            # Portable restage deliberately protects the replacement tree for
+            # SYSTEM and the standard-user caller only.  Keep filesystem
+            # assertions under that same caller identity; the runner account
+            # should inspect protocol evidence, not bypass the target DACL.
+            $postSmokeStatePath = Join-Path $smokeRoot "post-smoke-state.json"
+            $postSmokeVerifyOut = Join-Path $smokeRoot "post-smoke-verify.out"
+            $postSmokeVerifyErr = Join-Path $smokeRoot "post-smoke-verify.err"
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_INSTALL"] = $install
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_STAGING"] = $stagingRoot
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_VERIFY_OUT"] = $postSmokeStatePath
+            $postSmokeScript = @'
+$ErrorActionPreference = "Stop"
+$versionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL "version.txt"
+$stagingRoot = $env:DESKTOP_UPDATER_SMOKE_STAGING
+$versionReady = $false
+$stagingClean = $false
+for ($attempt = 0; $attempt -lt 600; $attempt++) {
+  try {
+    $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
+    $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
+  } catch {
+    $versionReady = $false
+    $stagingClean = $false
+  }
+  if ($versionReady -and $stagingClean) { break }
+  Start-Sleep -Milliseconds 250
+}
+[ordered]@{
+  versionReady = $versionReady
+  stagingClean = $stagingClean
+} | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
+if (-not $versionReady) { throw "Standard-user ZIP smoke did not observe version 2.7.1." }
+if (-not $stagingClean) { throw "Standard-user ZIP smoke observed an owned staging child." }
+'@
+            $postSmokeScriptPath = Join-Path $smokeRoot "post-smoke-verify.ps1"
+            [IO.File]::WriteAllText(
+              $postSmokeScriptPath,
+              $postSmokeScript,
+              [Text.UTF8Encoding]::new($false)
+            )
+            $postSmokeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+              "-NoLogo",
+              "-NoProfile",
+              "-NonInteractive",
+              "-File", $postSmokeScriptPath
+            ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $postSmokeVerifyOut -RedirectStandardError $postSmokeVerifyErr -Wait -PassThru
+            Get-Content $postSmokeVerifyOut, $postSmokeVerifyErr -ErrorAction SilentlyContinue
+            if ($postSmokeProcess.ExitCode -ne 0) {
+              throw "Hosted Windows ZIP smoke standard-user filesystem verification exited with code $($postSmokeProcess.ExitCode)."
+            }
+            $postSmokeState = Get-Content -Raw -LiteralPath $postSmokeStatePath | ConvertFrom-Json
+            $versionReady = [bool]$postSmokeState.versionReady
+            $stagingClean = [bool]$postSmokeState.stagingClean
             $moveComplete = $false
             $cleanupComplete = $false
             for ($attempt = 0; $attempt -lt 600; $attempt++) {
-              $versionFile = Join-Path $install "version.txt"
-              $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
-              $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
               $helperEvents = @(
                 Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
                   Where-Object { $_.ProviderName -eq $helperEventProvider }
