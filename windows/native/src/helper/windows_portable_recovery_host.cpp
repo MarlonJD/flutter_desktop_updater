@@ -761,18 +761,24 @@ StableTreeHandles OpenStableTree(
   }
   const std::wstring endpoint_leaf =
       Utf8ToWide(endpoint.helper_sha256);
+  if (!create_if_missing) {
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableImpersonationTokenFailure);
+  }
   const bool existed =
       ExistsRelativeNoReparse(result.binding.get(), endpoint_leaf);
   if (endpoint_existed != nullptr) *endpoint_existed = existed;
   if (!create_if_missing) {
     RecordWindowsHelperEvent(
-        WindowsHelperEvent::kPortableImpersonationTokenFailure);
+        existed ? WindowsHelperEvent::kPortableAccessCheckFailure
+                : WindowsHelperEvent::kPortableDirectoryAccessDenied);
   }
   result.endpoint = OpenSecureDirectory(
       result.binding.get(), endpoint_leaf, user, endpoint.user_sid,
       create_if_missing);
   if (!create_if_missing && result.endpoint.valid()) {
-    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAccessCheckFailure);
+    RecordWindowsHelperEvent(
+        WindowsHelperEvent::kPortableStageProvenanceFailure);
   }
   return result;
 }
@@ -1629,7 +1635,7 @@ LoadPortableWindowsRecoveryHostBootstrap() {
   UniqueWindowsHandle policy_file = OpenSecureFile(
       tree.endpoint.get(), kPolicyFileName, GENERIC_READ);
   RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableStageProvenanceFailure);
+      WindowsHelperEvent::kPortableStageManifestFailure);
   ValidateExactUserSecurity(helper_file.get(), SidPointer(current.user),
                             false);
   ValidateExactUserSecurity(policy_file.get(), SidPointer(current.user),
@@ -1640,7 +1646,7 @@ LoadPortableWindowsRecoveryHostBootstrap() {
       helper, ReadWindowsFileIdentity(helper_file.get()),
       Sha256Handle(helper_file.get()), FinalPath(helper_file.get()));
   RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableStageManifestFailure);
+      WindowsHelperEvent::kPortableStageRequestBindingFailure);
   if (policy_identity.directory ||
       (policy_identity.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
       policy_identity.number_of_links != 1 ||
@@ -1650,7 +1656,7 @@ LoadPortableWindowsRecoveryHostBootstrap() {
     Fail("portable recovery stable endpoint readback changed");
   }
   RecordWindowsHelperEvent(
-      WindowsHelperEvent::kPortableStageRequestBindingFailure);
+      WindowsHelperEvent::kPortableStageRestageFailure);
   return {std::move(policy), helper, std::move(endpoint)};
 }
 
