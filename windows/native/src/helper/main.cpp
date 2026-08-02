@@ -102,6 +102,9 @@ int Run(int argument_count, wchar_t** arguments) {
                               recovery_ready_nonce);
                       desktop_updater::helper::
                           SignalPortableWindowsRecoveryHostReady(definition);
+                      desktop_updater::helper::RecordWindowsHelperEvent(
+                          desktop_updater::helper::WindowsHelperEvent::
+                              kPortableStagePayloadIdentityFailure);
                     });
                 return desktop_updater::helper::
                     PortableWindowsRecoveryResolution{
@@ -116,6 +119,9 @@ int Run(int argument_count, wchar_t** arguments) {
                  ? ERROR_FILE_NOT_FOUND
                  : ERROR_RETRY;
     } catch (const std::exception&) {
+      desktop_updater::helper::RecordWindowsHelperEvent(
+          desktop_updater::helper::WindowsHelperEvent::
+              kPortablePreparationFailure);
       return ERROR_ACCESS_DENIED;
     }
   }

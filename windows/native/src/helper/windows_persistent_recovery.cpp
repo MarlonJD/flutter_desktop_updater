@@ -2124,14 +2124,19 @@ WindowsPersistentRecoveryService::RecoverAutonomously(
     std::function<void(const std::string&)> signal_ready) {
   RequireTransactionId(transaction_id);
   AuthenticateAutonomousHost();
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableStageProvenanceFailure);
   EnsureIndex();
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableStageManifestFailure);
   const auto record = index_->Load(transaction_id);
+  RecordWindowsHelperEvent(
+      WindowsHelperEvent::kPortableStageRequestBindingFailure);
   if (!record.has_value()) {
     return {1, transaction_id, "helperUnavailable", "none",
             std::string(64, '0')};
   }
   std::unique_ptr<CallerTokenWindowsLauncher> launcher =
       WaitForExactRecoveryActorsExit(*record, signal_ready);
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableStageRestageFailure);
   auto recovery = RecoverBound(transaction_id, false, nullptr);
   const bool terminal =
       (recovery.result_code == "completed" &&

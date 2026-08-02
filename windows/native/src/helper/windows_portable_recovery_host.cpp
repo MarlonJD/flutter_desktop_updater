@@ -1770,6 +1770,7 @@ UniqueWindowsHandle LaunchPortableWindowsRecoveryHostDirect(
           &process)) {
     Fail("portable recovery direct process launch failed");
   }
+  RecordWindowsHelperEvent(WindowsHelperEvent::kPortableTargetAuthorityFailure);
   UniqueWindowsHandle thread(process.hThread);
   return UniqueWindowsHandle(process.hProcess);
 }
@@ -1873,6 +1874,7 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   UniqueWindowsHandle direct_process;
   const auto launch_direct_fallback = [&]() {
     if (direct_process.valid()) return;
+    RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
   };
   const HRESULT start = registered.get()->RunEx(
@@ -1906,6 +1908,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {
+        RecordWindowsHelperEvent(
+            WindowsHelperEvent::kPortableTargetRequestFailure);
         Fail("portable recovery host exited before readiness");
       }
       if (process_wait == WAIT_FAILED) {
@@ -1913,6 +1917,8 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
       }
     }
     if (GetTickCount64() - started >= startup_timeout_milliseconds) {
+      RecordWindowsHelperEvent(
+          WindowsHelperEvent::kPortableTargetExecutableIdentityFailure);
       Fail("portable recovery host startup timed out");
     }
   }
