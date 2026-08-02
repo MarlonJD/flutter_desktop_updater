@@ -76,13 +76,16 @@ void main() {
     expect(workflow, isNot(contains("windows_inno_smoke.ps1")));
     expect(
       workflow,
-      contains("dart run tool/updater_smoke.dart --config Release"),
+      contains(
+        "./tool/windows_direct_flutter_smoke.ps1 "
+        "-Configuration Release",
+      ),
     );
     expect(
       workflow,
       contains(
-        "--diagnostics-log "
-        "../reports/windows-update-smoke-release-diagnostics.jsonl",
+        r"-DiagnosticsPath (Join-Path $PWD "
+        '"reports/windows-update-smoke-release-diagnostics.jsonl")',
       ),
     );
     expect(workflow, contains("actions/upload-artifact@v4"));

@@ -22,7 +22,7 @@ if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
 
 $smokeRoot = Join-Path $env:RUNNER_TEMP "flutter-windows-update-smoke-$($Configuration.ToLowerInvariant())"
 $install = Join-Path $smokeRoot "install"
-$host = Join-Path $smokeRoot "updater_smoke.exe"
+$smokeRunner = Join-Path $smokeRoot "updater_smoke.exe"
 $capturedDiagnostics = Join-Path $smokeRoot "helper-diagnostics.jsonl"
 $runnerOut = Join-Path $smokeRoot "runner.out"
 $runnerErr = Join-Path $smokeRoot "runner.err"
@@ -35,7 +35,7 @@ Copy-Item -LiteralPath $runnerRoot -Destination $install -Recurse -Force
 
 Push-Location $exampleRoot
 try {
-  & dart compile exe tool/updater_smoke.dart -o $host
+  & dart compile exe tool/updater_smoke.dart -o $smokeRunner
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   Pop-Location
@@ -81,6 +81,7 @@ try {
   $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
   $smokeEnvironment = @{
     APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
+    DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
     HOME = $smokeUserProfile
     HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
     HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
@@ -95,11 +96,58 @@ try {
     WINDIR = $env:WINDIR
   }
   $smokePasswordText = $null
-  $helperEventStart = Get-Date
-  $smokeProcess = Start-Process -FilePath $host -ArgumentList @(
-    "--app", (Join-Path $install "desktop_updater_example.exe"),
-    "--diagnostics-log", $capturedDiagnostics
-  ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -Wait -PassThru
+  $profileProbeOut = Join-Path $smokeRoot "profile-probe.out"
+  $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
+  $profileProbeScript = @(
+    '$ErrorActionPreference = "Stop"'
+    '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
+    'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
+    '  throw "LocalApplicationData is unavailable."'
+    '}'
+    '$expectedLocalAppData = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA'
+    'if (-not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath($localAppData), [IO.Path]::GetFullPath($expectedLocalAppData))) {'
+    '  throw "LocalApplicationData resolved outside the standard-user profile."'
+    '}'
+    '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
+    '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
+    'try {'
+    '  [IO.File]::WriteAllText($probe, "ready", [Text.UTF8Encoding]::new($false))'
+    '} finally {'
+    '  Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue'
+    '}'
+    'Write-Output "Windows Flutter smoke LocalApplicationData is ready."'
+  ) -join [Environment]::NewLine
+  $profileProbePath = Join-Path $smokeRoot "profile-probe.ps1"
+  [IO.File]::WriteAllText(
+    $profileProbePath,
+    $profileProbeScript,
+    [Text.UTF8Encoding]::new($false)
+  )
+  $profileProbeShell = (Get-Process -Id $PID).Path
+  $originalTemp = $env:TEMP
+  $originalTmp = $env:TMP
+  try {
+    $env:TEMP = $userTemp
+    $env:TMP = $userTemp
+    $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-File", $profileProbePath
+    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
+    Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
+    if ($profileProbeProcess.ExitCode -ne 0) {
+      throw "Windows Flutter smoke could not initialize LocalAppData for the standard user."
+    }
+    $helperEventStart = Get-Date
+    $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
+      "--app", (Join-Path $install "desktop_updater_example.exe"),
+      "--diagnostics-log", $capturedDiagnostics
+    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -Wait -PassThru
+  } finally {
+    $env:TEMP = $originalTemp
+    $env:TMP = $originalTmp
+  }
   Get-Content $runnerOut, $runnerErr -ErrorAction SilentlyContinue
   if ($smokeProcess.ExitCode -ne 0) {
     $helperEvents = @(

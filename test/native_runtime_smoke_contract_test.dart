@@ -790,8 +790,32 @@ void main() {
     expect(
         runner, contains("Account unexpectedly has administrator authority"));
     expect(runner, contains("Start-Process"));
+    expect(runner, contains(r"$smokeRunner"));
+    expect(RegExp(r"\$host\b", caseSensitive: false).hasMatch(runner), isFalse);
     expect(runner, contains(r"-Credential $smokeCredential"));
     expect(runner, contains("-LoadUserProfile"));
+    expect(
+      runner,
+      contains(
+        "[Environment]::GetFolderPath("
+        "[Environment+SpecialFolder]::LocalApplicationData, "
+        "[Environment+SpecialFolderOption]::Create)",
+      ),
+    );
+    expect(
+      runner,
+      contains(
+        r"DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData",
+      ),
+    );
+    expect(
+      runner.indexOf("LocalApplicationData is ready."),
+      lessThan(
+        runner.indexOf(
+          r"$smokeProcess = Start-Process -FilePath $smokeRunner",
+        ),
+      ),
+    );
     expect(runner, contains("Remove-LocalUser"));
     expect(runner, contains("dart compile exe"));
   });
