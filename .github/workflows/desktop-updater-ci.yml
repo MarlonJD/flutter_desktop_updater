@@ -856,13 +856,15 @@ jobs:
       - name: Run update smoke
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-debug-diagnostics.jsonl")
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-debug-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-debug-evidence")
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-debug-diagnostics
-          path: reports/windows-update-smoke-debug-diagnostics.jsonl
+          path: |
+            reports/windows-update-smoke-debug-diagnostics.jsonl
+            reports/windows-update-smoke-debug-evidence
           if-no-files-found: ignore
       - name: Build example release
         working-directory: example
@@ -913,13 +915,15 @@ jobs:
       - name: Run update smoke release
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-release-diagnostics.jsonl")
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-release-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-release-evidence")
       - name: Upload update smoke release diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-release-diagnostics
-          path: reports/windows-update-smoke-release-diagnostics.jsonl
+          path: |
+            reports/windows-update-smoke-release-diagnostics.jsonl
+            reports/windows-update-smoke-release-evidence
           if-no-files-found: ignore
       - name: Upload Windows native helper test counts
         if: always()

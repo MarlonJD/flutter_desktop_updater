@@ -3,7 +3,8 @@ param(
   [ValidateSet("Debug", "Release")]
   [string]$Configuration,
   [Parameter(Mandatory = $true)]
-  [string]$DiagnosticsPath
+  [string]$DiagnosticsPath,
+  [string]$EvidencePath
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,28 +21,474 @@ if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
   throw "Windows $Configuration Flutter smoke helper is missing: $helper"
 }
 
-$smokeRoot = Join-Path $env:RUNNER_TEMP "flutter-windows-update-smoke-$($Configuration.ToLowerInvariant())"
+$smokeRunId = [Guid]::NewGuid().ToString("N")
+$smokeRoot = Join-Path $env:RUNNER_TEMP "flutter-windows-update-smoke-$($Configuration.ToLowerInvariant())-$smokeRunId"
 $install = Join-Path $smokeRoot "install"
 $smokeRunner = Join-Path $smokeRoot "updater_smoke.exe"
+$runnerWorkingDirectory = $smokeRoot
 $capturedDiagnostics = Join-Path $smokeRoot "helper-diagnostics.jsonl"
 $runnerOut = Join-Path $smokeRoot "runner.out"
 $runnerErr = Join-Path $smokeRoot "runner.err"
 $smokeUser = $null
 $smokeUserCreated = $false
+$smokeUserProfile = $null
+$smokeLocalAppData = $null
+$userTemp = $null
+$smokeProcess = $null
+$helperEventStart = Get-Date
+$prelaunchAcls = @()
+$smokeSucceeded = $false
+$primaryFailure = $null
 
-Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
-Copy-Item -LiteralPath $runnerRoot -Destination $install -Recurse -Force
+$smokeRootFullPath = [IO.Path]::GetFullPath($smokeRoot)
+$smokeRootWithSeparator = "$smokeRootFullPath$([IO.Path]::DirectorySeparatorChar)"
+if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
+  $evidenceBase = "$([IO.Path]::GetFullPath($DiagnosticsPath)).evidence"
+} else {
+  $evidenceBase = [IO.Path]::GetFullPath($EvidencePath)
+}
+if (
+  [StringComparer]::OrdinalIgnoreCase.Equals($evidenceBase, $smokeRootFullPath) -or
+  $evidenceBase.StartsWith($smokeRootWithSeparator, [StringComparison]::OrdinalIgnoreCase)
+) {
+  throw "Windows Flutter smoke evidence path must be outside the disposable smoke root."
+}
+$evidenceRoot = Join-Path $evidenceBase $smokeRunId
+if (Test-Path -LiteralPath $evidenceRoot) {
+  throw "Unique Windows Flutter smoke evidence path already exists: $evidenceRoot"
+}
 
-Push-Location $exampleRoot
-try {
-  & dart compile exe tool/updater_smoke.dart -o $smokeRunner
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-} finally {
-  Pop-Location
+function ConvertTo-WindowsSmokeEvidenceText {
+  param([AllowNull()][string]$Text)
+
+  if ($null -eq $Text) {
+    return $null
+  }
+
+  $redacted = $Text
+  $redacted = [regex]::Replace(
+    $redacted,
+    '(?im)("(?:[^"\\]|\\.)*(?:token|nonce|password|secret)(?:[^"\\]|\\.)*"\s*:\s*")[^"]*(")',
+    '$1[redacted]$2'
+  )
+  $redacted = [regex]::Replace(
+    $redacted,
+    '(?im)(--(?:ready-token|recovery-ready-nonce|request-nonce|nonce)(?:\s+|=))(?:(?:"[^"]*")|\S+)',
+    '$1[redacted]'
+  )
+  $redacted = [regex]::Replace(
+    $redacted,
+    '(?i)\\\\\.\\pipe\\desktop-updater-[A-Za-z0-9_-]+',
+    '\\.\pipe\desktop-updater-[redacted]'
+  )
+  $redacted = [regex]::Replace(
+    $redacted,
+    '(?i)(https?://(?:127\.0\.0\.1|localhost):\d+/)[A-Za-z0-9_=\-]+/?',
+    '$1[redacted]/'
+  )
+  return [regex]::Replace(
+    $redacted,
+    '(?i)([\\/](?:PortableLaunch)[\\/])[A-Za-z0-9_-]{16,}',
+    '$1[redacted]'
+  )
+}
+
+function Read-WindowsSmokeSharedText {
+  param(
+    [string]$Path,
+    [int]$MaximumBytes = 262144
+  )
+
+  $share = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+  $stream = [IO.FileStream]::new(
+    $Path,
+    [IO.FileMode]::Open,
+    [IO.FileAccess]::Read,
+    $share
+  )
+  try {
+    $initialLength = $stream.Length
+    $bytesToRead = [int][Math]::Min([long]$MaximumBytes, $initialLength)
+    $buffer = [byte[]]::new($bytesToRead)
+    $offset = 0
+    while ($offset -lt $bytesToRead) {
+      $received = $stream.Read($buffer, $offset, $bytesToRead - $offset)
+      if ($received -eq 0) { break }
+      $offset += $received
+    }
+    $text = [Text.UTF8Encoding]::new($false, $false).GetString($buffer, 0, $offset)
+    if ($initialLength -gt $MaximumBytes) {
+      $text += "`n[evidence truncated at $MaximumBytes bytes]"
+    }
+    return ConvertTo-WindowsSmokeEvidenceText $text
+  } finally {
+    $stream.Dispose()
+  }
+}
+
+function Get-WindowsSmokeAclSnapshot {
+  param(
+    [string]$Label,
+    [AllowNull()][string]$Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return [PSCustomObject]@{
+      error = "path unavailable"
+      label = $Label
+      owner = $null
+      sddl = $null
+    }
+  }
+  try {
+    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    return [PSCustomObject]@{
+      error = $null
+      label = $Label
+      owner = ConvertTo-WindowsSmokeEvidenceText $acl.Owner
+      sddl = ConvertTo-WindowsSmokeEvidenceText $acl.Sddl
+    }
+  } catch {
+    return [PSCustomObject]@{
+      error = ConvertTo-WindowsSmokeEvidenceText $_.Exception.Message
+      label = $Label
+      owner = $null
+      sddl = $null
+    }
+  }
+}
+
+function Get-WindowsSmokeTopLevelEntries {
+  param([AllowNull()][string]$Root)
+
+  if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) {
+    return @()
+  }
+  return @(
+    Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop |
+      ForEach-Object {
+        [PSCustomObject]@{
+          attributes = $_.Attributes.ToString()
+          lastWriteTimeUtc = $_.LastWriteTimeUtc.ToString("o")
+          length = if ($_.PSIsContainer) { $null } else { $_.Length }
+          name = ConvertTo-WindowsSmokeEvidenceText $_.Name
+          type = if ($_.PSIsContainer) { "directory" } else { "file" }
+        }
+      }
+  )
+}
+
+function Stop-WindowsSmokeRelaunchProcess {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath
+  )
+
+  $targetName = [IO.Path]::GetFileName($ExecutablePath)
+  $targetProcessName = [IO.Path]::GetFileNameWithoutExtension($targetName)
+  for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    $remaining = @(
+      Get-Process -Name $targetProcessName -ErrorAction SilentlyContinue
+    )
+    if ($remaining.Count -eq 0) {
+      return
+    }
+    foreach ($process in $remaining) {
+      & taskkill.exe /F /T /PID $process.Id 2>$null | Out-Null
+    }
+    [System.Threading.Thread]::Sleep(100)
+  }
+  throw "Windows smoke relaunch process remained after elevated cleanup: $ExecutablePath"
+}
+
+function Repair-WindowsSmokeCleanupAccess {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Root
+  )
+
+  if (-not (Test-Path -LiteralPath $Root)) {
+    return
+  }
+  & takeown.exe /F $Root /R /D Y | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows smoke cleanup could not take ownership of $Root."
+  }
+  & icacls.exe $Root /reset /T /C | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows smoke cleanup could not reset permissions for $Root."
+  }
+  & icacls.exe $Root /grant '*S-1-5-32-544:(OI)(CI)F' /T /C | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows smoke cleanup could not grant Administrators access to $Root."
+  }
+  & icacls.exe $Root /grant '*S-1-5-18:(OI)(CI)F' /T /C | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows smoke cleanup could not grant SYSTEM access to $Root."
+  }
+}
+
+function Save-WindowsFlutterSmokeEvidence {
+  New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+  $collectionErrors = [Collections.Generic.List[string]]::new()
+
+  $eventRecords = @()
+  try {
+    $eventRecords = @(
+      Get-WinEvent -FilterHashtable @{
+        LogName = "Application"
+        ProviderName = "DesktopUpdater.InstallHelper.ProtocolV1"
+        StartTime = $helperEventStart
+      } -ErrorAction Stop |
+        Sort-Object TimeCreated, RecordId
+    )
+  } catch {
+    $collectionErrors.Add(
+      (ConvertTo-WindowsSmokeEvidenceText "provider-filtered event log: $($_.Exception.Message)")
+    ) | Out-Null
+    try {
+      $eventRecords = @(
+        Get-WinEvent -FilterHashtable @{
+          LogName = "Application"
+          StartTime = $helperEventStart
+        } -ErrorAction Stop |
+          Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" } |
+          Sort-Object TimeCreated, RecordId
+      )
+    } catch {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "fallback event log: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+  }
+  $events = @(
+    foreach ($eventRecord in $eventRecords) {
+      [PSCustomObject]@{
+        id = $eventRecord.Id
+        level = $eventRecord.LevelDisplayName
+        processId = $eventRecord.ProcessId
+        properties = @(
+          $eventRecord.Properties |
+            ForEach-Object { ConvertTo-WindowsSmokeEvidenceText ([string]$_.Value) }
+        )
+        recordId = $eventRecord.RecordId
+        timestampUtc = $eventRecord.TimeCreated.ToUniversalTime().ToString("o")
+      }
+    }
+  )
+
+  $tasks = @()
+  if ($null -ne $smokeUser) {
+    $taskErrors = @()
+    $smokeUserIdentifiers = @(
+      $smokeUser.SID.Value,
+      $smokeUser.Name,
+      "$env:COMPUTERNAME\$($smokeUser.Name)"
+    )
+    $taskCandidates = @(
+      Get-ScheduledTask -TaskName "DesktopUpdater-Portable-*" -ErrorAction SilentlyContinue -ErrorVariable +taskErrors |
+        Where-Object {
+          $principalUserId = [string]$_.Principal.UserId
+          @(
+            $smokeUserIdentifiers |
+              Where-Object {
+                [StringComparer]::OrdinalIgnoreCase.Equals($_, $principalUserId)
+              }
+          ).Count -ne 0
+        }
+    )
+    foreach ($taskError in $taskErrors) {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "scheduled tasks: $($taskError.Exception.Message)")
+      ) | Out-Null
+    }
+    $tasks = @(
+      foreach ($task in $taskCandidates) {
+        try {
+          $taskInfo = Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop
+          [PSCustomObject]@{
+            lastRunTimeUtc = if ($null -ne $taskInfo.LastRunTime) { $taskInfo.LastRunTime.ToUniversalTime().ToString("o") } else { $null }
+            lastTaskResult = $taskInfo.LastTaskResult
+            principalUserId = ConvertTo-WindowsSmokeEvidenceText $task.Principal.UserId
+            state = $task.State.ToString()
+            taskName = ConvertTo-WindowsSmokeEvidenceText $task.TaskName
+            taskPath = ConvertTo-WindowsSmokeEvidenceText $task.TaskPath
+          }
+        } catch {
+          $collectionErrors.Add(
+            (ConvertTo-WindowsSmokeEvidenceText "scheduled task $($task.TaskName): $($_.Exception.Message)")
+          ) | Out-Null
+        }
+      }
+    )
+  }
+
+  $eventProcessIds = @(
+    $events |
+      ForEach-Object { $_.processId } |
+      Where-Object { $null -ne $_ -and $_ -gt 0 } |
+      Sort-Object -Unique
+  )
+  $outerRunnerProcessId = if ($null -ne $smokeProcess) { $smokeProcess.Id } else { $null }
+  $processErrors = @()
+  $activeProcesses = @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue -ErrorVariable +processErrors |
+      Where-Object {
+        $eventProcessIds -contains $_.ProcessId -or
+        ($null -ne $outerRunnerProcessId -and $_.ParentProcessId -eq $outerRunnerProcessId)
+      } |
+      ForEach-Object {
+        [PSCustomObject]@{
+          creationDate = if ($null -ne $_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString("o") } else { $null }
+          name = ConvertTo-WindowsSmokeEvidenceText $_.Name
+          parentProcessId = $_.ParentProcessId
+          processId = $_.ProcessId
+        }
+      }
+  )
+  foreach ($processError in $processErrors) {
+    $collectionErrors.Add(
+      (ConvertTo-WindowsSmokeEvidenceText "processes: $($processError.Exception.Message)")
+    ) | Out-Null
+  }
+
+  $recoveryActive = $activeProcesses.Count -ne 0 -or @(
+    $tasks | Where-Object { $_.state -eq "Running" }
+  ).Count -ne 0
+  $filesystem = [PSCustomObject]@{
+    diagnosticsExists = Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf
+    installExists = $null
+    sentinelExists = $null
+    skippedReason = if ($recoveryActive) { "helper-or-recovery-active" } else { $null }
+    topLevelSmokeEntries = @()
+    topLevelUserTempEntries = @()
+  }
+  $recoveryRecords = @()
+  if (-not $recoveryActive) {
+    $filesystem.installExists = Test-Path -LiteralPath $install -PathType Container
+    $filesystem.sentinelExists = Test-Path -LiteralPath (Join-Path $install "desktop_updater_smoke.txt") -PathType Leaf
+    try {
+      $filesystem.topLevelSmokeEntries = @(Get-WindowsSmokeTopLevelEntries $smokeRoot)
+    } catch {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "smoke root metadata: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+    try {
+      $filesystem.topLevelUserTempEntries = @(Get-WindowsSmokeTopLevelEntries $userTemp)
+    } catch {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "user temp metadata: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($smokeLocalAppData)) {
+      $recoveryRoot = Join-Path $smokeLocalAppData "desktop_updater_portable_transactions_v1"
+      try {
+        if (Test-Path -LiteralPath $recoveryRoot -PathType Container) {
+          $recoveryNames = @(
+            "record.json",
+            "record.next",
+            "resolver_claim.json",
+            "resolver_claim.next",
+            "locator.json",
+            "locator.next"
+          )
+          $recoveryFiles = @(
+            Get-ChildItem -LiteralPath $recoveryRoot -File -Recurse -Depth 3 -Force -ErrorAction Stop |
+              Where-Object { $recoveryNames -contains $_.Name } |
+              Select-Object -First 32
+          )
+          $recoveryRecords = @(
+            foreach ($recoveryFile in $recoveryFiles) {
+              try {
+                if ($recoveryFile.Length -gt 1048576) {
+                  throw "recovery record exceeds 1048576 bytes"
+                }
+                [PSCustomObject]@{
+                  content = Read-WindowsSmokeSharedText -Path $recoveryFile.FullName -MaximumBytes 1048576
+                  error = $null
+                  relativePath = ".../$($recoveryFile.Name)"
+                }
+              } catch {
+                [PSCustomObject]@{
+                  content = $null
+                  error = ConvertTo-WindowsSmokeEvidenceText $_.Exception.Message
+                  relativePath = ".../$($recoveryFile.Name)"
+                }
+              }
+            }
+          )
+        } else {
+          $collectionErrors.Add("recovery records: root absent or inaccessible") | Out-Null
+        }
+      } catch {
+        $collectionErrors.Add(
+          (ConvertTo-WindowsSmokeEvidenceText "recovery records: $($_.Exception.Message)")
+        ) | Out-Null
+      }
+    }
+  }
+
+  $report = [PSCustomObject]@{
+    activeProcesses = $activeProcesses
+    capturedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    collectionErrors = @($collectionErrors)
+    configuration = $Configuration
+    events = $events
+    filesystem = $filesystem
+    helperEventStartUtc = $helperEventStart.ToUniversalTime().ToString("o")
+    prelaunchAcls = $prelaunchAcls
+    primaryFailure = ConvertTo-WindowsSmokeEvidenceText $primaryFailure
+    recoveryRecords = $recoveryRecords
+    runId = $smokeRunId
+    runner = [PSCustomObject]@{
+      exitCode = if ($null -ne $smokeProcess) { $smokeProcess.ExitCode } else { $null }
+      processId = $outerRunnerProcessId
+      workingDirectory = ConvertTo-WindowsSmokeEvidenceText $runnerWorkingDirectory
+    }
+    schemaVersion = 1
+    standardUser = if ($null -ne $smokeUser) { [PSCustomObject]@{ sid = $smokeUser.SID.Value } } else { $null }
+    tasks = $tasks
+  }
+  $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidenceRoot "report.json") -Encoding utf8
+
+  foreach ($textArtifact in @(
+      [PSCustomObject]@{ name = "runner.out"; path = $runnerOut },
+      [PSCustomObject]@{ name = "runner.err"; path = $runnerErr },
+      [PSCustomObject]@{ name = "helper-diagnostics.jsonl"; path = $capturedDiagnostics }
+    )) {
+    if (Test-Path -LiteralPath $textArtifact.path -PathType Leaf) {
+      try {
+        [IO.File]::WriteAllText(
+          (Join-Path $evidenceRoot $textArtifact.name),
+          (Read-WindowsSmokeSharedText $textArtifact.path),
+          [Text.UTF8Encoding]::new($false)
+        )
+      } catch {
+        Write-Warning (ConvertTo-WindowsSmokeEvidenceText "Windows smoke evidence text copy failed: $($_.Exception.Message)")
+      }
+    }
+  }
 }
 
 try {
+  if (Test-Path -LiteralPath $smokeRoot) {
+    throw "Unique Windows Flutter smoke root already exists: $smokeRoot"
+  }
+  New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+  Copy-Item -LiteralPath $runnerRoot -Destination $install -Recurse -Force
+
+  Push-Location $exampleRoot
+  try {
+    & dart compile exe tool/updater_smoke.dart -o $smokeRunner
+    if ($LASTEXITCODE -ne 0) {
+      throw "Windows Flutter smoke runner compilation failed with code $LASTEXITCODE."
+    }
+  } finally {
+    Pop-Location
+  }
+
   $smokeUserName = "duflutter$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
   $smokePasswordText = "Du!9$([Guid]::NewGuid().ToString('N'))"
   $smokePassword = ConvertTo-SecureString $smokePasswordText -AsPlainText -Force
@@ -86,6 +533,7 @@ try {
     HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
     HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
     LOCALAPPDATA = $smokeLocalAppData
+    DESKTOP_UPDATER_SMOKE_EXTERNAL_RELAUNCH_CLEANUP = "1"
     PATH = $env:PATH
     SystemRoot = $env:SystemRoot
     TEMP = $userTemp
@@ -135,28 +583,40 @@ try {
       "-NonInteractive",
       "-File", $profileProbePath
     ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
-    Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
+    foreach ($profileOutputPath in @($profileProbeOut, $profileProbeErr)) {
+      if (Test-Path -LiteralPath $profileOutputPath -PathType Leaf) {
+        Write-Host (Read-WindowsSmokeSharedText $profileOutputPath)
+      }
+    }
     if ($profileProbeProcess.ExitCode -ne 0) {
       throw "Windows Flutter smoke could not initialize LocalAppData for the standard user."
     }
+    $prelaunchAcls = @(
+      Get-WindowsSmokeAclSnapshot -Label "smokeRoot" -Path $smokeRoot
+      Get-WindowsSmokeAclSnapshot -Label "install" -Path $install
+      Get-WindowsSmokeAclSnapshot -Label "smokeLocalAppData" -Path $smokeLocalAppData
+    )
     $helperEventStart = Get-Date
+    # Keeping the outer sentinel waiter inside $install pins that directory on
+    # Windows and prevents the helper from atomically replacing it after exit.
     $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
       "--app", (Join-Path $install "desktop_updater_example.exe"),
       "--diagnostics-log", $capturedDiagnostics
-    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -Wait -PassThru
+    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $runnerWorkingDirectory -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -PassThru
   } finally {
     $env:TEMP = $originalTemp
     $env:TMP = $originalTmp
   }
-  Get-Content $runnerOut, $runnerErr -ErrorAction SilentlyContinue
-  if ($smokeProcess.ExitCode -ne 0) {
-    $helperEvents = @(
-      Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
-        Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" }
-    )
-    foreach ($helperEvent in $helperEvents) {
-      Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
+  if (-not $smokeProcess.HasExited) {
+    Wait-Process -Id $smokeProcess.Id -ErrorAction Stop | Out-Null
+  }
+  $smokeProcess.Refresh()
+  foreach ($runnerOutputPath in @($runnerOut, $runnerErr)) {
+    if (Test-Path -LiteralPath $runnerOutputPath -PathType Leaf) {
+      Write-Host (Read-WindowsSmokeSharedText $runnerOutputPath)
     }
+  }
+  if ($smokeProcess.ExitCode -ne 0) {
     throw "Windows $Configuration Flutter smoke standard-user runner exited with code $($smokeProcess.ExitCode)."
   }
   if (-not (Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf)) {
@@ -165,9 +625,53 @@ try {
   $destination = [IO.Path]::GetFullPath($DiagnosticsPath)
   New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
   Copy-Item -LiteralPath $capturedDiagnostics -Destination $destination -Force
+  $smokeSucceeded = $true
+} catch {
+  $primaryFailure = $_.Exception.ToString()
+  throw
 } finally {
-  if ($smokeUserCreated) {
-    Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+  if (-not $smokeSucceeded) {
+    try {
+      Save-WindowsFlutterSmokeEvidence
+    } catch {
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText "Windows Flutter smoke evidence capture failed: $($_.Exception.Message)")
+    }
   }
-  Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+  $cleanupFailures = [Collections.Generic.List[string]]::new()
+  if ($null -ne $smokeProcess) {
+    try {
+      Stop-WindowsSmokeRelaunchProcess -ExecutablePath $app
+    } catch {
+      $cleanupMessage = "Windows Flutter smoke relaunch cleanup failed: $($_.Exception.Message)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
+  }
+  if ($smokeUserCreated) {
+    try {
+      Remove-LocalUser -Name $smokeUser.Name -ErrorAction Stop
+    } catch {
+      $cleanupMessage = "Windows Flutter smoke account cleanup failed: $($_.Exception.Message)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
+  }
+  if (Test-Path -LiteralPath $smokeRoot) {
+    try {
+      Repair-WindowsSmokeCleanupAccess -Root $smokeRoot
+      Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction Stop
+    } catch {
+      $cleanupMessage = "Windows Flutter smoke root cleanup failed: $($_.Exception.Message)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
+  }
+  if (Test-Path -LiteralPath $smokeRoot) {
+    $cleanupMessage = "Windows Flutter smoke root remains after cleanup: $smokeRoot"
+    $cleanupFailures.Add($cleanupMessage) | Out-Null
+    Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+  }
+  if ($smokeSucceeded -and $cleanupFailures.Count -ne 0) {
+    throw "Windows Flutter smoke succeeded but cleanup failed."
+  }
 }

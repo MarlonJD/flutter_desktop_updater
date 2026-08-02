@@ -28,7 +28,30 @@ const _releaseManifestFileName = ".desktop_updater_release_manifest.json";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _installedIdentity =
     '{"packageId":"com.example.desktop_updater","schemaVersion":1}';
+const _defaultInitialAppExitTimeout = Duration(seconds: 30);
+const _windowsInitialAppExitTimeout = Duration(seconds: 60);
+const _windowsExternalRelaunchCleanupEnvironment =
+    "DESKTOP_UPDATER_SMOKE_EXTERNAL_RELAUNCH_CLEANUP";
 final _windowsPathSeparator = String.fromCharCode(92);
+const _windowsHelperEventNames = <int, String>{
+  1000: "helper scheduled",
+  1001: "waiting for parent process",
+  1002: "parent process exited",
+  1003: "staging path validation",
+  1004: "backup start",
+  1005: "backup success",
+  1006: "backup failure",
+  1007: "move start",
+  1008: "move success",
+  1009: "move failure",
+  1010: "rollback start",
+  1011: "rollback success",
+  1012: "rollback failure",
+  1013: "cleanup start",
+  1014: "cleanup success",
+  1015: "cleanup failure",
+  1016: "relaunch attempt",
+};
 
 class _NativeTargetContext {
   const _NativeTargetContext({
@@ -196,6 +219,9 @@ Future<void> main(List<String> args) async {
 
   final linuxXauthority =
       Platform.isLinux ? await _prepareLinuxRelaunchXauthority() : null;
+  final helperEventStart = DateTime.now().toUtc().subtract(
+        const Duration(seconds: 1),
+      );
   try {
     stdout
       ..writeln("Launching $executablePath")
@@ -235,8 +261,11 @@ Future<void> main(List<String> args) async {
     );
     stdout.writeln("App scheduled native installation and is closing...");
 
+    final initialAppExitTimeout = Platform.isWindows
+        ? _windowsInitialAppExitTimeout
+        : _defaultInitialAppExitTimeout;
     final exitCode = await process.exitCode.timeout(
-      const Duration(seconds: 30),
+      initialAppExitTimeout,
       onTimeout: () {
         process.kill();
         throw TimeoutException("App did not exit after scheduling update.");
@@ -269,6 +298,16 @@ Future<void> main(List<String> args) async {
         const Duration(seconds: 10),
         "Timed out waiting for staging directory cleanup.",
       );
+
+      if (Platform.isWindows) {
+        if (!relaunch) {
+          await _closeWindowsSmokeRelaunch(executablePath);
+        }
+        await _writeWindowsHelperEventDiagnostics(
+          diagnosticsLogPath: diagnosticsLogPath,
+          eventStart: helperEventStart,
+        );
+      }
 
       await _expectDiagnosticsLog(
         diagnosticsLogPath,
@@ -870,6 +909,139 @@ Future<void> _expectLinuxTransactionEvents({
     await eventsLog.readAsString(),
     flush: true,
   );
+}
+
+Future<void> _writeWindowsHelperEventDiagnostics({
+  required String diagnosticsLogPath,
+  required DateTime eventStart,
+}) async {
+  final start = _powershellSingleQuoted(eventStart.toIso8601String());
+  final command = """
+\$eventStart = [DateTime]::Parse('$start').ToLocalTime()
+\$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = \$eventStart } -ErrorAction Stop |
+  Where-Object { \$_.ProviderName -eq 'DesktopUpdater.InstallHelper.ProtocolV1' } |
+  Sort-Object TimeCreated, RecordId |
+  Select-Object -First 128 |
+  ForEach-Object {
+    [PSCustomObject]@{
+      id = \$_.Id
+      timestampUtc = \$_.TimeCreated.ToUniversalTime().ToString('o')
+    }
+  })
+\$events | ConvertTo-Json -Compress -Depth 3
+""";
+  final result = await Process.run(
+    "powershell.exe",
+    <String>[
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      command,
+    ],
+    runInShell: false,
+  );
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      "powershell.exe",
+      const <String>["Get-WinEvent"],
+      "${result.stdout}${result.stderr}",
+      result.exitCode,
+    );
+  }
+
+  final output = result.stdout.toString().trim();
+  if (output.isEmpty) {
+    throw StateError(
+      "Windows helper Event Log diagnostics were empty for the smoke run.",
+    );
+  }
+  final decoded = jsonDecode(output);
+  final records = decoded is List ? decoded : <Object?>[decoded];
+  final lines = <String>[];
+  for (final record in records) {
+    if (record is! Map) {
+      continue;
+    }
+    final id = int.tryParse(record["id"].toString());
+    final event = id == null ? null : _windowsHelperEventNames[id];
+    if (event == null) {
+      continue;
+    }
+    lines.add(
+      jsonEncode(<String, Object?>{
+        "event": event,
+        "id": id,
+        "timestampUtc": record["timestampUtc"],
+      }),
+    );
+  }
+  if (lines.isEmpty) {
+    throw StateError(
+      "Windows helper Event Log diagnostics contained no known helper events.",
+    );
+  }
+  await File(diagnosticsLogPath).writeAsString(
+    "${lines.join("\n")}\n",
+    flush: true,
+  );
+}
+
+Future<void> _closeWindowsSmokeRelaunch(String executablePath) async {
+  final targetName = File(executablePath).uri.pathSegments.last;
+  for (var attempt = 0; attempt < 20; attempt++) {
+    await Process.run(
+      "taskkill.exe",
+      <String>["/F", "/T", "/IM", targetName],
+      runInShell: false,
+    );
+    final remaining = await _windowsSmokeProcessIds(executablePath);
+    if (remaining.isEmpty) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  if (Platform.environment[_windowsExternalRelaunchCleanupEnvironment] == "1") {
+    stdout.writeln(
+      "Windows smoke relaunch cleanup deferred to elevated wrapper.",
+    );
+    return;
+  }
+  throw StateError(
+    "Windows smoke relaunch process remained after bounded cleanup: "
+    "$executablePath",
+  );
+}
+
+Future<List<int>> _windowsSmokeProcessIds(String executablePath) async {
+  final targetName = File(executablePath).uri.pathSegments.last;
+  final result = await Process.run(
+    "tasklist.exe",
+    <String>[
+      "/FI",
+      "IMAGENAME eq $targetName",
+      "/FO",
+      "CSV",
+      "/NH",
+    ],
+    runInShell: false,
+  );
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      "tasklist.exe",
+      const <String>["/FO", "CSV"],
+      "${result.stdout}${result.stderr}",
+      result.exitCode,
+    );
+  }
+  return RegExp(r'"[^"]+","(\d+)"')
+      .allMatches(result.stdout.toString())
+      .map((match) => int.parse(match.group(1)!))
+      .toList(growable: false);
+}
+
+String _powershellSingleQuoted(String value) {
+  return value.replaceAll("'", "''");
 }
 
 Future<void> _expectDiagnosticsLog(
