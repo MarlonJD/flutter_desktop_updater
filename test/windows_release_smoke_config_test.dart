@@ -339,6 +339,25 @@ void main() {
       workflow,
       contains("dart run tool/release_publish_smoke.dart --platform windows"),
     );
+    final releaseSignIndex =
+        workflow.indexOf("- name: Sign Windows release smoke binaries");
+    expect(releaseSignIndex, greaterThan(0));
+    expect(
+      releaseSignIndex,
+      greaterThan(workflow.indexOf("- name: Build native tests release")),
+    );
+    expect(
+      releaseSignIndex,
+      greaterThan(workflow.indexOf("- name: Run integration tests release")),
+    );
+    expect(
+      releaseSignIndex,
+      greaterThan(workflow.indexOf("- name: Run release publish smoke")),
+    );
+    expect(
+      releaseSignIndex,
+      lessThan(workflow.indexOf("- name: Run update smoke release")),
+    );
     expect(
       workflow,
       isNot(

@@ -869,6 +869,26 @@ jobs:
       - name: Build example release
         working-directory: example
         run: flutter build windows --release
+      - name: Build native tests release
+        working-directory: example
+        run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
+      - name: Run native tests release
+        working-directory: example
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Flutter Windows Release CTest registered zero tests."
+          }
+      - name: Run integration tests release
+        working-directory: example
+        run: flutter test integration_test -d windows
+      - name: Run release publish smoke
+        working-directory: example
+        run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Sign Windows release smoke binaries
         working-directory: example
         shell: pwsh
@@ -892,26 +912,6 @@ jobs:
               throw "Windows release smoke binary is not trusted: ${binary}: $($signature.Status)"
             }
           }
-      - name: Build native tests release
-        working-directory: example
-        run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
-      - name: Run native tests release
-        working-directory: example
-        shell: pwsh
-        run: |
-          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure 2>&1
-          $exitCode = $LASTEXITCODE
-          $output | ForEach-Object { Write-Host $_ }
-          if ($exitCode -ne 0) { exit $exitCode }
-          if (($output -join "`n") -match "No tests were found") {
-            throw "Flutter Windows Release CTest registered zero tests."
-          }
-      - name: Run integration tests release
-        working-directory: example
-        run: flutter test integration_test -d windows
-      - name: Run release publish smoke
-        working-directory: example
-        run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Run update smoke release
         shell: pwsh
         run: |
