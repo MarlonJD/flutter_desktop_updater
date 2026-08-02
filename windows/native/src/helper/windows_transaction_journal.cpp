@@ -790,7 +790,6 @@ void RenameHandleRelative(HANDLE source,
       static_cast<DWORD>(destination.size() * sizeof(wchar_t));
   std::vector<unsigned char> storage(sizeof(FILE_RENAME_INFO) + name_bytes);
   auto* info = reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
-  info->Flags = replace_existing ? FILE_RENAME_FLAG_REPLACE_IF_EXISTS : 0;
   info->RootDirectory = RootDirectory;
   info->FileNameLength = name_bytes;
   std::memcpy(info->FileName, destination.data(), name_bytes);
@@ -800,31 +799,30 @@ void RenameHandleRelative(HANDLE source,
         WindowsTransactionJournalError::Code::kPersistenceFailed,
         "NtSetInformationFile is unavailable");
   }
+  // This function only needs the legacy ReplaceIfExists member. Prefer the
+  // legacy class because hosted Windows runners can reject the extended class
+  // for an otherwise-authorized standard user.
+  info->ReplaceIfExists = replace_existing ? TRUE : FALSE;
   IO_STATUS_BLOCK status_block{};
   NTSTATUS status = set_information(
       source, &status_block, info, static_cast<ULONG>(storage.size()),
-      kNativeFileRenameInformationEx);
-  if (status >= 0) {
-    return;
+      kNativeFileRenameInformation);
+  if (status >= 0) return;
+  const DWORD legacy_error = NtStatusToError(status);
+  if (legacy_error != ERROR_ACCESS_DENIED &&
+      legacy_error != ERROR_INVALID_PARAMETER &&
+      legacy_error != ERROR_NOT_SUPPORTED) {
+    ThrowOpenError(legacy_error, "handle-relative rename failed");
   }
-  const DWORD extended_error = NtStatusToError(status);
-  // Some Windows Server/hosted-runner file systems reject the extended
-  // rename information class for an otherwise-authorized standard user.
-  // The legacy class expresses the same operation for the flags supported by
-  // this function, so retry it before reporting the access failure.
-  if (extended_error != ERROR_ACCESS_DENIED &&
-      extended_error != ERROR_INVALID_PARAMETER &&
-      extended_error != ERROR_NOT_SUPPORTED) {
-    ThrowOpenError(extended_error, "handle-relative rename failed");
-  }
-  info->ReplaceIfExists = replace_existing ? TRUE : FALSE;
+
+  info->Flags = replace_existing ? FILE_RENAME_FLAG_REPLACE_IF_EXISTS : 0;
   status_block = {};
   status = set_information(source, &status_block, info,
                            static_cast<ULONG>(storage.size()),
-                           kNativeFileRenameInformation);
+                           kNativeFileRenameInformationEx);
   if (status < 0) {
     ThrowOpenError(NtStatusToError(status),
-                   "handle-relative rename fallback failed");
+                   "handle-relative rename extended fallback failed");
   }
 }
 
