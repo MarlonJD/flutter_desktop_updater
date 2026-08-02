@@ -56,6 +56,11 @@ constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformation =
     static_cast<FILE_INFORMATION_CLASS>(10);
 constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformationEx =
     static_cast<FILE_INFORMATION_CLASS>(65);
+// Hosted Windows security filters can briefly hold a freshly extracted file
+// while the containing directory is being moved. Keep this bounded so a real
+// authority failure still fails closed without making the handoff fragile.
+constexpr DWORD kRelativeRenameRetryCount = 8;
+constexpr DWORD kRelativeRenameInitialDelayMilliseconds = 100;
 
 NtCreateFileFunction ResolveNtCreateFile() {
   const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -799,30 +804,43 @@ void RenameHandleRelative(HANDLE source,
         WindowsTransactionJournalError::Code::kPersistenceFailed,
         "NtSetInformationFile is unavailable");
   }
-  // This function only needs the legacy ReplaceIfExists member. Prefer the
-  // legacy class because hosted Windows runners can reject the extended class
-  // for an otherwise-authorized standard user.
-  info->ReplaceIfExists = replace_existing ? TRUE : FALSE;
-  IO_STATUS_BLOCK status_block{};
-  NTSTATUS status = set_information(
-      source, &status_block, info, static_cast<ULONG>(storage.size()),
-      kNativeFileRenameInformation);
-  if (status >= 0) return;
-  const DWORD legacy_error = NtStatusToError(status);
-  if (legacy_error != ERROR_ACCESS_DENIED &&
-      legacy_error != ERROR_INVALID_PARAMETER &&
-      legacy_error != ERROR_NOT_SUPPORTED) {
-    ThrowOpenError(legacy_error, "handle-relative rename failed");
-  }
+  for (DWORD attempt = 0; attempt < kRelativeRenameRetryCount; ++attempt) {
+    // This function only needs the legacy ReplaceIfExists member. Prefer the
+    // legacy class because hosted Windows runners can reject the extended
+    // class for an otherwise-authorized standard user.
+    info->ReplaceIfExists = replace_existing ? TRUE : FALSE;
+    IO_STATUS_BLOCK status_block{};
+    NTSTATUS status = set_information(
+        source, &status_block, info, static_cast<ULONG>(storage.size()),
+        kNativeFileRenameInformation);
+    if (status >= 0) return;
+    const DWORD legacy_error = NtStatusToError(status);
+    if (legacy_error != ERROR_ACCESS_DENIED &&
+        legacy_error != ERROR_INVALID_PARAMETER &&
+        legacy_error != ERROR_NOT_SUPPORTED) {
+      ThrowOpenError(legacy_error, "handle-relative rename failed");
+    }
 
-  info->Flags = replace_existing ? FILE_RENAME_FLAG_REPLACE_IF_EXISTS : 0;
-  status_block = {};
-  status = set_information(source, &status_block, info,
-                           static_cast<ULONG>(storage.size()),
-                           kNativeFileRenameInformationEx);
-  if (status < 0) {
-    ThrowOpenError(NtStatusToError(status),
-                   "handle-relative rename extended fallback failed");
+    info->Flags = replace_existing ? FILE_RENAME_FLAG_REPLACE_IF_EXISTS : 0;
+    status_block = {};
+    status = set_information(source, &status_block, info,
+                             static_cast<ULONG>(storage.size()),
+                             kNativeFileRenameInformationEx);
+    if (status >= 0) return;
+    const DWORD extended_error = NtStatusToError(status);
+    if (extended_error != ERROR_ACCESS_DENIED &&
+        extended_error != ERROR_SHARING_VIOLATION &&
+        extended_error != ERROR_LOCK_VIOLATION) {
+      ThrowOpenError(extended_error,
+                     "handle-relative rename extended fallback failed");
+    }
+    if (attempt + 1 == kRelativeRenameRetryCount) {
+      ThrowOpenError(extended_error,
+                     "handle-relative rename extended fallback failed");
+    }
+    const DWORD delay = std::min<DWORD>(
+        kRelativeRenameInitialDelayMilliseconds << attempt, 1000);
+    Sleep(delay);
   }
 }
 
