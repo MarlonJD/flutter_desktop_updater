@@ -11,19 +11,6 @@
 namespace desktop_updater::helper {
 namespace {
 
-// Temporary hosted-run probe. The stable event contract intentionally keeps
-// filesystem errors redacted; these bounded IDs identify the final rename
-// operation and its Win32 error for one CI diagnosis run, then are removed.
-void RecordPortableRenameProbe(DWORD event_id) noexcept {
-  HANDLE source = RegisterEventSourceW(
-      nullptr, L"DesktopUpdater.InstallHelper.ProtocolV1");
-  if (source == nullptr) return;
-  const wchar_t* message[] = {L"portable transaction rename probe"};
-  (void)ReportEventW(source, EVENTLOG_ERROR_TYPE, 0, event_id, nullptr, 1, 0,
-                     message, nullptr);
-  (void)DeregisterEventSource(source);
-}
-
 constexpr char alternateDataStreamRejected[] = "alternateDataStreamRejected";
 constexpr char beforeActivationRename[] = "beforeActivationRename";
 
@@ -461,19 +448,13 @@ void WindowsFileTransaction::DurableRename(
     WindowsTransactionFaultPoint after) {
   fault_injector_->Hit(before);
   try {
-    RecordPortableRenameProbe(26001);
     RenameHandleRelative(source, parent_.get(), destination, false);
-    RecordPortableRenameProbe(26002);
     fault_injector_->Hit(before_directory_flush);
     FlushMetadata(parent_.get());
     fault_injector_->Hit(after);
   } catch (const WindowsFileTransactionError&) {
-    const DWORD error = GetLastError();
-    RecordPortableRenameProbe(27000u + (error & 0xFFFFu));
     throw;
   } catch (const std::exception&) {
-    const DWORD error = GetLastError();
-    RecordPortableRenameProbe(27000u + (error & 0xFFFFu));
     ThrowFilesystem("handle-relative durable rename failed");
   }
 }

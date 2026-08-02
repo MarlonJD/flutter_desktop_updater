@@ -808,7 +808,12 @@ void RenameHandleRelative(HANDLE source,
     return;
   }
   const DWORD extended_error = NtStatusToError(status);
-  if (extended_error != ERROR_INVALID_PARAMETER &&
+  // Some Windows Server/hosted-runner file systems reject the extended
+  // rename information class for an otherwise-authorized standard user.
+  // The legacy class expresses the same operation for the flags supported by
+  // this function, so retry it before reporting the access failure.
+  if (extended_error != ERROR_ACCESS_DENIED &&
+      extended_error != ERROR_INVALID_PARAMETER &&
       extended_error != ERROR_NOT_SUPPORTED) {
     ThrowOpenError(extended_error, "handle-relative rename failed");
   }
