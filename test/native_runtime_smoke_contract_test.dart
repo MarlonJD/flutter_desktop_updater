@@ -780,6 +780,22 @@ void main() {
     expect(workflow, contains("Release/desktop_updater_install_helper.exe"));
   });
 
+  test("Windows Flutter smokes use a non-administrator portable helper user",
+      () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
+
+    expect(workflow, contains("windows_direct_flutter_smoke.ps1"));
+    expect(runner, contains("New-LocalUser"));
+    expect(
+        runner, contains("Account unexpectedly has administrator authority"));
+    expect(runner, contains("Start-Process"));
+    expect(runner, contains(r"-Credential $smokeCredential"));
+    expect(runner, contains("-LoadUserProfile"));
+    expect(runner, contains("Remove-LocalUser"));
+    expect(runner, contains("dart compile exe"));
+  });
+
   test("Windows ZIP handoff does not read Inno signer metadata", () {
     final source = readFile(
       "windows/native/src/runtime/artifact_stager_windows.cpp",

@@ -854,8 +854,9 @@ jobs:
             }
           }
       - name: Run update smoke
-        working-directory: example
-        run: dart run tool/updater_smoke.dart --diagnostics-log ../reports/windows-update-smoke-debug-diagnostics.jsonl
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-debug-diagnostics.jsonl")
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
@@ -910,8 +911,9 @@ jobs:
         working-directory: example
         run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Run update smoke release
-        working-directory: example
-        run: dart run tool/updater_smoke.dart --config Release --diagnostics-log ../reports/windows-update-smoke-release-diagnostics.jsonl
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-release-diagnostics.jsonl")
       - name: Upload update smoke release diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
