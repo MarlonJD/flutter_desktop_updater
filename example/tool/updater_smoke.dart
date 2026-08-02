@@ -542,7 +542,8 @@ Future<void> _writeWindowsPortableHelperPolicy({
   );
   final helper = File(helperPath);
   if (!await helper.exists()) {
-    throw StateError("Packaged Windows install helper is unavailable: $helperPath");
+    throw StateError(
+        "Packaged Windows install helper is unavailable: $helperPath");
   }
   final stagedHelperPath = _join(
     stagingRoot,
