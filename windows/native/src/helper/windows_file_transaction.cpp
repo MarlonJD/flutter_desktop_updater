@@ -541,6 +541,7 @@ void WindowsFileTransaction::Prepare() {
       WindowsHelperEvent::kPortableStagePayloadIdentityFailure);
   ValidatePayload(stage_parent_.get(), stage_name_);
   failure_event.Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
+  verifier_.ReleaseRetainedHandles();
   if (before_stage_rename_) before_stage_rename_();
   failure_event.Advance(WindowsHelperEvent::kPortableDirectoryHandleFailure);
   DurableRename(stage_.get(), paths_.prepared_name,
@@ -584,6 +585,7 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
   ValidatePayload(parent_.get(), paths_.prepared_name);
+  verifier_.ReleaseRetainedHandles();
 
   ValidateParentLocator();
   ReopenTargetForMutation();
@@ -608,6 +610,7 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
   ValidatePayload(parent_.get(), paths_.prepared_name);
+  verifier_.ReleaseRetainedHandles();
   RecordWindowsHelperEvent(WindowsHelperEvent::kMoveStart);
   try {
     DurableRename(
@@ -627,6 +630,7 @@ WindowsFileTransactionResult WindowsFileTransaction::ExecutePrepared() {
   ValidateIdentity(parent_.get(), paths_.target_name, stage_identity_,
                    WindowsFileTransactionError::Code::kStageIdentityChanged);
   ValidatePayload(parent_.get(), paths_.target_name);
+  verifier_.ReleaseRetainedHandles();
   journal_.state = WindowsTransactionState::kCompleted;
   journal_store_->Persist(journal_);
   FlushMetadata(parent_.get());
@@ -668,6 +672,7 @@ void WindowsFileTransaction::CancelPrepared() {
     ValidateIdentity(parent_.get(), paths_.prepared_name, stage_identity_,
                      WindowsFileTransactionError::Code::kStageIdentityChanged);
     ValidatePayload(parent_.get(), paths_.prepared_name);
+    verifier_.ReleaseRetainedHandles();
     ValidateIdentity(parent_.get(), paths_.target_name, target_identity_,
                      WindowsFileTransactionError::Code::kTargetIdentityChanged);
     RenameHandleRelative(stage_.get(), stage_parent_.get(), stage_name_, false);

@@ -592,7 +592,11 @@ class WindowsPortableDirectoryPreparedTransaction final
                      executor_process_start_identity_, {}, [this]() {
                        restage_.ReleaseToTransaction();
                      }),
-        launcher_(caller_process),
+        // A portable helper is launched in the caller's standard-user
+        // context, so relaunch directly with that same token.  Calling
+        // CreateProcessWithTokenW from a standard-user helper would require
+        // SeImpersonatePrivilege and fails with ERROR_PRIVILEGE_NOT_HELD.
+        launcher_(),
         relaunch_service_(std::move(expected_payload_identity), verifier_,
                           launcher_) {}
 
@@ -711,7 +715,7 @@ class WindowsPortableDirectoryPreparedTransaction final
   WindowsVerifiedArchiveRestage restage_;
   AuthenticodeWindowsPayloadVerifier verifier_;
   WindowsFileTransaction transaction_;
-  CallerTokenWindowsLauncher launcher_;
+  CreateProcessWindowsLauncher launcher_;
   WindowsRelaunchService relaunch_service_;
 };
 

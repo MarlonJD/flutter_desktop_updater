@@ -25,6 +25,7 @@ class AuthenticodeWindowsPayloadVerifier final
   WindowsVerifiedPayloadIdentity Verify(
       HANDLE parent,
       const std::wstring& bundle_leaf) override;
+  void ReleaseRetainedHandles() noexcept override;
 
  private:
   WindowsVerifiedPayloadIdentity expectation_;

@@ -45,6 +45,10 @@ class WindowsInstallPayloadVerifier {
   virtual WindowsVerifiedPayloadIdentity Verify(
       HANDLE parent,
       const std::wstring& bundle_leaf) = 0;
+  // Verification may retain handles while the payload identity is being
+  // checked. The transaction releases those handles immediately before a
+  // directory rename so security-filtered files can be moved atomically.
+  virtual void ReleaseRetainedHandles() noexcept {}
 };
 
 enum class WindowsFileTransactionResult {

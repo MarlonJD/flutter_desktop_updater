@@ -483,6 +483,10 @@ WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
   return observed;
 }
 
+void AuthenticodeWindowsPayloadVerifier::ReleaseRetainedHandles() noexcept {
+  retained_stage_handles_.clear();
+}
+
 void CreateProcessWindowsLauncher::Launch(
     const std::filesystem::path& executable) {
   std::wstring command_line = L"\"" + executable.wstring() + L"\"";

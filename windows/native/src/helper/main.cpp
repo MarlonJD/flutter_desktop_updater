@@ -200,6 +200,7 @@ int Run(int argument_count, wchar_t** arguments) {
                 ProvisionPortableWindowsRecoveryHost(
                     bootstrap.policy(), bootstrap.helper_identity(),
                     caller_process);
+            bootstrap.ReleaseRetainedHandles();
             stage = PortablePipeStage::kSession;
             desktop_updater::helper::RecordWindowsHelperEvent(
                 desktop_updater::helper::WindowsHelperEvent::kHelperScheduled);

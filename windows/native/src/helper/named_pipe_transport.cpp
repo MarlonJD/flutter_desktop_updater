@@ -1,5 +1,6 @@
 #include "named_pipe_transport.h"
 
+#include <shlobj.h>
 #include <sddl.h>
 #include <shellapi.h>
 
@@ -64,6 +65,124 @@ bool IsNonce(const std::string& nonce) {
 std::wstring AsciiToWide(const std::string& value) {
   return std::wstring(value.begin(), value.end());
 }
+
+struct PortableHelperLaunchArtifact {
+  std::filesystem::path root;
+  std::filesystem::path helper;
+};
+
+std::filesystem::path KnownLocalAppDataPath() {
+  PWSTR raw = nullptr;
+  const HRESULT result =
+      SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr,
+                           &raw);
+  if (FAILED(result) || raw == nullptr) {
+    throw NamedPipeTransportError("portable helper local app data unavailable");
+  }
+  std::filesystem::path path(raw);
+  CoTaskMemFree(raw);
+  if (path.empty() || !path.is_absolute()) {
+    throw NamedPipeTransportError("portable helper local app data is invalid");
+  }
+  return path;
+}
+
+void CreatePortableLaunchDirectory(const std::filesystem::path& path) {
+  if (CreateDirectoryW(path.c_str(), nullptr) != 0) return;
+  const DWORD error = GetLastError();
+  if (error != ERROR_ALREADY_EXISTS) {
+    throw NamedPipeTransportError("portable helper launch directory creation failed");
+  }
+  const DWORD attributes = GetFileAttributesW(path.c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES ||
+      (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    throw NamedPipeTransportError(
+        "portable helper launch directory is not a plain directory");
+  }
+}
+
+void CleanupPortableHelperLaunchArtifact(
+    const std::filesystem::path& root,
+    const std::filesystem::path& helper) noexcept {
+  if (root.empty() || helper.empty()) return;
+  (void)DeleteFileW(helper.c_str());
+  const std::filesystem::path policy =
+      helper.parent_path() / L"desktop_updater_helper_policy.json";
+  (void)DeleteFileW(policy.c_str());
+  (void)RemoveDirectoryW(root.c_str());
+}
+
+PortableHelperLaunchArtifact PreparePortableHelperLaunchArtifact(
+    const std::filesystem::path& source_helper,
+    const VerifiedWindowsExecutable& source_identity,
+    const WindowsHelperPolicy& helper_policy,
+    const std::string& nonce) {
+  if (nonce.empty()) {
+    throw NamedPipeTransportError("portable helper launch nonce is empty");
+  }
+  const std::filesystem::path root =
+      KnownLocalAppDataPath() / L"DesktopUpdater" / L"PortableLaunch" /
+      AsciiToWide(nonce);
+  CreatePortableLaunchDirectory(root.parent_path().parent_path());
+  CreatePortableLaunchDirectory(root.parent_path());
+  CreatePortableLaunchDirectory(root);
+  const std::filesystem::path helper =
+      root / L"desktop_updater_install_helper.exe";
+  const std::filesystem::path source_policy =
+      source_helper.parent_path() / L"desktop_updater_helper_policy.json";
+  const std::filesystem::path policy_path =
+      root / L"desktop_updater_helper_policy.json";
+  if (!CopyFileW(source_helper.c_str(), helper.c_str(), FALSE) ||
+      !CopyFileW(source_policy.c_str(), policy_path.c_str(), FALSE)) {
+    const DWORD error = GetLastError();
+    CleanupPortableHelperLaunchArtifact(root, helper);
+    SetLastError(error);
+    throw NamedPipeTransportError("portable helper launch artifact copy failed");
+  }
+  try {
+    const DWORD helper_attributes = GetFileAttributesW(helper.c_str());
+    const DWORD policy_attributes = GetFileAttributesW(policy_path.c_str());
+    if (helper_attributes == INVALID_FILE_ATTRIBUTES ||
+        policy_attributes == INVALID_FILE_ATTRIBUTES ||
+        (helper_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+        (policy_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      throw NamedPipeTransportError(
+          "portable helper launch artifact metadata is unsafe");
+    }
+    const VerifiedWindowsExecutable copied = VerifyWindowsExecutable(helper);
+    ValidateWindowsHelperIdentity(copied, helper_policy, false);
+    if (copied.sha256 != source_identity.sha256 ||
+        !VerifyWindowsExecutableStillMatches(helper, copied)) {
+      throw NamedPipeTransportError(
+          "portable helper launch artifact identity changed");
+    }
+  } catch (...) {
+    CleanupPortableHelperLaunchArtifact(root, helper);
+    throw;
+  }
+  return {root, helper};
+}
+
+class ScopedPortableHelperLaunchArtifact {
+ public:
+  explicit ScopedPortableHelperLaunchArtifact(PortableHelperLaunchArtifact value)
+      : value_(std::move(value)) {}
+  ~ScopedPortableHelperLaunchArtifact() {
+    CleanupPortableHelperLaunchArtifact(value_.root, value_.helper);
+  }
+  ScopedPortableHelperLaunchArtifact(
+      const ScopedPortableHelperLaunchArtifact&) = delete;
+  ScopedPortableHelperLaunchArtifact& operator=(
+      const ScopedPortableHelperLaunchArtifact&) = delete;
+
+  const std::filesystem::path& root() const { return value_.root; }
+  const std::filesystem::path& helper() const { return value_.helper; }
+  std::filesystem::path release_root() { return std::move(value_.root); }
+
+ private:
+  PortableHelperLaunchArtifact value_;
+};
 
 std::wstring CurrentUserSid() {
   HANDLE raw_token = nullptr;
@@ -305,14 +424,16 @@ struct WindowsElevatedHelperClientSession::Impl {
        VerifiedWindowsExecutable helper_identity_value,
        desktop_updater::runtime::internal::NativeInstallReservationV1
            reservation_value,
-       std::int64_t startup_deadline_unix_milliseconds)
+       std::int64_t startup_deadline_unix_milliseconds,
+       std::filesystem::path portable_launch_root_value = {})
       : pipe(std::move(pipe_value)),
         helper_process(std::move(helper_process_value)),
         helper_path(std::move(helper_path_value)),
         helper_identity(std::move(helper_identity_value)),
         reservation(std::move(reservation_value)),
         channel(pipe.get(), helper_process.get(),
-                startup_deadline_unix_milliseconds) {}
+                startup_deadline_unix_milliseconds),
+        portable_launch_root(std::move(portable_launch_root_value)) {}
 
   ScopedHandle pipe;
   ScopedHandle helper_process;
@@ -320,6 +441,7 @@ struct WindowsElevatedHelperClientSession::Impl {
   VerifiedWindowsExecutable helper_identity;
   desktop_updater::runtime::internal::NativeInstallReservationV1 reservation;
   WindowsOneShotPipeChannel channel;
+  std::filesystem::path portable_launch_root;
   State state = State::kPrepared;
 };
 
@@ -333,6 +455,11 @@ WindowsElevatedHelperClientSession::~WindowsElevatedHelperClientSession() {
       (void)CancelReservation();
     } catch (...) {
     }
+  }
+  if (impl_ != nullptr && !impl_->portable_launch_root.empty()) {
+    (void)WaitForSingleObject(impl_->helper_process.get(), 5'000);
+    CleanupPortableHelperLaunchArtifact(
+        impl_->portable_launch_root, impl_->helper_path);
   }
 }
 
@@ -511,15 +638,21 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedPortableHelper(
         "portable request is not bound to sealed same-user policy");
   }
   ConsumeNonceOnce(nonce);
-  const VerifiedWindowsExecutable identity =
+  const VerifiedWindowsExecutable source_identity =
       VerifyWindowsExecutable(fixed_helper_path);
-  ValidateWindowsHelperIdentity(identity, policy, false);
+  ValidateWindowsHelperIdentity(source_identity, policy, false);
+  ScopedPortableHelperLaunchArtifact launch_artifact(
+      PreparePortableHelperLaunchArtifact(fixed_helper_path, source_identity,
+                                          policy, nonce));
+  const VerifiedWindowsExecutable identity =
+      VerifyWindowsExecutable(launch_artifact.helper());
   const std::wstring pipe_name = DerivePipeName(nonce);
   const std::wstring caller_sid = CurrentUserSid();
   ScopedHandle pipe = CreateCallerPipe(pipe_name, caller_sid);
 
   std::wstring command_line =
-      L"\"" + fixed_helper_path.wstring() + L"\" --portable-pipe \"" +
+      L"\"" + launch_artifact.helper().wstring() +
+      L"\" --portable-pipe \"" +
       pipe_name + L"\" --nonce " + AsciiToWide(nonce);
   std::vector<wchar_t> mutable_command(command_line.begin(),
                                        command_line.end());
@@ -527,10 +660,10 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedPortableHelper(
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
-  if (!CreateProcessW(fixed_helper_path.c_str(), mutable_command.data(),
+  if (!CreateProcessW(launch_artifact.helper().c_str(), mutable_command.data(),
                       nullptr, nullptr, FALSE,
                       CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
-                      fixed_helper_path.parent_path().c_str(), &startup,
+                      launch_artifact.helper().parent_path().c_str(), &startup,
                       &process)) {
     return {ElevationLaunchResult::kFailed, nullptr};
   }
@@ -578,12 +711,12 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedPortableHelper(
       reservation.helper_endpoint_identity_sha256 != identity.sha256 ||
       reservation.helper_endpoint_identity_sha256 != policy.helper_sha256() ||
       reservation.expires_at_unix_milliseconds <= NowUnixMilliseconds() ||
-      !VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
+      !VerifyWindowsExecutableStillMatches(launch_artifact.helper(), identity)) {
     throw NamedPipeTransportError("portable helper reservation binding changed");
   }
   auto impl = std::make_unique<WindowsElevatedHelperClientSession::Impl>(
-      std::move(pipe), std::move(helper_process), fixed_helper_path, identity,
-      reservation, deadline);
+      std::move(pipe), std::move(helper_process), launch_artifact.helper(),
+      identity, reservation, deadline, launch_artifact.release_root());
   return {ElevationLaunchResult::kLaunched,
           std::unique_ptr<WindowsElevatedHelperClientSession>(
               new WindowsElevatedHelperClientSession(std::move(impl)))};
@@ -600,15 +733,21 @@ WindowsElevatedHelperExchange LaunchAuthenticatedPortableHelperExchange(
         "portable helper exchange requires a sealed portable policy");
   }
   ConsumeNonceOnce(nonce);
-  const VerifiedWindowsExecutable identity =
+  const VerifiedWindowsExecutable source_identity =
       VerifyWindowsExecutable(fixed_helper_path);
-  ValidateWindowsHelperIdentity(identity, policy, false);
+  ValidateWindowsHelperIdentity(source_identity, policy, false);
+  ScopedPortableHelperLaunchArtifact launch_artifact(
+      PreparePortableHelperLaunchArtifact(fixed_helper_path, source_identity,
+                                          policy, nonce));
+  const VerifiedWindowsExecutable identity =
+      VerifyWindowsExecutable(launch_artifact.helper());
   const std::wstring pipe_name = DerivePipeName(nonce);
   const std::wstring caller_sid = CurrentUserSid();
   ScopedHandle pipe = CreateCallerPipe(pipe_name, caller_sid);
 
   std::wstring command_line =
-      L"\"" + fixed_helper_path.wstring() + L"\" --portable-pipe \"" +
+      L"\"" + launch_artifact.helper().wstring() +
+      L"\" --portable-pipe \"" +
       pipe_name + L"\" --nonce " + AsciiToWide(nonce);
   std::vector<wchar_t> mutable_command(command_line.begin(),
                                        command_line.end());
@@ -616,10 +755,10 @@ WindowsElevatedHelperExchange LaunchAuthenticatedPortableHelperExchange(
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
-  if (!CreateProcessW(fixed_helper_path.c_str(), mutable_command.data(),
+  if (!CreateProcessW(launch_artifact.helper().c_str(), mutable_command.data(),
                       nullptr, nullptr, FALSE,
                       CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
-                      fixed_helper_path.parent_path().c_str(), &startup,
+                      launch_artifact.helper().parent_path().c_str(), &startup,
                       &process)) {
     return {ElevationLaunchResult::kFailed, "", ""};
   }
@@ -660,10 +799,14 @@ WindowsElevatedHelperExchange LaunchAuthenticatedPortableHelperExchange(
   WindowsOneShotPipeChannel channel(pipe.get(), helper_process.get(), deadline);
   channel.WriteFrame(canonical_request);
   const std::string response = channel.ReadFrameUntil(deadline);
-  if (!VerifyWindowsExecutableStillMatches(fixed_helper_path, identity)) {
+  if (!VerifyWindowsExecutableStillMatches(launch_artifact.helper(), identity)) {
     throw NamedPipeTransportError(
         "portable helper identity changed during exchange");
   }
+  (void)WaitForSingleObject(helper_process.get(), timeout_millis);
+  CleanupPortableHelperLaunchArtifact(launch_artifact.root(),
+                                       launch_artifact.helper());
+  launch_artifact.release_root();
   return {ElevationLaunchResult::kLaunched, response, identity.sha256};
 }
 

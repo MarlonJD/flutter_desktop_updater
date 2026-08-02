@@ -1389,6 +1389,12 @@ struct WindowsVerifiedArchiveRestage::Impl {
   std::string payload_seal_sha256;
   UniqueWindowsHandle parent;
   UniqueWindowsHandle root;
+  // The caller-owned stage is no longer needed once the verified payload has
+  // been durably journaled into the helper-owned restage. Keep an exact parent
+  // handle and identity so ReleaseToTransaction can remove only that root.
+  UniqueWindowsHandle caller_parent;
+  std::wstring caller_leaf;
+  WindowsFileIdentity caller_root_identity;
   UniqueWindowsHandle archive;
   UniqueWindowsHandle control;
   WindowsFileIdentity root_identity;
@@ -1488,6 +1494,18 @@ void WindowsVerifiedArchiveRestage::ReleaseToTransaction() {
     impl_->control.reset();
     FlushWindowsDirectory(impl_->parent.get());
   }
+  if (impl_->caller_parent.valid() && !impl_->caller_leaf.empty()) {
+    try {
+      DeleteTreeRelative(impl_->caller_parent.get(), impl_->caller_leaf,
+                         impl_->caller_root_identity);
+      FlushWindowsDirectory(impl_->caller_parent.get());
+      impl_->caller_parent.reset();
+    } catch (...) {
+      // The helper-owned restage is authoritative after the journal is
+      // durable. A transient caller-stage cleanup failure must not block the
+      // already-safe transaction; the next staging cleanup can retry it.
+    }
+  }
 }
 
 WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
@@ -1533,6 +1551,14 @@ WindowsVerifiedArchiveRestage RestageVerifiedWindowsZip(
             caller_stage, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
                               SYNCHRONIZE);
       });
+  result->caller_parent = RunRestagePhase(
+      WindowsHelperEvent::kPortableStageProvenanceFailure, [&]() {
+        return OpenAbsoluteDirectoryNoReparse(
+            caller_stage.parent_path(),
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE);
+      });
+  result->caller_leaf = caller_stage.filename().wstring();
+  result->caller_root_identity = ReadWindowsFileIdentity(caller_root.get());
   auto source_archive = RunRestagePhase(
       WindowsHelperEvent::kPortableStageManifestFailure, [&]() {
         return OpenRelativeNoReparse(

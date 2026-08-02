@@ -199,7 +199,7 @@ void main() {
     expect(
       workflow,
       contains(
-        r"$versionReady -and $stagingClean -and $cleanupComplete",
+        r"$versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete",
       ),
     );
     expect(workflow, isNot(contains(r"$stagingRemoved")));
@@ -646,7 +646,8 @@ void main() {
     );
   });
 
-  test("Windows ZIP smoke outlives helper retries and preserves diagnostics",
+  test(
+      "Windows ZIP smoke outlives helper retries and preserves Event Log evidence",
       () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
@@ -664,9 +665,21 @@ void main() {
       lane,
       contains(r"for ($attempt = 0; $attempt -lt 600; $attempt++)"),
     );
-    final diagnosticsDump = lane.indexOf(
-      r"Get-Content -LiteralPath $diagnosticsPath "
-      "-ErrorAction SilentlyContinue",
+    expect(
+        lane,
+        contains(
+            r'$helperEventProvider = "DesktopUpdater.InstallHelper.ProtocolV1"'));
+    expect(
+        lane,
+        contains(
+            r'$moveComplete = @($helperEvents | Where-Object { $_.Id -eq 1008 }).Count -gt 0'));
+    expect(
+        lane,
+        contains(
+            r'$cleanupComplete = @($helperEvents | Where-Object { $_.Id -eq 1014 }).Count -gt 0'));
+    expect(lane, isNot(contains(r'Get-Content -LiteralPath $diagnosticsPath')));
+    final eventQuery = lane.indexOf(
+      r'Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart }',
     );
     final versionFailure = lane.indexOf(
       "Windows ZIP runtime smoke did not install version 2.7.1.",
@@ -675,8 +688,8 @@ void main() {
       r"Remove-Item -LiteralPath $smokeRoot -Recurse -Force",
       end,
     );
-    expect(diagnosticsDump, greaterThanOrEqualTo(0));
-    expect(versionFailure, greaterThan(diagnosticsDump));
+    expect(eventQuery, greaterThanOrEqualTo(0));
+    expect(versionFailure, greaterThan(eventQuery));
     expect(smokeCleanup, greaterThan(end));
   });
 

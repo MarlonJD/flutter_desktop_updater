@@ -50,6 +50,14 @@ class PortableWindowsHelperBootstrap {
     return helper_identity_;
   }
 
+  // The helper executable and policy are retained while the authenticated
+  // session runs. Release those read handles before the portable target is
+  // renamed so the target directory has no self-held mutation blockers.
+  void ReleaseRetainedHandles() noexcept {
+    helper_file_.reset();
+    policy_file_.reset();
+  }
+
  private:
   WindowsHelperPolicy policy_;
   VerifiedWindowsExecutable helper_identity_;

@@ -498,6 +498,7 @@ jobs:
             Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
             $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
             $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+            $helperEventProvider = "DesktopUpdater.InstallHelper.ProtocolV1"
             $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
             $smokeUserName = "duzip$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
             $smokePasswordText = "Du!9$([Guid]::NewGuid().ToString('N'))"
@@ -614,7 +615,6 @@ jobs:
             Get-Content $runtimeOut, $runtimeErr -ErrorAction SilentlyContinue
             $runtimeExit = $runtimeProcess.ExitCode
             if ($runtimeExit -ne 0) {
-              Get-Content -LiteralPath $diagnosticsPath -ErrorAction SilentlyContinue
               $helperEvents = @(
                 Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
                   Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" }
@@ -626,19 +626,20 @@ jobs:
             }
             Write-Host "Hosted Windows ZIP smoke update handoff returned."
             $stagingRoot = Join-Path $smokeRoot "runtime/staging"
+            $moveComplete = $false
+            $cleanupComplete = $false
             for ($attempt = 0; $attempt -lt 600; $attempt++) {
               $versionFile = Join-Path $install "version.txt"
               $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
               $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
-              $cleanupComplete = $false
-              if (Test-Path -LiteralPath $diagnosticsPath) {
-                $cleanupComplete = (Get-Content -Raw $diagnosticsPath) -match '"event":"cleanup success"'
-              }
-              if ($versionReady -and $stagingClean -and $cleanupComplete) { break }
+              $helperEvents = @(
+                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
+                  Where-Object { $_.ProviderName -eq $helperEventProvider }
+              )
+              $moveComplete = @($helperEvents | Where-Object { $_.Id -eq 1008 }).Count -gt 0
+              $cleanupComplete = @($helperEvents | Where-Object { $_.Id -eq 1014 }).Count -gt 0
+              if ($versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete) { break }
               Start-Sleep -Milliseconds 250
-            }
-            if (-not $versionReady -or -not $stagingClean -or -not $cleanupComplete) {
-              Get-Content -LiteralPath $diagnosticsPath -ErrorAction SilentlyContinue
             }
             if (-not $versionReady) {
               throw "Windows ZIP runtime smoke did not install version 2.7.1."
@@ -646,9 +647,11 @@ jobs:
             if (-not $stagingClean) {
               throw "Windows ZIP runtime smoke left an owned staging child."
             }
-            $diagnostics = Get-Content -Raw $diagnosticsPath
-            if ($diagnostics -notmatch '"event":"move success"' -or $diagnostics -notmatch '"event":"cleanup success"') {
-              throw "Windows ZIP runtime smoke diagnostics are incomplete."
+            if (-not $moveComplete -or -not $cleanupComplete) {
+              foreach ($helperEvent in $helperEvents) {
+                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
+              }
+              throw "Windows ZIP runtime smoke helper events are incomplete."
             }
           } finally {
             if (Test-Path -LiteralPath $ready) {
