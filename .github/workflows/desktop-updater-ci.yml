@@ -637,29 +637,29 @@ jobs:
             $smokeEnvironment["DESKTOP_UPDATER_SMOKE_STAGING"] = $stagingRoot
             $smokeEnvironment["DESKTOP_UPDATER_SMOKE_VERIFY_OUT"] = $postSmokeStatePath
             $postSmokeScript = @'
-$ErrorActionPreference = "Stop"
-$versionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL "version.txt"
-$stagingRoot = $env:DESKTOP_UPDATER_SMOKE_STAGING
-$versionReady = $false
-$stagingClean = $false
-for ($attempt = 0; $attempt -lt 600; $attempt++) {
-  try {
-    $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
-    $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
-  } catch {
-    $versionReady = $false
-    $stagingClean = $false
-  }
-  if ($versionReady -and $stagingClean) { break }
-  Start-Sleep -Milliseconds 250
-}
-[ordered]@{
-  versionReady = $versionReady
-  stagingClean = $stagingClean
-} | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
-if (-not $versionReady) { throw "Standard-user ZIP smoke did not observe version 2.7.1." }
-if (-not $stagingClean) { throw "Standard-user ZIP smoke observed an owned staging child." }
-'@
+            $ErrorActionPreference = "Stop"
+            $versionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL "version.txt"
+            $stagingRoot = $env:DESKTOP_UPDATER_SMOKE_STAGING
+            $versionReady = $false
+            $stagingClean = $false
+            for ($attempt = 0; $attempt -lt 600; $attempt++) {
+              try {
+                $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
+                $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
+              } catch {
+                $versionReady = $false
+                $stagingClean = $false
+              }
+              if ($versionReady -and $stagingClean) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            [ordered]@{
+              versionReady = $versionReady
+              stagingClean = $stagingClean
+            } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
+            if (-not $versionReady) { throw "Standard-user ZIP smoke did not observe version 2.7.1." }
+            if (-not $stagingClean) { throw "Standard-user ZIP smoke observed an owned staging child." }
+          '@
             $postSmokeScriptPath = Join-Path $smokeRoot "post-smoke-verify.ps1"
             [IO.File]::WriteAllText(
               $postSmokeScriptPath,
