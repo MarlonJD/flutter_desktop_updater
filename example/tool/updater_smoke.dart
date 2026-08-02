@@ -7,8 +7,8 @@ import "dart:io";
 import "package:archive/archive.dart";
 import "package:crypto/crypto.dart" as crypto;
 import "package:cryptography_plus/cryptography_plus.dart";
-// The direct Linux helper smoke writes the same schema-v3 signed release
-// descriptor the native helper consumes after the public staging API runs.
+// The direct Windows and Linux helper smokes write the same schema-v3 signed
+// release descriptor the native helper consumes after public staging runs.
 // ignore: implementation_imports
 import "package:desktop_updater/src/core/release_descriptor.dart";
 // The direct helper smoke intentionally exercises the package's internal
@@ -23,7 +23,7 @@ const _smokeDescriptorSha256 =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const _smokeArtifactSha256 =
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const _linuxArtifactFileName = ".desktop_updater_artifact.zip";
+const _artifactFileName = ".desktop_updater_artifact.zip";
 const _releaseManifestFileName = ".desktop_updater_release_manifest.json";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _installedIdentity =
@@ -177,7 +177,9 @@ Future<void> main(List<String> args) async {
           stagingRoot: stagingRoot.path,
           executablePath: executablePath,
         )
-      : null;
+      : Platform.isWindows
+          ? await _writeWindowsNativeStageControl(stagingRoot: stagingRoot.path)
+          : null;
 
   final provenance = await writeStagedUpdateProvenance(
     stageRoot: ownedStageRoot,
@@ -500,9 +502,33 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
     await _chmod(policyFile.path, "600");
   }
 
-  final artifact = File(_join(stagingRoot, _linuxArtifactFileName));
-  await _writeLinuxArtifactZip(stagingRoot: stagingRoot, artifact: artifact);
-  await _chmod(artifact.path, "600");
+  return _writeSignedNativeStageControl(
+    stagingRoot: stagingRoot,
+    platform: "linux",
+    minimumOS: "glibc-2.35",
+  );
+}
+
+Future<_NativeStageControl> _writeWindowsNativeStageControl({
+  required String stagingRoot,
+}) {
+  return _writeSignedNativeStageControl(
+    stagingRoot: stagingRoot,
+    platform: "windows",
+    minimumOS: "10.0.19045",
+  );
+}
+
+Future<_NativeStageControl> _writeSignedNativeStageControl({
+  required String stagingRoot,
+  required String platform,
+  required String minimumOS,
+}) async {
+  final artifact = File(_join(stagingRoot, _artifactFileName));
+  await _writeNativeArtifactZip(stagingRoot: stagingRoot, artifact: artifact);
+  if (Platform.isLinux) {
+    await _chmod(artifact.path, "600");
+  }
 
   final artifactBytes = await artifact.readAsBytes();
   final artifactSha256 = crypto.sha256.convert(artifactBytes).toString();
@@ -512,7 +538,7 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
     appName: "desktop_updater smoke",
     version: "2.7.1",
     buildNumber: 271,
-    platform: "linux",
+    platform: platform,
     channel: "stable",
     artifact: ReleaseArtifact(
       kind: "zip",
@@ -527,7 +553,7 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
       value: "",
     ),
     minimumUpdaterVersion: "2.0.0",
-    minimumOS: const {"linux": "glibc-2.35"},
+    minimumOS: {platform: minimumOS},
     generatedAt: DateTime.utc(2026),
   )..validate();
   final signature = await Ed25519().sign(
@@ -565,7 +591,7 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
   );
 }
 
-Future<void> _writeLinuxArtifactZip({
+Future<void> _writeNativeArtifactZip({
   required String stagingRoot,
   required File artifact,
 }) async {
@@ -579,7 +605,7 @@ Future<void> _writeLinuxArtifactZip({
       continue;
     }
     final relativePath = _relativePathUnderRoot(entity.path, stagingRoot);
-    if (_isLinuxStageControlPath(relativePath)) {
+    if (_isNativeStageControlPath(relativePath)) {
       continue;
     }
     files.add(entity);
@@ -601,9 +627,9 @@ Future<void> _writeLinuxArtifactZip({
   await artifact.writeAsBytes(ZipEncoder().encode(archive), flush: true);
 }
 
-bool _isLinuxStageControlPath(String relativePath) {
+bool _isNativeStageControlPath(String relativePath) {
   final normalized = relativePath.replaceAll(_windowsPathSeparator, "/");
-  return normalized == _linuxArtifactFileName ||
+  return normalized == _artifactFileName ||
       normalized == _releaseManifestFileName ||
       normalized == ".desktop_updater_stage_provenance.json" ||
       normalized == ".desktop_updater_payload_seal.json";

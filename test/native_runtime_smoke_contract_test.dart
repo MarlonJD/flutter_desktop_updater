@@ -718,6 +718,9 @@ void main() {
     expect(tool, contains("Platform.isWindows || Platform.isLinux"));
     expect(tool, contains("Platform.isLinux"));
     expect(tool, contains("_writeLinuxNativeStageControl("));
+    expect(tool, contains("Platform.isWindows"));
+    expect(tool, contains("_writeWindowsNativeStageControl("));
+    expect(tool, contains('platform: "windows"'));
     expect(tool, contains(".desktop_updater_artifact.zip"));
     expect(tool, contains(".desktop_updater_release_manifest.json"));
     expect(tool, contains("ReleaseDescriptor("));
