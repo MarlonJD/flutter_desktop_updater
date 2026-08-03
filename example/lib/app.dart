@@ -2,8 +2,9 @@ import "dart:async";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater_example/json_file_update_recovery_store.dart";
 import "package:desktop_updater_example/release_notes_examples.dart";
+import "package:desktop_updater_example/smoke_update_flow.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
@@ -31,6 +32,8 @@ class _HomePageState extends State<HomePage> {
       "https://updates.example.com/release-notes.json";
 
   final _desktopUpdaterPlugin = DesktopUpdater();
+  final _smokeConfiguration =
+      SmokeUpdateConfiguration.fromEnvironment(Platform.environment);
   late final DesktopUpdaterController _desktopUpdaterController;
 
   String _platformVersion = "Unknown platform version";
@@ -50,7 +53,9 @@ class _HomePageState extends State<HomePage> {
       appArchiveUrl: _configuredAppArchiveUrl(),
       expectedPackageId: _configuredExpectedPackageId(),
       trustedReleasePublicKeys: _configuredTrustedReleasePublicKeys(),
-      recoveryStore: _ExampleRecoveryStore(),
+      recoveryStore: JsonFileUpdateRecoveryStore(
+        _configuredRecoveryStoreFile(),
+      ),
       releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
       localization: const DesktopUpdateLocalization(
@@ -116,11 +121,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   Map<String, String> _configuredTrustedReleasePublicKeys() {
-    final value = Platform.environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"];
-    return <String, String>{
-      "example-placeholder":
-          value == null || value.trim().isEmpty ? _placeholderPublicKey : value,
-    };
+    return configuredTrustedReleasePublicKeys(
+      Platform.environment,
+      fallbackKeyId: "example-placeholder",
+      fallbackPublicKey: _placeholderPublicKey,
+    );
+  }
+
+  File _configuredRecoveryStoreFile() {
+    final configured = Platform.environment[recoveryStoreEnvironment];
+    if (configured != null && configured.trim().isNotEmpty) {
+      return File(configured.trim());
+    }
+    final stateRoot = Platform.isWindows
+        ? Platform.environment["LOCALAPPDATA"]
+        : Platform.environment["XDG_STATE_HOME"] ??
+            _joinPath(Platform.environment["HOME"], ".local/state");
+    final root = stateRoot == null || stateRoot.trim().isEmpty
+        ? Directory.systemTemp.path
+        : stateRoot.trim();
+    return File(
+      _joinPath(
+        root,
+        "desktop_updater_example/pending-install-stable.json",
+      )!,
+    );
   }
 
   Future<void> _checkForUpdatesManually() async {
@@ -195,44 +220,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _runSmokeTestCommand() async {
-    final stagingPath = Platform.environment["DESKTOP_UPDATER_SMOKE_STAGING"];
-    if (stagingPath == null || stagingPath.isEmpty) {
+    final configuration = _smokeConfiguration;
+    if (!configuration.enabled) {
       return;
     }
 
-    final markerPath = Platform.environment["DESKTOP_UPDATER_SMOKE_MARKER"];
-    final diagnosticsLogPath =
-        Platform.environment["DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"];
-    final packageId = Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"];
-    final provenanceSha256 =
-        Platform.environment["DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"];
-    final installRoot =
-        Platform.environment["DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"];
-    final executableRelativePath =
-        Platform.environment["DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"];
-    final stagingDirectory = Directory(stagingPath);
-
-    if (!await stagingDirectory.exists()) {
-      await _writeSmokeMarker(markerPath, "staging-missing");
-      await _writeSmokeDiagnostics(
-        diagnosticsLogPath,
-        "staging-missing",
-        packageId: packageId,
-        provenanceSha256: provenanceSha256,
-        installRoot: installRoot,
-        executableRelativePath: executableRelativePath,
-      );
-      return;
-    }
-
-    await _writeSmokeMarker(markerPath, "raw-smoke-handoff-removed");
-    await _writeSmokeDiagnostics(
-      diagnosticsLogPath,
-      "raw-smoke-handoff-removed",
-      packageId: packageId,
-      provenanceSha256: provenanceSha256,
-      installRoot: installRoot,
-      executableRelativePath: executableRelativePath,
+    await runControllerOwnedSmokeUpdate(
+      configuration: configuration,
+      checkForUpdate: _desktopUpdaterController.checkVersion,
+      updateIsAvailable: () =>
+          _desktopUpdaterController.state is UpdateAvailable ||
+          _desktopUpdaterController.state is UpdateBlockedBySupportPolicy,
+      downloadAndStage: _desktopUpdaterController.downloadUpdate,
+      install: _desktopUpdaterController.restartApp,
+      writeMarker: (value) =>
+          _writeSmokeMarker(configuration.markerPath, value),
+      writeDiagnostics: (event) =>
+          _writeSmokeDiagnostics(configuration.diagnosticsLogPath, event),
     );
   }
 
@@ -284,12 +288,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _writeSmokeDiagnostics(
     String? diagnosticsLogPath,
-    String event, {
-    String? packageId,
-    String? provenanceSha256,
-    String? installRoot,
-    String? executableRelativePath,
-  }) async {
+    String event,
+  ) async {
     if (diagnosticsLogPath == null || diagnosticsLogPath.isEmpty) {
       return;
     }
@@ -297,14 +297,7 @@ class _HomePageState extends State<HomePage> {
     final diagnosticsLog = File(diagnosticsLogPath);
     await diagnosticsLog.parent.create(recursive: true);
     await diagnosticsLog.writeAsString(
-      [
-        "event=$event",
-        if (packageId != null) "packageId=$packageId",
-        if (provenanceSha256 != null) "provenanceSha256=$provenanceSha256",
-        if (installRoot != null) "installRoot=$installRoot",
-        if (executableRelativePath != null)
-          "executableRelativePath=$executableRelativePath",
-      ].join(" "),
+      "event=$event\n",
       mode: FileMode.append,
       flush: true,
     );
@@ -695,29 +688,12 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-final class _ExampleRecoveryStore implements UpdateRecoveryStore {
-  UpdateInstallRecoveryMarker? _marker;
-
-  @override
-  Future<void> clearPendingInstall({required String channel}) async {
-    if (_marker?.channel == channel) {
-      _marker = null;
-    }
+String? _joinPath(String? left, String right) {
+  if (left == null || left.isEmpty) {
+    return null;
   }
-
-  @override
-  Future<UpdateInstallRecoveryMarker?> readPendingInstall({
-    required String channel,
-  }) async {
-    final marker = _marker;
-    if (marker == null || marker.channel != channel) {
-      return null;
-    }
-    return marker;
+  if (left.endsWith(Platform.pathSeparator)) {
+    return "$left$right";
   }
-
-  @override
-  Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
-    _marker = marker;
-  }
+  return "$left${Platform.pathSeparator}$right";
 }

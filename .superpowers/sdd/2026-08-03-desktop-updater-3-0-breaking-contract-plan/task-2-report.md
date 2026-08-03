@@ -289,3 +289,10 @@ Building macOS application...
 ```
 
 The local macOS integration run is blocked before test execution by this host's missing Mac Development signing certificate. The exact target-host command is wired into CI for macOS, and corresponding Windows/Linux target-host commands are wired into their lanes. Their pass/fail output must be taken from the next pushed workflow run; no direct helper calls or source scans are used as the Task 2 forged-payload proof.
+
+## Fix round 4 — smoke flow regressions addressed
+
+- Focused `flutter test` selected smoke/contract set passed, 52 tests.
+- `dart format --output=none --set-exit-if-changed` passed.
+- `flutter analyze --no-fatal-infos` exited 0 with info-only diagnostics.
+- Local macOS integration remains CI-pending because this host lacks the required signing certificate.

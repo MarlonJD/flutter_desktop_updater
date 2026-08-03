@@ -30,14 +30,23 @@ void main() {
     expect(source, isNot(contains("Running on: 1.0.0+1")));
   });
 
-  test("direct smoke does not expose the rejected macOS unsigned bypass", () {
-    final source = File("example/lib/app.dart").readAsStringSync();
+  test("direct smoke uses controller flow without unsigned compatibility", () {
+    final appSource = File("example/lib/app.dart").readAsStringSync();
+    final helperSource =
+        File("example/lib/smoke_update_flow.dart").readAsStringSync();
+    final directSmokeSource = "$appSource\n$helperSource";
 
     expect(
-        source, isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
-    expect(source, isNot(contains("allowUnsignedMacOSUpdates:")));
-    expect(source, isNot(contains("diagnosticsLogPath: diagnosticsLogPath")));
-    expect(source, contains("raw-smoke-handoff-removed"));
+      directSmokeSource,
+      isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")),
+    );
+    expect(helperSource, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
+    expect(appSource, contains("runControllerOwnedSmokeUpdate("));
+    expect(directSmokeSource, isNot(contains("allowUnsignedMacOSUpdates:")));
+    expect(
+      directSmokeSource,
+      isNot(contains("diagnosticsLogPath: diagnosticsLogPath")),
+    );
+    expect(directSmokeSource, isNot(contains("raw-smoke-handoff-removed")));
   });
 }

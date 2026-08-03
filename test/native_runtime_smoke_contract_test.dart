@@ -705,11 +705,15 @@ void main() {
     expect(smokeCleanup, greaterThan(end));
   });
 
-  test("direct Flutter smokes hand off owned verified provenance", () {
+  test("direct Flutter smokes use the controller-owned signed update flow", () {
     final tool = readFile("example/tool/updater_smoke.dart");
     final app = readFile("example/lib/app.dart");
 
-    expect(tool, contains("createOwnedStagingDirectory("));
+    expect(tool, contains("ControllerSmokeUpdateServer.start("));
+    expect(tool, contains("DESKTOP_UPDATER_APP_ARCHIVE_URL"));
+    expect(tool, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID"));
+    expect(tool, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"));
+    expect(tool, contains("DESKTOP_UPDATER_RECOVERY_STORE_PATH"));
     expect(tool, contains("_copyInstallTree("));
     expect(tool, contains("robocopy"));
     expect(tool, contains("executable = \"/bin/cp\""));
@@ -717,16 +721,14 @@ void main() {
     expect(tool, contains(".desktop_updater_install_identity.json"));
     expect(tool, contains("Platform.isWindows || Platform.isLinux"));
     expect(tool, contains("Platform.isLinux"));
-    expect(tool, contains("_writeLinuxNativeStageControl("));
+    expect(tool, contains("_prepareLinuxSmokePayload("));
     expect(tool, contains("Platform.isWindows"));
-    expect(tool, contains("_writeWindowsNativeStageControl("));
+    expect(tool, contains("_prepareWindowsSmokePayload("));
     expect(tool, contains("_writeWindowsPortableHelperPolicy("));
     expect(tool, contains('"desktop_updater_helper_policy.json"'));
     expect(tool, contains('"allowedApplicationSigner"'));
     expect(tool, contains('"allowedHelperSigner"'));
-    expect(tool, contains('platform: "windows"'));
-    expect(tool, contains(".desktop_updater_artifact.zip"));
-    expect(tool, contains(".desktop_updater_release_manifest.json"));
+    expect(tool, contains("controller-smoke-update.zip"));
     expect(tool, contains("ReleaseDescriptor("));
     expect(tool, contains("Ed25519().sign("));
     expect(tool, isNot(contains("_retainMinimalLinuxStage(")));
@@ -734,9 +736,8 @@ void main() {
     expect(tool, contains("desktop-updater-helper.policy.json"));
     expect(tool, contains("await _chmod(helper.parent.path, \"755\")"));
     expect(tool, contains("await _chmod(helper.path, \"755\")"));
-    expect(tool, contains("nativeStageControl?.descriptorSha256"));
-    expect(tool, contains("nativeStageControl?.artifactSha256"));
-    expect(tool, contains("writeStagedUpdateProvenance("));
+    expect(tool, contains("signedIndex("));
+    expect(tool, contains("signedDescriptor("));
     expect(tool, contains("Directory(_join(tempRoot.path, \"state\"))"));
     expect(tool, contains("await _chmod(linuxStateHome.path, \"700\")"));
     expect(tool, contains("\"XDG_STATE_HOME\": linuxStateHome.path"));
@@ -748,23 +749,42 @@ void main() {
     expect(tool, contains("\"transaction completed\""));
     expect(tool, contains("stdoutSubscription.cancel()"));
     expect(tool, contains("stderrSubscription.cancel()"));
-    expect(tool, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
-    expect(tool, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
     expect(
       tool,
-      contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
+      contains(
+        'await _waitForFileText(\n'
+        '      markerPath,\n'
+        '      "checking",',
+      ),
     );
-    expect(app, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
-    expect(app, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
-    expect(app, contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"));
+    expect(
+      tool,
+      contains(
+        'await _waitForFileText(\n'
+        '      markerPath,\n'
+        '      "downloading",',
+      ),
+    );
+    expect(
+      tool,
+      contains(
+        'await _waitForFileText(\n'
+        '      markerPath,\n'
+        '      "installing",\n'
+        '      const Duration(minutes: 2),',
+      ),
+    );
+    expect(tool, isNot(contains("DESKTOP_UPDATER_SMOKE_STAGING")));
+    expect(tool, isNot(contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT")));
+    expect(app, contains("_desktopUpdaterController.checkVersion()"));
+    expect(app, contains("_desktopUpdaterController.downloadUpdate()"));
+    expect(app, contains("_desktopUpdaterController.restartApp()"));
+    expect(app, contains("JsonFileUpdateRecoveryStore"));
     expect(
       app,
       isNot(contains("DesktopUpdaterPlatform.instance.installUpdate")),
     );
-    expect(app, contains("raw-smoke-handoff-removed"));
-    expect(app, contains(r"provenanceSha256=$provenanceSha256"));
-    expect(app, contains(r"installRoot=$installRoot"));
-    expect(app, contains(r"executableRelativePath=$executableRelativePath"));
+    expect(app, isNot(contains("raw-smoke-handoff-removed")));
   });
 
   test("Windows Flutter smokes sign both caller and helper before handoff", () {

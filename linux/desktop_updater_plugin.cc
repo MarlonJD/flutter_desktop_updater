@@ -2,10 +2,12 @@
 
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
+#include <unistd.h>
 #include <sys/utsname.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -13,21 +15,61 @@
 
 namespace {
 
-bool ReadOptionalString(FlValue* args,
-                        const char* key,
-                        std::string* value,
-                        std::string* error) {
+namespace fs = std::filesystem;
+
+bool ReadRequiredInstallString(FlValue* args,
+                               const char* key,
+                               std::string* value,
+                               std::string* error) {
   FlValue* argument = fl_value_lookup_string(args, key);
   if (argument == nullptr) {
-    value->clear();
-    return true;
+    *error = std::string(key) + " is required.";
+    return false;
   }
   if (fl_value_get_type(argument) != FL_VALUE_TYPE_STRING) {
-    *error = std::string(key) + " must be a string when provided.";
+    *error = std::string(key) + " must be a string.";
     return false;
   }
   *value = fl_value_get_string(argument);
+  if (value->empty()) {
+    *error = std::string(key) + " must not be empty.";
+    return false;
+  }
   return true;
+}
+
+bool IsLowerHexSha256(const std::string& value) {
+  if (value.size() != 64) return false;
+  for (const char character : value) {
+    if (!((character >= '0' && character <= '9') ||
+          (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CurrentExecutableTarget(std::string* install_root,
+                             std::string* executable_relative_path) {
+  std::vector<char> buffer(4096);
+  while (buffer.size() <= 1024 * 1024) {
+    const ssize_t length =
+        readlink("/proc/self/exe", buffer.data(), buffer.size());
+    if (length < 0) return false;
+    if (static_cast<size_t>(length) < buffer.size()) {
+      const fs::path executable(
+          std::string(buffer.data(), static_cast<size_t>(length)));
+      if (!executable.is_absolute() || executable.parent_path().empty() ||
+          executable.filename().empty()) {
+        return false;
+      }
+      *install_root = executable.parent_path().string();
+      *executable_relative_path = executable.filename().string();
+      return true;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+  return false;
 }
 
 struct NativeInstallHandoffResult {
@@ -195,62 +237,59 @@ static void desktop_updater_plugin_handle_method_call(
     if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
           "InvalidArguments", "installUpdate expects a map.", nullptr));
+    } else if (fl_value_get_length(args) != 5) {
+      response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "InvalidArguments", "installUpdate expects exactly five arguments.",
+          nullptr));
     } else {
-      FlValue* staging_value = fl_value_lookup_string(args, "stagingPath");
-      if (staging_value == nullptr ||
-          fl_value_get_type(staging_value) != FL_VALUE_TYPE_STRING) {
+      std::string staging_path;
+      std::string expected_package_id;
+      std::string expected_artifact_sha256;
+      std::string expected_provenance_sha256;
+      std::string transaction_id;
+      std::string argument_error;
+      if (!ReadRequiredInstallString(args, "stagingPath", &staging_path,
+                                     &argument_error) ||
+          !ReadRequiredInstallString(args, "expectedPackageId",
+                                     &expected_package_id, &argument_error) ||
+          !ReadRequiredInstallString(args, "expectedArtifactSha256",
+                                     &expected_artifact_sha256,
+                                     &argument_error) ||
+          !ReadRequiredInstallString(args, "stageProvenanceSha256",
+                                     &expected_provenance_sha256,
+                                     &argument_error) ||
+          !ReadRequiredInstallString(args, "transactionId", &transaction_id,
+                                     &argument_error)) {
         response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "InvalidArguments", "stagingPath must be a string.", nullptr));
+            "InvalidArguments", argument_error.c_str(), nullptr));
+      } else if (!IsLowerHexSha256(expected_artifact_sha256)) {
+        response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "InvalidArguments",
+            "expectedArtifactSha256 must be a lowercase SHA-256 digest.",
+            nullptr));
       } else {
-        std::vector<std::string> removed_files;
-        FlValue* removed_value = fl_value_lookup_string(args, "removedFiles");
-        if (removed_value != nullptr &&
-            fl_value_get_type(removed_value) == FL_VALUE_TYPE_LIST) {
-          const size_t length = fl_value_get_length(removed_value);
-          for (size_t index = 0; index < length; ++index) {
-            FlValue* item = fl_value_get_list_value(removed_value, index);
-            if (item != nullptr &&
-                fl_value_get_type(item) == FL_VALUE_TYPE_STRING) {
-              removed_files.push_back(fl_value_get_string(item));
-            }
-          }
-        }
-
-        std::string diagnostics_log_path;
         std::string install_root;
         std::string executable_relative_path;
-        std::string package_id;
-        std::string provenance_sha256;
-        std::string transaction_id;
-        std::string argument_error;
-        const bool context_is_valid =
-            ReadOptionalString(args, "diagnosticsLogPath",
-                               &diagnostics_log_path, &argument_error) &&
-            ReadOptionalString(args, "installRoot", &install_root,
-                               &argument_error) &&
-            ReadOptionalString(args, "executableRelativePath",
-                               &executable_relative_path, &argument_error) &&
-            ReadOptionalString(args, "packageId", &package_id,
-                               &argument_error) &&
-            ReadOptionalString(args, "stageProvenanceSha256",
-                               &provenance_sha256, &argument_error) &&
-            ReadOptionalString(args, "transactionId", &transaction_id,
-                               &argument_error);
-        if (!context_is_valid) {
+        if (!CurrentExecutableTarget(&install_root,
+                                     &executable_relative_path)) {
           response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-              "InvalidArguments", argument_error.c_str(), nullptr));
+              "InstallError",
+              "Unable to derive the running Linux install target.", nullptr));
         } else {
           desktop_updater::native::InstallRequest request;
           request.operation =
               desktop_updater::native::LinuxInstallOperation::kInstall;
-          request.staging_path = fl_value_get_string(staging_value);
+          request.staging_path = staging_path;
           request.install_root = install_root;
           request.executable_relative_path = executable_relative_path;
-          request.package_id = package_id;
-          request.removed_files = removed_files;
-          request.diagnostics_log_path = diagnostics_log_path;
-          request.expected_provenance_sha256 = provenance_sha256;
+          request.package_id = expected_package_id;
+          request.expected_provenance_sha256 = expected_provenance_sha256;
           request.transaction_id = transaction_id;
+          // The existing Linux ABI reloads the artifact digest from the
+          // verified provenance marker while building the helper request.
+          // Requiring and validating this field keeps the Flutter boundary
+          // exact without introducing a duplicate ABI authority field.
+          (void)expected_artifact_sha256;
           const auto result = HandoffNativeInstall(request);
           if (!result.ok) {
             g_autoptr(FlValue) details = result.recovery_required

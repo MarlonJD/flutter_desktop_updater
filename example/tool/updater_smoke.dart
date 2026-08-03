@@ -7,27 +7,15 @@ import "dart:io";
 import "package:archive/archive.dart";
 import "package:crypto/crypto.dart" as crypto;
 import "package:cryptography_plus/cryptography_plus.dart";
-// The direct Windows and Linux helper smokes write the same schema-v3 signed
-// release descriptor the native helper consumes after public staging runs.
 // ignore: implementation_imports
 import "package:desktop_updater/src/core/release_descriptor.dart";
-// The direct helper smoke intentionally exercises the package's internal
-// provenance handoff instead of expanding the released Flutter API.
 // ignore: implementation_imports
-import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 
 const _smokePackageId = "com.example.desktop_updater";
-const _smokeStageNonce = "123e4567-e89b-42d3-a456-426614174000";
 const _smokePublicKeyId = "native-runtime-smoke-stable";
-const _smokeDescriptorSha256 =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const _smokeArtifactSha256 =
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const _artifactFileName = ".desktop_updater_artifact.zip";
-const _releaseManifestFileName = ".desktop_updater_release_manifest.json";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
-const _installedIdentity =
-    '{"packageId":"com.example.desktop_updater","schemaVersion":1}';
+const _maximumSmokeArtifactBytes = 512 * 1024 * 1024;
 const _defaultInitialAppExitTimeout = Duration(seconds: 30);
 const _windowsInitialAppExitTimeout = Duration(seconds: 60);
 const _windowsExternalRelaunchCleanupEnvironment =
@@ -52,16 +40,6 @@ const _windowsHelperEventNames = <int, String>{
   1015: "cleanup failure",
   1016: "relaunch attempt",
 };
-
-class _NativeTargetContext {
-  const _NativeTargetContext({
-    required this.installRoot,
-    required this.executableRelativePath,
-  });
-
-  final String installRoot;
-  final String executableRelativePath;
-}
 
 class _PreparedLinuxXauthority {
   const _PreparedLinuxXauthority(this.path, {required this.shouldDelete});
@@ -114,6 +92,7 @@ Future<void> main(List<String> args) async {
 
   final executablePath = _executablePath(appPath);
   final installRoot = _installRoot(appPath);
+  final smokePackageId = await _packageIdForApp(appPath);
 
   if (!File(executablePath).existsSync()) {
     stderr.writeln("Executable not found: $executablePath");
@@ -121,30 +100,34 @@ Future<void> main(List<String> args) async {
     exit(66);
   }
 
-  final nativeTargetContext = Platform.isWindows || Platform.isLinux
-      ? _nativeTargetContext(executablePath)
-      : null;
-  final effectiveInstallRoot = nativeTargetContext?.installRoot ?? installRoot;
+  final effectiveInstallRoot = Platform.isWindows || Platform.isLinux
+      ? _nativeInstallRoot(executablePath)
+      : installRoot;
 
   if (Platform.isWindows || Platform.isLinux) {
     await File(
       _join(effectiveInstallRoot, _installedIdentityFileName),
-    ).writeAsString(_installedIdentity, flush: true);
+    ).writeAsString(
+      _canonicalJson({
+        "packageId": smokePackageId,
+        "schemaVersion": 1,
+      }),
+      flush: true,
+    );
   }
 
   final tempRoot = await Directory.systemTemp.createTemp(
     "desktop_updater_smoke_",
   );
-  final ownedStageRoot = await createOwnedStagingDirectory(
-    parent: tempRoot,
-    nonce: _smokeStageNonce,
-  );
-  final stagingRoot = await _prepareStagingRoot(
+  final payloadRoot = Directory(_join(tempRoot.path, "payload"));
+  await payloadRoot.create();
+  final stagedPayload = await _prepareStagingRoot(
     appPath: appPath,
     stagedAppPath: stagedAppPath,
-    stageParent: ownedStageRoot,
+    stageParent: payloadRoot,
   );
   final markerPath = _join(tempRoot.path, "marker.txt");
+  final recoveryStorePath = _join(tempRoot.path, "pending-install.json");
   final diagnosticsLogPath =
       _absolutePath(_argValue(args, "--diagnostics-log")) ??
           _join(tempRoot.path, "helper-diagnostics.jsonl");
@@ -163,7 +146,7 @@ Future<void> main(List<String> args) async {
       ? _join("Resources", "desktop_updater_smoke.txt")
       : "desktop_updater_smoke.txt";
   final stagedSentinel = File(
-    _join(_stagingContentRoot(stagingRoot.path), sentinelRelativePath),
+    _join(_stagingContentRoot(stagedPayload.path), sentinelRelativePath),
   );
   final installedSentinel =
       File(_join(effectiveInstallRoot, sentinelRelativePath));
@@ -194,27 +177,33 @@ Future<void> main(List<String> args) async {
     );
   }
 
-  final nativeStageControl = Platform.isLinux
-      ? await _writeLinuxNativeStageControl(
-          installRoot: effectiveInstallRoot,
-          stagingRoot: stagingRoot.path,
-          executablePath: executablePath,
-        )
-      : Platform.isWindows
-          ? await _writeWindowsNativeStageControl(
-              installRoot: effectiveInstallRoot,
-              stagingRoot: stagingRoot.path,
-              executablePath: executablePath,
-            )
-          : null;
-
-  final provenance = await writeStagedUpdateProvenance(
-    stageRoot: ownedStageRoot,
-    nonce: _smokeStageNonce,
-    packageId: _smokePackageId,
-    descriptorSha256:
-        nativeStageControl?.descriptorSha256 ?? _smokeDescriptorSha256,
-    artifactSha256: nativeStageControl?.artifactSha256 ?? _smokeArtifactSha256,
+  if (Platform.isLinux) {
+    await _prepareLinuxSmokePayload(
+      installRoot: effectiveInstallRoot,
+      stagingRoot: stagedPayload.path,
+      executablePath: executablePath,
+      packageId: smokePackageId,
+    );
+  } else if (Platform.isWindows) {
+    await _prepareWindowsSmokePayload(
+      installRoot: effectiveInstallRoot,
+      stagingRoot: stagedPayload.path,
+      executablePath: executablePath,
+      packageId: smokePackageId,
+    );
+  }
+  final artifact = File(_join(tempRoot.path, "controller-smoke-update.zip"));
+  await _writeNativeArtifactZip(
+    stagingRoot: payloadRoot.path,
+    artifact: artifact,
+  );
+  final updateServer = await ControllerSmokeUpdateServer.start(
+    artifact: artifact,
+    platform: Platform.operatingSystem,
+    packageId: smokePackageId,
+    appName: Platform.isMacOS
+        ? _basename(stagedPayload.path)
+        : "desktop_updater smoke",
   );
 
   final linuxXauthority =
@@ -225,27 +214,24 @@ Future<void> main(List<String> args) async {
   try {
     stdout
       ..writeln("Launching $executablePath")
-      ..writeln("Staging update in ${stagingRoot.path}");
+      ..writeln("Signed smoke feed: ${updateServer.appArchiveUrl}");
 
     final process = await Process.start(
       executablePath,
       const [],
       environment: {
-        "DESKTOP_UPDATER_SMOKE_STAGING": stagingRoot.path,
+        "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+        "DESKTOP_UPDATER_APP_ARCHIVE_URL":
+            updateServer.appArchiveUrl.toString(),
+        "DESKTOP_UPDATER_EXPECTED_PACKAGE_ID": smokePackageId,
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID": updateServer.publicKeyId,
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY": updateServer.publicKeyBase64,
+        "DESKTOP_UPDATER_RECOVERY_STORE_PATH": recoveryStorePath,
         "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
         "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
-        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": _smokePackageId,
-        "DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256": provenance.markerSha256,
-        if (nativeTargetContext != null) ...{
-          "DESKTOP_UPDATER_SMOKE_INSTALL_ROOT": nativeTargetContext.installRoot,
-          "DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH":
-              nativeTargetContext.executableRelativePath,
-        },
         if (linuxStateHome != null) "XDG_STATE_HOME": linuxStateHome.path,
         if (linuxXauthority != null) "XAUTHORITY": linuxXauthority.path,
         if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
-        if (Platform.isMacOS && !productionGates)
-          "DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS": "1",
       },
       mode: ProcessStartMode.normal,
       workingDirectory: File(executablePath).parent.path,
@@ -256,8 +242,21 @@ Future<void> main(List<String> args) async {
 
     await _waitForFileText(
       markerPath,
-      "installing",
+      "checking",
       const Duration(seconds: 15),
+    );
+    await _waitForFileText(
+      markerPath,
+      "downloading",
+      const Duration(seconds: 30),
+    );
+    await _waitForFileText(
+      markerPath,
+      "installing",
+      const Duration(minutes: 2),
+    );
+    final controllerStageRoot = await _waitForControllerStageRoot(
+      recoveryStorePath,
     );
     stdout.writeln("App scheduled native installation and is closing...");
 
@@ -282,6 +281,11 @@ Future<void> main(List<String> args) async {
       "Timed out waiting for staged file to be copied into "
       "$effectiveInstallRoot",
     );
+    await _waitFor(
+      () => !controllerStageRoot.existsSync(),
+      const Duration(seconds: 10),
+      "Timed out waiting for controller staging directory cleanup.",
+    );
 
     if (Platform.isLinux && linuxStateHome != null) {
       await _expectLinuxTransactionEvents(
@@ -293,12 +297,6 @@ Future<void> main(List<String> args) async {
         ],
       );
     } else {
-      await _waitFor(
-        () => !stagingRoot.existsSync(),
-        const Duration(seconds: 10),
-        "Timed out waiting for staging directory cleanup.",
-      );
-
       if (Platform.isWindows) {
         if (!relaunch) {
           await _closeWindowsSmokeRelaunch(executablePath);
@@ -329,8 +327,12 @@ Future<void> main(List<String> args) async {
             : "Relaunch was skipped for test cleanup. Pass --relaunch to test it.",
       );
   } finally {
+    await updateServer.close();
     if (linuxXauthority != null) {
       await linuxXauthority.dispose();
+    }
+    if (await tempRoot.exists()) {
+      await tempRoot.delete(recursive: true);
     }
   }
 }
@@ -388,14 +390,27 @@ String _installRoot(String appPath) {
   return File(appPath).parent.path;
 }
 
-_NativeTargetContext _nativeTargetContext(String executablePath) {
-  final canonicalExecutable = File(executablePath).resolveSymbolicLinksSync();
-  final installRoot = Directory(File(canonicalExecutable).parent.path)
-      .resolveSymbolicLinksSync();
-  return _NativeTargetContext(
-    installRoot: installRoot,
-    executableRelativePath: _basename(canonicalExecutable),
+Future<String> _packageIdForApp(String appPath) async {
+  if (!Platform.isMacOS) {
+    return _smokePackageId;
+  }
+  final plist = _joinAll([appPath, "Contents", "Info.plist"]);
+  final result = await Process.run(
+    "/usr/libexec/PlistBuddy",
+    <String>["-c", "Print :CFBundleIdentifier", plist],
   );
+  final packageId = result.stdout.toString().trim();
+  if (result.exitCode != 0 || packageId.isEmpty) {
+    throw StateError("Unable to read the staged macOS package identity.");
+  }
+  return packageId;
+}
+
+String _nativeInstallRoot(String executablePath) {
+  final canonicalExecutable = File(executablePath).resolveSymbolicLinksSync();
+  return Directory(
+    File(canonicalExecutable).parent.path,
+  ).resolveSymbolicLinksSync();
 }
 
 Future<Directory> _prepareStagingRoot({
@@ -467,20 +482,11 @@ Future<void> _copyInstallTree({
   }
 }
 
-class _NativeStageControl {
-  const _NativeStageControl({
-    required this.descriptorSha256,
-    required this.artifactSha256,
-  });
-
-  final String descriptorSha256;
-  final String artifactSha256;
-}
-
-Future<_NativeStageControl> _writeLinuxNativeStageControl({
+Future<void> _prepareLinuxSmokePayload({
   required String installRoot,
   required String stagingRoot,
   required String executablePath,
+  required String packageId,
 }) async {
   final helperPath = _locateLinuxPortableHelper(installRoot);
   final helperRelativePath = _relativePathUnderRoot(helperPath, installRoot);
@@ -513,7 +519,7 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
       },
     ],
     "allowedTargetClasses": ["sameUserWritable"],
-    "applicationPackageId": _smokePackageId,
+    "applicationPackageId": packageId,
     "helperServiceId": "com.example.desktop-updater.helper",
     "minimumHelperProtocolVersion": 1,
     "policyId": "com.example.desktop-updater.portable",
@@ -544,28 +550,19 @@ Future<_NativeStageControl> _writeLinuxNativeStageControl({
     await policyFile.writeAsString(policy, flush: true);
     await _chmod(policyFile.path, "600");
   }
-
-  return _writeSignedNativeStageControl(
-    stagingRoot: stagingRoot,
-    platform: "linux",
-    minimumOS: "glibc-2.35",
-  );
 }
 
-Future<_NativeStageControl> _writeWindowsNativeStageControl({
+Future<void> _prepareWindowsSmokePayload({
   required String installRoot,
   required String stagingRoot,
   required String executablePath,
+  required String packageId,
 }) async {
   await _writeWindowsPortableHelperPolicy(
     installRoot: installRoot,
     stagingRoot: stagingRoot,
     executablePath: executablePath,
-  );
-  return _writeSignedNativeStageControl(
-    stagingRoot: stagingRoot,
-    platform: "windows",
-    minimumOS: "10.0.19045",
+    packageId: packageId,
   );
 }
 
@@ -573,6 +570,7 @@ Future<void> _writeWindowsPortableHelperPolicy({
   required String installRoot,
   required String stagingRoot,
   required String executablePath,
+  required String packageId,
 }) async {
   final executable = File(executablePath);
   final helperPath = _join(
@@ -582,7 +580,8 @@ Future<void> _writeWindowsPortableHelperPolicy({
   final helper = File(helperPath);
   if (!await helper.exists()) {
     throw StateError(
-        "Packaged Windows install helper is unavailable: $helperPath");
+      "Packaged Windows install helper is unavailable: $helperPath",
+    );
   }
   final stagedHelperPath = _join(
     stagingRoot,
@@ -615,7 +614,7 @@ Future<void> _writeWindowsPortableHelperPolicy({
       },
     ],
     "allowedTargetClasses": ["sameUserWritable"],
-    "applicationPackageId": _smokePackageId,
+    "applicationPackageId": packageId,
     "helperServiceId": "com.example.desktop-updater.helper",
     "minimumHelperProtocolVersion": 1,
     "policyId": "com.example.desktop-updater.portable",
@@ -637,78 +636,6 @@ Future<void> _writeWindowsPortableHelperPolicy({
   }
 }
 
-Future<_NativeStageControl> _writeSignedNativeStageControl({
-  required String stagingRoot,
-  required String platform,
-  required String minimumOS,
-}) async {
-  final artifact = File(_join(stagingRoot, _artifactFileName));
-  await _writeNativeArtifactZip(stagingRoot: stagingRoot, artifact: artifact);
-  if (Platform.isLinux) {
-    await _chmod(artifact.path, "600");
-  }
-
-  final artifactBytes = await artifact.readAsBytes();
-  final artifactSha256 = crypto.sha256.convert(artifactBytes).toString();
-  final descriptor = ReleaseDescriptor(
-    schemaVersion: 3,
-    packageId: _smokePackageId,
-    appName: "desktop_updater smoke",
-    version: "2.7.1",
-    buildNumber: 271,
-    platform: platform,
-    channel: "stable",
-    artifact: ReleaseArtifact(
-      kind: "zip",
-      url: Uri.parse("https://example.invalid/desktop-updater-smoke.zip"),
-      sha256: artifactSha256,
-      length: artifactBytes.length,
-    ),
-    install: const ReleaseInstall(strategy: "wholeDirectoryReplace"),
-    signature: const ReleaseSignature(
-      algorithm: "ed25519",
-      publicKeyId: _smokePublicKeyId,
-      value: "",
-    ),
-    minimumUpdaterVersion: "2.0.0",
-    minimumOS: {platform: minimumOS},
-    generatedAt: DateTime.utc(2026),
-  )..validate();
-  final signature = await Ed25519().sign(
-    descriptor.canonicalSignatureBytes(),
-    keyPair: await _smokeKeyPair(),
-  );
-  final signedDescriptor = ReleaseDescriptor(
-    schemaVersion: descriptor.schemaVersion,
-    packageId: descriptor.packageId,
-    appName: descriptor.appName,
-    version: descriptor.version,
-    buildNumber: descriptor.buildNumber,
-    platform: descriptor.platform,
-    channel: descriptor.channel,
-    artifact: descriptor.artifact,
-    install: descriptor.install,
-    signature: ReleaseSignature(
-      algorithm: "ed25519",
-      publicKeyId: _smokePublicKeyId,
-      value: base64Encode(signature.bytes),
-    ),
-    minimumUpdaterVersion: descriptor.minimumUpdaterVersion,
-    minimumOS: descriptor.minimumOS,
-    generatedAt: descriptor.generatedAt,
-  )..validate();
-  final manifestBytes = utf8.encode(_canonicalJson(signedDescriptor.toJson()));
-  await File(_join(stagingRoot, _releaseManifestFileName)).writeAsBytes(
-    manifestBytes,
-    flush: true,
-  );
-
-  return _NativeStageControl(
-    descriptorSha256: crypto.sha256.convert(manifestBytes).toString(),
-    artifactSha256: artifactSha256,
-  );
-}
-
 Future<void> _writeNativeArtifactZip({
   required String stagingRoot,
   required File artifact,
@@ -720,10 +647,6 @@ Future<void> _writeNativeArtifactZip({
     followLinks: false,
   )) {
     if (entity is! File) {
-      continue;
-    }
-    final relativePath = _relativePathUnderRoot(entity.path, stagingRoot);
-    if (_isNativeStageControlPath(relativePath)) {
       continue;
     }
     files.add(entity);
@@ -745,12 +668,217 @@ Future<void> _writeNativeArtifactZip({
   await artifact.writeAsBytes(ZipEncoder().encode(archive), flush: true);
 }
 
-bool _isNativeStageControlPath(String relativePath) {
-  final normalized = relativePath.replaceAll(_windowsPathSeparator, "/");
-  return normalized == _artifactFileName ||
-      normalized == _releaseManifestFileName ||
-      normalized == ".desktop_updater_stage_provenance.json" ||
-      normalized == ".desktop_updater_payload_seal.json";
+final class ControllerSmokeUpdateServer {
+  ControllerSmokeUpdateServer._({
+    required HttpServer server,
+    required this.appArchiveUrl,
+    required this.publicKeyId,
+    required this.publicKeyBase64,
+    required Map<String, List<int>> metadata,
+    required File artifact,
+  })  : _server = server,
+        _metadata = metadata,
+        _artifact = artifact;
+
+  static Future<ControllerSmokeUpdateServer> start({
+    required File artifact,
+    required String platform,
+    required String packageId,
+    required String appName,
+  }) async {
+    final artifactLength = await artifact.length();
+    if (artifactLength <= 0 || artifactLength > _maximumSmokeArtifactBytes) {
+      throw StateError("Controller smoke artifact exceeds its byte bound.");
+    }
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final baseUrl = Uri.parse("http://127.0.0.1:${server.port}");
+    final descriptor = await signedDescriptor(
+      artifact: artifact,
+      artifactUrl: baseUrl.resolve("/controller-smoke-update.zip"),
+      platform: platform,
+      packageId: packageId,
+      appName: appName,
+    );
+    final index = await signedIndex(
+      releaseUrl: baseUrl.resolve("/release.json"),
+      platform: platform,
+      appName: appName,
+    );
+    final publicKey = await (await _smokeKeyPair()).extractPublicKey();
+    final result = ControllerSmokeUpdateServer._(
+      server: server,
+      appArchiveUrl: baseUrl.resolve("/app-archive.json"),
+      publicKeyId: _smokePublicKeyId,
+      publicKeyBase64: base64Encode(publicKey.bytes),
+      metadata: <String, List<int>>{
+        "/app-archive.json": utf8.encode(_canonicalJson(index)),
+        "/release.json": utf8.encode(_canonicalJson(descriptor)),
+      },
+      artifact: artifact,
+    );
+    result._subscription = server.listen(result._serve);
+    return result;
+  }
+
+  final HttpServer _server;
+  final Map<String, List<int>> _metadata;
+  final File _artifact;
+  late final StreamSubscription<HttpRequest> _subscription;
+
+  final Uri appArchiveUrl;
+  final String publicKeyId;
+  final String publicKeyBase64;
+
+  Future<void> close() async {
+    await _subscription.cancel();
+    await _server.close(force: true);
+  }
+
+  Future<void> _serve(HttpRequest request) async {
+    try {
+      if (request.method != "GET" && request.method != "HEAD") {
+        request.response.statusCode = HttpStatus.methodNotAllowed;
+        return;
+      }
+      final metadata = _metadata[request.uri.path];
+      if (metadata != null) {
+        request.response.contentLength = metadata.length;
+        if (request.method == "GET") {
+          request.response.add(metadata);
+        }
+        return;
+      }
+      if (request.uri.path != "/controller-smoke-update.zip") {
+        request.response.statusCode = HttpStatus.notFound;
+        return;
+      }
+      final length = await _artifact.length();
+      var start = 0;
+      var endExclusive = length;
+      final range = request.headers.value(HttpHeaders.rangeHeader);
+      if (range != null) {
+        final match = RegExp(r"^bytes=(\d+)-(\d*)$").firstMatch(range);
+        if (match == null) {
+          request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+          return;
+        }
+        start = int.parse(match.group(1)!);
+        endExclusive =
+            match.group(2)!.isEmpty ? length : int.parse(match.group(2)!) + 1;
+        if (start >= length || endExclusive <= start || endExclusive > length) {
+          request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+          return;
+        }
+        request.response.statusCode = HttpStatus.partialContent;
+        request.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          "bytes $start-${endExclusive - 1}/$length",
+        );
+      }
+      request.response.headers.set(HttpHeaders.acceptRangesHeader, "bytes");
+      request.response.contentLength = endExclusive - start;
+      if (request.method == "GET") {
+        await request.response.addStream(
+          _artifact.openRead(start, endExclusive),
+        );
+      }
+    } finally {
+      await request.response.close();
+    }
+  }
+}
+
+Future<Map<String, dynamic>> signedDescriptor({
+  required File artifact,
+  required Uri artifactUrl,
+  required String platform,
+  required String packageId,
+  required String appName,
+}) async {
+  final descriptor = ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: packageId,
+    appName: appName,
+    version: "2.7.1",
+    buildNumber: 271,
+    platform: platform,
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: artifactUrl,
+      sha256: await _sha256File(artifact),
+      length: await artifact.length(),
+    ),
+    install: ReleaseInstall(
+      strategy:
+          platform == "macos" ? "wholeBundleReplace" : "wholeDirectoryReplace",
+    ),
+    signature: const ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: "",
+    ),
+    minimumUpdaterVersion: "2.0.0",
+    minimumOS: {
+      platform: switch (platform) {
+        "macos" => "10.14",
+        "windows" => "10.0.19045",
+        "linux" => "glibc-2.35",
+        _ => throw StateError("Unsupported smoke platform: $platform"),
+      },
+    },
+    generatedAt: DateTime.utc(2026, 8, 3),
+  )..validate();
+  final signature = await Ed25519().sign(
+    descriptor.canonicalSignatureBytes(),
+    keyPair: await _smokeKeyPair(),
+  );
+  return <String, dynamic>{
+    ...descriptor.toJson(),
+    "signature": ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: base64Encode(signature.bytes),
+    ).toJson(),
+  };
+}
+
+Future<Map<String, dynamic>> signedIndex({
+  required Uri releaseUrl,
+  required String platform,
+  required String appName,
+}) async {
+  final index = ReleaseIndex(
+    schemaVersion: 3,
+    appName: appName,
+    items: <ReleaseIndexItem>[
+      ReleaseIndexItem(
+        version: "2.7.1",
+        buildNumber: 271,
+        platform: platform,
+        channel: "stable",
+        mandatory: false,
+        release: releaseUrl,
+      ),
+    ],
+    signature: const ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: "",
+    ),
+  );
+  final signature = await Ed25519().sign(
+    index.canonicalSignatureBytes(),
+    keyPair: await _smokeKeyPair(),
+  );
+  return <String, dynamic>{
+    ...index.toJson(),
+    "signature": ReleaseSignature(
+      algorithm: "ed25519",
+      publicKeyId: _smokePublicKeyId,
+      value: base64Encode(signature.bytes),
+    ).toJson(),
+  };
 }
 
 String _locateLinuxPortableHelper(String installRoot) {
@@ -854,12 +982,56 @@ Future<void> _waitForFileText(
   Duration timeout,
 ) async {
   await _waitFor(
-    () =>
-        File(filePath).existsSync() &&
-        File(filePath).readAsStringSync().trim() == expected,
+    () {
+      if (!File(filePath).existsSync()) {
+        return false;
+      }
+      final actual = File(filePath).readAsStringSync().trim();
+      if (actual.startsWith("failed:")) {
+        throw StateError("Controller smoke failed: $actual");
+      }
+      const markerOrder = <String>["checking", "downloading", "installing"];
+      final actualIndex = markerOrder.indexOf(actual);
+      final expectedIndex = markerOrder.indexOf(expected);
+      return actualIndex >= 0 && expectedIndex >= 0
+          ? actualIndex >= expectedIndex
+          : actual == expected;
+    },
     timeout,
     "Timed out waiting for smoke marker '$expected'.",
   );
+}
+
+Future<Directory> _waitForControllerStageRoot(String recoveryStorePath) async {
+  Directory? result;
+  await _waitFor(
+    () {
+      final recoveryFile = File(recoveryStorePath);
+      if (!recoveryFile.existsSync()) {
+        return false;
+      }
+      final json = jsonDecode(recoveryFile.readAsStringSync());
+      if (json is! Map<String, dynamic>) {
+        throw StateError("Controller recovery marker is not a JSON object.");
+      }
+      final stagingPath = json["stagingPath"];
+      if (stagingPath is! String || stagingPath.isEmpty) {
+        return false;
+      }
+      var stageRoot = Directory(stagingPath);
+      if (!_basename(stageRoot.path).startsWith("desktop_updater_stage_")) {
+        stageRoot = stageRoot.parent;
+      }
+      if (!_basename(stageRoot.path).startsWith("desktop_updater_stage_")) {
+        throw StateError("Controller returned a non-owned staging path.");
+      }
+      result = stageRoot;
+      return true;
+    },
+    const Duration(seconds: 15),
+    "Timed out waiting for the durable controller recovery marker.",
+  );
+  return result!;
 }
 
 Future<void> _waitFor(
@@ -907,6 +1079,7 @@ Future<void> _expectLinuxTransactionEvents({
 
   await File(diagnosticsLogPath).writeAsString(
     await eventsLog.readAsString(),
+    mode: FileMode.append,
     flush: true,
   );
 }
@@ -983,6 +1156,7 @@ Future<void> _writeWindowsHelperEventDiagnostics({
   }
   await File(diagnosticsLogPath).writeAsString(
     "${lines.join("\n")}\n",
+    mode: FileMode.append,
     flush: true,
   );
 }

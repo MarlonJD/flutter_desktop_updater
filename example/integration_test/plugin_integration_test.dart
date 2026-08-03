@@ -45,41 +45,38 @@ void main() {
       if (await fixture.root.exists()) {
         await fixture.root.delete(recursive: true);
       }
-      if (await fixture.installRoot.exists()) {
-        await fixture.installRoot.delete(recursive: true);
-      }
     });
     final arguments = <String, Object?>{
       "stagingPath":
           Platform.isMacOS ? fixture.stagedAppPath : fixture.stageRoot.path,
-      "packageId": Platform.isLinux ? "com.example.forged" : fixture.packageId,
+      "expectedPackageId":
+          Platform.isLinux ? "com.example.forged" : fixture.packageId,
       "stageProvenanceSha256": fixture.provenanceSha256,
       "expectedArtifactSha256": fixture.artifactSha256,
       "transactionId": "123e4567-e89b-42d3-a456-426614174000",
-      if (Platform.isWindows) ...{
-        "installRoot": fixture.installRoot.path,
-        "executableRelativePath": "forged-target.exe",
-        "innoRequiresElevation": "never",
-      } else if (Platform.isLinux) ...{
-        "installRoot": fixture.installRoot.path,
-        "executableRelativePath": fixture.executableRelativePath,
-      },
     };
 
-    await expectLater(
-      const MethodChannel("desktop_updater").invokeMethod<void>(
-        "installUpdate",
-        arguments,
-      ),
-      throwsA(
-        isA<PlatformException>()
+    final matcher = Platform.isMacOS
+        ? isA<PlatformException>()
+            .having((error) => error.code, "code", "InstallError")
+            .having(
+              (error) => error.message,
+              "sanitized message",
+              "Unable to schedule update installation.",
+            )
+        : isA<PlatformException>()
             .having((error) => error.code, "code", "InstallError")
             .having(
               _platformExceptionText,
               "message/details",
               contains(_expectedForgedBindingMessage()),
-            ),
+            );
+    await expectLater(
+      const MethodChannel("desktop_updater").invokeMethod<void>(
+        "installUpdate",
+        arguments,
       ),
+      throwsA(matcher),
     );
   });
 }
@@ -88,20 +85,16 @@ class _VerifiedStageFixture {
   const _VerifiedStageFixture({
     required this.root,
     required this.stageRoot,
-    required this.installRoot,
     required this.stagedAppPath,
     required this.packageId,
-    required this.executableRelativePath,
     required this.artifactSha256,
     required this.provenanceSha256,
   });
 
   final Directory root;
   final Directory stageRoot;
-  final Directory installRoot;
   final String stagedAppPath;
   final String packageId;
-  final String executableRelativePath;
   final String artifactSha256;
   final String provenanceSha256;
 }
@@ -117,18 +110,6 @@ Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
     parent: stageParent,
     nonce: nonce,
   );
-  final installRoot = Directory(
-    _joinPath(
-      Directory.current.path,
-      "build",
-      "desktop_updater_forged_target",
-    ),
-  );
-  if (await installRoot.exists()) {
-    await installRoot.delete(recursive: true);
-  }
-  await installRoot.create(recursive: true);
-
   final packageId = Platform.isMacOS
       ? "com.example.forged.stage"
       : "com.example.desktop-updater-boundary";
@@ -191,28 +172,11 @@ Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
     descriptorSha256: canonicalJsonSha256(signedManifest),
     artifactSha256: artifactSha256,
   );
-  await File(
-    _joinPath(installRoot.path, ".desktop_updater_install_identity.json"),
-  ).writeAsString(
-    jsonEncode(
-      sortJsonValue({
-        "schemaVersion": 1,
-        "packageId": packageId,
-      }),
-    ),
-  );
-  if (Platform.isWindows) {
-    await File(_joinPath(installRoot.path, "forged-target.exe"))
-        .writeAsString("not the running app");
-  }
-
   return _VerifiedStageFixture(
     root: root,
     stageRoot: stageRoot,
-    installRoot: installRoot,
     stagedAppPath: _joinPath(stageRoot.path, "Example.app"),
     packageId: packageId,
-    executableRelativePath: executableRelativePath,
     artifactSha256: artifactSha256,
     provenanceSha256: provenance.markerSha256,
   );
@@ -250,10 +214,7 @@ String _expectedForgedBindingMessage() {
     return "Linux stage provenance package identity changed.";
   }
   if (Platform.isWindows) {
-    return "Windows install target does not match the running app.";
-  }
-  if (Platform.isMacOS) {
-    return "Stage provenance is not bound to the install request.";
+    return "Windows ZIP target requires a matching installed identity marker";
   }
   return "InstallError";
 }

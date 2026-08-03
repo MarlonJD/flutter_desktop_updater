@@ -7,8 +7,8 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
-#include <memory>
 #include <filesystem>
+#include <memory>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -118,59 +118,26 @@ bool ReadCurrentProductVersion(std::wstring* product_version,
   return true;
 }
 
-std::vector<std::wstring> RemovedFilesFromArguments(
-    const flutter::EncodableMap& arguments) {
-  std::vector<std::wstring> removed_files;
-  const auto iterator =
-      arguments.find(flutter::EncodableValue("removedFiles"));
-  if (iterator == arguments.end()) {
-    return removed_files;
-  }
-  const auto* list = std::get_if<flutter::EncodableList>(&iterator->second);
-  if (list == nullptr) {
-    return removed_files;
-  }
-  for (const auto& value : *list) {
-    if (const auto* item = std::get_if<std::string>(&value)) {
-      removed_files.push_back(Utf8ToWide(*item));
-    }
-  }
-  return removed_files;
-}
-
-std::wstring DiagnosticsLogPathFromArguments(
-    const flutter::EncodableMap& arguments) {
-  const auto iterator =
-      arguments.find(flutter::EncodableValue("diagnosticsLogPath"));
-  if (iterator == arguments.end()) {
-    return L"";
-  }
-  const auto* value = std::get_if<std::string>(&iterator->second);
-  return value == nullptr ? L"" : Utf8ToWide(*value);
-}
-
-std::wstring StringFromArguments(const flutter::EncodableMap& arguments,
-                                 const char* key) {
+bool ReadRequiredInstallString(const flutter::EncodableMap& arguments,
+                               const char* key,
+                               std::wstring* value,
+                               std::string* error) {
   const auto iterator = arguments.find(flutter::EncodableValue(key));
-  if (iterator == arguments.end()) return L"";
-  const auto* value = std::get_if<std::string>(&iterator->second);
-  return value == nullptr ? L"" : Utf8ToWide(*value);
-}
-
-std::vector<std::wstring> StringListFromArguments(
-    const flutter::EncodableMap& arguments,
-    const char* key) {
-  std::vector<std::wstring> result;
-  const auto iterator = arguments.find(flutter::EncodableValue(key));
-  if (iterator == arguments.end()) return result;
-  const auto* values = std::get_if<flutter::EncodableList>(&iterator->second);
-  if (values == nullptr) return result;
-  for (const auto& value : *values) {
-    if (const auto* text = std::get_if<std::string>(&value)) {
-      result.push_back(Utf8ToWide(*text));
-    }
+  if (iterator == arguments.end()) {
+    *error = std::string(key) + " is required.";
+    return false;
   }
-  return result;
+  const auto* text = std::get_if<std::string>(&iterator->second);
+  if (text == nullptr || text->empty()) {
+    *error = std::string(key) + " must be a non-empty string.";
+    return false;
+  }
+  *value = Utf8ToWide(*text);
+  if (value->empty()) {
+    *error = std::string(key) + " must contain valid UTF-8.";
+    return false;
+  }
+  return true;
 }
 
 bool HandoffNativeInstall(
@@ -369,71 +336,50 @@ void DesktopUpdaterPlugin::HandleMethodCall(
       result->Error("InvalidArguments", "installUpdate expects a map.");
       return;
     }
-    const auto staging_iterator =
-        arguments->find(flutter::EncodableValue("stagingPath"));
-    if (staging_iterator == arguments->end()) {
-      result->Error("InvalidArguments", "stagingPath is required.");
-      return;
-    }
-    const auto* staging_path =
-        std::get_if<std::string>(&staging_iterator->second);
-    if (staging_path == nullptr || staging_path->empty()) {
-      result->Error("InvalidArguments", "stagingPath must be a string.");
+    if (arguments->size() != 5) {
+      result->Error("InvalidArguments",
+                    "installUpdate expects exactly five arguments.");
       return;
     }
 
     desktop_updater::native::InstallRequest request;
-    std::string request_transaction_id;
-    const auto transaction_iterator =
-        arguments->find(flutter::EncodableValue("transactionId"));
-    if (transaction_iterator != arguments->end()) {
-      const auto* transaction_id =
-          std::get_if<std::string>(&transaction_iterator->second);
-      if (transaction_id == nullptr ||
-          !IsCanonicalInstallTransactionId(*transaction_id)) {
-        result->Error(
-            "InvalidArguments",
-            "transactionId must be a canonical lowercase UUIDv4.");
-        return;
-      }
-      request_transaction_id = *transaction_id;
-    }
-    request.staging_path = Utf8ToWide(*staging_path);
-    request.install_root = StringFromArguments(*arguments, "installRoot");
-    request.executable_relative_path =
-        StringFromArguments(*arguments, "executableRelativePath");
-    request.expected_package_id = StringFromArguments(*arguments, "packageId");
-    if (request.install_root.empty() &&
-        request.executable_relative_path.empty()) {
-      const fs::path current_executable(CurrentExecutablePath());
-      request.install_root = current_executable.parent_path().wstring();
-      request.executable_relative_path =
-          current_executable.filename().wstring();
-    }
-    request.removed_files = RemovedFilesFromArguments(*arguments);
-    request.diagnostics_log_path = DiagnosticsLogPathFromArguments(*arguments);
-    request.expected_provenance_sha256 = StringFromArguments(
-        *arguments, "stageProvenanceSha256");
-    request.expected_artifact_sha256 = StringFromArguments(
-        *arguments, "expectedArtifactSha256");
-    request.allowed_signer_thumbprints = StringListFromArguments(
-        *arguments, "allowedSignerThumbprints");
-    const std::wstring elevation_policy =
-        StringFromArguments(*arguments, "innoRequiresElevation");
-    if (elevation_policy.empty() || elevation_policy == L"auto") {
-      request.elevation_policy =
-          desktop_updater::native::InstallElevationPolicy::kAuto;
-    } else if (elevation_policy == L"always") {
-      request.elevation_policy =
-          desktop_updater::native::InstallElevationPolicy::kAlways;
-    } else if (elevation_policy == L"never") {
-      request.elevation_policy =
-          desktop_updater::native::InstallElevationPolicy::kNever;
-    } else {
-      result->Error("InvalidArguments",
-                    "innoRequiresElevation must be auto, always, or never.");
+    std::wstring transaction_id;
+    std::string argument_error;
+    if (!ReadRequiredInstallString(*arguments, "stagingPath",
+                                   &request.staging_path, &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "expectedPackageId",
+                                   &request.expected_package_id,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "expectedArtifactSha256",
+                                   &request.expected_artifact_sha256,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "stageProvenanceSha256",
+                                   &request.expected_provenance_sha256,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "transactionId",
+                                   &transaction_id, &argument_error)) {
+      result->Error("InvalidArguments", argument_error);
       return;
     }
+
+    const std::string request_transaction_id = WideToUtf8(transaction_id);
+    if (!IsCanonicalInstallTransactionId(request_transaction_id)) {
+      result->Error(
+          "InvalidArguments",
+          "transactionId must be a canonical lowercase UUIDv4.");
+      return;
+    }
+    const fs::path current_executable(CurrentExecutablePath());
+    if (current_executable.empty() ||
+        current_executable.parent_path().empty() ||
+        current_executable.filename().empty()) {
+      result->Error("InstallError",
+                    "Unable to derive the running Windows install target.");
+      return;
+    }
+    request.install_root = current_executable.parent_path().wstring();
+    request.executable_relative_path = current_executable.filename().wstring();
+
     std::string error;
     bool recovery_required = false;
     if (!HandoffNativeInstall(request, request_transaction_id, &error,

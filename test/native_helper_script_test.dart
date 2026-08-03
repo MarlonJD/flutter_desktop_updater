@@ -138,6 +138,41 @@ void main() {
     }
   });
 
+  test("Windows and Linux install adapters accept only the five-key request",
+      () {
+    final windowsPlugin = File(pluginSources[1]).readAsStringSync();
+    final linuxPlugin = File(pluginSources[2]).readAsStringSync();
+    const requiredKeys = <String>[
+      "stagingPath",
+      "expectedPackageId",
+      "expectedArtifactSha256",
+      "stageProvenanceSha256",
+      "transactionId",
+    ];
+    const removedKeys = <String>[
+      "installRoot",
+      "executableRelativePath",
+      "packageId",
+      "removedFiles",
+      "diagnosticsLogPath",
+      "allowedSignerThumbprints",
+      "innoRequiresElevation",
+    ];
+
+    for (final source in [windowsPlugin, linuxPlugin]) {
+      for (final key in requiredKeys) {
+        expect(source, contains('"$key"'), reason: key);
+      }
+      for (final key in removedKeys) {
+        expect(source, isNot(contains('"$key"')), reason: key);
+      }
+    }
+    expect(windowsPlugin, contains("arguments->size() != 5"));
+    expect(windowsPlugin, contains("CurrentExecutablePath()"));
+    expect(linuxPlugin, contains("fl_value_get_length(args) != 5"));
+    expect(linuxPlugin, contains("CurrentExecutableTarget("));
+  });
+
   test("Linux restart bypasses the privileged install transaction", () {
     final plugin = File(pluginSources[2]).readAsStringSync();
     final restartBranch = plugin.substring(

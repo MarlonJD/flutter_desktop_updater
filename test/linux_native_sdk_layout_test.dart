@@ -170,7 +170,7 @@ void main() {
     expect(source, contains("Staging path must not overlap install root"));
     expect(source, contains("SerializeCommonInstallRequest"));
     expect(header, contains("std::string transaction_id;"));
-    expect(plugin, contains('ReadOptionalString(args, "transactionId"'));
+    expect(plugin, contains('ReadRequiredInstallString(args, "transactionId"'));
     expect(plugin, contains("request.transaction_id = transaction_id;"));
     expect(source, contains("request.transaction_id.empty()"));
     expect(source, contains("EndpointUnavailableStatus"));
