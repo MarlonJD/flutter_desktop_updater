@@ -126,14 +126,68 @@ void WriteExact(const std::filesystem::path& path,
   }
 }
 
+std::string ReadExact(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    throw std::runtime_error("could not open fixture input: " +
+                             path.string());
+  }
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
+
+template <typename Decode>
+void VerifyExact(const std::filesystem::path& path, Decode decode) {
+  const std::string frozen = ReadExact(path);
+  const std::string reencoded = decode(frozen);
+  if (reencoded != frozen) {
+    throw std::runtime_error("fixture did not decode/re-encode byte-exactly: " +
+                             path.string());
+  }
+}
+
+void VerifyFixtures(const std::filesystem::path& input_directory) {
+  VerifyExact(input_directory / "transaction-journal-schema2.json",
+              [](const std::string& value) {
+                return WindowsTransactionJournal::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyExact(input_directory / "persistent-record-schema3.json",
+              [](const std::string& value) {
+                return WindowsPersistentTransactionRecord::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyExact(input_directory / "resolver-claim-schema1.json",
+              [](const std::string& value) {
+                return WindowsPersistentResolverClaim::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyExact(input_directory / "portable-locator-schema1.json",
+              [](const std::string& value) {
+                return WindowsPortableTransactionLocatorV1::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyExact(input_directory / "protected-helper-endpoint-schema1.json",
+              [](const std::string& value) {
+                return ProtectedWindowsHelperEndpointV1::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+}
+
 }  // namespace
 }  // namespace desktop_updater::helper
 
 int main(int argc, char** argv) {
   using namespace desktop_updater::helper;
   try {
+    if (argc == 3 && std::string(argv[1]) == "--verify") {
+      VerifyFixtures(std::filesystem::path(argv[2]));
+      return 0;
+    }
     if (argc != 2) {
-      std::cerr << "usage: native_durable_state_fixture_emitter OUTPUT_DIR\n";
+      std::cerr << "usage: native_durable_state_fixture_emitter OUTPUT_DIR\n"
+                   "       native_durable_state_fixture_emitter --verify "
+                   "FIXTURE_DIR\n";
       return 64;
     }
     const std::filesystem::path output_directory(argv[1]);

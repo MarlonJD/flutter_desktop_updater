@@ -116,6 +116,41 @@ final class BaselineDurableStateFixtureEmitterTests: XCTestCase {
     }
 }
 
+final class BaselineDurableStateFixtureReaderTests: XCTestCase {
+    func testPreparedJournalsDecodeAndReencodeByteExactly() throws {
+        guard let inputPath = ProcessInfo.processInfo.environment[
+            "DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"
+        ] else {
+            throw XCTSkip("fixture input is requested only by the Task 1 harness")
+        }
+        let input = URL(fileURLWithPath: inputPath, isDirectory: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        let directoryBytes = try Data(
+            contentsOf: input.appendingPathComponent(
+                "directory-journal-schema1.json"
+            )
+        )
+        let directory = try MacTransactionJournal.decodeStrict(directoryBytes)
+        XCTAssertEqual(try encoder.encode(directory), directoryBytes)
+
+        for name in [
+            "verified-installer-journal-schema1.json",
+            "verified-installer-journal-schema2.json",
+        ] {
+            let bytes = try Data(
+                contentsOf: input.appendingPathComponent(name)
+            )
+            let journal = try MacVerifiedInstallerJournal.decodeStrict(bytes)
+            XCTAssertEqual(
+                try NativeStrictJSON.canonicalize(encoder.encode(journal)),
+                bytes
+            )
+        }
+    }
+}
+
 // This test-only writer is the exact schema-1 Codable shape from
 // 73aa730efbf1384eef9b74d7eb87ee655d81c0b5. It intentionally omits the four
 // source-installer-stage fields introduced by schema 2 in 96cc4ecbb009d5be5a50adcbeeedf8fae2dedfa4.

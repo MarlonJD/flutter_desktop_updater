@@ -217,6 +217,8 @@ jobs:
           New-Item -ItemType Directory -Path $output -Force | Out-Null
           & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe $output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe --verify $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem -LiteralPath $output -Filter *.json |
             Sort-Object Name |
             ForEach-Object {
@@ -1791,6 +1793,7 @@ jobs:
           output="artifacts/native-durable-state/linux"
           mkdir -p "$output"
           linux/native/build/desktop_updater_native_durable_state_fixture_emitter "$output"
+          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify "$output"
           (
             cd "$output"
             sha256sum ./*.json | sed 's#  \./#  #' > SHA256SUMS

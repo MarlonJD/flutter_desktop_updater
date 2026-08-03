@@ -130,17 +130,95 @@ void EmitProviderJournal(const std::filesystem::path& output_directory) {
   std::filesystem::remove_all(working_directory);
 }
 
+template <typename Decode>
+void VerifyExact(const std::filesystem::path& path, Decode decode) {
+  const std::string frozen = ReadExact(path);
+  const std::string reencoded = decode(frozen);
+  if (reencoded != frozen) {
+    throw std::runtime_error("fixture did not decode/re-encode byte-exactly: " +
+                             path.string());
+  }
+}
+
+void VerifyProviderJournal(const std::filesystem::path& input_directory) {
+  const std::string transaction_id =
+      "00000000-0000-4000-8000-000000000044";
+  const std::filesystem::path reader_directory =
+      input_directory / ".provider-reader";
+  const std::filesystem::path writer_directory =
+      input_directory / ".provider-reencoder";
+  std::filesystem::remove_all(reader_directory);
+  std::filesystem::remove_all(writer_directory);
+  std::filesystem::create_directories(reader_directory);
+  std::filesystem::create_directories(writer_directory);
+  if (chmod(reader_directory.c_str(), 0700) != 0 ||
+      chmod(writer_directory.c_str(), 0700) != 0) {
+    throw std::runtime_error("could not protect provider probe directories");
+  }
+  const std::filesystem::path reader_path =
+      reader_directory / (transaction_id + ".provider.json");
+  WriteExact(reader_path,
+             ReadExact(input_directory / "provider-journal-schema1.json"));
+  if (chmod(reader_path.c_str(), 0600) != 0) {
+    throw std::runtime_error("could not protect provider probe journal");
+  }
+  std::optional<LinuxProviderJournalRecord> loaded;
+  {
+    LinuxProviderJournal reader(reader_directory, geteuid(), getegid());
+    loaded = reader.Load(transaction_id);
+  }
+  if (!loaded.has_value()) {
+    throw std::runtime_error("provider fixture decoded as absent");
+  }
+  {
+    LinuxProviderJournal writer(writer_directory, geteuid(), getegid());
+    writer.Persist(*loaded);
+  }
+  const std::string reencoded = ReadExact(
+      writer_directory / (transaction_id + ".provider.json"));
+  const std::string frozen =
+      ReadExact(input_directory / "provider-journal-schema1.json");
+  std::filesystem::remove_all(reader_directory);
+  std::filesystem::remove_all(writer_directory);
+  if (reencoded != frozen) {
+    throw std::runtime_error(
+        "provider fixture did not decode/re-encode byte-exactly");
+  }
+}
+
+void VerifyFixtures(const std::filesystem::path& input_directory) {
+  VerifyExact(input_directory / "transaction-journal-schema2.json",
+              [](const std::string& value) {
+                return LinuxTransactionJournal::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyExact(input_directory / "transaction-registry-schema2.json",
+              [](const std::string& value) {
+                return LinuxTransactionRegistryRecord::DecodeStrict(value)
+                    .EncodeCanonical();
+              });
+  VerifyProviderJournal(input_directory);
+}
+
 }  // namespace
 }  // namespace desktop_updater::helper
 
 int main(int argc, char** argv) {
   using namespace desktop_updater::helper;
   try {
+    if (argc == 3 && std::string(argv[1]) == "--verify") {
+      VerifyFixtures(
+          std::filesystem::absolute(argv[2]).lexically_normal());
+      return 0;
+    }
     if (argc != 2) {
-      std::cerr << "usage: native_durable_state_fixture_emitter OUTPUT_DIR\n";
+      std::cerr << "usage: native_durable_state_fixture_emitter OUTPUT_DIR\n"
+                   "       native_durable_state_fixture_emitter --verify "
+                   "FIXTURE_DIR\n";
       return 64;
     }
-    const std::filesystem::path output_directory(argv[1]);
+    const std::filesystem::path output_directory =
+        std::filesystem::absolute(argv[1]).lexically_normal();
     std::filesystem::create_directories(output_directory);
     WriteExact(output_directory / "transaction-journal-schema2.json",
                TransactionJournal().EncodeCanonical());
