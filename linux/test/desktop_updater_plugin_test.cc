@@ -173,6 +173,47 @@ TEST(LinuxInstallTarget, InstallRejectsBlankPackageIdentity) {
   EXPECT_FALSE(result.ok);
 }
 
+TEST(LinuxInstallTarget,
+     ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation) {
+  char staging_template[] = "/tmp/desktop_updater_forged_stage_XXXXXX";
+  char* staging_root = mkdtemp(staging_template);
+  ASSERT_NE(staging_root, nullptr);
+
+  InstallRequest forged_stage = {
+      LinuxInstallOperation::kInstall,
+      staging_root,
+      "/tmp/desktop_updater_forged_install",
+      "bin/my-app",
+      "com.example.app",
+      {},
+      "",
+  };
+  forged_stage.expected_provenance_sha256 = std::string(64, 'f');
+  EXPECT_FALSE(native::ValidateInstallRequest(forged_stage).ok);
+
+  EXPECT_FALSE(native::ValidateInstallRequest({
+      LinuxInstallOperation::kInstall,
+      staging_root,
+      "/tmp/desktop_updater_forged_install",
+      "bin/my-app",
+      "com.example.other",
+      {},
+      "",
+  }).ok);
+
+  EXPECT_FALSE(native::ValidateInstallRequest({
+      LinuxInstallOperation::kInstall,
+      staging_root,
+      "/usr/bin",
+      "my-app",
+      "com.example.app",
+      {},
+      "",
+  }).ok);
+
+  rmdir(staging_root);
+}
+
 TEST(LinuxInstallTarget, RejectsNonCanonicalRootAndExecutableTraversal) {
   EXPECT_FALSE(native::ValidateInstallRequest({
       LinuxInstallOperation::kInstall,

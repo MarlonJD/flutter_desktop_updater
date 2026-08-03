@@ -14,6 +14,17 @@ abstract interface class ObjectStorageClient {
   });
 }
 
+abstract interface class ConditionalObjectStorageClient
+    implements ObjectStorageClient {
+  Future<IndexPublishReceipt> putIndexFileConditionally({
+    required File file,
+    required String bucket,
+    required String key,
+    required S3UploadConfig config,
+    required RemoteIndexRevision expectedRevision,
+  });
+}
+
 class S3UploadProvider implements OrderedUploadProvider {
   const S3UploadProvider({this.client = const AwsCliObjectStorageClient()});
 
@@ -68,10 +79,28 @@ class S3UploadProvider implements OrderedUploadProvider {
     required StringSink output,
     required RemoteIndexRevision expectedRevision,
   }) async {
-    throw const FormatException(
-      "S3 upload requires a conditional index write or tested exclusive "
-      "publication lease before publishing app-archive.json.",
+    final conditionalClient = client;
+    if (conditionalClient is! ConditionalObjectStorageClient) {
+      throw const FormatException(
+        "S3 upload requires a conditional index write or tested exclusive "
+        "publication lease before publishing app-archive.json.",
+      );
+    }
+    final s3Config = _s3Config(config);
+    final receipt = await conditionalClient.putIndexFileConditionally(
+      file: File(path.join(localRoot.path, manifest.appArchive.path)),
+      bucket: s3Config.bucket,
+      key: _s3Key(s3Config.prefix, manifest.appArchive.path),
+      config: s3Config,
+      expectedRevision: expectedRevision,
     );
+    await verifyOrderedIndexPublishReceipt(
+      localRoot: localRoot,
+      manifest: manifest,
+      expectedRevision: expectedRevision,
+      receipt: receipt,
+    );
+    return receipt;
   }
 }
 

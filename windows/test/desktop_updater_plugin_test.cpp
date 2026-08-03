@@ -101,6 +101,25 @@ TEST(DesktopUpdaterPlugin, InnoUninstallArtifactsAreInstallerOwnedFiles) {
   EXPECT_FALSE(native::IsInstallerOwnedWindowsFile(L""));
 }
 
+TEST(DesktopUpdaterPlugin,
+     ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation) {
+  native::InstallRequest request = {
+      L"C:\\desktop_updater_missing_forged_stage",
+      L"C:\\Windows",
+      L"System32\\notepad.exe",
+      L"com.example.forged",
+      {},
+      L"",
+      std::wstring(64, L'f'),
+      std::wstring(64, L'a'),
+      {},
+      native::InstallElevationPolicy::kNever,
+  };
+
+  const auto result = native::ScheduleInstallAndRelaunch(request);
+  EXPECT_FALSE(result.ok);
+}
+
 TEST(DesktopUpdaterPlugin, ProgramFilesInstallDirectoryIsProtected) {
   const std::vector<std::wstring> protected_roots = {
       L"C:\\Program Files",

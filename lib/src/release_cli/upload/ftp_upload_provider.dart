@@ -13,6 +13,16 @@ abstract interface class FtpRemoteFileClient {
   });
 }
 
+abstract interface class ExclusiveLeaseFtpRemoteFileClient
+    implements FtpRemoteFileClient {
+  Future<IndexPublishReceipt> writeIndexFileWithLease({
+    required File file,
+    required String remotePath,
+    required FtpUploadConfig config,
+    required RemoteIndexRevision expectedRevision,
+  });
+}
+
 class FtpRemoteWrite {
   const FtpRemoteWrite({
     required this.file,
@@ -77,10 +87,27 @@ class FtpUploadProvider implements OrderedUploadProvider {
     required StringSink output,
     required RemoteIndexRevision expectedRevision,
   }) async {
-    throw const FormatException(
-      "FTP upload requires a conditional index write or tested exclusive "
-      "publication lease before publishing app-archive.json.",
+    final leaseClient = client;
+    if (leaseClient is! ExclusiveLeaseFtpRemoteFileClient) {
+      throw const FormatException(
+        "FTP upload requires a conditional index write or tested exclusive "
+        "publication lease before publishing app-archive.json.",
+      );
+    }
+    final ftpConfig = _ftpConfig(config);
+    final receipt = await leaseClient.writeIndexFileWithLease(
+      file: File(path.join(localRoot.path, manifest.appArchive.path)),
+      remotePath: _remotePath(ftpConfig.remotePath, manifest.appArchive.path),
+      config: ftpConfig,
+      expectedRevision: expectedRevision,
     );
+    await verifyOrderedIndexPublishReceipt(
+      localRoot: localRoot,
+      manifest: manifest,
+      expectedRevision: expectedRevision,
+      receipt: receipt,
+    );
+    return receipt;
   }
 }
 

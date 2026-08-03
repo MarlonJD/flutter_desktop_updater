@@ -1,6 +1,7 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart" as crypto;
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
@@ -35,6 +36,7 @@ import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 import "package:desktop_updater/src/release_cli/xcode_project_adapter.dart";
 import "package:desktop_updater/src/release_manifest.dart";
+import "package:http/http.dart" as http;
 import "package:path/path.dart" as path;
 
 export "package:desktop_updater/src/release_cli/project_adapter.dart"
@@ -81,6 +83,7 @@ class ReleasePublisher {
     this.projectAdapters = const [],
     this.runProcess = defaultProcessRunner,
     this.runHookCommand = defaultReleaseHookCommandRunner,
+    this.httpClient,
     BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
   }) : _startBuildProcess = startBuildProcess;
 
@@ -95,6 +98,7 @@ class ReleasePublisher {
   final List<ProjectAdapter> projectAdapters;
   final ProcessRunner runProcess;
   final ReleaseHookCommandRunner runHookCommand;
+  final http.Client? httpClient;
   final BuildProcessStarter _startBuildProcess;
 
   Future<PublishManifest> publish({
@@ -113,6 +117,15 @@ class ReleasePublisher {
         "--notarize is only supported with --platform macos.",
       );
     }
+    final signedHistory = signing == null
+        ? null
+        : await _acquireSignedPublicationHistory(
+            projectRoot: projectRoot,
+            appArchiveUrl: config.baseUrl.resolve("app-archive.json"),
+            overrides: overrides,
+            signing: signing,
+            client: httpClient ?? http.Client(),
+          );
     final flutterAdapter = FlutterProjectAdapter(
       overrides: overrides,
       output: output,
@@ -318,6 +331,13 @@ class ReleasePublisher {
       );
     }
 
+    if (signedHistory != null) {
+      await _writeFrozenHistoryToAppArchive(
+        archiveFile: layout.appArchiveFile,
+        archiveAppName: archiveAppName,
+        history: signedHistory,
+      );
+    }
     await upsertAppArchive(
       archiveFile: layout.appArchiveFile,
       appName: archiveAppName,
@@ -475,6 +495,7 @@ class ReleasePublisher {
         );
       }
       publicationValidator = ReleaseValidator(
+        client: httpClient,
         artifactVerifier: strictArtifactVerifier,
         requireIndexSignature: true,
         indexSignatureVerifier: indexSignatureVerifier,
@@ -482,6 +503,13 @@ class ReleasePublisher {
       output.writeln("Signed final app-archive.json.");
     }
 
+    if (signedHistory != null && config.uploadProvider is! ManualUploadConfig) {
+      await _assertRemoteIndexRevisionUnchanged(
+        appArchiveUrl: layout.appArchiveUrl,
+        expectedRevision: signedHistory.revision,
+        client: httpClient ?? http.Client(),
+      );
+    }
     await _uploadAndValidate(
       provider: _providerFor(config.uploadProvider),
       config: config.uploadProvider,
@@ -489,7 +517,8 @@ class ReleasePublisher {
       manifest: manifest,
       validator: publicationValidator,
       output: output,
-      expectedRevision: const RemoteIndexRevision.absent(),
+      expectedRevision:
+          signedHistory?.revision ?? const RemoteIndexRevision.absent(),
     );
 
     return manifest;
@@ -596,6 +625,218 @@ Future<void> _writeJsonFile(File file, Map<String, dynamic> json) async {
   await file.writeAsString(
     "${const JsonEncoder.withIndent("  ").convert(json)}\n",
   );
+}
+
+Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
+  required Directory projectRoot,
+  required Uri appArchiveUrl,
+  required ReleasePublishOverrides overrides,
+  required ReleaseSigningOptions signing,
+  required http.Client client,
+}) async {
+  final verifier = Ed25519ReleaseIndexSignatureVerifier(
+    signing.trustedReleasePublicKeys,
+  );
+  final hosted = await _fetchHostedAppArchive(
+    appArchiveUrl: appArchiveUrl,
+    client: client,
+    verifier: verifier,
+  );
+  if (overrides.initializeFeed && hosted != null) {
+    throw const FormatException(
+      "--initialize-feed can only be used when hosted app-archive.json is absent.",
+    );
+  }
+
+  final existingFile = _resolveExistingAppArchive(
+    projectRoot: projectRoot,
+    value: overrides.existingAppArchive,
+  );
+  final local = existingFile == null
+      ? null
+      : await _readSignedAppArchiveFile(
+          existingFile,
+          verifier: verifier,
+        );
+
+  if (hosted == null) {
+    if (!overrides.initializeFeed) {
+      throw const FormatException(
+        "Signed publishing requires a hosted signed app-archive.json. "
+        "Pass --initialize-feed only for a first feed publication.",
+      );
+    }
+    return _SignedPublicationHistory(
+      index: local?.index,
+      revision: const RemoteIndexRevision.absent(),
+    );
+  }
+
+  if (local != null && local.sha256 != hosted.revision.sha256) {
+    throw const FormatException(
+      "--existing-app-archive does not match the hosted app-archive.json bytes.",
+    );
+  }
+  return _SignedPublicationHistory(
+    index: hosted.index,
+    revision: hosted.revision,
+  );
+}
+
+Future<void> _assertRemoteIndexRevisionUnchanged({
+  required Uri appArchiveUrl,
+  required RemoteIndexRevision expectedRevision,
+  required http.Client client,
+}) async {
+  final response = await client.get(appArchiveUrl);
+  if (expectedRevision.absent) {
+    if (response.statusCode == 404) {
+      return;
+    }
+    throw StateError(
+      "Hosted app-archive.json changed before publish: expected absent, "
+      "got HTTP ${response.statusCode}.",
+    );
+  }
+  if (response.statusCode != 200) {
+    throw StateError(
+      "Hosted app-archive.json changed before publish: expected "
+      "$expectedRevision, got HTTP ${response.statusCode}.",
+    );
+  }
+  final actualRevision = _revisionForResponse(response);
+  if (actualRevision != expectedRevision) {
+    throw StateError(
+      "Hosted app-archive.json changed before publish: expected "
+      "$expectedRevision, got $actualRevision.",
+    );
+  }
+}
+
+Future<void> _writeFrozenHistoryToAppArchive({
+  required File archiveFile,
+  required String archiveAppName,
+  required _SignedPublicationHistory history,
+}) async {
+  await archiveFile.parent.create(recursive: true);
+  final index = history.index ??
+      ReleaseIndex(
+        schemaVersion: 3,
+        appName: archiveAppName,
+        items: const [],
+      );
+  await _writeJsonFile(
+      archiveFile,
+      {
+        ...index.toJson(),
+        "signature": null,
+      }..removeWhere((key, value) => value == null));
+}
+
+Future<_HostedSignedAppArchive?> _fetchHostedAppArchive({
+  required Uri appArchiveUrl,
+  required http.Client client,
+  required Ed25519ReleaseIndexSignatureVerifier verifier,
+}) async {
+  final response = await client.get(appArchiveUrl);
+  if (response.statusCode == 404) {
+    return null;
+  }
+  if (response.statusCode != 200) {
+    throw HttpException(
+      "GET $appArchiveUrl failed with HTTP ${response.statusCode}.",
+      uri: appArchiveUrl,
+    );
+  }
+  final index = await _parseAndVerifySignedAppArchiveBytes(
+    response.bodyBytes,
+    verifier: verifier,
+  );
+  return _HostedSignedAppArchive(
+    index: index,
+    revision: _revisionForResponse(response),
+  );
+}
+
+Future<_LocalSignedAppArchive> _readSignedAppArchiveFile(
+  File file, {
+  required Ed25519ReleaseIndexSignatureVerifier verifier,
+}) async {
+  final bytes = await file.readAsBytes();
+  final index = await _parseAndVerifySignedAppArchiveBytes(
+    bytes,
+    verifier: verifier,
+  );
+  return _LocalSignedAppArchive(index: index, sha256: _sha256Bytes(bytes));
+}
+
+Future<ReleaseIndex> _parseAndVerifySignedAppArchiveBytes(
+  List<int> bytes, {
+  required Ed25519ReleaseIndexSignatureVerifier verifier,
+}) async {
+  final json = jsonDecode(utf8.decode(bytes));
+  if (json is! Map<String, dynamic>) {
+    throw const FormatException("app-archive.json must be a JSON object.");
+  }
+  final index = ReleaseIndex.fromJson(json);
+  if (!await verifier.verify(index)) {
+    throw const FormatException(
+      "Hosted app-archive.json signature verification failed.",
+    );
+  }
+  return index;
+}
+
+File? _resolveExistingAppArchive({
+  required Directory projectRoot,
+  required String? value,
+}) {
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  final trimmed = value.trim();
+  return File(
+    path.isAbsolute(trimmed) ? trimmed : path.join(projectRoot.path, trimmed),
+  );
+}
+
+RemoteIndexRevision _revisionForResponse(http.Response response) {
+  return RemoteIndexRevision.present(
+    sha256: _sha256Bytes(response.bodyBytes),
+    etag: response.headers["etag"],
+  );
+}
+
+String _sha256Bytes(List<int> bytes) => crypto.sha256.convert(bytes).toString();
+
+final class _SignedPublicationHistory {
+  const _SignedPublicationHistory({
+    required this.index,
+    required this.revision,
+  });
+
+  final ReleaseIndex? index;
+  final RemoteIndexRevision revision;
+}
+
+final class _HostedSignedAppArchive {
+  const _HostedSignedAppArchive({
+    required this.index,
+    required this.revision,
+  });
+
+  final ReleaseIndex index;
+  final RemoteIndexRevision revision;
+}
+
+final class _LocalSignedAppArchive {
+  const _LocalSignedAppArchive({
+    required this.index,
+    required this.sha256,
+  });
+
+  final ReleaseIndex index;
+  final String sha256;
 }
 
 String _relativePublishPath({

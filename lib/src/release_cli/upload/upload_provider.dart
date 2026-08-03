@@ -2,6 +2,8 @@ import "dart:io";
 
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
+import "package:desktop_updater/src/release_manifest.dart";
+import "package:path/path.dart" as path;
 
 abstract interface class UploadProvider {
   Future<UploadResult> upload({
@@ -85,3 +87,31 @@ final class IndexPublishReceipt {
 }
 
 enum IndexPublishMechanism { conditionalWrite, exclusiveLease }
+
+Future<void> verifyOrderedIndexPublishReceipt({
+  required Directory localRoot,
+  required PublishManifest manifest,
+  required RemoteIndexRevision expectedRevision,
+  required IndexPublishReceipt receipt,
+}) async {
+  if (receipt.observedPriorRevision != expectedRevision) {
+    throw StateError(
+      "Upload provider observed a different app-archive.json revision.",
+    );
+  }
+  final localIndexSha256 = await sha256File(
+    File(path.join(localRoot.path, manifest.appArchive.path)),
+  );
+  if (receipt.publishedSha256 != localIndexSha256) {
+    throw StateError(
+      "Upload provider published a different app-archive.json digest.",
+    );
+  }
+  if (receipt.mechanism == IndexPublishMechanism.exclusiveLease &&
+      (receipt.leaseEvidenceSha256 == null ||
+          receipt.leaseEvidenceSha256!.trim().isEmpty)) {
+    throw StateError(
+      "Exclusive-lease publication receipts must include lease evidence.",
+    );
+  }
+}

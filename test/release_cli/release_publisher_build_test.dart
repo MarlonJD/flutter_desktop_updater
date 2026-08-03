@@ -17,6 +17,8 @@ import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
 import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:http/http.dart" as http;
+import "package:http/testing.dart";
 import "package:path/path.dart" as path;
 
 void main() {
@@ -53,7 +55,7 @@ void main() {
       await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         output: output,
       );
 
@@ -334,7 +336,7 @@ updates:
       await publisher.publish(
         projectRoot: root,
         platform: "macos",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         output: StringBuffer(),
       );
 
@@ -373,7 +375,7 @@ windows:
       final manifest = await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         output: output,
       );
 
@@ -489,7 +491,9 @@ macos:
       expect(zipPackager.requests, isEmpty);
       expect(pkgPackager.requests, hasLength(1));
       expect(
-          pkgPackager.configs.single.packageIdentifier, "com.example.app.pkg");
+        pkgPackager.configs.single.packageIdentifier,
+        "com.example.app.pkg",
+      );
       expect(pkgPackager.requests.single.installStrategy, "pkgInstaller");
       expect(pkgPackager.requests.single.minimumUpdaterVersion, "2.7.0");
       expect(manifest.artifact.kind, "pkgInstaller");
@@ -521,7 +525,7 @@ macos:
       await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         output: StringBuffer(),
       );
 
@@ -568,6 +572,7 @@ macos:
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: packager,
+        httpClient: _missingHostedIndexClient(),
         runHookCommand: _descriptorSigningHook(
           seed: seed,
           publicKeyId: "stable-2026",
@@ -577,7 +582,7 @@ macos:
       await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         signing: ReleaseSigningOptions(
           publicKeyId: "stable-2026",
           privateKeyBase64: base64Encode(seed),
@@ -636,12 +641,13 @@ macos:
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: _RecordingPackager(<String>[]),
+        httpClient: _missingHostedIndexClient(),
       );
 
       await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         signing: ReleaseSigningOptions(
           publicKeyId: "stable-2026",
           privateKeyBase64: base64Encode(seed),
@@ -667,6 +673,7 @@ macos:
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: _RecordingPackager(<String>[]),
+        httpClient: _missingHostedIndexClient(),
         runHookCommand: _descriptorSigningHook(
           seed: differentSeed,
           publicKeyId: "stable-2026",
@@ -676,7 +683,7 @@ macos:
       await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
         signing: ReleaseSigningOptions(
           publicKeyId: "stable-2026",
           privateKeyBase64: base64Encode(seed),
@@ -724,6 +731,178 @@ macos:
       await root.delete(recursive: true);
     }
   });
+
+  test("signed publisher preserves verified hosted app archive history",
+      () async {
+    final root = await _createWindowsFixture();
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    final hostedArchive = await _writeSignedAppArchive(
+      root: root,
+      relativePath: "hosted-app-archive.json",
+      seed: seed,
+      items: [
+        ReleaseIndexItem(
+          version: "2.0.0",
+          buildNumber: 200,
+          platform: "windows",
+          channel: "stable",
+          mandatory: false,
+          release: Uri.parse(
+            "https://updates.example.com/releases/2.0.0/windows/release.json",
+          ),
+        ),
+      ],
+    );
+    final hostedBytes = await hostedArchive.readAsBytes();
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        httpClient: MockClient(
+          (_) async => http.Response.bytes(
+            hostedBytes,
+            200,
+            headers: {"etag": '"prior"'},
+          ),
+        ),
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
+        ),
+        output: StringBuffer(),
+      );
+
+      final finalIndex = ReleaseIndex.fromJson(
+        jsonDecode(
+          await File(
+            path.join(root.path, "dist", "desktop_updater", "app-archive.json"),
+          ).readAsString(),
+        ) as Map<String, dynamic>,
+      );
+      expect(finalIndex.items.map((item) => item.version), [
+        "2.0.0",
+        "2.1.0",
+      ]);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed publisher requires explicit feed initialization when absent",
+      () async {
+    final root = await _createWindowsFixture();
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    final packager = _RecordingPackager(<String>[]);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: packager,
+        httpClient: _missingHostedIndexClient(),
+      );
+
+      await expectLater(
+        publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+            trustedReleasePublicKeys: publicKeys,
+          ),
+          output: StringBuffer(),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("--initialize-feed"),
+          ),
+        ),
+      );
+      expect(packager.requests, isEmpty);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed custom command publish rechecks frozen hosted revision",
+      () async {
+    final root = await _createWindowsFixture();
+    final webRoot = await Directory.systemTemp.createTemp("publish_web_");
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    await _configureCustomCommandUpload(root, webRoot);
+    final hostedArchive = await _writeSignedAppArchive(
+      root: webRoot,
+      relativePath: "app-archive.json",
+      seed: seed,
+      items: [
+        ReleaseIndexItem(
+          version: "2.0.0",
+          buildNumber: 200,
+          platform: "windows",
+          channel: "stable",
+          mandatory: false,
+          release: Uri.parse(
+            "https://updates.example.com/releases/2.0.0/windows/release.json",
+          ),
+        ),
+      ],
+    );
+    await hostedArchive.copy(path.join(root.path, "hosted-copy.json"));
+    try {
+      final output = StringBuffer();
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        httpClient: _webRootClient(webRoot, hostedArchiveEtag: '"prior"'),
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(
+          existingAppArchive: "hosted-copy.json",
+        ),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
+        ),
+        output: output,
+      );
+
+      expect(
+        output.toString(),
+        contains("Publishing app-archive.json last..."),
+      );
+      expect(output.toString(), contains("OK: Published and validated."));
+      final finalIndex = ReleaseIndex.fromJson(
+        jsonDecode(
+          await File(
+            path.join(webRoot.path, "app-archive.json"),
+          ).readAsString(),
+        ) as Map<String, dynamic>,
+      );
+      expect(finalIndex.items.map((item) => item.version), [
+        "2.0.0",
+        "2.1.0",
+      ]);
+    } finally {
+      await root.delete(recursive: true);
+      await webRoot.delete(recursive: true);
+    }
+  });
 }
 
 Future<void> _configureDescriptorSigningHook(
@@ -759,6 +938,78 @@ Future<Map<String, String>> _publicKeysForSeed(List<int> seed) async {
   final keyPair = await Ed25519().newKeyPairFromSeed(seed);
   final publicKey = await keyPair.extractPublicKey();
   return <String, String>{"stable-2026": base64Encode(publicKey.bytes)};
+}
+
+MockClient _missingHostedIndexClient() {
+  return MockClient((_) async => http.Response("not found", 404));
+}
+
+MockClient _webRootClient(
+  Directory webRoot, {
+  required String hostedArchiveEtag,
+}) {
+  return MockClient((request) async {
+    final relativePath = Uri.decodeComponent(
+      request.url.path.replaceFirst(RegExp(r"^/+"), ""),
+    );
+    final file = File(path.join(webRoot.path, relativePath));
+    if (!await file.exists()) {
+      return http.Response("not found", 404, request: request);
+    }
+    return http.Response.bytes(
+      await file.readAsBytes(),
+      200,
+      request: request,
+      headers: relativePath == "app-archive.json"
+          ? {"etag": hostedArchiveEtag}
+          : const {},
+    );
+  });
+}
+
+Future<File> _writeSignedAppArchive({
+  required Directory root,
+  required String relativePath,
+  required List<int> seed,
+  required List<ReleaseIndexItem> items,
+}) async {
+  final file = File(path.join(root.path, relativePath));
+  await file.parent.create(recursive: true);
+  await _writeJsonFileForTest(
+    file,
+    ReleaseIndex(
+      schemaVersion: 3,
+      appName: "Egas-Manager",
+      items: items,
+    ).toJson(),
+  );
+  await ReleaseIndexSigner().sign(
+    appArchiveFile: file,
+    publicKeyId: "stable-2026",
+    privateKeyBase64: base64Encode(seed),
+  );
+  return file;
+}
+
+Future<void> _configureCustomCommandUpload(
+  Directory root,
+  Directory webRoot,
+) async {
+  await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+customCommand:
+  command: dart test/e2e/fixtures/upload_commands/copy_updates.dart ${r"$DESKTOP_UPDATER_LOCAL_ROOT"} ${webRoot.path}
+""");
+}
+
+Future<void> _writeJsonFileForTest(
+  File file,
+  Map<String, dynamic> json,
+) async {
+  await file.writeAsString(
+    "${const JsonEncoder.withIndent("  ").convert(json)}\n",
+  );
 }
 
 Future<Directory> _createWindowsFixture() async {
@@ -858,7 +1109,10 @@ class _RecordingPackager implements ReleasePackager {
     commands.add("PACKAGE ${request.input.path}");
     await request.outputDirectory.create(recursive: true);
     final artifact = File(
-      path.join(request.outputDirectory.path, "Egas-Manager-2.1.0-windows.zip"),
+      path.join(
+        request.outputDirectory.path,
+        request.artifactUrl.pathSegments.last,
+      ),
     );
     await artifact.writeAsString("zip");
     final release =

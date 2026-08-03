@@ -2,6 +2,7 @@ import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive_io.dart";
+import "package:desktop_updater/src/release_cli/publish_command.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -9,6 +10,19 @@ import "package:path/path.dart" as path;
 import "../fixtures/release_publish_project.dart";
 
 void main() {
+  test("publish parser accepts explicit signed feed history flags", () {
+    final results = buildPublishParser().parse([
+      "--platform",
+      "macos",
+      "--initialize-feed",
+      "--existing-app-archive",
+      "history/app-archive.json",
+    ]);
+
+    expect(results["initialize-feed"], isTrue);
+    expect(results["existing-app-archive"], "history/app-archive.json");
+  });
+
   test("publish without upload provider prints manual upload instructions",
       () async {
     final fixture = await createReleasePublishFixture(

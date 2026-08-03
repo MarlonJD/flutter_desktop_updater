@@ -2,12 +2,11 @@ import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive.dart";
-import "package:cryptography_plus/cryptography_plus.dart";
 import "package:crypto/crypto.dart" as crypto;
+import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
-import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:desktop_updater/updater_controller.dart";
@@ -104,6 +103,105 @@ void main() {
     expect(platform.installRequests, isEmpty);
   });
 
+  test("throwing recovery write blocks platform dispatch", () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(throwOnWrite: true),
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    await expectLater(controller.restartApp(), throwsA(isA<StateError>()));
+
+    expect(platform.installRequests, isEmpty);
+  });
+
+  test("null recovery readback blocks platform dispatch", () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(nullReadback: true),
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    await expectLater(controller.restartApp(), throwsA(isA<StateError>()));
+
+    expect(platform.installRequests, isEmpty);
+  });
+
+  test("every authoritative recovery readback field is exact", () async {
+    final mutations = <String,
+        UpdateInstallRecoveryMarker Function(
+      UpdateInstallRecoveryMarker,
+    )>{
+      "createdAt": (marker) => _copyMarker(
+            marker,
+            createdAt: marker.createdAt.add(const Duration(seconds: 1)),
+          ),
+      "packageVersion": (marker) => _copyMarker(
+            marker,
+            packageVersion: "${marker.packageVersion}.mutated",
+          ),
+      "platform": (marker) => _copyMarker(marker, platform: "mutated"),
+      "channel": (marker) => _copyMarker(marker, channel: "mutated"),
+      "appVersion": (marker) => _copyMarker(marker, appVersion: "mutated"),
+      "updateVersion": (marker) => _copyMarker(marker, updateVersion: "9.9.9"),
+      "updateBuildNumber": (marker) =>
+          _copyMarker(marker, updateBuildNumber: 999),
+      "expectedPackageId": (marker) => _copyMarker(
+            marker,
+            expectedPackageId: "com.example.other",
+          ),
+      "stagingPath": (marker) =>
+          _copyMarker(marker, stagingPath: "${marker.stagingPath}.mutated"),
+      "stageProvenanceSha256": (marker) =>
+          _copyMarker(marker, stageProvenanceSha256: "b" * 64),
+      "diagnosticsText": (marker) =>
+          _copyMarker(marker, diagnosticsText: "mutated"),
+      "transactionId": (marker) => _copyMarker(
+            marker,
+            transactionId: "123e4567-e89b-42d3-a456-426614174999",
+          ),
+    };
+
+    for (final entry in mutations.entries) {
+      final fixture = await _ControllerFixture.create();
+      addTearDown(fixture.delete);
+      final platform = _RecordingPlatform();
+      DesktopUpdaterPlatform.instance = platform;
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveFile.uri,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        recoveryStore: _MemoryRecoveryStore(readbackTransform: entry.value),
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(isA<StateError>()),
+        reason: entry.key,
+      );
+      expect(platform.installRequests, isEmpty, reason: entry.key);
+    }
+  });
+
   test("valid persisted receipt dispatches exactly one verified request",
       () async {
     final fixture = await _ControllerFixture.create();
@@ -129,6 +227,32 @@ void main() {
     expect(request.stageProvenanceSha256, matches(RegExp(r"^[0-9a-f]{64}$")));
     expect(request.transactionId, matches(RegExp(r"^[0-9a-f-]{36}$")));
   });
+
+  test("two install dispatches race to exactly one platform call", () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(),
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    final results = await Future.wait<Object?>(
+      [
+        controller.restartApp().then<Object?>((_) => null).catchError((e) => e),
+        controller.restartApp().then<Object?>((_) => null).catchError((e) => e),
+      ],
+    );
+
+    expect(platform.installRequests, hasLength(1));
+    expect(results.whereType<StateError>(), hasLength(1));
+  });
 }
 
 class _RecordingPlatform
@@ -144,7 +268,8 @@ class _RecordingPlatform
 
   @override
   Future<void> installVerifiedUpdate(
-      VerifiedNativeInstallRequest request) async {
+    VerifiedNativeInstallRequest request,
+  ) async {
     installRequests.add(request);
   }
 
@@ -180,9 +305,18 @@ class _RecordingPlatform
 }
 
 class _MemoryRecoveryStore implements UpdateRecoveryStore {
-  _MemoryRecoveryStore({this.mutateReadback = false});
+  _MemoryRecoveryStore({
+    this.mutateReadback = false,
+    this.throwOnWrite = false,
+    this.nullReadback = false,
+    this.readbackTransform,
+  });
 
   final bool mutateReadback;
+  final bool throwOnWrite;
+  final bool nullReadback;
+  final UpdateInstallRecoveryMarker Function(UpdateInstallRecoveryMarker)?
+      readbackTransform;
   final _markers = <String, UpdateInstallRecoveryMarker>{};
 
   @override
@@ -195,6 +329,13 @@ class _MemoryRecoveryStore implements UpdateRecoveryStore {
     required String channel,
   }) async {
     final marker = _markers[channel];
+    if (nullReadback) {
+      return null;
+    }
+    final transform = readbackTransform;
+    if (marker != null && transform != null) {
+      return transform(marker);
+    }
     if (marker == null || !mutateReadback) {
       return marker;
     }
@@ -216,8 +357,43 @@ class _MemoryRecoveryStore implements UpdateRecoveryStore {
 
   @override
   Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
+    if (throwOnWrite) {
+      throw StateError("write failed");
+    }
     _markers[marker.channel] = marker;
   }
+}
+
+UpdateInstallRecoveryMarker _copyMarker(
+  UpdateInstallRecoveryMarker marker, {
+  DateTime? createdAt,
+  String? packageVersion,
+  String? platform,
+  String? channel,
+  String? appVersion,
+  String? updateVersion,
+  int? updateBuildNumber,
+  String? expectedPackageId,
+  String? stagingPath,
+  String? stageProvenanceSha256,
+  String? diagnosticsText,
+  String? transactionId,
+}) {
+  return UpdateInstallRecoveryMarker.pendingV3(
+    createdAt: createdAt ?? marker.createdAt,
+    packageVersion: packageVersion ?? marker.packageVersion,
+    platform: platform ?? marker.platform,
+    channel: channel ?? marker.channel,
+    appVersion: appVersion ?? marker.appVersion,
+    updateVersion: updateVersion ?? marker.updateVersion!,
+    updateBuildNumber: updateBuildNumber ?? marker.updateBuildNumber,
+    expectedPackageId: expectedPackageId ?? marker.expectedPackageId!,
+    stagingPath: stagingPath ?? marker.stagingPath!,
+    stageProvenanceSha256:
+        stageProvenanceSha256 ?? marker.stageProvenanceSha256!,
+    diagnosticsText: diagnosticsText ?? marker.diagnosticsText,
+    transactionId: transactionId ?? marker.transactionId!,
+  );
 }
 
 class _ControllerFixture {

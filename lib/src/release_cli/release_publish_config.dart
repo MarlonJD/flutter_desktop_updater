@@ -31,6 +31,8 @@ class ReleasePublishOverrides {
     this.enforcedAfter,
     this.freshInstallUrl,
     this.freshInstallMessage,
+    this.existingAppArchive,
+    this.initializeFeed = false,
     this.notarize = false,
   });
 
@@ -81,6 +83,8 @@ class ReleasePublishOverrides {
   final DateTime? enforcedAfter;
   final Uri? freshInstallUrl;
   final String? freshInstallMessage;
+  final String? existingAppArchive;
+  final bool initializeFeed;
   final bool notarize;
 }
 

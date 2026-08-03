@@ -30,6 +30,16 @@ ArgParser buildPublishParser() {
       "public-keys-env",
       help: "Environment variable containing JSON public key map.",
     )
+    ..addFlag(
+      "initialize-feed",
+      negatable: false,
+      help: "Create a signed feed only when no hosted app-archive.json exists.",
+    )
+    ..addOption(
+      "existing-app-archive",
+      help: "Path to the already-hosted signed app-archive.json history to "
+          "extend. When the hosted feed exists, bytes must match exactly.",
+    )
     ..addOption("version")
     ..addOption("build-number")
     ..addOption("package-id")
@@ -145,6 +155,8 @@ Future<int> runPublishCommand(
     freshInstallUrl:
         freshInstallUrlValue == null ? null : Uri.parse(freshInstallUrlValue),
     freshInstallMessage: freshInstallMessage,
+    existingAppArchive: results["existing-app-archive"] as String?,
+    initializeFeed: results["initialize-feed"] as bool,
     notarize: results["notarize"] as bool,
   );
   final publisher = ReleasePublisher(
