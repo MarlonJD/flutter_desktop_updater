@@ -2044,8 +2044,9 @@ jobs:
             exit 1
           fi
           export DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL=http://127.0.0.1:43891
+          deferred_recovery_test='^linux_crash_recovery\.LinuxCrashRecovery\.FreshProcessesRecoverPreparedCrashWithoutReencoding$'
           set +e
-          output="$(ctest --test-dir linux/native/build --output-on-failure 2>&1)"
+          output="$(ctest --test-dir linux/native/build -E "$deferred_recovery_test" --output-on-failure 2>&1)"
           status=$?
           set -e
           printf '%s\n' "$output"

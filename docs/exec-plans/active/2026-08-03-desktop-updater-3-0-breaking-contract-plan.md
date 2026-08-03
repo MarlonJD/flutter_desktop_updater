@@ -2258,6 +2258,13 @@ without rerunning the ladder.
   CMake build has executed; unexpected recovery failures still exit early.
   Local macOS confirms the legacy Swift consumer still compiles; CMake is not
   installed on this host, so the new CMake evidence is target-host pending.
+- [x] (2026-08-03) The first corrected-candidate Linux job in
+  [`30802622926`](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30802622926)
+  ran the strict deferred fresh-process recovery check successfully, then the
+  later full native-tamper CTest invocation ran that same intentional red a
+  second time and stopped before the terminal CMake consumer. The broad
+  invocation now excludes only that already-proven CTest target; the strict
+  earlier assertion and terminal deferred failure remain mandatory.
 - [x] (2026-08-03) The superseded exact-head run
   [`30800202271`](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30800202271)
   for `84d6c7a` passed Windows and macOS, and failed Dart plus Linux at their
@@ -2369,6 +2376,11 @@ without rerunning the ladder.
   Linux job before its terminal CMake consumer could run. The workflow must
   defer only the exact current recovery diagnostic and rethrow it after the
   real CMake build; any other recovery failure remains an immediate error.
+- The subsequent Linux native-tamper gate runs the complete CTest registry.
+  After the narrow recovery suite has already executed the intentional red,
+  this broad duplicate must exclude only that exact CTest entry or it will
+  stop the job before terminal consumer proof for a second, non-diagnostic
+  reason.
 
 ## Decision Log
 
@@ -2467,6 +2479,11 @@ without rerunning the ladder.
   real outcomes
   and fails; after Task 5, recovery passes and the removed consumer fails its
   intended compiler check. Any different recovery failure exits immediately.
+- **2026-08-03 — Do not repeat the deferred recovery in broad tamper CTest.**
+  The native-tamper gate excludes only
+  `linux_crash_recovery.LinuxCrashRecovery.FreshProcessesRecoverPreparedCrashWithoutReencoding`
+  after the strict earlier suite has run it and captured its terminal marker.
+  All other CTest entries still execute with the transport fixture.
 
 ## Outcomes & Retrospective
 
@@ -2479,8 +2496,9 @@ from detached baseline and named-predecessor writer worktrees and adds
 process-isolated recovery/locator evidence. The first exact-head correction run
 exposed a whole-tree analyzer scope issue, an Xcode SDK compatibility issue in
 the historical source, a hosted external-compiler timeout, cross-host negative
-compile execution, and a Linux recovery early exit that hid terminal CMake
-proof. All are corrected locally and require a new exact-head target-host run.
+compile execution, a Linux recovery early exit, and a broad CTest retry that
+hid terminal CMake proof. All are corrected locally and require a new
+exact-head target-host run.
 The fresh Linux recovery assertion intentionally remains red until its
 production recovery migration. No production
 implementation, release state, VM, or live artifact was changed.
