@@ -263,6 +263,16 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
   endif()
 
+  add_executable(desktop_updater_native_durable_state_fixture_emitter
+    test/helper/native_durable_state_fixture_emitter.cc)
+  target_compile_features(
+    desktop_updater_native_durable_state_fixture_emitter PRIVATE cxx_std_17)
+  target_compile_definitions(
+    desktop_updater_native_durable_state_fixture_emitter PRIVATE _GNU_SOURCE)
+  target_link_libraries(
+    desktop_updater_native_durable_state_fixture_emitter
+    PRIVATE desktop_updater_linux_helper_support)
+
   add_executable(desktop_updater_native_test
     test/desktop_updater_native_test.cc
     ${DESKTOP_UPDATER_MINIZ_DIR}/miniz.c

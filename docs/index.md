@@ -13,6 +13,7 @@ an existing authority instead of copying mutable rules into a second document.
 | ExecPlan policy | [`PLANS.md`](PLANS.md) | Plan authoring or lifecycle expectations change |
 | Active and completed work | [`exec-plans/index.md`](exec-plans/index.md) | A plan starts, completes, pauses, or is superseded |
 | Durable design rationale | [`design-docs/`](design-docs/) | A cross-cutting design decision changes |
+| Desktop Updater 3.0 frozen breaking contract | [`design-docs/2026-08-03-desktop-updater-3-0-contract.md`](design-docs/2026-08-03-desktop-updater-3-0-contract.md) | 3.0 public, ABI, or durable-state contract changes |
 | Security policy and reporting | [`../SECURITY.md`](../SECURITY.md) | Reporting path or security policy changes |
 | Runtime diagnostics and recovery | [`diagnostics-and-recovery.md`](diagnostics-and-recovery.md) | Failure modes, diagnostics, or recovery semantics change |
 | CI, target-host, and secret boundaries | [`github-actions-ci-cd.md`](github-actions-ci-cd.md) | Workflow lanes, credentials, or target-host contracts change |

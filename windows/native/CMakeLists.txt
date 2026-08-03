@@ -350,6 +350,17 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
   endif()
 
+  add_executable(desktop_updater_native_durable_state_fixture_emitter
+    test/helper/native_durable_state_fixture_emitter.cpp)
+  target_compile_features(
+    desktop_updater_native_durable_state_fixture_emitter PRIVATE cxx_std_17)
+  target_compile_definitions(
+    desktop_updater_native_durable_state_fixture_emitter
+    PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(
+    desktop_updater_native_durable_state_fixture_emitter
+    PRIVATE desktop_updater_install_helper_support)
+
   add_executable(desktop_updater_native_test
     test/desktop_updater_native_c_test.cpp
     ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}/install_helper_contract_fixture_tests.cc

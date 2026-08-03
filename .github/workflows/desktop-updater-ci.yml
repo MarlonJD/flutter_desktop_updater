@@ -210,6 +210,32 @@ jobs:
             Write-Output "::error title=Windows native SDK build failed::$detail"
             exit $buildExit
           }
+      - name: Emit baseline Windows durable-state fixtures
+        shell: pwsh
+        run: |
+          $output = "artifacts/native-durable-state/windows"
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem -LiteralPath $output -Filter *.json |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            } | Set-Content -LiteralPath "$output/SHA256SUMS" -Encoding ascii
+          @(
+            "serializerCommit=2f91208f0de95b9656b0ce2a28258e70a2920b86"
+            "emitterCommit=$env:GITHUB_SHA"
+            "runnerOS=$env:RUNNER_OS"
+            "runnerArch=$env:RUNNER_ARCH"
+            "command=windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe $output"
+          ) | Set-Content -LiteralPath "$output/PROVENANCE.txt" -Encoding ascii
+      - name: Upload baseline Windows durable-state fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-durable-state-windows-${{ github.sha }}
+          path: artifacts/native-durable-state/windows
+          if-no-files-found: error
       - name: Run Windows helper trust, pipe, transaction, and crash recovery tests
         shell: pwsh
         run: |
@@ -1758,6 +1784,30 @@ jobs:
         run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
       - name: Build standalone Linux native tests
         run: cmake --build linux/native/build
+      - name: Emit baseline Linux durable-state fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="artifacts/native-durable-state/linux"
+          mkdir -p "$output"
+          linux/native/build/desktop_updater_native_durable_state_fixture_emitter "$output"
+          (
+            cd "$output"
+            sha256sum ./*.json | sed 's#  \./#  #' > SHA256SUMS
+          )
+          {
+            printf 'serializerCommit=%s\n' '2f91208f0de95b9656b0ce2a28258e70a2920b86'
+            printf 'emitterCommit=%s\n' "$GITHUB_SHA"
+            printf 'runnerOS=%s\n' "$RUNNER_OS"
+            printf 'runnerArch=%s\n' "$RUNNER_ARCH"
+            printf 'command=%s\n' "linux/native/build/desktop_updater_native_durable_state_fixture_emitter $output"
+          } > "$output/PROVENANCE.txt"
+      - name: Upload baseline Linux durable-state fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-durable-state-linux-${{ github.sha }}
+          path: artifacts/native-durable-state/linux
+          if-no-files-found: error
       - name: Run Linux unprivileged helper and crash recovery tests
         shell: bash
         run: |
