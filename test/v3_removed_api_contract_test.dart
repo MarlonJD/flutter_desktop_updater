@@ -77,96 +77,100 @@ void main() {
     }
   });
 
-  test("3.0 native consumers reject removed source and ABI entries", () async {
-    final root = Directory.current.path;
-    final commands = <_CommandExpectation>[
-      _CommandExpectation(
-        "C scheduleInstallAndRelaunch",
-        "desktop_updater_schedule_install_and_relaunch_v1",
-        "clang",
-        <String>[
-          "-std=c11",
-          "-Werror",
-          "-I",
-          path.join(root, "windows/native/include"),
-          "-fsyntax-only",
-          path.join(root,
-              "test/fixtures/v3_removed_api/windows-c/legacy_schedule_install.c"),
-        ],
-        root,
-      ),
-      _CommandExpectation(
-        "C++ Windows legacy schedule entry",
-        "desktop_updater_schedule_install_and_relaunch_v1",
-        "clang++",
-        <String>[
-          "-std=c++17",
-          "-Werror",
-          "-I",
-          path.join(root, "windows/native/include"),
-          "-fsyntax-only",
-          path.join(root,
-              "test/fixtures/v3_removed_api/windows-cpp/legacy_schedule_install.cc"),
-        ],
-        root,
-      ),
-      _CommandExpectation(
-        "Swift unsigned install request",
-        "scheduleInstallAndRelaunch",
-        "swift",
-        <String>[
-          "build",
-          "--package-path",
-          path.join(root, "test/fixtures/v3_removed_api/swift"),
-        ],
-        root,
-      ),
-      _CommandExpectation(
-        "dotnet schedule and diagnostics path",
-        "ScheduleInstallAndRelaunch",
-        "dotnet",
-        <String>[
-          "build",
-          path.join(root,
-              "test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj"),
-          "--nologo",
-        ],
-        root,
-      ),
-    ];
+  test(
+    "3.0 native consumers reject removed source and ABI entries",
+    () async {
+      final root = Directory.current.path;
+      final commands = <_CommandExpectation>[
+        _CommandExpectation(
+          "C scheduleInstallAndRelaunch",
+          "desktop_updater_schedule_install_and_relaunch_v1",
+          "clang",
+          <String>[
+            "-std=c11",
+            "-Werror",
+            "-I",
+            path.join(root, "windows/native/include"),
+            "-fsyntax-only",
+            path.join(root,
+                "test/fixtures/v3_removed_api/windows-c/legacy_schedule_install.c"),
+          ],
+          root,
+        ),
+        _CommandExpectation(
+          "C++ Windows legacy schedule entry",
+          "desktop_updater_schedule_install_and_relaunch_v1",
+          "clang++",
+          <String>[
+            "-std=c++17",
+            "-Werror",
+            "-I",
+            path.join(root, "windows/native/include"),
+            "-fsyntax-only",
+            path.join(root,
+                "test/fixtures/v3_removed_api/windows-cpp/legacy_schedule_install.cc"),
+          ],
+          root,
+        ),
+        _CommandExpectation(
+          "Swift unsigned install request",
+          "scheduleInstallAndRelaunch",
+          "swift",
+          <String>[
+            "build",
+            "--package-path",
+            path.join(root, "test/fixtures/v3_removed_api/swift"),
+          ],
+          root,
+        ),
+        _CommandExpectation(
+          "dotnet schedule and diagnostics path",
+          "ScheduleInstallAndRelaunch",
+          "dotnet",
+          <String>[
+            "build",
+            path.join(root,
+                "test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj"),
+            "--nologo",
+          ],
+          root,
+        ),
+      ];
 
-    final failures = <String>[];
-    for (final command in commands) {
-      final result = await Process.run(
-        command.executable,
-        command.arguments,
-        workingDirectory: command.workingDirectory,
-        runInShell: false,
-      );
-      if (result.exitCode == 0 ||
-          !_output(result).contains(command.expectedDiagnosticToken)) {
-        failures.add(_reason(command.label, result));
+      final failures = <String>[];
+      for (final command in commands) {
+        final result = await Process.run(
+          command.executable,
+          command.arguments,
+          workingDirectory: command.workingDirectory,
+          runInShell: false,
+        );
+        if (result.exitCode == 0 ||
+            !_output(result).contains(command.expectedDiagnosticToken)) {
+          failures.add(_reason(command.label, result));
+        }
       }
-    }
-    final linuxCmake = await _buildLinuxCmakeConsumer(root);
-    if (Platform.isLinux) {
-      expect(
-        linuxCmake,
-        isNotNull,
-        reason: "Linux contract validation requires the CMake compiler path.",
-      );
-    }
-    if (linuxCmake != null &&
-        (linuxCmake.exitCode == 0 ||
-            !linuxCmake.output.contains("ScheduleInstallAndRelaunch"))) {
-      failures.add(
-        "Linux CMake legacy scheduler consumer must be rejected by the real "
-                "CMake compiler path.\n" +
-            linuxCmake.output,
-      );
-    }
-    expect(failures, isEmpty, reason: failures.join("\n\n"));
-  });
+      final linuxCmake = await _buildLinuxCmakeConsumer(root);
+      if (Platform.isLinux) {
+        expect(
+          linuxCmake,
+          isNotNull,
+          reason: "Linux contract validation requires the CMake compiler path.",
+        );
+      }
+      if (linuxCmake != null &&
+          (linuxCmake.exitCode == 0 ||
+              !linuxCmake.output.contains("ScheduleInstallAndRelaunch"))) {
+        failures.add(
+          "Linux CMake legacy scheduler consumer must be rejected by the real "
+                  "CMake compiler path.\n" +
+              linuxCmake.output,
+        );
+      }
+      expect(failures, isEmpty, reason: failures.join("\n\n"));
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }
 
 Future<ProcessResult> _analyze(String fixture) {

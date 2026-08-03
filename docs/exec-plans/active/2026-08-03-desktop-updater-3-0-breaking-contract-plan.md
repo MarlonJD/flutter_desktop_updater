@@ -2239,6 +2239,14 @@ without rerunning the ladder.
   frozen schema-1 bytes exactly. The fresh Linux baseline process-recovery
   assertion remains deliberately red: it returns manual-action-required rather
   than recovering, which is the behavior the later Linux migration must fix.
+- [x] (2026-08-03) The next exact-head run (`8763fac`, Actions
+  `30799571878`) proved the analyzer and historical macOS writer fixes, then
+  exposed a separate harness timeout: the sequential C/C++/Swift/.NET/Linux
+  compiler consumer test exceeded the generic 30-second Dart test deadline on
+  hosted Linux before it could report its intended diagnostics. That one test
+  now has a bounded three-minute timeout; locally it completes with the actual
+  expected baseline compiler failures and no timeout. Its candidate change
+  requires another exact-head run.
 - [ ] Complete Task 1 contract tests and durable design review. Run the
   correction set against its integration commit in target-host CI and resolve
   any follow-up independent-review finding before Task 2.
@@ -2326,6 +2334,10 @@ without rerunning the ladder.
   non-null, whereas the old source supplied `Data.baseAddress` directly. The
   unrelated service call prevents that complete historical checkout from
   compiling even though the journal writer itself is unchanged.
+- Sequential native compiler fixtures can exceed the default 30-second Dart
+  test timeout on a hosted runner. A timeout masks whether a removed path failed
+  for its intended compiler diagnostic, so the external-consumer test needs its
+  own finite timeout rather than accepting that false signal.
 
 ## Decision Log
 
@@ -2408,6 +2420,10 @@ without rerunning the ladder.
   adaptation outside the journal serializer. It is documented beside the
   fixture and the historical writer must still produce byte-identical schema-1
   output.
+- **2026-08-03 — Give the external compiler contract one bounded timeout.**
+  C/C++/Swift/.NET/Linux CMake probes run sequentially and retain their exact
+  compiler assertions; only their enclosing test receives a three-minute
+  deadline so a hosted-runner timeout cannot replace an intended diagnostic.
 
 ## Outcomes & Retrospective
 
@@ -2418,10 +2434,11 @@ emitter/reader/crash checks pass locally; the 3.0 contracts are deliberately
 red on baseline 2.7. The correction set makes baseline provenance reproducible
 from detached baseline and named-predecessor writer worktrees and adds
 process-isolated recovery/locator evidence. The first exact-head correction run
-exposed a whole-tree analyzer scope issue and an Xcode SDK compatibility issue
-in the historical source; both are corrected locally and require a new
-exact-head target-host run. The fresh Linux recovery assertion intentionally
-remains red until its production recovery migration. No production
+exposed a whole-tree analyzer scope issue, an Xcode SDK compatibility issue in
+the historical source, and a hosted external-compiler timeout; all are
+corrected locally and require a new exact-head target-host run. The fresh Linux
+recovery assertion intentionally remains red until its production recovery
+migration. No production
 implementation, release state, VM, or live artifact was changed.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
