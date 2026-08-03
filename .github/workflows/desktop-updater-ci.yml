@@ -219,6 +219,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe --verify $output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe --verify test/fixtures/compat/native-durable-state/2.7.0/windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem -LiteralPath $output -Filter *.json |
             Sort-Object Name |
             ForEach-Object {
@@ -1079,6 +1081,10 @@ jobs:
           test "$test_count" -gt 0
           mkdir -p reports
           printf 'platform=macos\nsuite=unprivileged-crash-recovery\ntestCount=%s\n' "$test_count" > reports/macos-helper-test-counts.txt
+      - name: Verify frozen macOS durable-state fixtures
+        env:
+          DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT: ${{ github.workspace }}/test/fixtures/compat/native-durable-state/2.7.0/macos
+        run: swift test --package-path macos/install_helper --filter BaselineDurableStateFixtureReaderTests/testPreparedJournalsDecodeAndReencodeByteExactly
       - name: Run unprivileged macOS install helper smoke
         run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
       - name: Typecheck macOS 10.14 CocoaPods fallback source set
@@ -1794,6 +1800,7 @@ jobs:
           mkdir -p "$output"
           linux/native/build/desktop_updater_native_durable_state_fixture_emitter "$output"
           linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify "$output"
+          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify test/fixtures/compat/native-durable-state/2.7.0/linux
           (
             cd "$output"
             sha256sum ./*.json | sed 's#  \./#  #' > SHA256SUMS

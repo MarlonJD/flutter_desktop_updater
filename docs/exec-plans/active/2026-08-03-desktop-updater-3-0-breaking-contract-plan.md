@@ -2210,11 +2210,14 @@ without rerunning the ladder.
   baseline serializer `2f91208` and emitter `745447d` locally by SHA-256. Its
   three bytes remain outside the fixture tree until matching Windows bytes are
   available.
-- [ ] Complete Task 1 contract tests and durable design review. The exact-head
-  Windows fixture-emitter job failed before upload because the emitter omitted
-  the header declaring `WindowsHelperSha256Hex`; the narrow test-only include
-  correction is awaiting a controller-pushed target-host retry and matching
-  artifact collection.
+- [x] (2026-08-03) Corrected the Windows fixture-emitter declaration include
+  in `fcd767c`. Exact-head Actions run `30794201039` compiled the native
+  target, emitted, uploaded, and SHA-verified matching Windows and Linux
+  baseline serializer artifacts. All eleven target-host bytes and provenance
+  now live in the frozen fixture tree with a manifest.
+- [ ] Complete Task 1 contract tests and durable design review. The fixture
+  reader gates are added to macOS, Windows, and Linux CI; run them against the
+  integration commit and resolve independent-review findings before Task 2.
 - [ ] Complete Task 2 Dart/API/publishing migration.
 - [ ] Complete Task 3 macOS helper and SwiftPM migration.
 - [ ] Complete Task 4 Windows C ABI/.NET/helper/runtime migration.
@@ -2270,6 +2273,10 @@ without rerunning the ladder.
   `desktop_updater_install_helper_support` already compiles
   `windows_helper_bootstrap.cpp` and is already linked by the emitter target;
   adding that source a second time would risk duplicate definitions.
+- Windows artifact `SHA256SUMS` uses CRLF because PowerShell emits it. Treat
+  that as transport metadata only: normalize its line endings for manifest
+  verification, then freeze the original JSON bytes (which have no trailing
+  newline) and record ordinary-LF repository hashes.
 
 ## Decision Log
 
@@ -2326,17 +2333,22 @@ without rerunning the ladder.
 - **2026-08-03 — Do not integrate a single-platform durable artifact.** The
   verified Linux bytes are retained as an external CI artifact until the
   matching Windows artifact carries its own target-host provenance and hashes.
+- **2026-08-03 — Freeze target-host outputs only after matching provenance.**
+  The committed Windows/Linux bytes come from exact-head Actions run
+  `30794201039`, baseline serializer `2f91208`, and emitter
+  `fcd767c`; local macOS cannot substitute for either target host.
 
 ## Outcomes & Retrospective
 
 Task 1 is in progress. The repository now has red 3.0 contracts, frozen ABI
-inputs, macOS baseline journals, and permanent target-host emitters. The
-baseline ABI probe and macOS emitter/reader checks pass locally; the 3.0
-contracts are deliberately red on baseline 2.7. Linux durable-state bytes are
-authentic and SHA-verified but intentionally not integrated alone. The Windows
-CI compile failure is corrected only by a test-emitter declaration include;
-actual Windows compilation and fixture upload remain a required next CI result.
-No production implementation, release state, VM, or live artifact was changed.
+inputs, macOS baseline journals, and all eleven target-host durable-state
+bytes with exact hashes and provenance. The baseline ABI probe and macOS
+emitter/reader checks pass locally; the 3.0 contracts are deliberately red on
+baseline 2.7. Exact-head CI compiled the corrected Windows emitter and uploaded
+the matching Windows/Linux artifacts. The integration commit adds fresh-process
+reader gates on every native platform; it still needs its own CI run and an
+independent review. No production implementation, release state, VM, or live
+artifact was changed.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
 and any contract deviation here. A deviation requires a dated Decision Log
