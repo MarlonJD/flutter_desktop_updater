@@ -68,6 +68,9 @@ int main(int argc, char** argv) {
     const char* expected = std::getenv("DESKTOP_UPDATER_TEST_PROVENANCE_SHA256");
     if (expected == nullptr) throw std::runtime_error("missing provenance digest");
     request.expected_provenance_sha256 = expected;
+    request.expected_artifact_sha256 =
+        desktop_updater::helper::Sha256LinuxFile(
+            std::filesystem::path(stage) / ".desktop_updater_artifact.zip");
 
     desktop_updater::native::InstallReservation reservation;
     const auto prepared =

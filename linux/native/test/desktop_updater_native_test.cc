@@ -155,6 +155,7 @@ InstallRequest RequestFor(const fs::path& install_root,
   request.install_root = install_root.string();
   request.executable_relative_path = "example";
   request.package_id = "com.example.app";
+  request.expected_artifact_sha256 = artifact_sha256;
   request.provenance_nonce = "123e4567-e89b-42d3-a456-426614174000";
   for (const fs::directory_entry& entry :
        fs::recursive_directory_iterator(staging_root)) {

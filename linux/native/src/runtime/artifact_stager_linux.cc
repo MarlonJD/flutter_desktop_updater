@@ -35,7 +35,8 @@ native::InstallRequest LinuxInstallRequest(
           diagnostics_log_path,
           expected_provenance_sha256,
           marker.nonce,
-          entries};
+          entries,
+          marker.artifact_sha256};
 }
 
 }  // namespace

@@ -45,6 +45,7 @@ void main() {
       if (await fixture.root.exists()) {
         await fixture.root.delete(recursive: true);
       }
+      await fixture.restoreInstalledIdentityMarker();
     });
     final arguments = <String, Object?>{
       "stagingPath":
@@ -52,7 +53,9 @@ void main() {
       "expectedPackageId":
           Platform.isLinux ? "com.example.forged" : fixture.packageId,
       "stageProvenanceSha256": fixture.provenanceSha256,
-      "expectedArtifactSha256": fixture.artifactSha256,
+      "expectedArtifactSha256": Platform.isWindows
+          ? "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          : fixture.artifactSha256,
       "transactionId": "123e4567-e89b-42d3-a456-426614174000",
     };
 
@@ -89,6 +92,8 @@ class _VerifiedStageFixture {
     required this.packageId,
     required this.artifactSha256,
     required this.provenanceSha256,
+    this.installedIdentityMarker,
+    this.installedIdentityMarkerContents,
   });
 
   final Directory root;
@@ -97,6 +102,19 @@ class _VerifiedStageFixture {
   final String packageId;
   final String artifactSha256;
   final String provenanceSha256;
+  final File? installedIdentityMarker;
+  final String? installedIdentityMarkerContents;
+
+  Future<void> restoreInstalledIdentityMarker() async {
+    final marker = installedIdentityMarker;
+    if (marker == null) return;
+    final contents = installedIdentityMarkerContents;
+    if (contents == null) {
+      if (await marker.exists()) await marker.delete();
+    } else {
+      await marker.writeAsString(contents);
+    }
+  }
 }
 
 Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
@@ -172,6 +190,28 @@ Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
     descriptorSha256: canonicalJsonSha256(signedManifest),
     artifactSha256: artifactSha256,
   );
+  File? installedIdentityMarker;
+  String? installedIdentityMarkerContents;
+  if (Platform.isWindows) {
+    installedIdentityMarker = File(
+      _joinPath(
+        File(Platform.resolvedExecutable).parent.path,
+        ".desktop_updater_install_identity.json",
+      ),
+    );
+    if (await installedIdentityMarker.exists()) {
+      installedIdentityMarkerContents =
+          await installedIdentityMarker.readAsString();
+    }
+    await installedIdentityMarker.writeAsString(
+      jsonEncode(
+        sortJsonValue({
+          "schemaVersion": 1,
+          "packageId": packageId,
+        }),
+      ),
+    );
+  }
   return _VerifiedStageFixture(
     root: root,
     stageRoot: stageRoot,
@@ -179,6 +219,8 @@ Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
     packageId: packageId,
     artifactSha256: artifactSha256,
     provenanceSha256: provenance.markerSha256,
+    installedIdentityMarker: installedIdentityMarker,
+    installedIdentityMarkerContents: installedIdentityMarkerContents,
   );
 }
 
@@ -214,7 +256,7 @@ String _expectedForgedBindingMessage() {
     return "Linux stage provenance package identity changed.";
   }
   if (Platform.isWindows) {
-    return "Windows ZIP target requires a matching installed identity marker";
+    return "release manifest, stage, and caller evidence are not bound";
   }
   return "InstallError";
 }

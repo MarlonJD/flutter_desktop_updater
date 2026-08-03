@@ -120,6 +120,7 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
       "",
   };
   request.expected_provenance_sha256 = marker_sha256;
+  request.expected_artifact_sha256 = std::string(64, 'a');
   const auto result = native::ValidateInstallRequest(request);
   EXPECT_TRUE(result.ok) << result.error;
   unlink(marker_path.c_str());

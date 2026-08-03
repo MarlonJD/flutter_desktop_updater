@@ -45,6 +45,9 @@ struct InstallRequest {
   std::string expected_provenance_sha256;
   std::string provenance_nonce;
   std::vector<InstallProvenanceEntry> provenance_entries;
+  // Caller-owned artifact identity. The platform boundary must carry this
+  // value through native validation instead of deriving it from the marker.
+  std::string expected_artifact_sha256;
   // Optional caller-owned durable transaction identity. Empty preserves the
   // native SDK's backwards-compatible generated-ID behavior.
   std::string transaction_id;

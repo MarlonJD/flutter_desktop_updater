@@ -296,3 +296,15 @@ The local macOS integration run is blocked before test execution by this host's 
 - `dart format --output=none --set-exit-if-changed` passed.
 - `flutter analyze --no-fatal-infos` exited 0 with info-only diagnostics.
 - Local macOS integration remains CI-pending because this host lacks the required signing certificate.
+
+## Fix round 5 — caller artifact binding and forged-boundary fixture
+
+- Linux now carries the caller-supplied `expectedArtifactSha256` through the
+  native install request, rejects marker mismatches before helper serialization,
+  and serializes that validated caller value as the helper evidence.
+- The Windows forged MethodChannel fixture provisions the installed identity
+  marker beside the derived running executable, then forges the artifact digest;
+  its assertion proves descriptor/stage/caller binding rejection rather than a
+  missing-marker rejection.
+- The macOS assertion intentionally proves rejection with the stable sanitized
+  public error message; it does not depend on an internal Swift error string.

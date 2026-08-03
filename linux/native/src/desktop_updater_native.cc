@@ -408,6 +408,10 @@ InstallResult BindProvenanceToMarker(InstallRequest* request,
     if (marker.package_id != request->package_id) {
       return {false, "Linux stage provenance package identity changed."};
     }
+    if (!IsLowercaseSHA256(request->expected_artifact_sha256) ||
+        marker.artifact_sha256 != request->expected_artifact_sha256) {
+      return {false, "Linux stage provenance artifact identity changed."};
+    }
     if (canonical_marker != nullptr) {
       *canonical_marker = binding.canonical_json;
     }
@@ -774,7 +778,7 @@ InstallResult SerializeCommonInstallRequest(
     evidence.stage_path_hint = request.staging_path;
     evidence.expected_provenance_sha256 =
         request.expected_provenance_sha256;
-    evidence.expected_artifact_sha256 = binding.marker.artifact_sha256;
+    evidence.expected_artifact_sha256 = request.expected_artifact_sha256;
     evidence.caller_process_id = static_cast<std::int64_t>(getpid());
     evidence.caller_process_start_identity =
         "linux:" + std::to_string(helper::LinuxProcessStartIdentity(getpid()));

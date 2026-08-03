@@ -284,12 +284,8 @@ static void desktop_updater_plugin_handle_method_call(
           request.executable_relative_path = executable_relative_path;
           request.package_id = expected_package_id;
           request.expected_provenance_sha256 = expected_provenance_sha256;
+          request.expected_artifact_sha256 = expected_artifact_sha256;
           request.transaction_id = transaction_id;
-          // The existing Linux ABI reloads the artifact digest from the
-          // verified provenance marker while building the helper request.
-          // Requiring and validating this field keeps the Flutter boundary
-          // exact without introducing a duplicate ABI authority field.
-          (void)expected_artifact_sha256;
           const auto result = HandoffNativeInstall(request);
           if (!result.ok) {
             g_autoptr(FlValue) details = result.recovery_required

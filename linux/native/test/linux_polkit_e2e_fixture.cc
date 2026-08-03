@@ -467,6 +467,8 @@ int Install(const fs::path& target,
   request.expected_provenance_sha256 =
       desktop_updater::helper::Sha256LinuxFile(
           stage / ".desktop_updater_stage_provenance.json");
+  request.expected_artifact_sha256 = desktop_updater::helper::Sha256LinuxFile(
+      stage / ".desktop_updater_artifact.zip");
   desktop_updater::native::InstallReservation reservation;
   const auto prepared =
       desktop_updater::native::PrepareInstall(request, &reservation);
