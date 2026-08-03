@@ -6,7 +6,24 @@ import "package:flutter_test/flutter_test.dart";
 void main() {
   const root = "test/fixtures/compat/windows-native-abi/2.7.0";
 
-  test("frozen 2.7 Windows ABI input hashes and compiles", () async {
+  test("frozen 2.7 Windows ABI input provenance, hashes, and compiles",
+      () async {
+    final readme = await File("$root/README.md").readAsString();
+    expect(
+      readme,
+      contains("2f91208f0de95b9656b0ce2a28258e70a2920b86"),
+      reason: "The frozen ABI fixtures need named baseline provenance.",
+    );
+    for (final name in const <String>[
+      "desktop_updater_native_c.h",
+      "desktop_updater_version.h",
+      "prepare-v2-probe.c",
+      "dotnet-probe/PrepareV2Probe.csproj",
+      "dotnet-probe/Program.cs",
+    ]) {
+      expect(readme, contains(name));
+    }
+
     final sums = await File("$root/SHA256SUMS").readAsLines();
     for (final line in sums) {
       final fields = line.split("  ");

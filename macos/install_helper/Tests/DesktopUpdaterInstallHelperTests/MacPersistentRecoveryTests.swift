@@ -104,6 +104,51 @@ final class MacPersistentRecoveryTests: XCTestCase {
         }
     }
 
+    func testFreshProcessQueriesFrozenDirectoryFixtureBeforeRecovery()
+        throws
+    {
+        guard let inputPath = ProcessInfo.processInfo.environment[
+            "DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"
+        ] else {
+            throw XCTSkip("fixture input is requested only by the Task 1 harness")
+        }
+        let input = URL(fileURLWithPath: inputPath, isDirectory: true)
+        let fixtureURL = input.appendingPathComponent(
+            "directory-journal-schema1.json"
+        )
+        let before = try Data(contentsOf: fixtureURL)
+
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = [
+            "xctest", "-XCTest",
+            "DesktopUpdaterInstallHelperTests."
+                + "FrozenDirectoryRecoveryWorkerTests/"
+                + "testQueryThenRecoverFromFrozenDirectoryFixture",
+            Bundle(for: FrozenDirectoryRecoveryWorkerTests.self)
+                .bundleURL.path,
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"] = input.path
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = output
+
+        try process.run()
+        process.waitUntilExit()
+        let processOutput = String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        )
+        XCTAssertEqual(process.terminationStatus, 0, processOutput)
+        XCTAssertEqual(
+            try Data(contentsOf: fixtureURL),
+            before,
+            "fresh query/recovery worker mutated the committed fixture"
+        )
+    }
+
     func testUncommittedPreparationQueriesThenRollsBack() throws {
         let fixture = try MacTransactionFixture()
         defer { fixture.remove() }
@@ -252,6 +297,122 @@ final class MacCrashProcessWorkerTests: XCTestCase {
         )
         _ = try transaction.prepare()
         XCTFail("configured crash point was not reached")
+    }
+}
+
+final class FrozenDirectoryRecoveryWorkerTests: XCTestCase {
+    func testQueryThenRecoverFromFrozenDirectoryFixture() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let inputPath = environment[
+            "DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"
+        ] else {
+            return
+        }
+        let input = URL(fileURLWithPath: inputPath, isDirectory: true)
+        let frozenBytes = try Data(
+            contentsOf: input.appendingPathComponent(
+                "directory-journal-schema1.json"
+            )
+        )
+        let frozen = try MacTransactionJournal.decodeStrict(frozenBytes)
+        let paths = try MacTransactionPaths(
+            targetName: frozen.targetName,
+            transactionID: frozen.transactionID
+        )
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let target = root.appendingPathComponent(
+            frozen.targetName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: target,
+            withIntermediateDirectories: true
+        )
+        try Data("old".utf8).write(
+            to: target.appendingPathComponent("version.txt"),
+            options: .atomic
+        )
+
+        let journalURL = root.appendingPathComponent(paths.journalName)
+        try frozenBytes.write(to: journalURL, options: .atomic)
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: root.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: FixturePayloadVerifier()
+            )
+        )
+
+        let status = try service.query(transactionID: frozen.transactionID)
+        XCTAssertEqual(status.state, "prepared")
+        XCTAssertEqual(status.resultCode, "recoveryRequired")
+        XCTAssertEqual(status.journalSHA256, macPrivilegeSHA256(frozenBytes))
+        XCTAssertEqual(
+            try Data(contentsOf: journalURL),
+            frozenBytes,
+            "query eagerly re-encoded the frozen predecessor journal"
+        )
+
+        let directory = try MacTransactionDirectory(url: root)
+        let prepared = root.appendingPathComponent(
+            paths.preparedName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: prepared,
+            withIntermediateDirectories: true
+        )
+        try Data("new".utf8).write(
+            to: prepared.appendingPathComponent("version.txt"),
+            options: .atomic
+        )
+        let targetLock = try MacTargetLock(
+            directory: directory,
+            name: paths.lockName,
+            transactionID: frozen.transactionID
+        )
+        let verifier = FixturePayloadVerifier()
+        let recoveryJournal = MacTransactionJournal(
+            transactionID: frozen.transactionID,
+            ownerProcessIdentifier: 999_999,
+            targetName: frozen.targetName,
+            originalStageName: frozen.originalStageName,
+            preparedName: frozen.preparedName,
+            backupName: frozen.backupName,
+            parentIdentity: directory.identity,
+            targetIdentity: try directory.identity(
+                name: paths.targetName,
+                rejectSymbolicLink: true
+            ),
+            stageIdentity: try directory.identity(
+                name: paths.preparedName,
+                rejectSymbolicLink: true
+            ),
+            expectedPayloadIdentity: verifier.identity(forVersion: "new"),
+            state: .prepared
+        )
+        try DurableTransactionJournalStore(
+            directory: directory,
+            paths: paths
+        ).persist(recoveryJournal)
+
+        let result = try MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: root.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(verifier: verifier)
+        ).recover(transactionID: frozen.transactionID)
+        XCTAssertEqual(result.resultCode, "rolledBack")
+        XCTAssertEqual(result.verifiedOutcome, "oldTarget")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: prepared.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+        withExtendedLifetime(targetLock) {}
     }
 }
 
