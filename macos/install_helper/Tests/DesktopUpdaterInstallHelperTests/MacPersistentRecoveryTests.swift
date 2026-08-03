@@ -104,7 +104,7 @@ final class MacPersistentRecoveryTests: XCTestCase {
         }
     }
 
-    func testFreshProcessQueriesFrozenDirectoryFixtureBeforeRecovery()
+    func testFreshProcessQueriesFrozenDirectoryFixtureWithoutMutation()
         throws
     {
         guard let inputPath = ProcessInfo.processInfo.environment[
@@ -125,7 +125,7 @@ final class MacPersistentRecoveryTests: XCTestCase {
             "xctest", "-XCTest",
             "DesktopUpdaterInstallHelperTests."
                 + "FrozenDirectoryRecoveryWorkerTests/"
-                + "testQueryThenRecoverFromFrozenDirectoryFixture",
+                + "testQueryFrozenDirectoryFixtureWithoutMutation",
             Bundle(for: FrozenDirectoryRecoveryWorkerTests.self)
                 .bundleURL.path,
         ]
@@ -145,7 +145,79 @@ final class MacPersistentRecoveryTests: XCTestCase {
         XCTAssertEqual(
             try Data(contentsOf: fixtureURL),
             before,
-            "fresh query/recovery worker mutated the committed fixture"
+            "fresh query worker mutated the committed fixture"
+        )
+    }
+
+    func testCurrentReaderRecoversBaselinePreparedJournalWithoutRewrite()
+        throws
+    {
+        let environment = ProcessInfo.processInfo.environment
+        guard let rootPath =
+                environment["DESKTOP_UPDATER_BASELINE_RECOVERY_ROOT"],
+              let transactionID =
+                environment["DESKTOP_UPDATER_BASELINE_RECOVERY_TRANSACTION"],
+              let expectedJournalSHA256 =
+                environment["DESKTOP_UPDATER_BASELINE_RECOVERY_JOURNAL_SHA256"]
+        else {
+            throw XCTSkip("baseline recovery root is provided by macOS CI")
+        }
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+        let paths = try MacTransactionPaths(
+            targetName: "Example.app",
+            transactionID: transactionID
+        )
+        let journalURL = root.appendingPathComponent(paths.journalName)
+        let before = try Data(contentsOf: journalURL)
+        XCTAssertEqual(macPrivilegeSHA256(before), expectedJournalSHA256)
+
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: root.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: FixturePayloadVerifier()
+            )
+        )
+        let status = try service.query(transactionID: transactionID)
+        XCTAssertEqual(status.state, "prepared")
+        XCTAssertEqual(status.resultCode, "recoveryRequired")
+        XCTAssertEqual(status.journalSHA256, expectedJournalSHA256)
+        XCTAssertEqual(
+            try Data(contentsOf: journalURL),
+            before,
+            "query rewrote the baseline-prepared journal"
+        )
+
+        let result = try service.recover(transactionID: transactionID)
+        XCTAssertEqual(result.resultCode, "rolledBack")
+        XCTAssertEqual(result.verifiedOutcome, "oldTarget")
+        XCTAssertEqual(result.journalSHA256, expectedJournalSHA256)
+        XCTAssertEqual(
+            try String(
+                decoding: Data(
+                    contentsOf: root
+                        .appendingPathComponent("Example.app")
+                        .appendingPathComponent("version.txt")
+                ),
+                as: UTF8.self
+            ),
+            "old"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(paths.preparedName).path
+            ),
+            "recovery left the old prepared target"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: journalURL.path),
+            "recovery left the baseline journal"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(paths.lockName).path
+            ),
+            "recovery left the transaction lock"
         )
     }
 
@@ -301,7 +373,7 @@ final class MacCrashProcessWorkerTests: XCTestCase {
 }
 
 final class FrozenDirectoryRecoveryWorkerTests: XCTestCase {
-    func testQueryThenRecoverFromFrozenDirectoryFixture() throws {
+    func testQueryFrozenDirectoryFixtureWithoutMutation() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let inputPath = environment[
             "DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"
@@ -359,60 +431,6 @@ final class FrozenDirectoryRecoveryWorkerTests: XCTestCase {
             frozenBytes,
             "query eagerly re-encoded the frozen predecessor journal"
         )
-
-        let directory = try MacTransactionDirectory(url: root)
-        let prepared = root.appendingPathComponent(
-            paths.preparedName,
-            isDirectory: true
-        )
-        try FileManager.default.createDirectory(
-            at: prepared,
-            withIntermediateDirectories: true
-        )
-        try Data("new".utf8).write(
-            to: prepared.appendingPathComponent("version.txt"),
-            options: .atomic
-        )
-        let targetLock = try MacTargetLock(
-            directory: directory,
-            name: paths.lockName,
-            transactionID: frozen.transactionID
-        )
-        let verifier = FixturePayloadVerifier()
-        let recoveryJournal = MacTransactionJournal(
-            transactionID: frozen.transactionID,
-            ownerProcessIdentifier: 999_999,
-            targetName: frozen.targetName,
-            originalStageName: frozen.originalStageName,
-            preparedName: frozen.preparedName,
-            backupName: frozen.backupName,
-            parentIdentity: directory.identity,
-            targetIdentity: try directory.identity(
-                name: paths.targetName,
-                rejectSymbolicLink: true
-            ),
-            stageIdentity: try directory.identity(
-                name: paths.preparedName,
-                rejectSymbolicLink: true
-            ),
-            expectedPayloadIdentity: verifier.identity(forVersion: "new"),
-            state: .prepared
-        )
-        try DurableTransactionJournalStore(
-            directory: directory,
-            paths: paths
-        ).persist(recoveryJournal)
-
-        let result = try MacPersistentRecoveryService(
-            policy: persistentRecoveryPolicy(root: root.path),
-            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
-            verifierFactory: FixtureRecoveryVerifierFactory(verifier: verifier)
-        ).recover(transactionID: frozen.transactionID)
-        XCTAssertEqual(result.resultCode, "rolledBack")
-        XCTAssertEqual(result.verifiedOutcome, "oldTarget")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: prepared.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
-        withExtendedLifetime(targetLock) {}
     }
 }
 

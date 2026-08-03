@@ -1189,6 +1189,36 @@ jobs:
           rm -f "$output/verified-installer-journal-schema1.json"
           test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 2
 
+          recovery_root="$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-root"
+          recovery_stage_root="$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-stage"
+          recovery_transaction="00000000-0000-4000-8000-000000000041"
+          recovery_journal="$recovery_root/.Example.app.desktop-updater-$recovery_transaction.journal.json"
+          recovery_prepared="$recovery_root/.Example.app.desktop-updater-$recovery_transaction.prepared"
+          rm -rf "$recovery_root" "$recovery_stage_root"
+          mkdir -p "$recovery_root/Example.app" "$recovery_stage_root/Stage.app"
+          printf 'old' > "$recovery_root/Example.app/version.txt"
+          printf 'new' > "$recovery_stage_root/Stage.app/version.txt"
+          set +e
+          DESKTOP_UPDATER_CRASH_ROOT="$recovery_root" \
+          DESKTOP_UPDATER_CRASH_STAGE="$recovery_stage_root/Stage.app" \
+          DESKTOP_UPDATER_CRASH_TRANSACTION="$recovery_transaction" \
+          DESKTOP_UPDATER_CRASH_POINT="afterPreparedJournalFlush" \
+            swift test --package-path "$baseline/macos/install_helper" --filter MacCrashProcessWorkerTests/testCrashAtConfiguredPoint 2>&1 | tee "$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-crash.log"
+          recovery_crash_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$recovery_crash_status" -eq 0 ]; then
+            echo "Baseline macOS crash worker unexpectedly exited successfully." >&2
+            exit 1
+          fi
+          test -s "$recovery_journal"
+          test -d "$recovery_prepared"
+          test "$(cat "$recovery_root/Example.app/version.txt")" = old
+          recovery_journal_sha="$(shasum -a 256 "$recovery_journal" | awk '{print $1}')"
+          DESKTOP_UPDATER_BASELINE_RECOVERY_ROOT="$recovery_root" \
+          DESKTOP_UPDATER_BASELINE_RECOVERY_TRANSACTION="$recovery_transaction" \
+          DESKTOP_UPDATER_BASELINE_RECOVERY_JOURNAL_SHA256="$recovery_journal_sha" \
+            swift test --package-path macos/install_helper --filter MacPersistentRecoveryTests/testCurrentReaderRecoversBaselinePreparedJournalWithoutRewrite
+
           git worktree add --detach "$predecessor" "$predecessor_commit"
           git -C "$predecessor" apply --whitespace=nowarn "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/73aa730-swift-sdk-compat.patch"
           cp "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/PredecessorSchema1FixtureWriterTests.swift" "$predecessor/macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/"

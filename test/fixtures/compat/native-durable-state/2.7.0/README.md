@@ -38,9 +38,16 @@ model. SHA256SUMS covers every JSON byte under this directory.
 
 The macOS test-only writer and reader run as separate Swift test invocations.
 The reader additionally starts a fresh XCTest process and verifies that it did
-not mutate any frozen byte. The Windows and Linux target-host fixture emitters
-run a separate `--verify` process against this fixture directory in CI; they
-strict-decode and byte-reencode the frozen journals.
+not mutate any frozen committed fixture byte. The committed abstract directory
+journal fixture is query/preservation evidence only; recovery is proven against
+an isolated root that a detached baseline 2.7 writer process prepared at the
+fixed `afterPreparedJournalFlush` crash point. The current reader verifies the
+baseline journal's raw SHA-256, confirms query left those exact bytes unchanged,
+then recovers without any intermediate current journal write and checks that the
+old target remains while the prepared target, lock, and journal are cleaned up.
+The Windows and Linux target-host fixture emitters run a separate `--verify`
+process against this fixture directory in CI; they strict-decode and
+byte-reencode the frozen journals.
 
 Windows and Linux crash tests also start a writer process that dies immediately
 after the prepared journal is durably flushed, then start a separate reader
