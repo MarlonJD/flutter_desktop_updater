@@ -1,0 +1,19 @@
+diff --git a/macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift b/macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift
+--- a/macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift
++++ b/macos/install_helper/Sources/DesktopUpdaterInstallHelper/MacPrivilegeService.swift
+@@ -771,11 +771,14 @@ extension MacPrivilegeService {
+                         peerProcessIdentifier:
+                             xpc_connection_get_pid(connection)
+                     )
+                     response.payload.withUnsafeBytes { bytes in
++                        // Xcode 16's XPC import marks this argument nonnull.
++                        // The pointer is ignored when the payload is empty.
++                        let payloadAddress = bytes.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!
+                         xpc_dictionary_set_data(
+                             reply,
+                             "payload",
+-                            bytes.baseAddress,
++                            payloadAddress,
+                             bytes.count
+                         )
+                     }

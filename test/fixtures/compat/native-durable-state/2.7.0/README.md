@@ -13,7 +13,11 @@ model. SHA256SUMS covers every JSON byte under this directory.
   before schema 2 landed in 96cc4ecbb009d5be5a50adcbeeedf8fae2dedfa4. CI
   checks it by copying a test-only emitter into an isolated checkout of that
   exact commit and comparing the historical writer's raw output; it does not
-  reconstruct schema 1 from a current type.
+  reconstruct schema 1 from a current type. Current GitHub macOS Xcode imports
+  one unrelated XPC reply pointer as non-null, so the isolated checkout applies
+  `writers/macos/73aa730-swift-sdk-compat.patch` before compiling. That patch
+  changes no journal model, canonicalizer, or writer code; the historical
+  writer still has to emit the committed raw schema-1 bytes exactly.
 - Windows and Linux bytes were first emitted on their respective GitHub-hosted
   target runners by baseline serializers at
   2f91208f0de95b9656b0ce2a28258e70a2920b86, using the test-emitter overlay

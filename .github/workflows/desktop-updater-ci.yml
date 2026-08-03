@@ -1163,6 +1163,7 @@ jobs:
           test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 2
 
           git worktree add --detach "$predecessor" "$predecessor_commit"
+          git -C "$predecessor" apply --whitespace=nowarn "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/73aa730-swift-sdk-compat.patch"
           cp "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/PredecessorSchema1FixtureWriterTests.swift" "$predecessor/macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/"
           mkdir -p "$predecessor_output"
           DESKTOP_UPDATER_PREDECESSOR_DURABLE_FIXTURE_OUTPUT="$predecessor_output" swift test --package-path "$predecessor/macos/install_helper" --filter PredecessorSchema1FixtureWriterTests/testEmitPreparedSchema1JournalFromHistoricalWriter

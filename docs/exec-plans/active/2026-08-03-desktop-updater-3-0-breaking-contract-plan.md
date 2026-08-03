@@ -2229,6 +2229,16 @@ without rerunning the ladder.
   set. It found and resolved the reader-state mutation and schema-1 historical
   provenance gaps; no remaining high or medium finding blocks the target-host
   CI gate.
+- [x] (2026-08-03) Diagnosed the first correction-set integration run
+  (`b33c829`, Actions `30798455449`). Repository-wide Dart analysis was
+  analyzing deliberately invalid compiler fixtures, so it now excludes only
+  those fixture directories while their dedicated tests invoke `dart analyze`
+  directly. The macOS `73aa730` writer was blocked only by the current Xcode
+  import's non-null XPC pointer annotation; an isolated-worktree compatibility
+  patch leaves journal serialization untouched and locally reproduces the
+  frozen schema-1 bytes exactly. The fresh Linux baseline process-recovery
+  assertion remains deliberately red: it returns manual-action-required rather
+  than recovering, which is the behavior the later Linux migration must fix.
 - [ ] Complete Task 1 contract tests and durable design review. Run the
   correction set against its integration commit in target-host CI and resolve
   any follow-up independent-review finding before Task 2.
@@ -2307,6 +2317,15 @@ without rerunning the ladder.
   writer merely by manually omitting later fields. The compatibility emitter
   must compile against the actual `73aa730` source in an isolated worktree and
   compare that process's raw output to the fixture.
+- General repository analysis treats fixture source as ordinary package source.
+  Negative and pending-positive v3 fixtures must therefore be excluded from the
+  whole-tree analyzer; their own tests must continue to invoke the compiler on
+  each exact fixture so exclusion cannot turn a contract assertion into a
+  source-name scan.
+- The current GitHub macOS SDK imports the historical XPC reply data pointer as
+  non-null, whereas the old source supplied `Data.baseAddress` directly. The
+  unrelated service call prevents that complete historical checkout from
+  compiling even though the journal writer itself is unchanged.
 
 ## Decision Log
 
@@ -2380,6 +2399,15 @@ without rerunning the ladder.
   emitter is copied only into the detached `73aa730` worktree and constructs
   that checkout's `MacVerifiedInstallerJournal`; current schema-2 source never
   generates evidence for schema 1.
+- **2026-08-03 — Keep compile-contract fixtures out of whole-tree analysis.**
+  The analyzer excludes only the deliberately invalid/pending v3 Dart fixture
+  directories. Their dedicated tests explicitly run `dart analyze` and assert
+  the required success or diagnostic, preserving executable red/green proof.
+- **2026-08-03 — Apply a minimal SDK compatibility overlay to the historical
+  macOS worktree.** The `73aa730` checkout receives one XPC non-null pointer
+  adaptation outside the journal serializer. It is documented beside the
+  fixture and the historical writer must still produce byte-identical schema-1
+  output.
 
 ## Outcomes & Retrospective
 
@@ -2389,9 +2417,12 @@ bytes with exact hashes and provenance. The baseline ABI probe and macOS
 emitter/reader/crash checks pass locally; the 3.0 contracts are deliberately
 red on baseline 2.7. The correction set makes baseline provenance reproducible
 from detached baseline and named-predecessor writer worktrees and adds
-process-isolated recovery/locator evidence; it still needs target-host CI and
-the follow-up independent review. No production implementation, release state,
-VM, or live artifact was changed.
+process-isolated recovery/locator evidence. The first exact-head correction run
+exposed a whole-tree analyzer scope issue and an Xcode SDK compatibility issue
+in the historical source; both are corrected locally and require a new
+exact-head target-host run. The fresh Linux recovery assertion intentionally
+remains red until its production recovery migration. No production
+implementation, release state, VM, or live artifact was changed.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
 and any contract deviation here. A deviation requires a dated Decision Log
