@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "helper_authenticode.h"
+#include "windows_helper_bootstrap.h"
 #include "windows_persistent_recovery.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_protected_helper_locator.h"

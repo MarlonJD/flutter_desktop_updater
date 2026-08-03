@@ -17,6 +17,21 @@ void main() {
     );
   });
 
+  test("3.0 exposes only owner-bound v3 capabilities", () async {
+    final result = await _analyze("positive_v3_capabilities.dart");
+
+    expect(
+      result.exitCode,
+      0,
+      reason: _reason(
+        "The pending-v3 marker, session, persistence receipt, retained-stage "
+        "claim, dispatcher, and typed recovery capabilities must compile as "
+        "one coherent contract.",
+        result,
+      ),
+    );
+  });
+
   for (final constructor in <String>["primary", "for_testing"]) {
     for (final argument in <String>[
       "app_archive_url",

@@ -1222,7 +1222,14 @@ listed in the file map.
   other receives an already-claimed failure. Add
   timeout/transport-loss tests proving the persisted marker remains until an
   authenticated query/recovery result proves the transaction absent or
-  terminal. Add
+  terminal. Add a Flutter binary-messenger test that dispatches a real
+  library-issued `VerifiedNativeInstallRequest` through
+  `MethodChannelDesktopUpdater`, asserts the preserved `installUpdate` method
+  name and the exact five-entry serialized map (`stagingPath`,
+  `expectedPackageId`, `expectedArtifactSha256`, `stageProvenanceSha256`, and
+  `transactionId`), and proves no legacy payload key is present. This runtime
+  proof belongs here because Task 1 cannot construct the opaque request before
+  the Task 2 authority path exists. Add
   platform-host tests proving a raw forged MethodChannel payload still fails
   native stage/descriptor/target validation.
 
@@ -2195,7 +2202,19 @@ without rerunning the ladder.
 - [x] (2026-08-03) Froze the proposed controller, trust, diagnostics,
   transaction, recovery, native ABI, migration, maturity, and release decisions
   in this plan.
-- [ ] Complete Task 1 contract tests and durable design review.
+- [x] (2026-08-03) Committed the initial Task 1 red-contract snapshot,
+  frozen 2.7 Windows ABI probe, macOS prepared-journal fixtures, and permanent
+  target-host durable-state emitters in `33bf921` and `745447d`; no production
+  API changed.
+- [x] (2026-08-03) Verified the Linux target-host durable-state artifact from
+  baseline serializer `2f91208` and emitter `745447d` locally by SHA-256. Its
+  three bytes remain outside the fixture tree until matching Windows bytes are
+  available.
+- [ ] Complete Task 1 contract tests and durable design review. The exact-head
+  Windows fixture-emitter job failed before upload because the emitter omitted
+  the header declaring `WindowsHelperSha256Hex`; the narrow test-only include
+  correction is awaiting a controller-pushed target-host retry and matching
+  artifact collection.
 - [ ] Complete Task 2 Dart/API/publishing migration.
 - [ ] Complete Task 3 macOS helper and SwiftPM migration.
 - [ ] Complete Task 4 Windows C ABI/.NET/helper/runtime migration.
@@ -2241,6 +2260,16 @@ without rerunning the ladder.
 - Several `2.7.0` literals are migration/smoke inputs rather than package
   version claims. A mechanical replacement could make the first signed v3
   bridge impossible to test.
+- The first Linux fixture-emitter CI attempt failed because the provider
+  journal output path was relative; `745447d` canonicalized it before writing.
+  The Linux retry emitted a SHA-verified artifact.
+- Exact-head Windows job `91617757650` in Actions run `30792147066` failed
+  before fixture upload with MSVC `C3861` at
+  `native_durable_state_fixture_emitter.cpp:76`: the emitter called
+  `WindowsHelperSha256Hex` without including `windows_helper_bootstrap.h`.
+  `desktop_updater_install_helper_support` already compiles
+  `windows_helper_bootstrap.cpp` and is already linked by the emitter target;
+  adding that source a second time would risk duplicate definitions.
 
 ## Decision Log
 
@@ -2289,14 +2318,29 @@ without rerunning the ladder.
 - **2026-08-03 — Keep Native Runtime Preview candidate-only.** Required normal
   CI is necessary evidence but does not replace signing, privilege, packaging,
   or production attestation.
+- **2026-08-03 — Reuse the baseline Windows bootstrap SHA-256 helper in the
+  fixture emitter.** Include its declaring header rather than duplicate a hash
+  implementation or alter the serializer/CMake source ownership. Keep the
+  existing `desktop_updater_install_helper_support` link edge, which supplies
+  the baseline implementation and public helper include directory.
+- **2026-08-03 — Do not integrate a single-platform durable artifact.** The
+  verified Linux bytes are retained as an external CI artifact until the
+  matching Windows artifact carries its own target-host provenance and hashes.
 
 ## Outcomes & Retrospective
 
-Implementation has not started. On completion, record the final diff, versions,
-focused/full/native/VM/CI evidence, external review findings, unresolved manual
-gates, release decision, and any contract deviation here. A deviation requires
-a dated Decision Log entry and updated tests/docs before the plan can move to
-`completed/`.
+Task 1 is in progress. The repository now has red 3.0 contracts, frozen ABI
+inputs, macOS baseline journals, and permanent target-host emitters. The
+baseline ABI probe and macOS emitter/reader checks pass locally; the 3.0
+contracts are deliberately red on baseline 2.7. Linux durable-state bytes are
+authentic and SHA-verified but intentionally not integrated alone. The Windows
+CI compile failure is corrected only by a test-emitter declaration include;
+actual Windows compilation and fixture upload remain a required next CI result.
+No production implementation, release state, VM, or live artifact was changed.
+On completion, record the final diff, versions, focused/full/native/VM/CI
+evidence, external review findings, unresolved manual gates, release decision,
+and any contract deviation here. A deviation requires a dated Decision Log
+entry and updated tests/docs before the plan can move to `completed/`.
 
 ## Dependencies and External Authority
 

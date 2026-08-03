@@ -37,6 +37,16 @@ void main() {
         "SUBTYPE_OF_SEALED_CLASS",
         "sealed install-request implementation",
       ),
+      const _AnalyzerExpectation(
+        "final_value_implementation.dart",
+        "SUBTYPE_OF_FINAL_IS_NOT_BASE",
+        "final result, receipt, and retained-stage implementation",
+      ),
+      const _AnalyzerExpectation(
+        "sealed_recovery_implementation.dart",
+        "SUBTYPE_OF_SEALED_CLASS",
+        "base-only recovery implementation",
+      ),
     ];
 
     final failures = <String>[];
@@ -48,6 +58,23 @@ void main() {
       }
     }
     expect(failures, isEmpty, reason: failures.join("\n\n"));
+
+    final testingAuthority = await _analyze("for_testing_authority_seams.dart");
+    final testingAuthorityOutput = _output(testingAuthority);
+    expect(testingAuthority.exitCode, isNonZero);
+    for (final seam in <String>[
+      "checkResult",
+      "stageResult",
+      "verifiedNativeInstallRequest",
+      "persistedInstallTransaction",
+    ]) {
+      expect(
+        testingAuthorityOutput,
+        contains("The named parameter '$seam' isn't defined"),
+        reason: "forTesting must not accept the $seam authority seam.\n"
+            "$testingAuthorityOutput",
+      );
+    }
   });
 
   test("3.0 native consumers reject removed source and ABI entries", () async {
@@ -55,6 +82,7 @@ void main() {
     final commands = <_CommandExpectation>[
       _CommandExpectation(
         "C scheduleInstallAndRelaunch",
+        "desktop_updater_schedule_install_and_relaunch_v1",
         "clang",
         <String>[
           "-std=c11",
@@ -69,6 +97,7 @@ void main() {
       ),
       _CommandExpectation(
         "C++ Windows legacy schedule entry",
+        "desktop_updater_schedule_install_and_relaunch_v1",
         "clang++",
         <String>[
           "-std=c++17",
@@ -83,6 +112,7 @@ void main() {
       ),
       _CommandExpectation(
         "Linux CMake legacy scheduler source",
+        "ScheduleInstallAndRelaunch",
         "clang++",
         <String>[
           "-std=c++17",
@@ -96,6 +126,7 @@ void main() {
       ),
       _CommandExpectation(
         "Swift unsigned install request",
+        "scheduleInstallAndRelaunch",
         "swift",
         <String>[
           "build",
@@ -106,6 +137,7 @@ void main() {
       ),
       _CommandExpectation(
         "dotnet schedule and diagnostics path",
+        "ScheduleInstallAndRelaunch",
         "dotnet",
         <String>[
           "build",
@@ -125,7 +157,8 @@ void main() {
         workingDirectory: command.workingDirectory,
         runInShell: false,
       );
-      if (result.exitCode == 0) {
+      if (result.exitCode == 0 ||
+          !_output(result).contains(command.expectedDiagnosticToken)) {
         failures.add(_reason(command.label, result));
       }
     }
@@ -163,12 +196,14 @@ final class _AnalyzerExpectation {
 final class _CommandExpectation {
   const _CommandExpectation(
     this.label,
+    this.expectedDiagnosticToken,
     this.executable,
     this.arguments,
     this.workingDirectory,
   );
 
   final String label;
+  final String expectedDiagnosticToken;
   final String executable;
   final List<String> arguments;
   final String workingDirectory;
