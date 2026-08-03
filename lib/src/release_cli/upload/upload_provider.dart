@@ -88,6 +88,8 @@ final class IndexPublishReceipt {
 
 enum IndexPublishMechanism { conditionalWrite, exclusiveLease }
 
+final _leaseEvidenceDigestPattern = RegExp(r"^[0-9a-f]{64}$");
+
 Future<void> verifyOrderedIndexPublishReceipt({
   required Directory localRoot,
   required PublishManifest manifest,
@@ -107,11 +109,21 @@ Future<void> verifyOrderedIndexPublishReceipt({
       "Upload provider published a different app-archive.json digest.",
     );
   }
-  if (receipt.mechanism == IndexPublishMechanism.exclusiveLease &&
-      (receipt.leaseEvidenceSha256 == null ||
-          receipt.leaseEvidenceSha256!.trim().isEmpty)) {
-    throw StateError(
-      "Exclusive-lease publication receipts must include lease evidence.",
-    );
+  switch (receipt.mechanism) {
+    case IndexPublishMechanism.conditionalWrite:
+      if (receipt.leaseEvidenceSha256 != null) {
+        throw StateError(
+          "Conditional-write publication receipts must not include lease "
+          "evidence.",
+        );
+      }
+    case IndexPublishMechanism.exclusiveLease:
+      final evidence = receipt.leaseEvidenceSha256;
+      if (evidence == null || !_leaseEvidenceDigestPattern.hasMatch(evidence)) {
+        throw StateError(
+          "Exclusive-lease publication receipts must include lowercase "
+          "64-hex lease evidence.",
+        );
+      }
   }
 }

@@ -10,6 +10,7 @@ import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:integration_test/integration_test.dart";
 
@@ -32,5 +33,45 @@ void main() {
 
     expect(json["schemaVersion"], 3);
     expect(first["release"], contains("release.json"));
+  });
+
+  testWidgets("forged raw MethodChannel payload fails native validation",
+      (tester) async {
+    final stagingRoot =
+        await Directory.systemTemp.createTemp("desktop_updater_forged_stage_");
+    addTearDown(() async {
+      if (await stagingRoot.exists()) {
+        await stagingRoot.delete(recursive: true);
+      }
+    });
+    final arguments = <String, Object?>{
+      "stagingPath": stagingRoot.path,
+      "packageId": "com.example.forged",
+      "stageProvenanceSha256": "f" * 64,
+      "expectedArtifactSha256": "a" * 64,
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+      if (Platform.isWindows) ...{
+        "installRoot": r"C:\Windows",
+        "executableRelativePath": r"System32\notepad.exe",
+        "innoRequiresElevation": "never",
+      } else if (Platform.isLinux) ...{
+        "installRoot": "/usr/bin",
+        "executableRelativePath": "my-app",
+      },
+    };
+
+    await expectLater(
+      const MethodChannel("desktop_updater").invokeMethod<void>(
+        "installUpdate",
+        arguments,
+      ),
+      throwsA(
+        isA<PlatformException>().having(
+          (error) => error.code,
+          "code",
+          "InstallError",
+        ),
+      ),
+    );
   });
 }

@@ -86,3 +86,143 @@ Remaining risks:
 
 - External credentialed provider E2E tests remain skipped unless `DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E=1` is set.
 - The new S3/SFTP/FTP production-safe ordered index publication requires the app/deployer to provide a concrete conditional-write or exclusive-lease client/transport; unsafe unordered index publication remains rejected.
+
+## Fix round 2 — scoped re-review 019fc79a addressed
+
+Implementation changes:
+
+- Publishing:
+  - manual signed publication now performs the same final hosted remote-revision recheck before returning;
+  - final signed `app-archive.json` is rebuilt after `postPackage` hooks from the frozen pre-hook signed prior snapshot plus the publisher-owned current release item, so hooks cannot author index history/items;
+  - shared ordered-upload receipt validation now rejects `conditionalWrite` receipts with non-null lease evidence and requires lowercase 64-hex `leaseEvidenceSha256` for `exclusiveLease`;
+  - strict custom-command receipt parser coverage now includes mechanism/evidence contradictions.
+- Authority tests:
+  - added a distinct differently configured foreign-client check-result rejection test;
+  - added signed descriptor/index binding mutation coverage that fails before artifact download;
+  - retained unknown-key, invalid-signature, concurrent/stale/replay, and artifact-not-requested trust failure coverage in `test/update_client_security_test.dart`.
+- Controller tests:
+  - added cross-stage receipt pairing coverage: a stage A receipt presented with stage B blocks dispatch and makes zero platform calls;
+  - added marker-retention coverage for native status transport loss and unauthenticated status;
+  - added marker-clear coverage only after authenticated terminal success plus current-version evidence.
+- Forged raw MethodChannel proof:
+  - reverted the temporary Linux production plugin/private-header seam after scope review; no production native ABI/API files are changed in this fix round;
+  - added an example integration test that invokes `MethodChannel("desktop_updater").invokeMethod("installUpdate", forgedRawMap)` so the payload crosses the real plugin MethodChannel boundary;
+  - added explicit Windows, macOS, and Linux target-host workflow steps for that integration test;
+  - converted the Windows native test from direct `ScheduleInstallAndRelaunch` to the existing public plugin `HandleMethodCall("installUpdate", raw map)` boundary.
+
+Exact verification commands and output:
+
+```text
+$ flutter test --no-pub --reporter compact --name "signed manual publish rechecks frozen hosted revision before returning" test/release_cli/release_publisher_build_test.dart
+00:01 +0: signed manual publish rechecks frozen hosted revision before returning
+00:01 +1: signed manual publish rechecks frozen hosted revision before returning
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "signed publisher ignores post-package hook-authored index history" test/release_cli/release_publisher_build_test.dart
+00:00 +0: signed publisher ignores post-package hook-authored index history
+00:01 +1: signed publisher ignores post-package hook-authored index history
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "rejects mechanism and lease evidence contradictions" test/release_cli/upload/custom_command_upload_provider_test.dart
+00:00 +0: strict index publish receipt parser rejects mechanism and lease evidence contradictions
+00:00 +1: strict index publish receipt parser rejects mechanism and lease evidence contradictions
+00:00 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "shared receipt validation rejects provider mechanism contradictions" test/release_cli/upload/custom_command_upload_provider_test.dart
+00:01 +0: shared receipt validation rejects provider mechanism contradictions
+00:01 +1: shared receipt validation rejects provider mechanism contradictions
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "download rejects check result from differently configured foreign client before artifact request" test/update_client_security_test.dart
+00:01 +0: download rejects check result from differently configured foreign client before artifact request
+00:01 +1: download rejects check result from differently configured foreign client before artifact request
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "mutated descriptor/index binding fails before artifact request" test/update_client_security_test.dart
+00:01 +0: mutated descriptor/index binding fails before artifact request
+00:01 +1: mutated descriptor/index binding fails before artifact request
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "stage A receipt cannot authorize stage B platform dispatch" test/updater_controller_test.dart
+00:01 +0: stage A receipt cannot authorize stage B platform dispatch
+00:01 +1: stage A receipt cannot authorize stage B platform dispatch
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "recovery marker survives transport loss and unauthenticated status" test/updater_controller_test.dart
+00:01 +0: recovery marker survives transport loss and unauthenticated status
+00:01 +1: recovery marker survives transport loss and unauthenticated status
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact --name "recovery marker clears only after authenticated terminal evidence" test/updater_controller_test.dart
+00:00 +0: recovery marker clears only after authenticated terminal evidence
+00:01 +1: recovery marker clears only after authenticated terminal evidence
+00:01 +1: All tests passed!
+```
+
+```text
+$ flutter test --no-pub --reporter compact test/release_cli/release_publisher_build_test.dart test/release_cli/upload/custom_command_upload_provider_test.dart test/update_client_security_test.dart test/updater_controller_test.dart test/desktop_updater_method_channel_test.dart
+00:03 +58: recovery marker clears only after authenticated terminal evidence
+00:03 +58: All tests passed!
+```
+
+```text
+$ dart format --output=none --set-exit-if-changed example/integration_test/plugin_integration_test.dart lib/src/release_cli/release_publisher.dart lib/src/release_cli/upload/upload_provider.dart test/release_cli/release_publisher_build_test.dart test/release_cli/upload/custom_command_upload_provider_test.dart test/update_client_security_test.dart test/updater_controller_test.dart test/desktop_updater_method_channel_test.dart
+Formatted 8 files (0 changed) in 0.03 seconds.
+```
+
+```text
+$ dart format --output=none --set-exit-if-changed test/release_cli/upload/custom_command_upload_provider_test.dart
+Formatted 1 file (0 changed) in 0.01 seconds.
+```
+
+```text
+$ flutter test --no-pub --reporter compact test/release_cli/upload/custom_command_upload_provider_test.dart
+00:01 +5: shared receipt validation rejects provider mechanism contradictions
+00:01 +6: shared receipt validation rejects provider mechanism contradictions
+00:01 +6: All tests passed!
+```
+
+```text
+$ flutter analyze --no-fatal-infos
+Analyzing flutter_desktop_updater...
+542 issues found. (ran in 2.3s)
+Exit code: 0. All diagnostics were info-level pre-existing style/API-doc diagnostics; no warnings or errors.
+```
+
+```text
+$ ruby -e 'require "yaml"; YAML.load_file(".github/workflows/desktop-updater-ci.yml"); puts ".github/workflows/desktop-updater-ci.yml: OK"'
+.github/workflows/desktop-updater-ci.yml: OK
+```
+
+Local target-host limitations:
+
+```text
+$ flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
+/Users/marlonjd/.codex/worktrees/f828/flutter_desktop_updater/example/macos/Runner.xcodeproj: error: No signing certificate "Mac Development" found: No "Mac Development" signing certificate matching team ID "UPK4SC93AN" with a private key was found. (in target 'Runner' from project 'Runner')
+** BUILD FAILED **
+00:00 +0 -1: Some tests failed.
+```
+
+The macOS integration test is blocked locally by host signing credentials, not by Dart or plugin compilation. The workflow now runs the same forged raw MethodChannel integration test on Windows, macOS, and Linux target hosts:
+
+```text
+flutter test integration_test/plugin_integration_test.dart -d windows --name "forged raw MethodChannel payload fails native validation"
+flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
+xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"
+```

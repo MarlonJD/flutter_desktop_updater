@@ -1,4 +1,5 @@
 import XCTest
+import FlutterMacOS
 @testable import desktop_updater
 
 final class DesktopUpdaterSwiftPMTests: XCTestCase {
@@ -23,16 +24,41 @@ final class DesktopUpdaterSwiftPMTests: XCTestCase {
     }
 
     func testForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation() throws {
-        let source = try String(
-            contentsOfFile: "Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-            encoding: .utf8
+        let stagingRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("desktop_updater_forged_stage_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: stagingRoot,
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: stagingRoot)
+        }
+
+        let plugin = DesktopUpdaterPlugin()
+        let completed = expectation(description: "installUpdate returns forged-payload error")
+        let call = FlutterMethodCall(
+            methodName: "installUpdate",
+            arguments: [
+                "stagingPath": stagingRoot.path,
+                "stageProvenanceSha256": String(repeating: "f", count: 64),
+                "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+            ]
         )
 
-        XCTAssertTrue(source.contains("installUpdate"))
-        XCTAssertTrue(source.contains("stagingPath"))
-        XCTAssertTrue(source.contains("stageProvenanceSHA256"))
-        XCTAssertTrue(source.contains("transactionID"))
-        XCTAssertTrue(source.contains("isCanonicalTransactionID"))
-        XCTAssertTrue(source.contains("prepareInstall"))
+        plugin.handle(call) { result in
+            guard let error = result as? FlutterError else {
+                XCTFail("Expected FlutterError, got \(String(describing: result))")
+                completed.fulfill()
+                return
+            }
+            XCTAssertEqual(error.code, "InstallError")
+            XCTAssertTrue(
+                (error.message ?? "").contains("provenance") ||
+                    (error.message ?? "").contains("stage") ||
+                    (error.message ?? "").contains("manifest")
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 5)
     }
 }

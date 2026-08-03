@@ -228,6 +228,48 @@ void main() {
     expect(request.transactionId, matches(RegExp(r"^[0-9a-f-]{36}$")));
   });
 
+  test("stage A receipt cannot authorize stage B platform dispatch", () async {
+    final fixtureA = await _ControllerFixture.create();
+    final fixtureB = await _ControllerFixture.create();
+    addTearDown(fixtureA.delete);
+    addTearDown(fixtureB.delete);
+    final storeA = _MemoryRecoveryStore();
+    final platformA = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platformA;
+    final controllerA = DesktopUpdaterController(
+      appArchiveUrl: fixtureA.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixtureA.publicKeys,
+      recoveryStore: storeA,
+      skipInitialVersionCheck: true,
+    );
+    await controllerA.checkVersion();
+    await controllerA.downloadUpdate();
+    await controllerA.restartApp();
+    final markerA = storeA.markerFor("stable");
+    expect(markerA, isNotNull);
+    expect(platformA.installRequests, hasLength(1));
+
+    final platformB = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platformB;
+    final controllerB = DesktopUpdaterController(
+      appArchiveUrl: fixtureB.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixtureB.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(readbackTransform: (_) => markerA!),
+      skipInitialVersionCheck: true,
+    );
+
+    await controllerB.checkVersion();
+    await controllerB.downloadUpdate();
+    await expectLater(
+      controllerB.restartApp(),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(platformB.installRequests, isEmpty);
+  });
+
   test("two install dispatches race to exactly one platform call", () async {
     final fixture = await _ControllerFixture.create();
     addTearDown(fixture.delete);
@@ -253,12 +295,105 @@ void main() {
     expect(platform.installRequests, hasLength(1));
     expect(results.whereType<StateError>(), hasLength(1));
   });
+
+  test("recovery marker survives transport loss and unauthenticated status",
+      () async {
+    final root = await Directory.systemTemp.createTemp("recovery_marker_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    final store = _MemoryRecoveryStore();
+    await _writePendingMarker(store: store, stagingRoot: root);
+    DesktopUpdaterPlatform.instance = _RecordingPlatform(
+      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+        query: (_) async => throw StateError("transport lost"),
+        recover: (_) async => null,
+      ),
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: _trustedPublicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.recoverPendingInstall();
+    expect(store.markerFor("stable"), isNotNull);
+
+    DesktopUpdaterPlatform.instance = _RecordingPlatform(
+      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+        query: (transactionId) async => _nativeStatus(
+          transactionId: transactionId,
+          state: NativeInstallTransactionState.unknown,
+          resultCode: NativeInstallTransactionResultCode.authenticationFailed,
+        ),
+        recover: (_) async => null,
+      ),
+    );
+
+    await controller.recoverPendingInstall();
+    expect(store.markerFor("stable"), isNotNull);
+  });
+
+  test("recovery marker clears only after authenticated terminal evidence",
+      () async {
+    final root = await Directory.systemTemp.createTemp("recovery_success_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_desktopUpdaterChannel, (call) async {
+      if (call.method == "getCurrentVersionInfo") {
+        return <String, String?>{"version": "2.0.0", "buildNumber": "200"};
+      }
+      if (call.method == "getCurrentVersion") {
+        return "200";
+      }
+      return null;
+    });
+    final store = _MemoryRecoveryStore();
+    await _writePendingMarker(store: store, stagingRoot: root);
+    DesktopUpdaterPlatform.instance = _RecordingPlatform(
+      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+        query: (transactionId) async => _nativeStatus(
+          transactionId: transactionId,
+          state: NativeInstallTransactionState.completed,
+          resultCode: NativeInstallTransactionResultCode.succeeded,
+        ),
+        recover: (_) async => null,
+      ),
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: _trustedPublicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(store.markerFor("stable"), isNull);
+  });
 }
 
 class _RecordingPlatform
     with MockPlatformInterfaceMixin
     implements DesktopUpdaterPlatform {
+  _RecordingPlatform({NativeInstallRecovery? nativeRecovery})
+      : _nativeRecovery = nativeRecovery ??
+            QueryAndRecoverNativeInstallRecovery(
+              query: (_) async => null,
+              recover: (_) async => null,
+            );
+
   final installRequests = <VerifiedNativeInstallRequest>[];
+  final NativeInstallRecovery _nativeRecovery;
 
   @override
   Future<String?> getPlatformVersion() async => "42";
@@ -297,11 +432,7 @@ class _RecordingPlatform
   Future<void> openMacOSBackgroundItemsSettings() async {}
 
   @override
-  NativeInstallRecovery get nativeInstallRecovery =>
-      QueryAndRecoverNativeInstallRecovery(
-        query: (_) async => null,
-        recover: (_) async => null,
-      );
+  NativeInstallRecovery get nativeInstallRecovery => _nativeRecovery;
 }
 
 class _MemoryRecoveryStore implements UpdateRecoveryStore {
@@ -318,6 +449,8 @@ class _MemoryRecoveryStore implements UpdateRecoveryStore {
   final UpdateInstallRecoveryMarker Function(UpdateInstallRecoveryMarker)?
       readbackTransform;
   final _markers = <String, UpdateInstallRecoveryMarker>{};
+
+  UpdateInstallRecoveryMarker? markerFor(String channel) => _markers[channel];
 
   @override
   Future<void> clearPendingInstall({required String channel}) async {
@@ -362,6 +495,44 @@ class _MemoryRecoveryStore implements UpdateRecoveryStore {
     }
     _markers[marker.channel] = marker;
   }
+}
+
+Future<UpdateInstallRecoveryMarker> _writePendingMarker({
+  required _MemoryRecoveryStore store,
+  required Directory stagingRoot,
+}) async {
+  await stagingRoot.create(recursive: true);
+  final marker = UpdateInstallRecoveryMarker.pendingV3(
+    createdAt: DateTime.utc(2026, 8, 3),
+    packageVersion: "2.7.0",
+    platform: Platform.operatingSystem,
+    channel: "stable",
+    appVersion: "1.0.0+100",
+    updateVersion: "2.0.0",
+    updateBuildNumber: 200,
+    expectedPackageId: "com.example.app",
+    stagingPath: stagingRoot.path,
+    stageProvenanceSha256: "a" * 64,
+    diagnosticsText: "pending",
+    transactionId: "123e4567-e89b-42d3-a456-426614174000",
+  );
+  await store.writePendingInstall(marker);
+  return marker;
+}
+
+NativeInstallTransactionStatus _nativeStatus({
+  required String transactionId,
+  required NativeInstallTransactionState state,
+  required NativeInstallTransactionResultCode resultCode,
+}) {
+  return NativeInstallTransactionStatus(
+    transactionId: transactionId,
+    state: state,
+    resultCode: resultCode,
+    detail: "",
+    responseDigestSha256: "b" * 64,
+    helperEndpointIdentitySha256: "c" * 64,
+  );
 }
 
 UpdateInstallRecoveryMarker _copyMarker(

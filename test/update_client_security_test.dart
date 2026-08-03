@@ -261,6 +261,117 @@ void main() {
     );
   });
 
+  test(
+      "download rejects check result from differently configured foreign "
+      "client before artifact request", () async {
+    final root = await Directory.systemTemp.createTemp("foreign_config_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    final artifact = File(path.join(root.path, "artifact.zip"));
+    final bytes = _zipBytes();
+    await artifact.writeAsBytes(bytes);
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final signed = await _SignedUpdate.create(
+      releaseUrl: releaseUrl,
+      descriptor: _descriptor(
+        artifactUrl: artifact.uri,
+        artifactSha256: crypto.sha256.convert(bytes).toString(),
+        artifactLength: bytes.length,
+      ),
+    );
+    final ownerTransport = _MapUpdateTransport({
+      archiveUrl: signed.indexJson,
+      releaseUrl: signed.descriptorJson,
+      artifact.uri: bytes,
+    });
+    final foreignTransport = _MapUpdateTransport({
+      archiveUrl: signed.indexJson,
+      releaseUrl: signed.descriptorJson,
+      artifact.uri: bytes,
+    });
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: signed.publicKeys,
+      platform: "linux",
+      channel: "stable",
+      transport: ownerTransport,
+      stagingParent: root,
+    );
+    final foreignClient = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      expectedPackageId: "com.other.app",
+      trustedReleasePublicKeys: signed.publicKeys,
+      platform: "linux",
+      channel: "beta",
+      transport: foreignTransport,
+      stagingParent: root,
+    );
+
+    final check = await client.checkForUpdate();
+    expect(check, isNotNull);
+
+    await expectLater(
+      foreignClient.downloadVerifyAndStage(checkResult: check!),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          "message",
+          contains("different UpdateClient"),
+        ),
+      ),
+    );
+    expect(ownerTransport.downloadedSources, [archiveUrl, releaseUrl]);
+    expect(foreignTransport.downloadedSources, isEmpty);
+  });
+
+  test("mutated descriptor/index binding fails before artifact request",
+      () async {
+    final archiveUrl =
+        Uri.parse("https://updates.example.com/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.com/release.json");
+    final artifactUrl = Uri.parse("https://updates.example.com/artifact.zip");
+    final signed = await _SignedUpdate.create(
+      releaseUrl: releaseUrl,
+      descriptor: _descriptor(
+        artifactUrl: artifactUrl,
+        buildNumber: 201,
+      ),
+    );
+    final transport = _MapUpdateTransport({
+      archiveUrl: signed.indexJson,
+      releaseUrl: signed.descriptorJson,
+      artifactUrl: "artifact bytes",
+    });
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: signed.publicKeys,
+      platform: "linux",
+      transport: transport,
+    );
+
+    await expectLater(
+      client.checkForUpdate(),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("buildNumber does not match app-archive.json"),
+        ),
+      ),
+    );
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl]);
+  });
+
   test("concurrent check results leave only the latest generation usable",
       () async {
     final root = await Directory.systemTemp.createTemp("concurrent_stage_");
@@ -352,6 +463,10 @@ Map<String, dynamic> _descriptorJson({
 ReleaseDescriptor _descriptor({
   required Uri artifactUrl,
   String packageId = "com.example.app",
+  String version = "2.0.0",
+  int buildNumber = 200,
+  String platform = "linux",
+  String channel = "stable",
   String? artifactSha256,
   int? artifactLength,
 }) {
@@ -359,10 +474,10 @@ ReleaseDescriptor _descriptor({
     schemaVersion: 3,
     packageId: packageId,
     appName: "Example",
-    version: "2.0.0",
-    buildNumber: 200,
-    platform: "linux",
-    channel: "stable",
+    version: version,
+    buildNumber: buildNumber,
+    platform: platform,
+    channel: channel,
     artifact: ReleaseArtifact(
       kind: "zip",
       url: artifactUrl,

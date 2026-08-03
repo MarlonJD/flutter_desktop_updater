@@ -396,6 +396,13 @@ class ReleasePublisher {
       artifactLength: finalArtifactLength,
     );
     await _writeJsonFile(layout.releaseFile, finalDescriptor.toJson());
+    if (signedHistory != null) {
+      await _writeFrozenHistoryToAppArchive(
+        archiveFile: layout.appArchiveFile,
+        archiveAppName: archiveAppName,
+        history: signedHistory,
+      );
+    }
     await upsertAppArchive(
       archiveFile: layout.appArchiveFile,
       appName: archiveAppName,
@@ -503,7 +510,7 @@ class ReleasePublisher {
       output.writeln("Signed final app-archive.json.");
     }
 
-    if (signedHistory != null && config.uploadProvider is! ManualUploadConfig) {
+    if (signedHistory != null) {
       await _assertRemoteIndexRevisionUnchanged(
         appArchiveUrl: layout.appArchiveUrl,
         expectedRevision: signedHistory.revision,

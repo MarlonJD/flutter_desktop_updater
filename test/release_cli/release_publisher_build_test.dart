@@ -903,6 +903,155 @@ macos:
       await webRoot.delete(recursive: true);
     }
   });
+
+  test("signed manual publish rechecks frozen hosted revision before returning",
+      () async {
+    final root = await _createWindowsFixture();
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    final hostedArchive = await _writeSignedAppArchive(
+      root: root,
+      relativePath: "hosted-app-archive.json",
+      seed: seed,
+      items: [
+        ReleaseIndexItem(
+          version: "2.0.0",
+          buildNumber: 200,
+          platform: "windows",
+          channel: "stable",
+          mandatory: false,
+          release: Uri.parse(
+            "https://updates.example.com/releases/2.0.0/windows/release.json",
+          ),
+        ),
+      ],
+    );
+    final changedArchive = await _writeSignedAppArchive(
+      root: root,
+      relativePath: "changed-app-archive.json",
+      seed: seed,
+      items: [
+        ReleaseIndexItem(
+          version: "2.0.1",
+          buildNumber: 201,
+          platform: "windows",
+          channel: "stable",
+          mandatory: false,
+          release: Uri.parse(
+            "https://updates.example.com/releases/2.0.1/windows/release.json",
+          ),
+        ),
+      ],
+    );
+    var appArchiveRequests = 0;
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        httpClient: MockClient((request) async {
+          if (request.url.path == "/app-archive.json") {
+            appArchiveRequests += 1;
+            final source =
+                appArchiveRequests == 1 ? hostedArchive : changedArchive;
+            return http.Response.bytes(
+              await source.readAsBytes(),
+              200,
+              request: request,
+              headers: {"etag": '"$appArchiveRequests"'},
+            );
+          }
+          return http.Response("not found", 404, request: request);
+        }),
+      );
+
+      await expectLater(
+        publisher.publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+            trustedReleasePublicKeys: publicKeys,
+          ),
+          output: StringBuffer(),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("changed before publish"),
+          ),
+        ),
+      );
+      expect(appArchiveRequests, 2);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("signed publisher ignores post-package hook-authored index history",
+      () async {
+    final root = await _createWindowsFixture();
+    await _configureIndexMutationHook(root);
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    try {
+      final publisher = ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        httpClient: _missingHostedIndexClient(),
+        runHookCommand: (_, {required environment}) async {
+          final appArchive =
+              File(environment["DESKTOP_UPDATER_APP_ARCHIVE_FILE"]!);
+          await _writeJsonFileForTest(
+            appArchive,
+            ReleaseIndex(
+              schemaVersion: 3,
+              appName: "Egas-Manager",
+              items: [
+                ReleaseIndexItem(
+                  version: "9.9.9",
+                  buildNumber: 999,
+                  platform: "windows",
+                  channel: "stable",
+                  mandatory: true,
+                  release: Uri.parse(
+                    "https://attacker.example.com/release.json",
+                  ),
+                ),
+              ],
+            ).toJson(),
+          );
+          return ProcessResult(0, 0, "", "");
+        },
+      );
+
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
+        ),
+        output: StringBuffer(),
+      );
+
+      final index = ReleaseIndex.fromJson(
+        jsonDecode(
+          await File(
+            path.join(root.path, "dist", "desktop_updater", "app-archive.json"),
+          ).readAsString(),
+        ) as Map<String, dynamic>,
+      );
+      expect(index.items.map((item) => item.version), ["2.1.0"]);
+      expect(index.items.single.release.host, "updates.example.com");
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
 }
 
 Future<void> _configureDescriptorSigningHook(
@@ -1000,6 +1149,17 @@ updates:
   baseUrl: https://updates.example.com
 customCommand:
   command: dart test/e2e/fixtures/upload_commands/copy_updates.dart ${r"$DESKTOP_UPDATER_LOCAL_ROOT"} ${webRoot.path}
+""");
+}
+
+Future<void> _configureIndexMutationHook(Directory root) async {
+  await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+hooks:
+  postPackage:
+    - command: ./tool/mutate_app_archive.sh
+      platforms: [windows]
 """);
 }
 

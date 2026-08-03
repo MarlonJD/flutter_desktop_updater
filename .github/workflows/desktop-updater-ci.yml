@@ -965,6 +965,9 @@ jobs:
         working-directory: example
         shell: pwsh
         run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release -R ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation --output-on-failure
+      - name: Assert forged raw MethodChannel payload fails Windows plugin boundary
+        working-directory: example
+        run: flutter test integration_test/plugin_integration_test.dart -d windows --name "forged raw MethodChannel payload fails native validation"
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
@@ -1395,6 +1398,9 @@ jobs:
       - name: Run macOS integration tests
         working-directory: example
         run: flutter test integration_test -d macos
+      - name: Assert forged raw MethodChannel payload fails macOS plugin boundary
+        working-directory: example
+        run: flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
 
   macos-notarized:
     name: macOS Notarized Publish
@@ -2424,6 +2430,9 @@ jobs:
       - name: Assert forged raw MethodChannel payload fails Linux validation
         working-directory: example
         run: ctest --test-dir build/linux/x64/release -R ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation --output-on-failure
+      - name: Assert forged raw MethodChannel payload fails Linux plugin boundary
+        working-directory: example
+        run: xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"
       - name: Run integration tests release
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux

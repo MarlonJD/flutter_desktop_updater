@@ -1,10 +1,10 @@
 import "dart:io";
 
-import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/upload/custom_command_upload_provider.dart";
 import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
+import "package:desktop_updater/src/release_manifest.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
@@ -175,7 +175,9 @@ printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
       expect(receipt.observedPriorRevision, expectedRevision);
       expect(receipt.mechanism, IndexPublishMechanism.conditionalWrite);
       expect(
-          calls.single.environment?["DESKTOP_UPDATER_UPLOAD_PHASE"], "index");
+        calls.single.environment?["DESKTOP_UPDATER_UPLOAD_PHASE"],
+        "index",
+      );
       expect(
         calls.single
             .environment?["DESKTOP_UPDATER_EXPECTED_REMOTE_INDEX_SHA256"],
@@ -195,13 +197,52 @@ printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
   });
 
   group("strict index publish receipt parser", () {
+    test("rejects mechanism and lease evidence contradictions", () async {
+      final cases = <String, Matcher>{
+        _receiptJson(
+          mechanism: "conditionalWrite",
+          leaseEvidenceSha256: "c" * 64,
+        ): throwsA(isA<FormatException>()),
+        _receiptJson(
+          mechanism: "exclusiveLease",
+          leaseEvidenceSha256: null,
+        ): throwsA(isA<FormatException>()),
+        _receiptJson(
+          mechanism: "exclusiveLease",
+          leaseEvidenceSha256: "C" * 64,
+        ): throwsA(isA<FormatException>()),
+        _receiptJson(
+          mechanism: "exclusiveLease",
+          leaseEvidenceSha256: "c" * 64,
+        ): completion(
+          isA<IndexPublishReceipt>().having(
+            (receipt) => receipt.leaseEvidenceSha256,
+            "leaseEvidenceSha256",
+            "c" * 64,
+          ),
+        ),
+      };
+
+      for (final entry in cases.entries) {
+        final tempDir =
+            await Directory.systemTemp.createTemp("receipt_contradiction_");
+        try {
+          final file = File(path.join(tempDir.path, "receipt.json"));
+          await file.writeAsString(entry.key);
+          await expectLater(readStrictIndexPublishReceipt(file), entry.value);
+        } finally {
+          await tempDir.delete(recursive: true);
+        }
+      }
+    });
+
     test("rejects unknown keys, duplicate keys, BOM, bad digest, and evidence",
         () async {
       final cases = <String, Matcher>{
         _receiptJson(extra: '"extra": true,'): throwsA(isA<FormatException>()),
         '{"schemaVersion":1,"schemaVersion":1}':
             throwsA(isA<FormatException>()),
-        '${String.fromCharCodes([0xfeff])}${_receiptJson()}':
+        "${String.fromCharCodes([0xfeff])}${_receiptJson()}":
             throwsA(isA<FormatException>()),
         _receiptJson(publishedSha256: "A" * 64):
             throwsA(isA<FormatException>()),
@@ -225,6 +266,65 @@ printf '%s\\n' "\$DESKTOP_UPDATER_ARTIFACT_KIND" >> "${logFile.path}"
         }
       }
     });
+  });
+
+  test("shared receipt validation rejects provider mechanism contradictions",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("receipt_verify_");
+    try {
+      final localRoot = Directory(path.join(tempDir.path, "dist"));
+      final manifest = testPublishManifest(localRoot: localRoot.path);
+      await _writePayload(localRoot, manifest);
+      final publishedSha256 = await sha256File(
+        File(path.join(localRoot.path, manifest.appArchive.path)),
+      );
+      final invalidReceipts = [
+        IndexPublishReceipt(
+          observedPriorRevision: const RemoteIndexRevision.absent(),
+          publishedSha256: publishedSha256,
+          mechanism: IndexPublishMechanism.conditionalWrite,
+          leaseEvidenceSha256: "c" * 64,
+        ),
+        IndexPublishReceipt(
+          observedPriorRevision: const RemoteIndexRevision.absent(),
+          publishedSha256: publishedSha256,
+          mechanism: IndexPublishMechanism.exclusiveLease,
+          leaseEvidenceSha256: null,
+        ),
+        IndexPublishReceipt(
+          observedPriorRevision: const RemoteIndexRevision.absent(),
+          publishedSha256: publishedSha256,
+          mechanism: IndexPublishMechanism.exclusiveLease,
+          leaseEvidenceSha256: "C" * 64,
+        ),
+      ];
+
+      for (final receipt in invalidReceipts) {
+        await expectLater(
+          verifyOrderedIndexPublishReceipt(
+            localRoot: localRoot,
+            manifest: manifest,
+            expectedRevision: const RemoteIndexRevision.absent(),
+            receipt: receipt,
+          ),
+          throwsA(isA<StateError>()),
+        );
+      }
+
+      await verifyOrderedIndexPublishReceipt(
+        localRoot: localRoot,
+        manifest: manifest,
+        expectedRevision: const RemoteIndexRevision.absent(),
+        receipt: IndexPublishReceipt(
+          observedPriorRevision: const RemoteIndexRevision.absent(),
+          publishedSha256: publishedSha256,
+          mechanism: IndexPublishMechanism.exclusiveLease,
+          leaseEvidenceSha256: "c" * 64,
+        ),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
   });
 }
 
