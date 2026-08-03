@@ -1,1957 +1,415 @@
-import "dart:async";
 import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive.dart";
+import "package:cryptography_plus/cryptography_plus.dart";
 import "package:crypto/crypto.dart" as crypto;
-import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/desktop_updater_platform_interface.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/update_recovery.dart";
+import "package:desktop_updater/src/core/update_state.dart";
+import "package:desktop_updater/src/macos_install_location.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
+import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
 const MethodChannel _desktopUpdaterChannel = MethodChannel("desktop_updater");
-const _trustedReleasePublicKeys = <String, String>{
-  "stable-2026": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
-};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final initialPlatform = DesktopUpdaterPlatform.instance;
 
-  setUp(_setMockPlatformHandler);
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_desktopUpdaterChannel, (call) async {
+      if (call.method == "getCurrentVersionInfo") {
+        return <String, String?>{"version": "1.0.0", "buildNumber": "100"};
+      }
+      if (call.method == "getCurrentVersion") {
+        return "100";
+      }
+      return null;
+    });
+  });
 
   tearDown(() {
+    DesktopUpdaterPlatform.instance = initialPlatform;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_desktopUpdaterChannel, null);
   });
 
-  test("skipInitialVersionCheck lets callers trigger checks manually", () {
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-    );
-    final archiveUrl = Uri.parse("https://example.com/app-archive.json");
-    var notifications = 0;
-
-    controller
-      ..addListener(() {
-        notifications += 1;
-      })
-      ..init(archiveUrl);
-
-    expect(controller.appArchiveUrl, archiveUrl);
-    expect(controller.skipInitialVersionCheck, isTrue);
-    expect(controller.state, isA<UpdateIdle>());
-    expect(notifications, 1);
-  });
-
-  test("localization updates notify ready-made UI listeners", () {
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-    );
-    var notifications = 0;
-
-    controller
-      ..addListener(() {
-        notifications += 1;
-      })
-      ..localization = const DesktopUpdateLocalization(
-        restartText: "Install update",
-      );
-
-    expect(controller.getLocalization?.restartText, "Install update");
-    expect(notifications, 1);
-  });
-
-  test(
-    "automatic startup check failure updates state without unhandled error",
-    () async {
-      final missingArchive = Uri.file(
-        "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
-      );
-      final unhandledErrors = <Object>[];
-      final failed = Completer<void>();
-      late DesktopUpdaterController controller;
-
-      await runZonedGuarded<Future<void>>(
-        () async {
-          controller = DesktopUpdaterController(appArchiveUrl: missingArchive);
-          controller.addListener(() {
-            if (controller.state is UpdateFailed && !failed.isCompleted) {
-              failed.complete();
-            }
-          });
-
-          await failed.future.timeout(const Duration(seconds: 5));
-          await Future<void>.delayed(Duration.zero);
-        },
-        (error, _) {
-          unhandledErrors.add(error);
-        },
-      );
-
-      expect(controller.state, isA<UpdateFailed>());
-      expect(unhandledErrors, isEmpty);
-    },
-  );
-
-  test("checkVersion remains strict when awaited explicitly", () async {
-    final missingArchive = Uri.file(
-      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
-    );
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: missingArchive,
-      skipInitialVersionCheck: true,
-    );
-
-    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
-    expect(controller.state, isA<UpdateFailed>());
-  });
-
-  test("controller pinned keys reject an unsigned archive before selection",
-      () async {
-    final fixture = await _ControllerUpdateFixture.create(mandatory: false);
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        trustedReleasePublicKeys: _trustedReleasePublicKeys,
-      );
-
-      await expectLater(
-        controller.checkVersion(),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            "message",
-            contains("app-archive.json signature verification failed"),
-          ),
-        ),
-      );
-      expect(controller.state, isA<UpdateFailed>());
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("controller sends app-owned request headers for update downloads",
-      () async {
-    final fixture = await _ControllerHttpUpdateFixture.create();
-    try {
-      await HttpOverrides.runZoned(
-        () async {
-          final controller = DesktopUpdaterController(
-            appArchiveUrl: fixture.archiveUrl,
-            skipInitialVersionCheck: true,
-            requestHeadersProvider: (source) {
-              return {"x-update-auth": "runtime-token"};
-            },
-          );
-
-          try {
-            await controller.checkVersion();
-            await controller.downloadUpdate();
-          } on Object catch (error) {
-            fail(
-              "$error paths=${fixture.updatePaths} "
-              "headers=${fixture.authHeaders}",
-            );
-          }
-        },
-        createHttpClient: _RealHttpOverrides().createHttpClient,
-      );
-
-      expect(
-        fixture.authHeaders,
-        ["runtime-token", "runtime-token", "runtime-token"],
-      );
-      expect(fixture.updatePaths, [
-        "/app-archive.json",
-        "/release.json",
-        "/artifact.zip",
-      ]);
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("failed check exposes a problem report", () async {
-    final missingArchive = Uri.file(
-      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
-    );
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: missingArchive,
-      skipInitialVersionCheck: true,
-    );
-
-    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
-
-    final failed = controller.state as UpdateFailed;
-    final report = failed.report;
-    expect(report, isNotNull);
-    expect(report!.failure, same(failed.error));
-    expect(report.channel, "stable");
-    expect(report.appVersion, "1.0.0+100");
+  test("constructor requires expected identity, keys, and store", () {
     expect(
-      report.entries.map((entry) => entry.stage),
-      contains(UpdateDiagnosticStage.check),
-    );
-    expect(report.entries.last.level, UpdateDiagnosticLevel.error);
-    expect(report.toPlainText(), contains("Checking for updates"));
-  });
-
-  test(
-    "failed download report keeps check and download lifecycle entries",
-    () async {
-      final fixture = await _ControllerUpdateFixture.create(mandatory: false);
-      try {
-        final controller = DesktopUpdaterController(
-          appArchiveUrl: fixture.archiveUrl,
-          skipInitialVersionCheck: true,
-        );
-
-        await controller.checkVersion();
-        await expectLater(controller.downloadUpdate(), throwsA(isA<Object>()));
-
-        final failed = controller.state as UpdateFailed;
-        final report = failed.report;
-        expect(report, isNotNull);
-        expect(report!.updateVersion, "2.0.1");
-        expect(
-          report.entries.map((entry) => entry.stage),
-          containsAllInOrder([
-            UpdateDiagnosticStage.check,
-            UpdateDiagnosticStage.descriptor,
-            UpdateDiagnosticStage.download,
-          ]),
-        );
-        expect(report.entries.last.level, UpdateDiagnosticLevel.error);
-        expect(report.entries.last.message, contains("Download failed"));
-      } finally {
-        await fixture.delete();
-      }
-    },
-  );
-
-  test("failed install report records install failure", () async {
-    _setMockPlatformHandler(failInstall: true);
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
+      () => DesktopUpdaterController(
+        appArchiveUrl: null,
+        expectedPackageId: "",
+        trustedReleasePublicKeys: _trustedPublicKeys,
+        recoveryStore: _MemoryRecoveryStore(),
         skipInitialVersionCheck: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await expectLater(
-        controller.restartApp(),
-        throwsA(isA<PlatformException>()),
-      );
-
-      final failed = controller.state as UpdateFailed;
-      final report = failed.report;
-      expect(report, isNotNull);
-      expect(report!.stagingPath, isNotEmpty);
-      expect(report.entries.last.stage, UpdateDiagnosticStage.install);
-      expect(report.entries.last.level, UpdateDiagnosticLevel.error);
-      expect(report.entries.last.message, contains("Install failed"));
-
-      final cleanupReport = controller.lastCleanupReport;
-      expect(cleanupReport, isNotNull);
-      expect(cleanupReport!.stagingPath, report.stagingPath);
-      expect(cleanupReport.descriptorVersion, "2.0.1");
-      expect(cleanupReport.cleanupAttempted, isFalse);
-      expect(cleanupReport.cleanupSucceeded, isFalse);
-      expect(cleanupReport.backupRestoredByNativeHelper, isNull);
-      expect(cleanupReport.errorText, contains("Native install failed"));
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("downloadUpdate keeps mandatory policy after staging", () async {
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: true,
-      validArtifact: true,
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-      );
-
-      await controller.checkVersion();
-      expect((controller.state as UpdateAvailable).mandatory, isTrue);
-
-      await controller.downloadUpdate();
-
-      final ready = controller.state as UpdateReadyToInstall;
-      expect(ready.stagingPath, isNotEmpty);
-      expect(ready.mandatory, isTrue);
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("freshInstall moves controller to fresh-install state", () async {
-    final openedUrls = <Uri>[];
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: true,
-      freshInstall: true,
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        externalUrlLauncher: (url) async {
-          openedUrls.add(url);
-        },
-      );
-
-      await controller.checkVersion();
-
-      final state = controller.state as UpdateFreshInstallRequired;
-      expect(state.mandatory, isTrue);
-      expect(state.freshInstall.message, "Install from a fresh download.");
-      expect(
-        state.freshInstall.downloadUrl.toString(),
-        "https://example.com/download/latest",
-      );
-      await expectLater(
-        controller.downloadUpdate(),
-        throwsStateError,
-      );
-
-      await controller.openFreshInstallDownload();
-      expect(
-          openedUrls.single.toString(), "https://example.com/download/latest");
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("supportPolicy past deadline moves controller to blocking state",
-      () async {
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      supportPolicy: true,
-      enforcedAfter: DateTime.utc(2000),
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-      );
-
-      await controller.checkVersion();
-
-      final state = controller.state as UpdateBlockedBySupportPolicy;
-      expect(state.supportPolicy.minimumSupportedVersion, "2.4.0");
-      expect(state.descriptor.version, "2.0.1");
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("supportPolicy before deadline keeps app usable with warning policy",
-      () async {
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      supportPolicy: true,
-      enforcedAfter: DateTime.utc(2999),
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-      );
-
-      await controller.checkVersion();
-
-      final state = controller.state as UpdateAvailable;
-      expect(state.supportPolicy?.minimumSupportedVersion, "2.4.0");
-      expect(state.mandatory, isFalse);
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("restartApp writes a recovery marker before native handoff", () async {
-    final recoveryStore = _MemoryRecoveryStore();
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (_) async {
-          expect(
-            await recoveryStore.readPendingInstall(channel: "stable"),
-            isNotNull,
-          );
-        },
-      );
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      final marker = await recoveryStore.readPendingInstall(channel: "stable");
-      expect(marker, isNotNull);
-      expect(marker!.channel, "stable");
-      expect(marker.appVersion, "1.0.0+100");
-      expect(marker.updateVersion, "2.0.1");
-      expect(marker.updateBuildNumber, 201);
-      expect(marker.stagingPath, isNotEmpty);
-      expect(marker.diagnosticsText, contains("Install handoff started"));
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("restartApp rejects unsigned metadata before native handoff", () async {
-    final recoveryStore = _MemoryRecoveryStore();
-    var installCalls = 0;
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-      includeDescriptorSignature: false,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (_) {
-          installCalls += 1;
-        },
-      );
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await expectLater(
-        controller.restartApp(),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            "message",
-            contains("signed release.json descriptor"),
-          ),
-        ),
-      );
-
-      expect(installCalls, 0);
-      expect(
-        await recoveryStore.readPendingInstall(channel: "stable"),
-        isNull,
-      );
-      final failed = controller.state as UpdateFailed;
-      expect(failed.report, isNotNull);
-      expect(
-        failed.report!.entries.last.message,
-        contains("Install failed"),
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("restartApp rejects the legacy macOS unsigned bypass", () async {
-    final recoveryStore = _MemoryRecoveryStore();
-    var installCalls = 0;
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (_) {
-          installCalls += 1;
-        },
-      );
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-        allowUnsignedMacOSUpdates: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await expectLater(
-        controller.restartApp(),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message,
-            "message",
-            contains("native install handoff"),
-          ),
-        ),
-      );
-
-      expect(installCalls, 0);
-      expect(
-        await recoveryStore.readPendingInstall(channel: "stable"),
-        isNull,
-      );
-      expect(controller.state, isA<UpdateFailed>());
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("restartApp forwards explicit native diagnostics log path", () async {
-    late MethodCall capturedCall;
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (methodCall) {
-          capturedCall = methodCall;
-        },
-      );
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        diagnosticsLogPath: "/tmp/helper.jsonl",
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      expect(
-        capturedCall.arguments,
-        containsPair("diagnosticsLogPath", "/tmp/helper.jsonl"),
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("restartApp forwards the verified descriptor package identity",
-      () async {
-    late MethodCall capturedCall;
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (methodCall) {
-          capturedCall = methodCall;
-        },
-      );
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      expect(
-        capturedCall.arguments,
-        containsPair("packageId", "com.example.app"),
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("pre-handoff native failure clears marker and exposes report", () async {
-    _setMockPlatformHandler(failInstall: true);
-    final recoveryStore = _MemoryRecoveryStore();
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await expectLater(
-        controller.restartApp(),
-        throwsA(isA<PlatformException>()),
-      );
-
-      expect(
-        await recoveryStore.readPendingInstall(channel: "stable"),
-        isNull,
-      );
-      final failed = controller.state as UpdateFailed;
-      expect(failed.report, isNotNull);
-      expect(failed.report!.entries.last.stage, UpdateDiagnosticStage.install);
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("Windows forwards the same durable marker transaction ID", () async {
-    late MethodCall capturedCall;
-    final recoveryStore = _MemoryRecoveryStore();
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (methodCall) {
-          capturedCall = methodCall;
-        },
-      );
-      final controller = DesktopUpdaterController.forTesting(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "windows"),
-        isWindows: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      final marker = await recoveryStore.readPendingInstall(channel: "stable");
-      final transactionId = marker?.transactionId;
-      expect(
-        transactionId,
-        matches(
-          RegExp(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
-            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-          ),
-        ),
-      );
-      expect(
-          capturedCall.arguments, containsPair("transactionId", transactionId));
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("non-Windows forwards the same durable marker transaction ID", () async {
-    late MethodCall capturedCall;
-    final recoveryStore = _MemoryRecoveryStore();
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (methodCall) {
-          capturedCall = methodCall;
-        },
-      );
-      final controller = DesktopUpdaterController.forTesting(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "linux"),
-        isWindows: false,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      final marker = await recoveryStore.readPendingInstall(channel: "stable");
-      final transactionId = marker?.transactionId;
-      expect(
-        transactionId,
-        matches(
-          RegExp(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
-            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-          ),
-        ),
-      );
-      expect(
-        capturedCall.arguments,
-        containsPair("transactionId", transactionId),
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("Windows preserves marker only for ambiguous native handoff", () async {
-    final recoveryStore = _MemoryRecoveryStore();
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      _setMockPlatformHandler(
-        onInstallUpdate: (_) => throw PlatformException(
-          code: "InstallError",
-          message: "Commit acknowledgement was lost.",
-          details: const <String, Object?>{"recoveryRequired": true},
-        ),
-      );
-      final controller = DesktopUpdaterController.forTesting(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        recoveryStore: recoveryStore,
-        diagnosticsRecorder: UpdateDiagnosticsRecorder(platform: "windows"),
-        isWindows: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await expectLater(
-        controller.restartApp(),
-        throwsA(
-          isA<PlatformException>().having(
-            (error) => error.code,
-            "code",
-            "InstallError",
-          ),
-        ),
-      );
-
-      expect(
-        await recoveryStore.readPendingInstall(channel: "stable"),
-        isNotNull,
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("relaunch on old version creates recovered failed report", () async {
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: Platform.operatingSystem,
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: "/tmp/staged-app",
-        diagnosticsText: "previous redacted diagnostics",
-      );
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-    );
-
-    await controller.recoverPendingInstall();
-
-    final failed = controller.state as UpdateFailed;
-    final report = failed.report;
-    expect(report, isNotNull);
-    expect(report!.appVersion, "1.0.0+100");
-    expect(report.updateVersion, "2.0.1");
-    expect(report.stagingPath, "/tmp/staged-app");
-    expect(
-      report.toPlainText(),
-      contains("Pending install did not complete"),
-    );
-    expect(
-      await recoveryStore.readPendingInstall(channel: "stable"),
-      isNotNull,
-    );
-  });
-
-  test("relaunch on target version clears marker without failure", () async {
-    _setMockPlatformHandler(versionName: "2.0.1", buildNumber: "201");
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: Platform.operatingSystem,
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: "/tmp/staged-app",
-      );
-    final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(controller.state, isA<UpdateIdle>());
-    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
-    expect(recoveryStore.clearedChannels, ["stable"]);
-  });
-
-  test(
-      "Windows startup recovery resolves native helper once before app version",
-      () async {
-    var resolveCalls = 0;
-    _setMockPlatformHandler(
-      versionName: "2.0.1",
-      buildNumber: "201",
-      onResolvePendingInstallTransactionAfterExit: (methodCall) {
-        resolveCalls += 1;
-        expect(methodCall.arguments, {
-          "transactionId": "123e4567-e89b-42d3-a456-426614174000",
-        });
-        return _nativeTransactionStatus(
-          state: "completed",
-          resultCode: "succeeded",
-        );
-      },
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: Platform.operatingSystem,
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: "/tmp/staged-app",
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: true,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(resolveCalls, 1);
-    expect(controller.state, isA<UpdateIdle>());
-    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
-  });
-
-  test("non-Windows recovery queries then recovers without atomic method",
-      () async {
-    var queryCalls = 0;
-    var recoveryCalls = 0;
-    var resolveCalls = 0;
-    _setMockPlatformHandler(
-      versionName: "2.0.1",
-      buildNumber: "201",
-      onQueryInstallTransaction: (_) {
-        queryCalls += 1;
-        return _nativeTransactionStatus(
-          state: "prepared",
-          resultCode: "recoveryRequired",
-        );
-      },
-      onRecoverPendingInstallTransaction: (_) {
-        recoveryCalls += 1;
-        return _nativeTransactionStatus(
-          state: "completed",
-          resultCode: "succeeded",
-        );
-      },
-      onResolvePendingInstallTransactionAfterExit: (_) {
-        resolveCalls += 1;
-        throw MissingPluginException(
-          "resolvePendingInstallTransactionAfterExit is Windows-only",
-        );
-      },
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "linux",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: "/tmp/staged-app",
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: false,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(queryCalls, 1);
-    expect(recoveryCalls, 1);
-    expect(resolveCalls, 0);
-    expect(controller.state, isA<UpdateIdle>());
-    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
-  });
-
-  test("non-Windows recovery keeps resolving an active native manager",
-      () async {
-    final stagingParent =
-        await Directory.systemTemp.createTemp("recovery_stage_");
-    final stage = await createOwnedStagingDirectory(
-      parent: stagingParent,
-      nonce: "123e4567-e89b-42d3-a456-426614174000",
-    );
-    await File(path.join(stage.path, "installer.pkg")).writeAsString("pkg");
-    await writeStagedUpdateProvenance(
-      stageRoot: stage,
-      nonce: "123e4567-e89b-42d3-a456-426614174000",
-      packageId: "com.example.app",
-      descriptorSha256: "a" * 64,
-      artifactSha256: "b" * 64,
-    );
-    addTearDown(() async {
-      if (await stagingParent.exists()) {
-        await stagingParent.delete(recursive: true);
-      }
-    });
-    var recoveryCalls = 0;
-    _setMockPlatformHandler(
-      versionName: "2.0.1",
-      buildNumber: "201",
-      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
-        state: "prepared",
-        resultCode: "recoveryRequired",
       ),
-      onRecoverPendingInstallTransaction: (_) {
-        recoveryCalls += 1;
-        return _nativeTransactionStatus(
-          state: recoveryCalls == 1 ? "prepared" : "completed",
-          resultCode: recoveryCalls == 1 ? "recoveryRequired" : "succeeded",
-        );
-      },
+      throwsArgumentError,
     );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "macos",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: stage.path,
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: false,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(recoveryCalls, 2);
-    expect(controller.state, isA<UpdateIdle>());
-    expect(await stage.exists(), isFalse);
-    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
-  });
-
-  test("non-Windows recovery bounds retries for a stuck native manager",
-      () async {
-    var recoveryCalls = 0;
-    _setMockPlatformHandler(
-      onQueryInstallTransaction: (_) => _nativeTransactionStatus(
-        state: "prepared",
-        resultCode: "recoveryRequired",
-      ),
-      onRecoverPendingInstallTransaction: (_) {
-        recoveryCalls += 1;
-        return _nativeTransactionStatus(
-          state: "prepared",
-          resultCode: "recoveryRequired",
-        );
-      },
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "macos",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        stagingPath: "/tmp/stuck-native-manager",
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: false,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(recoveryCalls, 6);
-    expect(controller.state, isA<UpdateInstalling>());
     expect(
-      await recoveryStore.readPendingInstall(channel: "stable"),
-      isNotNull,
-    );
-  });
-
-  test("active startup recovery ACK preserves marker and skips version check",
-      () async {
-    var resolveCalls = 0;
-    var versionCalls = 0;
-    _setMockPlatformHandler(
-      versionName: "2.0.1",
-      buildNumber: "201",
-      onGetCurrentVersionInfo: () {
-        versionCalls += 1;
-      },
-      onResolvePendingInstallTransactionAfterExit: (_) {
-        resolveCalls += 1;
-        return _nativeTransactionStatus(
-          state: "prepared",
-          resultCode: "recoveryRequired",
-        );
-      },
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: Platform.operatingSystem,
-        channel: "stable",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: true,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(resolveCalls, 1);
-    expect(versionCalls, 0);
-    expect(controller.state, isA<UpdateInstalling>());
-    expect(
-      await recoveryStore.readPendingInstall(channel: "stable"),
-      isNotNull,
-    );
-  });
-
-  test("verified native rollback clears the pending marker", () async {
-    _setMockPlatformHandler(
-      onResolvePendingInstallTransactionAfterExit: (_) =>
-          _nativeTransactionStatus(
-        state: "rolledBack",
-        resultCode: "succeeded",
-      ),
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "windows",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: true,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(controller.state, isA<UpdateFailed>());
-    expect(await recoveryStore.readPendingInstall(channel: "stable"), isNull);
-  });
-
-  test("manual-action recovery fails visibly without checking app version",
-      () async {
-    var versionCalls = 0;
-    _setMockPlatformHandler(
-      onGetCurrentVersionInfo: () {
-        versionCalls += 1;
-      },
-      onResolvePendingInstallTransactionAfterExit: (_) =>
-          _nativeTransactionStatus(
-        state: "manualActionRequired",
-        resultCode: "recoveryRequired",
-      ),
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "windows",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: true,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(versionCalls, 0);
-    expect(controller.state, isA<UpdateFailed>());
-    expect(
-      await recoveryStore.readPendingInstall(channel: "stable"),
-      isNotNull,
-    );
-  });
-
-  test("relaunch failure fails visibly and preserves recovery evidence",
-      () async {
-    var versionCalls = 0;
-    _setMockPlatformHandler(
-      onGetCurrentVersionInfo: () {
-        versionCalls += 1;
-      },
-      onResolvePendingInstallTransactionAfterExit: (_) =>
-          _nativeTransactionStatus(
-        state: "completed",
-        resultCode: "relaunchFailure",
-      ),
-    );
-    final recoveryStore = _MemoryRecoveryStore()
-      ..marker = UpdateInstallRecoveryMarker(
-        createdAt: DateTime.utc(2026, 6, 16, 10),
-        packageVersion: "2.1.4",
-        platform: "windows",
-        channel: "stable",
-        appVersion: "1.0.0+100",
-        updateVersion: "2.0.1",
-        updateBuildNumber: 201,
-        transactionId: "123e4567-e89b-42d3-a456-426614174000",
-      );
-    final controller = DesktopUpdaterController.forTesting(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: recoveryStore,
-      isWindows: true,
-    );
-
-    await controller.recoverPendingInstall();
-
-    expect(versionCalls, 0);
-    expect(controller.state, isA<UpdateFailed>());
-    expect(
-      await recoveryStore.readPendingInstall(channel: "stable"),
-      isNotNull,
-    );
-  });
-
-  test("recovery store failures do not crash startup or install handoff",
-      () async {
-    final readFailureStore = _ThrowingRecoveryStore(readFailure: true);
-    final readController = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      recoveryStore: readFailureStore,
-    );
-
-    await readController.recoverPendingInstall();
-
-    expect(readController.state, isA<UpdateIdle>());
-    expect(
-      readController.diagnosticsRecorder.entries.last.message,
-      contains("Recovery marker read failed"),
-    );
-
-    final writeFailureStore = _ThrowingRecoveryStore(writeFailure: true);
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      late MethodCall installCall;
-      _setMockPlatformHandler(
-        onInstallUpdate: (methodCall) => installCall = methodCall,
-      );
-      final controller = DesktopUpdaterController.forTesting(
-        appArchiveUrl: fixture.archiveUrl,
+      () => DesktopUpdaterController(
+        appArchiveUrl: null,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: const {},
+        recoveryStore: _MemoryRecoveryStore(),
         skipInitialVersionCheck: true,
-        recoveryStore: writeFailureStore,
-        isWindows: true,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      expect(controller.state, isA<UpdateInstalling>());
-      expect(
-        controller.diagnosticsRecorder.entries.map((entry) => entry.message),
-        contains("Recovery marker write failed."),
-      );
-      expect(
-        (installCall.arguments as Map<Object?, Object?>)["transactionId"],
-        matches(
-          RegExp(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
-            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-          ),
-        ),
-      );
-    } finally {
-      await fixture.delete();
-    }
+      ),
+      throwsFormatException,
+    );
   });
 
-  test(
-    "successful install scheduling emits cleanup report without blocking",
-    () async {
-      final reports = <UpdateCleanupReport>[];
-      final fixture = await _ControllerUpdateFixture.create(
-        mandatory: false,
-        validArtifact: true,
-      );
-      try {
-        final controller = DesktopUpdaterController(
-          appArchiveUrl: fixture.archiveUrl,
-          skipInitialVersionCheck: true,
-          onCleanupReport: (report) {
-            reports.add(report);
-            throw StateError("report sink is down");
-          },
-        );
-
-        await controller.checkVersion();
-        await controller.downloadUpdate();
-        await controller.restartApp();
-
-        expect(reports, hasLength(1));
-        final report = reports.single;
-        expect(controller.lastCleanupReport, same(report));
-        expect(report.stagingPath, isNotEmpty);
-        expect(report.descriptorVersion, "2.0.1");
-        expect(report.cleanupAttempted, isFalse);
-        expect(report.cleanupSucceeded, isNull);
-        expect(report.backupRestoredByNativeHelper, isNull);
-        expect(report.errorText, isNull);
-
-        final state = controller.state;
-        expect(state, isA<UpdateInstalling>());
-        expect((state as UpdateInstalling).cleanupReport, same(report));
-      } finally {
-        await fixture.delete();
-      }
-    },
-  );
-
-  test("telemetry failures do not prevent diagnostics reports", () async {
-    final missingArchive = Uri.file(
-      "${Directory.systemTemp.path}/desktop-updater-missing-archive.json",
-    );
+  test("check and download use signed metadata and retain ready state",
+      () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
     final controller = DesktopUpdaterController(
-      appArchiveUrl: missingArchive,
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(),
       skipInitialVersionCheck: true,
-      telemetry: (_) {
-        throw StateError("telemetry sink is down");
-      },
     );
 
-    await expectLater(controller.checkVersion(), throwsA(isA<Object>()));
+    await controller.checkVersion();
+    expect(controller.state, isA<UpdateAvailable>());
 
-    final failed = controller.state as UpdateFailed;
-    expect(failed.report, isNotNull);
-    expect(failed.report!.entries.last.level, UpdateDiagnosticLevel.error);
+    await controller.downloadUpdate();
+    expect(controller.state, isA<UpdateReadyToInstall>());
   });
 
-  test("telemetry events include artifact and install metadata", () async {
-    final events = <UpdateTelemetryEvent>[];
-    final fixture = await _ControllerUpdateFixture.create(
-      mandatory: false,
-      validArtifact: true,
-    );
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        telemetry: events.add,
-      );
-
-      await controller.checkVersion();
-      await controller.downloadUpdate();
-      await controller.restartApp();
-
-      expect(
-        events,
-        contains(
-          isA<UpdateTelemetryEvent>()
-              .having(
-                (event) => event.type,
-                "type",
-                UpdateTelemetryEventType.downloadStarted,
-              )
-              .having((event) => event.artifactKind, "artifactKind", "zip")
-              .having(
-                (event) => event.installStrategy,
-                "installStrategy",
-                "wholeDirectoryReplace",
-              ),
-        ),
-      );
-      expect(
-        events,
-        contains(
-          isA<UpdateTelemetryEvent>()
-              .having(
-                (event) => event.type,
-                "type",
-                UpdateTelemetryEventType.artifactVerified,
-              )
-              .having((event) => event.artifactKind, "artifactKind", "zip")
-              .having(
-                (event) => event.installStrategy,
-                "installStrategy",
-                "wholeDirectoryReplace",
-              ),
-        ),
-      );
-      expect(
-        events,
-        contains(
-          isA<UpdateTelemetryEvent>()
-              .having(
-                (event) => event.type,
-                "type",
-                UpdateTelemetryEventType.installScheduled,
-              )
-              .having((event) => event.artifactKind, "artifactKind", "zip")
-              .having(
-                (event) => event.installStrategy,
-                "installStrategy",
-                "wholeDirectoryReplace",
-              ),
-        ),
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("problem report callback is invoked only by explicit action", () async {
-    final sentReports = <UpdateProblemReport>[];
-    final report = UpdateProblemReport(
-      generatedAt: DateTime.utc(2026, 6, 13, 9),
-      packageVersion: "2.1.4",
-      platform: "linux",
-      channel: "stable",
-      entries: const [],
-    );
+  test("recovery write/readback mismatch blocks platform dispatch", () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final store = _MemoryRecoveryStore(mutateReadback: true);
     final controller = DesktopUpdaterController(
-      appArchiveUrl: null,
-      skipInitialVersionCheck: true,
-      onProblemReport: (report) async {
-        sentReports.add(report);
-      },
-    );
-    final controllerWithoutCallback = DesktopUpdaterController(
-      appArchiveUrl: null,
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: store,
       skipInitialVersionCheck: true,
     );
 
-    expect(controller.canReportProblem, isTrue);
-    expect(controllerWithoutCallback.canReportProblem, isFalse);
-    expect(sentReports, isEmpty);
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    await expectLater(controller.restartApp(), throwsA(isA<StateError>()));
 
-    await controller.reportProblem(report);
-
-    expect(sentReports, [same(report)]);
+    expect(platform.installRequests, isEmpty);
   });
 
-  test(
-    "checkForUpdates returns up to date when checkVersion leaves idle state",
-    () async {
-      final controller = _ManualCheckTestController(
-        onCheckVersion: (controller) {
-          controller.stateForTest = const UpdateIdle();
-        },
-      );
-
-      final result = await controller.checkForUpdates();
-
-      expect(result, isA<ManualUpdateCheckUpToDate>());
-    },
-  );
-
-  test(
-    "checkForUpdates returns available when checkVersion sets available state",
-    () async {
-      final descriptor = _testDescriptor();
-      final controller = _ManualCheckTestController(
-        onCheckVersion: (controller) {
-          controller.stateForTest =
-              UpdateAvailable(descriptor: descriptor, mandatory: true);
-        },
-      );
-
-      final result = await controller.checkForUpdates();
-
-      expect(result, isA<ManualUpdateCheckAvailable>());
-      final available = result as ManualUpdateCheckAvailable;
-      expect(available.descriptor, descriptor);
-      expect(available.mandatory, isTrue);
-    },
-  );
-
-  test("checkForUpdates returns failed when checkVersion throws", () async {
-    final error = StateError("network down");
-    final controller = _ManualCheckTestController(
-      onCheckVersion: (_) {
-        throw error;
-      },
+  test("valid persisted receipt dispatches exactly one verified request",
+      () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: _MemoryRecoveryStore(),
+      skipInitialVersionCheck: true,
     );
 
-    final result = await controller.checkForUpdates();
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    await controller.restartApp();
 
-    expect(result, isA<ManualUpdateCheckFailed>());
-    expect((result as ManualUpdateCheckFailed).error, same(error));
-    expect(controller.state, isA<UpdateFailed>());
-  });
-
-  test(
-    "preference adapter persists skipped optional version across controllers",
-    () async {
-      final fixture = await _ControllerUpdateFixture.create(mandatory: false);
-      final preferences = _MemoryUpdatePreferences();
-      try {
-        final first = DesktopUpdaterController(
-          appArchiveUrl: fixture.archiveUrl,
-          skipInitialVersionCheck: true,
-          preferences: preferences,
-        );
-
-        await first.checkVersion();
-        expect(first.state, isA<UpdateAvailable>());
-
-        await first.makeSkipUpdate();
-
-        expect(first.skipUpdate, isTrue);
-        expect(
-          await preferences.skippedVersion(channel: "stable"),
-          "2.0.1",
-        );
-
-        final second = DesktopUpdaterController(
-          appArchiveUrl: fixture.archiveUrl,
-          skipInitialVersionCheck: true,
-          preferences: preferences,
-        );
-
-        await second.checkVersion();
-
-        expect(second.state, isA<UpdateIdle>());
-        expect(second.skipUpdate, isTrue);
-      } finally {
-        await fixture.delete();
-      }
-    },
-  );
-
-  test("mandatory updates ignore persisted skipped versions", () async {
-    final fixture = await _ControllerUpdateFixture.create(mandatory: true);
-    final preferences = _MemoryUpdatePreferences();
-    try {
-      await preferences.skipVersion(version: "2.0.1", channel: "stable");
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        preferences: preferences,
-      );
-
-      await controller.checkVersion();
-
-      expect(controller.state, isA<UpdateAvailable>());
-      expect((controller.state as UpdateAvailable).mandatory, isTrue);
-      expect(controller.skipUpdate, isFalse);
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("telemetry callback failures do not break update checks", () async {
-    final fixture = await _ControllerUpdateFixture.create(mandatory: false);
-    final events = <UpdateTelemetryEventType>[];
-    try {
-      final controller = DesktopUpdaterController(
-        appArchiveUrl: fixture.archiveUrl,
-        skipInitialVersionCheck: true,
-        telemetry: (event) {
-          events.add(event.type);
-          if (event.type == UpdateTelemetryEventType.checkStarted) {
-            throw StateError("telemetry sink is down");
-          }
-        },
-      );
-
-      await controller.checkVersion();
-
-      expect(controller.state, isA<UpdateAvailable>());
-      expect(
-        events,
-        containsAllInOrder([
-          UpdateTelemetryEventType.checkStarted,
-          UpdateTelemetryEventType.updateSelected,
-        ]),
-      );
-    } finally {
-      await fixture.delete();
-    }
+    expect(platform.installRequests, hasLength(1));
+    final request = platform.installRequests.single;
+    expect(request.expectedPackageId, "com.example.app");
+    expect(request.expectedArtifactSha256, fixture.artifactSha256);
+    expect(request.stageProvenanceSha256, matches(RegExp(r"^[0-9a-f]{64}$")));
+    expect(request.transactionId, matches(RegExp(r"^[0-9a-f-]{36}$")));
   });
 }
 
-void _setMockPlatformHandler({
-  bool failInstall = false,
-  String versionName = "1.0.0",
-  String buildNumber = "100",
-  FutureOr<void> Function(MethodCall methodCall)? onInstallUpdate,
-  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
-      onQueryInstallTransaction,
-  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
-      onRecoverPendingInstallTransaction,
-  FutureOr<Map<String, Object?>> Function(MethodCall methodCall)?
-      onResolvePendingInstallTransactionAfterExit,
-  FutureOr<void> Function()? onGetCurrentVersionInfo,
-}) {
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(_desktopUpdaterChannel, (
-    MethodCall methodCall,
-  ) async {
-    if (methodCall.method == "getCurrentVersionInfo") {
-      await onGetCurrentVersionInfo?.call();
-      return <String, String?>{
-        "version": versionName,
-        "buildNumber": buildNumber,
-      };
-    }
-    if (methodCall.method == "getCurrentVersion") {
-      return buildNumber;
-    }
-    if (methodCall.method == "installUpdate") {
-      await onInstallUpdate?.call(methodCall);
-    }
-    if (methodCall.method == "installUpdate" && failInstall) {
-      throw PlatformException(
-        code: "install-failed",
-        message: "Native install failed",
+class _RecordingPlatform
+    with MockPlatformInterfaceMixin
+    implements DesktopUpdaterPlatform {
+  final installRequests = <VerifiedNativeInstallRequest>[];
+
+  @override
+  Future<String?> getPlatformVersion() async => "42";
+
+  @override
+  Future<void> restartApp() async {}
+
+  @override
+  Future<void> installVerifiedUpdate(
+      VerifiedNativeInstallRequest request) async {
+    installRequests.add(request);
+  }
+
+  @override
+  Future<String?> getExecutablePath() async => null;
+
+  @override
+  Future<String?> getCurrentVersion() async => "100";
+
+  @override
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() async {
+    return const MacOSInstallLocationStatus(
+      kind: MacOSInstallLocationKind.unsupported,
+      bundlePath: null,
+      targetPath: null,
+    );
+  }
+
+  @override
+  Future<void> moveMacOSAppToApplications({
+    bool replaceExisting = false,
+  }) async {}
+
+  @override
+  Future<void> openMacOSBackgroundItemsSettings() async {}
+
+  @override
+  NativeInstallRecovery get nativeInstallRecovery =>
+      QueryAndRecoverNativeInstallRecovery(
+        query: (_) async => null,
+        recover: (_) async => null,
       );
-    }
-    if (methodCall.method == "queryInstallTransaction") {
-      return onQueryInstallTransaction?.call(methodCall);
-    }
-    if (methodCall.method == "recoverPendingInstallTransaction") {
-      return onRecoverPendingInstallTransaction?.call(methodCall);
-    }
-    if (methodCall.method == "resolvePendingInstallTransactionAfterExit") {
-      return onResolvePendingInstallTransactionAfterExit?.call(methodCall);
-    }
-    return null;
-  });
-}
-
-Map<String, Object?> _nativeTransactionStatus({
-  required String state,
-  required String resultCode,
-}) {
-  return {
-    "transactionId": "123e4567-e89b-42d3-a456-426614174000",
-    "state": state,
-    "resultCode": resultCode,
-    "detail": "Native helper status.",
-    "responseDigestSha256": "a" * 64,
-    "helperEndpointIdentitySha256": "b" * 64,
-  };
-}
-
-class _ManualCheckTestController extends DesktopUpdaterController {
-  _ManualCheckTestController({required this.onCheckVersion})
-      : super(
-          appArchiveUrl: null,
-          skipInitialVersionCheck: true,
-        );
-
-  final FutureOr<void> Function(_ManualCheckTestController controller)
-      onCheckVersion;
-
-  UpdateState? _stateOverride;
-
-  @override
-  UpdateState get state => _stateOverride ?? super.state;
-
-  set stateForTest(UpdateState value) {
-    _stateOverride = value;
-  }
-
-  @override
-  Future<void> checkVersion() async {
-    await onCheckVersion(this);
-  }
-}
-
-ReleaseDescriptor _testDescriptor() {
-  return ReleaseDescriptor(
-    schemaVersion: 3,
-    packageId: "com.example.app",
-    appName: "Example.app",
-    version: "2.0.1",
-    buildNumber: 201,
-    platform: "macos",
-    channel: "stable",
-    artifact: ReleaseArtifact(
-      kind: "zip",
-      url: Uri.parse("https://example.com/Example.zip"),
-      sha256:
-          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      length: 1024,
-    ),
-    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
-    minimumUpdaterVersion: "2.0.0",
-    generatedAt: DateTime.utc(2026, 6, 12),
-  );
-}
-
-class _MemoryUpdatePreferences implements UpdatePreferences {
-  final Map<String, String> _skippedVersions = {};
-
-  @override
-  Future<String?> skippedVersion({required String channel}) async {
-    return _skippedVersions[channel];
-  }
-
-  @override
-  Future<void> skipVersion({
-    required String version,
-    required String channel,
-  }) async {
-    _skippedVersions[channel] = version;
-  }
-
-  @override
-  Future<void> clearSkippedVersion({required String channel}) async {
-    _skippedVersions.remove(channel);
-  }
 }
 
 class _MemoryRecoveryStore implements UpdateRecoveryStore {
-  UpdateInstallRecoveryMarker? marker;
-  final clearedChannels = <String>[];
+  _MemoryRecoveryStore({this.mutateReadback = false});
 
-  @override
-  Future<UpdateInstallRecoveryMarker?> readPendingInstall({
-    required String channel,
-  }) async {
-    if (marker?.channel != channel) {
-      return null;
-    }
-    return marker;
-  }
-
-  @override
-  Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
-    this.marker = marker;
-  }
+  final bool mutateReadback;
+  final _markers = <String, UpdateInstallRecoveryMarker>{};
 
   @override
   Future<void> clearPendingInstall({required String channel}) async {
-    if (marker?.channel == channel) {
-      marker = null;
-    }
-    clearedChannels.add(channel);
+    _markers.remove(channel);
   }
-}
-
-class _ThrowingRecoveryStore implements UpdateRecoveryStore {
-  _ThrowingRecoveryStore({
-    this.readFailure = false,
-    this.writeFailure = false,
-  });
-
-  final bool readFailure;
-  final bool writeFailure;
 
   @override
   Future<UpdateInstallRecoveryMarker?> readPendingInstall({
     required String channel,
   }) async {
-    if (readFailure) {
-      throw StateError("read unavailable");
+    final marker = _markers[channel];
+    if (marker == null || !mutateReadback) {
+      return marker;
     }
-    return null;
+    return UpdateInstallRecoveryMarker.pendingV3(
+      createdAt: marker.createdAt,
+      packageVersion: marker.packageVersion,
+      platform: marker.platform,
+      channel: marker.channel,
+      appVersion: marker.appVersion,
+      updateVersion: marker.updateVersion!,
+      updateBuildNumber: marker.updateBuildNumber,
+      expectedPackageId: marker.expectedPackageId!,
+      stagingPath: marker.stagingPath!,
+      stageProvenanceSha256: "b" * 64,
+      diagnosticsText: marker.diagnosticsText,
+      transactionId: marker.transactionId!,
+    );
   }
 
   @override
   Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker) async {
-    if (writeFailure) {
-      throw StateError("write unavailable");
+    _markers[marker.channel] = marker;
+  }
+}
+
+class _ControllerFixture {
+  const _ControllerFixture({
+    required this.root,
+    required this.archiveFile,
+    required this.publicKeys,
+    required this.artifactSha256,
+  });
+
+  final Directory root;
+  final File archiveFile;
+  final Map<String, String> publicKeys;
+  final String artifactSha256;
+
+  static Future<_ControllerFixture> create() async {
+    final root = await Directory.systemTemp.createTemp("controller_update_");
+    final artifact = File(path.join(root.path, "artifact.zip"));
+    final bytes = _zipBytes();
+    await artifact.writeAsBytes(bytes);
+    final artifactSha256 = crypto.sha256.convert(bytes).toString();
+    final releaseFile = File(path.join(root.path, "release.json"));
+    final archiveFile = File(path.join(root.path, "app-archive.json"));
+    final descriptor = _descriptor(
+      artifactUrl: artifact.uri,
+      artifactSha256: artifactSha256,
+      artifactLength: bytes.length,
+    );
+    final signed = await _SignedUpdate.create(
+      releaseUrl: releaseFile.uri,
+      descriptor: descriptor,
+    );
+    await releaseFile.writeAsString(signed.descriptorJson);
+    await archiveFile.writeAsString(signed.indexJson);
+    return _ControllerFixture(
+      root: root,
+      archiveFile: archiveFile,
+      publicKeys: signed.publicKeys,
+      artifactSha256: artifactSha256,
+    );
+  }
+
+  Future<void> delete() async {
+    if (await root.exists()) {
+      await root.delete(recursive: true);
     }
   }
-
-  @override
-  Future<void> clearPendingInstall({required String channel}) async {}
 }
 
-class _ControllerUpdateFixture {
-  const _ControllerUpdateFixture({
-    required this.root,
-    required this.archiveUrl,
+List<int> _zipBytes() {
+  final archive = Archive()..addFile(ArchiveFile.string("bin/example", "bin"));
+  return ZipEncoder().encode(archive);
+}
+
+ReleaseDescriptor _descriptor({
+  required Uri artifactUrl,
+  required String artifactSha256,
+  required int artifactLength,
+}) {
+  return ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.app",
+    appName: "bin",
+    version: "2.0.0",
+    buildNumber: 200,
+    platform: Platform.operatingSystem,
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: artifactUrl,
+      sha256: artifactSha256,
+      length: artifactLength,
+    ),
+    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    minimumUpdaterVersion: "2.0.0",
+    generatedAt: DateTime.utc(2026, 8, 3),
+  );
+}
+
+const _publicKeyId = "release-2026";
+const _privateSeed = <int>[
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+];
+
+final _trustedPublicKeys = {
+  _publicKeyId: "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+};
+
+class _SignedUpdate {
+  const _SignedUpdate({
+    required this.indexJson,
+    required this.descriptorJson,
+    required this.publicKeys,
   });
 
-  final Directory root;
-  final Uri archiveUrl;
+  final String indexJson;
+  final String descriptorJson;
+  final Map<String, String> publicKeys;
 
-  static Future<_ControllerUpdateFixture> create({
-    required bool mandatory,
-    bool validArtifact = false,
-    bool supportPolicy = false,
-    bool includeDescriptorSignature = true,
-    DateTime? enforcedAfter,
-    bool freshInstall = false,
+  static Future<_SignedUpdate> create({
+    required Uri releaseUrl,
+    required ReleaseDescriptor descriptor,
   }) async {
-    final root = await Directory.systemTemp.createTemp(
-      "updater_controller_",
-    );
-    final releaseUrl = root.uri.resolve("release.json");
-    final artifactUrl = root.uri.resolve("artifact.zip");
-
-    final appName =
-        Platform.operatingSystem == "macos" ? "Example.app" : "Example";
-    final artifact = File(path.join(root.path, "artifact.zip"));
-    final artifactBytes = validArtifact
-        ? ZipEncoder().encode(
-            Archive()
-              ..addFile(
-                ArchiveFile.string(
-                  Platform.operatingSystem == "macos"
-                      ? "$appName/Contents/Info.plist"
-                      : "app.txt",
-                  "version=2.0.1",
-                ),
-              ),
-          )
-        : utf8.encode("zip");
-    await artifact.writeAsBytes(artifactBytes);
-    final artifactSha256 =
-        crypto.sha256.convert(await artifact.readAsBytes()).toString();
-    await File(path.join(root.path, "app-archive.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "appName": appName,
-            if (supportPolicy)
-              "supportPolicy": {
-                "minimumSupportedVersion": "2.4.0",
-                "enforcedAfter": (enforcedAfter ?? DateTime.utc(2999))
-                    .toUtc()
-                    .toIso8601String(),
-              },
-            "items": [
-              {
-                "version": "2.0.1",
-                "buildNumber": 201,
-                "platform": Platform.operatingSystem,
-                "channel": "stable",
-                "mandatory": mandatory,
-                if (freshInstall)
-                  "freshInstall": {
-                    "downloadUrl": "https://example.com/download/latest",
-                    "message": "Install from a fresh download.",
-                  },
-                "release": releaseUrl.toString(),
-              },
-            ],
-          })}\n",
-    );
-    await File(path.join(root.path, "release.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "packageId": "com.example.app",
-            "appName": appName,
-            "version": "2.0.1",
-            "buildNumber": 201,
-            "platform": Platform.operatingSystem,
-            "channel": "stable",
-            "artifact": {
-              "kind": "zip",
-              "url": artifactUrl.toString(),
-              "sha256": validArtifact ? artifactSha256 : "a" * 64,
-              "length": await artifact.length(),
-            },
-            "install": {"strategy": "wholeDirectoryReplace"},
-            if (includeDescriptorSignature)
-              "signature": {
-                "algorithm": "ed25519",
-                "publicKeyId": "test-release",
-                "value": base64Encode(List<int>.filled(64, 0)),
-              },
-            "minimumUpdaterVersion": "2.0.0",
-            "generatedAt": DateTime.utc(2026, 6, 13).toIso8601String(),
-          })}\n",
-    );
-
-    return _ControllerUpdateFixture(
-      root: root,
-      archiveUrl: root.uri.resolve("app-archive.json"),
-    );
-  }
-
-  Future<void> delete() async {
-    await root.delete(recursive: true);
-  }
-}
-
-class _ControllerHttpUpdateFixture {
-  _ControllerHttpUpdateFixture._({
-    required this.root,
-    required this.server,
-    required this.archiveUrl,
-  });
-
-  final Directory root;
-  final HttpServer server;
-  final Uri archiveUrl;
-  final authHeaders = <String?>[];
-  final updatePaths = <String>[];
-
-  static Future<_ControllerHttpUpdateFixture> create() async {
-    final root = await Directory.systemTemp.createTemp(
-      "updater_controller_http_",
-    );
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final fixture = _ControllerHttpUpdateFixture._(
-      root: root,
-      server: server,
-      archiveUrl: Uri.parse(
-        "http://127.0.0.1:${server.port}/app-archive.json",
-      ),
-    );
-    await fixture._writeFiles();
-    fixture._serve();
-    return fixture;
-  }
-
-  Uri _url(String fileName) {
-    return Uri.parse("http://127.0.0.1:${server.port}/$fileName");
-  }
-
-  Future<void> _writeFiles() async {
-    final appName =
-        Platform.operatingSystem == "macos" ? "Example.app" : "Example";
-    final artifactBytes = ZipEncoder().encode(
-      Archive()
-        ..addFile(
-          ArchiveFile.string(
-            Platform.operatingSystem == "macos"
-                ? "$appName/Contents/Info.plist"
-                : "app.txt",
-            "version=2.0.1",
-          ),
-        ),
-    );
-    final artifact = File(path.join(root.path, "artifact.zip"));
-    await artifact.writeAsBytes(artifactBytes);
-    final artifactSha256 =
-        crypto.sha256.convert(await artifact.readAsBytes()).toString();
-
-    await File(path.join(root.path, "app-archive.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "appName": appName,
-            "items": [
-              {
-                "version": "2.0.1",
-                "buildNumber": 201,
-                "platform": Platform.operatingSystem,
-                "channel": "stable",
-                "mandatory": false,
-                "release": _url("release.json").toString(),
-              },
-            ],
-          })}\n",
-    );
-    await File(path.join(root.path, "release.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({
-            "schemaVersion": 3,
-            "packageId": "com.example.app",
-            "appName": appName,
-            "version": "2.0.1",
-            "buildNumber": 201,
-            "platform": Platform.operatingSystem,
-            "channel": "stable",
-            "artifact": {
-              "kind": "zip",
-              "url": _url("artifact.zip").toString(),
-              "sha256": artifactSha256,
-              "length": await artifact.length(),
-            },
-            "install": {"strategy": "wholeDirectoryReplace"},
-            "minimumUpdaterVersion": "2.0.0",
-            "generatedAt": DateTime.utc(2026, 6, 24).toIso8601String(),
-          })}\n",
-    );
-  }
-
-  void _serve() {
-    server.listen((request) async {
-      authHeaders.add(request.headers.value("x-update-auth"));
-      updatePaths.add(request.uri.path);
-
-      final relative = request.uri.pathSegments.join("/");
-      final file = File(path.join(root.path, relative));
-      if (!await file.exists()) {
-        request.response.statusCode = HttpStatus.notFound;
-        await request.response.close();
-        return;
-      }
-
-      request.response.headers.contentLength = await file.length();
-      await request.response.addStream(file.openRead());
-      await request.response.close();
+    final algorithm = Ed25519();
+    final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
+    final publicKey = await keyPair.extractPublicKey();
+    final descriptorToSign = ReleaseDescriptor.fromJson({
+      ...descriptor.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": "",
+      },
     });
-  }
-
-  Future<void> delete() async {
-    await server.close(force: true);
-    await root.delete(recursive: true);
-  }
-}
-
-class _RealHttpOverrides extends HttpOverrides {
-  @override
-  // ignore: unnecessary_overrides
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context);
+    final descriptorSignature = await algorithm.sign(
+      descriptorToSign.canonicalSignatureBytes(),
+      keyPair: keyPair,
+    );
+    final signedDescriptor = ReleaseDescriptor.fromJson({
+      ...descriptor.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": base64Encode(descriptorSignature.bytes),
+      },
+    });
+    final indexToSign = ReleaseIndex.fromJson({
+      "schemaVersion": 3,
+      "appName": "Example",
+      "items": [
+        {
+          "version": descriptor.version,
+          "buildNumber": descriptor.buildNumber,
+          "platform": descriptor.platform,
+          "channel": descriptor.channel,
+          "mandatory": true,
+          "release": releaseUrl.toString(),
+        },
+      ],
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": "",
+      },
+    });
+    final indexSignature = await algorithm.sign(
+      indexToSign.canonicalSignatureBytes(),
+      keyPair: keyPair,
+    );
+    final signedIndex = ReleaseIndex.fromJson({
+      ...indexToSign.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": base64Encode(indexSignature.bytes),
+      },
+    });
+    return _SignedUpdate(
+      indexJson: jsonEncode(signedIndex.toJson()),
+      descriptorJson: jsonEncode(signedDescriptor.toJson()),
+      publicKeys: {_publicKeyId: base64Encode(publicKey.bytes)},
+    );
   }
 }

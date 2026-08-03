@@ -9,7 +9,7 @@ class Ed25519ReleaseSignatureVerifier {
   Ed25519ReleaseSignatureVerifier(
     Map<String, String> publicKeys, {
     Ed25519? algorithm,
-  })  : publicKeys = Map.unmodifiable(publicKeys),
+  })  : publicKeys = normalizeReleasePublicKeys(publicKeys),
         _algorithm = algorithm ?? Ed25519();
 
   /// Map of `publicKeyId` to base64 raw Ed25519 public key bytes.
@@ -40,14 +40,17 @@ class Ed25519ReleaseSignatureVerifier {
       return false;
     }
 
-    final publicKeyValue = publicKeys[signature.publicKeyId];
-    if (publicKeyValue == null || publicKeyValue.trim().isEmpty) {
+    final publicKeyValue = publicKeys[signature.publicKeyId.trim()];
+    if (publicKeyValue == null || publicKeyValue.isEmpty) {
       return false;
     }
 
     try {
-      final publicKeyBytes = base64Decode(publicKeyValue.trim());
+      final publicKeyBytes = base64Decode(publicKeyValue);
       final signatureBytes = base64Decode(signature.value.trim());
+      if (signatureBytes.length != 64) {
+        return false;
+      }
       final publicKey = SimplePublicKey(
         publicKeyBytes,
         type: KeyPairType.ed25519,
@@ -75,14 +78,50 @@ Map<String, String> decodeReleasePublicKeysJson(String value) {
 
   final publicKeys = <String, String>{};
   for (final entry in decoded.entries) {
-    final publicKeyId = entry.key.trim();
+    final publicKeyId = entry.key;
     final publicKeyValue = entry.value;
-    if (publicKeyId.isEmpty || publicKeyValue is! String) {
+    if (publicKeyValue is! String) {
       throw const FormatException(
         "Release public keys must map non-empty key ids to base64 strings.",
       );
     }
     publicKeys[publicKeyId] = publicKeyValue;
   }
-  return publicKeys;
+  return normalizeReleasePublicKeys(publicKeys);
 }
+
+/// Returns a normalized immutable copy of pinned raw Ed25519 public keys.
+Map<String, String> normalizeReleasePublicKeys(Map<String, String> publicKeys) {
+  if (publicKeys.isEmpty) {
+    throw const FormatException(
+      "Release public keys must contain at least one key.",
+    );
+  }
+  final normalized = <String, String>{};
+  for (final entry in publicKeys.entries) {
+    final keyId = entry.key.trim();
+    if (keyId.isEmpty) {
+      throw const FormatException("Release public key ids must not be blank.");
+    }
+    if (normalized.containsKey(keyId)) {
+      throw FormatException("Duplicate release public key id: $keyId.");
+    }
+    final value = entry.value.trim();
+    if (value != entry.value || !_strictBase64.hasMatch(value)) {
+      throw FormatException(
+        "Release public key $keyId must be strict base64.",
+      );
+    }
+    final bytes = base64Decode(value);
+    if (bytes.length != 32) {
+      throw FormatException(
+        "Release public key $keyId must decode to 32 bytes.",
+      );
+    }
+    normalized[keyId] = value;
+  }
+  return Map.unmodifiable(normalized);
+}
+
+final _strictBase64 =
+    RegExp(r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$");

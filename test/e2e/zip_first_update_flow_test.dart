@@ -19,7 +19,8 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(root: tempDir, baseUri: server.uri);
+      final fixture =
+          await buildReleaseFixture(root: tempDir, baseUri: server.uri);
 
       final client = UpdateClient(
         appArchiveUrl: server.uri.resolve("app-archive.json"),
@@ -28,6 +29,8 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
 
       final check = await client.checkForUpdate();
@@ -35,7 +38,7 @@ void main() {
 
       final progress = <int>[];
       final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
+        checkResult: check!,
         onProgress: (receivedBytes, _) => progress.add(receivedBytes),
       );
 
@@ -76,7 +79,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "macos",
@@ -89,6 +92,8 @@ void main() {
           buildNumber: "100",
         ),
         platform: "macos",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
         runProcess: (_, arguments) async {
           final destination = arguments.last;
@@ -98,9 +103,7 @@ void main() {
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
       final sidecar = File(
         path.join(
           Directory(staged.stagingPath).parent.path,
@@ -123,7 +126,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "windows",
@@ -136,13 +139,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
       final sidecar = File(
         path.join(staged.stagingPath, stagedReleaseManifestFileName),
       );
@@ -170,7 +173,7 @@ void main() {
       );
 
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "windows",
@@ -183,13 +186,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
 
       expect(staleStage.existsSync(), isTrue);
       expect(Directory(staged.stagingPath).existsSync(), isTrue);
@@ -223,7 +226,7 @@ void main() {
       );
 
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "windows",
@@ -235,13 +238,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
 
       expect(staleStage.existsSync(), isFalse);
       expect(Directory(staged.stagingPath).existsSync(), isTrue);
@@ -256,7 +259,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         badChecksum: true,
@@ -269,11 +272,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
       final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(descriptor: check!.descriptor),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsA(isA<FileSystemException>()),
       );
     } finally {
@@ -287,7 +292,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         traversalZip: true,
@@ -300,11 +305,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
       final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(descriptor: check!.descriptor),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsFormatException,
       );
     } finally {

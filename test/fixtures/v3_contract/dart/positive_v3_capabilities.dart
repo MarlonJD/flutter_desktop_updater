@@ -2,7 +2,6 @@ import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/install_handoff.dart";
 import "package:desktop_updater/src/core/update_client.dart";
-import "package:desktop_updater/src/core/update_recovery.dart";
 
 import "support.dart";
 
@@ -14,11 +13,13 @@ void main() {
     packageVersion: "3.0.0",
     platform: "windows",
     channel: "stable",
+    appVersion: "2.7.0",
     updateVersion: "3.0.0",
     updateBuildNumber: null,
     expectedPackageId: "com.example.desktop",
     stagingPath: r"C:\stage\Example.app",
     stageProvenanceSha256: "a" * 64,
+    diagnosticsText: null,
     transactionId: "00000000-0000-4000-8000-000000000001",
   );
   final session = DesktopUpdater().createZipFirstUpdateSession(
@@ -29,25 +30,31 @@ void main() {
     expectedPackageId: "com.example.desktop",
     trustedReleasePublicKeys: trustedReleasePublicKeys,
   );
-  final queryAndRecover = QueryAndRecoverNativeInstallRecovery(
+  const queryAndRecover = QueryAndRecoverNativeInstallRecovery(
     query: _status,
     recover: _status,
   );
-  final atomic = AtomicAfterExitNativeInstallRecovery(
+  const atomic = AtomicAfterExitNativeInstallRecovery(
     query: _status,
     resolveAfterExit: _status,
   );
-  final persist = persistInstallTransaction;
-  final claim = claimRetainedVerifiedStageForDispatch;
-  final dispatch = dispatchVerifiedInstall;
+  final capabilities = <Object?>[
+    marker,
+    session,
+    queryAndRecover,
+    atomic,
+    persistInstallTransaction,
+    claimRetainedVerifiedStageForDispatch,
+    dispatchVerifiedInstall,
+  ];
 
   assert(
     marker.transactionId != null &&
-        session is ZipFirstUpdateSession &&
-        queryAndRecover is NativeInstallRecovery &&
-        atomic is NativeInstallRecovery &&
-        persist is Function &&
-        claim is Function &&
-        dispatch is Function,
+        capabilities.length == 7 &&
+        queryAndRecover.queryInstallTransaction == _status &&
+        queryAndRecover.recoverPendingInstallTransaction == _status &&
+        atomic.queryInstallTransaction == _status &&
+        atomic.resolvePendingInstallTransactionAfterExit == _status,
+    "v3 capabilities must compile as a coherent typed surface",
   );
 }

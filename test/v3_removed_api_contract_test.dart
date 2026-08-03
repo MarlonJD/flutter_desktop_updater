@@ -18,7 +18,7 @@ void main() {
       ),
       const _AnalyzerExpectation(
         "legacy_platform_fallback.dart",
-        "NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER",
+        "OVERRIDE_ON_NON_OVERRIDING_MEMBER",
         "platform fallback",
       ),
       const _AnalyzerExpectation(
@@ -28,22 +28,22 @@ void main() {
       ),
       const _AnalyzerExpectation(
         "opaque_persistence_and_request.dart",
-        "UNDEFINED_CONSTRUCTOR",
+        "NEW_WITH_UNDEFINED_CONSTRUCTOR_DEFAULT",
         "persistence receipt construction",
       ),
       const _AnalyzerExpectation(
         "opaque_persistence_and_request.dart",
-        "SUBTYPE_OF_SEALED_CLASS",
+        "INVALID_USE_OF_TYPE_OUTSIDE_LIBRARY",
         "sealed install-request implementation",
       ),
       const _AnalyzerExpectation(
         "final_value_implementation.dart",
-        "SUBTYPE_OF_FINAL_IS_NOT_BASE",
+        "INVALID_USE_OF_TYPE_OUTSIDE_LIBRARY",
         "final result, receipt, and retained-stage implementation",
       ),
       const _AnalyzerExpectation(
         "sealed_recovery_implementation.dart",
-        "SUBTYPE_OF_SEALED_CLASS",
+        "INVALID_USE_OF_TYPE_OUTSIDE_LIBRARY",
         "base-only recovery implementation",
       ),
     ];

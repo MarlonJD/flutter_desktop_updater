@@ -6,6 +6,7 @@ import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package/app_archive_writer.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
@@ -33,6 +34,7 @@ import "package:desktop_updater/src/release_cli/upload/sftp_upload_provider.dart
 import "package:desktop_updater/src/release_cli/upload/upload_provider.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 import "package:desktop_updater/src/release_cli/xcode_project_adapter.dart";
+import "package:desktop_updater/src/release_manifest.dart";
 import "package:path/path.dart" as path;
 
 export "package:desktop_updater/src/release_cli/project_adapter.dart"
@@ -51,16 +53,21 @@ typedef ReleaseHookCommandRunner = Future<ProcessResult> Function(
 /// Ephemeral key material used to sign the final app archive after hooks.
 class ReleaseSigningOptions {
   /// Creates ephemeral signing options for one publication.
-  const ReleaseSigningOptions({
+  ReleaseSigningOptions({
     required this.publicKeyId,
     required this.privateKeyBase64,
-  });
+    required Map<String, String> trustedReleasePublicKeys,
+  }) : trustedReleasePublicKeys =
+            normalizeReleasePublicKeys(trustedReleasePublicKeys);
 
   /// Pinned key identifier written to the signature envelope.
   final String publicKeyId;
 
   /// Base64-encoded raw 32-byte Ed25519 private seed.
   final String privateKeyBase64;
+
+  /// Normalized trusted release public key map used for publication validation.
+  final Map<String, String> trustedReleasePublicKeys;
 }
 
 class ReleasePublisher {
@@ -336,29 +343,17 @@ class ReleasePublisher {
       ),
     );
 
-    final manifest = PublishManifest(
-      schemaVersion: 1,
-      baseUrl: config.baseUrl,
-      localRoot: config.outputDirectory.path,
-      appArchive: PublishManifestFile(
-        path: layout.appArchiveRelativePath,
-        url: layout.appArchiveUrl,
+    var manifest = _publishManifestFor(
+      config: config,
+      layout: layout,
+      metadata: metadata,
+      artifactKind: packageResult.descriptor.artifact.kind,
+      artifactRelativePath: _relativePublishPath(
+        root: config.outputDirectory,
+        file: packageResult.artifact,
       ),
-      release: PublishManifestRelease(
-        version: metadata.version,
-        buildNumber: metadata.buildNumber,
-        platform: platform,
-        channel: config.channel,
-        path: layout.releaseRelativePath,
-        url: layout.releaseUrl,
-      ),
-      artifact: PublishManifestArtifact(
-        kind: packageResult.descriptor.artifact.kind,
-        path: layout.artifactRelativePath,
-        url: layout.artifactUrl,
-        sha256: packageResult.descriptor.artifact.sha256,
-        length: packageResult.descriptor.artifact.length,
-      ),
+      artifactSha256: packageResult.descriptor.artifact.sha256,
+      artifactLength: packageResult.descriptor.artifact.length,
     );
     await manifest.writeTo(layout.manifestFile);
 
@@ -373,6 +368,52 @@ class ReleasePublisher {
       output: output,
     );
 
+    final finalArtifactSha256 = await sha256File(packageResult.artifact);
+    final finalArtifactLength = await packageResult.artifact.length();
+    final finalDescriptor = _releaseDescriptorForFinalArtifact(
+      packageResult.descriptor,
+      artifactSha256: finalArtifactSha256,
+      artifactLength: finalArtifactLength,
+    );
+    await _writeJsonFile(layout.releaseFile, finalDescriptor.toJson());
+    await upsertAppArchive(
+      archiveFile: layout.appArchiveFile,
+      appName: archiveAppName,
+      supportPolicy: overrides.minimumSupportedVersion == null
+          ? null
+          : ReleaseSupportPolicy(
+              minimumSupportedVersion: overrides.minimumSupportedVersion!,
+              enforcedAfter: overrides.enforcedAfter!,
+            ),
+      item: ReleaseIndexItem(
+        version: metadata.version,
+        buildNumber: metadata.buildNumber,
+        platform: platform,
+        channel: config.channel,
+        mandatory: overrides.mandatory,
+        freshInstall: overrides.freshInstallUrl == null
+            ? null
+            : ReleaseFreshInstall(
+                downloadUrl: overrides.freshInstallUrl!,
+                message: overrides.freshInstallMessage,
+              ),
+        release: layout.releaseUrl,
+      ),
+    );
+    manifest = _publishManifestFor(
+      config: config,
+      layout: layout,
+      metadata: metadata,
+      artifactKind: finalDescriptor.artifact.kind,
+      artifactRelativePath: _relativePublishPath(
+        root: config.outputDirectory,
+        file: packageResult.artifact,
+      ),
+      artifactSha256: finalDescriptor.artifact.sha256,
+      artifactLength: finalDescriptor.artifact.length,
+    );
+    await manifest.writeTo(layout.manifestFile);
+
     var publicationValidator = ReleaseValidator();
     if (signing != null) {
       final publicKeyId = signing.publicKeyId.trim();
@@ -380,13 +421,23 @@ class ReleasePublisher {
         base64Decode(signing.privateKeyBase64.trim()),
       );
       final publicKey = await keyPair.extractPublicKey();
-      final publicKeys = {
-        publicKeyId: base64Encode(publicKey.bytes),
-      };
+      final publicKeys = signing.trustedReleasePublicKeys;
+      final activePublicKey = publicKeys[publicKeyId];
+      if (activePublicKey == null ||
+          activePublicKey != base64Encode(publicKey.bytes)) {
+        throw const FormatException(
+          "Active signing key does not match --public-keys-env.",
+        );
+      }
       final strictArtifactVerifier = ArtifactVerifier(
         policy: ArtifactVerificationPolicy.requireEd25519Signature(
           publicKeys: publicKeys,
         ),
+      );
+      await ReleaseDescriptorSigner().sign(
+        releaseFile: layout.releaseFile,
+        publicKeyId: publicKeyId,
+        privateKeyBase64: signing.privateKeyBase64,
       );
       final descriptor = ReleaseDescriptor.fromJson(
         jsonDecode(await layout.releaseFile.readAsString())
@@ -431,13 +482,6 @@ class ReleasePublisher {
       output.writeln("Signed final app-archive.json.");
     }
 
-    if (signing != null && config.uploadProvider is CustomCommandUploadConfig) {
-      throw const FormatException(
-        "Signed publishing requires an upload provider that publishes "
-        "app-archive.json last.",
-      );
-    }
-
     await _uploadAndValidate(
       provider: _providerFor(config.uploadProvider),
       config: config.uploadProvider,
@@ -445,6 +489,7 @@ class ReleasePublisher {
       manifest: manifest,
       validator: publicationValidator,
       output: output,
+      expectedRevision: const RemoteIndexRevision.absent(),
     );
 
     return manifest;
@@ -483,6 +528,89 @@ Future<void> _copyAdditionalFiles({
       );
     }
   }
+}
+
+PublishManifest _publishManifestFor({
+  required ReleasePublishConfig config,
+  required PublishLayout layout,
+  required ProjectMetadata metadata,
+  required String artifactKind,
+  required String artifactRelativePath,
+  required String artifactSha256,
+  required int artifactLength,
+}) {
+  return PublishManifest(
+    schemaVersion: 1,
+    baseUrl: config.baseUrl,
+    localRoot: config.outputDirectory.path,
+    appArchive: PublishManifestFile(
+      path: layout.appArchiveRelativePath,
+      url: layout.appArchiveUrl,
+    ),
+    release: PublishManifestRelease(
+      version: metadata.version,
+      buildNumber: metadata.buildNumber,
+      platform: metadata.platform,
+      channel: config.channel,
+      path: layout.releaseRelativePath,
+      url: layout.releaseUrl,
+    ),
+    artifact: PublishManifestArtifact(
+      kind: artifactKind,
+      path: artifactRelativePath,
+      url: layout.artifactUrl,
+      sha256: artifactSha256,
+      length: artifactLength,
+    ),
+  );
+}
+
+ReleaseDescriptor _releaseDescriptorForFinalArtifact(
+  ReleaseDescriptor descriptor, {
+  required String artifactSha256,
+  required int artifactLength,
+}) {
+  return ReleaseDescriptor(
+    schemaVersion: descriptor.schemaVersion,
+    packageId: descriptor.packageId,
+    appName: descriptor.appName,
+    version: descriptor.version,
+    buildNumber: descriptor.buildNumber,
+    platform: descriptor.platform,
+    channel: descriptor.channel,
+    artifact: ReleaseArtifact(
+      kind: descriptor.artifact.kind,
+      url: descriptor.artifact.url,
+      sha256: artifactSha256,
+      length: artifactLength,
+    ),
+    install: descriptor.install,
+    minimumUpdaterVersion: descriptor.minimumUpdaterVersion,
+    generatedAt: descriptor.generatedAt,
+    minimumOS: descriptor.minimumOS,
+    deltaArtifacts: descriptor.deltaArtifacts,
+  )..validate();
+}
+
+Future<void> _writeJsonFile(File file, Map<String, dynamic> json) async {
+  await file.writeAsString(
+    "${const JsonEncoder.withIndent("  ").convert(json)}\n",
+  );
+}
+
+String _relativePublishPath({
+  required Directory root,
+  required File file,
+}) {
+  final rootPath = path.normalize(root.absolute.path);
+  final filePath = path.normalize(file.absolute.path);
+  if (!path.isWithin(rootPath, filePath)) {
+    throw FileSystemException(
+      "Published artifact must stay inside the output directory",
+      file.path,
+    );
+  }
+  return path.relative(filePath, from: rootPath).replaceAll(r"\", "/");
 }
 
 Directory _additionalFileDestination({
@@ -1063,6 +1191,7 @@ Future<void> _uploadAndValidate({
   required PublishManifest manifest,
   required ReleaseValidator validator,
   required StringSink output,
+  required RemoteIndexRevision expectedRevision,
 }) async {
   if (config is ManualUploadConfig) {
     await provider.upload(
@@ -1085,19 +1214,30 @@ Future<void> _uploadAndValidate({
     output.writeln("Validating hosted release descriptor...");
     await validator.validateReleaseFiles(manifest: manifest, output: output);
     output.writeln("Publishing app-archive.json last...");
-    await provider.uploadAppArchive(
+    final receipt = await provider.uploadAppArchive(
       localRoot: localRoot,
       manifest: manifest,
       config: config,
       output: output,
+      expectedRevision: expectedRevision,
     );
+    final localIndexSha256 = await sha256File(
+      File(path.join(localRoot.path, manifest.appArchive.path)),
+    );
+    if (receipt.observedPriorRevision != expectedRevision) {
+      throw StateError(
+        "Upload provider observed a different app-archive.json revision.",
+      );
+    }
+    if (receipt.publishedSha256 != localIndexSha256) {
+      throw StateError(
+        "Upload provider published a different app-archive.json digest.",
+      );
+    }
   } else {
-    output.writeln("Uploading release files...");
-    await provider.upload(
-      localRoot: localRoot,
-      manifest: manifest,
-      config: config,
-      output: output,
+    throw const FormatException(
+      "Automatic upload providers must publish versioned files first and "
+      "return an ordered app-archive.json receipt.",
     );
   }
 

@@ -37,6 +37,7 @@ class S3UploadProvider implements OrderedUploadProvider {
       manifest: manifest,
       config: config,
       output: output,
+      expectedRevision: const RemoteIndexRevision.absent(),
     );
     return const UploadResult(uploaded: true);
   }
@@ -60,18 +61,16 @@ class S3UploadProvider implements OrderedUploadProvider {
   }
 
   @override
-  Future<void> uploadAppArchive({
+  Future<IndexPublishReceipt> uploadAppArchive({
     required Directory localRoot,
     required PublishManifest manifest,
     required UploadConfig config,
     required StringSink output,
+    required RemoteIndexRevision expectedRevision,
   }) async {
-    final s3Config = _s3Config(config);
-    await client.putFile(
-      file: File(path.join(localRoot.path, manifest.appArchive.path)),
-      bucket: s3Config.bucket,
-      key: _s3Key(s3Config.prefix, manifest.appArchive.path),
-      config: s3Config,
+    throw const FormatException(
+      "S3 upload requires a conditional index write or tested exclusive "
+      "publication lease before publishing app-archive.json.",
     );
   }
 }

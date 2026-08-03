@@ -3,10 +3,10 @@ import "dart:io";
 import "dart:math";
 
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
-import "package:desktop_updater/src/core/artifact_verifier.dart";
+import "package:desktop_updater/src/core/install_handoff.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
-import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/core/release_notes.dart";
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
@@ -61,17 +61,16 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// the controller starts an asynchronous update check during construction.
   DesktopUpdaterController({
     required Uri? appArchiveUrl,
+    required String expectedPackageId,
+    required UpdateRecoveryStore recoveryStore,
+    required Map<String, String> trustedReleasePublicKeys,
     DesktopUpdateLocalization? localization,
-    this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
     this.preferences,
-    this.recoveryStore,
-    this.diagnosticsLogPath,
     this.telemetry,
     this.isMinimumOSSupported,
     this.requestHeadersProvider,
-    Map<String, String>? trustedReleasePublicKeys,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -79,9 +78,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesLoader? releaseNotesLoader,
     Uri? releaseNotesUrl,
     ExternalUrlLauncher? externalUrlLauncher,
-  })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
-            ? null
-            : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+  })  : expectedPackageId =
+            _normalizeControllerExpectedPackageId(expectedPackageId),
+        recoveryStore = recoveryStore,
+        trustedReleasePublicKeys =
+            normalizeReleasePublicKeys(trustedReleasePublicKeys),
         _isWindows = Platform.isWindows,
         _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
@@ -111,17 +112,16 @@ class DesktopUpdaterController extends ChangeNotifier {
   @visibleForTesting
   DesktopUpdaterController.forTesting({
     required Uri? appArchiveUrl,
+    required String expectedPackageId,
+    required UpdateRecoveryStore recoveryStore,
+    required Map<String, String> trustedReleasePublicKeys,
     DesktopUpdateLocalization? localization,
-    this.allowUnsignedMacOSUpdates = false,
     this.channel = "stable",
     this.installationIdentity,
     this.preferences,
-    this.recoveryStore,
-    this.diagnosticsLogPath,
     this.telemetry,
     this.isMinimumOSSupported,
     this.requestHeadersProvider,
-    Map<String, String>? trustedReleasePublicKeys,
     UpdateDiagnosticsRecorder? diagnosticsRecorder,
     Future<void> Function(UpdateProblemReport report)? onProblemReport,
     FutureOr<void> Function(UpdateCleanupReport report)? onCleanupReport,
@@ -131,9 +131,11 @@ class DesktopUpdaterController extends ChangeNotifier {
     ReleaseNotesFetcher? releaseNotesFetcher,
     ExternalUrlLauncher? externalUrlLauncher,
     bool? isWindows,
-  })  : trustedReleasePublicKeys = trustedReleasePublicKeys == null
-            ? null
-            : Map<String, String>.unmodifiable(trustedReleasePublicKeys),
+  })  : expectedPackageId =
+            _normalizeControllerExpectedPackageId(expectedPackageId),
+        recoveryStore = recoveryStore,
+        trustedReleasePublicKeys =
+            normalizeReleasePublicKeys(trustedReleasePublicKeys),
         _isWindows = isWindows ?? Platform.isWindows,
         _localization = localization,
         _skipInitialVersionCheck = skipInitialVersionCheck,
@@ -188,12 +190,11 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Optional app-owned persistence adapter for skipped versions.
   final UpdatePreferences? preferences;
 
-  /// Optional app-owned persistence adapter for pending install recovery.
-  final UpdateRecoveryStore? recoveryStore;
+  /// App-owned expected package identity for signed metadata and install.
+  final String expectedPackageId;
 
-  /// Compatibility-only diagnostics path. Standalone helpers use their fixed
-  /// platform log sink instead of writing this caller-selected path.
-  final String? diagnosticsLogPath;
+  /// App-owned durable persistence adapter for pending install recovery.
+  final UpdateRecoveryStore recoveryStore;
 
   /// Optional app-owned telemetry callback.
   final DesktopUpdaterTelemetry? telemetry;
@@ -235,19 +236,7 @@ class DesktopUpdaterController extends ChangeNotifier {
   final UpdateRequestHeadersProvider? requestHeadersProvider;
 
   /// Pinned Ed25519 public keys required for app archive and descriptor trust.
-  ///
-  /// When null, the released 2.x unsigned-metadata compatibility behavior is
-  /// preserved. Supplying a map requires valid signatures on both metadata
-  /// documents before release selection or artifact download. Native install
-  /// handoff still requires a signed release descriptor.
-  final Map<String, String>? trustedReleasePublicKeys;
-
-  /// Legacy compatibility flag for the former unsigned macOS install path.
-  ///
-  /// Native install handoff rejects this flag because the sealed helper trust
-  /// policy requires signed release metadata. Keep this false and publish
-  /// signed, notarized macOS updates for macOS privileged installation.
-  final bool allowUnsignedMacOSUpdates;
+  final Map<String, String> trustedReleasePublicKeys;
 
   Uri? _appArchiveUrl;
 
@@ -287,6 +276,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   ReleaseSupportPolicy? get activeSupportPolicy => _activeSupportPolicy;
 
   UpdateClient? _client;
+  UpdateCheckResult? _activeCheckResult;
+  UpdateStageResult? _activeStageResult;
   String? _stagingPath;
   StagedUpdateProvenance? _stageProvenance;
   String? _stageProvenanceSha256;
@@ -424,31 +415,22 @@ class DesktopUpdaterController extends ChangeNotifier {
       }
       _currentAppVersion = _formatVersionInfo(currentVersion);
 
-      final publicKeys = trustedReleasePublicKeys;
-
       final client = UpdateClient(
         appArchiveUrl: archiveUrl,
         currentVersion: currentVersion,
+        expectedPackageId: expectedPackageId,
+        trustedReleasePublicKeys: trustedReleasePublicKeys,
         channel: channel,
         installationIdentity: installationIdentity,
         requestHeadersProvider: requestHeadersProvider,
         telemetry: telemetry,
         isMinimumOSSupported: isMinimumOSSupported,
-        requireIndexSignature: publicKeys != null,
-        indexSignatureVerifier: publicKeys == null
-            ? null
-            : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
-        verifier: publicKeys == null
-            ? const ArtifactVerifier()
-            : ArtifactVerifier(
-                policy: ArtifactVerificationPolicy.requireEd25519Signature(
-                  publicKeys: publicKeys,
-                ),
-              ),
       );
       final result = await client.checkForUpdate();
       if (result == null) {
         _client = null;
+        _activeCheckResult = null;
+        _activeStageResult = null;
         _activeDescriptor = null;
         _activeFreshInstall = null;
         _activeSupportPolicy = null;
@@ -483,6 +465,8 @@ class DesktopUpdaterController extends ChangeNotifier {
           !supportPolicyEnforced &&
           await _isSkipped(result.descriptor)) {
         _client = null;
+        _activeCheckResult = null;
+        _activeStageResult = null;
         _activeDescriptor = null;
         _activeFreshInstall = null;
         _activeSupportPolicy = null;
@@ -503,6 +487,8 @@ class DesktopUpdaterController extends ChangeNotifier {
 
       _skipUpdate = false;
       _client = client;
+      _activeCheckResult = result;
+      _activeStageResult = null;
       _activeDescriptor = result.descriptor;
       _activeFreshInstall = freshInstall;
       _activeSupportPolicy = activeSupportPolicy;
@@ -628,7 +614,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   Future<void> downloadUpdate() async {
     final descriptor = _activeDescriptor;
     final client = _client;
-    if (descriptor == null || client == null) {
+    final checkResult = _activeCheckResult;
+    if (descriptor == null || client == null || checkResult == null) {
       throw StateError("No zip-first update is available.");
     }
     if (_state is UpdateFreshInstallRequired) {
@@ -643,6 +630,7 @@ class DesktopUpdaterController extends ChangeNotifier {
     };
 
     _stagingPath = null;
+    _activeStageResult = null;
     _stageProvenance = null;
     _stageProvenanceSha256 = null;
     _diagnosticsRecorder.record(
@@ -669,7 +657,7 @@ class DesktopUpdaterController extends ChangeNotifier {
 
     try {
       final result = await client.downloadVerifyAndStage(
-        descriptor: descriptor,
+        checkResult: checkResult,
         onProgress: (receivedBytes, totalBytes) {
           _state = UpdateDownloading(
             receivedBytes: receivedBytes,
@@ -680,6 +668,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
 
       _stagingPath = result.stagingPath;
+      _activeStageResult = result;
       _stageProvenance = result.stageProvenance;
       _stageProvenanceSha256 = result.stageProvenanceSha256;
       _diagnosticsRecorder
@@ -734,10 +723,12 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// Hands the staged update to the native installer or restart helper.
   Future<void> restartApp() async {
     final stagingPath = _stagingPath;
+    final stageResult = _activeStageResult;
     final provenance = _stageProvenance;
     final provenanceSha256 = _stageProvenanceSha256;
     if (stagingPath == null ||
         stagingPath.isEmpty ||
+        stageResult == null ||
         provenance == null ||
         provenanceSha256 == null) {
       throw StateError("No downloaded update is ready to install.");
@@ -767,27 +758,13 @@ class DesktopUpdaterController extends ChangeNotifier {
       _validateNativeInstallTrust();
       final candidateTransactionId = _createInstallTransactionId();
       transactionId = candidateTransactionId;
-      await _writePendingRecoveryMarker(
+      final receipt = await _writePendingRecoveryMarker(
         stagingPath,
         candidateTransactionId,
       );
-      await DesktopUpdaterPlatform.instance.installUpdateWithContext(
-        stagingPath: stagingPath,
-        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-        diagnosticsLogPath: diagnosticsLogPath,
-        packageId: _activeDescriptor?.packageId,
-        stageProvenanceSha256: provenanceSha256,
-        stageProvenanceNonce: provenance.nonce,
-        stageProvenanceEntries: provenance.entries
-            .map((entry) => Map<String, Object?>.from(entry.toJson()))
-            .toList(growable: false),
-        expectedArtifactSha256: provenance.artifactSha256,
-        allowedSignerThumbprints:
-            _activeDescriptor?.install.inno?.authenticode.sha256Thumbprints ??
-                const [],
-        innoRequiresElevation:
-            _activeDescriptor?.install.inno?.requiresElevation ?? "auto",
-        transactionId: transactionId,
+      await dispatchVerifiedInstall(
+        stageResult: stageResult,
+        persistedTransaction: receipt,
       );
       final cleanupReport = _buildCleanupReport(
         stagingPath: stagingPath,
@@ -845,13 +822,6 @@ class DesktopUpdaterController extends ChangeNotifier {
   }
 
   void _validateNativeInstallTrust() {
-    if (allowUnsignedMacOSUpdates) {
-      throw UnsupportedError(
-        "allowUnsignedMacOSUpdates is incompatible with native install "
-        "handoff. Publish a signed and notarized macOS update instead.",
-      );
-    }
-
     final signature = _activeDescriptor?.signature;
     if (signature == null ||
         signature.algorithm != "ed25519" ||
@@ -859,22 +829,16 @@ class DesktopUpdaterController extends ChangeNotifier {
         signature.value.trim().isEmpty) {
       throw StateError(
         "Native install handoff requires a signed release.json "
-        "descriptor using Ed25519. Unsigned 2.x metadata remains supported "
-        "for update checks and downloads only.",
+        "descriptor using Ed25519.",
       );
     }
   }
 
   /// Recovers a pending native install marker from the app-owned store.
   Future<void> recoverPendingInstall() async {
-    final store = recoveryStore;
-    if (store == null) {
-      return;
-    }
-
     final UpdateInstallRecoveryMarker? marker;
     try {
-      marker = await store.readPendingInstall(channel: channel);
+      marker = await recoveryStore.readPendingInstall(channel: channel);
     } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
@@ -903,18 +867,28 @@ class DesktopUpdaterController extends ChangeNotifier {
     if (transactionId != null && transactionId.isNotEmpty) {
       final NativeInstallTransactionStatus? nativeStatus;
       try {
+        final recovery = DesktopUpdaterPlatform.instance.nativeInstallRecovery;
         if (_isWindows) {
-          nativeStatus = await DesktopUpdaterPlatform.instance
-              .resolveNativeInstallTransactionAfterExit(transactionId);
+          if (recovery is! AtomicAfterExitNativeInstallRecovery) {
+            throw StateError(
+              "Windows native recovery must be atomic after caller exit.",
+            );
+          }
+          nativeStatus = await recovery
+              .resolvePendingInstallTransactionAfterExit(transactionId);
         } else {
-          var status = await DesktopUpdaterPlatform.instance
-              .queryNativeInstallTransaction(transactionId);
+          if (recovery is! QueryAndRecoverNativeInstallRecovery) {
+            throw StateError(
+              "This platform must expose query/recover native recovery.",
+            );
+          }
+          var status = await recovery.queryInstallTransaction(transactionId);
           if (status?.requiresRecovery ?? false) {
             const maximumRecoveryAttempts = 6;
             var attempts = 0;
             do {
-              status = await DesktopUpdaterPlatform.instance
-                  .recoverNativeInstallTransaction(transactionId);
+              status = await recovery
+                  .recoverPendingInstallTransaction(transactionId);
               attempts += 1;
             } while ((status?.awaitsCallerExit ?? false) &&
                 attempts < maximumRecoveryAttempts);
@@ -1012,43 +986,48 @@ class DesktopUpdaterController extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<bool> _writePendingRecoveryMarker(
+  Future<PersistedInstallTransaction> _writePendingRecoveryMarker(
     String stagingPath,
     String? transactionId,
   ) async {
-    final store = recoveryStore;
-    if (store == null) {
-      return false;
+    final descriptor = _activeDescriptor;
+    if (descriptor == null || transactionId == null) {
+      throw StateError("No active descriptor or transaction is available.");
     }
-
-    final marker = UpdateInstallRecoveryMarker(
+    final marker = UpdateInstallRecoveryMarker.pendingV3(
       createdAt: DateTime.now(),
       packageVersion: _diagnosticsRecorder.packageVersion,
       platform: _diagnosticsRecorder.platform,
       channel: channel,
       appVersion: _currentAppVersion,
-      updateVersion: _activeDescriptor?.version,
-      updateBuildNumber: _activeDescriptor?.buildNumber,
+      updateVersion: descriptor.version,
+      updateBuildNumber: descriptor.buildNumber,
+      expectedPackageId: expectedPackageId,
       stagingPath: stagingPath,
+      stageProvenanceSha256: _stageProvenanceSha256!,
       diagnosticsText: _buildProblemReport(
         StateError("Install handoff pending."),
-        updateVersion: _activeDescriptor?.version,
+        updateVersion: descriptor.version,
         stagingPath: stagingPath,
       ).toPlainText(),
       transactionId: transactionId,
     );
 
     try {
-      await store.writePendingInstall(marker);
-      return true;
+      await recoveryStore.writePendingInstall(marker);
+      final readback = await recoveryStore.readPendingInstall(channel: channel);
+      return persistedInstallTransactionFromExactReadback(
+        written: marker,
+        readback: readback,
+      );
     } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
-        level: UpdateDiagnosticLevel.warning,
-        message: "Recovery marker write failed.",
+        level: UpdateDiagnosticLevel.error,
+        message: "Recovery marker write/readback failed.",
         error: error,
       );
-      return false;
+      rethrow;
     }
   }
 
@@ -1065,13 +1044,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   }
 
   Future<void> _clearPendingRecoveryMarker() async {
-    final store = recoveryStore;
-    if (store == null) {
-      return;
-    }
-
     try {
-      await store.clearPendingInstall(channel: channel);
+      await recoveryStore.clearPendingInstall(channel: channel);
     } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
@@ -1247,6 +1221,18 @@ class DesktopUpdaterController extends ChangeNotifier {
 bool _hasRecoveryRequiredDetails(Object? details) {
   return details is Map<Object?, Object?> &&
       details["recoveryRequired"] == true;
+}
+
+String _normalizeControllerExpectedPackageId(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    throw ArgumentError.value(
+      value,
+      "expectedPackageId",
+      "must not be blank",
+    );
+  }
+  return normalized;
 }
 
 String _releaseNotesCacheKey(ReleaseDescriptor descriptor) {

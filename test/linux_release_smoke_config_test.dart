@@ -26,11 +26,11 @@ void main() {
       appSource,
       contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
     );
-    expect(appSource, contains("packageId: packageId"));
-    expect(appSource, contains("installRoot: installRoot"));
+    expect(appSource, contains(r"packageId=$packageId"));
+    expect(appSource, contains(r"installRoot=$installRoot"));
     expect(
       appSource,
-      contains("executableRelativePath: executableRelativePath"),
+      contains(r"executableRelativePath=$executableRelativePath"),
     );
     expect(source, contains(r'"event":"$event"'));
     expect(source, contains("--diagnostics-log <path>"));

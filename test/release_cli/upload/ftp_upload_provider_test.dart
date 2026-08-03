@@ -26,23 +26,35 @@ ftp:
     );
   });
 
-  test("ftp uploader uploads app archive last", () async {
+  test("ftp uploader rejects app archive publish without lease", () async {
     final recorder = RecordingFtpRemoteFileClient();
     final provider = FtpUploadProvider(client: recorder);
 
-    await provider.upload(
-      localRoot: Directory("/tmp/dist"),
-      manifest: testPublishManifest(),
-      config: const FtpUploadConfig(
-        host: "localhost",
-        remotePath: "/updates",
-        username: "deploy",
-        allowInsecure: true,
+    await expectLater(
+      provider.upload(
+        localRoot: Directory("/tmp/dist"),
+        manifest: testPublishManifest(),
+        config: const FtpUploadConfig(
+          host: "localhost",
+          remotePath: "/updates",
+          username: "deploy",
+          allowInsecure: true,
+        ),
+        output: StringBuffer(),
       ),
-      output: StringBuffer(),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("tested exclusive publication lease"),
+        ),
+      ),
     );
 
-    expect(recorder.writes.last.remotePath, "/updates/app-archive.json");
+    expect(
+      recorder.writes.map((write) => write.remotePath),
+      isNot(contains("/updates/app-archive.json")),
+    );
   });
 }
 

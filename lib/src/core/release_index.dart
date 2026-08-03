@@ -8,13 +8,13 @@ import "package:desktop_updater/src/version_info.dart";
 /// Parsed `app-archive.json` index for zip-first update discovery.
 class ReleaseIndex {
   /// Creates a release index.
-  const ReleaseIndex({
+  ReleaseIndex({
     required this.schemaVersion,
     required this.appName,
-    required this.items,
+    required List<ReleaseIndexItem> items,
     this.supportPolicy,
     this.signature,
-  });
+  }) : items = List<ReleaseIndexItem>.unmodifiable(items);
 
   /// Parses and validates a schema-v3 app archive index from JSON.
   factory ReleaseIndex.fromJson(Map<String, dynamic> json) {

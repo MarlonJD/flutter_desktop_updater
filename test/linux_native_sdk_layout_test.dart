@@ -245,10 +245,13 @@ void main() {
     expect(
       workflow,
       contains(
-        "ctest --test-dir linux/native/build --output-on-failure",
+        "ctest --test-dir build/linux/x64/debug --output-on-failure",
       ),
     );
-    expect(workflow, contains("Linux native CTest registered zero tests"));
+    expect(
+      workflow,
+      contains("Linux Flutter debug CTest registered zero tests"),
+    );
     expect(exampleCmake, contains("enable_testing()"));
     expect(workflow, isNot(contains("desktop_updater_native.so")));
   });

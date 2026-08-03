@@ -55,7 +55,7 @@ Future<ReleasePublishE2eFixture> createReleasePublishE2eFixture({
     config: """
 updates:
   baseUrl: ${baseUrl ?? server.uri}
-$providerConfig
+${providerConfig.replaceAll("{{WEB_ROOT}}", webRoot.path)}
 """,
   );
 

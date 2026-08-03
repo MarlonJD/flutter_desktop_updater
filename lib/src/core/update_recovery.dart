@@ -9,10 +9,64 @@ class UpdateInstallRecoveryMarker {
     this.appVersion,
     this.updateVersion,
     this.updateBuildNumber,
+    this.expectedPackageId,
     this.stagingPath,
+    this.stageProvenanceSha256,
     this.diagnosticsText,
     this.transactionId,
   });
+
+  /// Creates a v3 pending marker with durable install authority bindings.
+  factory UpdateInstallRecoveryMarker.pendingV3({
+    required DateTime createdAt,
+    required String packageVersion,
+    required String platform,
+    required String channel,
+    required String? appVersion,
+    required String updateVersion,
+    required int? updateBuildNumber,
+    required String expectedPackageId,
+    required String stagingPath,
+    required String stageProvenanceSha256,
+    required String? diagnosticsText,
+    required String transactionId,
+  }) {
+    final normalizedTransaction = _requireLowercaseUuid(
+      transactionId,
+      "transactionId",
+    );
+    final normalizedPackageId = _requireNonEmpty(
+      expectedPackageId,
+      "expectedPackageId",
+    );
+    final normalizedUpdateVersion = _requireNonEmpty(
+      updateVersion,
+      "updateVersion",
+    );
+    final normalizedChannel = _requireNonEmpty(channel, "channel");
+    final normalizedStagingPath = _requireNonEmpty(
+      stagingPath,
+      "stagingPath",
+    );
+    final normalizedProvenance = _requireLowercaseSha256(
+      stageProvenanceSha256,
+      "stageProvenanceSha256",
+    );
+    return UpdateInstallRecoveryMarker(
+      createdAt: createdAt.toUtc(),
+      packageVersion: _requireNonEmpty(packageVersion, "packageVersion"),
+      platform: _requireNonEmpty(platform, "platform"),
+      channel: normalizedChannel,
+      appVersion: appVersion,
+      updateVersion: normalizedUpdateVersion,
+      updateBuildNumber: updateBuildNumber,
+      expectedPackageId: normalizedPackageId,
+      stagingPath: normalizedStagingPath,
+      stageProvenanceSha256: normalizedProvenance,
+      diagnosticsText: diagnosticsText,
+      transactionId: normalizedTransaction,
+    );
+  }
 
   /// Time the marker was created.
   final DateTime createdAt;
@@ -35,8 +89,18 @@ class UpdateInstallRecoveryMarker {
   /// Target update build number expected after relaunch, when known.
   final int? updateBuildNumber;
 
+  /// App-owned package identity expected for the installed target.
+  ///
+  /// This is nullable only so 2.x markers can still decode.
+  final String? expectedPackageId;
+
   /// Platform-specific staged update path handed to the native helper.
   final String? stagingPath;
+
+  /// Lowercase SHA-256 digest of the retained staged provenance marker.
+  ///
+  /// This is nullable only so 2.x markers can still decode.
+  final String? stageProvenanceSha256;
 
   /// Redacted diagnostics text captured before native install handoff.
   final String? diagnosticsText;
@@ -240,8 +304,40 @@ abstract interface class UpdateRecoveryStore {
   });
 
   /// Writes a pending install [marker].
+  ///
+  /// Implementations must complete this future only after durable replacement
+  /// has finished and a subsequent [readPendingInstall] for the same channel
+  /// can return the exact marker bytes. Filesystem-backed stores should use
+  /// atomic replacement and the strongest flush/fsync semantics available to
+  /// the host platform.
   Future<void> writePendingInstall(UpdateInstallRecoveryMarker marker);
 
   /// Clears the pending install marker for [channel].
   Future<void> clearPendingInstall({required String channel});
+}
+
+String _requireNonEmpty(String value, String name) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    throw ArgumentError.value(value, name, "must not be blank");
+  }
+  return normalized;
+}
+
+String _requireLowercaseSha256(String value, String name) {
+  final normalized = value.trim();
+  if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(normalized)) {
+    throw ArgumentError.value(value, name, "must be lowercase 64-hex SHA-256");
+  }
+  return normalized;
+}
+
+String _requireLowercaseUuid(String value, String name) {
+  final normalized = value.trim();
+  if (!RegExp(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+  ).hasMatch(normalized)) {
+    throw ArgumentError.value(value, name, "must be a lowercase UUID");
+  }
+  return normalized;
 }

@@ -192,6 +192,12 @@ void main() {
     if (!Platform.isMacOS && !Platform.isLinux) {
       return;
     }
+    if (!_toolAvailable("cc") ||
+        !_toolAvailable("ar") ||
+        !_toolAvailable("pkg-config")) {
+      markTestSkipped("cc, ar, and pkg-config are required locally.");
+      return;
+    }
     final template = readRequiredFile(
       "linux/native/cmake/desktop_updater_native.pc.in",
     );
@@ -505,3 +511,12 @@ String readRequiredFile(String path) {
 }
 
 String normalizeNewlines(String value) => value.replaceAll("\r\n", "\n");
+
+bool _toolAvailable(String executable) {
+  try {
+    final result = Process.runSync(executable, const <String>["--version"]);
+    return result.exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
+}

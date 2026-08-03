@@ -46,6 +46,7 @@ class SftpUploadProvider implements OrderedUploadProvider {
       manifest: manifest,
       config: config,
       output: output,
+      expectedRevision: const RemoteIndexRevision.absent(),
     );
     return const UploadResult(uploaded: true);
   }
@@ -68,17 +69,16 @@ class SftpUploadProvider implements OrderedUploadProvider {
   }
 
   @override
-  Future<void> uploadAppArchive({
+  Future<IndexPublishReceipt> uploadAppArchive({
     required Directory localRoot,
     required PublishManifest manifest,
     required UploadConfig config,
     required StringSink output,
+    required RemoteIndexRevision expectedRevision,
   }) async {
-    final sftpConfig = _sftpConfig(config);
-    await client.writeFile(
-      file: File(path.join(localRoot.path, manifest.appArchive.path)),
-      remotePath: _remotePath(sftpConfig.remotePath, manifest.appArchive.path),
-      config: sftpConfig,
+    throw const FormatException(
+      "SFTP upload requires a conditional index write or tested exclusive "
+      "publication lease before publishing app-archive.json.",
     );
   }
 }

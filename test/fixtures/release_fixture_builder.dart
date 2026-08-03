@@ -2,7 +2,9 @@ import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive.dart";
+import "package:cryptography_plus/cryptography_plus.dart";
 import "package:crypto/crypto.dart" as crypto;
+import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:path/path.dart" as path;
 
 class ReleaseFixture {
@@ -11,12 +13,27 @@ class ReleaseFixture {
     required this.artifact,
     required this.release,
     required this.index,
+    required this.publicKeys,
   });
 
   final Directory root;
   final File artifact;
   final File release;
   final File index;
+  final Map<String, String> publicKeys;
+}
+
+const testReleasePublicKeyId = "test-2026";
+const testReleasePrivateKeyBase64 =
+    "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
+
+Future<Map<String, String>> testReleasePublicKeys() async {
+  final publicKey = await Ed25519()
+      .newKeyPairFromSeed(base64Decode(testReleasePrivateKeyBase64))
+      .then((keyPair) => keyPair.extractPublicKey());
+  return <String, String>{
+    testReleasePublicKeyId: base64Encode(publicKey.bytes),
+  };
 }
 
 Future<ReleaseFixture> buildReleaseFixture({
@@ -41,6 +58,8 @@ Future<ReleaseFixture> buildReleaseFixture({
   final artifactSha =
       crypto.sha256.convert(await artifact.readAsBytes()).toString();
 
+  final publicKeys = await testReleasePublicKeys();
+
   final release = File(path.join(root.path, "release.json"));
   await release.writeAsString(
     const JsonEncoder.withIndent("  ").convert({
@@ -62,6 +81,11 @@ Future<ReleaseFixture> buildReleaseFixture({
       "generatedAt": "2026-06-11T00:00:00Z",
     }),
   );
+  await ReleaseDescriptorSigner().sign(
+    releaseFile: release,
+    publicKeyId: testReleasePublicKeyId,
+    privateKeyBase64: testReleasePrivateKeyBase64,
+  );
 
   final index = File(path.join(root.path, "app-archive.json"));
   await index.writeAsString(
@@ -80,11 +104,17 @@ Future<ReleaseFixture> buildReleaseFixture({
       ],
     }),
   );
+  await ReleaseIndexSigner().sign(
+    appArchiveFile: index,
+    publicKeyId: testReleasePublicKeyId,
+    privateKeyBase64: testReleasePrivateKeyBase64,
+  );
 
   return ReleaseFixture(
     root: root,
     artifact: artifact,
     release: release,
     index: index,
+    publicKeys: publicKeys,
   );
 }

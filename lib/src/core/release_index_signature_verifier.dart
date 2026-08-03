@@ -2,6 +2,7 @@ import "dart:convert";
 
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 
 /// Verifies Ed25519 signatures embedded in app archive release indexes.
 class Ed25519ReleaseIndexSignatureVerifier {
@@ -9,7 +10,7 @@ class Ed25519ReleaseIndexSignatureVerifier {
   Ed25519ReleaseIndexSignatureVerifier(
     Map<String, String> publicKeys, {
     Ed25519? algorithm,
-  })  : publicKeys = Map.unmodifiable(publicKeys),
+  })  : publicKeys = normalizeReleasePublicKeys(publicKeys),
         _algorithm = algorithm ?? Ed25519();
 
   /// Map of `publicKeyId` to base64 raw Ed25519 public key bytes.
@@ -25,13 +26,13 @@ class Ed25519ReleaseIndexSignatureVerifier {
         signature.value.trim().isEmpty) {
       return false;
     }
-    final publicKeyValue = publicKeys[signature.publicKeyId];
-    if (publicKeyValue == null || publicKeyValue.trim().isEmpty) {
+    final publicKeyValue = publicKeys[signature.publicKeyId.trim()];
+    if (publicKeyValue == null || publicKeyValue.isEmpty) {
       return false;
     }
 
     try {
-      final publicKeyBytes = base64Decode(publicKeyValue.trim());
+      final publicKeyBytes = base64Decode(publicKeyValue);
       final signatureBytes = base64Decode(signature.value.trim());
       if (publicKeyBytes.length != 32 || signatureBytes.length != 64) {
         return false;

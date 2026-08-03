@@ -3,6 +3,8 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "fixtures/controller_v3_test_support.dart";
+
 void main() {
   testWidgets("direct card shows available update actions", (tester) async {
     final controller = _ReadyUiTestController();
@@ -538,7 +540,13 @@ class _ReadyUiTestController extends DesktopUpdaterController {
     super.releaseNotesUrl,
     super.releaseNotesLoader,
     super.localization,
-  }) : super(appArchiveUrl: null, skipInitialVersionCheck: true);
+  }) : super(
+          appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
+          skipInitialVersionCheck: true,
+        );
 
   bool _skipUpdate = false;
   UpdateState _state = const UpdateIdle();

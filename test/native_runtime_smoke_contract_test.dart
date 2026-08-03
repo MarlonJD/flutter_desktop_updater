@@ -757,17 +757,14 @@ void main() {
     expect(app, contains("DESKTOP_UPDATER_SMOKE_PROVENANCE_SHA256"));
     expect(app, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
     expect(app, contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"));
-    expect(app, contains("verifyStagedUpdateProvenance("));
     expect(
       app,
-      contains("DesktopUpdaterPlatform.instance.installUpdateWithContext("),
+      isNot(contains("DesktopUpdaterPlatform.instance.installUpdate")),
     );
-    expect(app, contains("stageProvenanceSha256:"));
-    expect(app, contains("stageProvenanceNonce:"));
-    expect(app, contains("stageProvenanceEntries:"));
-    expect(app, contains("expectedArtifactSha256:"));
-    expect(app, contains("installRoot: installRoot"));
-    expect(app, contains("executableRelativePath: executableRelativePath"));
+    expect(app, contains("raw-smoke-handoff-removed"));
+    expect(app, contains(r"provenanceSha256=$provenanceSha256"));
+    expect(app, contains(r"installRoot=$installRoot"));
+    expect(app, contains(r"executableRelativePath=$executableRelativePath"));
   });
 
   test("Windows Flutter smokes sign both caller and helper before handoff", () {

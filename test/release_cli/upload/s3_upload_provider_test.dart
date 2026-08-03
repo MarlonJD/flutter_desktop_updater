@@ -6,22 +6,32 @@ import "package:desktop_updater/src/release_cli/upload/s3_upload_provider.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
-  test("s3 uploader uploads app archive last", () async {
+  test("s3 uploader rejects app archive publish without conditional write",
+      () async {
     final recorder = RecordingObjectStorageClient();
     final provider = S3UploadProvider(client: recorder);
 
-    await provider.upload(
-      localRoot: Directory("/tmp/dist"),
-      manifest: testPublishManifest(),
-      config: const S3UploadConfig(
-        bucket: "updates",
-        prefix: "desktop",
-        region: "local",
+    await expectLater(
+      provider.upload(
+        localRoot: Directory("/tmp/dist"),
+        manifest: testPublishManifest(),
+        config: const S3UploadConfig(
+          bucket: "updates",
+          prefix: "desktop",
+          region: "local",
+        ),
+        output: StringBuffer(),
       ),
-      output: StringBuffer(),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("conditional index write"),
+        ),
+      ),
     );
 
-    expect(recorder.putKeys.last, "desktop/app-archive.json");
+    expect(recorder.putKeys, isNot(contains("desktop/app-archive.json")));
     expect(
       recorder.putKeys,
       contains("desktop/releases/2.0.1/macos/release.json"),

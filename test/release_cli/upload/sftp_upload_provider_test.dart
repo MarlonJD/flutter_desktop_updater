@@ -6,23 +6,35 @@ import "package:desktop_updater/src/release_cli/upload/sftp_upload_provider.dart
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
-  test("sftp uploader uploads versioned files before app archive", () async {
+  test("sftp uploader rejects app archive publish without lease", () async {
     final recorder = RecordingRemoteFileClient();
     final provider = SftpUploadProvider(client: recorder);
 
-    await provider.upload(
-      localRoot: Directory("/tmp/dist"),
-      manifest: testPublishManifest(),
-      config: const SftpUploadConfig(
-        host: "localhost",
-        port: 2222,
-        remotePath: "/updates",
-        username: "deploy",
+    await expectLater(
+      provider.upload(
+        localRoot: Directory("/tmp/dist"),
+        manifest: testPublishManifest(),
+        config: const SftpUploadConfig(
+          host: "localhost",
+          port: 2222,
+          remotePath: "/updates",
+          username: "deploy",
+        ),
+        output: StringBuffer(),
       ),
-      output: StringBuffer(),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("tested exclusive publication lease"),
+        ),
+      ),
     );
 
-    expect(recorder.writes.last.remotePath, "/updates/app-archive.json");
+    expect(
+      recorder.writes.map((write) => write.remotePath),
+      isNot(contains("/updates/app-archive.json")),
+    );
   });
 
   test("sftp curl transport prefers Homebrew curl when available", () {

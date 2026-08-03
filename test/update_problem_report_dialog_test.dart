@@ -5,6 +5,8 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "fixtures/controller_v3_test_support.dart";
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -345,6 +347,9 @@ class _ProblemReportTestController extends DesktopUpdaterController {
     super.onProblemReport,
   }) : super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
         );
 

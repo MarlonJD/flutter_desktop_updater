@@ -7,6 +7,8 @@ import "package:flutter/rendering.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "../test/fixtures/controller_v3_test_support.dart";
+
 const _surfaceSize = Size(760, 300);
 const _outputDirectory = "docs/assets/localization";
 const _fontFamily = "DesktopUpdaterLocalizationScreenshots";
@@ -200,6 +202,9 @@ class _ScreenshotController extends DesktopUpdaterController {
   _ScreenshotController({super.localization})
       : super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.desktop",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           releaseNotesUrl: Uri.parse("https://example.com/release-notes.json"),
           skipInitialVersionCheck: true,
         );

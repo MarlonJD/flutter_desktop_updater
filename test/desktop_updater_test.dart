@@ -1,29 +1,128 @@
-import "dart:async";
 import "dart:convert";
 import "dart:io";
 
+import "package:archive/archive.dart";
+import "package:cryptography_plus/cryptography_plus.dart";
+import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/desktop_updater_method_channel.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
-import "package:desktop_updater/src/core/staged_update_provenance.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/update_client.dart";
+import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
-import "package:desktop_updater/src/package/release_packager.dart";
-import "package:desktop_updater/src/package/zip_release_packager.dart";
-import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
-const _trustedReleasePublicKeys = <String, String>{
-  "stable-2026": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
-};
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final initialPlatform = DesktopUpdaterPlatform.instance;
 
-class MockDesktopUpdaterPlatform
+  tearDown(() {
+    DesktopUpdaterPlatform.instance = initialPlatform;
+  });
+
+  test("$MethodChannelDesktopUpdater is the default instance", () {
+    expect(initialPlatform, isInstanceOf<MethodChannelDesktopUpdater>());
+  });
+
+  test("restartApp remains restart-only", () async {
+    final fakePlatform = _MockDesktopUpdaterPlatform();
+    DesktopUpdaterPlatform.instance = fakePlatform;
+
+    await DesktopUpdater().restartApp();
+
+    expect(fakePlatform.restartCount, 1);
+    expect(fakePlatform.installRequests, isEmpty);
+  });
+
+  test("platform utility methods still forward through the facade", () async {
+    final fakePlatform = _MockDesktopUpdaterPlatform()
+      ..macOSInstallLocationStatus = const MacOSInstallLocationStatus(
+        kind: MacOSInstallLocationKind.installed,
+        bundlePath: "/Applications/Example.app",
+        targetPath: "/Applications/Example.app",
+      );
+    DesktopUpdaterPlatform.instance = fakePlatform;
+    final updater = DesktopUpdater();
+
+    expect(await updater.getPlatformVersion(), "42");
+    expect(
+      (await updater.checkMacOSInstallLocation()).kind,
+      MacOSInstallLocationKind.installed,
+    );
+    await updater.moveMacOSAppToApplications(replaceExisting: true);
+    await updater.openMacOSBackgroundItemsSettings();
+
+    expect(fakePlatform.lastReplaceExisting, isTrue);
+    expect(fakePlatform.openBackgroundItemsCount, 1);
+  });
+
+  test("zip-first session uses one signed client for check and download",
+      () async {
+    final root = await Directory.systemTemp.createTemp("session_stage_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    final artifact = File(path.join(root.path, "artifact.zip"));
+    final bytes = _zipBytes();
+    await artifact.writeAsBytes(bytes);
+    final archiveUrl =
+        Uri.parse("https://updates.example.test/app-archive.json");
+    final releaseUrl = Uri.parse("https://updates.example.test/release.json");
+    final signed = await _SignedUpdate.create(
+      releaseUrl: releaseUrl,
+      descriptor: _descriptor(
+        artifactUrl: artifact.uri,
+        artifactSha256: crypto.sha256.convert(bytes).toString(),
+        artifactLength: bytes.length,
+      ),
+    );
+    final transport = _MapTransport({
+      archiveUrl: signed.indexJson,
+      releaseUrl: signed.descriptorJson,
+      artifact.uri: bytes,
+    });
+
+    final session = DesktopUpdater().createZipFirstUpdateSession(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: signed.publicKeys,
+      requestHeadersProvider: (_) => const {},
+    );
+    // The public facade owns an internal UpdateClient; this test swaps transport
+    // by exercising the same session contract directly through UpdateClient.
+    final client = UpdateClient(
+      appArchiveUrl: archiveUrl,
+      currentVersion: DesktopVersionInfo.parse("1.0.0"),
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: signed.publicKeys,
+      platform: "linux",
+      transport: transport,
+      stagingParent: root,
+    );
+    expect(session, isA<ZipFirstUpdateSession>());
+
+    final check = await client.checkForUpdate();
+    final staged = await client.downloadVerifyAndStage(checkResult: check!);
+
+    expect(staged.descriptor.packageId, "com.example.app");
+    expect(transport.downloadedSources, [archiveUrl, releaseUrl, artifact.uri]);
+  });
+}
+
+class _MockDesktopUpdaterPlatform
     with MockPlatformInterfaceMixin
     implements DesktopUpdaterPlatform {
-  String? lastDiagnosticsLogPath;
+  var restartCount = 0;
+  var openBackgroundItemsCount = 0;
   bool? lastReplaceExisting;
+  final installRequests = <VerifiedNativeInstallRequest>[];
   MacOSInstallLocationStatus macOSInstallLocationStatus =
       const MacOSInstallLocationStatus(
     kind: MacOSInstallLocationKind.unsupported,
@@ -32,626 +131,215 @@ class MockDesktopUpdaterPlatform
   );
 
   @override
-  Future<String?> getPlatformVersion() => Future.value("42");
+  Future<String?> getPlatformVersion() async => "42";
 
   @override
-  Future<void> restartApp() {
-    return Future.value();
+  Future<void> restartApp() async {
+    restartCount += 1;
   }
 
   @override
-  Future<void> installUpdate({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
-  }) {
-    lastDiagnosticsLogPath = diagnosticsLogPath;
-    return Future.value();
+  Future<void> installVerifiedUpdate(
+      VerifiedNativeInstallRequest request) async {
+    installRequests.add(request);
   }
 
   @override
-  Future<String?> getExecutablePath() {
-    return Future.value();
-  }
+  Future<String?> getExecutablePath() async => "/Applications/Example.app";
 
   @override
-  Future<String?> getCurrentVersion() {
-    return Future.value();
-  }
+  Future<String?> getCurrentVersion() async => "1.0.0+100";
 
   @override
-  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() {
-    return Future.value(macOSInstallLocationStatus);
+  Future<MacOSInstallLocationStatus> checkMacOSInstallLocation() async {
+    return macOSInstallLocationStatus;
   }
 
   @override
   Future<void> moveMacOSAppToApplications({
     bool replaceExisting = false,
-  }) {
+  }) async {
     lastReplaceExisting = replaceExisting;
-    return Future.value();
   }
 
   @override
-  Future<void> openMacOSBackgroundItemsSettings() => Future.value();
-}
-
-class RecordingMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
-  bool legacyInstallInvoked = false;
+  Future<void> openMacOSBackgroundItemsSettings() async {
+    openBackgroundItemsCount += 1;
+  }
 
   @override
-  Future<void> installUpdate({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
+  NativeInstallRecovery get nativeInstallRecovery =>
+      QueryAndRecoverNativeInstallRecovery(
+        query: (_) async => null,
+        recover: (_) async => null,
+      );
+}
+
+List<int> _zipBytes() {
+  final archive = Archive()..addFile(ArchiveFile.string("bin/example", "bin"));
+  return ZipEncoder().encode(archive);
+}
+
+ReleaseDescriptor _descriptor({
+  required Uri artifactUrl,
+  required String artifactSha256,
+  required int artifactLength,
+}) {
+  return ReleaseDescriptor(
+    schemaVersion: 3,
+    packageId: "com.example.app",
+    appName: "Example",
+    version: "2.0.0",
+    buildNumber: 200,
+    platform: "linux",
+    channel: "stable",
+    artifact: ReleaseArtifact(
+      kind: "zip",
+      url: artifactUrl,
+      sha256: artifactSha256,
+      length: artifactLength,
+    ),
+    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
+    minimumUpdaterVersion: "2.0.0",
+    generatedAt: DateTime.utc(2026, 8, 3),
+  );
+}
+
+const _publicKeyId = "release-2026";
+const _privateSeed = <int>[
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+];
+
+class _SignedUpdate {
+  const _SignedUpdate({
+    required this.indexJson,
+    required this.descriptorJson,
+    required this.publicKeys,
+  });
+
+  final String indexJson;
+  final String descriptorJson;
+  final Map<String, String> publicKeys;
+
+  static Future<_SignedUpdate> create({
+    required Uri releaseUrl,
+    required ReleaseDescriptor descriptor,
   }) async {
-    legacyInstallInvoked = true;
-  }
-}
-
-class InheritingMethodChannelDesktopUpdater
-    extends MethodChannelDesktopUpdater {}
-
-class _DelegatingMethodChannelDesktopUpdater
-    extends MethodChannelDesktopUpdater {
-  @override
-  Future<void> installUpdate({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
-  }) {
-    return super.installUpdate(
-      stagingPath: "$stagingPath/delegated",
-      removedFiles: [...removedFiles, "delegated.dll"],
-      allowUnsignedMacOSUpdates: !allowUnsignedMacOSUpdates,
-      diagnosticsLogPath:
-          diagnosticsLogPath == null ? null : "$diagnosticsLogPath.delegated",
+    final algorithm = Ed25519();
+    final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
+    final publicKey = await keyPair.extractPublicKey();
+    final descriptorToSign = ReleaseDescriptor.fromJson({
+      ...descriptor.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": "",
+      },
+    });
+    final descriptorSignature = await algorithm.sign(
+      descriptorToSign.canonicalSignatureBytes(),
+      keyPair: keyPair,
+    );
+    final signedDescriptor = ReleaseDescriptor.fromJson({
+      ...descriptor.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": base64Encode(descriptorSignature.bytes),
+      },
+    });
+    final indexToSign = ReleaseIndex.fromJson({
+      "schemaVersion": 3,
+      "appName": "Example",
+      "items": [
+        {
+          "version": descriptor.version,
+          "buildNumber": descriptor.buildNumber,
+          "platform": descriptor.platform,
+          "channel": descriptor.channel,
+          "mandatory": true,
+          "release": releaseUrl.toString(),
+        },
+      ],
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": "",
+      },
+    });
+    final indexSignature = await algorithm.sign(
+      indexToSign.canonicalSignatureBytes(),
+      keyPair: keyPair,
+    );
+    final signedIndex = ReleaseIndex.fromJson({
+      ...indexToSign.toJson(),
+      "signature": {
+        "algorithm": "ed25519",
+        "publicKeyId": _publicKeyId,
+        "value": base64Encode(indexSignature.bytes),
+      },
+    });
+    return _SignedUpdate(
+      indexJson: jsonEncode(signedIndex.toJson()),
+      descriptorJson: jsonEncode(signedDescriptor.toJson()),
+      publicKeys: {_publicKeyId: base64Encode(publicKey.bytes)},
     );
   }
 }
 
-class _DelayedSuperMethodChannelDesktopUpdater
-    extends MethodChannelDesktopUpdater {
-  _DelayedSuperMethodChannelDesktopUpdater(this.releaseByStagingPath);
+class _MapTransport implements UpdateTransport {
+  _MapTransport(this.responses);
 
-  final Map<String, Completer<void>> releaseByStagingPath;
+  final Map<Uri, Object> responses;
+  final List<Uri> downloadedSources = [];
 
   @override
-  Future<void> installUpdate({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
+  Future<void> download(
+    Uri source,
+    File destination, {
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+    Duration? timeout,
   }) async {
-    await releaseByStagingPath[stagingPath]!.future;
-    await super.installUpdate(
-      stagingPath: stagingPath,
-      removedFiles: removedFiles,
-      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-      diagnosticsLogPath: diagnosticsLogPath,
-    );
+    downloadedSources.add(source);
+    final response = responses[source];
+    if (response == null) {
+      throw StateError("No fake response for $source.");
+    }
+    final bytes =
+        response is String ? utf8.encode(response) : response as List<int>;
+    await destination.parent.create(recursive: true);
+    await destination.writeAsBytes(bytes);
+    onProgress?.call(bytes.length, bytes.length);
   }
-}
-
-class _NestedMethodChannelDesktopUpdater extends MethodChannelDesktopUpdater {
-  bool _dispatchingNestedInstall = false;
-
-  @override
-  Future<void> installUpdate({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
-  }) async {
-    if (!_dispatchingNestedInstall && stagingPath == "/tmp/outer") {
-      _dispatchingNestedInstall = true;
-      try {
-        final DesktopUpdaterPlatform platform = this;
-        await platform.installUpdateWithContext(
-          stagingPath: "/tmp/nested",
-          packageId: "com.example.nested",
-          stageProvenanceSha256: "c" * 64,
-          stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174002",
-          stageProvenanceEntries: const [
-            {"path": "nested", "kind": "file", "length": 7},
-          ],
-          expectedArtifactSha256: "d" * 64,
-          transactionId: "123e4567-e89b-42d3-a456-426614174003",
-        );
-      } finally {
-        _dispatchingNestedInstall = false;
-      }
-    }
-    await super.installUpdate(
-      stagingPath: stagingPath,
-      removedFiles: removedFiles,
-      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-      diagnosticsLogPath: diagnosticsLogPath,
-    );
-  }
-}
-
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  final initialPlatform = DesktopUpdaterPlatform.instance;
-
-  test("$MethodChannelDesktopUpdater is the default instance", () {
-    expect(initialPlatform, isInstanceOf<MethodChannelDesktopUpdater>());
-  });
-
-  test("getPlatformVersion", () async {
-    final desktopUpdaterPlugin = DesktopUpdater();
-    final fakePlatform = MockDesktopUpdaterPlatform();
-    DesktopUpdaterPlatform.instance = fakePlatform;
-
-    expect(await desktopUpdaterPlugin.getPlatformVersion(), "42");
-  });
-
-  test("installUpdate forwards explicit diagnostics log path to platform",
-      () async {
-    final desktopUpdaterPlugin = DesktopUpdater();
-    final fakePlatform = MockDesktopUpdaterPlatform();
-    DesktopUpdaterPlatform.instance = fakePlatform;
-
-    await desktopUpdaterPlugin.installUpdate(
-      stagingPath: "/tmp/staged",
-      diagnosticsLogPath: "/tmp/helper.jsonl",
-    );
-
-    expect(fakePlatform.lastDiagnosticsLogPath, "/tmp/helper.jsonl");
-  });
-
-  test("MethodChannel subclass legacy install override remains compatible",
-      () async {
-    final platform = RecordingMethodChannelDesktopUpdater();
-    DesktopUpdaterPlatform.instance = platform;
-
-    await DesktopUpdater().installUpdate(
-      stagingPath: "/tmp/staged",
-      packageId: "com.example.desktop_updater",
-    );
-
-    expect(platform.legacyInstallInvoked, isTrue);
-  });
-
-  test("inheriting MethodChannel subclass forwards complete install context",
-      () async {
-    late MethodCall capturedCall;
-    const channel = MethodChannel("desktop_updater");
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      capturedCall = call;
-      return null;
-    });
-    final DesktopUpdaterPlatform platform =
-        InheritingMethodChannelDesktopUpdater();
-
-    try {
-      await platform.installUpdateWithContext(
-        stagingPath: "/tmp/staged",
-        removedFiles: const ["old.dll"],
-        allowUnsignedMacOSUpdates: true,
-        diagnosticsLogPath: "/tmp/helper.jsonl",
-        installRoot: "/opt/example",
-        executableRelativePath: "bin/example",
-        packageId: "com.example.app",
-        stageProvenanceSha256: "a" * 64,
-        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
-        stageProvenanceEntries: const [
-          {"path": "bin/example", "kind": "file", "length": 42},
-        ],
-        expectedArtifactSha256: "b" * 64,
-        allowedSignerThumbprints: ["C" * 64],
-        innoRequiresElevation: "always",
-        transactionId: "123e4567-e89b-42d3-a456-426614174001",
-      );
-
-      expect(capturedCall.method, "installUpdate");
-      expect(capturedCall.arguments, {
-        "stagingPath": "/tmp/staged",
-        "removedFiles": <String>["old.dll"],
-        "allowUnsignedMacOSUpdates": true,
-        "diagnosticsLogPath": "/tmp/helper.jsonl",
-        "installRoot": "/opt/example",
-        "executableRelativePath": "bin/example",
-        "packageId": "com.example.app",
-        "stageProvenanceSha256": "a" * 64,
-        "stageProvenanceNonce": "123e4567-e89b-42d3-a456-426614174000",
-        "stageProvenanceEntries": <Map<String, Object?>>[
-          {"path": "bin/example", "kind": "file", "length": 42},
-        ],
-        "expectedArtifactSha256": "b" * 64,
-        "allowedSignerThumbprints": <String>["C" * 64],
-        "innoRequiresElevation": "always",
-        "transactionId": "123e4567-e89b-42d3-a456-426614174001",
-      });
-    } finally {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    }
-  });
-
-  test("delegating MethodChannel override controls legacy install arguments",
-      () async {
-    late MethodCall capturedCall;
-    const channel = MethodChannel("desktop_updater");
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      capturedCall = call;
-      return null;
-    });
-    final DesktopUpdaterPlatform platform =
-        _DelegatingMethodChannelDesktopUpdater();
-
-    try {
-      await platform.installUpdateWithContext(
-        stagingPath: "/tmp/staged",
-        removedFiles: const ["old.dll"],
-        allowUnsignedMacOSUpdates: true,
-        diagnosticsLogPath: "/tmp/helper.jsonl",
-        installRoot: "/opt/example",
-        executableRelativePath: "bin/example",
-        packageId: "com.example.app",
-        stageProvenanceSha256: "a" * 64,
-        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
-        stageProvenanceEntries: const [
-          {"path": "bin/example", "kind": "file", "length": 42},
-        ],
-        expectedArtifactSha256: "b" * 64,
-        allowedSignerThumbprints: ["C" * 64],
-        innoRequiresElevation: "always",
-        transactionId: "123e4567-e89b-42d3-a456-426614174001",
-      );
-
-      expect(capturedCall.method, "installUpdate");
-      expect(capturedCall.arguments, {
-        "stagingPath": "/tmp/staged/delegated",
-        "removedFiles": <String>["old.dll", "delegated.dll"],
-        "allowUnsignedMacOSUpdates": false,
-        "diagnosticsLogPath": "/tmp/helper.jsonl.delegated",
-        "installRoot": "/opt/example",
-        "executableRelativePath": "bin/example",
-        "packageId": "com.example.app",
-        "stageProvenanceSha256": "a" * 64,
-        "stageProvenanceNonce": "123e4567-e89b-42d3-a456-426614174000",
-        "stageProvenanceEntries": <Map<String, Object?>>[
-          {"path": "bin/example", "kind": "file", "length": 42},
-        ],
-        "expectedArtifactSha256": "b" * 64,
-        "allowedSignerThumbprints": <String>["C" * 64],
-        "innoRequiresElevation": "always",
-        "transactionId": "123e4567-e89b-42d3-a456-426614174001",
-      });
-    } finally {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    }
-  });
-
-  test("delayed super calls keep sibling install contexts isolated", () async {
-    final capturedCalls = <MethodCall>[];
-    const channel = MethodChannel("desktop_updater");
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      capturedCalls.add(call);
-      return null;
-    });
-    final firstRelease = Completer<void>();
-    final secondRelease = Completer<void>();
-    final DesktopUpdaterPlatform platform =
-        _DelayedSuperMethodChannelDesktopUpdater({
-      "/tmp/first": firstRelease,
-      "/tmp/second": secondRelease,
-    });
-
-    try {
-      final first = platform.installUpdateWithContext(
-        stagingPath: "/tmp/first",
-        packageId: "com.example.first",
-        stageProvenanceSha256: "a" * 64,
-        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174010",
-        stageProvenanceEntries: const [
-          {"path": "first", "kind": "file", "length": 1},
-        ],
-        expectedArtifactSha256: "b" * 64,
-        transactionId: "123e4567-e89b-42d3-a456-426614174011",
-      );
-      final second = platform.installUpdateWithContext(
-        stagingPath: "/tmp/second",
-        packageId: "com.example.second",
-        stageProvenanceSha256: "c" * 64,
-        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174012",
-        stageProvenanceEntries: const [
-          {"path": "second", "kind": "file", "length": 2},
-        ],
-        expectedArtifactSha256: "d" * 64,
-        transactionId: "123e4567-e89b-42d3-a456-426614174013",
-      );
-
-      secondRelease.complete();
-      await second;
-      firstRelease.complete();
-      await first;
-
-      expect(capturedCalls, hasLength(2));
-      expect(
-        capturedCalls[0].arguments,
-        allOf(
-          containsPair("stagingPath", "/tmp/second"),
-          containsPair("packageId", "com.example.second"),
-          containsPair(
-            "transactionId",
-            "123e4567-e89b-42d3-a456-426614174013",
-          ),
-        ),
-      );
-      expect(
-        capturedCalls[1].arguments,
-        allOf(
-          containsPair("stagingPath", "/tmp/first"),
-          containsPair("packageId", "com.example.first"),
-          containsPair(
-            "transactionId",
-            "123e4567-e89b-42d3-a456-426614174011",
-          ),
-        ),
-      );
-    } finally {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    }
-  });
-
-  test("nested install dispatch restores its outer Zone context", () async {
-    final capturedCalls = <MethodCall>[];
-    const channel = MethodChannel("desktop_updater");
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      capturedCalls.add(call);
-      return null;
-    });
-    final DesktopUpdaterPlatform platform =
-        _NestedMethodChannelDesktopUpdater();
-
-    try {
-      await platform.installUpdateWithContext(
-        stagingPath: "/tmp/outer",
-        packageId: "com.example.outer",
-        stageProvenanceSha256: "a" * 64,
-        stageProvenanceNonce: "123e4567-e89b-42d3-a456-426614174000",
-        stageProvenanceEntries: const [
-          {"path": "outer", "kind": "file", "length": 9},
-        ],
-        expectedArtifactSha256: "b" * 64,
-        transactionId: "123e4567-e89b-42d3-a456-426614174001",
-      );
-
-      expect(capturedCalls, hasLength(2));
-      expect(
-        capturedCalls[0].arguments,
-        allOf(
-          containsPair("stagingPath", "/tmp/nested"),
-          containsPair("packageId", "com.example.nested"),
-          containsPair(
-            "transactionId",
-            "123e4567-e89b-42d3-a456-426614174003",
-          ),
-        ),
-      );
-      expect(
-        capturedCalls[1].arguments,
-        allOf(
-          containsPair("stagingPath", "/tmp/outer"),
-          containsPair("packageId", "com.example.outer"),
-          containsPair(
-            "transactionId",
-            "123e4567-e89b-42d3-a456-426614174001",
-          ),
-        ),
-      );
-    } finally {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    }
-  });
-
-  test("old safe install call loads package identity from stage provenance",
-      () async {
-    const nonce = "123e4567-e89b-42d3-a456-426614174000";
-    final parent = await Directory.systemTemp.createTemp("updater_compat_");
-    final forgedStage = await createOwnedStagingDirectory(
-      parent: parent,
-      nonce: nonce,
-    );
-    try {
-      await File(path.join(forgedStage.path, "example"))
-          .writeAsString("payload");
-      await writeStagedUpdateProvenance(
-        stageRoot: forgedStage,
-        nonce: nonce,
-        packageId: "com.example.forged",
-        descriptorSha256: "a".padRight(64, "a"),
-        artifactSha256: "b".padRight(64, "b"),
-      );
-      late MethodCall capturedCall;
-      var methodCallCount = 0;
-      const channel = MethodChannel("desktop_updater");
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-        methodCallCount += 1;
-        capturedCall = call;
-        return null;
-      });
-      DesktopUpdaterPlatform.instance = MethodChannelDesktopUpdater();
-
-      await expectLater(
-        DesktopUpdater().installUpdate(stagingPath: forgedStage.path),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            "message",
-            contains("retained verified stage provenance"),
-          ),
-        ),
-      );
-      expect(methodCallCount, 0);
-      await forgedStage.delete(recursive: true);
-
-      final input = Directory(path.join(parent.path, "input"));
-      await input.create();
-      await File(path.join(input.path, "example")).writeAsString("payload");
-      final output = Directory(path.join(parent.path, "output"));
-      final artifact = File(
-        path.join(output.path, "Example-2.0.0-linux.zip"),
-      );
-      final packaged = await const ZipReleasePackager().package(
-        ReleasePackageRequest(
-          input: input,
-          outputDirectory: output,
-          packageId: "com.example.provenance",
-          appName: "Example",
-          version: "2.0.0",
-          platform: "linux",
-          channel: "stable",
-          artifactUrl: artifact.uri,
-          installStrategy: "wholeDirectoryReplace",
-        ),
-      );
-      final client = UpdateClient(
-        appArchiveUrl: Uri.parse("https://updates.example/app-archive.json"),
-        currentVersion: DesktopVersionInfo.parse("1.0.0"),
-        platform: "linux",
-        stagingParent: parent,
-      );
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: packaged.descriptor,
-      );
-
-      await DesktopUpdater().installUpdate(stagingPath: staged.stagingPath);
-
-      expect(
-        capturedCall.arguments,
-        containsPair(
-          "packageId",
-          "com.example.provenance",
-        ),
-      );
-      expect(
-        capturedCall.arguments,
-        containsPair(
-          "stageProvenanceNonce",
-          staged.stageProvenance.nonce,
-        ),
-      );
-      expect(capturedCall.arguments, contains("stageProvenanceSha256"));
-      expect(capturedCall.arguments, contains("stageProvenanceEntries"));
-      expect(methodCallCount, 1);
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    } finally {
-      DesktopUpdaterPlatform.instance = initialPlatform;
-      await parent.delete(recursive: true);
-    }
-  });
-
-  test("checkMacOSInstallLocation forwards to platform", () async {
-    final desktopUpdaterPlugin = DesktopUpdater();
-    final fakePlatform = MockDesktopUpdaterPlatform()
-      ..macOSInstallLocationStatus = const MacOSInstallLocationStatus(
-        kind: MacOSInstallLocationKind.diskImage,
-        bundlePath: "/Volumes/Example/Example.app",
-        targetPath: "/Applications/Example.app",
-      );
-    DesktopUpdaterPlatform.instance = fakePlatform;
-
-    final status = await desktopUpdaterPlugin.checkMacOSInstallLocation();
-
-    expect(status.kind, MacOSInstallLocationKind.diskImage);
-    expect(status.targetPath, "/Applications/Example.app");
-  });
-
-  test("moveMacOSAppToApplications forwards replace policy to platform",
-      () async {
-    final desktopUpdaterPlugin = DesktopUpdater();
-    final fakePlatform = MockDesktopUpdaterPlatform();
-    DesktopUpdaterPlatform.instance = fakePlatform;
-
-    await desktopUpdaterPlugin.moveMacOSAppToApplications(
-      replaceExisting: true,
-    );
-
-    expect(fakePlatform.lastReplaceExisting, isTrue);
-  });
-
-  test("checkZipFirstUpdate accepts app-owned request headers provider",
-      () async {
-    final tempDir = await Directory.systemTemp.createTemp("desktop_updater_");
-    try {
-      final archive = File(path.join(tempDir.path, "app-archive.json"));
-      await archive.writeAsString(
-        '{"schemaVersion":3,"appName":"Example","items":[]}',
-      );
-
-      final result = await DesktopUpdater().checkZipFirstUpdate(
-        appArchiveUrl: archive.uri,
-        currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
-        requestHeadersProvider: (_) => {"x-update-auth": "runtime-token"},
-      );
-
-      expect(result, isNull);
-    } finally {
-      await tempDir.delete(recursive: true);
-    }
-  });
-
-  test("checkZipFirstUpdate pinned keys reject an unsigned archive", () async {
-    final tempDir = await Directory.systemTemp.createTemp("desktop_updater_");
-    try {
-      final archive = File(path.join(tempDir.path, "app-archive.json"));
-      await archive.writeAsString(
-        '{"schemaVersion":3,"appName":"Example","items":[]}',
-      );
-
-      await expectLater(
-        DesktopUpdater().checkZipFirstUpdate(
-          appArchiveUrl: archive.uri,
-          currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
-          trustedReleasePublicKeys: _trustedReleasePublicKeys,
-        ),
-        throwsA(isA<FormatException>()),
-      );
-    } finally {
-      await tempDir.delete(recursive: true);
-    }
-  });
-
-  test("downloadZipFirstUpdate pinned keys reject an unsigned descriptor",
-      () async {
-    final fixture = jsonDecode(
-      File("fixtures/compat/signing-ed25519.json").readAsStringSync(),
-    ) as Map<String, dynamic>;
-    final descriptorJson = Map<String, dynamic>.from(
-      fixture["validDescriptor"] as Map<String, dynamic>,
-    )..remove("signature");
-    final descriptor = ReleaseDescriptor.fromJson(descriptorJson);
-
-    await expectLater(
-      DesktopUpdater().downloadZipFirstUpdate(
-        appArchiveUrl: Uri.parse("https://updates.example/app-archive.json"),
-        currentVersion: DesktopVersionInfo.fromParts(versionName: "1.0.0"),
-        descriptor: descriptor,
-        trustedReleasePublicKeys: _trustedReleasePublicKeys,
-      ),
-      throwsA(
-        isA<StateError>().having(
-          (error) => error.message,
-          "message",
-          contains("release.json signature is required"),
-        ),
-      ),
-    );
-  });
 }

@@ -1,4 +1,6 @@
 import "package:desktop_updater/desktop_updater_method_channel.dart";
+import "package:desktop_updater/src/core/install_handoff.dart";
+import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
@@ -35,22 +37,11 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
     throw UnimplementedError("restartApp() has not been implemented.");
   }
 
-  /// Installs a staged update, then lets the native helper relaunch the app.
-  Future<void> installUpdate({
-    /// Platform-specific staged artifact path.
-    required String stagingPath,
-
-    /// Legacy-compatible list of files removed during install.
-    List<String> removedFiles = const [],
-
-    /// Legacy compatibility flag rejected by privileged macOS installation.
-    bool allowUnsignedMacOSUpdates = false,
-
-    /// Compatibility-only diagnostics path. Standalone helpers use their
-    /// fixed platform log sink instead of writing this caller-selected path.
-    String? diagnosticsLogPath,
-  }) {
-    throw UnimplementedError("installUpdate() has not been implemented.");
+  /// Installs a verified staged update, then lets the native helper relaunch.
+  Future<void> installVerifiedUpdate(VerifiedNativeInstallRequest request) {
+    throw UnimplementedError(
+      "installVerifiedUpdate() has not been implemented.",
+    );
   }
 
   /// Returns the current executable path when the platform supports it.
@@ -89,98 +80,158 @@ abstract class DesktopUpdaterPlatform extends PlatformInterface {
       "openMacOSBackgroundItemsSettings() has not been implemented.",
     );
   }
-}
 
-/// Internal install-context handoff that preserves old platform implementers.
-extension DesktopUpdaterPlatformInstallContext on DesktopUpdaterPlatform {
-  /// Installs a staged update with verified context when a MethodChannel
-  /// implementation is active, otherwise uses the compatible
-  /// [DesktopUpdaterPlatform.installUpdate] call.
-  Future<void> installUpdateWithContext({
-    required String stagingPath,
-    List<String> removedFiles = const [],
-    bool allowUnsignedMacOSUpdates = false,
-    String? diagnosticsLogPath,
-    String? installRoot,
-    String? executableRelativePath,
-    String? packageId,
-    String? stageProvenanceSha256,
-    String? stageProvenanceNonce,
-    List<Map<String, Object?>> stageProvenanceEntries = const [],
-    String? expectedArtifactSha256,
-    List<String> allowedSignerThumbprints = const [],
-    String innoRequiresElevation = "auto",
-    String? transactionId,
-  }) async {
-    final platform = this;
-    if (platform is MethodChannelDesktopUpdater) {
-      return MethodChannelDesktopUpdater.runWithVerifiedInstallContext(
-        () => platform.installUpdateWithContext(
-          stagingPath: stagingPath,
-          removedFiles: removedFiles,
-          allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-          diagnosticsLogPath: diagnosticsLogPath,
-          installRoot: installRoot,
-          executableRelativePath: executableRelativePath,
-          packageId: packageId,
-          stageProvenanceSha256: stageProvenanceSha256,
-          stageProvenanceNonce: stageProvenanceNonce,
-          stageProvenanceEntries: stageProvenanceEntries,
-          expectedArtifactSha256: expectedArtifactSha256,
-          allowedSignerThumbprints: allowedSignerThumbprints,
-          innoRequiresElevation: innoRequiresElevation,
-          transactionId: transactionId,
-        ),
-      );
-    }
-    return installUpdate(
-      stagingPath: stagingPath,
-      removedFiles: removedFiles,
-      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-      diagnosticsLogPath: diagnosticsLogPath,
+  /// Typed native recovery capability for this platform.
+  NativeInstallRecovery get nativeInstallRecovery {
+    throw UnimplementedError(
+      "nativeInstallRecovery has not been implemented.",
     );
   }
 }
 
-/// Internal native recovery lookup that preserves released platform subclasses.
-extension DesktopUpdaterPlatformNativeRecovery on DesktopUpdaterPlatform {
-  /// Queries native helper status when the default MethodChannel adapter is in
-  /// use. Custom released platform subclasses keep their existing behavior.
-  Future<NativeInstallTransactionStatus?> queryNativeInstallTransaction(
+/// Opaque typed native install request created only by this library.
+sealed class VerifiedNativeInstallRequest {
+  const VerifiedNativeInstallRequest();
+
+  /// Platform-specific staged artifact path.
+  String get stagingPath;
+
+  /// Expected package identity from signed metadata and durable receipt.
+  String get expectedPackageId;
+
+  /// Expected artifact SHA-256 from the signed descriptor.
+  String get expectedArtifactSha256;
+
+  /// SHA-256 of the retained stage provenance marker.
+  String get stageProvenanceSha256;
+
+  /// Durable native helper transaction identifier.
+  String get transactionId;
+}
+
+final class _VerifiedNativeInstallRequest extends VerifiedNativeInstallRequest {
+  const _VerifiedNativeInstallRequest({
+    required this.stagingPath,
+    required this.expectedPackageId,
+    required this.expectedArtifactSha256,
+    required this.stageProvenanceSha256,
+    required this.transactionId,
+  });
+
+  @override
+  final String stagingPath;
+  @override
+  final String expectedPackageId;
+  @override
+  final String expectedArtifactSha256;
+  @override
+  final String stageProvenanceSha256;
+  @override
+  final String transactionId;
+}
+
+/// Native helper status operation used by typed recovery capabilities.
+typedef NativeInstallStatusOperation = Future<NativeInstallTransactionStatus?>
+    Function(String transactionId);
+
+/// Sealed native recovery capability exposed by each platform implementation.
+sealed class NativeInstallRecovery {
+  const NativeInstallRecovery._();
+
+  /// Queries authenticated native helper status for [transactionId].
+  Future<NativeInstallTransactionStatus?> queryInstallTransaction(
+    String transactionId,
+  );
+}
+
+/// Recovery capability for helpers that support read-only query plus recover.
+final class QueryAndRecoverNativeInstallRecovery extends NativeInstallRecovery {
+  /// Creates a query/recover native recovery capability.
+  const QueryAndRecoverNativeInstallRecovery({
+    required NativeInstallStatusOperation query,
+    required NativeInstallStatusOperation recover,
+  })  : _query = query,
+        _recover = recover,
+        super._();
+
+  final NativeInstallStatusOperation _query;
+  final NativeInstallStatusOperation _recover;
+
+  @override
+  Future<NativeInstallTransactionStatus?> queryInstallTransaction(
     String transactionId,
   ) {
-    final platform = this;
-    if (platform.runtimeType == MethodChannelDesktopUpdater) {
-      return (platform as MethodChannelDesktopUpdater).queryInstallTransaction(
-        transactionId,
-      );
-    }
-    return Future.value();
+    return _query(transactionId);
   }
 
-  /// Requests helper-owned recovery without granting the Dart store mutation
-  /// authority.
-  Future<NativeInstallTransactionStatus?> recoverNativeInstallTransaction(
+  /// Requests helper-owned recovery for [transactionId].
+  Future<NativeInstallTransactionStatus?> recoverPendingInstallTransaction(
     String transactionId,
   ) {
-    final platform = this;
-    if (platform.runtimeType == MethodChannelDesktopUpdater) {
-      return (platform as MethodChannelDesktopUpdater)
-          .recoverPendingInstallTransaction(transactionId);
-    }
-    return Future.value();
+    return _recover(transactionId);
+  }
+}
+
+/// Recovery capability for helpers that must resolve recovery after caller exit.
+final class AtomicAfterExitNativeInstallRecovery extends NativeInstallRecovery {
+  /// Creates an atomic after-exit native recovery capability.
+  const AtomicAfterExitNativeInstallRecovery({
+    required NativeInstallStatusOperation query,
+    required NativeInstallStatusOperation resolveAfterExit,
+  })  : _query = query,
+        _resolveAfterExit = resolveAfterExit,
+        super._();
+
+  final NativeInstallStatusOperation _query;
+  final NativeInstallStatusOperation _resolveAfterExit;
+
+  @override
+  Future<NativeInstallTransactionStatus?> queryInstallTransaction(
+    String transactionId,
+  ) {
+    return _query(transactionId);
   }
 
-  /// Resolves a pending transaction in one elevated exchange. An active
-  /// recovery acknowledgement causes the native plugin to exit the app before
-  /// the helper mutates or relaunches it.
+  /// Resolves a pending install transaction in one exit-bound exchange.
   Future<NativeInstallTransactionStatus?>
-      resolveNativeInstallTransactionAfterExit(String transactionId) {
-    final platform = this;
-    if (platform.runtimeType == MethodChannelDesktopUpdater) {
-      return (platform as MethodChannelDesktopUpdater)
-          .resolvePendingInstallTransactionAfterExit(transactionId);
-    }
-    return Future.value();
+      resolvePendingInstallTransactionAfterExit(String transactionId) {
+    return _resolveAfterExit(transactionId);
   }
+}
+
+/// Claims a staged result and receipt for exactly one native dispatch.
+Future<VerifiedNativeInstallRequest> verifiedNativeInstallRequestFromStage({
+  required UpdateStageResult stageResult,
+  required PersistedInstallTransaction receipt,
+}) async {
+  final retained = await claimRetainedVerifiedStageForDispatch(
+    stageResult: stageResult,
+    expectedPackageId: receipt.expectedPackageId,
+  );
+  if (retained.stagingPath != receipt.stagingPath ||
+      retained.state.markerSha256 != receipt.stageProvenanceSha256 ||
+      stageResult.stageProvenanceSha256 != receipt.stageProvenanceSha256) {
+    throw StateError(
+      "Persisted install transaction does not match the verified stage.",
+    );
+  }
+  return _VerifiedNativeInstallRequest(
+    stagingPath: receipt.stagingPath,
+    expectedPackageId: receipt.expectedPackageId,
+    expectedArtifactSha256: stageResult.descriptor.artifact.sha256,
+    stageProvenanceSha256: receipt.stageProvenanceSha256,
+    transactionId: receipt.transactionId,
+  );
+}
+
+/// Claims a verified stage and dispatches the resulting typed request.
+Future<void> dispatchVerifiedInstall({
+  required UpdateStageResult stageResult,
+  required PersistedInstallTransaction persistedTransaction,
+}) async {
+  final request = await verifiedNativeInstallRequestFromStage(
+    stageResult: stageResult,
+    receipt: persistedTransaction,
+  );
+  await DesktopUpdaterPlatform.instance.installVerifiedUpdate(request);
 }

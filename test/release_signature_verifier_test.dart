@@ -6,6 +6,41 @@ import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("strict public key configuration normalizes ids and rejects ambiguity",
+      () async {
+    final signed = await _signedDescriptor(
+      signatureKeyId: " stable-2026 ",
+    );
+
+    final verifier = Ed25519ReleaseSignatureVerifier({
+      " stable-2026 ": signed.publicKey,
+    });
+
+    expect(await verifier.verify(signed.descriptor), isTrue);
+
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({
+        "stable-2026": signed.publicKey,
+        " stable-2026 ": signed.publicKey,
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({" ": signed.publicKey}),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({"stable-2026": "not base64"}),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({
+        "stable-2026": base64Encode(List<int>.filled(31, 0)),
+      }),
+      throwsFormatException,
+    );
+  });
+
   test("valid Ed25519 signature passes", () async {
     final signed = await _signedDescriptor();
 
@@ -60,12 +95,11 @@ void main() {
     expect(await verifier.verify(tampered), isFalse);
   });
 
-  test("missing public key fails", () async {
-    final signed = await _signedDescriptor();
-
-    final verifier = Ed25519ReleaseSignatureVerifier(const {});
-
-    expect(await verifier.verify(signed.descriptor), isFalse);
+  test("empty public key map is rejected at configuration", () {
+    expect(
+      () => Ed25519ReleaseSignatureVerifier(const {}),
+      throwsFormatException,
+    );
   });
 
   test("malformed base64 signature fails", () async {
@@ -143,6 +177,7 @@ const _privateSeed = <int>[
 
 Future<_SignedDescriptor> _signedDescriptor({
   Map<String, dynamic>? descriptorJson,
+  String signatureKeyId = _publicKeyId,
 }) async {
   final json = descriptorJson ?? _descriptorJson();
   final algorithm = Ed25519();
@@ -152,7 +187,7 @@ Future<_SignedDescriptor> _signedDescriptor({
     ...json,
     "signature": {
       "algorithm": "ed25519",
-      "publicKeyId": _publicKeyId,
+      "publicKeyId": signatureKeyId,
       "value": "",
     },
   });
@@ -164,7 +199,7 @@ Future<_SignedDescriptor> _signedDescriptor({
     ...json,
     "signature": {
       "algorithm": "ed25519",
-      "publicKeyId": _publicKeyId,
+      "publicKeyId": signatureKeyId,
       "value": base64Encode(signature.bytes),
     },
   });

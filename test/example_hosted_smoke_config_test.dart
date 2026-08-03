@@ -12,7 +12,7 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"));
     expect(
       source,
-      contains("diagnosticsLogPath: _configuredHostedDiagnosticsLogPath()"),
+      contains("_writeSmokeDiagnostics(diagnosticsLogPath"),
     );
     expect(
         source, isNot(contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS")));
@@ -37,6 +37,7 @@ void main() {
         source, isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")));
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(source, isNot(contains("allowUnsignedMacOSUpdates:")));
-    expect(source, contains("diagnosticsLogPath: diagnosticsLogPath"));
+    expect(source, isNot(contains("diagnosticsLogPath: diagnosticsLogPath")));
+    expect(source, contains("raw-smoke-handoff-removed"));
   });
 }

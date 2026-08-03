@@ -2281,6 +2281,22 @@ without rerunning the ladder.
 - [ ] Complete Task 1 contract tests and durable design review. Run the
   correction set against its integration commit in target-host CI and resolve
   any follow-up independent-review finding before Task 2.
+- [x] (2026-08-03) Implemented and locally verified the Task 2 Dart/API/core
+  handoff candidate: mandatory package identity and trusted key pins,
+  signed-index and signed-descriptor checks before artifacts, owner-bound
+  single-use check/stage authority, exact durable v3 recovery readback,
+  sealed `VerifiedNativeInstallRequest`, sealed typed native recovery
+  capabilities, and the preserved internal MethodChannel `installUpdate`
+  five-field payload. Focused tests, analyzer, format, and the full Flutter
+  suite pass locally.
+- [x] (2026-08-03) Implemented the Task 2 signed-publishing local candidate:
+  active private/public key match, publisher-owned final descriptor/archive
+  and index signatures after hooks, ordered isolated custom-command phases,
+  strict custom-command receipts, and fail-closed automatic S3/SFTP/FTP
+  publication without tested conditional-write or lease support. The remaining
+  hosted-history, explicit initialization, remote revision recheck, and
+  backend conditional index-write work is recorded as a Task 2 risk rather
+  than hidden.
 - [ ] Complete Task 2 Dart/API/publishing migration.
 - [ ] Complete Task 3 macOS helper and SwiftPM migration.
 - [ ] Complete Task 4 Windows C ABI/.NET/helper/runtime migration.
@@ -2381,6 +2397,10 @@ without rerunning the ladder.
   this broad duplicate must exclude only that exact CTest entry or it will
   stop the job before terminal consumer proof for a second, non-diagnostic
   reason.
+- The local host has no `pkg-config`, so the native package retail
+  relocatable-compile test now skips only that local compile proof when
+  `cc`, `ar`, or `pkg-config` is unavailable. CI hosts with the tools still
+  execute the same compile path.
 
 ## Decision Log
 
@@ -2420,6 +2440,11 @@ without rerunning the ladder.
   backed by remote absence, and conditionally writes the index against the
   frozen remote revision so clean builds and concurrent publishers cannot drop
   releases.
+- **2026-08-03 — Fail closed for unordered automatic providers.** Until a
+  backend-specific conditional write or tested exclusive lease exists, S3,
+  SFTP, and FTP signed publication must reject instead of writing an index
+  from a stale or locally inferred history. Custom-command publication carries
+  the ordered boundary through isolated phases and strict receipt evidence.
 - **2026-08-03 — Version the existing migrator.** Preserve explicit 1-to-2
   behavior, add safe 2-to-3 analysis, and never synthesize trust or native
   authority.
@@ -2502,6 +2527,13 @@ exact-head target-host run.
 The fresh Linux recovery assertion intentionally remains red until its
 production recovery migration. No production
 implementation, release state, VM, or live artifact was changed.
+Task 2 now has a locally verified Dart/API/core/platform and signed-publishing
+candidate. The exact local commands and results are recorded in
+`.superpowers/sdd/2026-08-03-desktop-updater-3-0-breaking-contract-plan/task-2-report.md`.
+The candidate intentionally leaves hosted prior-history acquisition,
+explicit feed initialization, final remote revision recheck, and backend
+conditional index-write support as named publishing risks; automatic
+S3/SFTP/FTP signed publication rejects without those safeguards.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
 and any contract deviation here. A deviation requires a dated Decision Log

@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:args/args.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
 import "package:path/path.dart" as path;
@@ -24,6 +25,10 @@ ArgParser buildPublishParser() {
     ..addOption(
       "private-key-file",
       help: "External file containing the base64 Ed25519 private seed.",
+    )
+    ..addOption(
+      "public-keys-env",
+      help: "Environment variable containing JSON public key map.",
     )
     ..addOption("version")
     ..addOption("build-number")
@@ -168,18 +173,28 @@ Future<ReleaseSigningOptions?> _releaseSigningOptions(
   final publicKeyId = results["public-key-id"] as String?;
   final envName = results["private-key-env"] as String?;
   final fileValue = results["private-key-file"] as String?;
+  final publicKeysEnvName = results["public-keys-env"] as String?;
   final hasKeyId = publicKeyId != null && publicKeyId.trim().isNotEmpty;
   final hasEnv = envName != null && envName.trim().isNotEmpty;
   final hasFile = fileValue != null && fileValue.trim().isNotEmpty;
+  final hasPublicKeysEnv =
+      publicKeysEnvName != null && publicKeysEnvName.trim().isNotEmpty;
   if (!hasKeyId && !hasEnv && !hasFile) {
     return null;
   }
-  if (!hasKeyId || hasEnv == hasFile) {
+  if (!hasKeyId || !hasPublicKeysEnv || hasEnv == hasFile) {
     throw const FormatException(
-      "Publishing signatures require --public-key-id and exactly one of "
-      "--private-key-env or --private-key-file.",
+      "Publishing signatures require --public-key-id, --public-keys-env, "
+      "and exactly one of --private-key-env or --private-key-file.",
     );
   }
+  final publicKeysJson = environment[publicKeysEnvName.trim()];
+  if (publicKeysJson == null || publicKeysJson.trim().isEmpty) {
+    throw FormatException(
+      "Missing environment variable ${publicKeysEnvName.trim()}.",
+    );
+  }
+  final trustedReleasePublicKeys = decodeReleasePublicKeysJson(publicKeysJson);
   late final String privateKey;
   if (hasEnv) {
     final value = environment[envName.trim()];
@@ -197,6 +212,7 @@ Future<ReleaseSigningOptions?> _releaseSigningOptions(
   return ReleaseSigningOptions(
     publicKeyId: publicKeyId.trim(),
     privateKeyBase64: privateKey,
+    trustedReleasePublicKeys: trustedReleasePublicKeys,
   );
 }
 

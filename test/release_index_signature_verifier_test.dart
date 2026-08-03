@@ -1,13 +1,9 @@
 import "dart:convert";
-import "dart:io";
 
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
-import "package:desktop_updater/src/core/update_client.dart";
-import "package:desktop_updater/src/io/update_transport.dart";
-import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
@@ -22,12 +18,10 @@ void main() {
     );
   });
 
-  test("unknown app archive signing key fails", () async {
-    final signed = await _signedIndex();
-
+  test("empty app archive key map is rejected at configuration", () {
     expect(
-      await Ed25519ReleaseIndexSignatureVerifier(const {}).verify(signed.index),
-      isFalse,
+      () => Ed25519ReleaseIndexSignatureVerifier(const {}),
+      throwsFormatException,
     );
   });
 
@@ -133,64 +127,6 @@ void main() {
       );
     }
   });
-
-  test("strict update client rejects a missing signature before selection",
-      () async {
-    final archiveUrl =
-        Uri.parse("https://updates.example.test/app-archive.json");
-    final descriptorUrl =
-        Uri.parse("https://updates.example.test/release.json");
-    final transport = _MapTransport({
-      archiveUrl: _indexJson(descriptorUrl),
-    });
-    final client = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.parse("1.0.0"),
-      platform: "macos",
-      transport: transport,
-      requireIndexSignature: true,
-    );
-
-    await expectLater(
-      client.checkForUpdate(),
-      throwsA(isA<FormatException>()),
-    );
-    expect(transport.downloadedSources, [archiveUrl]);
-  });
-
-  test("compatibility client verifies a configured signed index", () async {
-    final signed = await _signedIndex();
-    final archiveUrl =
-        Uri.parse("https://updates.example.test/app-archive.json");
-    final descriptorUrl = signed.index.items.single.release;
-    final tamperedJson = signed.index.toJson();
-    final items = tamperedJson["items"] as List<dynamic>;
-    tamperedJson["items"] = [
-      {
-        ...(items.single as Map<String, dynamic>),
-        "mandatory": false,
-      },
-    ];
-    final transport = _MapTransport({
-      archiveUrl: tamperedJson,
-      descriptorUrl: _descriptorJson(),
-    });
-    final client = UpdateClient(
-      appArchiveUrl: archiveUrl,
-      currentVersion: DesktopVersionInfo.parse("1.0.0"),
-      platform: "macos",
-      transport: transport,
-      indexSignatureVerifier: Ed25519ReleaseIndexSignatureVerifier({
-        _publicKeyId: signed.publicKey,
-      }),
-    );
-
-    await expectLater(
-      client.checkForUpdate(),
-      throwsA(isA<FormatException>()),
-    );
-    expect(transport.downloadedSources, [archiveUrl]);
-  });
 }
 
 const _publicKeyId = "release-key-2026";
@@ -286,52 +222,9 @@ Map<String, dynamic> _indexJson(Uri descriptorUrl) {
   };
 }
 
-Map<String, dynamic> _descriptorJson() {
-  return {
-    "schemaVersion": 3,
-    "packageId": "com.example.app",
-    "appName": "Example.app",
-    "version": "2.0.0",
-    "buildNumber": 200,
-    "platform": "macos",
-    "channel": "stable",
-    "artifact": {
-      "kind": "zip",
-      "url": "https://updates.example.test/Example.zip",
-      "sha256": "a" * 64,
-      "length": 12,
-    },
-    "install": {"strategy": "wholeBundleReplace"},
-    "minimumUpdaterVersion": "2.0.0",
-    "generatedAt": "2026-07-10T00:00:00Z",
-  };
-}
-
 class _SignedIndex {
   const _SignedIndex({required this.index, required this.publicKey});
 
   final ReleaseIndex index;
   final String publicKey;
-}
-
-class _MapTransport implements UpdateTransport {
-  _MapTransport(this.responses);
-
-  final Map<Uri, Map<String, dynamic>> responses;
-  final List<Uri> downloadedSources = [];
-
-  @override
-  Future<void> download(
-    Uri source,
-    File destination, {
-    void Function(int receivedBytes, int? totalBytes)? onProgress,
-    Duration? timeout,
-  }) async {
-    downloadedSources.add(source);
-    final response = responses[source];
-    if (response == null) {
-      throw StateError("No response for $source");
-    }
-    await destination.writeAsString(jsonEncode(response));
-  }
 }

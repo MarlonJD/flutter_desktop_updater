@@ -46,6 +46,7 @@ class FtpUploadProvider implements OrderedUploadProvider {
       manifest: manifest,
       config: config,
       output: output,
+      expectedRevision: const RemoteIndexRevision.absent(),
     );
     return const UploadResult(uploaded: true);
   }
@@ -69,17 +70,16 @@ class FtpUploadProvider implements OrderedUploadProvider {
   }
 
   @override
-  Future<void> uploadAppArchive({
+  Future<IndexPublishReceipt> uploadAppArchive({
     required Directory localRoot,
     required PublishManifest manifest,
     required UploadConfig config,
     required StringSink output,
+    required RemoteIndexRevision expectedRevision,
   }) async {
-    final ftpConfig = _ftpConfig(config);
-    await client.writeFile(
-      file: File(path.join(localRoot.path, manifest.appArchive.path)),
-      remotePath: _remotePath(ftpConfig.remotePath, manifest.appArchive.path),
-      config: ftpConfig,
+    throw const FormatException(
+      "FTP upload requires a conditional index write or tested exclusive "
+      "publication lease before publishing app-archive.json.",
     );
   }
 }

@@ -1,7 +1,4 @@
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
-import "package:desktop_updater/src/core/artifact_verifier.dart";
-import "package:desktop_updater/src/core/release_descriptor.dart";
-import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/current_version.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart"
@@ -13,7 +10,7 @@ export "package:desktop_updater/src/core/release_descriptor.dart";
 export "package:desktop_updater/src/core/release_index.dart";
 export "package:desktop_updater/src/core/release_notes.dart";
 export "package:desktop_updater/src/core/update_client.dart"
-    show UpdateCheckResult, UpdateStageResult;
+    show MinimumOSSupportChecker, UpdateCheckResult, UpdateStageResult;
 export "package:desktop_updater/src/core/update_diagnostics.dart";
 export "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 export "package:desktop_updater/src/core/update_recovery.dart";
@@ -47,82 +44,9 @@ class DesktopUpdater {
     return DesktopUpdaterPlatform.instance.getPlatformVersion();
   }
 
-  /// Restarts or installs a staged update.
-  Future<void> restartApp({
-    /// Optional staged update path to install before restarting.
-    String? stagingPath,
-
-    /// Legacy compatibility flag rejected before native install handoff.
-    ///
-    /// Keep this false. Native install handoff requires signed release
-    /// metadata; privileged macOS installs also require signed, notarized
-    /// application code.
-    bool allowUnsignedMacOSUpdates = false,
-
-    /// Compatibility-only diagnostics path. Standalone helpers use their
-    /// fixed platform log sink instead of writing this caller-selected path.
-    String? diagnosticsLogPath,
-
-    /// Verified package identity required by protected native install targets.
-    String? packageId,
-
-    /// Canonical app-owned install root for explicit native target proof.
-    String? installRoot,
-
-    /// Running executable path relative to [installRoot].
-    String? executableRelativePath,
-  }) {
-    if (stagingPath != null) {
-      return installUpdate(
-        stagingPath: stagingPath,
-        allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-        diagnosticsLogPath: diagnosticsLogPath,
-        packageId: packageId,
-        installRoot: installRoot,
-        executableRelativePath: executableRelativePath,
-      );
-    }
-
+  /// Restarts the current app without installing a staged update.
+  Future<void> restartApp() {
     return DesktopUpdaterPlatform.instance.restartApp();
-  }
-
-  /// Installs an already staged update artifact.
-  Future<void> installUpdate({
-    /// Platform-specific staged artifact path.
-    required String stagingPath,
-
-    /// Legacy-compatible list of files removed during install.
-    List<String> removedFiles = const [],
-
-    /// Legacy compatibility flag rejected before native install handoff.
-    ///
-    /// Keep this false. Native install handoff requires signed release
-    /// metadata; privileged macOS installs also require signed, notarized
-    /// application code.
-    bool allowUnsignedMacOSUpdates = false,
-
-    /// Compatibility-only diagnostics path. Standalone helpers use their
-    /// fixed platform log sink instead of writing this caller-selected path.
-    String? diagnosticsLogPath,
-
-    /// Verified package identity required by protected native install targets.
-    String? packageId,
-
-    /// Canonical app-owned install root for explicit native target proof.
-    String? installRoot,
-
-    /// Running executable path relative to [installRoot].
-    String? executableRelativePath,
-  }) {
-    return DesktopUpdaterPlatform.instance.installUpdateWithContext(
-      stagingPath: stagingPath,
-      removedFiles: removedFiles,
-      allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-      diagnosticsLogPath: diagnosticsLogPath,
-      installRoot: installRoot,
-      executableRelativePath: executableRelativePath,
-      packageId: packageId,
-    );
   }
 
   /// Returns the current executable path when the platform supports it.
@@ -159,77 +83,55 @@ class DesktopUpdater {
     return currentVersionInfo();
   }
 
-  /// Checks the zip-first update index for a matching newer release.
-  Future<UpdateCheckResult?> checkZipFirstUpdate({
+  /// Creates a configured zip-first update session.
+  ZipFirstUpdateSession createZipFirstUpdateSession({
     /// Hosted app archive URL.
     required Uri appArchiveUrl,
 
     /// Version currently installed on this machine.
     required DesktopVersionInfo currentVersion,
+
+    /// Stable package identity expected in signed release descriptors.
+    required String expectedPackageId,
+
+    /// Pinned Ed25519 public keys required for archive and descriptor trust.
+    required Map<String, String> trustedReleasePublicKeys,
 
     /// Stable app-owned identity used for deterministic staged rollouts.
     String? installationIdentity,
 
     /// Optional app-owned HTTP headers for update metadata requests.
     UpdateRequestHeadersProvider? requestHeadersProvider,
-
-    /// Pinned Ed25519 public keys required for archive and descriptor trust.
-    Map<String, String>? trustedReleasePublicKeys,
   }) {
-    final publicKeys = trustedReleasePublicKeys;
-    return UpdateClient(
-      appArchiveUrl: appArchiveUrl,
-      currentVersion: currentVersion,
-      installationIdentity: installationIdentity,
-      requestHeadersProvider: requestHeadersProvider,
-      requireIndexSignature: publicKeys != null,
-      indexSignatureVerifier: publicKeys == null
-          ? null
-          : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
-      verifier: publicKeys == null
-          ? const ArtifactVerifier()
-          : ArtifactVerifier(
-              policy: ArtifactVerificationPolicy.requireEd25519Signature(
-                publicKeys: publicKeys,
-              ),
-            ),
-    ).checkForUpdate();
+    return ZipFirstUpdateSession._(
+      UpdateClient(
+        appArchiveUrl: appArchiveUrl,
+        currentVersion: currentVersion,
+        expectedPackageId: expectedPackageId,
+        trustedReleasePublicKeys: trustedReleasePublicKeys,
+        installationIdentity: installationIdentity,
+        requestHeadersProvider: requestHeadersProvider,
+      ),
+    );
   }
+}
 
-  /// Downloads, verifies, and stages a zip-first update artifact.
-  Future<UpdateStageResult> downloadZipFirstUpdate({
-    /// Hosted app archive URL.
-    required Uri appArchiveUrl,
+/// Per-client zip-first update session.
+final class ZipFirstUpdateSession {
+  ZipFirstUpdateSession._(this._client);
 
-    /// Version currently installed on this machine.
-    required DesktopVersionInfo currentVersion,
+  final UpdateClient _client;
 
-    /// Release descriptor selected by [checkZipFirstUpdate].
-    required ReleaseDescriptor descriptor,
+  /// Checks the signed app archive for a matching newer release.
+  Future<UpdateCheckResult?> checkForUpdate() => _client.checkForUpdate();
 
-    /// Optional download progress callback.
+  /// Downloads, verifies, and stages the selected update once.
+  Future<UpdateStageResult> downloadVerifyAndStage({
+    required UpdateCheckResult checkResult,
     void Function(int receivedBytes, int? totalBytes)? onProgress,
-
-    /// Optional app-owned HTTP headers for artifact requests.
-    UpdateRequestHeadersProvider? requestHeadersProvider,
-
-    /// Pinned Ed25519 public keys required for descriptor trust.
-    Map<String, String>? trustedReleasePublicKeys,
   }) {
-    final publicKeys = trustedReleasePublicKeys;
-    return UpdateClient(
-      appArchiveUrl: appArchiveUrl,
-      currentVersion: currentVersion,
-      requestHeadersProvider: requestHeadersProvider,
-      verifier: publicKeys == null
-          ? const ArtifactVerifier()
-          : ArtifactVerifier(
-              policy: ArtifactVerificationPolicy.requireEd25519Signature(
-                publicKeys: publicKeys,
-              ),
-            ),
-    ).downloadVerifyAndStage(
-      descriptor: descriptor,
+    return _client.downloadVerifyAndStage(
+      checkResult: checkResult,
       onProgress: onProgress,
     );
   }

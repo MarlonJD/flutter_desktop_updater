@@ -2,6 +2,80 @@ import "package:desktop_updater/desktop_updater.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("pending v3 marker requires transaction identity and stage binding", () {
+    final marker = UpdateInstallRecoveryMarker.pendingV3(
+      createdAt: DateTime.utc(2026, 8, 3, 12, 30),
+      packageVersion: "3.0.0",
+      platform: "macos",
+      channel: "stable",
+      appVersion: "1.0.0+100",
+      updateVersion: "2.0.0",
+      updateBuildNumber: null,
+      expectedPackageId: "com.example.app",
+      stagingPath: "/tmp/desktop_updater_stage",
+      stageProvenanceSha256: "a" * 64,
+      diagnosticsText: "redacted diagnostics",
+      transactionId: "123e4567-e89b-42d3-a456-426614174000",
+    );
+
+    expect(marker.expectedPackageId, "com.example.app");
+    expect(marker.stageProvenanceSha256, "a" * 64);
+    expect(marker.updateBuildNumber, isNull);
+    expect(marker.transactionId, "123e4567-e89b-42d3-a456-426614174000");
+
+    expect(
+      () => UpdateInstallRecoveryMarker.pendingV3(
+        createdAt: DateTime.utc(2026, 8, 3),
+        packageVersion: "3.0.0",
+        platform: "macos",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.0",
+        updateBuildNumber: null,
+        expectedPackageId: " ",
+        stagingPath: "/tmp/desktop_updater_stage",
+        stageProvenanceSha256: "a" * 64,
+        diagnosticsText: null,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      () => UpdateInstallRecoveryMarker.pendingV3(
+        createdAt: DateTime.utc(2026, 8, 3),
+        packageVersion: "3.0.0",
+        platform: "macos",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.0",
+        updateBuildNumber: null,
+        expectedPackageId: "com.example.app",
+        stagingPath: "/tmp/desktop_updater_stage",
+        stageProvenanceSha256: "A" * 64,
+        diagnosticsText: null,
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      () => UpdateInstallRecoveryMarker.pendingV3(
+        createdAt: DateTime.utc(2026, 8, 3),
+        packageVersion: "3.0.0",
+        platform: "macos",
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.0",
+        updateBuildNumber: null,
+        expectedPackageId: "com.example.app",
+        stagingPath: "/tmp/desktop_updater_stage",
+        stageProvenanceSha256: "a" * 64,
+        diagnosticsText: null,
+        transactionId: "123E4567-E89B-42D3-A456-426614174000",
+      ),
+      throwsArgumentError,
+    );
+  });
+
   test("install recovery marker retains app-owned recovery fields", () {
     final marker = UpdateInstallRecoveryMarker(
       createdAt: DateTime.utc(2026, 6, 16, 10),

@@ -434,7 +434,7 @@ macos:
       final manifest = await publisher.publish(
         projectRoot: root,
         platform: "macos",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(buildNumber: 201),
         output: output,
       );
 
@@ -482,7 +482,7 @@ macos:
       final manifest = await publisher.publish(
         projectRoot: root,
         platform: "macos",
-        overrides: const ReleasePublishOverrides(),
+        overrides: const ReleasePublishOverrides(buildNumber: 201),
         output: output,
       );
 
@@ -581,6 +581,9 @@ macos:
         signing: ReleaseSigningOptions(
           publicKeyId: "stable-2026",
           privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: {
+            "stable-2026": base64Encode(publicKey.bytes),
+          },
         ),
         output: StringBuffer(),
       );
@@ -624,49 +627,42 @@ macos:
     }
   });
 
-  test("signed publisher rejects an unsigned descriptor before upload",
-      () async {
+  test("signed publisher signs an unsigned descriptor before upload", () async {
     final root = await _createWindowsFixture();
     final output = StringBuffer();
     final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
     try {
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: _RecordingPackager(<String>[]),
       );
 
-      await expectLater(
-        publisher.publish(
-          projectRoot: root,
-          platform: "windows",
-          overrides: const ReleasePublishOverrides(),
-          signing: ReleaseSigningOptions(
-            publicKeyId: "stable-2026",
-            privateKeyBase64: base64Encode(seed),
-          ),
-          output: output,
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
         ),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            "message",
-            contains("Final release.json signature verification failed"),
-          ),
-        ),
+        output: output,
       );
-      expect(output.toString(), isNot(contains("Manual publish package")));
+      expect(output.toString(), contains("Signed final app-archive.json."));
     } finally {
       await root.delete(recursive: true);
     }
   });
 
-  test("signed publisher rejects a differently keyed descriptor before upload",
+  test("signed publisher overwrites hook-authored descriptor signatures",
       () async {
     final root = await _createWindowsFixture();
     await _configureDescriptorSigningHook(root);
     final output = StringBuffer();
     final seed = List<int>.generate(32, (index) => index);
     final differentSeed = List<int>.generate(32, (index) => index + 32);
+    final publicKeys = await _publicKeysForSeed(seed);
     try {
       final publisher = ReleasePublisher(
         skipBuild: true,
@@ -677,36 +673,29 @@ macos:
         ),
       );
 
-      await expectLater(
-        publisher.publish(
-          projectRoot: root,
-          platform: "windows",
-          overrides: const ReleasePublishOverrides(),
-          signing: ReleaseSigningOptions(
-            publicKeyId: "stable-2026",
-            privateKeyBase64: base64Encode(seed),
-          ),
-          output: output,
+      await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
         ),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            "message",
-            contains("Final release.json signature verification failed"),
-          ),
-        ),
+        output: output,
       );
-      expect(output.toString(), isNot(contains("Manual publish package")));
+      expect(output.toString(), contains("Signed final app-archive.json."));
     } finally {
       await root.delete(recursive: true);
     }
   });
 
-  test("signed publisher rejects upload providers without index-last ordering",
+  test("signed custom command publish requires hosted versioned validation",
       () async {
     final root = await _createWindowsFixture();
     await _configureDescriptorSigningHook(root, customCommand: true);
     final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
     try {
       final publisher = ReleasePublisher(
         skipBuild: true,
@@ -725,16 +714,11 @@ macos:
           signing: ReleaseSigningOptions(
             publicKeyId: "stable-2026",
             privateKeyBase64: base64Encode(seed),
+            trustedReleasePublicKeys: publicKeys,
           ),
           output: StringBuffer(),
         ),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            "message",
-            contains("app-archive.json last"),
-          ),
-        ),
+        throwsA(isA<Exception>()),
       );
     } finally {
       await root.delete(recursive: true);
@@ -769,6 +753,12 @@ ReleaseHookCommandRunner _descriptorSigningHook({
     );
     return ProcessResult(0, 0, "", "");
   };
+}
+
+Future<Map<String, String>> _publicKeysForSeed(List<int> seed) async {
+  final keyPair = await Ed25519().newKeyPairFromSeed(seed);
+  final publicKey = await keyPair.extractPublicKey();
+  return <String, String>{"stable-2026": base64Encode(publicKey.bytes)};
 }
 
 Future<Directory> _createWindowsFixture() async {

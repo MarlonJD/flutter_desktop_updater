@@ -4,18 +4,20 @@ import "dart:typed_data";
 
 import "package:archive/archive.dart";
 import "package:crypto/crypto.dart";
-import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/file_update_transport.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
+import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:http/http.dart" as http;
 import "package:http/testing.dart";
 import "package:path/path.dart" as path;
+
+import "fixtures/release_fixture_builder.dart";
 
 void main() {
   group("bounded stable metadata", () {
@@ -139,14 +141,17 @@ void main() {
       final releaseUrl = Uri.parse("https://updates.example.test/release.json");
       final artifactUrl =
           Uri.parse("https://updates.example.test/artifact.zip");
+      final publicKeys = await testReleasePublicKeys();
       final transport = _BoundedMapTransport(<Uri, String>{
-        archiveUrl: _indexJson(releaseUrl),
-        releaseUrl: _descriptorJson(artifactUrl),
+        archiveUrl: await _indexJson(releaseUrl),
+        releaseUrl: await _descriptorJson(artifactUrl),
       });
       final client = UpdateClient(
         appArchiveUrl: archiveUrl,
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         transport: transport,
       );
 
@@ -166,15 +171,18 @@ void main() {
       final releaseUrl = Uri.parse("https://updates.example.test/release.json");
       final artifactUrl =
           Uri.parse("https://updates.example.test/artifact.zip");
+      final publicKeys = await testReleasePublicKeys();
+      final descriptorJson = await _descriptorJson(artifactUrl);
       final transport = _LegacyMapTransport(<Uri, String>{
-        archiveUrl: _indexJson(releaseUrl),
-        releaseUrl:
-            "${_descriptorJson(artifactUrl)}${" " * maximumStableMetadataBytes}",
+        archiveUrl: await _indexJson(releaseUrl),
+        releaseUrl: "$descriptorJson${" " * maximumStableMetadataBytes}",
       });
       final client = UpdateClient(
         appArchiveUrl: archiveUrl,
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         transport: transport,
       );
 
@@ -190,40 +198,38 @@ void main() {
         () async {
       final artifactUrl =
           Uri.parse("https://updates.example.test/artifact.zip");
-      final transport = _ArtifactRecordingTransport(artifactUrl);
+      final archiveUrl =
+          Uri.parse("https://updates.example.test/app-archive.json");
+      final releaseUrl = Uri.parse("https://updates.example.test/release.json");
+      final publicKeys = await testReleasePublicKeys();
+      final transport = _ArtifactRecordingTransport(
+        artifactUrl: artifactUrl,
+        responses: <Uri, String>{
+          archiveUrl: await _indexJson(releaseUrl),
+          releaseUrl: await _descriptorJson(artifactUrl, length: 123),
+        },
+      );
       final client = UpdateClient(
-        appArchiveUrl:
-            Uri.parse("https://updates.example.test/app-archive.json"),
+        appArchiveUrl: archiveUrl,
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         transport: transport,
       );
-      final descriptor = ReleaseDescriptor(
-        schemaVersion: 3,
-        packageId: "com.example.app",
-        appName: "Example",
-        version: "2.0.0",
-        buildNumber: 200,
-        platform: "linux",
-        channel: "stable",
-        artifact: ReleaseArtifact(
-          kind: "zip",
-          url: artifactUrl,
-          sha256: "a" * 64,
-          length: 123,
-        ),
-        install: const ReleaseInstall(strategy: "wholeBundleReplace"),
-        minimumUpdaterVersion: "2.0.0",
-        generatedAt: DateTime.utc(2026, 7, 13),
-      );
+      final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(descriptor: descriptor),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsA(isA<_ArtifactTransferStopped>()),
       );
 
       expect(transport.unboundedSources, isEmpty);
-      expect(transport.boundedCalls, <(Uri, int)>[(artifactUrl, 123)]);
+      expect(transport.boundedCalls, <(Uri, int)>[
+        (archiveUrl, maximumStableMetadataBytes),
+        (releaseUrl, maximumStableMetadataBytes),
+        (artifactUrl, 123),
+      ]);
     });
 
     test("built-in artifact overrun removes partials and owned stage",
@@ -233,20 +239,24 @@ void main() {
       final artifact = File(path.join(root.path, "oversized.zip"));
       final bytes = utf8.encode("oversized");
       await artifact.writeAsBytes(bytes);
+      await _writeSignedFeed(
+        root: root,
+        artifactUrl: artifact.uri,
+        artifactLength: bytes.length - 1,
+      );
+      final publicKeys = await testReleasePublicKeys();
       final client = UpdateClient(
         appArchiveUrl: Uri.file(path.join(root.path, "app-archive.json")),
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         stagingParent: root,
       );
+      final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(
-          descriptor: _artifactDescriptor(
-            artifact.uri,
-            length: bytes.length - 1,
-          ),
-        ),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsA(isA<UpdateDownloadSizeLimitException>()),
       );
 
@@ -267,19 +277,29 @@ void main() {
       addTearDown(() => root.delete(recursive: true));
       final artifactUrl =
           Uri.parse("https://updates.example.test/oversized.zip");
+      final archiveUrl =
+          Uri.parse("https://updates.example.test/app-archive.json");
+      final releaseUrl = Uri.parse("https://updates.example.test/release.json");
+      final publicKeys = await testReleasePublicKeys();
       final client = UpdateClient(
-        appArchiveUrl:
-            Uri.parse("https://updates.example.test/app-archive.json"),
+        appArchiveUrl: archiveUrl,
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         stagingParent: root,
-        transport: _LegacyArtifactTransport(List<int>.filled(124, 1)),
+        transport: _LegacyArtifactTransport(
+          bytes: List<int>.filled(124, 1),
+          responses: <Uri, String>{
+            archiveUrl: await _indexJson(releaseUrl),
+            releaseUrl: await _descriptorJson(artifactUrl, length: 123),
+          },
+        ),
       );
+      final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(
-          descriptor: _artifactDescriptor(artifactUrl, length: 123),
-        ),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsA(isA<UpdateDownloadSizeLimitException>()),
       );
 
@@ -425,11 +445,22 @@ void main() {
             ),
         ),
       );
+      final archiveBytes = await archive.readAsBytes();
+      await _writeSignedFeed(
+        root: root,
+        artifactUrl: archive.uri,
+        artifactLength: archiveBytes.length,
+        platform: "macos",
+        sha256Value: sha256.convert(archiveBytes).toString(),
+      );
+      final publicKeys = await testReleasePublicKeys();
       final processCalls = <String>[];
       final client = UpdateClient(
         appArchiveUrl: Uri.file(path.join(root.path, "app-archive.json")),
         currentVersion: DesktopVersionInfo.parse("1.0.0"),
         platform: "macos",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: publicKeys,
         stagingParent: root,
         extractor: const SafeZipExtractor(maximumSingleEntryBytes: 3),
         runProcess: (executable, arguments) async {
@@ -440,7 +471,7 @@ void main() {
 
       await expectLater(
         client.downloadVerifyAndStage(
-          descriptor: await _zipDescriptor(archive, platform: "macos"),
+          checkResult: (await client.checkForUpdate())!,
         ),
         throwsFormatException,
       );
@@ -655,58 +686,98 @@ void main() {
   });
 }
 
-String _indexJson(Uri releaseUrl) => jsonEncode(<String, Object?>{
+Future<String> _indexJson(Uri releaseUrl, {String platform = "linux"}) async {
+  return _signedJson(
+    <String, Object?>{
       "schemaVersion": 3,
       "appName": "Example",
       "items": <Object?>[
         <String, Object?>{
           "version": "2.0.0",
           "buildNumber": 200,
-          "platform": "linux",
+          "platform": platform,
           "channel": "stable",
           "mandatory": false,
           "release": releaseUrl.toString(),
         },
       ],
-    });
+    },
+    signer: (file) => ReleaseIndexSigner().sign(
+      appArchiveFile: file,
+      publicKeyId: testReleasePublicKeyId,
+      privateKeyBase64: testReleasePrivateKeyBase64,
+    ),
+  );
+}
 
-String _descriptorJson(Uri artifactUrl) => jsonEncode(<String, Object?>{
+Future<String> _descriptorJson(
+  Uri artifactUrl, {
+  int length = 1,
+  String platform = "linux",
+  String sha256Value = "",
+}) async {
+  return _signedJson(
+    <String, Object?>{
       "schemaVersion": 3,
       "packageId": "com.example.app",
       "appName": "Example",
       "version": "2.0.0",
       "buildNumber": 200,
-      "platform": "linux",
+      "platform": platform,
       "channel": "stable",
       "artifact": <String, Object?>{
         "kind": "zip",
         "url": artifactUrl.toString(),
-        "sha256": "a" * 64,
-        "length": 1,
+        "sha256": sha256Value.isEmpty ? "a" * 64 : sha256Value,
+        "length": length,
       },
       "install": <String, Object?>{"strategy": "wholeBundleReplace"},
       "minimumUpdaterVersion": "2.0.0",
       "generatedAt": DateTime.utc(2026, 7, 13).toIso8601String(),
-    });
-
-ReleaseDescriptor _artifactDescriptor(Uri artifactUrl, {required int length}) {
-  return ReleaseDescriptor(
-    schemaVersion: 3,
-    packageId: "com.example.app",
-    appName: "Example",
-    version: "2.0.0",
-    buildNumber: 200,
-    platform: "linux",
-    channel: "stable",
-    artifact: ReleaseArtifact(
-      kind: "zip",
-      url: artifactUrl,
-      sha256: "a" * 64,
-      length: length,
+    },
+    signer: (file) => ReleaseDescriptorSigner().sign(
+      releaseFile: file,
+      publicKeyId: testReleasePublicKeyId,
+      privateKeyBase64: testReleasePrivateKeyBase64,
     ),
-    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
-    minimumUpdaterVersion: "2.0.0",
-    generatedAt: DateTime.utc(2026, 7, 13),
+  );
+}
+
+Future<String> _signedJson(
+  Map<String, Object?> json, {
+  required Future<void> Function(File file) signer,
+}) async {
+  final root = await Directory.systemTemp.createTemp("signed_feed_");
+  try {
+    final file = File(path.join(root.path, "metadata.json"));
+    await file.writeAsString("${jsonEncode(json)}\n");
+    await signer(file);
+    return await file.readAsString();
+  } finally {
+    await root.delete(recursive: true);
+  }
+}
+
+Future<void> _writeSignedFeed({
+  required Directory root,
+  required Uri artifactUrl,
+  required int artifactLength,
+  String platform = "linux",
+  String sha256Value = "",
+}) async {
+  await File(path.join(root.path, "release.json")).writeAsString(
+    await _descriptorJson(
+      artifactUrl,
+      length: artifactLength,
+      platform: platform,
+      sha256Value: sha256Value,
+    ),
+  );
+  await File(path.join(root.path, "app-archive.json")).writeAsString(
+    await _indexJson(
+      Uri.file(path.join(root.path, "release.json")),
+      platform: platform,
+    ),
   );
 }
 
@@ -720,31 +791,6 @@ Future<List<FileSystemEntity>> _ownedStages(Directory parent) {
       .toList();
 }
 
-Future<ReleaseDescriptor> _zipDescriptor(
-  File archive, {
-  required String platform,
-}) async {
-  final bytes = await archive.readAsBytes();
-  return ReleaseDescriptor(
-    schemaVersion: 3,
-    packageId: "com.example.app",
-    appName: "Example.app",
-    version: "2.0.0",
-    buildNumber: 200,
-    platform: platform,
-    channel: "stable",
-    artifact: ReleaseArtifact(
-      kind: "zip",
-      url: archive.uri,
-      sha256: sha256.convert(bytes).toString(),
-      length: bytes.length,
-    ),
-    install: const ReleaseInstall(strategy: "wholeBundleReplace"),
-    minimumUpdaterVersion: "2.0.0",
-    generatedAt: DateTime.utc(2026, 7, 13),
-  );
-}
-
 Future<void> _expectMacZipRejectedBeforeDitto(
   List<int> bytes, {
   String? reason,
@@ -754,11 +800,21 @@ Future<void> _expectMacZipRejectedBeforeDitto(
   try {
     final archive = File(path.join(root.path, "artifact.zip"));
     await archive.writeAsBytes(bytes);
+    await _writeSignedFeed(
+      root: root,
+      artifactUrl: archive.uri,
+      artifactLength: bytes.length,
+      platform: "macos",
+      sha256Value: sha256.convert(bytes).toString(),
+    );
+    final publicKeys = await testReleasePublicKeys();
     final processCalls = <String>[];
     final client = UpdateClient(
       appArchiveUrl: Uri.file(path.join(root.path, "app-archive.json")),
       currentVersion: DesktopVersionInfo.parse("1.0.0"),
       platform: "macos",
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: publicKeys,
       stagingParent: root,
       runProcess: (executable, arguments) async {
         processCalls.add(executable);
@@ -768,7 +824,7 @@ Future<void> _expectMacZipRejectedBeforeDitto(
 
     await expectLater(
       client.downloadVerifyAndStage(
-        descriptor: await _zipDescriptor(archive, platform: "macos"),
+        checkResult: (await client.checkForUpdate())!,
       ),
       expectedError ?? throwsFormatException,
       reason: reason,
@@ -832,9 +888,13 @@ class _LegacyMapTransport implements UpdateTransport {
 }
 
 class _ArtifactRecordingTransport implements BoundedUpdateTransport {
-  _ArtifactRecordingTransport(this.artifactUrl);
+  _ArtifactRecordingTransport({
+    required this.artifactUrl,
+    required this.responses,
+  });
 
   final Uri artifactUrl;
+  final Map<Uri, String> responses;
   final List<Uri> unboundedSources = <Uri>[];
   final List<(Uri, int)> boundedCalls = <(Uri, int)>[];
 
@@ -861,16 +921,25 @@ class _ArtifactRecordingTransport implements BoundedUpdateTransport {
     if (source == artifactUrl) {
       throw _ArtifactTransferStopped();
     }
-    throw StateError("Unexpected bounded source: $source");
+    final response = responses[source];
+    if (response == null) {
+      throw StateError("Unexpected bounded source: $source");
+    }
+    await destination.create(recursive: true);
+    await destination.writeAsString(response);
   }
 }
 
 class _ArtifactTransferStopped implements Exception {}
 
 class _LegacyArtifactTransport implements UpdateTransport {
-  _LegacyArtifactTransport(this.bytes);
+  _LegacyArtifactTransport({
+    required this.bytes,
+    required this.responses,
+  });
 
   final List<int> bytes;
+  final Map<Uri, String> responses;
 
   @override
   Future<void> download(
@@ -880,6 +949,11 @@ class _LegacyArtifactTransport implements UpdateTransport {
     Duration? timeout,
   }) async {
     await destination.create(recursive: true);
+    final response = responses[source];
+    if (response != null) {
+      await destination.writeAsString(response);
+      return;
+    }
     await destination.writeAsBytes(bytes);
   }
 }
