@@ -2242,11 +2242,35 @@ without rerunning the ladder.
 - [x] (2026-08-03) The next exact-head run (`8763fac`, Actions
   `30799571878`) proved the analyzer and historical macOS writer fixes, then
   exposed a separate harness timeout: the sequential C/C++/Swift/.NET/Linux
-  compiler consumer test exceeded the generic 30-second Dart test deadline on
-  hosted Linux before it could report its intended diagnostics. That one test
-  now has a bounded three-minute timeout; locally it completes with the actual
-  expected baseline compiler failures and no timeout. Its candidate change
-  requires another exact-head run.
+  consumer probes exceeded the generic Dart-test deadline on hosted Linux
+  before they could report their intended diagnostics. The target-host split
+  supersedes that temporary timeout: Dart now runs only Dart analysis, while
+  each native consumer compiles on its actual target runner.
+- [x] (2026-08-03) Corrected the native negative-compile lane boundary before
+  the timeout retry: the Linux Dart job must not stand in for Windows MSVC,
+  Windows .NET, macOS Swift, or Linux CMake proof. Dart now verifies only Dart
+  fixtures; Windows has C/C++ `try_compile` plus .NET build assertions, macOS
+  builds the Swift fixture, and Linux builds the CMake fixture on their actual
+  hosted targets. The new steps run last so baseline-red assertions do not
+  suppress earlier durable-state evidence. The Linux fresh-process recovery
+  baseline red is recognized only by its exact GTest diagnostic, deferred to
+  the terminal Linux consumer assertion, and still fails that job after the
+  CMake build has executed; unexpected recovery failures still exit early.
+  Local macOS confirms the legacy Swift consumer still compiles; CMake is not
+  installed on this host, so the new CMake evidence is target-host pending.
+- [x] (2026-08-03) The superseded exact-head run
+  [`30800202271`](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30800202271)
+  for `84d6c7a` passed Windows and macOS, and failed Dart plus Linux at their
+  intentional baseline contracts. It predates the target-host negative-compile
+  split and therefore is not evidence for this corrected candidate. Locally,
+  the workflow parses and its Bash steps pass syntax validation; the direct
+  forTesting compiler fixture rejects every forbidden retained-authority seam;
+  `flutter analyze --no-fatal-infos` exits zero with the pre-existing 506 infos.
+- [x] (2026-08-03) A final read-only independent review of the uncommitted
+  target-host correction found no actionable critical, high, or medium issue.
+  It verified real Windows MSVC C/C++ `try_compile` and .NET checks, macOS
+  Swift and Linux CMake target-host invocations, the sole expected Linux CTest
+  deferral, Dart fixture aggregation, and matching ExecPlan claims.
 - [ ] Complete Task 1 contract tests and durable design review. Run the
   correction set against its integration commit in target-host CI and resolve
   any follow-up independent-review finding before Task 2.
@@ -2334,10 +2358,17 @@ without rerunning the ladder.
   non-null, whereas the old source supplied `Data.baseAddress` directly. The
   unrelated service call prevents that complete historical checkout from
   compiling even though the journal writer itself is unchanged.
-- Sequential native compiler fixtures can exceed the default 30-second Dart
-  test timeout on a hosted runner. A timeout masks whether a removed path failed
-  for its intended compiler diagnostic, so the external-consumer test needs its
-  own finite timeout rather than accepting that false signal.
+- Sequential native compiler fixtures can exceed the default Dart-test timeout
+  on a hosted runner. A longer Dart timeout is only an interim diagnostic; the
+  lasting fix is to run each native compile fixture on its target-host lane.
+- Running Windows, macOS, and Linux compiler fixtures inside the single Linux
+  Dart job does not prove the required target ABI/toolchain behavior and caused
+  the timeout. Each fixture must run in its corresponding hosted job, after the
+  job's independent native evidence has been collected.
+- The expected Linux fresh-process recovery red originally stopped the hosted
+  Linux job before its terminal CMake consumer could run. The workflow must
+  defer only the exact current recovery diagnostic and rethrow it after the
+  real CMake build; any other recovery failure remains an immediate error.
 
 ## Decision Log
 
@@ -2420,10 +2451,22 @@ without rerunning the ladder.
   adaptation outside the journal serializer. It is documented beside the
   fixture and the historical writer must still produce byte-identical schema-1
   output.
-- **2026-08-03 — Give the external compiler contract one bounded timeout.**
-  C/C++/Swift/.NET/Linux CMake probes run sequentially and retain their exact
-  compiler assertions; only their enclosing test receives a three-minute
-  deadline so a hosted-runner timeout cannot replace an intended diagnostic.
+- **2026-08-03 — Do not compensate for cross-host probes with a Dart timeout.**
+  Dart analyzes only Dart fixtures. C/C++, .NET, Swift, and Linux CMake proof
+  run in their native target-host jobs, where their compiler output is the
+  assertion rather than an indirect Linux-host surrogate.
+- **2026-08-03 — Prove native removals on their real target lanes.** Dart
+  fixtures remain in the Dart test; C/C++ and .NET run on Windows, Swift runs
+  on macOS, and CMake runs on Linux. The terminal workflow steps fail baseline
+  only after earlier target-host fixture and recovery evidence is retained.
+- **2026-08-03 — Aggregate only the exact expected Task 1 Linux red.** The
+  unprivileged recovery suite defers its fresh-reader and fresh-process GTest
+  failure only when it reports `LinuxRecoveryOutcome::kRecovered` as the
+  expected result, the frozen manual-action-required value as actual, and
+  exactly one failed CTest entry. The terminal CMake build then records both
+  real outcomes
+  and fails; after Task 5, recovery passes and the removed consumer fails its
+  intended compiler check. Any different recovery failure exits immediately.
 
 ## Outcomes & Retrospective
 
@@ -2435,10 +2478,11 @@ red on baseline 2.7. The correction set makes baseline provenance reproducible
 from detached baseline and named-predecessor writer worktrees and adds
 process-isolated recovery/locator evidence. The first exact-head correction run
 exposed a whole-tree analyzer scope issue, an Xcode SDK compatibility issue in
-the historical source, and a hosted external-compiler timeout; all are
-corrected locally and require a new exact-head target-host run. The fresh Linux
-recovery assertion intentionally remains red until its production recovery
-migration. No production
+the historical source, a hosted external-compiler timeout, cross-host negative
+compile execution, and a Linux recovery early exit that hid terminal CMake
+proof. All are corrected locally and require a new exact-head target-host run.
+The fresh Linux recovery assertion intentionally remains red until its
+production recovery migration. No production
 implementation, release state, VM, or live artifact was changed.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
