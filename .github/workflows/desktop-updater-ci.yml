@@ -121,6 +121,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -213,13 +215,58 @@ jobs:
       - name: Emit baseline Windows durable-state fixtures
         shell: pwsh
         run: |
-          $output = "artifacts/native-durable-state/windows"
+          $ErrorActionPreference = "Stop"
+          $baselineCommit = "2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          $overlayCommit = "fcd767ccfe9140f0787925f80cceb57553c1170a"
+          $baseline = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows"
+          $baselineBuild = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows-build"
+          $patch = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows-fixture-overlay.patch"
+          $output = Join-Path $env:GITHUB_WORKSPACE "artifacts/native-durable-state/windows"
           New-Item -ItemType Directory -Path $output -Force | Out-Null
-          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe $output
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe --verify $output
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe --verify test/fixtures/compat/native-durable-state/2.7.0/windows
+
+          try {
+            git worktree add --detach $baseline $baselineCommit
+            if ($LASTEXITCODE -ne 0) { throw "Could not create baseline worktree." }
+            git diff --binary $baselineCommit $overlayCommit -- windows/native/CMakeLists.txt windows/native/test/helper/native_durable_state_fixture_emitter.cpp |
+              Set-Content -LiteralPath $patch -Encoding utf8NoBOM
+            if ($LASTEXITCODE -ne 0) { throw "Could not create baseline emitter overlay." }
+            git -C $baseline apply --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { throw "Could not apply baseline emitter overlay." }
+            cmake -S (Join-Path $baseline "windows/native") -B $baselineBuild -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            cmake --build $baselineBuild --config Release --target desktop_updater_native_durable_state_fixture_emitter
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $baselineEmitter = Join-Path $baselineBuild "Release/desktop_updater_native_durable_state_fixture_emitter.exe"
+            & $baselineEmitter $output
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $baselineEmitter --verify $output
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $fixture = Join-Path $env:GITHUB_WORKSPACE "test/fixtures/compat/native-durable-state/2.7.0/windows"
+            & $baselineEmitter --verify $fixture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $emitted = Get-ChildItem -LiteralPath $output -Filter *.json | Sort-Object Name
+            if ($emitted.Count -ne 5) { throw "Baseline emitter wrote an unexpected fixture set." }
+            foreach ($file in $emitted) {
+              $frozen = Join-Path $fixture $file.Name
+              if (-not (Test-Path -LiteralPath $frozen -PathType Leaf)) {
+                throw "Frozen fixture is missing $($file.Name)."
+              }
+              $emittedHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+              $frozenHash = (Get-FileHash -LiteralPath $frozen -Algorithm SHA256).Hash
+              if ($emittedHash -ne $frozenHash) {
+                throw "Baseline fixture bytes differ from the frozen $($file.Name)."
+              }
+            }
+            $serializerCommit = (git -C $baseline rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            if (Test-Path -LiteralPath $baseline) {
+              git worktree remove --force $baseline
+            }
+          }
+
+          $currentEmitter = "windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe"
+          & $currentEmitter --verify test/fixtures/compat/native-durable-state/2.7.0/windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem -LiteralPath $output -Filter *.json |
             Sort-Object Name |
@@ -228,11 +275,12 @@ jobs:
               "$hash  $($_.Name)"
             } | Set-Content -LiteralPath "$output/SHA256SUMS" -Encoding ascii
           @(
-            "serializerCommit=2f91208f0de95b9656b0ce2a28258e70a2920b86"
-            "emitterCommit=$env:GITHUB_SHA"
+            "serializerCommit=$serializerCommit"
+            "overlayCommit=$overlayCommit"
+            "readerCommit=$env:GITHUB_SHA"
             "runnerOS=$env:RUNNER_OS"
             "runnerArch=$env:RUNNER_ARCH"
-            "command=windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe $output"
+            "command=$baselineEmitter $output"
           ) | Set-Content -LiteralPath "$output/PROVENANCE.txt" -Encoding ascii
       - name: Upload baseline Windows durable-state fixtures
         uses: actions/upload-artifact@v4
@@ -1044,6 +1092,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -1081,10 +1131,47 @@ jobs:
           test "$test_count" -gt 0
           mkdir -p reports
           printf 'platform=macos\nsuite=unprivileged-crash-recovery\ntestCount=%s\n' "$test_count" > reports/macos-helper-test-counts.txt
+      - name: Reproduce frozen macOS durable-state fixtures from baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_commit="2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          predecessor_commit="73aa730efbf1384eef9b74d7eb87ee655d81c0b5"
+          overlay_commit="fcd767ccfe9140f0787925f80cceb57553c1170a"
+          baseline="$RUNNER_TEMP/desktop-updater-baseline-macos"
+          predecessor="$RUNNER_TEMP/desktop-updater-predecessor-macos"
+          patch="$RUNNER_TEMP/desktop-updater-baseline-macos-fixture-overlay.patch"
+          output="$RUNNER_TEMP/desktop-updater-baseline-macos-fixtures"
+          predecessor_output="$RUNNER_TEMP/desktop-updater-predecessor-macos-fixtures"
+          fixture="$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/2.7.0/macos"
+          cleanup() {
+            git worktree remove --force "$baseline" >/dev/null 2>&1 || true
+            git worktree remove --force "$predecessor" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$baseline" "$baseline_commit"
+          git diff --binary "$baseline_commit" "$overlay_commit" -- macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/BaselineDurableStateFixtureEmitterTests.swift > "$patch"
+          git -C "$baseline" apply --whitespace=nowarn "$patch"
+          mkdir -p "$output"
+          DESKTOP_UPDATER_DURABLE_FIXTURE_OUTPUT="$output" swift test --package-path "$baseline/macos/install_helper" --filter BaselineDurableStateFixtureEmitterTests/testEmitPreparedBaselineAndPredecessorJournals
+          for name in directory-journal-schema1.json verified-installer-journal-schema2.json; do
+            cmp -- "$output/$name" "$fixture/$name"
+          done
+          # Schema 1 belongs solely to its historical 73aa730 writer below.
+          rm -f "$output/verified-installer-journal-schema1.json"
+          test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 2
+
+          git worktree add --detach "$predecessor" "$predecessor_commit"
+          cp "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/PredecessorSchema1FixtureWriterTests.swift" "$predecessor/macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/"
+          mkdir -p "$predecessor_output"
+          DESKTOP_UPDATER_PREDECESSOR_DURABLE_FIXTURE_OUTPUT="$predecessor_output" swift test --package-path "$predecessor/macos/install_helper" --filter PredecessorSchema1FixtureWriterTests/testEmitPreparedSchema1JournalFromHistoricalWriter
+          cmp -- "$predecessor_output/verified-installer-journal-schema1.json" "$fixture/verified-installer-journal-schema1.json"
+          test "$(find "$predecessor_output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 1
       - name: Verify frozen macOS durable-state fixtures
         env:
           DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT: ${{ github.workspace }}/test/fixtures/compat/native-durable-state/2.7.0/macos
-        run: swift test --package-path macos/install_helper --filter BaselineDurableStateFixtureReaderTests/testPreparedJournalsDecodeAndReencodeByteExactly
+        run: swift test --package-path macos/install_helper --filter BaselineDurableStateFixtureReaderTests
       - name: Run unprivileged macOS install helper smoke
         run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
       - name: Typecheck macOS 10.14 CocoaPods fallback source set
@@ -1781,6 +1868,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -1796,21 +1885,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          output="artifacts/native-durable-state/linux"
+          baseline_commit="2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          overlay_commit="fcd767ccfe9140f0787925f80cceb57553c1170a"
+          baseline="$RUNNER_TEMP/desktop-updater-baseline-linux"
+          baseline_build="$RUNNER_TEMP/desktop-updater-baseline-linux-build"
+          patch="$RUNNER_TEMP/desktop-updater-baseline-linux-fixture-overlay.patch"
+          output="$GITHUB_WORKSPACE/artifacts/native-durable-state/linux"
+          fixture="$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/2.7.0/linux"
+          cleanup() {
+            git worktree remove --force "$baseline" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$baseline" "$baseline_commit"
+          git diff --binary "$baseline_commit" "$overlay_commit" -- linux/native/CMakeLists.txt linux/native/test/helper/native_durable_state_fixture_emitter.cc > "$patch"
+          git -C "$baseline" apply --whitespace=nowarn "$patch"
+          cmake -S "$baseline/linux/native" -B "$baseline_build" -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+          cmake --build "$baseline_build" --target desktop_updater_native_durable_state_fixture_emitter
+
           mkdir -p "$output"
-          linux/native/build/desktop_updater_native_durable_state_fixture_emitter "$output"
-          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify "$output"
-          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify test/fixtures/compat/native-durable-state/2.7.0/linux
+          baseline_emitter="$baseline_build/desktop_updater_native_durable_state_fixture_emitter"
+          "$baseline_emitter" "$output"
+          "$baseline_emitter" --verify "$output"
+          "$baseline_emitter" --verify "$fixture"
+          for frozen in "$fixture"/*.json; do
+            cmp -- "$output/$(basename "$frozen")" "$frozen"
+          done
+          test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 3
+          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify "$fixture"
           (
             cd "$output"
             sha256sum ./*.json | sed 's#  \./#  #' > SHA256SUMS
           )
           {
-            printf 'serializerCommit=%s\n' '2f91208f0de95b9656b0ce2a28258e70a2920b86'
-            printf 'emitterCommit=%s\n' "$GITHUB_SHA"
+            printf 'serializerCommit=%s\n' "$(git -C "$baseline" rev-parse HEAD)"
+            printf 'overlayCommit=%s\n' "$overlay_commit"
+            printf 'readerCommit=%s\n' "$GITHUB_SHA"
             printf 'runnerOS=%s\n' "$RUNNER_OS"
             printf 'runnerArch=%s\n' "$RUNNER_ARCH"
-            printf 'command=%s\n' "linux/native/build/desktop_updater_native_durable_state_fixture_emitter $output"
+            printf 'command=%s\n' "$baseline_emitter $output"
           } > "$output/PROVENANCE.txt"
       - name: Upload baseline Linux durable-state fixtures
         uses: actions/upload-artifact@v4

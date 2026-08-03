@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "linux_recovery_service.h"
 #include "linux_relaunch_service.h"
@@ -59,6 +60,18 @@ class OneShotFault final : public LinuxTransactionFaultInjector {
   bool thrown_ = false;
 };
 
+class ExitAtFault final : public LinuxTransactionFaultInjector {
+ public:
+  explicit ExitAtFault(LinuxTransactionFaultPoint point) : point_(point) {}
+
+  void Hit(LinuxTransactionFaultPoint point) override {
+    if (point == point_) _exit(83);
+  }
+
+ private:
+  LinuxTransactionFaultPoint point_;
+};
+
 class FixedLiveness final : public LinuxProcessLivenessChecker {
  public:
   explicit FixedLiveness(bool alive) : alive_(alive) {}
@@ -70,10 +83,14 @@ class FixedLiveness final : public LinuxProcessLivenessChecker {
 
 class Fixture {
  public:
-  Fixture() {
-    root = std::filesystem::temp_directory_path() /
-           ("desktop-updater-recovery-" + std::to_string(getpid()) + "-" +
-            std::to_string(counter_++));
+  explicit Fixture(std::filesystem::path existing_root = {})
+      : owns_root_(existing_root.empty()) {
+    root = owns_root_
+               ? std::filesystem::temp_directory_path() /
+                     ("desktop-updater-recovery-" +
+                      std::to_string(getpid()) + "-" +
+                      std::to_string(counter_++))
+               : std::move(existing_root);
     target = root / "Example.AppDir";
     stage = root / "Stage.AppDir";
     std::filesystem::create_directories(target);
@@ -82,6 +99,7 @@ class Fixture {
     Write(stage, "new");
   }
   ~Fixture() {
+    if (!owns_root_) return;
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
   }
@@ -112,7 +130,44 @@ class Fixture {
   std::filesystem::path target;
   std::filesystem::path stage;
   FixtureVerifier verifier;
+
+ private:
+  bool owns_root_;
 };
+
+std::filesystem::path FreshProcessTestExecutable() {
+  return std::filesystem::read_symlink("/proc/self/exe");
+}
+
+int RunFreshProcessWorker(const std::string& filter,
+                          const std::filesystem::path& root) {
+  const pid_t child = fork();
+  if (child < 0) return -1;
+  if (child == 0) {
+    if (setenv("DESKTOP_UPDATER_FRESH_RECOVERY_ROOT", root.c_str(), 1) != 0) {
+      _exit(127);
+    }
+    const std::filesystem::path executable = FreshProcessTestExecutable();
+    execl(executable.c_str(), executable.filename().c_str(),
+          ("--gtest_filter=" + filter).c_str(), nullptr);
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -1;
+  return WEXITSTATUS(status);
+}
+
+std::filesystem::path FreshProcessRoot() {
+  return std::filesystem::temp_directory_path() /
+         ("desktop-updater-fresh-recovery-" + std::to_string(getpid()) +
+          "-" + std::to_string(Fixture::counter_++));
+}
+
+std::string ReadFile(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
 
 TEST(LinuxCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
   for (const auto point : LinuxTransactionCrashInjectionPoints()) {
@@ -130,6 +185,68 @@ TEST(LinuxCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
       EXPECT_EQ("new", fixture.Read(fixture.target));
     }
   }
+}
+
+TEST(LinuxCrashRecovery, FreshProcessWriterLeavesPreparedJournal) {
+  const char* root = std::getenv("DESKTOP_UPDATER_FRESH_RECOVERY_ROOT");
+  if (root == nullptr) {
+    GTEST_SKIP() << "run only by the fresh-process recovery orchestrator";
+  }
+
+  Fixture fixture(root);
+  ExitAtFault fault(LinuxTransactionFaultPoint::kAfterPreparedJournalFlush);
+  auto transaction = fixture.Transaction(&fault);
+  transaction->Execute();
+  FAIL() << "prepared-journal crash boundary was not reached";
+}
+
+TEST(LinuxCrashRecovery, FreshProcessReaderResolvesPreparedJournal) {
+  const char* root = std::getenv("DESKTOP_UPDATER_FRESH_RECOVERY_ROOT");
+  if (root == nullptr) {
+    GTEST_SKIP() << "run only by the fresh-process recovery orchestrator";
+  }
+
+  const std::filesystem::path root_path(root);
+  const std::filesystem::path target = root_path / "Example.AppDir";
+  ASSERT_TRUE(std::filesystem::exists(target));
+  FixtureVerifier verifier;
+  FixedLiveness dead(false);
+  LinuxRecoveryService recovery(
+      target, "00000000-0000-4000-8000-000000000010", Payload("new"),
+      verifier, dead);
+  ASSERT_EQ(LinuxRecoveryOutcome::kRecovered, recovery.Recover());
+  EXPECT_EQ("new", ReadFile(target / "version.txt"));
+  std::ofstream(root_path / "fresh-reader-proof.txt", std::ios::binary)
+      << "resolved-without-writer-state\n";
+}
+
+TEST(LinuxCrashRecovery, FreshProcessesRecoverPreparedCrashWithoutReencoding) {
+  const std::filesystem::path root = FreshProcessRoot();
+  struct Cleanup {
+    std::filesystem::path root;
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(root, ignored);
+    }
+  } cleanup{root};
+
+  ASSERT_EQ(83, RunFreshProcessWorker(
+                    "LinuxCrashRecovery.FreshProcessWriterLeavesPreparedJournal",
+                    root));
+  const LinuxTransactionPaths paths = LinuxTransactionPaths::Create(
+      "Example.AppDir", "00000000-0000-4000-8000-000000000010");
+  const std::filesystem::path journal = root / paths.journal_name;
+  ASSERT_TRUE(std::filesystem::exists(journal));
+  const std::string writer_bytes = ReadFile(journal);
+  ASSERT_FALSE(writer_bytes.empty());
+
+  ASSERT_EQ(0, RunFreshProcessWorker(
+                   "LinuxCrashRecovery.FreshProcessReaderResolvesPreparedJournal",
+                   root));
+  EXPECT_EQ("new", ReadFile(root / "Example.AppDir" / "version.txt"));
+  EXPECT_EQ("resolved-without-writer-state\n",
+            ReadFile(root / "fresh-reader-proof.txt"));
+  EXPECT_FALSE(std::filesystem::exists(journal));
 }
 
 TEST(LinuxCrashRecovery, TornJournalIsManualWithoutCleanup) {

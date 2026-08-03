@@ -5,7 +5,10 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "windows_file_transaction.h"
 #include "windows_recovery_service.h"
@@ -50,6 +53,18 @@ class OneShotFault final : public WindowsTransactionFaultInjector {
   bool thrown_ = false;
 };
 
+class ExitAtFault final : public WindowsTransactionFaultInjector {
+ public:
+  explicit ExitAtFault(WindowsTransactionFaultPoint point) : point_(point) {}
+
+  void Hit(WindowsTransactionFaultPoint point) override {
+    if (point == point_) ExitProcess(83);
+  }
+
+ private:
+  WindowsTransactionFaultPoint point_;
+};
+
 class FixedLiveness final : public WindowsProcessLivenessChecker {
  public:
   explicit FixedLiveness(bool alive) : alive_(alive) {}
@@ -61,11 +76,14 @@ class FixedLiveness final : public WindowsProcessLivenessChecker {
 
 class Fixture {
  public:
-  Fixture() {
-    root = std::filesystem::temp_directory_path() /
-           (L"desktop-updater-recovery-" +
-            std::to_wstring(GetCurrentProcessId()) + L"-" +
-            std::to_wstring(GetTickCount64()));
+  explicit Fixture(std::filesystem::path existing_root = {})
+      : owns_root_(existing_root.empty()) {
+    root = owns_root_
+               ? std::filesystem::temp_directory_path() /
+                     (L"desktop-updater-recovery-" +
+                      std::to_wstring(GetCurrentProcessId()) + L"-" +
+                      std::to_wstring(GetTickCount64()))
+               : std::move(existing_root);
     target = root / L"Example.app";
     stage = root / L"Stage.app";
     std::filesystem::create_directories(target);
@@ -74,6 +92,7 @@ class Fixture {
     Write(stage, "new");
   }
   ~Fixture() {
+    if (!owns_root_) return;
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
   }
@@ -118,7 +137,94 @@ class Fixture {
   std::filesystem::path target;
   std::filesystem::path stage;
   FixtureVerifier verifier;
+
+ private:
+  bool owns_root_;
 };
+
+class ScopedEnvironmentVariable {
+ public:
+  explicit ScopedEnvironmentVariable(std::wstring name) : name_(std::move(name)) {
+    const DWORD required = GetEnvironmentVariableW(name_.c_str(), nullptr, 0);
+    if (required == 0) return;
+    previous_.resize(required);
+    const DWORD copied =
+        GetEnvironmentVariableW(name_.c_str(), previous_.data(), required);
+    if (copied == 0 || copied >= required) {
+      throw std::runtime_error("could not read process environment");
+    }
+    previous_.resize(copied);
+    had_value_ = true;
+  }
+
+  ~ScopedEnvironmentVariable() {
+    (void)SetEnvironmentVariableW(name_.c_str(),
+                                  had_value_ ? previous_.c_str() : nullptr);
+  }
+
+  void Set(const std::wstring& value) {
+    if (!SetEnvironmentVariableW(name_.c_str(), value.c_str())) {
+      throw std::runtime_error("could not set process environment");
+    }
+  }
+
+ private:
+  std::wstring name_;
+  std::wstring previous_;
+  bool had_value_ = false;
+};
+
+std::filesystem::path FreshProcessTestExecutable() {
+  std::vector<wchar_t> buffer(32'768);
+  const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
+                                          static_cast<DWORD>(buffer.size()));
+  if (length == 0 || length >= buffer.size()) {
+    throw std::runtime_error("fresh-process test executable is unavailable");
+  }
+  return std::filesystem::path(std::wstring(buffer.data(), length));
+}
+
+int RunFreshProcessWorker(const std::wstring& filter,
+                          const std::filesystem::path& root) {
+  ScopedEnvironmentVariable root_environment(
+      L"DESKTOP_UPDATER_FRESH_RECOVERY_ROOT");
+  root_environment.Set(root.wstring());
+  const std::filesystem::path executable = FreshProcessTestExecutable();
+  std::wstring command_line = L"\"" + executable.wstring() + L"\" " +
+                              L"--gtest_filter=" + filter;
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(executable.c_str(), command_line.data(), nullptr,
+                      nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT, nullptr,
+                      executable.parent_path().c_str(), &startup, &process)) {
+    return -1;
+  }
+  CloseHandle(process.hThread);
+  if (WaitForSingleObject(process.hProcess, 30'000) != WAIT_OBJECT_0) {
+    (void)TerminateProcess(process.hProcess, 124);
+    (void)WaitForSingleObject(process.hProcess, 5'000);
+    CloseHandle(process.hProcess);
+    return -1;
+  }
+  DWORD exit_code = 0;
+  const BOOL has_exit_code = GetExitCodeProcess(process.hProcess, &exit_code);
+  CloseHandle(process.hProcess);
+  return has_exit_code ? static_cast<int>(exit_code) : -1;
+}
+
+std::filesystem::path FreshProcessRoot() {
+  return std::filesystem::temp_directory_path() /
+         (L"desktop-updater-fresh-recovery-" +
+          std::to_wstring(GetCurrentProcessId()) + L"-" +
+          std::to_wstring(GetTickCount64()));
+}
+
+std::string ReadFile(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
 
 TEST(WindowsCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
   for (const auto point : WindowsTransactionCrashInjectionPoints()) {
@@ -139,6 +245,83 @@ TEST(WindowsCrashRecovery, RecoversEveryRenameAndJournalBoundary) {
       EXPECT_EQ("new", fixture.Read(fixture.target));
     }
   }
+}
+
+TEST(WindowsCrashRecovery, FreshProcessWriterLeavesPreparedJournal) {
+  const DWORD required = GetEnvironmentVariableW(
+      L"DESKTOP_UPDATER_FRESH_RECOVERY_ROOT", nullptr, 0);
+  if (required == 0) {
+    GTEST_SKIP() << "run only by the fresh-process recovery orchestrator";
+  }
+  std::wstring root(required, L'\0');
+  const DWORD copied = GetEnvironmentVariableW(
+      L"DESKTOP_UPDATER_FRESH_RECOVERY_ROOT", root.data(), required);
+  ASSERT_GT(copied, 0U);
+  ASSERT_LT(copied, required);
+  root.resize(copied);
+
+  Fixture fixture{std::filesystem::path(root)};
+  ExitAtFault fault(WindowsTransactionFaultPoint::kAfterPreparedJournalFlush);
+  auto transaction = fixture.Transaction(&fault);
+  transaction->Execute();
+  FAIL() << "prepared-journal crash boundary was not reached";
+}
+
+TEST(WindowsCrashRecovery, FreshProcessReaderResolvesPreparedJournal) {
+  const DWORD required = GetEnvironmentVariableW(
+      L"DESKTOP_UPDATER_FRESH_RECOVERY_ROOT", nullptr, 0);
+  if (required == 0) {
+    GTEST_SKIP() << "run only by the fresh-process recovery orchestrator";
+  }
+  std::wstring root(required, L'\0');
+  const DWORD copied = GetEnvironmentVariableW(
+      L"DESKTOP_UPDATER_FRESH_RECOVERY_ROOT", root.data(), required);
+  ASSERT_GT(copied, 0U);
+  ASSERT_LT(copied, required);
+  root.resize(copied);
+
+  const std::filesystem::path root_path(root);
+  const std::filesystem::path target = root_path / L"Example.app";
+  ASSERT_TRUE(std::filesystem::exists(target));
+  FixtureVerifier verifier;
+  FixedLiveness dead(false);
+  WindowsRecoveryService recovery(
+      target, "00000000-0000-4000-8000-000000000008", Payload("new"),
+      verifier, dead);
+  ASSERT_EQ(WindowsRecoveryOutcome::kRecovered, recovery.Recover());
+  EXPECT_EQ("new", ReadFile(target / L"version.txt"));
+  std::ofstream(root_path / L"fresh-reader-proof.txt", std::ios::binary)
+      << "resolved-without-writer-state\n";
+}
+
+TEST(WindowsCrashRecovery,
+     FreshProcessesRecoverPreparedCrashWithoutReencoding) {
+  const std::filesystem::path root = FreshProcessRoot();
+  struct Cleanup {
+    std::filesystem::path root;
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(root, ignored);
+    }
+  } cleanup{root};
+
+  ASSERT_EQ(83, RunFreshProcessWorker(
+                    L"WindowsCrashRecovery.FreshProcessWriterLeavesPreparedJournal",
+                    root));
+  const WindowsTransactionPaths paths = WindowsTransactionPaths::Create(
+      L"Example.app", "00000000-0000-4000-8000-000000000008");
+  const std::filesystem::path journal = root / paths.journal_name;
+  ASSERT_TRUE(std::filesystem::exists(journal));
+  const std::string writer_bytes = ReadFile(journal);
+  ASSERT_FALSE(writer_bytes.empty());
+
+  ASSERT_EQ(0, RunFreshProcessWorker(
+                   L"WindowsCrashRecovery.FreshProcessReaderResolvesPreparedJournal",
+                   root));
+  EXPECT_EQ("new", ReadFile(root / L"Example.app" / L"version.txt"));
+  EXPECT_EQ("resolved-without-writer-state\n",
+            ReadFile(root / L"fresh-reader-proof.txt"));
+  EXPECT_FALSE(std::filesystem::exists(journal));
 }
 
 TEST(WindowsCrashRecovery,

@@ -111,20 +111,6 @@ void main() {
         root,
       ),
       _CommandExpectation(
-        "Linux CMake legacy scheduler source",
-        "ScheduleInstallAndRelaunch",
-        "clang++",
-        <String>[
-          "-std=c++17",
-          "-Werror",
-          "-I",
-          path.join(root, "linux/native/include"),
-          "-fsyntax-only",
-          path.join(root, "test/fixtures/v3_removed_api/linux-cmake/main.cpp"),
-        ],
-        root,
-      ),
-      _CommandExpectation(
         "Swift unsigned install request",
         "scheduleInstallAndRelaunch",
         "swift",
@@ -162,6 +148,23 @@ void main() {
         failures.add(_reason(command.label, result));
       }
     }
+    final linuxCmake = await _buildLinuxCmakeConsumer(root);
+    if (Platform.isLinux) {
+      expect(
+        linuxCmake,
+        isNotNull,
+        reason: "Linux contract validation requires the CMake compiler path.",
+      );
+    }
+    if (linuxCmake != null &&
+        (linuxCmake.exitCode == 0 ||
+            !linuxCmake.output.contains("ScheduleInstallAndRelaunch"))) {
+      failures.add(
+        "Linux CMake legacy scheduler consumer must be rejected by the real "
+                "CMake compiler path.\n" +
+            linuxCmake.output,
+      );
+    }
     expect(failures, isEmpty, reason: failures.join("\n\n"));
   });
 }
@@ -183,6 +186,54 @@ String _output(ProcessResult result) => "${result.stdout}\n${result.stderr}";
 
 String _reason(String label, ProcessResult result) {
   return "$label must be rejected by the real compiler.\n${_output(result)}";
+}
+
+Future<_CmakeResult?> _buildLinuxCmakeConsumer(String root) async {
+  try {
+    final availability = await Process.run(
+      "cmake",
+      const <String>["--version"],
+      runInShell: false,
+    );
+    if (availability.exitCode != 0) {
+      return null;
+    }
+  } on ProcessException {
+    return null;
+  }
+
+  final build = await Directory.systemTemp.createTemp(
+    "desktop-updater-v3-removed-linux-cmake-",
+  );
+  try {
+    final fixture = path.join(root, "test/fixtures/v3_removed_api/linux-cmake");
+    final configure = await Process.run(
+      "cmake",
+      <String>[
+        "-S",
+        fixture,
+        "-B",
+        build.path,
+        "-DDESKTOP_UPDATER_SOURCE_ROOT=$root",
+      ],
+      runInShell: false,
+    );
+    if (configure.exitCode != 0) {
+      return _CmakeResult(configure.exitCode, _output(configure));
+    }
+
+    final compile = await Process.run(
+      "cmake",
+      <String>["--build", build.path],
+      runInShell: false,
+    );
+    return _CmakeResult(
+      compile.exitCode,
+      _output(configure) + "\n" + _output(compile),
+    );
+  } finally {
+    await build.delete(recursive: true);
+  }
 }
 
 final class _AnalyzerExpectation {
@@ -207,4 +258,11 @@ final class _CommandExpectation {
   final String executable;
   final List<String> arguments;
   final String workingDirectory;
+}
+
+final class _CmakeResult {
+  const _CmakeResult(this.exitCode, this.output);
+
+  final int exitCode;
+  final String output;
 }

@@ -498,7 +498,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_compile_definitions(windows_protected_helper_locator
     PRIVATE
       UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
-      _WIN32_WINNT=0x0A00)
+      _WIN32_WINNT=0x0A00
+      DESKTOP_UPDATER_DURABLE_STATE_FIXTURE_DIRECTORY=\"${CMAKE_CURRENT_SOURCE_DIR}/../../test/fixtures/compat/native-durable-state/2.7.0/windows\")
   if(MSVC)
     target_compile_options(windows_protected_helper_locator PRIVATE /utf-8)
   endif()

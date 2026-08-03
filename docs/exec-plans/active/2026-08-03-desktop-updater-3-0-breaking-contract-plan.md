@@ -2215,9 +2215,23 @@ without rerunning the ladder.
   target, emitted, uploaded, and SHA-verified matching Windows and Linux
   baseline serializer artifacts. All eleven target-host bytes and provenance
   now live in the frozen fixture tree with a manifest.
-- [ ] Complete Task 1 contract tests and durable design review. The fixture
-  reader gates are added to macOS, Windows, and Linux CI; run them against the
-  integration commit and resolve independent-review findings before Task 2.
+- [x] (2026-08-03) Implemented the Task 1 review-correction set without a
+  production API change: CI reconstructs baseline Windows/Linux and macOS
+  schema-2 bytes from an isolated baseline worktree and fixed test-emitter
+  overlay, and reproduces macOS schema 1 from its actual `73aa730` predecessor
+  worktree; Linux legacy compilation uses CMake configure/build; macOS frozen
+  readers run in a separate XCTest process; Windows/Linux crash writers and
+  readers are separate OS processes; and the frozen protected Windows endpoint
+  is loaded from a fresh process under the production registry ACL. Local
+  macOS reader/crash/predecessor-writer and manifest checks pass; target-host
+  Windows/Linux compilation is pending exact CI.
+- [x] (2026-08-03) Completed a follow-up independent review of the correction
+  set. It found and resolved the reader-state mutation and schema-1 historical
+  provenance gaps; no remaining high or medium finding blocks the target-host
+  CI gate.
+- [ ] Complete Task 1 contract tests and durable design review. Run the
+  correction set against its integration commit in target-host CI and resolve
+  any follow-up independent-review finding before Task 2.
 - [ ] Complete Task 2 Dart/API/publishing migration.
 - [ ] Complete Task 3 macOS helper and SwiftPM migration.
 - [ ] Complete Task 4 Windows C ABI/.NET/helper/runtime migration.
@@ -2277,6 +2291,22 @@ without rerunning the ladder.
   that as transport metadata only: normalize its line endings for manifest
   verification, then freeze the original JSON bytes (which have no trailing
   newline) and record ordinary-LF repository hashes.
+- The first integration workflow reconstructed its durable fixtures with the
+  current checked-out serializer while reporting a hard-coded baseline SHA.
+  That labels a current output as predecessor evidence even when bytes match;
+  the workflow must build the baseline source in a detached worktree instead.
+- Strict decode/re-encode proves byte compatibility but not process-isolated
+  recovery. The strengthened tests explicitly kill a prepared-state writer and
+  start an independent reader process; macOS also starts a fresh XCTest reader
+  for frozen bytes.
+- The protected Windows locator can be exercised without mutating real HKLM:
+  a per-test HKCU sandbox is substituted only inside the test processes with
+  `RegOverridePredefKey`, while the production registrar still creates and the
+  loader still verifies the exact protected ACL.
+- The current schema-2 journal type cannot prove the named schema-1 predecessor
+  writer merely by manually omitting later fields. The compatibility emitter
+  must compile against the actual `73aa730` source in an isolated worktree and
+  compare that process's raw output to the fixture.
 
 ## Decision Log
 
@@ -2337,18 +2367,31 @@ without rerunning the ladder.
   The committed Windows/Linux bytes come from exact-head Actions run
   `30794201039`, baseline serializer `2f91208`, and emitter
   `fcd767c`; local macOS cannot substitute for either target host.
+- **2026-08-03 — Reproduce fixture provenance from a detached baseline.**
+  Current CI builds a worktree pinned to `2f91208` plus only the fixed
+  `fcd767c` test-emitter overlay, compares its raw output to the committed
+  files, and records separate serializer, overlay, and reader SHAs.
+- **2026-08-03 — Treat fresh-process recovery and locator lookup as executable
+  proof.** Prepared-state writer/reader tests cannot pass state in memory, and
+  the protected-locator test writes frozen bytes directly after the registrar
+  applies its ACL, then proves a fresh process reads both bindings without
+  mutation.
+- **2026-08-03 — Reproduce schema 1 from the historical writer.** A test-only
+  emitter is copied only into the detached `73aa730` worktree and constructs
+  that checkout's `MacVerifiedInstallerJournal`; current schema-2 source never
+  generates evidence for schema 1.
 
 ## Outcomes & Retrospective
 
 Task 1 is in progress. The repository now has red 3.0 contracts, frozen ABI
 inputs, macOS baseline journals, and all eleven target-host durable-state
 bytes with exact hashes and provenance. The baseline ABI probe and macOS
-emitter/reader checks pass locally; the 3.0 contracts are deliberately red on
-baseline 2.7. Exact-head CI compiled the corrected Windows emitter and uploaded
-the matching Windows/Linux artifacts. The integration commit adds fresh-process
-reader gates on every native platform; it still needs its own CI run and an
-independent review. No production implementation, release state, VM, or live
-artifact was changed.
+emitter/reader/crash checks pass locally; the 3.0 contracts are deliberately
+red on baseline 2.7. The correction set makes baseline provenance reproducible
+from detached baseline and named-predecessor writer worktrees and adds
+process-isolated recovery/locator evidence; it still needs target-host CI and
+the follow-up independent review. No production implementation, release state,
+VM, or live artifact was changed.
 On completion, record the final diff, versions, focused/full/native/VM/CI
 evidence, external review findings, unresolved manual gates, release decision,
 and any contract deviation here. A deviation requires a dated Decision Log

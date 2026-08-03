@@ -4,7 +4,7 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class BaselineDurableStateFixtureEmitterTests: XCTestCase {
-    func testEmitPreparedBaselineAndPredecessorJournals() throws {
+    func testEmitPreparedBaselineJournals() throws {
         guard let outputPath = ProcessInfo.processInfo.environment[
             "DESKTOP_UPDATER_DURABLE_FIXTURE_OUTPUT"
         ] else {
@@ -29,13 +29,6 @@ final class BaselineDurableStateFixtureEmitterTests: XCTestCase {
         try NativeStrictJSON.canonicalize(encoder.encode(schema2)).write(
             to: output.appendingPathComponent(
                 "verified-installer-journal-schema2.json"
-            ),
-            options: .atomic
-        )
-        let schema1 = LegacyMacVerifiedInstallerJournalV1(schema2)
-        try NativeStrictJSON.canonicalize(encoder.encode(schema1)).write(
-            to: output.appendingPathComponent(
-                "verified-installer-journal-schema1.json"
             ),
             options: .atomic
         )
@@ -149,77 +142,55 @@ final class BaselineDurableStateFixtureReaderTests: XCTestCase {
             )
         }
     }
-}
 
-// This test-only writer is the exact schema-1 Codable shape from
-// 73aa730efbf1384eef9b74d7eb87ee655d81c0b5. It intentionally omits the four
-// source-installer-stage fields introduced by schema 2 in 96cc4ecbb009d5be5a50adcbeeedf8fae2dedfa4.
-private struct LegacyMacVerifiedInstallerJournalV1: Codable {
-    let schemaVersion: Int
-    let transactionID: String
-    let ownerProcessIdentifier: Int32
-    let ownerProcessStartIdentity: String
-    let policyID: String
-    let policySHA256: String
-    let targetName: String
-    let parentIdentity: MacFileIdentity
-    let targetIdentity: MacFileIdentity
-    let installerStageName: String
-    let installerStageParentPath: String
-    let installerStageParentIdentity: MacFileIdentity
-    let installerStageIdentity: MacFileIdentity
-    let installerPath: String
-    let installerIdentity: MacFileIdentity
-    let packageIdentifier: String
-    let expectedVersion: String
-    let expectedBuildNumber: Int64
-    let designatedRequirement: String
-    let artifactSHA256: String
-    let artifactLength: Int64
-    let expectedPackageIdentifiers: [String]
-    let expectedReceiptVersions: [String: String]
-    let expectedExecutableSHA256: String
-    let expectedBundleTreeSHA256: String
-    let descriptorSHA256: String
-    let provenanceSHA256: String
-    let reservationJournalSHA256: String
-    let providerTransactionIdentity: String
-    let managerProcessIdentifier: Int32
-    let managerProcessStartIdentity: String
-    let state: MacVerifiedInstallerTransactionState
+    func testPreparedJournalsReadByFreshProcessWithoutMutation() throws {
+        guard let inputPath = ProcessInfo.processInfo.environment[
+            "DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"
+        ] else {
+            throw XCTSkip("fixture input is requested only by the Task 1 harness")
+        }
+        let input = URL(fileURLWithPath: inputPath, isDirectory: true)
+        let names = [
+            "directory-journal-schema1.json",
+            "verified-installer-journal-schema1.json",
+            "verified-installer-journal-schema2.json",
+        ]
+        let before = try Dictionary(
+            uniqueKeysWithValues: names.map { name in
+                (name, try Data(contentsOf: input.appendingPathComponent(name)))
+            }
+        )
 
-    init(_ value: MacVerifiedInstallerJournal) {
-        schemaVersion = 1
-        transactionID = value.transactionID
-        ownerProcessIdentifier = value.ownerProcessIdentifier
-        ownerProcessStartIdentity = value.ownerProcessStartIdentity
-        policyID = value.policyID
-        policySHA256 = value.policySHA256
-        targetName = value.targetName
-        parentIdentity = value.parentIdentity
-        targetIdentity = value.targetIdentity
-        installerStageName = value.installerStageName
-        installerStageParentPath = value.installerStageParentPath
-        installerStageParentIdentity = value.installerStageParentIdentity
-        installerStageIdentity = value.installerStageIdentity
-        installerPath = value.installerPath
-        installerIdentity = value.installerIdentity
-        packageIdentifier = value.packageIdentifier
-        expectedVersion = value.expectedVersion
-        expectedBuildNumber = value.expectedBuildNumber
-        designatedRequirement = value.designatedRequirement
-        artifactSHA256 = value.artifactSHA256
-        artifactLength = value.artifactLength
-        expectedPackageIdentifiers = value.expectedPackageIdentifiers
-        expectedReceiptVersions = value.expectedReceiptVersions
-        expectedExecutableSHA256 = value.expectedExecutableSHA256
-        expectedBundleTreeSHA256 = value.expectedBundleTreeSHA256
-        descriptorSHA256 = value.descriptorSHA256
-        provenanceSHA256 = value.provenanceSHA256
-        reservationJournalSHA256 = value.reservationJournalSHA256
-        providerTransactionIdentity = value.providerTransactionIdentity
-        managerProcessIdentifier = value.managerProcessIdentifier
-        managerProcessStartIdentity = value.managerProcessStartIdentity
-        state = value.state
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = [
+            "xctest", "-XCTest",
+            "DesktopUpdaterInstallHelperTests."
+                + "BaselineDurableStateFixtureReaderTests/"
+                + "testPreparedJournalsDecodeAndReencodeByteExactly",
+            Bundle(for: BaselineDurableStateFixtureReaderTests.self)
+                .bundleURL.path,
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT"] = input.path
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = output
+
+        try process.run()
+        process.waitUntilExit()
+        let processOutput = String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        )
+        XCTAssertEqual(process.terminationStatus, 0, processOutput)
+        for name in names {
+            XCTAssertEqual(
+                try Data(contentsOf: input.appendingPathComponent(name)),
+                before[name],
+                "fresh reader mutated \(name)"
+            )
+        }
     }
 }
