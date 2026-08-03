@@ -226,3 +226,66 @@ flutter test integration_test/plugin_integration_test.dart -d windows --name "fo
 flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
 xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"
 ```
+
+## Fix round 3 — forged raw MethodChannel target-host boundary proof tightened
+
+Implementation changes:
+
+- Replaced the empty/invalid-stage forged payload fixture with a real integration-test fixture that creates an updater-owned staging directory, staged executable tree, platform release manifest, stage provenance marker, and install identity marker before dispatching a raw `MethodChannel("desktop_updater").invokeMethod("installUpdate", forgedRawMap)`.
+- The fixture signs `.desktop_updater_release_manifest.json` with `ReleaseDescriptorSigner` and records the stage provenance descriptor SHA-256 from the final signed canonical descriptor bytes.
+- The forged map now keeps valid stage/provenance/descriptor/artifact evidence and forges the binding that native code must reject:
+  - Windows: valid staged evidence plus a forged `executableRelativePath` under the install root, expecting `Windows install target does not match the running app.`
+  - macOS: valid staged app/provenance evidence with a staged package identity that differs from the running bundle, expecting `Stage provenance is not bound to the install request.`
+  - Linux: valid staged evidence with a forged expected package identity, expecting `Linux stage provenance package identity changed.`
+- Removed only the prior inadequate forged-proof native tests: the Windows invalid-stage `HandleMethodCall` assertion, the Linux direct `ValidateInstallRequest` forged proof, and the macOS SwiftPM empty-stage proof. Their coverage is replaced by the single real example integration MethodChannel boundary test wired into all applicable target-host lanes.
+- CI target-host commands:
+  - Windows: `flutter test integration_test/plugin_integration_test.dart -d windows --name "forged raw MethodChannel payload fails native validation"`
+  - macOS: `flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"`
+  - Linux: `xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"`
+- Scope guard: no production native ABI/API files are changed in this fix round; the diff is limited to integration tests, native test cleanup, CI workflow wiring, and this report.
+
+Exact local verification commands and output:
+
+```text
+$ dart format --output=none --set-exit-if-changed example/integration_test/plugin_integration_test.dart
+Formatted 1 file (0 changed) in 0.00 seconds.
+```
+
+```text
+$ flutter test --no-pub --reporter compact test/update_client_security_test.dart test/updater_controller_test.dart test/update_recovery_test.dart test/desktop_updater_test.dart test/desktop_updater_method_channel_test.dart test/release_cli/upload/custom_command_upload_provider_test.dart test/release_cli/release_publisher_build_test.dart
+00:03 +68: recovery marker survives transport loss and unauthenticated status
+00:03 +68: recovery marker clears only after authenticated terminal evidence
+00:03 +69: recovery marker clears only after authenticated terminal evidence
+00:03 +69: All tests passed!
+```
+
+```text
+$ flutter analyze --no-fatal-infos
+Analyzing flutter_desktop_updater...
+542 issues found. (ran in 2.4s)
+Exit code: 0. All diagnostics were info-level pre-existing style/API-doc diagnostics; no warnings or errors.
+```
+
+```text
+$ ruby -e 'require "yaml"; YAML.load_file(".github/workflows/desktop-updater-ci.yml"); puts ".github/workflows/desktop-updater-ci.yml: OK"'
+.github/workflows/desktop-updater-ci.yml: OK
+```
+
+```text
+$ git diff --check
+Exit code: 0. No whitespace errors.
+```
+
+Local target-host attempt:
+
+```text
+$ flutter test --no-pub integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
+00:00 +0: loading /Users/marlonjd/.codex/worktrees/f828/flutter_desktop_updater/example/integration_test/plugin_integration_test.dart
+Adding Swift Package Manager integration...                        755ms
+Building macOS application...
+/Users/marlonjd/.codex/worktrees/f828/flutter_desktop_updater/example/macos/Runner.xcodeproj: error: No signing certificate "Mac Development" found: No "Mac Development" signing certificate matching team ID "UPK4SC93AN" with a private key was found. (in target 'Runner' from project 'Runner')
+** BUILD FAILED **
+00:00 +0 -1: Some tests failed.
+```
+
+The local macOS integration run is blocked before test execution by this host's missing Mac Development signing certificate. The exact target-host command is wired into CI for macOS, and corresponding Windows/Linux target-host commands are wired into their lanes. Their pass/fail output must be taken from the next pushed workflow run; no direct helper calls or source scans are used as the Task 2 forged-payload proof.

@@ -961,10 +961,6 @@ jobs:
           if (($output -join "`n") -match "No tests were found") {
             throw "Flutter Windows Release CTest registered zero tests."
           }
-      - name: Assert forged raw MethodChannel payload fails Windows validation
-        working-directory: example
-        shell: pwsh
-        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release -R ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation --output-on-failure
       - name: Assert forged raw MethodChannel payload fails Windows plugin boundary
         working-directory: example
         run: flutter test integration_test/plugin_integration_test.dart -d windows --name "forged raw MethodChannel payload fails native validation"
@@ -1243,8 +1239,6 @@ jobs:
         run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
       - name: Run DesktopUpdaterKit SwiftPM tests
         run: swift test --package-path .
-      - name: Assert forged raw MethodChannel payload fails macOS validation
-        run: swift test --package-path . --filter DesktopUpdaterSwiftPMTests/testForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
       - name: macOS native runtime ZIP package and unsigned rejection smoke
@@ -2427,9 +2421,6 @@ jobs:
             echo "Linux Flutter release CTest registered zero tests"
             exit 1
           fi
-      - name: Assert forged raw MethodChannel payload fails Linux validation
-        working-directory: example
-        run: ctest --test-dir build/linux/x64/release -R ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation --output-on-failure
       - name: Assert forged raw MethodChannel payload fails Linux plugin boundary
         working-directory: example
         run: xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"

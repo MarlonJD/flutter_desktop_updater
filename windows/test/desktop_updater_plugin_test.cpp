@@ -101,45 +101,6 @@ TEST(DesktopUpdaterPlugin, InnoUninstallArtifactsAreInstallerOwnedFiles) {
   EXPECT_FALSE(native::IsInstallerOwnedWindowsFile(L""));
 }
 
-TEST(DesktopUpdaterPlugin,
-     ForgedRawMethodChannelPayloadFailsStageDescriptorAndTargetValidation) {
-  DesktopUpdaterPlugin plugin;
-  EncodableMap arguments;
-  arguments[EncodableValue("stagingPath")] =
-      EncodableValue("C:\\desktop_updater_missing_forged_stage");
-  arguments[EncodableValue("installRoot")] = EncodableValue("C:\\Windows");
-  arguments[EncodableValue("executableRelativePath")] =
-      EncodableValue("System32\\notepad.exe");
-  arguments[EncodableValue("packageId")] =
-      EncodableValue("com.example.forged");
-  arguments[EncodableValue("stageProvenanceSha256")] =
-      EncodableValue(std::string(64, 'f'));
-  arguments[EncodableValue("expectedArtifactSha256")] =
-      EncodableValue(std::string(64, 'a'));
-  arguments[EncodableValue("innoRequiresElevation")] =
-      EncodableValue("never");
-  arguments[EncodableValue("transactionId")] =
-      EncodableValue("123e4567-e89b-42d3-a456-426614174000");
-
-  std::string error_code;
-  std::string error_message;
-  plugin.HandleMethodCall(
-      MethodCall("installUpdate",
-                 std::make_unique<EncodableValue>(arguments)),
-      std::make_unique<MethodResultFunctions<>>(
-          nullptr,
-          [&error_code, &error_message](
-              const std::string& code, const std::string& message,
-              const EncodableValue* details) {
-            error_code = code;
-            error_message = message;
-          },
-          nullptr));
-
-  EXPECT_EQ(error_code, "InstallError");
-  EXPECT_NE(error_message.find("Staged update"), std::string::npos);
-}
-
 TEST(DesktopUpdaterPlugin, ProgramFilesInstallDirectoryIsProtected) {
   const std::vector<std::wstring> protected_roots = {
       L"C:\\Program Files",
