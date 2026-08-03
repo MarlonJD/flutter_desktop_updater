@@ -15,44 +15,37 @@ if CommandLine.arguments.count == 3,
     }
 }
 
-if CommandLine.arguments.count == 7,
-   CommandLine.arguments[1] == "--schedule"
+if CommandLine.arguments.count == 8,
+   CommandLine.arguments[1] == "--prepare"
 {
-    let stagingParent = URL(fileURLWithPath: CommandLine.arguments[2])
-    let verifiedApp = URL(fileURLWithPath: CommandLine.arguments[3])
-    let packageID = CommandLine.arguments[4]
-    let descriptorSHA256 = CommandLine.arguments[5]
-    let artifactSHA256 = CommandLine.arguments[6]
-    let stageRoot = try StageProvenance.createOwnedStage(parent: stagingParent)
-    let stagedApp = stageRoot.appendingPathComponent(verifiedApp.lastPathComponent)
-    try FileManager.default.copyItem(at: verifiedApp, to: stagedApp)
-    let nonce = stageRoot.lastPathComponent.replacingOccurrences(
-        of: updaterOwnedStagePrefix,
-        with: ""
-    )
-    let provenance = try StageProvenance.write(
+    let transactionID = CommandLine.arguments[2]
+    let stageRoot = URL(fileURLWithPath: CommandLine.arguments[3])
+    let stagedPath = URL(fileURLWithPath: CommandLine.arguments[4])
+    let packageID = CommandLine.arguments[5]
+    let keyID = CommandLine.arguments[6]
+    guard let publicKey = Data(base64Encoded: CommandLine.arguments[7]) else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    let verifiedStage = try MacVerifiedStage.loadAndVerify(
+        stagedPath: stagedPath,
         stageRoot: stageRoot,
-        nonce: nonce,
-        packageID: packageID,
-        descriptorSHA256: descriptorSHA256,
-        artifactSHA256: artifactSHA256
+        expectedPackageID: packageID,
+        trustedReleasePublicKeys: [keyID: publicKey]
     )
-    let verifiedStage = MacVerifiedStage(
-        stagedPath: stagedApp,
-        stageRoot: stageRoot,
-        provenance: provenance,
-        artifactKind: "zip"
+    let helper = MacInstallHelper()
+    let reservation = try helper.prepareInstall(
+        MacInstallRequest(verifiedStage: verifiedStage),
+        transactionID: transactionID
     )
-    let request = MacInstallRequest(
-        verifiedStage: verifiedStage,
-        allowUnsignedUpdates: false,
-        diagnosticsLogPath: nil
-    )
-    try MacInstallHelper().scheduleInstallAndRelaunch(request)
+    _ = try helper.commitAfterExit(reservation)
 }
 
 if CommandLine.arguments.contains("--help") {
-    print("DesktopUpdaterConsumer [--recover TRANSACTION_ID]")
+    print(
+        "DesktopUpdaterConsumer [--recover TRANSACTION_ID] " +
+            "[--prepare TRANSACTION_ID STAGE_ROOT STAGED_PATH " +
+            "PACKAGE_ID KEY_ID PUBLIC_KEY_BASE64]"
+    )
 }
 
 precondition(!DesktopUpdaterVersion.string.isEmpty)

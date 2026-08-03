@@ -2,18 +2,21 @@ import DesktopUpdaterKit
 import XCTest
 
 final class DesktopUpdaterKitPublicAPITests: XCTestCase {
-    func testPublicValueTypesHaveExternalInitializers() {
-        let request = MacInstallRequest(
-            stagingPath: "/tmp/Example.app",
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: "/tmp/desktop_updater.jsonl"
-        )
+    func testPublicInstallSurfaceRequiresVerifiedStageAndExplicitTransaction() {
         let diagnosticsEvent = MacDiagnosticEvent(
             timestamp: "2026-07-10T12:00:00Z",
             event: MacHelperEvent.helperScheduled.rawValue
         )
         let helper = MacInstallHelper()
-        let prepareInstall: (MacInstallRequest) throws
+        let loadAndVerify: (
+            URL,
+            URL,
+            String,
+            [String: Data]
+        ) throws -> MacVerifiedStage = MacVerifiedStage.loadAndVerify
+        let makeRequest: (MacVerifiedStage) -> MacInstallRequest =
+            MacInstallRequest.init(verifiedStage:)
+        let prepareInstall: (MacInstallRequest, String) throws
             -> MacInstallReservation = helper.prepareInstall
         let commitAfterExit: (MacInstallReservation) throws
             -> InstallTransactionStatus = helper.commitAfterExit
@@ -35,17 +38,12 @@ final class DesktopUpdaterKitPublicAPITests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(request.stagingPath, "/tmp/Example.app")
-        XCTAssertFalse(request.allowUnsignedUpdates)
-        XCTAssertFalse(
-            Mirror(reflecting: request).children.contains {
-                $0.label == "currentProcessIdentifier" || $0.label == "bundlePath"
-            }
-        )
         XCTAssertEqual(diagnosticsEvent.event, "helper scheduled")
         XCTAssertEqual(status.state, .prepared)
         XCTAssertEqual(status.resultCode, .accepted)
         XCTAssertNotNil(helper)
+        XCTAssertNotNil(loadAndVerify)
+        XCTAssertNotNil(makeRequest)
         XCTAssertNotNil(prepareInstall)
         XCTAssertNotNil(commitAfterExit)
         XCTAssertNotNil(cancelReservation)

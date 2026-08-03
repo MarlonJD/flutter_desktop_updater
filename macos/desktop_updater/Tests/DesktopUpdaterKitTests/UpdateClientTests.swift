@@ -4,6 +4,9 @@ import XCTest
 
 @testable import DesktopUpdaterKit
 
+private let lifecycleTransactionID =
+    "00000000-0000-4000-8000-000000000099"
+
 final class UpdateClientTests: XCTestCase {
     func testForgedCheckIsRejectedBeforeDownload() async throws {
         let fixture = try LifecycleFixture()
@@ -91,10 +94,9 @@ final class UpdateClientTests: XCTestCase {
         )
 
         XCTAssertEqual(failed.runtimeOutcome, .stagingFailure)
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )) { error in
             XCTAssertEqual((error as? RuntimeError)?.runtimeOutcome,
                            .installHandoffFailure)
@@ -110,16 +112,14 @@ final class UpdateClientTests: XCTestCase {
         let check = await client.checkForUpdate()
         let staged = try await fixture.stage(check, with: client, name: "once")
 
-        try client.installAndRelaunch(
+        try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )
 
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )) { error in
             XCTAssertEqual((error as? RuntimeError)?.runtimeOutcome,
                            .installHandoffFailure)
@@ -138,10 +138,9 @@ final class UpdateClientTests: XCTestCase {
             with: client,
             name: "check-after-handoff"
         )
-        try client.installAndRelaunch(
+        try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )
         let requestCount = fixture.transport.requestedURLs.count
 
@@ -160,15 +159,13 @@ final class UpdateClientTests: XCTestCase {
         let check = await client.checkForUpdate()
         let staged = try await fixture.stage(check, with: client, name: "retry")
 
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         ))
-        try client.installAndRelaunch(
+        try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )
 
         XCTAssertEqual(recorder.invocationCount, 2)
@@ -190,10 +187,9 @@ final class UpdateClientTests: XCTestCase {
             name: "helper-approval"
         )
 
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )) { error in
             guard case let RuntimeError.diagnostic(outcome, diagnostic) = error
             else {
@@ -277,10 +273,9 @@ final class UpdateClientTests: XCTestCase {
         let earlierResult = await earlier.value
 
         XCTAssertEqual(earlierResult.runtimeOutcome, .invalidDescriptor)
-        try client.installAndRelaunch(
+        try client.prepareInstall(
             later,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         )
         XCTAssertEqual(recorder.invocationCount, 1)
     }
@@ -301,10 +296,9 @@ final class UpdateClientTests: XCTestCase {
         let failedCheck = await client.checkForUpdate()
 
         XCTAssertEqual(failedCheck.outcome, .downloadFailure)
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         ))
         XCTAssertEqual(recorder.invocationCount, 0)
     }
@@ -330,10 +324,9 @@ final class UpdateClientTests: XCTestCase {
             DispatchQueue.global().async {
                 start.arriveAndWait()
                 do {
-                    try install.client.installAndRelaunch(
+                    try install.client.prepareInstall(
                         install.staged,
-                        diagnosticsLogPath: nil,
-                        allowUnsignedUpdates: true
+                        transactionID: lifecycleTransactionID
                     )
                     results.append(nil)
                 } catch {
@@ -377,10 +370,9 @@ final class UpdateClientTests: XCTestCase {
         group.enter()
         DispatchQueue.global().async {
             do {
-                try install.client.installAndRelaunch(
+                try install.client.prepareInstall(
                     install.staged,
-                    diagnosticsLogPath: nil,
-                    allowUnsignedUpdates: true
+                    transactionID: lifecycleTransactionID
                 )
                 results.append(nil)
             } catch {
@@ -397,10 +389,9 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
         XCTAssertEqual(results.values, [.installHandoffFailure])
         schedulerGate.release()
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         ))
         XCTAssertEqual(recorder.invocationCount, 1)
     }
@@ -426,10 +417,9 @@ final class UpdateClientTests: XCTestCase {
         group.enter()
         DispatchQueue.global().async {
             do {
-                try install.client.installAndRelaunch(
+                try install.client.prepareInstall(
                     install.staged,
-                    diagnosticsLogPath: nil,
-                    allowUnsignedUpdates: true
+                    transactionID: lifecycleTransactionID
                 )
                 results.append(nil)
             } catch {
@@ -454,10 +444,9 @@ final class UpdateClientTests: XCTestCase {
         XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
         XCTAssertEqual(results.values, [.installHandoffFailure])
         schedulerGate.release()
-        XCTAssertThrowsError(try client.installAndRelaunch(
+        XCTAssertThrowsError(try client.prepareInstall(
             staged,
-            diagnosticsLogPath: nil,
-            allowUnsignedUpdates: true
+            transactionID: lifecycleTransactionID
         ))
         XCTAssertEqual(recorder.invocationCount, 1)
     }
@@ -991,11 +980,10 @@ private final class InstallRecorder {
         return count
     }
 
-    func schedule(
+    func prepare(
         _: RuntimeStagedUpdate,
-        _: String?,
-        _: Bool
-    ) throws {
+        transactionID: String
+    ) throws -> MacInstallReservation {
         lock.lock()
         count += 1
         let shouldFail = failuresRemaining > 0
@@ -1007,6 +995,31 @@ private final class InstallRecorder {
         if shouldFail {
             throw scheduledError ?? CocoaError(.fileWriteUnknown)
         }
+        return MacInstallReservation(
+            response: InstallReservationResponseV1(
+                protocolVersion: 1,
+                transactionID: transactionID,
+                readyToken: String(repeating: "a", count: 43),
+                journalSHA256: String(repeating: "b", count: 64),
+                helperEndpointIdentitySHA256: String(repeating: "c", count: 64),
+                expiresAtUnixMilliseconds: 1
+            ),
+            abandon: {}
+        )
+    }
+
+    func commit(
+        _ reservation: MacInstallReservation
+    ) throws -> InstallTransactionStatus {
+        InstallTransactionStatus(
+            transactionID: reservation.transactionID,
+            state: .commitAccepted,
+            resultCode: .accepted,
+            detail: "",
+            responseDigestSHA256: reservation.responseDigestSHA256,
+            helperEndpointIdentitySHA256:
+                reservation.helperEndpointIdentitySHA256
+        )
     }
 }
 
@@ -1177,7 +1190,8 @@ private final class LifecycleFixture {
             ),
             transport: transport,
             stager: MacArtifactStager(),
-            installScheduler: recorder.schedule
+            installPreparer: recorder.prepare,
+            installCommitter: recorder.commit
         )
     }
 

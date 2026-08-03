@@ -1,4 +1,7 @@
 import CommonCrypto
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 import Darwin
 import Foundation
 import Security
@@ -36,7 +39,7 @@ public struct MacVerifiedStage: Sendable {
     public let artifactKind: String
     public let expectedPackageIDs: [String]
 
-    public init(
+    init(
         stagedPath: URL,
         stageRoot: URL,
         provenance: StageProvenanceState,
@@ -48,6 +51,170 @@ public struct MacVerifiedStage: Sendable {
         self.provenance = provenance
         self.artifactKind = artifactKind
         self.expectedPackageIDs = expectedPackageIDs
+    }
+
+    public static func loadAndVerify(
+        stagedPath: URL,
+        stageRoot: URL,
+        expectedPackageID: String,
+        trustedReleasePublicKeys: [String: Data]
+    ) throws -> MacVerifiedStage {
+        let expectedPackageID = expectedPackageID.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !expectedPackageID.isEmpty,
+              !trustedReleasePublicKeys.isEmpty else {
+            throw macInstallRequestFailure(
+                "Trusted release identity is required."
+            )
+        }
+        let root = stageRoot.standardizedFileURL
+        let staged = stagedPath.standardizedFileURL
+        guard staged == root || staged.deletingLastPathComponent() == root else {
+            throw macInstallRequestFailure(
+                "Staged update is not owned by its stage root."
+            )
+        }
+
+        let manifestURL = root.appendingPathComponent(
+            ".desktop_updater_release_manifest.json"
+        )
+        let manifestValues = try manifestURL.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        )
+        guard manifestValues.isRegularFile == true,
+              manifestValues.isSymbolicLink != true,
+              let manifestSize = manifestValues.fileSize,
+              manifestSize > 0,
+              manifestSize <= 4 * 1024 * 1024 else {
+            throw macInstallRequestFailure(
+                "Signed release manifest is missing or unsafe."
+            )
+        }
+        let manifestData = try Data(
+            contentsOf: manifestURL,
+            options: [.mappedIfSafe]
+        )
+        guard let manifest = try JSONSerialization.jsonObject(
+            with: manifestData
+        ) as? [String: Any],
+            exactInt64(manifest["schemaVersion"]) == 3,
+            manifest["platform"] as? String == "macos",
+            manifest["packageId"] as? String == expectedPackageID,
+            let artifact = manifest["artifact"] as? [String: Any],
+            let artifactKind = artifact["kind"] as? String,
+            ["zip", "dmg", "pkgInstaller"].contains(artifactKind),
+            let artifactSHA256 = artifact["sha256"] as? String,
+            macInstallValidSHA256(artifactSHA256),
+            let artifactLength = exactInt64(artifact["length"]),
+            artifactLength > 0,
+            let signature = manifest["signature"] as? [String: Any],
+            Set(signature.keys) == ["algorithm", "publicKeyId", "value"],
+            signature["algorithm"] as? String == "ed25519",
+            let keyID = signature["publicKeyId"] as? String,
+            !keyID.isEmpty,
+            let publicKeyData = trustedReleasePublicKeys[keyID],
+            publicKeyData.count == 32,
+            let signatureText = signature["value"] as? String,
+            let signatureData = Data(base64Encoded: signatureText),
+            signatureData.count == 64 else {
+            throw macInstallRequestFailure(
+                "Signed release manifest is invalid."
+            )
+        }
+
+        var unsignedManifest = manifest
+        var blankSignature = signature
+        blankSignature["value"] = ""
+        unsignedManifest["signature"] = blankSignature
+        let signatureBytes = try macInstallCanonicalJSON(unsignedManifest)
+#if canImport(CryptoKit)
+        if #available(macOS 10.15, *) {
+            let publicKey = try Curve25519.Signing.PublicKey(
+                rawRepresentation: publicKeyData
+            )
+            guard publicKey.isValidSignature(
+                signatureData,
+                for: signatureBytes
+            ) else {
+                throw macInstallRequestFailure(
+                    "Signed release manifest verification failed."
+                )
+            }
+        } else {
+            throw macInstallRequestFailure(
+                "Signed release verification requires macOS 10.15 or newer."
+            )
+        }
+#else
+        throw macInstallRequestFailure(
+            "Signed release verification is unavailable."
+        )
+#endif
+
+        let provenance = try StageProvenance.read(stageRoot: root)
+        let marker = try StageProvenance.verify(
+            stageRoot: root,
+            expectedMarkerSHA256: provenance.markerSHA256
+        )
+        let descriptorSHA256 = macInstallRequestSHA256(
+            try macInstallCanonicalJSON(manifest)
+        )
+        guard marker.packageId == expectedPackageID,
+              marker.artifactSha256 == artifactSHA256,
+              marker.descriptorSha256 == descriptorSHA256 else {
+            throw macInstallRequestFailure(
+                "Signed package, artifact, and stage binding failed."
+            )
+        }
+
+        let expectedPackageIDs: [String]
+        switch artifactKind {
+        case "zip", "dmg":
+            let values = try staged.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            )
+            guard staged != root,
+                  staged.pathExtension.lowercased() == "app",
+                  values.isDirectory == true,
+                  values.isSymbolicLink != true,
+                  Bundle(url: staged)?.bundleIdentifier == expectedPackageID
+            else {
+                throw macInstallRequestFailure(
+                    "Staged application package identity changed."
+                )
+            }
+            expectedPackageIDs = []
+        case "pkgInstaller":
+            guard staged == root,
+                  let install = manifest["install"] as? [String: Any],
+                  install["strategy"] as? String == "pkgInstaller",
+                  let macosPKG = install["macosPkg"] as? [String: Any],
+                  let packageIDs = macosPKG["expectedPackageIds"] as? [String],
+                  packageIDs.count == 1,
+                  packageIDs.allSatisfy({
+                      !$0.trimmingCharacters(in: .whitespacesAndNewlines)
+                          .isEmpty
+                  }),
+                  macosPKG["relaunchAfterInstall"] as? Bool == false else {
+                throw macInstallRequestFailure(
+                    "Signed PKG installation policy is invalid."
+                )
+            }
+            expectedPackageIDs = packageIDs
+        default:
+            throw macInstallRequestFailure(
+                "The staged artifact has no native helper strategy."
+            )
+        }
+
+        return MacVerifiedStage(
+            stagedPath: staged,
+            stageRoot: root,
+            provenance: provenance,
+            artifactKind: artifactKind,
+            expectedPackageIDs: expectedPackageIDs
+        )
     }
 }
 
@@ -589,46 +756,16 @@ public enum StageProvenance {
 }
 
 public struct MacInstallRequest: Sendable {
-    public let stagingPath: String?
-    public let allowUnsignedUpdates: Bool
-    public let diagnosticsLogPath: String?
-    public let stageRoot: String?
-    public let expectedProvenanceSHA256: String?
-    public let artifactKind: String?
-    public let expectedArtifactSHA256: String?
+    public let stagingPath: String
+    public let stageRoot: String
+    public let expectedProvenanceSHA256: String
+    public let artifactKind: String
+    public let expectedArtifactSHA256: String
     public let expectedPackageIDs: [String]
     public let provenanceEntries: [StageProvenanceEntry]
 
-    public init(
-        stagingPath: String?,
-        allowUnsignedUpdates: Bool,
-        diagnosticsLogPath: String?,
-        stageRoot: String? = nil,
-        expectedProvenanceSHA256: String? = nil,
-        artifactKind: String? = nil,
-        expectedArtifactSHA256: String? = nil,
-        expectedPackageIDs: [String] = [],
-        provenanceEntries: [StageProvenanceEntry] = []
-    ) {
-        self.stagingPath = stagingPath
-        self.allowUnsignedUpdates = allowUnsignedUpdates
-        self.diagnosticsLogPath = diagnosticsLogPath
-        self.stageRoot = stageRoot
-        self.expectedProvenanceSHA256 = expectedProvenanceSHA256
-        self.artifactKind = artifactKind
-        self.expectedArtifactSHA256 = expectedArtifactSHA256
-        self.expectedPackageIDs = expectedPackageIDs
-        self.provenanceEntries = provenanceEntries
-    }
-
-    public init(
-        verifiedStage: MacVerifiedStage,
-        allowUnsignedUpdates: Bool,
-        diagnosticsLogPath: String?
-    ) {
+    public init(verifiedStage: MacVerifiedStage) {
         stagingPath = verifiedStage.stagedPath.path
-        self.allowUnsignedUpdates = allowUnsignedUpdates
-        self.diagnosticsLogPath = diagnosticsLogPath
         stageRoot = verifiedStage.stageRoot.path
         expectedProvenanceSHA256 = verifiedStage.provenance.markerSHA256
         artifactKind = verifiedStage.artifactKind
@@ -644,16 +781,6 @@ public struct MacInstallRequest: Sendable {
         bundleURL: URL,
         evidence: MacInstallRequestEvidence
     ) throws -> Data {
-        guard !allowUnsignedUpdates,
-              let stageRoot,
-              let stagingPath,
-              let expectedProvenanceSHA256,
-              let expectedArtifactSHA256,
-              let artifactKind else {
-            throw macInstallRequestFailure(
-                "Canonical signed install evidence is required."
-            )
-        }
         let root = URL(fileURLWithPath: stageRoot).standardizedFileURL
         let staged = URL(fileURLWithPath: stagingPath).standardizedFileURL
         let marker = try StageProvenance.verify(
@@ -800,6 +927,13 @@ private func exactInt64(_ value: Any?) -> Int64? {
     }
     let result = number.int64Value
     return NSNumber(value: result) == number ? result : nil
+}
+
+private func macInstallValidSHA256(_ value: String) -> Bool {
+    value.range(
+        of: #"^[0-9a-f]{64}$"#,
+        options: .regularExpression
+    ) != nil
 }
 
 private func macInstallRequestSHA256(_ data: Data) -> String {

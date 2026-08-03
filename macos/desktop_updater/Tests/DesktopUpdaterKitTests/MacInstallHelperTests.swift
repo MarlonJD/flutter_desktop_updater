@@ -25,24 +25,6 @@ final class MacInstallHelperTests: XCTestCase {
         }
     }
 
-    func testIncompleteStagedRequestIsRejectedBeforeScheduling() throws {
-        let incomplete = MacInstallRequest(
-            stagingPath: "/tmp/Example.app",
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: nil
-        )
-
-        XCTAssertThrowsError(
-            try MacInstallHelper().validateCompleteHandoff(incomplete)
-        ) { error in
-            XCTAssertTrue(
-                error.localizedDescription.contains(
-                    "Verified stage provenance is required"
-                )
-            )
-        }
-    }
-
     func testVerifiedStagePopulatesCompleteHelperHandoff() {
         let marker = StageProvenanceMarker(
             schemaVersion: 1,
@@ -65,11 +47,7 @@ final class MacInstallHelperTests: XCTestCase {
             artifactKind: "zip",
             expectedPackageIDs: []
         )
-        let request = MacInstallRequest(
-            verifiedStage: verifiedStage,
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: nil
-        )
+        let request = MacInstallRequest(verifiedStage: verifiedStage)
 
         XCTAssertEqual(request.stagingPath, verifiedStage.stagedPath.path)
         XCTAssertEqual(request.stageRoot, verifiedStage.stageRoot.path)
@@ -152,9 +130,7 @@ final class MacInstallHelperTests: XCTestCase {
                 stageRoot: stageRoot,
                 provenance: provenance,
                 artifactKind: "zip"
-            ),
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: nil
+            )
         )
 
         let data = try request.helperRequestData(
@@ -214,15 +190,13 @@ final class MacInstallHelperTests: XCTestCase {
         )
 
         let mismatchedPackageIDs = MacInstallRequest(
-            stagingPath: stagedApp.path,
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: nil,
-            stageRoot: stageRoot.path,
-            expectedProvenanceSHA256: provenance.markerSHA256,
-            artifactKind: "pkgInstaller",
-            expectedArtifactSHA256: String(repeating: "c", count: 64),
-            expectedPackageIDs: ["com.example.attacker.pkg"],
-            provenanceEntries: provenance.marker.entries
+            verifiedStage: MacVerifiedStage(
+                stagedPath: stagedApp,
+                stageRoot: stageRoot,
+                provenance: provenance,
+                artifactKind: "pkgInstaller",
+                expectedPackageIDs: ["com.example.attacker.pkg"]
+            )
         )
         XCTAssertThrowsError(
             try mismatchedPackageIDs.helperRequestData(
@@ -250,15 +224,15 @@ final class MacInstallHelperTests: XCTestCase {
         )
     }
 
-    func testDefaultClientFailsClosedWhenPackagedEndpointIsUnavailable() {
-        let request = MacInstallRequest(
-            stagingPath: nil,
-            allowUnsignedUpdates: false,
-            diagnosticsLogPath: nil
-        )
+    func testDefaultClientFailsClosedWhenPackagedEndpointIsUnavailable() throws {
+        let fixture = try CallerTransactionFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
 
         XCTAssertThrowsError(
-            try MacInstallHelper().scheduleInstallAndRelaunch(request)
+            try MacInstallHelper().prepareInstall(
+                fixture.request,
+                transactionID: "00000000-0000-4000-8000-000000000099"
+            )
         ) { error in
             XCTAssertEqual(
                 error as? MacInstallClientError,
@@ -667,9 +641,7 @@ private struct CallerTransactionFixture {
                     stageRoot: stageRoot,
                     provenance: provenance,
                     artifactKind: "zip"
-                ),
-                allowUnsignedUpdates: false,
-                diagnosticsLogPath: nil
+                )
             )
         )
     }

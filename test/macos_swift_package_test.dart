@@ -119,7 +119,7 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     );
   });
 
-  test("macOS helper kit exposes constructible public request API", () {
+  test("macOS helper kit exposes verified explicit install API", () {
     final requestSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift",
     ).readAsStringSync();
@@ -134,13 +134,37 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
       requestSource,
       contains("public struct MacInstallRequest: Sendable"),
     );
-    expect(requestSource, contains("public init("));
+    expect(
+      requestSource,
+      contains("public init(verifiedStage: MacVerifiedStage)"),
+    );
+    expect(requestSource, contains("public static func loadAndVerify("));
+    expect(requestSource, contains("expectedPackageID: String"));
+    expect(requestSource, contains("trustedReleasePublicKeys: [String: Data]"));
+    expect(requestSource, isNot(contains("allowUnsignedUpdates")));
+    expect(requestSource, isNot(contains("diagnosticsLogPath")));
     expect(helperSource, contains("public struct MacInstallHelper"));
     expect(helperSource, contains("public init()"));
     expect(
       helperSource,
       contains(
-        "scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws",
+        "public func prepareInstall(\n"
+        "        _ request: MacInstallRequest,\n"
+        "        transactionID: String",
+      ),
+    );
+    expect(helperSource, contains("public func commitAfterExit("));
+    expect(helperSource, contains("public func queryTransaction("));
+    expect(helperSource, contains("public func recoverPendingInstall("));
+    expect(helperSource, isNot(contains("scheduleInstallAndRelaunch")));
+    expect(
+      helperSource,
+      isNot(
+        contains(
+          "public func prepareInstall(\n"
+          "        _ request: MacInstallRequest\n"
+          "    )",
+        ),
       ),
     );
     expect(diagnosticsSource, contains("public struct MacDiagnosticEvent"));
@@ -183,7 +207,21 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(pluginSource, contains("import DesktopUpdaterKit"));
     expect(pluginSource, contains("MacInstallHelper"));
     expect(pluginSource, contains("MacInstallRequest"));
-    expect(pluginSource, contains("allowUnsignedMacOSUpdates"));
+    expect(pluginSource, contains('"expectedPackageId"'));
+    expect(pluginSource, contains('"expectedArtifactSha256"'));
+    expect(pluginSource, contains('"stageProvenanceSha256"'));
+    expect(pluginSource, contains('"transactionId"'));
+    expect(pluginSource, contains("MacVerifiedStage.loadAndVerify("));
+    expect(
+        pluginSource, contains("let reservation = try helper.prepareInstall("));
+    expect(pluginSource, contains("transactionID: transactionID"));
+    expect(pluginSource, contains("commitAfterExit(reservation)"));
+    expect(
+      pluginSource,
+      contains('message: "Unable to prepare update installation."'),
+    );
+    expect(pluginSource, isNot(contains("allowUnsignedMacOSUpdates")));
+    expect(pluginSource, isNot(contains("diagnosticsLogPath")));
     expect(helperSource, isNot(contains("makeHelperScript")));
     expect(helperSource, isNot(contains("/bin/sh")));
     expect(helperSource, contains("SMAppService.daemon"));

@@ -93,8 +93,8 @@ struct MacOSRuntimeSmoke {
             fileURLWithPath: arguments.value("--smoke-root"),
             isDirectory: true
         )
-        let diagnosticsLog = arguments.value("--diagnostics-log")
         let allowUnsigned = arguments.has("--allow-unsigned-updates")
+        let transactionID = arguments.value("--transaction-id")
         let configuration = try RuntimeConfiguration(
             appArchiveUrl: try requiredURL(
                 arguments.value("--app-archive-url")
@@ -128,18 +128,11 @@ struct MacOSRuntimeSmoke {
             to: smokeRoot.appendingPathComponent("runtime-diagnostics.log")
         )
         do {
-            try client.installAndRelaunch(
+            let reservation = try client.prepareInstall(
                 staged,
-                diagnosticsLogPath: diagnosticsLog,
-                allowUnsignedUpdates: allowUnsigned
+                transactionID: transactionID
             )
-        } catch let RuntimeError.outcome(outcome, message)
-            where arguments.expectsUnsignedHandoffRejection &&
-            outcome == .installHandoffFailure &&
-            message.contains("Canonical signed install evidence is required.")
-        {
-            print("Expected unsigned install handoff rejection")
-            return
+            _ = try client.commitAfterExit(reservation)
         } catch let RuntimeError.diagnostic(outcome, diagnostic)
             where arguments.expectsHelperApprovalRequirement &&
             outcome == .installHandoffFailure &&
@@ -156,15 +149,12 @@ struct MacOSRuntimeSmoke {
             print("Expected SMAppService admin approval requirement")
             return
         }
-        if arguments.expectsUnsignedHandoffRejection {
-            throw SmokeFailure("Unsigned install handoff unexpectedly succeeded.")
-        }
         if arguments.expectsHelperApprovalRequirement {
             print("SMAppService helper unexpectedly avoided approval.")
             return
         }
         print(
-            "installAndRelaunch scheduled \(staged.descriptor.version) " +
+            "prepareInstall committed \(staged.descriptor.version) " +
                 "from \(staged.descriptor.artifact.kind)"
         )
     }
@@ -210,7 +200,7 @@ private struct Arguments {
                 "--public-key-base64",
                 "--package-id",
                 "--smoke-root",
-                "--diagnostics-log",
+                "--transaction-id",
             ] where optionalValue(option) == nil {
                 throw SmokeFailure("Missing required argument \(option).")
             }
@@ -222,9 +212,6 @@ private struct Arguments {
     }
 
     var isSmoke: Bool { values.contains("--smoke") }
-    var expectsUnsignedHandoffRejection: Bool {
-        values.contains("--expect-unsigned-handoff-rejection")
-    }
     var expectsHelperApprovalRequirement: Bool {
         values.contains("--expect-helper-approval-required")
     }

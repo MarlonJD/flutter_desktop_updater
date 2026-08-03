@@ -87,7 +87,7 @@ private final class UpdateClientLifecycleState {
     private var installInProgress = false
     private var nextHandoffToken: UInt64 = 0
     private var activeHandoffToken: UInt64 = 0
-    private var schedulingConfirmed = false
+    private var preparationConfirmed = false
 
     func beginCheck() -> RuntimeCheckLease {
         withLock {
@@ -185,7 +185,7 @@ private final class UpdateClientLifecycleState {
             incrementNonzero(&nextHandoffToken)
             installInProgress = true
             activeHandoffToken = nextHandoffToken
-            schedulingConfirmed = false
+            preparationConfirmed = false
             activeStagedUpdate = nil
             let handoff = RuntimeInstallHandoff(
                 token: activeHandoffToken,
@@ -201,7 +201,7 @@ private final class UpdateClientLifecycleState {
     func rollback(_ handoff: RuntimeInstallHandoff) -> Bool {
         withLock {
             guard installInProgress,
-                  !schedulingConfirmed,
+                  !preparationConfirmed,
                   handoff.token == activeHandoffToken
             else { return false }
             let canRestore = handoff.generation == generation &&
@@ -219,10 +219,10 @@ private final class UpdateClientLifecycleState {
     func confirm(_ handoff: RuntimeInstallHandoff) -> Bool {
         withLock {
             guard installInProgress,
-                  !schedulingConfirmed,
+                  !preparationConfirmed,
                   handoff.token == activeHandoffToken
             else { return false }
-            schedulingConfirmed = true
+            preparationConfirmed = true
             return true
         }
     }
@@ -241,7 +241,7 @@ private final class UpdateClientLifecycleState {
     }
 }
 
-private final class RuntimeSchedulingRollbackGuard {
+private final class RuntimePreparationRollbackGuard {
     private let state: UpdateClientLifecycleState
     private let handoff: RuntimeInstallHandoff
     private var active = true
@@ -282,11 +282,13 @@ public final class UpdateClient {
     private let stager: MacArtifactStager
     private let lifecycle = UpdateClientLifecycleState()
     private let diagnosticsLock = NSLock()
-    private let installScheduler: (
+    private let installPreparer: (
         RuntimeStagedUpdate,
-        String?,
-        Bool
-    ) throws -> Void
+        String
+    ) throws -> MacInstallReservation
+    private let installCommitter: (
+        MacInstallReservation
+    ) throws -> InstallTransactionStatus
 
     public init(
         configuration: RuntimeConfiguration,
@@ -296,29 +298,38 @@ public final class UpdateClient {
         self.configuration = configuration
         self.transport = transport
         self.stager = stager
-        installScheduler = { staged, diagnosticsLogPath, allowUnsigned in
-            try stager.installAndRelaunch(
+        let helper = MacInstallHelper()
+        installPreparer = { staged, transactionID in
+            let request = try stager.installRequest(
                 staged: staged,
-                diagnosticsLogPath: diagnosticsLogPath,
-                allowUnsignedUpdates: allowUnsigned
+                expectedPackageID: configuration.expectedPackageId,
+                trustedReleasePublicKeys: configuration.pinnedPublicKeysById
+            )
+            return try helper.prepareInstall(
+                request,
+                transactionID: transactionID
             )
         }
+        installCommitter = helper.commitAfterExit
     }
 
     init(
         configuration: RuntimeConfiguration,
         transport: RuntimeUpdateTransport,
         stager: MacArtifactStager,
-        installScheduler: @escaping (
+        installPreparer: @escaping (
             RuntimeStagedUpdate,
-            String?,
-            Bool
-        ) throws -> Void
+            String
+        ) throws -> MacInstallReservation,
+        installCommitter: @escaping (
+            MacInstallReservation
+        ) throws -> InstallTransactionStatus
     ) {
         self.configuration = configuration
         self.transport = transport
         self.stager = stager
-        self.installScheduler = installScheduler
+        self.installPreparer = installPreparer
+        self.installCommitter = installCommitter
     }
 
     public func checkForUpdate() async -> RuntimeUpdateCheck {
@@ -672,11 +683,10 @@ public final class UpdateClient {
         }
     }
 
-    public func installAndRelaunch(
+    public func prepareInstall(
         _ staged: RuntimeStagedUpdate,
-        diagnosticsLogPath: String?,
-        allowUnsignedUpdates: Bool = false
-    ) throws {
+        transactionID: String
+    ) throws -> MacInstallReservation {
         do {
             _ = try StageProvenance.verify(
                 stageRoot: staged.stageRoot,
@@ -698,27 +708,40 @@ public final class UpdateClient {
             record(.install, .error, "macOS helper handoff failed.", error)
             throw error
         }
-        let rollbackGuard = RuntimeSchedulingRollbackGuard(
+        let rollbackGuard = RuntimePreparationRollbackGuard(
             state: lifecycle,
             handoff: handoff
         )
         do {
-            record(.install, .info, "Handing staged update to the macOS helper.")
-            try installScheduler(
+            record(.install, .info, "Preparing staged update with the macOS helper.")
+            let reservation = try installPreparer(
                 handoff.staged,
-                diagnosticsLogPath,
-                allowUnsignedUpdates
+                transactionID
             )
             guard rollbackGuard.confirm() else {
                 throw RuntimeError.outcome(
                     .installHandoffFailure,
-                    message: "macOS helper handoff confirmation failed."
+                    message: "macOS helper preparation confirmation failed."
                 )
             }
+            return reservation
         } catch {
             rollbackGuard.rollback()
             let failure = mappedInstallFailure(error)
             record(.install, .error, "macOS helper handoff failed.", failure)
+            throw failure
+        }
+    }
+
+    public func commitAfterExit(
+        _ reservation: MacInstallReservation
+    ) throws -> InstallTransactionStatus {
+        do {
+            record(.install, .info, "Committing prepared macOS installation.")
+            return try installCommitter(reservation)
+        } catch {
+            let failure = mappedInstallFailure(error)
+            record(.install, .error, "macOS helper commit failed.", failure)
             throw failure
         }
     }

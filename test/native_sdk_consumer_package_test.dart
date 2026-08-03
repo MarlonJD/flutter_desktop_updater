@@ -12,10 +12,15 @@ void main() {
     expect(manifest, contains('.package(path: "../../..")'));
     expect(manifest, contains('package: "flutter_desktop_updater"'));
     expect(source, contains("import DesktopUpdaterKit"));
-    expect(source, contains("MacInstallRequest("));
-    expect(source, contains("MacVerifiedStage("));
+    expect(source, contains("MacInstallRequest(verifiedStage:"));
+    expect(source, contains("MacVerifiedStage.loadAndVerify("));
     expect(source, contains("verifiedStage:"));
-    expect(source, contains("StageProvenance.write("));
+    expect(source, contains("expectedPackageID:"));
+    expect(source, contains("trustedReleasePublicKeys:"));
+    expect(source, contains("transactionID:"));
+    expect(source, contains("let reservation = try helper.prepareInstall("));
+    expect(source, contains("commitAfterExit(reservation)"));
+    expect(source, isNot(contains("StageProvenance.write(")));
     expect(source, contains("DesktopUpdaterVersion.string"));
     expect(source, isNot(contains("currentProcessIdentifier:")));
     expect(source, isNot(contains("bundlePath:")));
@@ -79,8 +84,25 @@ void main() {
     expect(macStatus, contains("public enum InstallTransactionResultCode"));
     expect(macStatus, contains("public final class MacInstallReservation"));
     expect(macStatus, contains("deinit"));
-    expect(macHelper, contains("prepareInstall(request)"));
-    expect(macHelper, contains("commitAfterExit(reservation)"));
+    expect(
+      macHelper,
+      contains(
+        "public func prepareInstall(\n"
+        "        _ request: MacInstallRequest,\n"
+        "        transactionID: String",
+      ),
+    );
+    expect(macHelper, isNot(contains("scheduleInstallAndRelaunch")));
+    expect(
+      macHelper,
+      isNot(
+        contains(
+          "public func prepareInstall(\n"
+          "        _ request: MacInstallRequest\n"
+          "    )",
+        ),
+      ),
+    );
     expect(macConsumer, contains("queryTransaction"));
     expect(macConsumer, contains("recoverPendingInstall"));
 

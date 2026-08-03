@@ -65,8 +65,9 @@ void main() {
             .having(
               (error) => error.message,
               "sanitized message",
-              "Unable to schedule update installation.",
+              "Unable to prepare update installation.",
             )
+            .having((error) => error.details, "sanitized details", isNull)
         : isA<PlatformException>()
             .having((error) => error.code, "code", "InstallError")
             .having(
@@ -178,7 +179,7 @@ Future<_VerifiedStageFixture> _createVerifiedStageFixture() async {
   await releaseManifest.writeAsString(jsonEncode(sortJsonValue(manifest)));
   await ReleaseDescriptorSigner().sign(
     releaseFile: releaseManifest,
-    publicKeyId: "stable-2026",
+    publicKeyId: "native-runtime-smoke-stable",
     privateKeyBase64: base64Encode(List<int>.generate(32, (index) => index)),
   );
   final signedManifest =

@@ -2130,20 +2130,6 @@ public struct MacInstallHelper {
         self.transport = transport
     }
 
-    public func scheduleInstallAndRelaunch(_ request: MacInstallRequest) throws {
-        let reservation = try prepareInstall(request)
-        _ = try commitAfterExit(reservation)
-    }
-
-    public func prepareInstall(
-        _ request: MacInstallRequest
-    ) throws -> MacInstallReservation {
-        try prepareInstall(
-            request,
-            transactionID: UUID().uuidString.lowercased()
-        )
-    }
-
     public func prepareInstall(
         _ request: MacInstallRequest,
         transactionID: String
@@ -2392,17 +2378,17 @@ public struct MacInstallHelper {
     }
 
     func validateCompleteHandoff(_ request: MacInstallRequest) throws {
-        guard let stagingPath = request.stagingPath else { return }
-        guard let root = request.stageRoot,
-              !root.isEmpty,
-              let expectedProvenance = request.expectedProvenanceSHA256,
+        let stagingPath = request.stagingPath
+        let root = request.stageRoot
+        let expectedProvenance = request.expectedProvenanceSHA256
+        let artifactKind = request.artifactKind
+        let expectedArtifact = request.expectedArtifactSHA256
+        guard !root.isEmpty,
               expectedProvenance.range(
                   of: #"^[0-9a-f]{64}$"#,
                   options: .regularExpression
               ) != nil,
-              let artifactKind = request.artifactKind,
               !artifactKind.isEmpty,
-              let expectedArtifact = request.expectedArtifactSHA256,
               expectedArtifact.range(
                   of: #"^[0-9a-f]{64}$"#,
                   options: .regularExpression

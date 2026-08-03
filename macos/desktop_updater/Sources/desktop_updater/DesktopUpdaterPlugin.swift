@@ -1,6 +1,7 @@
 import Cocoa
 import Darwin
 import FlutterMacOS
+import Security
 import ServiceManagement
 #if canImport(DesktopUpdaterKit)
 import DesktopUpdaterKit
@@ -30,46 +31,41 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             guard
                 let arguments = call.arguments as? [String: Any],
                 let stagingPath = arguments["stagingPath"] as? String,
-                !stagingPath.isEmpty
+                !stagingPath.isEmpty,
+                let expectedPackageID = arguments["expectedPackageId"]
+                    as? String,
+                !expectedPackageID.isEmpty,
+                let expectedArtifactSHA256 = arguments[
+                    "expectedArtifactSha256"
+                ] as? String,
+                isSHA256(expectedArtifactSHA256),
+                let stageProvenanceSHA256 = arguments[
+                    "stageProvenanceSha256"
+                ] as? String,
+                isSHA256(stageProvenanceSHA256),
+                let transactionID = arguments["transactionId"] as? String,
+                isCanonicalTransactionID(transactionID),
+                Set(arguments.keys) == [
+                    "stagingPath",
+                    "expectedPackageId",
+                    "expectedArtifactSha256",
+                    "stageProvenanceSha256",
+                    "transactionId",
+                ]
             else {
                 result(
                     FlutterError(
                         code: "InvalidArguments",
-                        message: "installUpdate requires a stagingPath.",
+                        message: "installUpdate requires the canonical signed handoff payload.",
                         details: nil
                     )
                 )
                 return
             }
-
-            let removedFiles = arguments["removedFiles"] as? [String] ?? []
-            let allowUnsignedMacOSUpdates =
-                arguments["allowUnsignedMacOSUpdates"] as? Bool ?? false
-            let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
-            let stageProvenanceSHA256 =
-                arguments["stageProvenanceSha256"] as? String
-            let transactionID: String?
-            if let value = arguments["transactionId"] {
-                guard let candidate = value as? String,
-                      isCanonicalTransactionID(candidate) else {
-                    result(
-                        FlutterError(
-                            code: "InvalidArguments",
-                            message: "transactionId must be a canonical lowercase UUIDv4.",
-                            details: nil
-                        )
-                    )
-                    return
-                }
-                transactionID = candidate
-            } else {
-                transactionID = nil
-            }
-            handoffInstallAndRelaunch(
+            prepareAndCommitInstall(
                 stagingPath: stagingPath,
-                removedFiles: removedFiles,
-                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-                diagnosticsLogPath: diagnosticsLogPath,
+                expectedPackageID: expectedPackageID,
+                expectedArtifactSHA256: expectedArtifactSHA256,
                 stageProvenanceSHA256: stageProvenanceSHA256,
                 transactionID: transactionID,
                 result: result
@@ -131,76 +127,40 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         }
     }
 
-    private func handoffInstallAndRelaunch(
-        stagingPath: String?,
-        removedFiles _: [String],
-        allowUnsignedMacOSUpdates: Bool = false,
-        diagnosticsLogPath: String? = nil,
-        stageProvenanceSHA256: String? = nil,
-        transactionID: String? = nil,
+    private func prepareAndCommitInstall(
+        stagingPath: String,
+        expectedPackageID: String,
+        expectedArtifactSHA256: String,
+        stageProvenanceSHA256: String,
+        transactionID: String,
         result: @escaping FlutterResult
     ) {
         do {
-            var stageRoot: URL?
-            var provenance: StageProvenanceState?
-            var artifactKind: String?
-            var expectedPackageIDs: [String] = []
-            if let stagingPath {
-                guard let expectedProvenanceSHA256 = stageProvenanceSHA256,
-                      !expectedProvenanceSHA256.isEmpty
-                else {
-                    throw NSError(
-                        domain: "desktop_updater.stage_provenance",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey:
-                            "Verified stage provenance SHA-256 is required."]
-                    )
-                }
-                let stagedURL = URL(fileURLWithPath: stagingPath)
-                let root = stagedURL.pathExtension.lowercased() == "app"
-                    ? stagedURL.deletingLastPathComponent()
-                    : stagedURL
-                let state = try StageProvenance.read(stageRoot: root)
-                _ = try StageProvenance.verify(
-                    stageRoot: root,
-                    expectedMarkerSHA256: expectedProvenanceSHA256
-                )
-                let manifestURL = root.appendingPathComponent(
-                    ".desktop_updater_release_manifest.json"
-                )
-                let manifest = try JSONSerialization.jsonObject(
-                    with: Data(contentsOf: manifestURL)
-                ) as? [String: Any]
-                artifactKind = (manifest?["artifact"] as? [String: Any])?["kind"]
-                    as? String
-                expectedPackageIDs = ((manifest?["install"]
-                    as? [String: Any])?["macosPkg"] as? [String: Any])?[
-                        "expectedPackageIds"
-                    ] as? [String] ?? []
-                stageRoot = root
-                provenance = state
-            }
-            let request = MacInstallRequest(
-                stagingPath: stagingPath,
-                allowUnsignedUpdates: allowUnsignedMacOSUpdates,
-                diagnosticsLogPath: diagnosticsLogPath,
-                stageRoot: stageRoot?.path,
-                expectedProvenanceSHA256: stageProvenanceSHA256,
-                artifactKind: artifactKind,
-                expectedArtifactSHA256: provenance?.marker.artifactSha256,
-                expectedPackageIDs: expectedPackageIDs,
-                provenanceEntries: provenance?.marker.entries ?? []
+            let stagedURL = URL(fileURLWithPath: stagingPath)
+            let stageRoot = stagedURL.pathExtension.lowercased() == "app"
+                ? stagedURL.deletingLastPathComponent()
+                : stagedURL
+            let verifiedStage = try MacVerifiedStage.loadAndVerify(
+                stagedPath: stagedURL,
+                stageRoot: stageRoot,
+                expectedPackageID: expectedPackageID,
+                trustedReleasePublicKeys: try trustedReleasePublicKeys()
             )
-            let helper = MacInstallHelper()
-            let reservation: MacInstallReservation
-            if let transactionID {
-                reservation = try helper.prepareInstall(
-                    request,
-                    transactionID: transactionID
+            guard verifiedStage.provenance.markerSHA256
+                    == stageProvenanceSHA256,
+                  verifiedStage.provenance.marker.artifactSha256
+                    == expectedArtifactSHA256 else {
+                throw NSError(
+                    domain: "desktop_updater.install_binding",
+                    code: 1
                 )
-            } else {
-                reservation = try helper.prepareInstall(request)
             }
+            let request = MacInstallRequest(verifiedStage: verifiedStage)
+            let helper = MacInstallHelper()
+            let reservation = try helper.prepareInstall(
+                request,
+                transactionID: transactionID
+            )
             let status = try helper.commitAfterExit(reservation)
             guard status.state == .commitAccepted || status.state == .completed,
                   status.resultCode == .accepted || status.resultCode == .succeeded,
@@ -240,30 +200,85 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                         message: "Unable to confirm update installation handoff.",
                         details: [
                             "recoveryRequired": true,
-                            "transactionId": transactionID ?? "",
-                            "detail": error.localizedDescription,
+                            "transactionId": transactionID,
                         ]
                     )
                 )
                 return
             }
-            let validationMessages = [
-                "Staged macOS update directory does not exist.",
-                "Staged macOS update must be a real .app directory, not a symlink.",
-            ]
-            let message = validationMessages.contains(error.localizedDescription)
-                ? error.localizedDescription
-                : "Unable to schedule update installation."
             result(
                 FlutterError(
                     code: "InstallError",
-                    message: message,
-                    details: validationMessages.contains(error.localizedDescription)
-                        ? stagingPath
-                        : error.localizedDescription
+                    message: "Unable to prepare update installation.",
+                    details: nil
                 )
             )
         }
+    }
+
+    private func trustedReleasePublicKeys() throws -> [String: Data] {
+        let helperURL = Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
+        )
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(
+            helperURL as CFURL,
+            [],
+            &staticCode
+        ) == errSecSuccess,
+            let staticCode,
+            SecStaticCodeCheckValidity(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
+                nil
+            ) == errSecSuccess else {
+            throw NSError(domain: "desktop_updater.release_keys", code: 1)
+        }
+        var signingInformation: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &signingInformation
+        ) == errSecSuccess,
+            let values = signingInformation as? [String: Any],
+            let plist = values[kSecCodeInfoPList as String]
+                as? [String: Any],
+            let sealedPolicy = plist["DesktopUpdaterSealedPolicy"] as? Data,
+            let expectedPolicySHA256 = plist[
+                "DesktopUpdaterSealedPolicySHA256"
+            ] as? String,
+            let policy = try JSONSerialization.jsonObject(
+                with: sealedPolicy
+            ) as? [String: Any],
+            try StageProvenance.canonicalJSONSHA256(policy)
+                == expectedPolicySHA256,
+            policy["applicationPackageId"] as? String
+                == Bundle.main.bundleIdentifier,
+            let releaseKeys = policy["releaseRootPublicKeys"]
+                as? [[String: Any]],
+            !releaseKeys.isEmpty else {
+            throw NSError(domain: "desktop_updater.release_keys", code: 2)
+        }
+        var result: [String: Data] = [:]
+        for key in releaseKeys {
+            guard Set(key.keys) == [
+                "algorithm", "keyId", "publicKeyBase64",
+            ],
+                key["algorithm"] as? String == "ed25519",
+                let keyID = key["keyId"] as? String,
+                !keyID.isEmpty,
+                result[keyID] == nil,
+                let encoded = key["publicKeyBase64"] as? String,
+                let publicKey = Data(base64Encoded: encoded),
+                publicKey.count == 32 else {
+                throw NSError(
+                    domain: "desktop_updater.release_keys",
+                    code: 3
+                )
+            }
+            result[keyID] = publicKey
+        }
+        return result
     }
 
     private func queryInstallTransaction(
@@ -309,7 +324,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 FlutterError(
                     code: "InstallError",
                     message: "Unable to query native install status.",
-                    details: String(describing: error)
+                    details: nil
                 )
             )
         }
@@ -318,6 +333,13 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     private func isCanonicalTransactionID(_ value: String) -> Bool {
         value.range(
             of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func isSHA256(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9a-f]{64}$"#,
             options: .regularExpression
         ) != nil
     }

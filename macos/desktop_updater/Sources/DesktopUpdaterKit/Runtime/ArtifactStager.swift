@@ -204,29 +204,31 @@ public struct MacArtifactStager {
         )
     }
 
-    public func installAndRelaunch(
+    func installRequest(
         staged: RuntimeStagedUpdate,
-        diagnosticsLogPath: String?,
-        allowUnsignedUpdates: Bool = false
-    ) throws {
-        let provenance = try StageProvenance.read(stageRoot: staged.stageRoot)
-        _ = try StageProvenance.verify(
+        expectedPackageID: String,
+        trustedReleasePublicKeys: [String: Data]
+    ) throws -> MacInstallRequest {
+        let verifiedStage = try MacVerifiedStage.loadAndVerify(
+            stagedPath: staged.stagedPath,
             stageRoot: staged.stageRoot,
-            expectedMarkerSHA256: staged.stageProvenanceSHA256
+            expectedPackageID: expectedPackageID,
+            trustedReleasePublicKeys: trustedReleasePublicKeys
         )
-        try MacInstallHelper().scheduleInstallAndRelaunch(
-            MacInstallRequest(
-                verifiedStage: MacVerifiedStage(
-                    stagedPath: staged.stagedPath,
-                    stageRoot: staged.stageRoot,
-                    provenance: provenance,
-                    artifactKind: staged.descriptor.artifact.kind,
-                    expectedPackageIDs: expectedPackageIDs(staged.descriptor)
-                ),
-                allowUnsignedUpdates: allowUnsignedUpdates,
-                diagnosticsLogPath: diagnosticsLogPath
+        guard verifiedStage.provenance.markerSHA256
+            == staged.stageProvenanceSHA256,
+            verifiedStage.provenance.marker.artifactSha256
+                == staged.descriptor.artifact.sha256,
+            verifiedStage.artifactKind == staged.descriptor.artifact.kind,
+            verifiedStage.expectedPackageIDs == expectedPackageIDs(
+                staged.descriptor
+            ) else {
+            throw RuntimeError.outcome(
+                .installHandoffFailure,
+                message: "Retained staged update identity changed."
             )
-        )
+        }
+        return MacInstallRequest(verifiedStage: verifiedStage)
     }
 
     private func validateApp(
