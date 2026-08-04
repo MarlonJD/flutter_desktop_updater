@@ -16,7 +16,10 @@ final class MacVerifiedStageTests: XCTestCase {
             trustedReleasePublicKeys: [fixture.keyID: fixture.publicKey]
         )
 
-        XCTAssertEqual(verified.stagedPath, fixture.stagedApp)
+        XCTAssertEqual(
+            verified.stagedPath.standardizedFileURL,
+            fixture.stagedApp.standardizedFileURL
+        )
         XCTAssertEqual(verified.stageRoot, fixture.stageRoot)
         XCTAssertEqual(verified.provenance.marker.packageId, fixture.packageID)
         XCTAssertEqual(
