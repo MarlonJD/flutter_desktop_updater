@@ -967,9 +967,6 @@ jobs:
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
-      - name: Run release publish smoke
-        working-directory: example
-        run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Sign Windows release smoke binaries
         working-directory: example
         shell: pwsh
@@ -1006,6 +1003,12 @@ jobs:
             reports/windows-update-smoke-release-diagnostics.jsonl
             reports/windows-update-smoke-release-evidence
           if-no-files-found: ignore
+      # The publish smoke rebuilds Release with its synthetic 9.9.9 version;
+      # keep the updater smoke ahead of it so the 2.7.1 fixture remains newer
+      # than the app under test.
+      - name: Run release publish smoke
+        working-directory: example
+        run: dart run tool/release_publish_smoke.dart --platform windows
       - name: Assert removed Windows C/C++ and .NET consumers
         shell: pwsh
         run: |
