@@ -26,8 +26,7 @@ final class UpdateClientTests: XCTestCase {
             forged,
             downloadDirectory: fixture.downloadDirectory,
             stagingRoot: fixture.stagingDirectory("forged"),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
 
         XCTAssertEqual(result.runtimeOutcome, .invalidDescriptor)
@@ -45,8 +44,7 @@ final class UpdateClientTests: XCTestCase {
             check,
             downloadDirectory: fixture.downloadDirectory,
             stagingRoot: fixture.stagingDirectory("cross-client"),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
 
         XCTAssertEqual(result.runtimeOutcome, .invalidDescriptor)
@@ -64,8 +62,7 @@ final class UpdateClientTests: XCTestCase {
             staleCheck,
             downloadDirectory: fixture.downloadDirectory,
             stagingRoot: fixture.stagingDirectory("stale-generation"),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
 
         XCTAssertEqual(result.runtimeOutcome, .invalidDescriptor)
@@ -89,8 +86,7 @@ final class UpdateClientTests: XCTestCase {
             check,
             downloadDirectory: fixture.downloadDirectory,
             stagingRoot: fixture.stagingDirectory("stage-b"),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
 
         XCTAssertEqual(failed.runtimeOutcome, .stagingFailure)
@@ -112,7 +108,7 @@ final class UpdateClientTests: XCTestCase {
         let check = await client.checkForUpdate()
         let staged = try await fixture.stage(check, with: client, name: "once")
 
-        try client.prepareInstall(
+        _ = try client.prepareInstall(
             staged,
             transactionID: lifecycleTransactionID
         )
@@ -138,7 +134,7 @@ final class UpdateClientTests: XCTestCase {
             with: client,
             name: "check-after-handoff"
         )
-        try client.prepareInstall(
+        _ = try client.prepareInstall(
             staged,
             transactionID: lifecycleTransactionID
         )
@@ -163,7 +159,7 @@ final class UpdateClientTests: XCTestCase {
             staged,
             transactionID: lifecycleTransactionID
         ))
-        try client.prepareInstall(
+        _ = try client.prepareInstall(
             staged,
             transactionID: lifecycleTransactionID
         )
@@ -223,8 +219,7 @@ final class UpdateClientTests: XCTestCase {
                 check,
                 downloadDirectory: fixture.downloadDirectory,
                 stagingRoot: fixture.stagingDirectory("slow-a-failed-b"),
-                expectedTeamIdentifier: "",
-                allowUnsignedUpdates: true
+                expectedTeamIdentifier: ""
             )
         }
         gate.waitUntilEntered()
@@ -233,8 +228,7 @@ final class UpdateClientTests: XCTestCase {
             check,
             downloadDirectory: fixture.downloadDirectory,
             stagingRoot: fixture.stagingDirectory("failed-b"),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
         gate.release()
         let earlierResult = await earlier.value
@@ -259,8 +253,7 @@ final class UpdateClientTests: XCTestCase {
                 check,
                 downloadDirectory: fixture.downloadDirectory,
                 stagingRoot: fixture.stagingDirectory("slow-a-successful-b"),
-                expectedTeamIdentifier: "",
-                allowUnsignedUpdates: true
+                expectedTeamIdentifier: ""
             )
         }
         gate.waitUntilEntered()
@@ -273,7 +266,7 @@ final class UpdateClientTests: XCTestCase {
         let earlierResult = await earlier.value
 
         XCTAssertEqual(earlierResult.runtimeOutcome, .invalidDescriptor)
-        try client.prepareInstall(
+        _ = try client.prepareInstall(
             later,
             transactionID: lifecycleTransactionID
         )
@@ -324,7 +317,7 @@ final class UpdateClientTests: XCTestCase {
             DispatchQueue.global().async {
                 start.arriveAndWait()
                 do {
-                    try install.client.prepareInstall(
+                    _ = try install.client.prepareInstall(
                         install.staged,
                         transactionID: lifecycleTransactionID
                     )
@@ -370,7 +363,7 @@ final class UpdateClientTests: XCTestCase {
         group.enter()
         DispatchQueue.global().async {
             do {
-                try install.client.prepareInstall(
+                _ = try install.client.prepareInstall(
                     install.staged,
                     transactionID: lifecycleTransactionID
                 )
@@ -417,7 +410,7 @@ final class UpdateClientTests: XCTestCase {
         group.enter()
         DispatchQueue.global().async {
             do {
-                try install.client.prepareInstall(
+                _ = try install.client.prepareInstall(
                     install.staged,
                     transactionID: lifecycleTransactionID
                 )
@@ -435,8 +428,7 @@ final class UpdateClientTests: XCTestCase {
             stagingRoot: fixture.stagingDirectory(
                 "rejected-stage-attempt-during-scheduling"
             ),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
 
         XCTAssertEqual(rejectedStage.runtimeOutcome, .installHandoffFailure)
@@ -529,7 +521,7 @@ final class UpdateClientTests: XCTestCase {
         let descriptorURL = URL(
             string: "https://updates.example.test/releases/release.json"
         )!
-        let index: [String: Any] = [
+        let index = try signedIndex([
             "schemaVersion": 3,
             "appName": "Example.app",
             "items": [[
@@ -539,7 +531,7 @@ final class UpdateClientTests: XCTestCase {
                 "channel": "stable",
                 "release": descriptorURL.absoluteString,
             ]],
-        ]
+        ])
         let signatureRoot = try fixtureObject(
             "canonical-signature-cases.json"
         )
@@ -550,6 +542,7 @@ final class UpdateClientTests: XCTestCase {
             descriptor["signedDescriptor"] as? [String: Any]
         )
         descriptor["packageId"] = "com.example.other"
+        descriptor = try signedDescriptor(descriptor)
         let transport = FixtureRuntimeTransport(metadata: [
             indexURL: try JSONSerialization.data(withJSONObject: index),
             descriptorURL: try JSONSerialization.data(withJSONObject: descriptor),
@@ -562,9 +555,10 @@ final class UpdateClientTests: XCTestCase {
                 currentBuildNumber: 260,
                 currentUpdaterVersion: "2.7.0",
                 platform: "macos",
-                requireIndexSignature: false,
-                requireDescriptorSignature: false,
-                pinnedPublicKeysById: [:]
+                pinnedPublicKeysById: [
+                    "native-contract-stable": signingPrivateKey.publicKey
+                        .rawRepresentation
+                ]
             ),
             transport: transport
         )
@@ -840,6 +834,27 @@ private func signedIndex(_ json: [String: Any]) throws -> [String: Any] {
     )
     let signature = try signingPrivateKey.signature(
         for: index.canonicalSignatureBytes()
+    )
+    unsigned["signature"] = [
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-stable",
+        "value": signature.base64EncodedString(),
+    ]
+    return unsigned
+}
+
+private func signedDescriptor(_ json: [String: Any]) throws -> [String: Any] {
+    var unsigned = json
+    unsigned["signature"] = [
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-stable",
+        "value": "",
+    ]
+    let descriptor = try ReleaseDescriptor(
+        jsonData: JSONSerialization.data(withJSONObject: unsigned)
+    )
+    let signature = try signingPrivateKey.signature(
+        for: descriptor.canonicalSignatureBytes()
     )
     unsigned["signature"] = [
         "algorithm": "ed25519",
@@ -1132,7 +1147,11 @@ private final class LifecycleFixture {
         )!
         let archive = root.appendingPathComponent("artifact.zip")
         try Self.writeArchive(to: archive)
-        let descriptor: [String: Any] = [
+        let archiveData = try Data(contentsOf: archive)
+        let artifactSHA256 = SHA256.hash(data: archiveData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let descriptor = try signedDescriptor([
             "schemaVersion": 3,
             "packageId": "com.example.native-contract",
             "appName": "Example.app",
@@ -1143,15 +1162,15 @@ private final class LifecycleFixture {
             "artifact": [
                 "kind": "zip",
                 "url": artifactURL.absoluteString,
-                "sha256": String(repeating: "0", count: 64),
-                "length": try Data(contentsOf: archive).count,
+                "sha256": artifactSHA256,
+                "length": archiveData.count,
             ],
             "install": ["strategy": "wholeBundleReplace"],
             "minimumUpdaterVersion": "2.0.0",
             "minimumOS": ["macos": "10.15"],
             "generatedAt": "2026-07-10T00:00:00.000Z",
-        ]
-        let index: [String: Any] = [
+        ])
+        let index = try signedIndex([
             "schemaVersion": 3,
             "appName": "Example.app",
             "items": [[
@@ -1161,7 +1180,7 @@ private final class LifecycleFixture {
                 "channel": "stable",
                 "release": descriptorURL.absoluteString,
             ]],
-        ]
+        ])
         transport = FixtureRuntimeTransport(
             metadata: [
                 indexURL: try JSONSerialization.data(withJSONObject: index),
@@ -1169,7 +1188,7 @@ private final class LifecycleFixture {
                     withJSONObject: descriptor
                 ),
             ],
-            artifacts: [artifactURL: try Data(contentsOf: archive)]
+            artifacts: [artifactURL: archiveData]
         )
     }
 
@@ -1184,12 +1203,15 @@ private final class LifecycleFixture {
                 currentBuildNumber: 260,
                 currentUpdaterVersion: "2.7.0",
                 platform: "macos",
-                requireIndexSignature: false,
-                requireDescriptorSignature: false,
-                pinnedPublicKeysById: [:]
+                pinnedPublicKeysById: [
+                    "native-contract-stable": signingPrivateKey.publicKey
+                        .rawRepresentation
+                ]
             ),
             transport: transport,
-            stager: MacArtifactStager(),
+            stager: MacArtifactStager(
+                applicationTrustValidator: { _, _ in }
+            ),
             installPreparer: recorder.prepare,
             installCommitter: recorder.commit
         )
@@ -1208,8 +1230,7 @@ private final class LifecycleFixture {
             check,
             downloadDirectory: downloadDirectory,
             stagingRoot: stagingDirectory(name),
-            expectedTeamIdentifier: "",
-            allowUnsignedUpdates: true
+            expectedTeamIdentifier: ""
         )
         switch result {
         case let .success(staged):

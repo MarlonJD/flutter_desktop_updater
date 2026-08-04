@@ -97,19 +97,19 @@ private enum SMAppServiceSmokeHost {
     guard stagedApp.deletingLastPathComponent() == stageRoot else {
       throw SmokeError("Staged app is not a direct child of its stage root.")
     }
-    let provenance = try StageProvenance.read(stageRoot: stageRoot)
+    guard let expectedPackageID = Bundle.main.bundleIdentifier else {
+      throw SmokeError("Smoke host package identity is unavailable.")
+    }
+    let verifiedStage = try DesktopUpdaterPlugin.loadVerifiedStageForSmokeHost(
+      stagedPath: stagedApp,
+      stageRoot: stageRoot,
+      expectedPackageID: expectedPackageID
+    )
+    let transactionID = UUID().uuidString.lowercased()
     let helper = MacInstallHelper.smAppServiceSmokeHost()
     let reservation = try helper.prepareInstall(
-      MacInstallRequest(
-        verifiedStage: MacVerifiedStage(
-          stagedPath: stagedApp,
-          stageRoot: stageRoot,
-          provenance: provenance,
-          artifactKind: "zip"
-        ),
-        allowUnsignedUpdates: false,
-        diagnosticsLogPath: nil
-      )
+      MacInstallRequest(verifiedStage: verifiedStage),
+      transactionID: transactionID
     )
     var evidence: [String: Any] = [
       "schemaVersion": 1,

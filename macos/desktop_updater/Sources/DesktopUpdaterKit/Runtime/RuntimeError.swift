@@ -93,8 +93,6 @@ public struct RuntimeConfiguration {
     public let platform: String
     public let channel: String
     public let installationIdentity: String?
-    public let requireIndexSignature: Bool
-    public let requireDescriptorSignature: Bool
     public let pinnedPublicKeysById: [String: Data]
     public let minimumOSResolver: RuntimeMinimumOSResolver
     public let requestHeadersProvider: RuntimeRequestHeadersProvider
@@ -113,8 +111,6 @@ public struct RuntimeConfiguration {
         platform: String,
         channel: String = "stable",
         installationIdentity: String? = nil,
-        requireIndexSignature: Bool = true,
-        requireDescriptorSignature: Bool = true,
         pinnedPublicKeysById: [String: Data],
         minimumOSResolver: @escaping RuntimeMinimumOSResolver = { _, _ in true },
         requestHeadersProvider: @escaping RuntimeRequestHeadersProvider = { _ in [:] },
@@ -143,9 +139,7 @@ public struct RuntimeConfiguration {
                 "currentBuildNumber must not be negative."
             )
         }
-        if (requireIndexSignature || requireDescriptorSignature) &&
-            pinnedPublicKeysById.isEmpty
-        {
+        if pinnedPublicKeysById.isEmpty {
             throw RuntimeError.invalidConfiguration(
                 "At least one pinned public key is required."
             )
@@ -181,8 +175,6 @@ public struct RuntimeConfiguration {
         self.platform = platform
         self.channel = channel
         self.installationIdentity = installationIdentity
-        self.requireIndexSignature = requireIndexSignature
-        self.requireDescriptorSignature = requireDescriptorSignature
         self.pinnedPublicKeysById = pinnedPublicKeysById
         self.minimumOSResolver = minimumOSResolver
         self.requestHeadersProvider = requestHeadersProvider

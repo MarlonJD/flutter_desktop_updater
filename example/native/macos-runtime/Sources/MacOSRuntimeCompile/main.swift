@@ -93,7 +93,6 @@ struct MacOSRuntimeSmoke {
             fileURLWithPath: arguments.value("--smoke-root"),
             isDirectory: true
         )
-        let allowUnsigned = arguments.has("--allow-unsigned-updates")
         let transactionID = arguments.value("--transaction-id")
         let configuration = try RuntimeConfiguration(
             appArchiveUrl: try requiredURL(
@@ -120,8 +119,7 @@ struct MacOSRuntimeSmoke {
             stagingRoot: smokeRoot.appendingPathComponent("staging"),
             expectedTeamIdentifier: arguments.optionalValue(
                 "--expected-team-identifier"
-            ) ?? "",
-            allowUnsignedUpdates: allowUnsigned
+            ) ?? ""
         ).get()
         try writeDiagnostics(
             client.diagnostics.redactedLogLines(),

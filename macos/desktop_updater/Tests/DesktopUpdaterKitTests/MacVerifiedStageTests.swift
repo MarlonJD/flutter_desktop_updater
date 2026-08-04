@@ -50,18 +50,75 @@ final class MacVerifiedStageTests: XCTestCase {
             )
         )
     }
+
+    func testSignedLoaderRejectsArtifactByteMutation() throws {
+        let fixture = try SignedStageFixture.create()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var artifact = try Data(contentsOf: fixture.artifactURL)
+        artifact[artifact.startIndex] ^= 0xff
+        try artifact.write(to: fixture.artifactURL)
+
+        XCTAssertThrowsError(try fixture.load())
+    }
+
+    func testSignedLoaderRejectsSignedArtifactLengthMismatch() throws {
+        let fixture = try SignedStageFixture.create(
+            descriptorArtifactLengthAdjustment: 1
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        XCTAssertThrowsError(try fixture.load())
+    }
+
+    func testSignedLoaderRejectsSignedArtifactDigestMismatch() throws {
+        let fixture = try SignedStageFixture.create(
+            descriptorArtifactSHA256: String(repeating: "c", count: 64)
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        XCTAssertThrowsError(try fixture.load())
+    }
+
+    func testRetainedArtifactNamesMatchRuntimeStagerTopology() {
+        XCTAssertEqual(
+            macStagedArtifactFileName(for: "zip"),
+            ".desktop_updater_artifact.zip"
+        )
+        XCTAssertEqual(
+            macStagedArtifactFileName(for: "dmg"),
+            "artifact.dmg"
+        )
+        XCTAssertEqual(
+            macStagedArtifactFileName(for: "pkgInstaller"),
+            "installer.pkg"
+        )
+        XCTAssertNil(macStagedArtifactFileName(for: "unknown"))
+    }
 }
 
 private struct SignedStageFixture {
     let root: URL
     let stageRoot: URL
     let stagedApp: URL
+    let artifactURL: URL
     let packageID: String
     let artifactSHA256: String
     let keyID: String
     let publicKey: Data
 
-    static func create() throws -> Self {
+    func load() throws -> MacVerifiedStage {
+        try MacVerifiedStage.loadAndVerify(
+            stagedPath: stagedApp,
+            stageRoot: stageRoot,
+            expectedPackageID: packageID,
+            trustedReleasePublicKeys: [keyID: publicKey]
+        )
+    }
+
+    static func create(
+        descriptorArtifactSHA256: String? = nil,
+        descriptorArtifactLengthAdjustment: Int64 = 0
+    ) throws -> Self {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("signed-stage-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
@@ -88,12 +145,23 @@ private struct SignedStageFixture {
         ).write(to: contents.appendingPathComponent("Info.plist"))
         try Data("new executable".utf8).write(to: executable)
 
+        let artifactURL = stageRoot.appendingPathComponent(
+            ".desktop_updater_artifact.zip"
+        )
+        let artifactData = Data("signed retained zip artifact".utf8)
+        try artifactData.write(to: artifactURL)
+        let actualArtifactSHA256 = sha256(artifactData)
+        let signedArtifactSHA256 = descriptorArtifactSHA256
+            ?? actualArtifactSHA256
+        let signedArtifactLength = Int64(artifactData.count)
+            + descriptorArtifactLengthAdjustment
+
         let privateKey = Curve25519.Signing.PrivateKey()
         let keyID = "stable-2026"
-        let artifactSHA256 = String(repeating: "c", count: 64)
         var manifest = descriptorJSON(
             packageID: packageID,
-            artifactSHA256: artifactSHA256,
+            artifactSHA256: signedArtifactSHA256,
+            artifactLength: signedArtifactLength,
             keyID: keyID,
             signature: ""
         )
@@ -125,14 +193,15 @@ private struct SignedStageFixture {
             nonce: nonce,
             packageID: packageID,
             descriptorSHA256: try StageProvenance.canonicalJSONSHA256(manifest),
-            artifactSHA256: artifactSHA256
+            artifactSHA256: signedArtifactSHA256
         )
         return Self(
             root: root,
             stageRoot: stageRoot,
             stagedApp: stagedApp,
+            artifactURL: artifactURL,
             packageID: packageID,
-            artifactSHA256: artifactSHA256,
+            artifactSHA256: actualArtifactSHA256,
             keyID: keyID,
             publicKey: privateKey.publicKey.rawRepresentation
         )
@@ -141,6 +210,7 @@ private struct SignedStageFixture {
     private static func descriptorJSON(
         packageID: String,
         artifactSHA256: String,
+        artifactLength: Int64,
         keyID: String,
         signature: String
     ) -> [String: Any] {
@@ -156,7 +226,7 @@ private struct SignedStageFixture {
                 "kind": "zip",
                 "url": "https://updates.example.test/Example.zip",
                 "sha256": artifactSHA256,
-                "length": 123,
+                "length": artifactLength,
             ],
             "install": ["strategy": "wholeBundleReplace"],
             "signature": [
@@ -167,5 +237,9 @@ private struct SignedStageFixture {
             "minimumUpdaterVersion": "2.7.0",
             "generatedAt": "2026-08-03T00:00:00.000Z",
         ]
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }

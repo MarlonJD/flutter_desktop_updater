@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -92,7 +93,7 @@ final class NativeContractConformanceTests: XCTestCase {
             Data(base64Encoded: try string(valid, "publicKeyBase64"))
         )
         for entry in try dictionaries(fixture["freshInstallCases"]) {
-            let index: [String: Any] = [
+            let index = try signedNativeContractIndex([
                 "schemaVersion": 3,
                 "appName": "Example.app",
                 "items": [[
@@ -104,7 +105,7 @@ final class NativeContractConformanceTests: XCTestCase {
                     "release": descriptorURL.absoluteString,
                     "freshInstall": try required(entry, "input"),
                 ]],
-            ]
+            ])
             let transport = FixtureRuntimeTransport(metadata: [
                 indexURL: try JSONSerialization.data(withJSONObject: index),
                 descriptorURL: try JSONSerialization.data(
@@ -119,9 +120,11 @@ final class NativeContractConformanceTests: XCTestCase {
                     currentBuildNumber: 260,
                     currentUpdaterVersion: "2.7.0",
                     platform: "macos",
-                    requireIndexSignature: false,
                     pinnedPublicKeysById: [
                         try string(valid, "publicKeyId"): publicKey,
+                        "native-contract-index":
+                            nativeContractIndexPrivateKey.publicKey
+                                .rawRepresentation,
                     ]
                 ),
                 transport: transport
@@ -378,6 +381,33 @@ final class NativeContractConformanceTests: XCTestCase {
             XCTAssertTrue(descriptor.artifact.url.isAbsoluteURL)
         }
     }
+}
+
+private let nativeContractIndexPrivateKey = try! Curve25519.Signing.PrivateKey(
+    rawRepresentation: Data(repeating: 0x5a, count: 32)
+)
+
+private func signedNativeContractIndex(
+    _ json: [String: Any]
+) throws -> [String: Any] {
+    var signed = json
+    signed["signature"] = [
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-index",
+        "value": "",
+    ]
+    let index = try ReleaseIndex(
+        jsonData: JSONSerialization.data(withJSONObject: signed)
+    )
+    let signature = try nativeContractIndexPrivateKey.signature(
+        for: index.canonicalSignatureBytes()
+    )
+    signed["signature"] = [
+        "algorithm": "ed25519",
+        "publicKeyId": "native-contract-index",
+        "value": signature.base64EncodedString(),
+    ]
+    return signed
 }
 
 private final class FixtureRuntimeTransport: RuntimeUpdateTransport {

@@ -13,6 +13,12 @@ let package = Package(
             dependencies: [
                 .product(name: "DesktopUpdaterKit", package: "flutter_desktop_updater")
             ]
+        ),
+        .executableTarget(
+            name: "LegacyUnsignedRuntimeConsumer",
+            dependencies: [
+                .product(name: "DesktopUpdaterKit", package: "flutter_desktop_updater")
+            ]
         )
     ]
 )

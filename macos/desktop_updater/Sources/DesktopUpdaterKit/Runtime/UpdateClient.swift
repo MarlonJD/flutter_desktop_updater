@@ -366,25 +366,23 @@ public final class UpdateClient {
                 generation: checkGeneration
             )
         }
-        if configuration.requireIndexSignature || index.signature != nil {
-            do {
-                guard try ArtifactVerifier.verifyIndexSignature(
-                    index,
-                    pinnedPublicKeysById: configuration.pinnedPublicKeysById
-                ) else {
-                    return failure(
-                        .signatureFailure,
-                        "App archive Ed25519 signature is invalid.",
-                        generation: checkGeneration
-                    )
-                }
-            } catch {
+        do {
+            guard try ArtifactVerifier.verifyIndexSignature(
+                index,
+                pinnedPublicKeysById: configuration.pinnedPublicKeysById
+            ) else {
                 return failure(
                     .signatureFailure,
                     "App archive Ed25519 signature is invalid.",
                     generation: checkGeneration
                 )
             }
+        } catch {
+            return failure(
+                .signatureFailure,
+                "App archive Ed25519 signature is invalid.",
+                generation: checkGeneration
+            )
         }
         do {
             let currentVersion = try DesktopVersion(
@@ -478,20 +476,16 @@ public final class UpdateClient {
                     generation: checkGeneration
                 )
             }
-            if configuration.requireDescriptorSignature ||
-                descriptor.signature != nil
-            {
-                guard try ArtifactVerifier.verifyDescriptorSignature(
-                    descriptor,
-                    pinnedPublicKeysById: configuration.pinnedPublicKeysById
-                ) else {
-                    return failure(
-                        .signatureFailure,
-                        "Descriptor Ed25519 signature is invalid.",
-                        selectedItem: selected,
-                        generation: checkGeneration
-                    )
-                }
+            guard try ArtifactVerifier.verifyDescriptorSignature(
+                descriptor,
+                pinnedPublicKeysById: configuration.pinnedPublicKeysById
+            ) else {
+                return failure(
+                    .signatureFailure,
+                    "Descriptor Ed25519 signature is invalid.",
+                    selectedItem: selected,
+                    generation: checkGeneration
+                )
             }
             let policy = try UpdatePolicy.descriptorOutcome(
                 descriptor: descriptor,
@@ -553,7 +547,6 @@ public final class UpdateClient {
         downloadDirectory: URL,
         stagingRoot: URL,
         expectedTeamIdentifier: String,
-        allowUnsignedUpdates: Bool = false,
         progress: (@Sendable (Int64, Int64?) -> Void)? = nil
     ) async -> Result<RuntimeStagedUpdate, RuntimeError> {
         let stageLease: RuntimeStageLease
@@ -615,7 +608,6 @@ public final class UpdateClient {
                     descriptor: descriptor,
                     expectedPackageId: configuration.expectedPackageId,
                     expectedTeamIdentifier: expectedTeamIdentifier,
-                    allowUnsignedUpdates: allowUnsignedUpdates,
                     limits: RuntimeArchiveLimits(configuration: configuration)
                 )
             case "dmg":
@@ -624,8 +616,7 @@ public final class UpdateClient {
                     stagingRoot: stagingRoot,
                     descriptor: descriptor,
                     expectedPackageId: configuration.expectedPackageId,
-                    expectedTeamIdentifier: expectedTeamIdentifier,
-                    allowUnsignedUpdates: allowUnsignedUpdates
+                    expectedTeamIdentifier: expectedTeamIdentifier
                 )
             case "pkgInstaller":
                 stagedArtifact = try stager.stagePKG(
@@ -640,17 +631,16 @@ public final class UpdateClient {
                     message: "Artifact kind is not supported on macOS."
                 )
             }
-            let retainedArtifactPath: URL
-            switch descriptor.artifact.kind {
-            case "zip":
-                retainedArtifactPath = stagedArtifact.stageRoot
-                    .appendingPathComponent(".desktop_updater_artifact.zip")
-            case "pkgInstaller":
-                retainedArtifactPath = stagedArtifact.stageRoot
-                    .appendingPathComponent("installer.pkg")
-            default:
-                retainedArtifactPath = stagedArtifact.stagedPath
+            guard let retainedArtifactName = macStagedArtifactFileName(
+                for: descriptor.artifact.kind
+            ) else {
+                throw RuntimeError.outcome(
+                    .unsupportedArtifactKind,
+                    message: "Artifact kind is not supported on macOS."
+                )
             }
+            let retainedArtifactPath = stagedArtifact.stageRoot
+                .appendingPathComponent(retainedArtifactName)
             record(.stage, .info, "Verified native artifact is staged.")
             let staged = RuntimeStagedUpdate(
                 descriptor: descriptor,

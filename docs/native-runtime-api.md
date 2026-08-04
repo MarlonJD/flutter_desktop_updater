@@ -98,7 +98,8 @@ Every platform exposes the same stateful flow:
 ```text
 checkForUpdate
 downloadVerifyAndStage
-installAndRelaunch
+prepareInstall(transactionID)
+commitAfterExit(reservation)
 ```
 
 The first call fetches discovery metadata, selects an eligible release, binds
@@ -108,10 +109,9 @@ it under application-owned disposable roots. The third passes that staged
 artifact to the existing platform helper. A failed or non-update result cannot
 skip directly to a later stage.
 
-The optional `diagnosticsLogPath` argument is a compatibility-only diagnostics
-input. Standalone protocol-v1 helpers use their fixed platform-owned log and do
-not write post-exit events to a caller-selected path. Hosts that need their own
-durable file should persist app-owned lifecycle diagnostics before handoff.
+Native runtime helpers do not accept a caller-selected diagnostics path. Hosts
+that need durable lifecycle evidence should persist app-owned diagnostics
+before handoff; platform helpers retain their fixed platform-owned logs.
 
 ### macOS Swift
 
@@ -129,16 +129,18 @@ let staged = try await client.downloadVerifyAndStage(
     expectedTeamIdentifier: teamIdentifier
 ).get()
 
-try client.installAndRelaunch(
+let transactionID = UUID().uuidString.lowercased()
+let reservation = try client.prepareInstall(
     staged,
-    diagnosticsLogPath: diagnosticsLogPath
+    transactionID: transactionID
 )
+try client.commitAfterExit(reservation)
 ```
 
 Production ZIP and DMG staging rechecks the application bundle and publisher.
-`allowUnsignedUpdates` can relax staging-only checks for a controlled test, but
-privileged installation rejects it. The install handoff requires signed
-descriptor authority and signed application code; PKG trust is never disabled.
+Unsigned staging switches are not part of the 3.0 runtime surface. The install
+handoff requires signed descriptor authority and signed application code; PKG
+trust is never disabled.
 
 ### Windows .NET And C ABI
 

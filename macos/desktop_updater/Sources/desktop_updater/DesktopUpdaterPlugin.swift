@@ -144,7 +144,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 stagedPath: stagedURL,
                 stageRoot: stageRoot,
                 expectedPackageID: expectedPackageID,
-                trustedReleasePublicKeys: try trustedReleasePublicKeys()
+                trustedReleasePublicKeys: try Self.trustedReleasePublicKeys()
             )
             guard verifiedStage.provenance.markerSHA256
                     == stageProvenanceSHA256,
@@ -216,7 +216,21 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         }
     }
 
-    private func trustedReleasePublicKeys() throws -> [String: Data] {
+    @_spi(DesktopUpdaterSmoke)
+    public static func loadVerifiedStageForSmokeHost(
+        stagedPath: URL,
+        stageRoot: URL,
+        expectedPackageID: String
+    ) throws -> MacVerifiedStage {
+        try MacVerifiedStage.loadAndVerify(
+            stagedPath: stagedPath,
+            stageRoot: stageRoot,
+            expectedPackageID: expectedPackageID,
+            trustedReleasePublicKeys: try trustedReleasePublicKeys()
+        )
+    }
+
+    private static func trustedReleasePublicKeys() throws -> [String: Data] {
         let helperURL = Bundle.main.bundleURL.appendingPathComponent(
             "Contents/Helpers/DesktopUpdaterInstallHelper"
         )

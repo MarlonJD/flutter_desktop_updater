@@ -82,6 +82,12 @@ void main() {
     expect(host, contains("case .notRegistered, .notFound:"));
     expect(host, isNot(contains("synchronizeFile")));
     expect(host, contains("prepareInstall"));
+    expect(
+        host, contains("DesktopUpdaterPlugin.loadVerifiedStageForSmokeHost("));
+    expect(host, contains("transactionID: transactionID"));
+    expect(host, isNot(contains("MacVerifiedStage(")));
+    expect(host, isNot(contains("allowUnsignedUpdates")));
+    expect(host, isNot(contains("diagnosticsLogPath")));
     expect(host, contains("commitAfterExit"));
     expect(host, contains("recoverPendingInstall"));
     expect(host, contains("queryTransaction"));
@@ -99,6 +105,7 @@ void main() {
     expect(smoke, contains('phase: "recover"'));
     expect(smoke, contains('phase: "query"'));
     expect(smoke, contains("--exit-gate"));
+    expect(smoke, contains("--transaction-id"));
     expect(smoke, contains("launchctl"));
     expect(smoke, contains("rolledBack"));
     expect(smoke, contains("commitAccepted"));

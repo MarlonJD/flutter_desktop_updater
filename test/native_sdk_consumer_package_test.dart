@@ -70,6 +70,11 @@ void main() {
       "example/native/linux-cmake/main.cpp",
     );
     final docs = readRequiredFile("docs/native-sdk.md");
+    expect(docs, contains("prepareInstall(transactionID)"));
+    expect(docs, contains("commitAfterExit(reservation)"));
+    expect(docs, isNot(contains("scheduleInstallAndRelaunch")));
+    expect(docs, isNot(contains("allowUnsignedUpdates")));
+    expect(docs, isNot(contains("diagnosticsLogPath")));
 
     for (final operation in <String>[
       "prepareInstall",

@@ -129,6 +129,18 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     final diagnosticsSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
     ).readAsStringSync();
+    final runtimeConfigurationSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/Runtime/RuntimeError.swift",
+    ).readAsStringSync();
+    final artifactStagerSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/Runtime/ArtifactStager.swift",
+    ).readAsStringSync();
+    final updateClientSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/Runtime/UpdateClient.swift",
+    ).readAsStringSync();
+    final runnerSource = File(
+      "example/macos/Runner/AppDelegate.swift",
+    ).readAsStringSync();
 
     expect(
       requestSource,
@@ -143,6 +155,16 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     expect(requestSource, contains("trustedReleasePublicKeys: [String: Data]"));
     expect(requestSource, isNot(contains("allowUnsignedUpdates")));
     expect(requestSource, isNot(contains("diagnosticsLogPath")));
+    expect(
+      runtimeConfigurationSource,
+      isNot(contains("requireIndexSignature")),
+    );
+    expect(
+      runtimeConfigurationSource,
+      isNot(contains("requireDescriptorSignature")),
+    );
+    expect(artifactStagerSource, isNot(contains("allowUnsignedUpdates")));
+    expect(updateClientSource, isNot(contains("allowUnsignedUpdates")));
     expect(helperSource, contains("public struct MacInstallHelper"));
     expect(helperSource, contains("public init()"));
     expect(
@@ -169,6 +191,14 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     );
     expect(diagnosticsSource, contains("public struct MacDiagnosticEvent"));
     expect(diagnosticsSource, contains("public init("));
+    expect(
+      runnerSource,
+      contains("DesktopUpdaterPlugin.loadVerifiedStageForSmokeHost("),
+    );
+    expect(runnerSource, contains("transactionID: transactionID"));
+    expect(runnerSource, isNot(contains("MacVerifiedStage(")));
+    expect(runnerSource, isNot(contains("allowUnsignedUpdates")));
+    expect(runnerSource, isNot(contains("diagnosticsLogPath")));
   });
 
   test("macOS production updater gates stay enabled by default", () {

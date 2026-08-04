@@ -10,6 +10,19 @@ public let stageProvenanceFileName =
     ".desktop_updater_stage_provenance.json"
 public let updaterOwnedStagePrefix = "desktop_updater_stage_"
 
+func macStagedArtifactFileName(for artifactKind: String) -> String? {
+    switch artifactKind {
+    case "zip":
+        return ".desktop_updater_artifact.zip"
+    case "dmg":
+        return "artifact.dmg"
+    case "pkgInstaller":
+        return "installer.pkg"
+    default:
+        return nil
+    }
+}
+
 public struct StageProvenanceEntry: Codable, Equatable, Sendable {
     public let path: String
     public let kind: String
@@ -165,6 +178,36 @@ public struct MacVerifiedStage: Sendable {
               marker.descriptorSha256 == descriptorSHA256 else {
             throw macInstallRequestFailure(
                 "Signed package, artifact, and stage binding failed."
+            )
+        }
+
+        guard let retainedArtifactName = macStagedArtifactFileName(
+            for: artifactKind
+        ) else {
+            throw macInstallRequestFailure(
+                "The staged artifact has no native helper strategy."
+            )
+        }
+        let retainedArtifact = root.appendingPathComponent(
+            retainedArtifactName
+        )
+        let retainedValues = try retainedArtifact.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        )
+        guard retainedArtifact.deletingLastPathComponent() == root,
+              retainedValues.isRegularFile == true,
+              retainedValues.isSymbolicLink != true else {
+            throw macInstallRequestFailure(
+                "The retained staged artifact is missing or unsafe."
+            )
+        }
+        let retainedIdentity = try macInstallRequestFileIdentity(
+            retainedArtifact
+        )
+        guard retainedIdentity.length == artifactLength,
+              retainedIdentity.sha256 == artifactSHA256 else {
+            throw macInstallRequestFailure(
+                "The retained staged artifact does not match the signed descriptor."
             )
         }
 
@@ -934,6 +977,44 @@ private func macInstallValidSHA256(_ value: String) -> Bool {
         of: #"^[0-9a-f]{64}$"#,
         options: .regularExpression
     ) != nil
+}
+
+private func macInstallRequestFileIdentity(
+    _ url: URL
+) throws -> (length: Int64, sha256: String) {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { handle.closeFile() }
+    var context = CC_SHA256_CTX()
+    _ = CC_SHA256_Init(&context)
+    var length: Int64 = 0
+    while true {
+        let chunk = handle.readData(ofLength: 64 * 1024)
+        if chunk.isEmpty { break }
+        let chunkLength = Int64(chunk.count)
+        guard length <= Int64.max - chunkLength else {
+            throw macInstallRequestFailure(
+                "The retained staged artifact length overflowed."
+            )
+        }
+        length += chunkLength
+        chunk.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            _ = CC_SHA256_Update(
+                &context,
+                baseAddress,
+                CC_LONG(bytes.count)
+            )
+        }
+    }
+    var digest = [UInt8](
+        repeating: 0,
+        count: Int(CC_SHA256_DIGEST_LENGTH)
+    )
+    _ = CC_SHA256_Final(&digest, &context)
+    return (
+        length,
+        digest.map { String(format: "%02x", $0) }.joined()
+    )
 }
 
 private func macInstallRequestSHA256(_ data: Data) -> String {

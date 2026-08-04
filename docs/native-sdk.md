@@ -89,17 +89,16 @@ they expose an equivalent atomic operation. Application or Flutter state may
 drive UX but must not authorize mutation, choose rollback, or rewrite helper
 state.
 
-The compatibility method `scheduleInstallAndRelaunch` remains available. It is
-implemented as prepare, reservation validation, and commit; it has no script
-fallback. A missing, untrusted, or unavailable packaged endpoint fails before
-mutation. The transport integration and signed/elevated retail evidence are
-still **candidate-only**; this API surface is not production-ready until the
-target-host gates described below pass.
+There is no compatibility scheduling wrapper in 3.0. Every host must persist
+its caller-generated transaction ID, call explicit prepare, and commit only
+after the caller has exited. A missing, untrusted, or unavailable packaged
+endpoint fails before mutation. The transport integration and signed/elevated
+retail evidence are still **candidate-only**; this API surface is not
+production-ready until the target-host gates described below pass.
 
-Across these APIs, `diagnosticsLogPath` is a compatibility-only diagnostics
-input. Standalone protocol-v1 helpers use their fixed platform-owned log and do
-not write post-exit events to a caller-selected path. Use an app-owned lifecycle
-diagnostics sink when the host needs its own durable file.
+Native helpers do not accept a caller-selected diagnostics path. Use an
+app-owned lifecycle diagnostics sink before handoff; platform helpers retain
+their fixed platform-owned logs.
 
 Each retail application must provision these policy-bound artifacts:
 
@@ -132,44 +131,29 @@ dependency.
 import DesktopUpdaterKit
 import Foundation
 
-let stageRoot = try StageProvenance.createOwnedStage(parent: stagingParent)
-let stagedApp = stageRoot.appendingPathComponent(verifiedApp.lastPathComponent)
-try FileManager.default.copyItem(at: verifiedApp, to: stagedApp)
-let nonce = stageRoot.lastPathComponent.replacingOccurrences(
-    of: updaterOwnedStagePrefix,
-    with: ""
+// `staged` is returned by UpdateClient after signed metadata and artifact
+// verification; do not construct a stage or provenance marker at the call site.
+let verifiedStage = try MacVerifiedStage.loadAndVerify(
+    stagedPath: staged.stagedPath,
+    stageRoot: staged.stageRoot,
+    expectedPackageID: "com.example.app",
+    trustedReleasePublicKeys: trustedReleasePublicKeys
 )
-let provenance = try StageProvenance.write(
-    stageRoot: stageRoot,
-    nonce: nonce,
-    packageID: "com.example.app",
-    descriptorSHA256: verifiedDescriptorSHA256,
-    artifactSHA256: verifiedArtifactSHA256
+let transactionID = UUID().uuidString.lowercased()
+let reservation = try MacInstallHelper().prepareInstall(
+    MacInstallRequest(verifiedStage: verifiedStage),
+    transactionID: transactionID
 )
-let verifiedStage = MacVerifiedStage(
-    stagedPath: stagedApp,
-    stageRoot: stageRoot,
-    provenance: provenance,
-    artifactKind: "zip"
-)
-let request = MacInstallRequest(
-    verifiedStage: verifiedStage,
-    allowUnsignedUpdates: false,
-    diagnosticsLogPath: diagnosticsPath
-)
-try MacInstallHelper().scheduleInstallAndRelaunch(request)
+try MacInstallHelper().commitAfterExit(reservation)
 ```
 
 Create an updater-owned stage only after descriptor and artifact verification,
 then pass the resulting `MacVerifiedStage`. A staged request without complete
-provenance is rejected synchronously before helper launch. Keep
-`allowUnsignedUpdates` false for install handoff. It can relax staging-only
-checks in controlled tests, but the privileged helper rejects an unsigned
-install request. The helper rechecks stage inventory, bundle identity, and
-publisher trust before replacement. It derives the current PID and
-`Bundle.main` target internally, so callers cannot select another process or
-application bundle. `DesktopUpdaterVersion.string` exposes the helper package
-version.
+provenance is rejected synchronously before helper launch. The helper rechecks
+stage inventory, bundle identity, and publisher trust before replacement. It
+derives the current PID and `Bundle.main` target internally, so callers cannot
+select another process or application bundle. `DesktopUpdaterVersion.string`
+exposes the helper package version.
 
 Writable directory-replacement targets use the packaged one-shot helper and do
 not register a background item. A protected directory target uses the root
@@ -219,9 +203,10 @@ terms, this exact Flutter fallback boundary is **CocoaPods macOS 10.14**. It
 does not compile `DesktopUpdaterKit/Runtime/**`.
 
 The same SwiftPM product now includes the preview `UpdateClient`. Its
-`checkForUpdate`, `downloadVerifyAndStage`, and `installAndRelaunch` operations
-are exercised by the external `example/native/macos-runtime` consumer. Linking
-the helper directly does not require a Flutter engine.
+`checkForUpdate`, `downloadVerifyAndStage`, and explicit
+`prepareInstall`/`commitAfterExit` operations are exercised by the external
+`example/native/macos-runtime` consumer. Linking the helper directly does not
+require a Flutter engine.
 
 ## Windows: CMake, C ABI, And .NET
 
@@ -423,7 +408,8 @@ The opt-in preview implements the same three-stage lifecycle on every platform:
 ```text
 checkForUpdate
 downloadVerifyAndStage
-installAndRelaunch
+prepareInstall(transactionID)
+commitAfterExit(reservation)
 ```
 
 It covers HTTP transport, rollout and fresh-install selection, support policy,

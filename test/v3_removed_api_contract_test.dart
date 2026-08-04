@@ -79,6 +79,27 @@ void main() {
     }
     expect(failures, isEmpty, reason: failures.join("\n\n"));
   });
+
+  test("3.0 rejects Swift unsigned runtime switches", () async {
+    final result = await Process.run(
+      "swift",
+      const <String>[
+        "build",
+        "--package-path",
+        "test/fixtures/v3_removed_api/swift",
+        "--target",
+        "LegacyUnsignedRuntimeConsumer",
+      ],
+      runInShell: false,
+    );
+
+    expect(
+      result.exitCode,
+      isNot(0),
+      reason:
+          "Legacy Swift unsigned controls must not compile.\n${_output(result)}",
+    );
+  });
 }
 
 Future<ProcessResult> _analyze(String fixture) {
