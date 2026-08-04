@@ -2271,6 +2271,7 @@ jobs:
           smoke_root="$RUNNER_TEMP/native-runtime-linux-zip"
           ready_file="$smoke_root/ready.json"
           package_id="com.example.native-runtime-smoke"
+          transaction_id="00000000-0000-4000-8000-000000000043"
           rm -rf "$smoke_root"
           mkdir -p "$smoke_root/install" "$smoke_root/payload"
           consumer_bin="$PWD/example/native/linux-cmake-runtime/build/runtime_compile"
@@ -2340,6 +2341,7 @@ jobs:
             --smoke-root "$smoke_root/runtime" \
             --install-root "$smoke_root/install" \
             --executable-relative-path runtime_compile \
+            --transaction-id "$transaction_id" \
             --diagnostics-log "$smoke_root/helper-diagnostics.jsonl"
           for attempt in $(seq 1 120); do
             if [ "$(tr -d '\r\n' < "$smoke_root/install/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi
