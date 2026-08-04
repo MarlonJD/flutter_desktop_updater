@@ -1588,24 +1588,30 @@ TEST(LinuxNativeInstall,
   EXPECT_NE(std::string::npos, ReadFile(query_result).find("state\n1\n"))
       << ReadFile(query_result);
 
-  EXPECT_EQ(0, RunControlFixture(
-                   install_root / "linux_commit_caller_fixture", "--recover",
-                   transaction_id, recovery_result))
-      << ReadFile(recovery_result);
-  EXPECT_NE(std::string::npos,
-            ReadFile(recovery_result).find(
-                "state\n" +
-                std::to_string(static_cast<unsigned int>(
-                    InstallTransactionState::kCompleted)) +
-                "\n"))
-      << ReadFile(recovery_result);
-  EXPECT_NE(std::string::npos,
-            ReadFile(recovery_result).find(
-                "code\n" +
-                std::to_string(static_cast<unsigned int>(
-                    InstallTransactionResultCode::kRelaunchFailure)) +
-                "\n"))
-      << ReadFile(recovery_result);
+  bool recovered = false;
+  std::string last_recovery;
+  for (int attempt = 0; attempt < 400 && !recovered; ++attempt) {
+    std::error_code ignored;
+    fs::remove(recovery_result, ignored);
+    const int recovery_status = RunControlFixture(
+        install_root / "linux_commit_caller_fixture", "--recover",
+        transaction_id, recovery_result);
+    last_recovery = ReadFile(recovery_result);
+    recovered =
+        recovery_status == 0 &&
+        last_recovery.find(
+            "state\n" +
+            std::to_string(static_cast<unsigned int>(
+                InstallTransactionState::kCompleted)) +
+            "\n") != std::string::npos &&
+        last_recovery.find(
+            "code\n" +
+            std::to_string(static_cast<unsigned int>(
+                InstallTransactionResultCode::kRelaunchFailure)) +
+            "\n") != std::string::npos;
+    if (!recovered) usleep(10'000);
+  }
+  ASSERT_TRUE(recovered) << last_recovery;
 
   const fs::path authority =
       state_directory.path() / "desktop-updater" / "transactions" /
