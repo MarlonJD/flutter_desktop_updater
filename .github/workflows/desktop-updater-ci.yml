@@ -1018,13 +1018,25 @@ jobs:
       - name: Assert removed Windows C/C++ and .NET consumers
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
+          $ErrorActionPreference = "Stop"
           $failures = @()
           $cmakeBuild = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake"
-          $cmakeOutput = & cmake -S test/fixtures/v3_removed_api/windows-cmake -B $cmakeBuild "-DDESKTOP_UPDATER_SOURCE_ROOT=$env:GITHUB_WORKSPACE" 2>&1
-          $cmakeExit = $LASTEXITCODE
-          $cmakeText = $cmakeOutput -join "`n"
-          $cmakeOutput | ForEach-Object { Write-Host $_ }
+          $cmakeStdoutPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake.stdout.log"
+          $cmakeStderrPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake.stderr.log"
+          Remove-Item -LiteralPath $cmakeStdoutPath, $cmakeStderrPath -Force -ErrorAction SilentlyContinue
+          $cmakeProcess = Start-Process -FilePath "cmake" -ArgumentList @(
+            "-S",
+            "test/fixtures/v3_removed_api/windows-cmake",
+            "-B",
+            $cmakeBuild,
+            "-DDESKTOP_UPDATER_SOURCE_ROOT=$env:GITHUB_WORKSPACE"
+          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput $cmakeStdoutPath -RedirectStandardError $cmakeStderrPath
+          $cmakeExit = $cmakeProcess.ExitCode
+          $cmakeText = @(
+            (Get-Content -Raw -LiteralPath $cmakeStdoutPath -ErrorAction SilentlyContinue),
+            (Get-Content -Raw -LiteralPath $cmakeStderrPath -ErrorAction SilentlyContinue)
+          ) -join [Environment]::NewLine
+          Write-Host $cmakeText
           if ($cmakeExit -ne 0) {
             if ($cmakeText -match "unexpectedly compiled: desktop_updater_schedule_install_and_relaunch_v1") {
               $failures += "Windows C/C++ legacy ABI consumers unexpectedly compiled."
@@ -1032,16 +1044,26 @@ jobs:
               $failures += "Windows C/C++ fixture failed without its expected assertion: $cmakeText"
             }
           }
-          $dotnetOutput = & dotnet build test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj --nologo 2>&1
-          $dotnetExit = $LASTEXITCODE
-          $dotnetText = $dotnetOutput -join "`n"
-          $dotnetOutput | ForEach-Object { Write-Host $_ }
+          $dotnetStdoutPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-dotnet.stdout.log"
+          $dotnetStderrPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-dotnet.stderr.log"
+          Remove-Item -LiteralPath $dotnetStdoutPath, $dotnetStderrPath -Force -ErrorAction SilentlyContinue
+          $dotnetProcess = Start-Process -FilePath "dotnet" -ArgumentList @(
+            "build",
+            "test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj",
+            "--nologo"
+          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput $dotnetStdoutPath -RedirectStandardError $dotnetStderrPath
+          $dotnetExit = $dotnetProcess.ExitCode
+          $dotnetText = @(
+            (Get-Content -Raw -LiteralPath $dotnetStdoutPath -ErrorAction SilentlyContinue),
+            (Get-Content -Raw -LiteralPath $dotnetStderrPath -ErrorAction SilentlyContinue)
+          ) -join [Environment]::NewLine
+          Write-Host $dotnetText
           if ($dotnetExit -eq 0) {
             $failures += "Windows .NET legacy consumer unexpectedly compiled: ScheduleInstallAndRelaunch"
           } elseif ($dotnetText -notmatch "ScheduleInstallAndRelaunch") {
             $failures += "Windows .NET fixture failed without the intended ScheduleInstallAndRelaunch diagnostic: $dotnetText"
           }
-          if ($failures.Count -gt 0) { throw ($failures -join "`n") }
+          if ($failures.Count -gt 0) { throw ($failures -join [Environment]::NewLine) }
       - name: Upload Windows native helper test counts
         if: always()
         uses: actions/upload-artifact@v4
