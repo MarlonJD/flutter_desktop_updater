@@ -360,8 +360,22 @@ function Save-WindowsFlutterSmokeEvidence {
   }
   $recoveryRecords = @()
   if (-not $recoveryActive) {
-    $filesystem.installExists = Test-Path -LiteralPath $install -PathType Container
-    $filesystem.sentinelExists = Test-Path -LiteralPath (Join-Path $install "desktop_updater_smoke.txt") -PathType Leaf
+    try {
+      $filesystem.installExists = Test-Path -LiteralPath $install -PathType Container
+    } catch {
+      $filesystem.installExists = $null
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "install directory probe: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+    try {
+      $filesystem.sentinelExists = Test-Path -LiteralPath (Join-Path $install "desktop_updater_smoke.txt") -PathType Leaf
+    } catch {
+      $filesystem.sentinelExists = $null
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "install sentinel probe: $($_.Exception.Message)")
+      ) | Out-Null
+    }
     try {
       $filesystem.topLevelSmokeEntries = @(Get-WindowsSmokeTopLevelEntries $smokeRoot)
     } catch {
