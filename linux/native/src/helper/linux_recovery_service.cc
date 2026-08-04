@@ -11,6 +11,8 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 #include "unix_socket_transport.h"
@@ -20,6 +22,13 @@ namespace {
 
 constexpr char manualActionRequired[] = "manualActionRequired";
 constexpr char liveOwner[] = "liveOwner";
+
+LinuxRecoveryOutcome DebugManual(const char* reason) {
+  if (std::getenv("DESKTOP_UPDATER_DEBUG_RECOVERY") != nullptr) {
+    std::fprintf(stderr, "linux recovery manual: %s\n", reason);
+  }
+  return LinuxRecoveryOutcome::kManualActionRequired;
+}
 
 bool Matches(int parent,
              const std::string& leaf,
@@ -107,7 +116,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
     auto parent = OpenLinuxDirectory(parent_locator_.string());
     DurableLinuxTransactionJournalStore store(parent.get(), paths_);
     if (store.HasAmbiguousNext()) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("ambiguous journal next");
     }
     const auto loaded = store.Load();
     if (!loaded.has_value()) {
@@ -122,7 +131,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       const auto record = LinuxTransactionLockRecord::DecodeStrict(
           ReadLinuxRelativeUtf8(parent.get(), paths_.lock_name, 4096));
       if (record.transaction_id != paths_.transaction_id) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("orphan lock transaction mismatch");
       }
       if (liveness_checker_.IsSameProcessAlive(
               record.owner_process_id,
@@ -131,17 +140,17 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       }
       if (LinuxRelativeExistsNoFollow(parent.get(), paths_.prepared_name) ||
           LinuxRelativeExistsNoFollow(parent.get(), paths_.backup_name)) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("orphan lock has mutation artifacts");
       }
       if (unlinkat(parent.get(), paths_.lock_name.c_str(), 0) != 0) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("orphan lock unlink failed");
       }
       orphan_lock.reset();
       SyncLinuxDirectory(parent.get());
       return LinuxRecoveryOutcome::kNothingToRecover;
     }
     if (!LinuxRelativeExistsNoFollow(parent.get(), paths_.lock_name)) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("journal has no lock");
     }
     auto transaction_lock = OpenLinuxRelativeNoFollow(
         parent.get(), paths_.lock_name, O_RDWR);
@@ -151,12 +160,12 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
     const auto lock_record = LinuxTransactionLockRecord::DecodeStrict(
         ReadLinuxRelativeUtf8(parent.get(), paths_.lock_name, 4096));
     if (lock_record.transaction_id != paths_.transaction_id) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("lock transaction mismatch");
     }
     if (loaded->owner_process_id != lock_record.owner_process_id ||
-        loaded->owner_process_start_identity !=
+            loaded->owner_process_start_identity !=
             lock_record.owner_process_start_identity) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("journal owner mismatch");
     }
     LinuxTransactionJournal journal = *loaded;
     if (journal.transaction_id != paths_.transaction_id ||
@@ -167,7 +176,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
         !HasStableLinuxIdentity(ReadLinuxFileIdentity(parent.get()),
                                 journal.parent_identity) ||
         journal.expected_payload_identity != expected_payload_identity_) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("journal identity or payload mismatch");
     }
     if (liveness_checker_.IsSameProcessAlive(
             journal.owner_process_id,
@@ -181,7 +190,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       return LinuxRecoveryOutcome::kLiveOwner;
     }
     if (!LinuxRelativeExistsNoFollow(parent.get(), paths_.lock_name)) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("lock disappeared after recovery lock");
     }
 
     bool target_exists =
@@ -194,7 +203,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
         LinuxRelativeExistsNoFollow(parent.get(), paths_.backup_name);
     if (!CompatibleObservation(journal, target_exists, stage_exists,
                                prepared_exists, backup_exists)) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("incompatible filesystem observation");
     }
     if (target_exists) {
       const auto identity =
@@ -202,12 +211,12 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       if (identity != journal.target_identity &&
           !verifier_.MatchesActivatedPayloadRoot(
               parent.get(), paths_.target_name, journal.stage_identity)) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("target identity mismatch");
       }
     }
     if (backup_exists &&
         !Matches(parent.get(), paths_.backup_name, journal.target_identity)) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("backup identity mismatch");
     }
 
     if (stage_exists) {
@@ -215,7 +224,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
                    journal.stage_identity) ||
           verifier_.Verify(parent.get(), journal.original_stage_name) !=
               expected_payload_identity_) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("stage identity or payload mismatch");
       }
       RenameLinuxRelative(parent.get(), journal.original_stage_name,
                           paths_.prepared_name, false);
@@ -227,7 +236,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
     if (!backup_exists && prepared_exists) {
       if (!target_exists ||
           !Matches(parent.get(), paths_.target_name, journal.target_identity)) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("target missing or identity mismatch before backup");
       }
       RenameLinuxRelative(parent.get(), paths_.target_name, paths_.backup_name,
                           false);
@@ -242,7 +251,7 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
       if (!Matches(parent.get(), paths_.prepared_name, journal.stage_identity) ||
           verifier_.Verify(parent.get(), paths_.prepared_name) !=
               expected_payload_identity_) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("prepared identity or payload mismatch");
       }
       RenameLinuxRelative(parent.get(), paths_.prepared_name,
                           paths_.target_name, false);
@@ -263,12 +272,12 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
             parent.get(), paths_.target_name, journal.stage_identity) ||
         verifier_.Verify(parent.get(), paths_.target_name) !=
             expected_payload_identity_) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("activated target identity or payload mismatch");
     }
 
     if (backup_exists) {
       if (!Matches(parent.get(), paths_.backup_name, journal.target_identity)) {
-        return LinuxRecoveryOutcome::kManualActionRequired;
+        return DebugManual("backup identity mismatch before cleanup");
       }
       journal.state = LinuxTransactionState::kTargetActivated;
       store.Persist(journal);
@@ -282,11 +291,14 @@ LinuxRecoveryOutcome LinuxRecoveryService::Recover() {
     store.Remove();
     if (unlinkat(parent.get(), paths_.recovery_lock_name.c_str(), 0) != 0 &&
         errno != ENOENT) {
-      return LinuxRecoveryOutcome::kManualActionRequired;
+      return DebugManual("recovery lock unlink failed");
     }
     SyncLinuxDirectory(parent.get());
     return LinuxRecoveryOutcome::kRecovered;
-  } catch (const std::exception&) {
+  } catch (const std::exception& error) {
+    if (std::getenv("DESKTOP_UPDATER_DEBUG_RECOVERY") != nullptr) {
+      std::fprintf(stderr, "linux recovery exception: %s\n", error.what());
+    }
     return LinuxRecoveryOutcome::kManualActionRequired;
   }
 }
