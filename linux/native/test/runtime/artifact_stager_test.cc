@@ -144,8 +144,8 @@ int main(int argument_count, char** arguments) {
     const auto valid_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(
             destination, install_root, "Example",
-            "com.example.native-contract", {}, "",
-            staged.provenance.marker_sha256);
+            "com.example.native-contract", {},
+            staged.provenance.marker_sha256, descriptor.artifact.sha256);
     if (!valid_handoff.ok) {
       throw std::runtime_error(
           "Validated Linux install handoff was rejected: " +
@@ -154,8 +154,8 @@ int main(int argument_count, char** arguments) {
     const auto protected_handoff =
         desktop_updater::runtime::internal::ValidateLinuxInstallHandoff(
             destination, "/usr/bin", "Example",
-            "com.example.native-contract", {}, "",
-            staged.provenance.marker_sha256);
+            "com.example.native-contract", {},
+            staged.provenance.marker_sha256, descriptor.artifact.sha256);
     if (protected_handoff.ok) {
       throw std::runtime_error("Protected Linux install root was accepted.");
     }

@@ -1,5 +1,7 @@
 #include "contract_fixture_tests.h"
 
+#include <array>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -10,6 +12,7 @@
 
 #include "update_client_core.h"
 #include "update_transport.h"
+#include "optional/monocypher-ed25519.h"
 
 namespace desktop_updater {
 namespace runtime {
@@ -74,6 +77,51 @@ bool OptionalIntegerValue(const JsonValue& value,
 
 std::vector<std::uint8_t> Bytes(const std::string& value) {
   return std::vector<std::uint8_t>(value.begin(), value.end());
+}
+
+std::string Base64(const std::uint8_t* bytes, std::size_t length) {
+  static constexpr char alphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string result;
+  result.reserve(((length + 2) / 3) * 4);
+  for (std::size_t offset = 0; offset < length; offset += 3) {
+    const std::uint32_t first = bytes[offset];
+    const std::uint32_t second =
+        offset + 1 < length ? bytes[offset + 1] : 0;
+    const std::uint32_t third = offset + 2 < length ? bytes[offset + 2] : 0;
+    const std::uint32_t value = (first << 16) | (second << 8) | third;
+    result.push_back(alphabet[(value >> 18) & 0x3f]);
+    result.push_back(alphabet[(value >> 12) & 0x3f]);
+    result.push_back(offset + 1 < length ? alphabet[(value >> 6) & 0x3f] : '=');
+    result.push_back(offset + 2 < length ? alphabet[value & 0x3f] : '=');
+  }
+  return result;
+}
+
+std::string SignIndex(JsonValue index, const std::string& public_key_id) {
+  JsonValue::Object signature;
+  signature.emplace("algorithm", JsonValue(std::string("ed25519")));
+  signature.emplace("publicKeyId", JsonValue(public_key_id));
+  signature.emplace("value", JsonValue(std::string()));
+  index.object().emplace("signature", JsonValue(std::move(signature)));
+
+  const ReleaseIndex unsigned_index =
+      ParseReleaseIndex(EncodeCanonicalJson(index));
+  const std::string message = CanonicalIndexSignatureBytes(unsigned_index);
+  std::array<std::uint8_t, 32> seed{};
+  for (std::size_t index = 0; index < seed.size(); ++index) {
+    seed[index] = static_cast<std::uint8_t>(index);
+  }
+  std::array<std::uint8_t, 64> secret{};
+  std::array<std::uint8_t, 32> public_key{};
+  std::array<std::uint8_t, 64> signed_bytes{};
+  crypto_ed25519_key_pair(secret.data(), public_key.data(), seed.data());
+  crypto_ed25519_sign(
+      signed_bytes.data(), secret.data(),
+      reinterpret_cast<const std::uint8_t*>(message.data()), message.size());
+  index.object().at("signature").object().at("value") =
+      JsonValue(Base64(signed_bytes.data(), signed_bytes.size()));
+  return EncodeCanonicalJson(index);
 }
 
 ClientConfiguration FixtureConfiguration(const std::string& index_url) {
@@ -185,7 +233,8 @@ void TestFreshInstallClient(const JsonValue& fixture,
     index.emplace("schemaVersion", JsonValue(std::int64_t{3}));
     index.emplace("appName", JsonValue(std::string("Example.app")));
     index.emplace("items", JsonValue(std::move(items)));
-    const std::string encoded = EncodeCanonicalJson(JsonValue(std::move(index)));
+    const std::string encoded =
+        SignIndex(JsonValue(std::move(index)), valid.at("publicKeyId").string());
     FixtureTransport transport({
         {index_url, Bytes(encoded)},
         {descriptor_url, Bytes(EncodeCanonicalJson(descriptor))},
