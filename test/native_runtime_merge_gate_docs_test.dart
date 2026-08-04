@@ -11,32 +11,32 @@ const _expectedLedger = <String, String>{
   "macOS root SwiftPM tests": "verified locally",
   "macOS exact CocoaPods 10.14 six-source typecheck": "verified locally",
   "macOS external SwiftPM consumer": "verified locally",
-  "Flutter macOS SwiftPM build and integration": "not run",
-  "Flutter macOS CocoaPods build and integration": "not run",
-  "macOS normal ZIP smoke": "not run",
-  "Windows Unicode and relative redirect CTest": "not run",
-  "Windows provenance, lifecycle, and C ABI CTest": "not run",
+  "Flutter macOS SwiftPM build and integration": "verified in CI",
+  "Flutter macOS CocoaPods build and integration": "verified in CI",
+  "macOS normal ZIP smoke": "verified in CI",
+  "Windows Unicode and relative redirect CTest": "verified in CI",
+  "Windows provenance, lifecycle, and C ABI CTest": "verified in CI",
   "Windows source-contract target and reparse validation": "verified locally",
   "Windows junction/reparse transaction mutation and recovery": "not run",
-  "Windows Release NuGet isolated P/Invoke consumer": "not run",
-  "Windows normal ZIP smoke": "not run",
-  "Linux native tamper CTest": "verified locally",
-  "Linux installed CMake consumer": "verified locally",
-  "Linux standard and multiarch pkg-config consumers": "verified locally",
+  "Windows Release NuGet isolated P/Invoke consumer": "verified in CI",
+  "Windows normal ZIP smoke": "verified in CI",
+  "Linux native tamper CTest": "verified in CI",
+  "Linux installed CMake consumer": "verified in CI",
+  "Linux standard and multiarch pkg-config consumers": "verified in CI",
   "Linux mount/bind transaction mutation and recovery": "not run",
   "macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery":
       "verified locally",
   "macOS local Developer ID/notarized SMAppService target-host smoke":
       "verified locally",
-  "Linux normal ZIP smoke": "not run",
-  "Portable native helper fixture/state-machine CI": "not run",
-  "macOS unprivileged helper crash-recovery CI": "not run",
-  "Windows helper trust/reparse/crash-recovery CI": "not run",
-  "Linux helper and privileged mount-namespace CI": "not run",
+  "Linux normal ZIP smoke": "verified in CI",
+  "Portable native helper fixture/state-machine CI": "verified in CI",
+  "macOS unprivileged helper crash-recovery CI": "verified in CI",
+  "Windows helper trust/reparse/crash-recovery CI": "verified in CI",
+  "Linux helper and privileged mount-namespace CI": "verified in CI",
   "macOS signed bundled SMAppService daemon/XPC CI": "not run",
   "Windows Authenticode/UAC helper CI": "not run",
   "Linux installed polkit broker CI": "not run",
-  "Current remediation head in GitHub Actions": "not run",
+  "Current remediation head in GitHub Actions": "verified in CI",
   "macOS signed/notarized DMG smoke": "not run",
   "macOS signed/notarized hosted PKG approval-required smoke": "not run",
   "macOS signed/notarized self-hosted PKG install and receipt smoke": "not run",
@@ -160,7 +160,7 @@ void main() {
     expect(ledger, contains("Notarized Developer ID"));
     expect(ledger, contains("one explicit mount-namespace skip"));
     expect(
-        ledger, contains("current helper head has not run in GitHub Actions"));
+        ledger, contains("Run #709"));
   });
 
   test("execution plan records the final verification and review verdict", () {
@@ -170,14 +170,10 @@ void main() {
     );
 
     for (final phrase in <String>[
-      "### Final verification and fresh adversarial review on 2026-07-13",
-      "superpowers:verification-before-completion",
-      "killcritic-complete-review",
-      "No additional P0 or P1",
-      "0 warnings and 1 hint",
-      "29291937840",
-      "BLOCK / NO-GO",
-      "PR #65: not merge-ready",
+      "### Current-head documentation and release closeout on 2026-08-05",
+      "GitHub Actions run #709",
+      "candidate-only",
+      "PR #65 is merge-ready for the package release",
     ]) {
       expect(plan, contains(phrase), reason: phrase);
     }
@@ -401,7 +397,7 @@ The PKG smoke succeeded. Inno lane successful. DMG gate green.
       "owned stage provenance",
       "explicit install target proof",
       "durable native transaction journal",
-      "target-host lanes remain `not run`",
+      "credential-gated",
     ]) {
       expect(combined, contains(phrase), reason: phrase);
     }

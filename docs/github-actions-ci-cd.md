@@ -152,7 +152,7 @@ Use an app-owned workflow when you want CI/CD to publish real desktop updates.
 
 Recommended high-level flow:
 
-1. Trigger the workflow from a version tag such as `v2.0.0`, or from a protected manual `workflow_dispatch`.
+1. Trigger the workflow from a version tag such as `v3.0.0`, or from a protected manual `workflow_dispatch`.
 2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
 3. Run `dart run desktop_updater:release publish --platform macos` with
    `--public-key-id`, `--private-key-env`, and `--public-keys-env`.
@@ -209,7 +209,7 @@ DESKTOP_UPDATER_RELEASE_SIGNING_PRIVATE_KEY
 DESKTOP_UPDATER_RELEASE_SIGNING_PUBLIC_KEY
 ```
 
-The current 2.0 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
+The current 3.0 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
 
 ## macOS Signing And Notarization
 
@@ -444,11 +444,11 @@ The final `app-archive.json` should point at the hosted descriptor, not at a fol
   "appName": "Example App",
   "items": [
     {
-      "version": "2.0.0",
-      "buildNumber": 200,
+      "version": "3.0.0",
+      "buildNumber": 300,
       "platform": "macos",
       "channel": "stable",
-      "release": "https://updates.example.com/releases/2.0.0/macos/release.json"
+      "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
     }
   ]
 }

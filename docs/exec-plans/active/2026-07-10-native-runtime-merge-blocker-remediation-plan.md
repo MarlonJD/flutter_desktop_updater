@@ -2638,3 +2638,10 @@ This workflow reduces omission risk but cannot guarantee that no defect remains.
 - [ ] Ordinary CI gates pass with nonzero test discovery.
 - [x] Signed/notarized lanes are reported literally as passed or not run.
 - [x] PR body and execution-plan state match repository evidence.
+
+
+### Current-head documentation and release closeout on 2026-08-05
+
+The older review entries above are historical snapshots. The implementation head used for the documentation refresh passed the normal, secretless target-host matrix in [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): Dart package checks, macOS SwiftPM/CocoaPods integrations, Windows/Linux native and consumer lanes, normal ZIP smokes, and candidate CLI jobs completed successfully. Authenticode/UAC, installed-polkit, signed SMAppService, signed/notarized DMG and PKG, and signed Inno lanes remain `not run` because their explicit credentials or hosts were unavailable.
+
+This closes the stale-evidence documentation item and makes the 2.x-to-3.0 migration/removal surface explicit. It does not promote the native runtime preview to `production-ready`; the preview remains `candidate-only` and the credential-gated release lanes remain separately tracked. PR #65 is merge-ready for the package release after the documentation commit passes its own CI; native preview production readiness remains a separate release gate.

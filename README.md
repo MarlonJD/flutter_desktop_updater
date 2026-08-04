@@ -16,6 +16,8 @@ artifact length and SHA-256 before installation.
 
 ## Quick Start
 
+Upgrading from 2.x? Read the [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md) before changing the dependency. Version 3.0 is a breaking release: legacy trust flags, caller-selected diagnostics, and compatibility scheduling APIs were removed rather than deprecated.
+
 Add the package:
 
 ```yaml

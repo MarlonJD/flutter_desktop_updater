@@ -401,9 +401,13 @@ Windows transport must preserve Unicode paths and resolve relative redirects;
 Windows retail consumption must use the Release NuGet payload and installed
 third-party notices.
 
-The current remediation head's target-host jobs are configured but `not run`;
-no `verified in CI` result is claimed for it. Signed DMG, PKG, and Inno lanes
-are also `not run` without explicit credentials. The API remains `preview` and
-`candidate-only`, not `production-ready`. See
+The exact implementation head passed the normal, secretless target-host matrix
+in [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992):
+Dart package checks, macOS SwiftPM/CocoaPods integrations, native consumer
+checks, Windows/Linux target-host tests, and normal ZIP smokes all passed.
+Credential-gated Authenticode/UAC, installed-polkit, signed SMAppService, DMG,
+PKG, and Inno lanes remain `not run` without their explicit credentials and
+hosts. The API remains `preview` and `candidate-only`, not
+`production-ready`. See
 [Native Runtime Preview API](native-runtime-api.md) for the literal ledger,
 compiling examples, packaging boundaries, and trust rules.

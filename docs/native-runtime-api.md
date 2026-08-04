@@ -42,37 +42,37 @@ configured-but-unexecuted workflow.
 | macOS root SwiftPM tests | `verified locally` | Root `swift test` completed 96/96 tests on this macOS host for the current integration head |
 | macOS exact CocoaPods 10.14 six-source typecheck | `verified locally` | The exact fallback source allowlist typechecked for `x86_64-apple-macosx10.14` |
 | macOS external SwiftPM consumer | `verified locally` | `swift run --package-path example/native/macos` built and executed the external consumer |
-| Flutter macOS SwiftPM build and integration | `not run` | The current helper head has not run in GitHub Actions |
-| Flutter macOS CocoaPods build and integration | `not run` | The current helper head has not run in GitHub Actions |
-| macOS normal ZIP smoke | `not run` | The current helper head has not run in GitHub Actions |
-| Windows Unicode and relative redirect CTest | `not run` | Requires the Windows target-host job for the current helper head |
-| Windows provenance, lifecycle, and C ABI CTest | `not run` | Requires the Windows target-host job for the current helper head |
+| Flutter macOS SwiftPM build and integration | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): build and integration tests passed |
+| Flutter macOS CocoaPods build and integration | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): fallback build and integration tests passed |
+| macOS normal ZIP smoke | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): native runtime ZIP candidate rejection smoke passed |
+| Windows Unicode and relative redirect CTest | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): target-host gates passed |
+| Windows provenance, lifecycle, and C ABI CTest | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): native tests and C ABI coverage passed |
 | Windows source-contract target and reparse validation | `verified locally` | Dart source-contract tests verified the fail-closed target/reparse checks; this is not junction execution evidence |
 | Windows junction/reparse transaction mutation and recovery | `not run` | The standalone helper implementation exists; mandatory Windows target-host execution is absent |
-| Windows Release NuGet isolated P/Invoke consumer | `not run` | The current package, embedded helper, and sealed policy inventory have not run on Windows CI |
-| Windows normal ZIP smoke | `not run` | Requires the Windows target-host job for the current helper head |
-| Linux native tamper CTest | `verified locally` | The local Linux container lane passed its native suite |
-| Linux installed CMake consumer | `verified locally` | The local Linux container installed and consumed the CMake package |
-| Linux standard and multiarch pkg-config consumers | `verified locally` | The local Linux container consumed the installed pkg-config metadata |
+| Windows Release NuGet isolated P/Invoke consumer | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): Release package, notices, isolated P/Invoke, and inventory checks passed |
+| Windows normal ZIP smoke | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): debug/release update and ZIP smokes passed |
+| Linux native tamper CTest | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): Linux target-host tamper gates passed |
+| Linux installed CMake consumer | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): installed CMake consumer passed |
+| Linux standard and multiarch pkg-config consumers | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): standard and multiarch consumers passed |
 | Linux mount/bind transaction mutation and recovery | `not run` | The unprivileged container suite had one explicit mount-namespace skip. A separate privileged throwaway container passed the exact bind-mount rejection test 1/1, but installed-polkit transaction mutation and recovery have not run |
 | macOS packaged signed helper ownership transfer, cross-process target lock, durable journal, and crash recovery | `verified locally` | The helper suite passed 134/134 and DesktopUpdaterKit passed 96/96; earlier administrator-approved notarized root-daemon evidence covered XPC prepare, forced-kill rollback recovery, v1-to-v2 replacement, ownership normalization, and fresh-process completed query, while the new PKG provider still requires fresh target-host evidence |
 | macOS local Developer ID/notarized SMAppService target-host smoke | `verified locally` | Final universal v1/v2 apps were accepted by Apple notarization, stapled, and Gatekeeper accepted with `source=Notarized Developer ID`; the protected root-owned target updated with daemon PIDs `27851` → `28621` → `29512` and endpoint identities `525c…` → `308d…` |
-| Linux normal ZIP smoke | `not run` | Requires the Linux target-host job for the current helper head |
-| Portable native helper fixture/state-machine CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| macOS unprivileged helper crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| Windows helper trust/reparse/crash-recovery CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| Linux helper and privileged mount-namespace CI | `not run` | The mandatory job is configured but has not executed for the current helper head |
-| macOS signed bundled SMAppService daemon/XPC CI | `not run` | Optional CI duplication; the equivalent target-host boundary is verified locally and accepted for the macOS `production-ready` verdict |
+| Linux normal ZIP smoke | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): debug/release update and ZIP smokes passed |
+| Portable native helper fixture/state-machine CI | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): generated fixture checks and Windows/Linux helper suites passed |
+| macOS unprivileged helper crash-recovery CI | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): unprivileged crash-recovery suite and helper smoke passed |
+| Windows helper trust/reparse/crash-recovery CI | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): helper trust, transaction, and crash-recovery tests passed |
+| Linux helper and privileged mount-namespace CI | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): helper and privileged mount-namespace rejection tests passed; installed-polkit mutation remains `not run` |
+| macOS signed bundled SMAppService daemon/XPC CI | `not run` | Optional credential-gated job was skipped in Run #709; signed target-host execution remains separately gated |
 | Windows Authenticode/UAC helper CI | `not run` | Manual self-hosted credential-gated lane |
 | Linux installed polkit broker CI | `not run` | Manual self-hosted lane is configured for separate fixed-byte/policy audit plus real non-root public-API → pkexec mutation, durable query, after-backup death, and fresh-broker recovery; it has not run for this head |
-| Current remediation head in GitHub Actions | `not run` | The current helper head has not run in GitHub Actions; older run `29291937840` does not prove these helper changes |
+| Current remediation head in GitHub Actions | `verified in CI` | [GitHub Actions run #709](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/30952030992): all ordinary package, platform, consumer, smoke, and candidate CLI jobs passed; credential-gated jobs were skipped |
 | macOS signed/notarized DMG smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 | macOS signed/notarized hosted PKG approval-required smoke | `not run` | Separate credential-gated `workflow_dispatch` lane; approval-boundary evidence is not install success |
 | macOS signed/notarized self-hosted PKG install and receipt smoke | `not run` | Separate preapproved target-host lane for real `/Applications` mutation, receipt, installed helper identity, and stage cleanup |
 | Windows signed Inno smoke | `not run` | Separate credential-gated `workflow_dispatch` lane |
 
 `verified locally` means the named behavior passed on the local host.
-`verified in CI` is recorded only after the required target-host job passes.
+`verified in CI` is recorded only after the required target-host job passes. Run #709 covered the normal secretless target-host matrix; credential-gated lanes remain separately labeled `not run`.
 `blocked` means a required implementation, host, dependency, approval, or
 credential prevented a gate. `production-ready` requires every applicable
 artifact row, packaged consumer, publisher check, and cleanup assertion to pass.

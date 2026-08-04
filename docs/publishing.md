@@ -1,5 +1,7 @@
 # Publishing Desktop Updates
 
+Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) before publishing.
+
 This guide covers the app-owned release publishing flow for desktop_updater 3.0.
 The happy path is:
 
