@@ -1018,8 +1018,7 @@ jobs:
       - name: Assert removed Windows C/C++ and .NET consumers
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $PSNativeCommandUseErrorActionPreference = $false
+          $ErrorActionPreference = "Continue"
           $failures = @()
           $cmakeBuild = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake"
           $cmakeOutput = & cmake -S test/fixtures/v3_removed_api/windows-cmake -B $cmakeBuild "-DDESKTOP_UPDATER_SOURCE_ROOT=$env:GITHUB_WORKSPACE" 2>&1
