@@ -308,8 +308,10 @@ void main() {
         File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
 
     const diagnosticsPaths = [
-      "reports/windows-update-smoke-debug-diagnostics.jsonl",
-      "reports/windows-update-smoke-release-diagnostics.jsonl",
+      "reports/windows-v3-debug-run-1",
+      "reports/windows-v3-debug-run-2",
+      "reports/windows-v3-release-run-1",
+      "reports/windows-v3-release-run-2",
       "reports/linux-update-smoke-debug-diagnostics.jsonl",
       "reports/linux-update-smoke-release-diagnostics.jsonl",
     ];

@@ -141,13 +141,17 @@ void main() {
     }
   });
 
-  test("Windows and Linux install adapters accept only the five-key request",
+  test("Windows and Linux install adapters accept only the nine-key request",
       () {
     final windowsPlugin = File(pluginSources[1]).readAsStringSync();
     final linuxPlugin = File(pluginSources[2]).readAsStringSync();
     const requiredKeys = <String>[
       "stagingPath",
       "expectedPackageId",
+      "updateVersion",
+      "updateBuildNumber",
+      "platform",
+      "channel",
       "expectedArtifactSha256",
       "stageProvenanceSha256",
       "transactionId",
@@ -170,9 +174,9 @@ void main() {
         expect(source, isNot(contains('"$key"')), reason: key);
       }
     }
-    expect(windowsPlugin, contains("arguments->size() != 5"));
+    expect(windowsPlugin, contains("arguments->size() != 9"));
     expect(windowsPlugin, contains("CurrentExecutablePath()"));
-    expect(linuxPlugin, contains("fl_value_get_length(args) != 5"));
+    expect(linuxPlugin, contains("fl_value_get_length(args) != 9"));
     expect(linuxPlugin, contains("CurrentExecutableTarget("));
   });
 

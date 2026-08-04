@@ -317,9 +317,15 @@ Future<StringBuffer> validateFixture(ReleasePublishE2eFixture fixture) async {
       fixture.manifestFile.path,
       "--from-version",
       "2.0.0+200",
+      "--public-keys-env",
+      _publishPublicKeysEnv,
     ],
     projectRoot: fixture.projectRoot,
     output: output,
+    environment: {
+      _publishPublicKeysEnv:
+          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
+    },
   );
   if (exitCode != 0) {
     throw StateError("release validate failed:\n$output");
