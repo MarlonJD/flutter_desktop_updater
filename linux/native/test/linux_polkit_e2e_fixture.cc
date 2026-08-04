@@ -459,7 +459,6 @@ int Install(const fs::path& target,
             const fs::path& stage,
             const fs::path& output) {
   desktop_updater::native::InstallRequest request;
-  request.operation = desktop_updater::native::LinuxInstallOperation::kInstall;
   request.staging_path = stage.string();
   request.install_root = target.string();
   request.executable_relative_path = kExecutableRelativePath;
@@ -471,7 +470,8 @@ int Install(const fs::path& target,
       stage / ".desktop_updater_artifact.zip");
   desktop_updater::native::InstallReservation reservation;
   const auto prepared =
-      desktop_updater::native::PrepareInstall(request, &reservation);
+      desktop_updater::native::PrepareInstall(request, StageNonce(stage),
+                                              &reservation);
   if (!prepared.ok) {
     WriteFile(output, "prepareError=" + prepared.error + "\n", 0600);
     return 2;

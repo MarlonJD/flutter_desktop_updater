@@ -33,6 +33,9 @@ namespace {
 
 namespace fs = std::filesystem;
 
+constexpr char kTestTransactionID[] =
+    "123e4567-e89b-42d3-a456-426614174001";
+
 class TemporaryDirectory {
  public:
   explicit TemporaryDirectory(bool system_temp = false) {
@@ -150,7 +153,6 @@ InstallRequest RequestFor(const fs::path& install_root,
         "{\"packageId\":\"com.example.app\",\"schemaVersion\":1}");
   }
   InstallRequest request;
-  request.operation = LinuxInstallOperation::kInstall;
   request.staging_path = staging_root.string();
   request.install_root = install_root.string();
   request.executable_relative_path = "example";
@@ -678,7 +680,8 @@ TEST(LinuxNativeInstall,
   request.executable_relative_path = copied_launcher.filename().string();
 
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_FALSE(prepared.ok);
   EXPECT_NE(std::string::npos,
             prepared.error.find(
@@ -725,7 +728,6 @@ TEST(LinuxNativeInstall, PublicClientPreparesAndCancelsOverRealUnixSocket) {
   InstallRequest request = RequestFor(install_root, staging_root, true,
                                       descriptor_sha256, artifact_sha256);
   request.executable_relative_path = executable.filename().string();
-  request.transaction_id = "123e4567-e89b-42d3-a456-426614174001";
   WriteFile(helper.parent_path() / "desktop-updater-helper.policy.json",
             CanonicalPortablePolicy(Sha256File(executable),
                                     Sha256File(helper),
@@ -733,9 +735,10 @@ TEST(LinuxNativeInstall, PublicClientPreparesAndCancelsOverRealUnixSocket) {
             0600);
 
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_TRUE(prepared.ok) << prepared.error;
-  EXPECT_EQ(request.transaction_id, reservation.transaction_id);
+  EXPECT_EQ(kTestTransactionID, reservation.transaction_id);
   EXPECT_EQ(43u, reservation.ready_token.size());
   if (prepared.ok) {
     const fs::path helper_stage =
@@ -820,7 +823,8 @@ TEST(LinuxNativeInstall,
 
   target_lock_exit.Set("1");
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   target_lock_exit.Unset();
   EXPECT_FALSE(prepared.ok) << prepared.error;
   EXPECT_TRUE(reservation.transaction_id.empty());
@@ -931,7 +935,8 @@ TEST(LinuxNativeInstall,
 
   preparing_exit.Set("1");
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   preparing_exit.Unset();
   EXPECT_FALSE(prepared.ok) << prepared.error;
   EXPECT_TRUE(reservation.transaction_id.empty());
@@ -1027,7 +1032,8 @@ TEST(LinuxNativeInstall,
 
   rollback_exit.Set("1");
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   ASSERT_TRUE(prepared.ok) << prepared.error;
   ASSERT_FALSE(reservation.transaction_id.empty());
   const std::string transaction_id = reservation.transaction_id;
@@ -1124,7 +1130,8 @@ TEST(LinuxNativeInstall,
             0600);
 
   InstallReservation reservation;
-  const InstallResult prepared = PrepareInstall(request, &reservation);
+  const InstallResult prepared =
+      PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_TRUE(prepared.ok) << prepared.error;
   if (prepared.ok) {
     const fs::path helper_stage =
@@ -1806,7 +1813,6 @@ TEST(LinuxNativeInstall, RejectsProtectedSharedRoots) {
                            "/usr/sbin", "/usr/local", "/usr/local/bin",
                            "/opt", "/etc", "/var", "/home"}) {
     InstallRequest request;
-    request.operation = LinuxInstallOperation::kInstall;
     request.staging_path = "/tmp/staging";
     request.install_root = root;
     request.executable_relative_path = "bin/example";
@@ -1851,9 +1857,9 @@ TEST(LinuxNativeInstall, RejectsInvalidCallerProvidedTransactionId) {
   WriteFile(install_root / "example", "old", 0755);
   WriteFile(staging_root / "example", "new", 0755);
   InstallRequest request = RequestFor(install_root, staging_root);
-  request.transaction_id = "NOT-A-CANONICAL-TRANSACTION-ID";
-
-  const InstallResult result = ValidateInstallRequest(request);
+  InstallReservation reservation;
+  const InstallResult result = PrepareInstall(
+      request, "NOT-A-CANONICAL-TRANSACTION-ID", &reservation);
 
   EXPECT_FALSE(result.ok);
   EXPECT_NE(std::string::npos, result.error.find("transaction ID"));

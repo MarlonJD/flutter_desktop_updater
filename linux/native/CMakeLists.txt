@@ -313,7 +313,9 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
     test/linux_commit_caller_fixture.cc)
   target_compile_features(linux_commit_caller_fixture PRIVATE cxx_std_17)
   target_include_directories(linux_commit_caller_fixture
-    PRIVATE ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR})
+    PRIVATE
+      ${DESKTOP_UPDATER_RUNTIME_COMMON_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/helper)
   target_link_libraries(linux_commit_caller_fixture
     PRIVATE desktop_updater_native)
   add_executable(linux_restart_caller_fixture

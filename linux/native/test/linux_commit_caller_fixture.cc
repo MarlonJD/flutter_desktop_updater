@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -7,6 +8,21 @@
 #include <unistd.h>
 
 #include "desktop_updater_native.h"
+#include "unix_socket_transport.h"
+
+namespace {
+
+constexpr char kStagePrefix[] = "desktop_updater_stage_";
+
+std::string TransactionIDFromStage(const std::string& stage) {
+  const std::string leaf = std::filesystem::path(stage).filename().string();
+  if (leaf.rfind(kStagePrefix, 0) != 0) {
+    throw std::runtime_error("stage leaf must use the owned updater prefix");
+  }
+  return leaf.substr(sizeof(kStagePrefix) - 1);
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   if (argc == 1) {
@@ -53,11 +69,10 @@ int main(int argc, char** argv) {
   if (argc != 5) return 64;
   const std::string target = argv[1];
   const std::string stage = argv[2];
-    const std::string result_path = argv[4];
+  const std::string result_path = argv[4];
   std::ofstream result(result_path, std::ios::binary | std::ios::trunc);
   try {
     desktop_updater::native::InstallRequest request;
-    request.operation = desktop_updater::native::LinuxInstallOperation::kInstall;
     request.staging_path = stage;
     request.install_root = target;
     request.executable_relative_path = "linux_commit_caller_fixture";
@@ -74,7 +89,8 @@ int main(int argc, char** argv) {
 
     desktop_updater::native::InstallReservation reservation;
     const auto prepared =
-        desktop_updater::native::PrepareInstall(request, &reservation);
+        desktop_updater::native::PrepareInstall(
+            request, TransactionIDFromStage(stage), &reservation);
     if (!prepared.ok) {
       result << "prepare-error\n" << prepared.error << '\n';
       return 2;
