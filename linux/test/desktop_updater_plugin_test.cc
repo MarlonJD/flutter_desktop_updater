@@ -24,7 +24,9 @@ namespace desktop_updater {
 namespace test {
 
 using native::InstallRequest;
-using native::LinuxInstallOperation;
+
+constexpr char kTestTransactionID[] =
+    "123e4567-e89b-42d3-a456-426614174000";
 
 TEST(DesktopUpdaterPlugin, GetPlatformVersion) {
   g_autoptr(FlMethodResponse) response = get_platform_version();
@@ -45,26 +47,32 @@ TEST(DesktopUpdaterPlugin, InstallUpdateRequiresExistingStagingDirectory) {
       std::to_string(getpid());
 
   InstallRequest request = {
-      LinuxInstallOperation::kInstall,
       "/tmp/desktop_updater_missing_staging",
       install_root,
       "bin/my-app",
       "com.example.app",
       {},
       "",
+      "",
+      {},
+      "",
   };
-  const auto result = native::ScheduleInstallAndRelaunch(request);
+  native::InstallReservation reservation;
+  const auto result =
+      native::PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_FALSE(result.ok);
   EXPECT_THAT(result.error, testing::HasSubstr("Staged update directory"));
 }
 
 TEST(LinuxInstallTarget, RejectsUsrBinExecutableParent) {
   const auto result = native::ValidateInstallRequest({
-      LinuxInstallOperation::kInstall,
       "/tmp/staging",
       "/usr/bin",
       "my-app",
       "com.example.app",
+      {},
+      "",
+      "",
       {},
       "",
   });
@@ -111,11 +119,13 @@ TEST(LinuxInstallTarget, AcceptsSelfContainedBundle) {
   ASSERT_NE(marker_sha256, nullptr);
 
   InstallRequest request = {
-      LinuxInstallOperation::kInstall,
       staging_root,
       install_root,
       "bin/my-app",
       "com.example.app",
+      {},
+      "",
+      "",
       {},
       "",
   };
@@ -136,11 +146,13 @@ TEST(LinuxInstallTarget, RejectsEveryProtectedRoot) {
                            "/usr/sbin", "/usr/local", "/usr/local/bin",
                            "/opt", "/etc", "/var", "/home"}) {
     const auto result = native::ValidateInstallRequest({
-        LinuxInstallOperation::kInstall,
         "/tmp/staging",
         root,
         "bin/my-app",
         "com.example.app",
+        {},
+        "",
+        "",
         {},
         "",
     });
@@ -148,26 +160,15 @@ TEST(LinuxInstallTarget, RejectsEveryProtectedRoot) {
   }
 }
 
-TEST(LinuxInstallTarget, RestartDoesNotRequirePackageIdentity) {
-  const auto result = native::ValidateInstallRequest({
-      LinuxInstallOperation::kRestart,
-      "",
-      "/opt/example-app",
-      "bin/my-app",
-      "",
-      {},
-      "",
-  });
-  EXPECT_TRUE(result.ok) << result.error;
-}
-
 TEST(LinuxInstallTarget, InstallRejectsBlankPackageIdentity) {
   const auto result = native::ValidateInstallRequest({
-      LinuxInstallOperation::kInstall,
       "/tmp/staging",
       "/opt/example-app",
       "bin/my-app",
       "   ",
+      {},
+      "",
+      "",
       {},
       "",
   });
@@ -176,20 +177,24 @@ TEST(LinuxInstallTarget, InstallRejectsBlankPackageIdentity) {
 
 TEST(LinuxInstallTarget, RejectsNonCanonicalRootAndExecutableTraversal) {
   EXPECT_FALSE(native::ValidateInstallRequest({
-      LinuxInstallOperation::kInstall,
       "/tmp/staging",
       "/opt/../usr/bin",
       "my-app",
       "com.example.app",
       {},
       "",
+      "",
+      {},
+      "",
   }).ok);
   EXPECT_FALSE(native::ValidateInstallRequest({
-      LinuxInstallOperation::kInstall,
       "/tmp/staging",
       "/opt/example-app",
       "bin/../my-app",
       "com.example.app",
+      {},
+      "",
+      "",
       {},
       "",
   }).ok);
@@ -203,11 +208,13 @@ TEST(LinuxInstallTarget, RejectsSymlinkedInstallRoot) {
   ASSERT_EQ(symlink(real_root, link_path.c_str()), 0);
 
   const auto result = native::ValidateInstallRequest({
-      LinuxInstallOperation::kInstall,
       "/tmp/staging",
       link_path,
       "my-app",
       "com.example.app",
+      {},
+      "",
+      "",
       {},
       "",
   });
@@ -222,15 +229,20 @@ TEST(LinuxInstallTarget, ValidationFailureCreatesNoHelperScript) {
       "/tmp/desktop_updater_" + std::to_string(getpid()) + ".sh";
   unlink(script_path.c_str());
 
-  const auto result = native::ScheduleInstallAndRelaunch({
-      LinuxInstallOperation::kInstall,
+  InstallRequest request = {
       "/tmp",
       "/usr/bin",
       "my-app",
       "com.example.app",
       {},
       "",
-  });
+      "",
+      {},
+      "",
+  };
+  native::InstallReservation reservation;
+  const auto result =
+      native::PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_FALSE(result.ok);
   EXPECT_NE(result.error.find("protected"), std::string::npos);
   EXPECT_NE(access(script_path.c_str(), F_OK), 0);
@@ -246,15 +258,20 @@ TEST(LinuxInstallTarget, RemovedTraversalCreatesNoHelperScript) {
       std::string(current_directory) + "/desktop_updater_removed_target_" +
       std::to_string(getpid());
 
-  const auto result = native::ScheduleInstallAndRelaunch({
-      LinuxInstallOperation::kInstall,
+  InstallRequest request = {
       "/tmp",
       install_root,
       "bin/my-app",
       "com.example.app",
       {"../escape"},
       "",
-  });
+      "",
+      {},
+      "",
+  };
+  native::InstallReservation reservation;
+  const auto result =
+      native::PrepareInstall(request, kTestTransactionID, &reservation);
   EXPECT_FALSE(result.ok);
   EXPECT_NE(result.error.find("Removed file path"), std::string::npos);
   EXPECT_NE(access(script_path.c_str(), F_OK), 0);
