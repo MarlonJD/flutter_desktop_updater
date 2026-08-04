@@ -80,44 +80,48 @@ void main() {
     expect(failures, isEmpty, reason: failures.join("\n\n"));
   });
 
-  test("3.0 rejects Swift unsigned runtime switches", () async {
-    final result = await Process.run(
-      "swift",
-      const <String>[
-        "build",
-        "--package-path",
-        "test/fixtures/v3_removed_api/swift",
-        "--target",
-        "LegacyUnsignedRuntimeConsumer",
-      ],
-      runInShell: false,
-    );
-
-    expect(
-      result.exitCode,
-      isNot(0),
-      reason:
-          "Legacy Swift unsigned controls must not compile.\n${_output(result)}",
-    );
-    final output = _output(result);
-    final fixtureSource = File(
-      "test/fixtures/v3_removed_api/swift/"
-      "Sources/LegacyUnsignedRuntimeConsumer/main.swift",
-    ).readAsStringSync();
-    for (final removedSurface in <String>[
-      "requireIndexSignature",
-      "requireDescriptorSignature",
-      "allowUnsignedUpdates",
-    ]) {
-      expect(
-        fixtureSource,
-        contains(removedSurface),
-        reason:
-            "Legacy Swift fixture must exercise the removed $removedSurface surface.",
+  test(
+    "3.0 rejects Swift unsigned runtime switches",
+    () async {
+      final result = await Process.run(
+        "swift",
+        const <String>[
+          "build",
+          "--package-path",
+          "test/fixtures/v3_removed_api/swift",
+          "--target",
+          "LegacyUnsignedRuntimeConsumer",
+        ],
+        runInShell: false,
       );
-    }
-    expect(output, contains("allowUnsignedUpdates"));
-  });
+
+      expect(
+        result.exitCode,
+        isNot(0),
+        reason:
+            "Legacy Swift unsigned controls must not compile.\n${_output(result)}",
+      );
+      final output = _output(result);
+      final fixtureSource = File(
+        "test/fixtures/v3_removed_api/swift/"
+        "Sources/LegacyUnsignedRuntimeConsumer/main.swift",
+      ).readAsStringSync();
+      for (final removedSurface in <String>[
+        "requireIndexSignature",
+        "requireDescriptorSignature",
+        "allowUnsignedUpdates",
+      ]) {
+        expect(
+          fixtureSource,
+          contains(removedSurface),
+          reason:
+              "Legacy Swift fixture must exercise the removed $removedSurface surface.",
+        );
+      }
+      expect(output, contains("allowUnsignedUpdates"));
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }
 
 Future<ProcessResult> _analyze(String fixture) {
