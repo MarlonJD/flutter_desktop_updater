@@ -46,7 +46,7 @@ Future<void> main(List<String> args) async {
       _publishConfig(
         baseUrl: server.baseUrl,
         outputRoot: _joinAll([tempRoot.path, "dist", "desktop_updater"]),
-        copyCommand: _copyCommand(packageRoot),
+        copyCommand: _copyCommand(packageRoot, webRoot),
         notarize: notarize,
       ),
     );
@@ -131,7 +131,7 @@ String _requiredEnv(String name) {
   return value;
 }
 
-String _copyCommand(Directory packageRoot) {
+String _copyCommand(Directory packageRoot, Directory webRoot) {
   final script = File(
     _joinAll([
       packageRoot.path,
@@ -142,7 +142,7 @@ String _copyCommand(Directory packageRoot) {
       "copy_updates.dart",
     ]),
   );
-  return 'dart "${script.path}"';
+  return 'dart "${script.path}" unused "${webRoot.path}"';
 }
 
 Future<ProcessResult> _runChecked(

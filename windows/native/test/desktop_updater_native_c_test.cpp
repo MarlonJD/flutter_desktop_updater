@@ -177,12 +177,12 @@ TEST(DesktopUpdaterNativeCAbi2, MissingRequestFieldIsRejected) {
 
 TEST(DesktopUpdaterNativeCAbi2, InvalidTransactionIdIsRejected) {
   auto request = ValidRequest();
-  constexpr std::uint16_t invalid[] = u"not-a-uuid";
+  constexpr char16_t invalid[] = u"not-a-uuid";
   auto status = EmptyStatus();
   desktop_updater_reservation_handle_abi2* reservation = nullptr;
 
   auto result = desktop_updater_prepare_install_abi2(
-      &request, invalid, &reservation, &status);
+      &request, U16(invalid), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation, nullptr);
