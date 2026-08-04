@@ -1,0 +1,73 @@
+#ifndef DESKTOP_UPDATER_RUNTIME_C_COMPAT_H_
+#define DESKTOP_UPDATER_RUNTIME_C_COMPAT_H_
+
+// The implementation was originally written against the pre-3.0 spelling.
+// Keep these aliases private so the installed header and export table expose
+// only the collision-free ABI2 contract.
+#define desktop_updater_runtime_client_v1 desktop_updater_runtime_client_abi2
+#define desktop_updater_runtime_result_v1 desktop_updater_runtime_result_abi2
+#define desktop_updater_runtime_outcome_v1 desktop_updater_runtime_outcome_abi2
+#define desktop_updater_runtime_pinned_key_v1 \
+  desktop_updater_runtime_pinned_key_abi2
+#define desktop_updater_runtime_header_v1 desktop_updater_runtime_header_abi2
+#define desktop_updater_runtime_header_list_v1 \
+  desktop_updater_runtime_header_list_abi2
+#define desktop_updater_runtime_configuration_v1 \
+  desktop_updater_runtime_configuration_abi2
+#define desktop_updater_runtime_stage_request_v1 \
+  desktop_updater_runtime_stage_request_abi2
+#define desktop_updater_runtime_install_request_v1 \
+  desktop_updater_runtime_install_request_abi2
+
+#define desktop_updater_runtime_minimum_os_resolver_v1 \
+  desktop_updater_runtime_minimum_os_resolver_abi2
+#define desktop_updater_runtime_headers_provider_v1 \
+  desktop_updater_runtime_headers_provider_abi2
+
+#define DESKTOP_UPDATER_RUNTIME_NO_UPDATE \
+  DESKTOP_UPDATER_RUNTIME_NO_UPDATE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_UPDATE_AVAILABLE \
+  DESKTOP_UPDATER_RUNTIME_UPDATE_AVAILABLE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_FRESH_INSTALL_REQUIRED \
+  DESKTOP_UPDATER_RUNTIME_FRESH_INSTALL_REQUIRED_ABI2
+#define DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_UPDATER \
+  DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_UPDATER_ABI2
+#define DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_OS \
+  DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_MINIMUM_OS_ABI2
+#define DESKTOP_UPDATER_RUNTIME_ROLLOUT_INELIGIBLE \
+  DESKTOP_UPDATER_RUNTIME_ROLLOUT_INELIGIBLE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_ARTIFACT_KIND \
+  DESKTOP_UPDATER_RUNTIME_UNSUPPORTED_ARTIFACT_KIND_ABI2
+#define DESKTOP_UPDATER_RUNTIME_INVALID_DESCRIPTOR \
+  DESKTOP_UPDATER_RUNTIME_INVALID_DESCRIPTOR_ABI2
+#define DESKTOP_UPDATER_RUNTIME_SIGNATURE_FAILURE \
+  DESKTOP_UPDATER_RUNTIME_SIGNATURE_FAILURE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_PACKAGE_IDENTITY_MISMATCH \
+  DESKTOP_UPDATER_RUNTIME_PACKAGE_IDENTITY_MISMATCH_ABI2
+#define DESKTOP_UPDATER_RUNTIME_DOWNLOAD_FAILURE \
+  DESKTOP_UPDATER_RUNTIME_DOWNLOAD_FAILURE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_ARTIFACT_INTEGRITY_FAILURE \
+  DESKTOP_UPDATER_RUNTIME_ARTIFACT_INTEGRITY_FAILURE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_UNSAFE_ARCHIVE \
+  DESKTOP_UPDATER_RUNTIME_UNSAFE_ARCHIVE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_STAGING_FAILURE \
+  DESKTOP_UPDATER_RUNTIME_STAGING_FAILURE_ABI2
+#define DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE \
+  DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE_ABI2
+
+#define desktop_updater_runtime_abi_version_v1 \
+  desktop_updater_runtime_abi_version_abi2
+#define desktop_updater_runtime_result_size_v1 \
+  desktop_updater_runtime_result_size_abi2
+#define desktop_updater_runtime_client_create_v1 \
+  desktop_updater_runtime_client_create_abi2
+#define desktop_updater_runtime_client_check_for_update_v1 \
+  desktop_updater_runtime_client_check_for_update_abi2
+#define desktop_updater_runtime_client_download_verify_and_stage_v1 \
+  desktop_updater_runtime_client_download_verify_and_stage_abi2
+#define desktop_updater_runtime_client_free_v1 \
+  desktop_updater_runtime_client_free_abi2
+#define desktop_updater_runtime_result_free_v1 \
+  desktop_updater_runtime_result_free_abi2
+
+#endif  // DESKTOP_UPDATER_RUNTIME_C_COMPAT_H_

@@ -157,8 +157,6 @@ void RunUpdateClientCoreFixtureTests(const std::string& fixture_root,
   configuration.platform = "macos";
   configuration.channel = "stable";
   configuration.installation_identity = "cpp-client-test";
-  configuration.require_index_signature = true;
-  configuration.require_descriptor_signature = true;
   configuration.pinned_public_keys_by_id.emplace(
       valid.at("publicKeyId").string(), index.public_key);
   configuration.minimum_os_resolver = [](const std::string&,

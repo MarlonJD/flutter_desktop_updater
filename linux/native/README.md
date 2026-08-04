@@ -6,8 +6,10 @@ export or `desktop_updater_native.pc` metadata.
 
 Set `DESKTOP_UPDATER_NATIVE_RUNTIME=ON` to build the opt-in preview and link
 `desktop_updater::runtime`. Its `UpdateClient` provides `CheckForUpdate`,
-`DownloadVerifyAndStage`, and `InstallAndRelaunch` while preserving the
-application-owned install-root checks in the helper. The preview requires
+`DownloadVerifyAndStage`, and explicit `PrepareInstall`, `CommitAfterExit`,
+and `CancelReservation` operations while preserving the application-owned
+install-root checks in the helper. Every install receives a caller-owned
+lowercase UUIDv4 before the helper boundary. The preview requires
 CMake 3.12 or later for its imported libcurl target; the helper-only build
 retains the package's CMake 3.10 floor. Native tests require CMake 3.14 or
 later. The preview is

@@ -210,7 +210,8 @@ private func completeCopiedAppLaunch() {
     expect(requestSource, contains("public struct StageProvenanceState"));
     expect(requestSource, contains("public enum StageProvenance"));
     expect(requestSource, contains("import CommonCrypto"));
-    expect(requestSource, isNot(contains("import CryptoKit")));
+    expect(requestSource, contains("#if canImport(CryptoKit)"));
+    expect(requestSource, contains("import CryptoKit"));
   });
 
   test("shared helper sources remain Flutter-free", () {

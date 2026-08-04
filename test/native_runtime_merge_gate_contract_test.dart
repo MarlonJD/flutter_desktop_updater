@@ -126,26 +126,27 @@ void main() {
     }
   });
 
-  test("Windows repeated-free fixture populates every owned result string", () {
+  test("Windows runtime C fixture exercises the explicit ABI2 lifecycle", () {
     final source = File(
       "windows/native/test/runtime/runtime_c_api_compile_test.cpp",
     ).readAsStringSync();
 
-    expect(source, contains("OwnedString("));
-    for (final field in <String>[
-      "selected_platform_utf8",
-      "selected_channel_utf8",
-      "fresh_install_url_utf8",
-      "fresh_install_message_utf8",
-    ]) {
-      expect(source, contains("result.$field = OwnedString("), reason: field);
-      expect(source, contains("result.$field != nullptr"), reason: field);
-    }
+    expect(source, contains("desktop_updater_runtime_abi_version_abi2"));
+    expect(source,
+        contains("desktop_updater_runtime_client_prepare_install_abi2"));
+    expect(source,
+        contains("desktop_updater_runtime_client_commit_after_exit_abi2"));
+    expect(source,
+        contains("desktop_updater_runtime_client_cancel_reservation_abi2"));
+    expect(source,
+        contains("desktop_updater_runtime_client_query_transaction_abi2"));
     expect(
-      RegExp(r"desktop_updater_runtime_result_free_v1\(&result\)")
-          .allMatches(source),
-      hasLength(greaterThanOrEqualTo(2)),
-    );
+        source,
+        contains(
+            "desktop_updater_runtime_client_resolve_pending_install_after_exit_abi2"));
+    expect(source, contains("desktop_updater_runtime_result_free_abi2"));
+    expect(source, isNot(contains("OwnedString(")));
+    expect(source, isNot(contains("_v1")));
   });
 
   test("CI names real helper recovery and privileged target-host evidence", () {

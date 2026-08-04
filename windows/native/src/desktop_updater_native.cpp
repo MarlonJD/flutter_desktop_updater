@@ -3,7 +3,6 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <knownfolders.h>
-#include <objbase.h>
 #include <shlobj.h>
 
 #include <algorithm>
@@ -12,13 +11,11 @@
 #include <cstdint>
 #include <cwchar>
 #include <filesystem>
-#include <iomanip>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -195,26 +192,6 @@ fs::path ConfiguredWindowsHelperPath() {
         "Protected Windows helper install directory is not configured.");
   }
   return fs::u8path(configured) / kWindowsHelperExecutableName;
-}
-
-std::string NewTransactionId() {
-  GUID guid{};
-  if (FAILED(CoCreateGuid(&guid))) {
-    throw std::runtime_error("Unable to create install transaction ID.");
-  }
-  std::ostringstream encoded;
-  encoded << std::hex << std::nouppercase << std::setfill('0')
-          << std::setw(8) << guid.Data1 << '-' << std::setw(4) << guid.Data2
-          << '-' << std::setw(4) << guid.Data3 << '-' << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[0]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[1]) << '-' << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[2]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[3]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[4]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[5]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[6]) << std::setw(2)
-          << static_cast<unsigned int>(guid.Data4[7]);
-  return encoded.str();
 }
 
 std::string SecureRequestNonce() {
@@ -756,36 +733,12 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
   }
   if (proof != nullptr) {
     *proof = {canonical_root.wstring(), relative.wstring(),
-              request.expected_package_id,
-              protected_target
-                  ? InstallTargetProofSource::kRegistryUninstallRecord
-                  : InstallTargetProofSource::kInstalledIdentityMarker};
+              request.expected_package_id, protected_target};
   }
   return {true, ""};
 }
 
 }  // namespace
-
-InstallLaunchDecision ResolveInstallLaunchDecision(
-    InstallElevationPolicy policy,
-    bool target_is_protected,
-    bool target_is_writable,
-    bool process_is_elevated) {
-  if (process_is_elevated) {
-    return target_is_writable ? InstallLaunchDecision::kNormal
-                              : InstallLaunchDecision::kReject;
-  }
-  if (policy == InstallElevationPolicy::kAlways) {
-    return InstallLaunchDecision::kElevated;
-  }
-  if (policy == InstallElevationPolicy::kNever) {
-    return target_is_writable ? InstallLaunchDecision::kNormal
-                              : InstallLaunchDecision::kReject;
-  }
-  return target_is_protected || !target_is_writable
-             ? InstallLaunchDecision::kElevated
-             : InstallLaunchDecision::kNormal;
-}
 
 namespace {
 
@@ -1083,8 +1036,7 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
   const std::string package_id = WideToUtf8(request.expected_package_id);
   WindowsHelperClientContext context = [&]() {
     if (portable) {
-      if (target_proof.source !=
-          InstallTargetProofSource::kInstalledIdentityMarker) {
+      if (target_proof.protected_target) {
         throw std::runtime_error(
             "Portable helper requires an app-owned identity marker.");
       }
@@ -1105,8 +1057,7 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
 
   const fs::path target_path(target_proof.canonical_root);
   std::string installed_identity;
-  if (target_proof.source ==
-      InstallTargetProofSource::kInstalledIdentityMarker) {
+  if (!target_proof.protected_target) {
     installed_identity = CanonicalJsonFile(
         target_path / kInstalledIdentityMarkerName,
         kMaximumInstalledIdentityMarkerBytes, "Installed identity marker");
@@ -1154,11 +1105,8 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
         "Running app identity does not match the sealed helper policy.");
   }
 
-  const std::string transaction_id = requested_transaction_id.empty()
-                                         ? NewTransactionId()
-                                         : requested_transaction_id;
   if (!IsTransactionId(transaction_id)) {
-    throw std::runtime_error("Generated install transaction ID is invalid.");
+    throw std::runtime_error("Install transaction ID is invalid.");
   }
   const std::string nonce = SecureRequestNonce();
   WindowsNativeInstallEvidenceV1 evidence;
@@ -1521,16 +1469,14 @@ bool AwaitRestartParentExitIfRequested() {
   return WaitForSingleObject(parent_handle.get(), INFINITE) == WAIT_OBJECT_0;
 }
 
-InstallResult PrepareInstallWithTransactionId(
+InstallResult PrepareInstall(
     const InstallRequest& request,
     const std::string& transaction_id,
-    InstallReservation* reservation,
-    bool* recovery_required) {
-  if (reservation == nullptr || recovery_required == nullptr) {
+    InstallReservation* reservation) {
+  if (reservation == nullptr) {
     return {false, "Install reservation output must not be null."};
   }
   *reservation = {};
-  *recovery_required = false;
   const InstallResult staging = ValidateStagingRoot(request);
   if (!staging.ok) {
     return staging;
@@ -1554,18 +1500,7 @@ InstallResult PrepareInstallWithTransactionId(
   if (!target.ok) {
     return target;
   }
-  const bool protected_target =
-      target_proof.source ==
-      InstallTargetProofSource::kRegistryUninstallRecord;
-  if (protected_target &&
-      request.elevation_policy == InstallElevationPolicy::kNever) {
-    return {false,
-            "Windows protected install target requires the registered "
-            "elevated helper endpoint."};
-  }
-  const bool portable =
-      !protected_target &&
-      request.elevation_policy != InstallElevationPolicy::kAlways;
+  const bool portable = !target_proof.protected_target;
   std::optional<PreparedWindowsHelperRequest> prepared;
   try {
     prepared.emplace(
@@ -1588,10 +1523,6 @@ InstallResult PrepareInstallWithTransactionId(
                   kWindowsHelperStartupTimeoutMilliseconds);
     if (launch.result != helper::ElevationLaunchResult::kLaunched ||
         launch.session == nullptr) {
-      const bool ambiguous_handoff =
-          launch.result == helper::ElevationLaunchResult::kTimedOut ||
-          launch.result == helper::ElevationLaunchResult::kLaunched;
-      *recovery_required = ambiguous_handoff;
       return {false,
               portable && launch.result ==
                               helper::ElevationLaunchResult::kFailed
@@ -1604,7 +1535,6 @@ InstallResult PrepareInstallWithTransactionId(
         public_reservation.ready_token.empty() ||
         public_reservation.response_digest_sha256.size() != 64 ||
         public_reservation.helper_endpoint_identity_sha256.size() != 64) {
-      *recovery_required = true;
       return {false, "Windows helper returned an invalid reservation."};
     }
     {
@@ -1616,7 +1546,6 @@ InstallResult PrepareInstallWithTransactionId(
                            public_reservation, std::move(launch.session)})
               .second;
       if (!inserted) {
-        *recovery_required = true;
         return {false,
                 "Windows helper returned a duplicate transaction ID."};
       }
@@ -1624,17 +1553,9 @@ InstallResult PrepareInstallWithTransactionId(
     *reservation = public_reservation;
     return {true, ""};
   } catch (const std::exception& error) {
-    *recovery_required = true;
     return {false, std::string("Windows helper preparation failed: ") +
                        error.what()};
   }
-}
-
-InstallResult PrepareInstall(const InstallRequest& request,
-                             InstallReservation* reservation) {
-  bool ignored_recovery_required = false;
-  return PrepareInstallWithTransactionId(
-      request, "", reservation, &ignored_recovery_required);
 }
 
 InstallTransactionStatus CommitAfterExit(
@@ -1754,17 +1675,6 @@ InstallTransactionStatus QueryTransaction(
   return RunWindowsPersistentOperation(transaction_id, "queryTransaction");
 }
 
-InstallTransactionStatus RecoverPendingInstall(
-    const std::string& transaction_id) {
-  if (!IsTransactionId(transaction_id)) {
-    return {transaction_id, InstallTransactionState::kUnknown,
-            InstallTransactionResultCode::kRejected,
-            "Transaction ID is invalid.", "", ""};
-  }
-  return RunWindowsPersistentOperation(transaction_id,
-                                       "recoverPendingInstall");
-}
-
 InstallTransactionStatus ResolvePendingInstallAfterExit(
     const std::string& transaction_id) {
   if (!IsTransactionId(transaction_id)) {
@@ -1774,33 +1684,6 @@ InstallTransactionStatus ResolvePendingInstallAfterExit(
   }
   return RunWindowsPersistentOperation(
       transaction_id, "resolvePendingInstallAfterExit");
-}
-
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
-  InstallReservation reservation;
-  const InstallResult prepare = PrepareInstall(request, &reservation);
-  if (!prepare.ok) return prepare;
-  if (!IsTransactionId(reservation.transaction_id) ||
-      reservation.ready_token.empty() ||
-      reservation.response_digest_sha256.size() != 64 ||
-      reservation.helper_endpoint_identity_sha256.size() != 64) {
-    return {false, "Install helper returned an invalid reservation."};
-  }
-  const InstallTransactionStatus status = CommitAfterExit(reservation);
-  const bool accepted =
-      (status.state == InstallTransactionState::kCommitAccepted ||
-       status.state == InstallTransactionState::kCompleted) &&
-      (status.result_code == InstallTransactionResultCode::kAccepted ||
-       status.result_code == InstallTransactionResultCode::kSucceeded) &&
-      status.response_digest_sha256 == reservation.response_digest_sha256 &&
-      status.helper_endpoint_identity_sha256 ==
-          reservation.helper_endpoint_identity_sha256;
-  return accepted
-             ? InstallResult{true, ""}
-             : InstallResult{false,
-                             status.detail.empty()
-                                 ? "Install helper commit was not accepted."
-                                 : status.detail};
 }
 
 bool IsStrictChildPath(const std::wstring& root,

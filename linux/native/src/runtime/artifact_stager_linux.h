@@ -32,8 +32,8 @@ native::InstallResult ValidateLinuxInstallHandoff(
     const std::string& executable_relative_path,
     const std::string& expected_package_id,
     const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path,
-    const std::string& expected_provenance_sha256);
+    const std::string& expected_provenance_sha256,
+    const std::string& expected_artifact_sha256);
 
 native::InstallResult HandoffLinuxInstall(
     const std::string& staging_path,
@@ -41,8 +41,10 @@ native::InstallResult HandoffLinuxInstall(
     const std::string& executable_relative_path,
     const std::string& expected_package_id,
     const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path,
-    const std::string& expected_provenance_sha256);
+    const std::string& expected_provenance_sha256,
+    const std::string& expected_artifact_sha256,
+    const std::string& transaction_id,
+    native::InstallReservation* reservation);
 
 }  // namespace internal
 }  // namespace runtime

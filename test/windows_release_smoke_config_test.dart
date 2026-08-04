@@ -11,12 +11,9 @@ void main() {
     expect(source, contains('"runner"'));
     expect(source, contains("config,"));
     expect(source, contains('"desktop_updater_example.exe"'));
+    expect(source, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
+    expect(source, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"));
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
-    expect(
-      source,
-      contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
-    );
     expect(source, contains(r'"event":"$event"'));
     expect(source, contains("--diagnostics-log <path>"));
   });

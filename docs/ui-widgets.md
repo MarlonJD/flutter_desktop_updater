@@ -508,12 +508,10 @@ Store failures are captured as diagnostics warnings and do not crash startup or
 block install handoff.
 
 For a durable app-owned log, configure an `UpdateDiagnosticsRecorder` sink.
-`diagnosticsLogPath` remains available for source and ABI compatibility, but
-the standalone protocol-v1 helpers convert diagnostics to a fixed
-`platformLog` destination and do not write to that caller-selected path. New
-integrations should not set it as an app-owned helper-log destination; use the
-`UpdateDiagnosticsRecorder` example above for durable app-owned lifecycle
-logs.
+The 3.0 native API does not expose a caller-selected diagnostics path. The
+standalone protocol-v1 helpers convert diagnostics to a fixed `platformLog`
+destination. Use the `UpdateDiagnosticsRecorder` example above for durable
+app-owned lifecycle logs.
 
 Use an app-owned recovery store for startup UX. Collect post-exit helper
 evidence from the Windows Application Event Log or the Linux helper-owned

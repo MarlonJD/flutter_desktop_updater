@@ -156,25 +156,6 @@ std::vector<std::string> AuthenticodeThumbprints(
   return result;
 }
 
-desktop_updater_install_elevation_policy_v1 ElevationPolicy(
-    const ReleaseDescriptor& descriptor) {
-  if (descriptor.artifact.kind != "innoInstaller") {
-    return DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO;
-  }
-  const std::string value =
-      descriptor.install.at("inno").at("requiresElevation").string();
-  if (value == "always") {
-    return DESKTOP_UPDATER_INSTALL_ELEVATION_ALWAYS;
-  }
-  if (value == "never") {
-    return DESKTOP_UPDATER_INSTALL_ELEVATION_NEVER;
-  }
-  if (value != "auto") {
-    throw std::invalid_argument("Invalid signed Inno elevation policy.");
-  }
-  return DESKTOP_UPDATER_INSTALL_ELEVATION_AUTO;
-}
-
 }  // namespace
 
 WindowsStagedArtifact StageWindowsZip(
@@ -276,7 +257,7 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
     const std::wstring& install_root,
     const std::wstring& executable_relative_path,
     const std::wstring& expected_package_id,
-    const std::wstring& diagnostics_log_path,
+    const std::string& transaction_id,
     const std::vector<std::wstring>& removed_files,
     const std::string& expected_provenance_sha256,
     const ReleaseDescriptor& descriptor) {
@@ -288,7 +269,7 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
     removed_file_pointers.push_back(
         reinterpret_cast<const std::uint16_t*>(file.c_str()));
   }
-  desktop_updater_install_request_v1 request{};
+  desktop_updater_install_request_abi2 request{};
   request.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
   request.struct_size = sizeof(request);
   request.staging_path = reinterpret_cast<const std::uint16_t*>(
@@ -299,10 +280,6 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
       executable_relative_path.c_str());
   request.expected_package_id = reinterpret_cast<const std::uint16_t*>(
       expected_package_id.c_str());
-  request.diagnostics_log_path = diagnostics_log_path.empty()
-                                     ? nullptr
-                                     : reinterpret_cast<const std::uint16_t*>(
-                                           diagnostics_log_path.c_str());
   request.removed_files = removed_file_pointers.empty()
                               ? nullptr
                               : removed_file_pointers.data();
@@ -311,31 +288,29 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
       expected_provenance_sha256.begin(), expected_provenance_sha256.end());
   const std::wstring expected_artifact(descriptor.artifact.sha256.begin(),
                                        descriptor.artifact.sha256.end());
-  std::vector<std::wstring> thumbprints;
-  if (descriptor.artifact.kind == "innoInstaller") {
-    for (const std::string& thumbprint : AuthenticodeThumbprints(descriptor)) {
-      thumbprints.emplace_back(thumbprint.begin(), thumbprint.end());
-    }
-  }
-  std::vector<const std::uint16_t*> thumbprint_pointers;
-  for (const std::wstring& thumbprint : thumbprints) {
-    thumbprint_pointers.push_back(
-        reinterpret_cast<const std::uint16_t*>(thumbprint.c_str()));
-  }
   request.expected_provenance_sha256 =
       reinterpret_cast<const std::uint16_t*>(expected_provenance.c_str());
   request.expected_artifact_sha256 =
       reinterpret_cast<const std::uint16_t*>(expected_artifact.c_str());
-  request.allowed_signer_thumbprints = thumbprint_pointers.empty()
-      ? nullptr : thumbprint_pointers.data();
-  request.allowed_signer_thumbprint_count = thumbprint_pointers.size();
-  request.elevation_policy = ElevationPolicy(descriptor);
-  desktop_updater_result_v1 result =
-      desktop_updater_schedule_install_and_relaunch_v1(&request);
+  std::wstring transaction_id_utf16(transaction_id.begin(), transaction_id.end());
+  desktop_updater_transaction_status_abi2 status{};
+  status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
+  status.struct_size = sizeof(status);
+  desktop_updater_reservation_handle_abi2* reservation = nullptr;
+  desktop_updater_result_abi2 result = desktop_updater_prepare_install_abi2(
+      &request,
+      reinterpret_cast<const std::uint16_t*>(transaction_id_utf16.c_str()),
+      &reservation, &status);
   WindowsInstallHandoffResult handoff{
       result.ok != 0,
-      result.error_message_utf8 == nullptr ? "" : result.error_message_utf8};
-  desktop_updater_result_free_v1(&result);
+      result.error_message_utf8 == nullptr ? "" : result.error_message_utf8,
+      reservation};
+  if (result.ok == 0 && reservation != nullptr) {
+    desktop_updater_reservation_release_abi2(reservation);
+    handoff.reservation = nullptr;
+  }
+  desktop_updater_transaction_status_free_abi2(&status);
+  desktop_updater_result_free_abi2(&result);
   return handoff;
 }
 

@@ -188,6 +188,18 @@ bool ClientLifecycleState::ConfirmInstall(const InstallHandoff& handoff) {
   return true;
 }
 
+bool ClientLifecycleState::CompleteInstall(const InstallHandoff& handoff) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!install_in_progress_ || handoff.token == 0 ||
+      handoff.token != active_handoff_token_) {
+    return false;
+  }
+  install_in_progress_ = false;
+  active_handoff_token_ = 0;
+  scheduling_confirmed_ = true;
+  return true;
+}
+
 LifecycleSnapshot ClientLifecycleState::Snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);
   LifecycleSnapshot snapshot;

@@ -69,13 +69,16 @@ void main() {
     );
   });
 
-  test("native convenience entry points are reservation-only wrappers", () {
+  test("native entry points expose only explicit reservation operations", () {
     for (final path in productionSources.skip(1)) {
       final source = File(path).readAsStringSync();
-      final schedule = _functionBody(source, "ScheduleInstallAndRelaunch");
-      expect(schedule, contains("PrepareInstall"), reason: path);
-      expect(schedule, contains("CommitAfterExit"), reason: path);
-      expect(schedule, isNot(contains("script")), reason: path);
+      expect(source, contains("PrepareInstall"), reason: path);
+      expect(source, contains("CommitAfterExit"), reason: path);
+      expect(
+        source,
+        isNot(contains("ScheduleInstallAndRelaunch")),
+        reason: path,
+      );
     }
   });
 
@@ -243,7 +246,7 @@ void main() {
     expect(restartBranch, isNot(contains("MacInstallRequest")));
     final restart = plugin.substring(
       plugin.indexOf("private func restartCurrentApplication"),
-      plugin.indexOf("private func handoffInstallAndRelaunch"),
+      plugin.indexOf("private func prepareAndCommitInstall"),
     );
     expect(restart, contains("scheduleCurrentApplicationRestart"));
     expect(restart, contains("exit(EXIT_SUCCESS)"));
@@ -276,13 +279,13 @@ void main() {
       plugin.indexOf('case "queryInstallTransaction"'),
     );
     final handoff = plugin.substring(
-      plugin.indexOf("private func handoffInstallAndRelaunch"),
+      plugin.indexOf("private func prepareAndCommitInstall"),
       plugin.indexOf("private func queryInstallTransaction"),
     );
 
     expect(installBranch, contains('arguments["transactionId"]'));
     expect(installBranch, contains("transactionID: transactionID"));
-    expect(handoff, contains("transactionID: String?"));
+    expect(handoff, contains("transactionID: String,"));
     expect(
       handoff,
       matches(
@@ -298,7 +301,7 @@ void main() {
   test("macOS and Linux ambiguous handoffs preserve recovery markers", () {
     final macPlugin = File(pluginSources[0]).readAsStringSync();
     final macInstallBranch = macPlugin.substring(
-      macPlugin.indexOf("private func handoffInstallAndRelaunch"),
+      macPlugin.indexOf("private func prepareAndCommitInstall"),
       macPlugin.indexOf("private func queryInstallTransaction"),
     );
     final linuxPlugin = File(pluginSources[2]).readAsStringSync();

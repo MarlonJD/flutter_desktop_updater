@@ -85,8 +85,6 @@ ClientConfiguration FixtureConfiguration(const std::string& index_url) {
   configuration.platform = "macos";
   configuration.channel = "stable";
   configuration.installation_identity = "fixture-device";
-  configuration.require_index_signature = false;
-  configuration.require_descriptor_signature = false;
   configuration.minimum_os_resolver = [](const std::string&,
                                          const std::string&) { return true; };
   return configuration;
@@ -196,7 +194,6 @@ void TestFreshInstallClient(const JsonValue& fixture,
     configuration.current_version = "2.6.0";
     configuration.has_current_build_number = true;
     configuration.current_build_number = 260;
-    configuration.require_descriptor_signature = true;
     configuration.pinned_public_keys_by_id.emplace(
         valid.at("publicKeyId").string(),
         DecodeBase64(valid.at("publicKeyBase64").string()));

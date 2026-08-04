@@ -261,9 +261,9 @@ not add new files to Inno's uninstall log.
 
 ## Diagnostics
 
-`diagnosticsLogPath` remains a compatibility input, but the standalone Windows
-helper does not receive or write that caller-provided path. It emits fixed,
-best-effort lifecycle events to the Windows Application Event Log under
+The 3.0 native API has no caller-selected diagnostics path. The standalone
+Windows helper emits fixed, best-effort lifecycle events to the Windows
+Application Event Log under
 `DesktopUpdater.InstallHelper.ProtocolV1`. App-owned Dart and in-memory
 diagnostics remain available before handoff.
 

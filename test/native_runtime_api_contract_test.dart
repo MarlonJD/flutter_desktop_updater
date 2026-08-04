@@ -20,7 +20,10 @@ void main() {
     for (final operation in <String>[
       "checkForUpdate",
       "downloadVerifyAndStage",
-      "installAndRelaunch",
+      "prepareInstall",
+      "commitAfterExit",
+      "queryTransaction",
+      "recoverPendingInstall",
     ]) {
       expect(docs, contains(operation));
     }
@@ -196,23 +199,45 @@ void main() {
       "example/native/windows-dotnet-runtime/Program.cs",
     );
 
-    expect(header, contains("DESKTOP_UPDATER_RUNTIME_ABI_VERSION 1u"));
-    expect(header, contains("desktop_updater_runtime_configuration_v1"));
+    expect(header, contains("DESKTOP_UPDATER_RUNTIME_ABI_VERSION 2u"));
+    expect(header, contains("desktop_updater_runtime_configuration_abi2"));
     expect(header, contains("uint32_t abi_version"));
     expect(header, contains("size_t struct_size"));
     expect(header, contains("const char* install_root_utf8"));
     expect(header, contains("const char* executable_relative_path_utf8"));
     expect(header, contains("const char* expected_package_id_utf8"));
+    expect(header, contains("desktop_updater_runtime_stage_request_abi2"));
+    expect(header, contains("desktop_updater_runtime_install_request_abi2"));
     expect(
-      source,
-      contains("constexpr std::size_t kLegacyInstallRequestSize"),
+      header,
+      contains("desktop_updater_runtime_client_prepare_install_abi2"),
     );
-    expect(source, contains("install_root_utf8);"));
-    expect(source, contains("const bool has_target_fields"));
-    expect(header, contains("desktop_updater_runtime_client_free_v1"));
-    expect(header, contains("desktop_updater_runtime_result_free_v1"));
-    expect(header, contains("desktop_updater_runtime_abi_version_v1"));
-    expect(header, contains("desktop_updater_runtime_result_size_v1"));
+    expect(
+      header,
+      contains("desktop_updater_runtime_client_commit_after_exit_abi2"),
+    );
+    expect(
+      header,
+      contains("desktop_updater_runtime_client_cancel_reservation_abi2"),
+    );
+    expect(
+      header,
+      contains("desktop_updater_runtime_client_query_transaction_abi2"),
+    );
+    expect(
+      header,
+      contains(
+        "desktop_updater_runtime_client_resolve_pending_install_after_exit_abi2",
+      ),
+    );
+    expect(header, isNot(contains("_v1")));
+    expect(source, contains("request->install_root_utf8"));
+    expect(source, contains("ValidateRequest"));
+    expect(source, contains("request->struct_size"));
+    expect(source, contains("request->abi_version"));
+    expect(source, contains("HandoffWindowsInstall"));
+    expect(source, contains("desktop_updater_commit_after_exit_abi2"));
+    expect(source, contains("desktop_updater_result_free_abi2"));
     expect(
       source,
       contains("return DESKTOP_UPDATER_RUNTIME_ABI_VERSION;"),
@@ -223,16 +248,13 @@ void main() {
     );
     expect(
       header,
-      contains("desktop_updater_runtime_client_check_for_update_v1"),
+      contains("desktop_updater_runtime_client_check_for_update_abi2"),
     );
     expect(
       header,
-      contains("desktop_updater_runtime_client_download_verify_and_stage_v1"),
+      contains("desktop_updater_runtime_client_download_verify_and_stage_abi2"),
     );
-    expect(
-      header,
-      contains("desktop_updater_runtime_client_install_and_relaunch_v1"),
-    );
+    expect(header, isNot(contains("install_and_relaunch")));
     expect(header, contains('extern "C"'));
     expect(source, contains("catch (...)"));
     expect(source, contains("ClientLifecycleState lifecycle"));
@@ -259,11 +281,11 @@ void main() {
     );
     expect(
       dotnet,
-      contains('EntryPoint = "desktop_updater_runtime_abi_version_v1"'),
+      contains('EntryPoint = "desktop_updater_runtime_abi_version_abi2"'),
     );
     expect(
       dotnet,
-      contains('EntryPoint = "desktop_updater_runtime_result_size_v1"'),
+      contains('EntryPoint = "desktop_updater_runtime_result_size_abi2"'),
     );
     final createCleanup = dotnet.lastIndexOf("if (resultReceived)");
     final cleanupStart = createCleanup < 0 ? 0 : createCleanup;
@@ -368,7 +390,7 @@ void main() {
     expect(client, contains("SchedulingRollbackGuard rollback"));
     expect(
       client,
-      contains("RemoveStagingDirectory(install_handoff.staged_path)"),
+      contains("RemoveStagingDirectory(pending_handoff_.staged_path)"),
     );
     expect(client, contains("Linux handoff staging cleanup failed"));
     expect(lifecycle, contains("selection_generation_"));

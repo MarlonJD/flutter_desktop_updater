@@ -72,6 +72,10 @@ void RunWindowsPersistentRecoveryPipeSession(
     throw NamedPipeTransportError(
         "persistent recovery request transport binding changed");
   }
+  if (request.operation == "recoverPendingInstall") {
+    throw NamedPipeTransportError(
+        "direct persistent recovery is not an app-facing operation");
+  }
   WindowsPersistentRecoveryService service(policy, observed_caller_process);
   if (request.operation == "queryTransaction") {
     channel.WriteFrame(
@@ -99,9 +103,6 @@ void RunWindowsPersistentRecoveryPipeSession(
         launcher);
     return;
   }
-  channel.WriteFrame(
-      desktop_updater::runtime::internal::EncodeNativeInstallRecoveryResultV1(
-          service.Recover(request.transaction_id)));
 }
 
 }  // namespace desktop_updater::helper

@@ -21,7 +21,7 @@ an existing authority instead of copying mutable rules into a second document.
 | Native contracts | [`native-contract.md`](native-contract.md) and [`native-install-helper-protocol.md`](native-install-helper-protocol.md) | Cross-language schema or helper protocol changes |
 | Public widget behavior | [`ui-widgets.md`](ui-widgets.md) | Widget states, accessibility, or integration examples change |
 | Localization | [`localization.md`](localization.md) and [`i18n.md`](i18n.md) | Locale assets, directionality, or translation workflow changes |
-| Migration guidance | [`migration/1.x-to-2.0.md`](migration/1.x-to-2.0.md) | Compatibility or upgrade behavior changes |
+| Migration guidance | [`migration/1.x-to-2.0.md`](migration/1.x-to-2.0.md) and [`migration/2.x-to-3.0.md`](migration/2.x-to-3.0.md) | Compatibility or upgrade behavior changes |
 
 The repository is a package and native-plugin source tree, not a deployed
 service. Production evidence belongs to the app or target-host authority named

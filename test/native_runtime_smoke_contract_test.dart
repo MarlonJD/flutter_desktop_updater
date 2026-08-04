@@ -36,12 +36,14 @@ void main() {
     for (final source in [linuxHeader, linuxSample]) {
       expect(source, contains("CheckForUpdate"));
       expect(source, contains("DownloadVerifyAndStage"));
-      expect(source, contains("InstallAndRelaunch"));
+      expect(source, contains("PrepareInstall"));
+      expect(source, contains("CommitAfterExit"));
     }
     for (final source in [windowsHeader, dotnetClient, windowsSample]) {
       expect(source.toLowerCase(), contains("check_for_update"));
       expect(source.toLowerCase(), contains("download_verify_and_stage"));
-      expect(source.toLowerCase(), contains("install_and_relaunch"));
+      expect(source.toLowerCase(), contains("prepare_install"));
+      expect(source.toLowerCase(), contains("commit_after_exit"));
     }
   });
 
@@ -887,22 +889,19 @@ void main() {
       "WindowsInstallHandoffResult HandoffWindowsInstall(",
     );
     final handoffEnd = source.indexOf(
-      "desktop_updater_result_v1 result",
+      "\n}\n\n}  // namespace internal",
       handoffStart,
     );
 
     expect(handoffStart, greaterThanOrEqualTo(0));
     expect(handoffEnd, greaterThan(handoffStart));
     final handoff = source.substring(handoffStart, handoffEnd);
+    expect(handoff, contains("desktop_updater_prepare_install_abi2"));
+    expect(handoff, contains("expected_artifact_sha256"));
+    expect(handoff, isNot(contains("AuthenticodeThumbprints")));
     expect(
       handoff,
-      matches(
-        RegExp(
-          r'if\s*\(descriptor\.artifact\.kind == "innoInstaller"\)\s*\{'
-          r'\s*for\s*\(const std::string& thumbprint\s*:'
-          r'\s*AuthenticodeThumbprints\(descriptor\)\)',
-        ),
-      ),
+      isNot(contains('descriptor.artifact.kind == "innoInstaller"')),
     );
   });
 }

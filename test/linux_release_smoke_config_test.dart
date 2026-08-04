@@ -13,25 +13,10 @@ void main() {
     expect(source, contains("config.toLowerCase()"));
     expect(source, contains('"bundle"'));
     expect(source, contains('"desktop_updater_example"'));
+    expect(source, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
+    expect(source, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"));
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_PACKAGE_ID"));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
-    expect(
-      source,
-      contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
-    );
-    expect(appSource, contains("DESKTOP_UPDATER_SMOKE_PACKAGE_ID"));
-    expect(appSource, contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT"));
-    expect(
-      appSource,
-      contains("DESKTOP_UPDATER_SMOKE_EXECUTABLE_RELATIVE_PATH"),
-    );
-    expect(appSource, contains(r"packageId=$packageId"));
-    expect(appSource, contains(r"installRoot=$installRoot"));
-    expect(
-      appSource,
-      contains(r"executableRelativePath=$executableRelativePath"),
-    );
+    expect(appSource, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
     expect(source, contains(r'"event":"$event"'));
     expect(source, contains("--diagnostics-log <path>"));
   });

@@ -49,16 +49,22 @@ File.WriteAllLines(
         $"check {check.Outcome} {check.ReleaseVersion}",
         $"stage {staged.Outcome} {staged.ArtifactKind} {staged.StagedPath}",
     });
-var handoff = client.InstallAndRelaunch(
-    Array.Empty<string>(),
-    options.Required("--diagnostics-log"));
-if (handoff.Outcome != DesktopUpdaterOutcome.UpdateAvailable)
+var transactionId = Guid.NewGuid().ToString("D");
+File.WriteAllText(Path.Combine(smokeRoot, "transaction-id"), transactionId);
+var prepared = client.PrepareInstall(transactionId, Array.Empty<string>());
+if (prepared.Outcome != DesktopUpdaterOutcome.UpdateAvailable)
 {
     throw new InvalidOperationException(
-        $"install_and_relaunch failed: {handoff.Outcome} {handoff.Message}");
+        $"prepare_install failed: {prepared.Outcome} {prepared.Message}");
+}
+var committed = client.CommitAfterExit();
+if (committed.Outcome != DesktopUpdaterOutcome.UpdateAvailable)
+{
+    throw new InvalidOperationException(
+        $"commit_after_exit failed: {committed.Outcome} {committed.Message}");
 }
 Console.WriteLine(
-    $"install_and_relaunch scheduled {handoff.ReleaseVersion} from {handoff.ArtifactKind}");
+    $"prepare_install committed {prepared.ReleaseVersion} from {prepared.ArtifactKind}");
 return 0;
 
 static DesktopUpdaterConfiguration Configuration(
@@ -69,13 +75,12 @@ static DesktopUpdaterConfiguration Configuration(
     return new DesktopUpdaterConfiguration(
         archiveUrl,
         packageId,
-        "2.7.0",
+        "3.0.0",
         270,
-        "2.7.0",
+        "3.0.0",
         "windows",
         "stable",
         "windows-native-runtime-smoke",
-        true,
         new Dictionary<string, byte[]>
         {
             ["native-runtime-smoke-stable"] = publicKey,

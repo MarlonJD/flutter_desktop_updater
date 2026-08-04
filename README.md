@@ -20,7 +20,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^2.7.0
+  desktop_updater: ^3.0.0
 ```
 
 Point your app at the hosted archive:
@@ -77,8 +77,9 @@ runtime preview for native host apps:
 
 Helper-only consumers still provide their own discovery, verification, and
 staging. The preview adds the stateful `checkForUpdate`,
-`downloadVerifyAndStage`, and `installAndRelaunch` flow while reusing the same
-helpers and trust rules. Its current merge gates require signed app-archive
+`downloadVerifyAndStage`, `prepareInstall`, and `commitAfterExit` flow while
+reusing the same helpers and trust rules. Hosts use `queryTransaction` and
+`recoverPendingInstall` after a restart. Its current merge gates require signed app-archive
 authority, owned stage provenance, explicit install target proof, mount and
 reparse rejection, a one-shot handoff, Windows Unicode paths and relative
 redirects, and Release NuGet packages with third-party notices. The current
@@ -300,14 +301,14 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-2.2.0 adds opt-in diagnostics and recovery for support flows. The default stays
+3.0.0 adds explicit app-owned diagnostics and recovery wiring for support flows. The default stays
 quiet: no package-owned files, uploads, telemetry, or storage.
 
 Use in-memory problem reports for normal support, add an app-owned diagnostics
 sink for durable Dart lifecycle logs, and add an app-owned
-`UpdateRecoveryStore` when support needs post-relaunch evidence.
-`diagnosticsLogPath` remains a compatibility input; standalone helpers use
-fixed platform logs rather than that caller-selected path.
+`UpdateRecoveryStore` when support needs post-relaunch evidence. Native helper
+APIs do not accept a caller-selected diagnostics path; standalone helpers use
+fixed platform logs rather than app-owned diagnostics storage.
 
 Details live in [Diagnostics and recovery](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/diagnostics-and-recovery.md),
 [Ready-made UI widgets](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/ui-widgets.md#diagnostics-and-support), and
@@ -330,11 +331,11 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-Leaving `trustedReleasePublicKeys` null preserves the released unsigned 2.x
-compatibility behavior for update checks and downloads; do not describe that
-mode as production-authenticated. Native install handoff still requires a
-signed `release.json` whose Ed25519 key is sealed into the native helper
-policy. An unsigned descriptor fails before native handoff and leaves no pending
+`trustedReleasePublicKeys` is required for every 3.0 controller and low-level
+update client. Each release must authenticate against one of the pinned Ed25519
+keys before policy selection or artifact download. Native install handoff also
+requires a signed `release.json` whose key is sealed into the native helper
+policy; an unsigned descriptor fails before native handoff and leaves no pending
 recovery marker.
 The low-level `DesktopUpdater.checkZipFirstUpdate` and
 `downloadZipFirstUpdate` methods accept the same key map, and callers must pass
@@ -379,7 +380,9 @@ and the local Apple-trust smoke harness, see
   written, how helper diagnostics work, and how to wire support collection.
 - [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
-- [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md): migration
+- [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md): breaking contract,
+  explicit transactions, pinned trust, and migration commands.
+- [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md): historical migration
   commands and compatibility notes.
 - [2.0 roadmap](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/2.0-roadmap.md)
 

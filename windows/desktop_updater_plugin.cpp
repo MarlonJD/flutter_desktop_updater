@@ -148,8 +148,8 @@ bool HandoffNativeInstall(
   *recovery_required = false;
   desktop_updater::native::InstallReservation reservation;
   const desktop_updater::native::InstallResult prepared =
-      desktop_updater::native::PrepareInstallWithTransactionId(
-          request, request_transaction_id, &reservation, recovery_required);
+      desktop_updater::native::PrepareInstall(
+          request, request_transaction_id, &reservation);
   if (!prepared.ok) {
     *error = prepared.error_message;
     return false;
@@ -396,8 +396,6 @@ void DesktopUpdaterPlugin::HandleMethodCall(
   } else if (method_call.method_name().compare("queryInstallTransaction") ==
              0 ||
              method_call.method_name().compare(
-                 "recoverPendingInstallTransaction") == 0 ||
-             method_call.method_name().compare(
                  "resolvePendingInstallTransactionAfterExit") == 0) {
     std::string transaction_id;
     if (!ReadTransactionId(method_call.arguments(), &transaction_id)) {
@@ -411,9 +409,7 @@ void DesktopUpdaterPlugin::HandleMethodCall(
             "resolvePendingInstallTransactionAfterExit") == 0;
     const native::InstallTransactionStatus status =
         query ? native::QueryTransaction(transaction_id)
-              : resolve_after_exit
-                    ? native::ResolvePendingInstallAfterExit(transaction_id)
-                    : native::RecoverPendingInstall(transaction_id);
+              : native::ResolvePendingInstallAfterExit(transaction_id);
     result->Success(TransactionStatusValue(status));
     if (resolve_after_exit &&
         status.state == native::InstallTransactionState::kPrepared &&

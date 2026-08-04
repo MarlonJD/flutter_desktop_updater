@@ -8,34 +8,17 @@
 namespace desktop_updater {
 namespace native {
 
-enum class InstallTargetProofSource {
-  kRegistryUninstallRecord,
-  kInstalledIdentityMarker,
-};
-
 enum class WindowsPathComponentState {
   kSafe,
   kUnavailable,
   kReparsePoint,
 };
 
-enum class InstallElevationPolicy {
-  kAuto,
-  kAlways,
-  kNever,
-};
-
-enum class InstallLaunchDecision {
-  kNormal,
-  kElevated,
-  kReject,
-};
-
 struct InstallTargetProof {
   std::wstring canonical_root;
   std::wstring executable_relative_path;
   std::wstring package_id;
-  InstallTargetProofSource source;
+  bool protected_target = false;
 };
 
 struct InstallRequest {
@@ -44,11 +27,8 @@ struct InstallRequest {
   std::wstring executable_relative_path;
   std::wstring expected_package_id;
   std::vector<std::wstring> removed_files;
-  std::wstring diagnostics_log_path;
   std::wstring expected_provenance_sha256;
   std::wstring expected_artifact_sha256;
-  std::vector<std::wstring> allowed_signer_thumbprints;
-  InstallElevationPolicy elevation_policy = InstallElevationPolicy::kAuto;
 };
 
 struct InstallResult {
@@ -99,35 +79,20 @@ struct InstallTransactionStatus {
   std::string helper_endpoint_identity_sha256;
 };
 
-InstallResult PrepareInstall(const InstallRequest& request,
-                             InstallReservation* reservation);
-// Additive entry point for callers that must persist a transaction locator
-// before the privileged handoff. Existing request/result layouts stay intact.
-InstallResult PrepareInstallWithTransactionId(
+InstallResult PrepareInstall(
     const InstallRequest& request,
     const std::string& transaction_id,
-    InstallReservation* reservation,
-    bool* recovery_required);
+    InstallReservation* reservation);
 InstallTransactionStatus CommitAfterExit(
     const InstallReservation& reservation);
 InstallTransactionStatus CancelReservation(
     const InstallReservation& reservation);
 InstallTransactionStatus QueryTransaction(const std::string& transaction_id);
-InstallTransactionStatus RecoverPendingInstall(
-    const std::string& transaction_id);
 InstallTransactionStatus ResolvePendingInstallAfterExit(
     const std::string& transaction_id);
 
 InstallResult RestartCurrentApplication();
 bool AwaitRestartParentExitIfRequested();
-
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
-
-InstallLaunchDecision ResolveInstallLaunchDecision(
-    InstallElevationPolicy policy,
-    bool target_is_protected,
-    bool target_is_writable,
-    bool process_is_elevated);
 
 bool IsStrictChildPath(const std::wstring& root,
                        const std::wstring& candidate);

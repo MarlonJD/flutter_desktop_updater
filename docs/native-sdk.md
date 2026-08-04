@@ -4,9 +4,10 @@
 helper SDK packages, and an opt-in Native Runtime Preview for non-Flutter host
 applications. Helper-only consumers continue to own discovery, download,
 descriptor validation, artifact verification, and staging; the helper surface
-only schedules installation and relaunch of an application-owned staged
-artifact. The preview adds those earlier lifecycle stages without changing the
-Flutter runtime or the independently consumable helper boundary.
+owns only the explicit prepare/commit/cancel/query transaction over an
+application-owned verified stage. The preview adds the earlier lifecycle
+stages without changing the Flutter runtime or the independently consumable
+helper boundary.
 
 ## Distribution Surfaces
 
@@ -41,12 +42,13 @@ prepareInstall
 commitAfterExit
 cancelReservation
 queryTransaction
-recoverPendingInstall
+resolvePendingInstallAfterExit (Windows)
+recoverPendingInstall (macOS/Linux)
 ```
 
 The platform spelling follows its language conventions (`prepareInstall` in
 Swift, `PrepareInstall` in C++/.NET, and versioned
-`desktop_updater_*_v1` functions in the Windows C ABI). Preparation returns an
+`desktop_updater_*_abi2` functions in the Windows C ABI). Preparation returns an
 owned reservation only after a helper response has a valid transaction ID,
 response digest, endpoint identity, and durable journal proof. Commit is
 accepted only when those values still match. Dropping a Swift reservation or
@@ -54,15 +56,13 @@ disposing a .NET safe handle sends a best-effort cancellation; the helper's
 journal remains authoritative if the caller dies or cancellation cannot be
 delivered.
 
-At startup, persist only the transaction ID in application state. On Windows,
-call `resolvePendingInstallAfterExit` once instead of issuing a
-`queryTransaction`/`recoverPendingInstall` pair. When it returns a prepared,
-recovery-required status, the authenticated helper has retained the exact
-caller identity and will continue only after that process exits; the caller
-must exit immediately and must not launch a second recovery request. A terminal
-completed, rolled-back, or manual-action status may be handled without exiting.
-The separate Windows query and recovery functions remain available as low-level
-diagnostic and operator-recovery operations.
+At startup, persist the transaction ID in app-owned state. On Windows, call
+`resolvePendingInstallAfterExit` once for the mutating startup path; use
+`queryTransaction` only for read-only display. When the resolver returns a
+prepared, recovery-required status, the authenticated helper has retained the
+exact caller identity and will continue only after that process exits. The
+caller must exit immediately and must not launch a second recovery request.
+macOS and Linux retain their authenticated query-then-recover capability.
 
 Windows filesystem recovery is durable; automatic relaunch is a separate,
 verified best-effort operation with an at-most-once attempt boundary. The
@@ -84,10 +84,8 @@ normal elevated helper dies. A host that starts after reboot without that token
 still recovers the filesystem transaction but records relaunch failure instead
 of launching with the SYSTEM token or claiming that relaunch succeeded.
 
-The other platform SDKs retain the query-then-recover startup sequence until
-they expose an equivalent atomic operation. Application or Flutter state may
-drive UX but must not authorize mutation, choose rollback, or rewrite helper
-state.
+Application or Flutter state may drive UX but must not authorize mutation,
+choose rollback, or rewrite helper state.
 
 There is no compatibility scheduling wrapper in 3.0. Every host must persist
 its caller-generated transaction ID, call explicit prepare, and commit only
@@ -225,60 +223,34 @@ An external CMake consumer requests the exact package version and links the
 installed shared target:
 
 ```cmake
-find_package(desktop_updater_native 2.7.0 EXACT CONFIG REQUIRED)
+find_package(desktop_updater_native 3.0.0 EXACT CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE desktop_updater::native)
 ```
 
 Include `desktop_updater_native.h` for the C++ helper or
-`desktop_updater_native_c.h` for the versioned C ABI. Set
-`DESKTOP_UPDATER_NATIVE_ABI_VERSION`, `struct_size`, every staged path, and the
-complete `removed_files` array before calling
-`desktop_updater_schedule_install_and_relaunch_v1`. A staged C ABI request must
-also include the verified provenance and artifact SHA-256 values plus complete
-install-root, executable-relative-path, and package-identity target proof; an
-incomplete request is rejected before scheduling. The installed header also
-exposes `DESKTOP_UPDATER_NATIVE_VERSION_STRING`.
+`desktop_updater_native_c.h` for the installed C ABI. The public C ABI2
+surface contains only explicit prepare, commit-after-exit, cancel, query, and
+resolve-after-exit operations. Every request, result, and status begins with
+`abi_version` and `struct_size`; truncated prefixes are rejected before later
+fields are read. The old `desktop_updater_prepare_install_v2` export is a
+binary-only ABI1 rejecting tombstone and is absent from the 3.0 header.
 
-Durable Windows consumers should generate and persist a canonical lowercase
-UUIDv4 before privileged preparation, then use
-`desktop_updater_prepare_install_v2`. Its prepare outcome distinguishes a
-definite rejection from an ambiguous handoff that requires authoritative
-recovery by that same transaction ID. Startup recovery uses
-`desktop_updater_resolve_pending_install_after_exit_v1`; an active recovery ACK
-requires the caller to exit immediately. The original prepare, query, and
-recover entry points remain ABI-compatible for existing consumers.
-The .NET status exposes `AwaitsCallerExit` for that exact
-`prepared`/`recoveryRequired` combination; `manualActionRequired` must remain
-visible to the operator and must not be treated as an exit acknowledgement.
-The C++, C, .NET, Flutter plugin, and Dart status surfaces preserve
-`relaunchFailure` as a distinct additive result code. It means the install
-reached a verified terminal state but the single best-effort relaunch was not
-durably confirmed; it is neither success nor a request to retry recovery.
+Persist a canonical lowercase UUIDv4 before prepare and release owned ABI2
+result/status strings with the ABI2 free functions. The .NET wrapper exposes
+`PrepareInstall`, `CommitAfterExit`, `CancelReservation`, `QueryTransaction`,
+and `ResolvePendingInstallAfterExit` with matching ABI2 P/Invoke entry points.
+It does not expose a scheduler, mutating direct recover, caller-selected
+diagnostics path, signer allowlist, or elevation override. The C++, C, .NET,
+Flutter plugin, and Dart status surfaces preserve `relaunchFailure` as a
+distinct terminal result.
 
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
-wrappers, `buildTransitive` copy target, both
-`runtimes/win-x64/native/desktop_updater_native.dll` and
-`runtimes/win-x64/native/desktop_updater_runtime.dll`,
-`desktop_updater_install_helper.exe`, and the consumer-specific
-`desktop_updater_helper_policy.json`. Pack requires explicit
-`InstallHelperPath` and `HelperPolicyPath` inputs and fails when either is
-missing. The `buildTransitive`
-copy target accepts an explicit `RuntimeIdentifier` only when it is `win-x64`
-and fails before copying assets for any other explicit RID. Framework-dependent
-consumers that omit `RuntimeIdentifier` retain the existing copy behavior. The
-preview wrapper exposes `CheckForUpdate`, `DownloadVerifyAndStage`, and
-`InstallAndRelaunch`;
-helper-only consumers use `DesktopUpdaterInstallRequest` so the managed wrapper
-marshals the retained provenance, artifact digest, signer allowlist, and target
-proof. Its `DesktopUpdaterElevationPolicy` carries the signed Inno
-`requiresElevation` value as `Auto`, `Always`, or `Never`; the native helper
-rejects policy drift from the provenance-protected release manifest before
-installer execution. The old managed overload remains source-compatible for
-restart-only calls and rejects staged requests lacking that trust context. The
-lower-level C ABI uses the corresponding versioned `_v1` functions.
-Repository CI packs the package to a local feed and runs external consumers
-against the real DLLs. It is not a public NuGet release until an approved
-release workflow publishes that exact verified package.
+wrappers, `buildTransitive` copy target, both native runtime DLLs,
+`desktop_updater_install_helper.exe`, and the consumer-specific sealed policy.
+The helper and policy are discovery assets; the installer remains the
+protected authority. Repository CI packs the package to a local feed and runs
+external consumers against the real DLLs. It is not a public NuGet release
+until an approved release workflow publishes that exact verified package.
 
 The NuGet or Flutter copy beside the runtime DLLs is a discovery artifact. It
 does not become an elevation authority merely by being present. A machine-wide
@@ -331,7 +303,7 @@ scope and `candidate-only`.
 Use the installed CMake package:
 
 ```cmake
-find_package(desktop_updater_native 2.7.0 EXACT CONFIG REQUIRED)
+find_package(desktop_updater_native 3.0.0 EXACT CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE desktop_updater::native)
 ```
 

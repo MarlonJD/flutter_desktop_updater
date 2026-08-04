@@ -4,11 +4,11 @@ import XCTest
 
 final class HelperVersionTests: XCTestCase {
     func testVersionAndProtocolIdentityAreStable() {
-        XCTAssertEqual(HelperVersion.semanticVersion, "2.7.0")
+        XCTAssertEqual(HelperVersion.semanticVersion, "3.0.0")
         XCTAssertEqual(HelperVersion.protocolVersion, 1)
         XCTAssertEqual(
             HelperVersion.displayString,
-            "DesktopUpdaterInstallHelper 2.7.0 (protocol 1)"
+            "DesktopUpdaterInstallHelper 3.0.0 (protocol 1)"
         )
     }
 

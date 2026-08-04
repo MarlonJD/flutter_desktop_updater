@@ -70,6 +70,7 @@ class ClientLifecycleState {
   InstallHandoff BeginInstall(const LifecycleSnapshot& expected);
   bool RollbackInstall(const InstallHandoff& handoff);
   bool ConfirmInstall(const InstallHandoff& handoff);
+  bool CompleteInstall(const InstallHandoff& handoff);
   LifecycleSnapshot Snapshot() const;
 
  private:

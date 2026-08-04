@@ -7,7 +7,7 @@
     <UseAppHost>true</UseAppHost>
     <RollForward>Major</RollForward>
     <NuGetAudit>false</NuGetAudit>
-    <DesktopUpdaterNativeVersion Condition="'$(DesktopUpdaterNativeVersion)' == ''">2.7.0</DesktopUpdaterNativeVersion>
+    <DesktopUpdaterNativeVersion Condition="'$(DesktopUpdaterNativeVersion)' == ''">3.0.0</DesktopUpdaterNativeVersion>
   </PropertyGroup>
 
   <ItemGroup>

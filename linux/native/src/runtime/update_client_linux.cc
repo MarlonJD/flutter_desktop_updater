@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -141,9 +142,6 @@ internal::ClientConfiguration CoreConfiguration(
   result.platform = configuration.platform;
   result.channel = configuration.channel;
   result.installation_identity = configuration.installation_identity;
-  result.require_index_signature = configuration.require_index_signature;
-  result.require_descriptor_signature =
-      configuration.require_descriptor_signature;
   result.pinned_public_keys_by_id = configuration.pinned_public_keys_by_id;
   result.minimum_os_resolver = configuration.minimum_os_resolver;
   return result;
@@ -268,11 +266,11 @@ class UpdateClient::Impl {
     }
   }
 
-  RuntimeResult InstallAndRelaunch(
+  RuntimeResult PrepareInstall(
+      const std::string& transaction_id,
       const std::string& install_root,
       const std::string& executable_relative_path,
-      const std::vector<std::string>& removed_files,
-      const std::string& diagnostics_log_path) {
+      const std::vector<std::string>& removed_files) {
     const internal::LifecycleSnapshot snapshot = lifecycle_.Snapshot();
     if (snapshot.staged_path.empty() || !snapshot.check.has_descriptor) {
       return Result("installHandoffFailure",
@@ -284,7 +282,8 @@ class UpdateClient::Impl {
         internal::ValidateLinuxInstallHandoff(
             snapshot.staged_path, install_root, executable_relative_path,
             configuration_.expected_package_id, removed_files,
-            diagnostics_log_path, snapshot.stage_provenance_sha256);
+            snapshot.stage_provenance_sha256,
+            snapshot.check.descriptor.artifact.sha256);
     if (!validation.ok) {
       Record("install", "error", validation.error);
       return Result("installHandoffFailure", validation.error);
@@ -296,13 +295,15 @@ class UpdateClient::Impl {
                     "No staged update is ready for helper handoff.");
     }
     internal::SchedulingRollbackGuard rollback(&lifecycle_, install_handoff);
-    native::InstallResult scheduler_result{false, std::string()};
+    native::InstallReservation reservation;
+    native::InstallResult prepare_result{false, std::string()};
     try {
-      scheduler_result = internal::HandoffLinuxInstall(
+      prepare_result = internal::HandoffLinuxInstall(
           install_handoff.staged_path, install_root, executable_relative_path,
           configuration_.expected_package_id, removed_files,
-          diagnostics_log_path,
-          install_handoff.stage_provenance_sha256);
+          install_handoff.stage_provenance_sha256,
+          snapshot.check.descriptor.artifact.sha256, transaction_id,
+          &reservation);
     } catch (const std::exception& error) {
       Record("install", "error", error.what());
       return Result("installHandoffFailure", error.what());
@@ -311,25 +312,90 @@ class UpdateClient::Impl {
       return Result("installHandoffFailure",
                     "Unknown Linux helper scheduling failure.");
     }
-    if (!scheduler_result.ok) {
-      Record("install", "error", scheduler_result.error);
-      return Result("installHandoffFailure", scheduler_result.error);
+    if (!prepare_result.ok) {
+      Record("install", "error", prepare_result.error);
+      return Result("installHandoffFailure", prepare_result.error);
     }
     if (!rollback.Confirm()) {
       return Result("installHandoffFailure",
                     "Linux helper handoff confirmation failed.");
     }
+    pending_handoff_ = std::move(install_handoff);
+    pending_reservation_ = std::move(reservation);
+    return Result("updateAvailable", "Linux helper prepareInstall accepted.");
+  }
+
+  RuntimeResult CommitAfterExit() {
+    if (pending_reservation_.transaction_id.empty()) {
+      return Result("installHandoffFailure",
+                    "No prepared Linux install transaction is available.");
+    }
+    const native::InstallTransactionStatus status =
+        native::CommitAfterExit(pending_reservation_);
+    const bool accepted =
+        (status.state == native::InstallTransactionState::kCommitAccepted ||
+         status.state == native::InstallTransactionState::kCompleted) &&
+        (status.result_code == native::InstallTransactionResultCode::kAccepted ||
+         status.result_code == native::InstallTransactionResultCode::kSucceeded) &&
+        status.transaction_id == pending_reservation_.transaction_id &&
+        status.response_digest_sha256 ==
+            pending_reservation_.response_digest_sha256 &&
+        status.helper_endpoint_identity_sha256 ==
+            pending_reservation_.helper_endpoint_identity_sha256;
+    if (!accepted) {
+      return Result("installHandoffFailure",
+                    status.detail.empty()
+                        ? "Linux helper commit was not accepted."
+                        : status.detail);
+    }
+    if (!lifecycle_.CompleteInstall(pending_handoff_)) {
+      return Result("installHandoffFailure",
+                    "Linux helper lifecycle completion failed.");
+    }
     try {
-      internal::RemoveStagingDirectory(install_handoff.staged_path);
+      internal::RemoveStagingDirectory(pending_handoff_.staged_path);
     } catch (const std::exception& error) {
       Record("stage", "warning",
              std::string("Linux handoff staging cleanup failed: ") +
                  error.what());
     } catch (...) {
-      Record("stage", "warning",
-             "Linux handoff staging cleanup failed.");
+      Record("stage", "warning", "Linux handoff staging cleanup failed.");
     }
-    return Result("updateAvailable", "Linux helper handoff scheduled.");
+    const std::string detail = status.detail;
+    pending_handoff_ = internal::InstallHandoff();
+    pending_reservation_ = native::InstallReservation();
+    return Result("updateAvailable", detail);
+  }
+
+  RuntimeResult CancelReservation() {
+    if (pending_reservation_.transaction_id.empty()) {
+      return Result("installHandoffFailure",
+                    "No prepared Linux install transaction is available.");
+    }
+    const native::InstallTransactionStatus status =
+        native::CancelReservation(pending_reservation_);
+    if (status.state != native::InstallTransactionState::kCancelled) {
+      return Result("installHandoffFailure",
+                    status.detail.empty()
+                        ? "Linux helper cancellation was not accepted."
+                        : status.detail);
+    }
+    (void)lifecycle_.CompleteInstall(pending_handoff_);
+    pending_handoff_ = internal::InstallHandoff();
+    pending_reservation_ = native::InstallReservation();
+    return Result("updateAvailable", status.detail);
+  }
+
+  RuntimeResult QueryTransaction(const std::string& transaction_id) {
+    const native::InstallTransactionStatus status =
+        native::QueryTransaction(transaction_id);
+    return Result("updateAvailable", status.detail);
+  }
+
+  RuntimeResult RecoverPendingInstall(const std::string& transaction_id) {
+    const native::InstallTransactionStatus status =
+        native::RecoverPendingInstall(transaction_id);
+    return Result("updateAvailable", status.detail);
   }
 
   std::vector<std::string> RedactedDiagnostics() const {
@@ -378,6 +444,8 @@ class UpdateClient::Impl {
   mutable std::mutex diagnostics_mutex_;
   internal::DiagnosticsRecorder diagnostics_;
   internal::ClientLifecycleState lifecycle_;
+  internal::InstallHandoff pending_handoff_;
+  native::InstallReservation pending_reservation_;
 };
 
 UpdateClient::UpdateClient(RuntimeConfiguration configuration)
@@ -399,13 +467,30 @@ RuntimeResult UpdateClient::DownloadVerifyAndStage(
                                        executable_relative_path);
 }
 
-RuntimeResult UpdateClient::InstallAndRelaunch(
+RuntimeResult UpdateClient::PrepareInstall(
+    const std::string& transaction_id,
     const std::string& install_root,
     const std::string& executable_relative_path,
-    const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path) {
-  return impl_->InstallAndRelaunch(install_root, executable_relative_path,
-                                   removed_files, diagnostics_log_path);
+    const std::vector<std::string>& removed_files) {
+  return impl_->PrepareInstall(transaction_id, install_root,
+                               executable_relative_path, removed_files);
+}
+
+RuntimeResult UpdateClient::CommitAfterExit() {
+  return impl_->CommitAfterExit();
+}
+
+RuntimeResult UpdateClient::CancelReservation() {
+  return impl_->CancelReservation();
+}
+
+RuntimeResult UpdateClient::QueryTransaction(const std::string& transaction_id) {
+  return impl_->QueryTransaction(transaction_id);
+}
+
+RuntimeResult UpdateClient::RecoverPendingInstall(
+    const std::string& transaction_id) {
+  return impl_->RecoverPendingInstall(transaction_id);
 }
 
 std::vector<std::string> UpdateClient::RedactedDiagnostics() const {

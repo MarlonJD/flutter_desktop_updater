@@ -110,18 +110,22 @@ void main() {
       "windows/native/src/desktop_updater_native_c.cpp",
     );
 
-    expect(version, contains("DESKTOP_UPDATER_NATIVE_ABI_VERSION 1u"));
+    expect(version, contains("DESKTOP_UPDATER_NATIVE_ABI_VERSION 2u"));
     expect(header, contains('extern "C"'));
-    expect(header, contains("desktop_updater_install_request_v1"));
-    expect(header, contains("desktop_updater_result_v1"));
+    expect(header, contains("desktop_updater_install_request_abi2"));
+    expect(header, contains("desktop_updater_result_abi2"));
+    expect(header, contains("desktop_updater_prepare_install_abi2"));
+    expect(header, contains("desktop_updater_commit_after_exit_abi2"));
+    expect(header, contains("desktop_updater_cancel_reservation_abi2"));
+    expect(header, contains("desktop_updater_query_transaction_abi2"));
     expect(
       header,
-      contains("desktop_updater_schedule_install_and_relaunch_v1"),
+      contains("desktop_updater_resolve_pending_install_after_exit_abi2"),
     );
-    expect(header, contains("desktop_updater_result_free_v1"));
+    expect(header, contains("desktop_updater_result_free_abi2"));
     expect(header, contains("DESKTOP_UPDATER_CALL"));
-    expect(header, contains("desktop_updater_install_elevation_policy_v1"));
-    expect(header, contains("elevation_policy"));
+    expect(header, isNot(contains("schedule_install_and_relaunch")));
+    expect(header, isNot(contains("elevation_policy")));
 
     expect(cmake, contains("desktop_updater_native_objects OBJECT"));
     expect(cmake, contains("desktop_updater_native_static STATIC"));
@@ -132,9 +136,10 @@ void main() {
       contains("if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)"),
     );
     expect(source, contains("catch (...)"));
-    expect(source, contains("request->abi_version"));
-    expect(source, contains("request->struct_size"));
+    expect(source, contains("ValidateAbi2Prefix(request"));
+    expect(source, contains("ValidateStatusDestination"));
     expect(source, contains("removed_file_count"));
+    expect(source, contains("desktop_updater_prepare_install_v2"));
     expect(source, contains("result->error_message_utf8 = nullptr"));
   });
 
@@ -160,21 +165,12 @@ void main() {
         "a9607c9215866bd425a725610c5e0f739eeb50887a57903df48891446ce6fb3c",
       ),
     );
-    expect(tests, contains("WrongAbiVersion"));
-    expect(tests, contains("UndersizedStruct"));
+    expect(tests, contains("Abi1PrefixIsRejectedBeforeLaterRead"));
+    expect(tests, contains("TruncatedPrefixIsRejectedBeforeLaterRead"));
     expect(tests, contains("InvalidUtf16"));
-    expect(
-      tests,
-      contains("IncompleteStagedHandoffFailsBeforeScheduler"),
-    );
-    expect(tests, contains('find("verified provenance")'));
-    expect(tests, contains("EXPECT_FALSE(scheduler_called)"));
-    expect(tests, contains("RemovedFilesReachNativeRequest"));
-    expect(tests, contains("ElevationPolicyReachesNativeRequest"));
-    expect(tests, contains("InvalidElevationPolicyFailsBeforeScheduler"));
-    expect(tests, contains("NeverElevationRejectsUnwritableTarget"));
-    expect(tests, contains("ThrownInternalException"));
-    expect(tests, contains("RepeatedFreeIsSafe"));
+    expect(tests, contains("MissingRequestFieldIsRejected"));
+    expect(tests, contains("InvalidTransactionIdIsRejected"));
+    expect(tests, contains("CleanupIsIdempotent"));
   });
 
   test("Flutter adapter links the static native helper", () {
@@ -223,35 +219,25 @@ void main() {
       wrapper,
       contains("public sealed class DesktopUpdaterInstallRequest"),
     );
-    expect(wrapper, contains("public enum DesktopUpdaterElevationPolicy"));
-    expect(wrapper, contains("RequiresElevation ="));
-    expect(wrapper, contains("ElevationPolicy = (uint)elevationPolicy"));
     expect(wrapper, contains("ExpectedProvenanceSha256 ="));
     expect(wrapper, contains("ExpectedArtifactSha256 ="));
-    expect(wrapper, contains("AllowedSignerThumbprints ="));
-    expect(wrapper, contains("ExpectedProvenanceSha256 = provenancePointer"));
-    expect(wrapper, contains("ExpectedArtifactSha256 = artifactPointer"));
-    expect(wrapper, contains("AllowedSignerThumbprints = signerPointers"));
     expect(wrapper, contains("Marshal.StringToHGlobalUni"));
     expect(wrapper, contains("Marshal.WriteIntPtr"));
-    expect(wrapper, contains("removedFiles.Count"));
+    expect(wrapper, contains("request.RemovedFiles.Count"));
     expect(wrapper, contains("finally"));
     expect(wrapper, contains("Marshal.FreeHGlobal"));
     expect(wrapper, contains('"desktop_updater_native"'));
     expect(
       wrapper,
-      contains(
-        'EntryPoint = "desktop_updater_schedule_install_and_relaunch_v1"',
-      ),
+      contains('EntryPoint = "desktop_updater_prepare_install_abi2"'),
     );
     expect(wrapper, contains("ExactSpelling = true"));
     expect(wrapper, contains("CallingConvention = CallingConvention.Cdecl"));
-    expect(tests, contains("NativeInvalidRequestReturnsNativeError"));
-    expect(tests, contains("IncompleteStagedHandoffFailsBeforeNativeLoad"));
-    expect(
-      tests,
-      contains("VerifiedInstallRequestCarriesCompleteNativeTrustContext"),
-    );
+    expect(tests,
+        contains("VerifiedInstallRequestContainsNoCallerPolicyControls"));
+    expect(tests,
+        contains("ExplicitTransactionOperationsRejectNonCanonicalUuidV4"));
+    expect(tests, contains("NativeMethodsUseOnlyAbi2EntryPoints"));
     expect(tests, contains("desktop_updater_native.dll"));
     expect(tests, contains("CopyNativeDll"));
   });
@@ -941,7 +927,7 @@ void main() {
     expect(helperSources, contains("windows_recovery_transport.cpp"));
     expect(client, contains("LaunchAuthenticatedElevatedRecoveryRequest"));
     expect(client, contains('"queryTransaction"'));
-    expect(client, contains('"recoverPendingInstall"'));
+    expect(client, isNot(contains('"recoverPendingInstall"')));
     expect(client, contains('"resolvePendingInstallAfterExit"'));
     expect(publicHeader, contains("ResolvePendingInstallAfterExit"));
     expect(

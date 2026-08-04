@@ -8,7 +8,7 @@ if(POLICY CMP0135)
 endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-project(desktop_updater_native VERSION 2.7.0 LANGUAGES C CXX)
+project(desktop_updater_native VERSION 3.0.0 LANGUAGES C CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)
@@ -22,7 +22,7 @@ option(DESKTOP_UPDATER_PORTABLE_PROVIDER
 set(DESKTOP_UPDATER_PORTABLE_HELPER_POLICY_PATH "" CACHE FILEPATH
   "Absolute path to the consumer-specific portable helper policy")
 set(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR "" CACHE PATH
-  "Absolute installer-protected directory for an elevated helper copy")
+  "Absolute helper discovery directory supplied by the installer")
 if(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR)
   string(REPLACE "\\" "/"
     DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR_NORMALIZED
@@ -300,11 +300,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   if(DESKTOP_UPDATER_PORTABLE_PROVIDER)
     install(FILES "${DESKTOP_UPDATER_PORTABLE_POLICY_OUTPUT}"
       DESTINATION ${CMAKE_INSTALL_BINDIR})
-  endif()
-  if(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR)
-    install(TARGETS desktop_updater_install_helper
-      RUNTIME DESTINATION
-        "${DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}")
   endif()
   if(DESKTOP_UPDATER_NATIVE_RUNTIME)
     install(TARGETS desktop_updater_runtime

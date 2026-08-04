@@ -116,45 +116,39 @@ void main() {
       "CommitAfterExit",
       "CancelReservation",
       "QueryTransaction",
-      "RecoverPendingInstall",
+      "ResolvePendingInstallAfterExit",
     ]) {
       expect(windowsHeader, contains(operation));
     }
     expect(windowsHeader, contains("enum class InstallTransactionState"));
     expect(windowsHeader, contains("enum class InstallTransactionResultCode"));
     expect(windowsHeader, contains("kRelaunchFailure = 8"));
-    expect(windowsCHeader, contains("desktop_updater_reservation_handle_v1"));
-    expect(windowsCHeader, contains("desktop_updater_prepare_install_v1"));
-    expect(windowsCHeader, contains("desktop_updater_prepare_install_v2"));
-    expect(windowsCHeader, contains("desktop_updater_commit_after_exit_v1"));
-    expect(windowsCHeader, contains("desktop_updater_query_transaction_v1"));
-    expect(
-        windowsCHeader, contains("desktop_updater_recover_pending_install_v1"));
+    expect(windowsCHeader, contains("desktop_updater_reservation_handle_abi2"));
+    expect(windowsCHeader, contains("desktop_updater_prepare_install_abi2"));
+    expect(windowsCHeader, contains("desktop_updater_commit_after_exit_abi2"));
+    expect(windowsCHeader, contains("desktop_updater_cancel_reservation_abi2"));
+    expect(windowsCHeader, contains("desktop_updater_query_transaction_abi2"));
     expect(
       windowsCHeader,
-      contains("desktop_updater_resolve_pending_install_after_exit_v1"),
+      contains("desktop_updater_resolve_pending_install_after_exit_abi2"),
     );
-    expect(windowsCHeader, contains("desktop_updater_reservation_release_v1"));
-    expect(windowsCHeader, contains("desktop_updater_transaction_status_v1"));
+    expect(
+        windowsCHeader, contains("desktop_updater_reservation_release_abi2"));
+    expect(windowsCHeader, contains("desktop_updater_transaction_status_abi2"));
     expect(
       windowsCHeader,
-      contains("DESKTOP_UPDATER_TRANSACTION_RESULT_RELAUNCH_FAILURE = 8"),
+      contains("DESKTOP_UPDATER_TRANSACTION_RESULT_RELAUNCH_FAILURE_ABI2 = 8"),
     );
-    expect(
-      windowsNative,
-      contains(
-        "InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {\n"
-        "  InstallReservation reservation;",
-      ),
-    );
+    expect(windowsNative, contains("InstallResult PrepareInstall("));
+    expect(windowsNative, isNot(contains("ScheduleInstallAndRelaunch")));
     expect(
       windowsNative,
       contains("BuildWindowsNativeInstallTransactionRequestV1"),
     );
-    expect(windowsCNative, contains("destination->struct_size <"));
+    expect(windowsCNative, contains("value->struct_size < sizeof(Struct)"));
     expect(
       windowsCNative,
-      contains("sizeof(desktop_updater_transaction_status_v1)"),
+      contains("ValidateStatusDestination"),
     );
     expect(dotnetNative,
         contains("sealed class DesktopUpdaterInstallReservation"));
@@ -165,10 +159,10 @@ void main() {
     expect(dotnetNative, contains("PrepareInstall("));
     expect(dotnetNative, contains("string transactionId"));
     expect(dotnetNative, contains("ResolvePendingInstallAfterExit"));
-    expect(windowsConsumer, contains("QueryTransaction"));
-    expect(windowsConsumer, contains("RecoverPendingInstall"));
+    expect(windowsConsumer, contains("desktop_updater_prepare_install_abi2"));
+    expect(windowsConsumer, contains("desktop_updater_query_transaction_abi2"));
     expect(dotnetConsumer, contains("QueryTransaction"));
-    expect(dotnetConsumer, contains("RecoverPendingInstall"));
+    expect(dotnetConsumer, contains("ResolvePendingInstallAfterExit"));
 
     for (final operation in <String>[
       "PrepareInstall",
@@ -184,13 +178,8 @@ void main() {
     expect(linuxHeader, contains("kRelaunchFailure = 8"));
     expect(linuxHeader, isNot(contains("helper_executable_path")));
     expect(linuxHeader, isNot(contains("std::string policy_id")));
-    expect(
-      linuxNative,
-      contains(
-        "InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {\n"
-        "  InstallReservation reservation;",
-      ),
-    );
+    expect(linuxNative, contains("InstallResult PrepareInstall("));
+    expect(linuxNative, isNot(contains("ScheduleInstallAndRelaunch")));
     expect(linuxNative, contains("SerializeCommonInstallRequest"));
     expect(linuxConsumer, contains("QueryTransaction"));
     expect(linuxConsumer, contains("RecoverPendingInstall"));
@@ -241,10 +230,19 @@ void main() {
           "target_link_libraries(consumer PRIVATE desktop_updater::native)",
         ),
       );
-      expect(consumerSource, contains("return 0"));
       expect(
         consumerSource,
-        contains("DESKTOP_UPDATER_NATIVE_VERSION_STRING"),
+        contains(platform == "windows"
+            ? "return query_succeeded ? 0 : 1"
+            : "return 0"),
+      );
+      expect(
+        consumerSource,
+        contains(
+          platform == "windows"
+              ? "DESKTOP_UPDATER_NATIVE_ABI_VERSION"
+              : "DESKTOP_UPDATER_NATIVE_VERSION_STRING",
+        ),
       );
     }
   });
@@ -260,7 +258,11 @@ void main() {
       ".github/workflows/desktop-updater-ci.yml",
     );
 
-    expect(consumer, contains("PrepareInstall(request, &reservation)"));
+    expect(
+      consumer,
+      contains(
+          "PrepareInstall(request, transaction_id,\n                                              &reservation)"),
+    );
     expect(consumer, contains("CommitAfterExit(reservation)"));
     expect(
       consumer,
@@ -372,7 +374,7 @@ void main() {
     expect(consumerSource, contains("DesktopUpdaterInstallRequest("));
     expect(consumerSource, contains("expectedProvenanceSha256:"));
     expect(consumerSource, contains("expectedArtifactSha256:"));
-    expect(consumerSource, contains("allowedSignerThumbprints:"));
+    expect(consumerSource, contains("expectedPackageId:"));
     expect(consumerSource, contains('"Staged update"'));
     expect(consumerSource, contains('"path components"'));
   });
@@ -490,7 +492,11 @@ void main() {
     expect(workflow, contains("dart pub publish --dry-run"));
     expect(publishedDocs, contains("downloadVerifyAndStage"));
     expect(publishedDocs, contains("checkForUpdate"));
-    expect(publishedDocs, contains("installAndRelaunch"));
+    expect(publishedDocs, contains("prepareInstall"));
+    expect(publishedDocs, contains("commitAfterExit"));
+    expect(publishedDocs, contains("queryTransaction"));
+    expect(publishedDocs, contains("recoverPendingInstall"));
+    expect(publishedDocs, isNot(contains("installAndRelaunch")));
     expect(publishedDocs, contains("candidate-only"));
     expect(publishedDocs, contains("not production-ready"));
     expect(publishedDocs, isNot(contains("production-ready native runtime")));

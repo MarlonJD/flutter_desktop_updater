@@ -33,6 +33,8 @@ void main() {
     expect(source, contains("pubspec.yaml"));
     expect(source, contains("desktopUpdaterPackageVersion"));
     expect(source, contains("DesktopUpdaterVersion"));
+    expect(source, contains("HelperVersion"));
+    expect(source, contains("Helper-Info.plist"));
     expect(source, contains("DESKTOP_UPDATER_NATIVE_VERSION_STRING"));
     expect(source, contains("NuGet"));
     expect(source, isNot(contains("CHANGELOG.md")));
@@ -68,7 +70,10 @@ void main() {
     for (final operation in [
       "checkForUpdate",
       "downloadVerifyAndStage",
-      "installAndRelaunch",
+      "prepareInstall",
+      "commitAfterExit",
+      "queryTransaction",
+      "recoverPendingInstall",
     ]) {
       expect("$guide\n$runtimeApi\n$readme", contains(operation));
     }
@@ -98,7 +103,7 @@ void main() {
     expect(
       workflow,
       contains(
-        "macOS native runtime ZIP package and unsigned rejection smoke",
+        "macOS native runtime ZIP candidate rejection smoke",
       ),
     );
     expect(ciGuide, contains("not privileged install"));

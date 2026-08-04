@@ -17,8 +17,8 @@ native::InstallRequest LinuxInstallRequest(
     const std::string& executable_relative_path,
     const std::string& expected_package_id,
     const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path,
-    const std::string& expected_provenance_sha256) {
+    const std::string& expected_provenance_sha256,
+    const std::string& expected_artifact_sha256) {
   const StageProvenanceMarker marker = VerifyStageProvenance(
       staging_path, expected_provenance_sha256, OpenSSLSha256);
   std::vector<native::InstallProvenanceEntry> entries;
@@ -26,17 +26,15 @@ native::InstallRequest LinuxInstallRequest(
     entries.push_back({entry.path, entry.kind, entry.length,
                        entry.sha256, entry.target});
   }
-  return {native::LinuxInstallOperation::kInstall,
-          staging_path,
+  return {staging_path,
           install_root,
           NormalizeSafeArchivePath(executable_relative_path),
           expected_package_id,
           removed_files,
-          diagnostics_log_path,
           expected_provenance_sha256,
           marker.nonce,
           entries,
-          marker.artifact_sha256};
+          expected_artifact_sha256};
 }
 
 }  // namespace
@@ -101,12 +99,12 @@ native::InstallResult ValidateLinuxInstallHandoff(
     const std::string& executable_relative_path,
     const std::string& expected_package_id,
     const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path,
-    const std::string& expected_provenance_sha256) {
+    const std::string& expected_provenance_sha256,
+    const std::string& expected_artifact_sha256) {
   return native::ValidateInstallRequest(LinuxInstallRequest(
       staging_path, install_root, executable_relative_path,
-      expected_package_id, removed_files, diagnostics_log_path,
-      expected_provenance_sha256));
+      expected_package_id, removed_files, expected_provenance_sha256,
+      expected_artifact_sha256));
 }
 
 native::InstallResult HandoffLinuxInstall(
@@ -115,12 +113,14 @@ native::InstallResult HandoffLinuxInstall(
     const std::string& executable_relative_path,
     const std::string& expected_package_id,
     const std::vector<std::string>& removed_files,
-    const std::string& diagnostics_log_path,
-    const std::string& expected_provenance_sha256) {
-  return native::ScheduleInstallAndRelaunch(LinuxInstallRequest(
+    const std::string& expected_provenance_sha256,
+    const std::string& expected_artifact_sha256,
+    const std::string& transaction_id,
+    native::InstallReservation* reservation) {
+  return native::PrepareInstall(LinuxInstallRequest(
       staging_path, install_root, executable_relative_path,
-      expected_package_id, removed_files, diagnostics_log_path,
-      expected_provenance_sha256));
+      expected_package_id, removed_files, expected_provenance_sha256,
+      expected_artifact_sha256), transaction_id, reservation);
 }
 
 }  // namespace internal

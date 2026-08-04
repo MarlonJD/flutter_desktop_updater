@@ -6,7 +6,7 @@ var startupStatus = DesktopUpdaterNative.QueryTransaction(startupTransactionId);
 if (startupStatus.ResultCode ==
     DesktopUpdaterInstallTransactionResultCode.RecoveryRequired)
 {
-    _ = DesktopUpdaterNative.RecoverPendingInstall(startupTransactionId);
+    _ = DesktopUpdaterNative.ResolvePendingInstallAfterExit(startupTransactionId);
 }
 
 var missingStagingPath = Path.Combine(
@@ -18,15 +18,15 @@ try
     var request = new DesktopUpdaterInstallRequest(
         stagingPath: missingStagingPath,
         removedFiles: new[] { "obsolete.txt" },
-        diagnosticsLogPath: null,
         expectedProvenanceSha256: new string('a', 64),
         expectedArtifactSha256: new string('b', 64),
-        allowedSignerThumbprints: new[] { new string('c', 64) },
-        requiresElevation: DesktopUpdaterElevationPolicy.Auto,
         installRoot: AppContext.BaseDirectory,
         executableRelativePath: Path.GetFileName(Environment.ProcessPath!),
         expectedPackageId: "com.example.desktop-updater-consumer");
-    DesktopUpdaterNative.ScheduleInstallAndRelaunch(request);
+    using var reservation = DesktopUpdaterNative.PrepareInstall(
+        request,
+        "123e4567-e89b-42d3-a456-426614174000");
+    _ = DesktopUpdaterNative.CommitAfterExit(reservation);
 }
 catch (DesktopUpdaterException error)
     when (error.Message.Contains("Staged update", StringComparison.Ordinal)

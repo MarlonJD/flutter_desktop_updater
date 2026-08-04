@@ -4,8 +4,17 @@ import "dart:io";
 
 import "package:path/path.dart" as path;
 
-const desktopUpdaterMigrationGuide =
+const desktopUpdaterMigrationGuideV1To2 =
     "https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md";
+const desktopUpdaterMigrationGuideV2To3 =
+    "https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md";
+
+// Historical alias retained for callers that imported the 1.x guide.
+const desktopUpdaterMigrationGuide = desktopUpdaterMigrationGuideV1To2;
+
+String migrationGuideFor(int fromMajor) => fromMajor == 1
+    ? desktopUpdaterMigrationGuideV1To2
+    : desktopUpdaterMigrationGuideV2To3;
 
 enum MigrationEditKind {
   pubspecConstraint,
@@ -17,6 +26,7 @@ enum MigrationFindingKind {
   lowLevelApi,
   oldCliCommand,
   manualReview,
+  sourceMajorMismatch,
 }
 
 class MigrationLocation {
@@ -61,6 +71,7 @@ class MigrationResult {
   MigrationResult({
     required this.root,
     required this.apply,
+    required this.fromMajor,
     required this.pendingEdits,
     required this.appliedEdits,
     required this.findings,
@@ -69,6 +80,7 @@ class MigrationResult {
 
   final Directory root;
   final bool apply;
+  final int fromMajor;
   final List<MigrationEdit> pendingEdits;
   final List<MigrationEdit> appliedEdits;
   final List<MigrationFinding> findings;
@@ -76,6 +88,9 @@ class MigrationResult {
 
   bool get hasEdits => pendingEdits.isNotEmpty || appliedEdits.isNotEmpty;
   bool get hasFindings => findings.isNotEmpty;
+  bool get hasSourceMajorMismatch => findings.any(
+        (finding) => finding.kind == MigrationFindingKind.sourceMajorMismatch,
+      );
 
   static List<File> _uniqueFiles(List<File> files) {
     final seen = <String>{};
@@ -92,7 +107,11 @@ class MigrationResult {
 Future<MigrationResult> migrateDesktopUpdaterProject({
   required Directory root,
   bool apply = false,
+  int fromMajor = 1,
 }) async {
+  if (fromMajor != 1 && fromMajor != 2) {
+    throw ArgumentError.value(fromMajor, "fromMajor", "Use 1 or 2.");
+  }
   if (!await root.exists()) {
     throw ArgumentError.value(root.path, "root", "Directory does not exist.");
   }
@@ -100,16 +119,23 @@ Future<MigrationResult> migrateDesktopUpdaterProject({
   final edits = <MigrationEdit>[];
   final findings = <MigrationFinding>[];
   final changedFiles = <File>[];
+  final pendingWrites = <String, File>{};
+  final pendingContents = <String, String>{};
 
   final pubspec = File(path.join(root.path, "pubspec.yaml"));
   final isDesktopUpdaterPackageRoot = await _isDesktopUpdaterPackageRoot(
     pubspec,
   );
   if (await pubspec.exists()) {
-    final updated = await _migratePubspec(pubspec, edits, findings);
-    if (updated != null && apply) {
-      await pubspec.writeAsString(updated);
-      changedFiles.add(pubspec);
+    final updated = await _migratePubspec(
+      pubspec,
+      edits,
+      findings,
+      fromMajor,
+    );
+    if (updated != null) {
+      pendingWrites[pubspec.path] = pubspec;
+      pendingContents[pubspec.path] = updated;
     }
   } else {
     findings.add(
@@ -133,21 +159,37 @@ Future<MigrationResult> migrateDesktopUpdaterProject({
       if (_isGeneratedDart(file)) {
         continue;
       }
-      final updated = await _migrateDartFile(file, edits, findings);
-      if (updated != null && apply) {
-        await file.writeAsString(updated);
-        changedFiles.add(file);
+      final updated = await _migrateDartFile(
+        file,
+        edits,
+        findings,
+        fromMajor,
+      );
+      if (updated != null) {
+        pendingWrites[file.path] = file;
+        pendingContents[file.path] = updated;
       }
     } else if (_isInspectableTextFile(file)) {
-      await _scanTextFile(file, findings);
+      await _scanTextFile(file, findings, fromMajor);
+    }
+  }
+
+  final blocked = findings.any(
+    (finding) => finding.kind == MigrationFindingKind.sourceMajorMismatch,
+  );
+  if (apply && !blocked) {
+    for (final entry in pendingWrites.entries) {
+      await entry.value.writeAsString(pendingContents[entry.key]!);
+      changedFiles.add(entry.value);
     }
   }
 
   return MigrationResult(
     root: root,
     apply: apply,
-    pendingEdits: apply ? const [] : edits,
-    appliedEdits: apply ? edits : const [],
+    fromMajor: fromMajor,
+    pendingEdits: apply && !blocked ? const [] : edits,
+    appliedEdits: apply && !blocked ? edits : const [],
     findings: findings,
     changedFiles: changedFiles,
   );
@@ -157,6 +199,7 @@ Future<String?> _migratePubspec(
   File file,
   List<MigrationEdit> edits,
   List<MigrationFinding> findings,
+  int fromMajor,
 ) async {
   final content = await file.readAsString();
   final lines = content.split("\n");
@@ -177,20 +220,42 @@ Future<String?> _migratePubspec(
     ).firstMatch(line);
     if (scalarMatch != null) {
       final current = scalarMatch.group(2)!.trim();
-      if (current == "^2.0.0") {
-        continue;
+      final major = _simpleConstraintMajor(current);
+      final target = fromMajor == 1 ? "^2.0.0" : "^3.0.0";
+      final supportedSource = fromMajor == 1 ? 1 : 2;
+      final idempotent = fromMajor == 1 ? "^2.0.0" : "^3.0.0";
+      if (major == null) {
+        _addManualDependencyFinding(
+          file,
+          i + 1,
+          findings,
+          "desktop_updater uses a non-simple dependency constraint.",
+          "Review the dependency manually and migrate it to $target.",
+        );
+      } else if (major == supportedSource) {
+        lines[i] =
+            "${scalarMatch.group(1)}desktop_updater: $target${scalarMatch.group(3)}";
+        changed = true;
+        edits.add(
+          MigrationEdit(
+            kind: MigrationEditKind.pubspecConstraint,
+            location: MigrationLocation(file: file, line: i + 1, column: 1),
+            description:
+                "Update desktop_updater dependency constraint to $target.",
+          ),
+        );
+      } else if (current != idempotent) {
+        findings.add(
+          MigrationFinding(
+            kind: MigrationFindingKind.sourceMajorMismatch,
+            location: MigrationLocation(file: file, line: i + 1, column: 1),
+            description:
+                "desktop_updater constraint $current does not belong to the requested --from $fromMajor lane.",
+            recommendation:
+                "Run the migrator with the dependency's actual source major, or choose $target only after reviewing the breaking migration.",
+          ),
+        );
       }
-      lines[i] =
-          "${scalarMatch.group(1)}desktop_updater: ^2.0.0${scalarMatch.group(3)}";
-      changed = true;
-      edits.add(
-        MigrationEdit(
-          kind: MigrationEditKind.pubspecConstraint,
-          location: MigrationLocation(file: file, line: i + 1, column: 1),
-          description:
-              "Update desktop_updater dependency constraint to ^2.0.0.",
-        ),
-      );
       continue;
     }
 
@@ -203,7 +268,7 @@ Future<String?> _migratePubspec(
           location: MigrationLocation(file: file, line: i + 1, column: 1),
           description: "desktop_updater dependency uses a nested declaration.",
           recommendation:
-              "Review this dependency manually and point it at desktop_updater ^2.0.0 when ready.",
+              "Review this dependency manually and point it at desktop_updater ${fromMajor == 1 ? "^2.0.0" : "^3.0.0"} when ready.",
         ),
       );
     }
@@ -215,19 +280,45 @@ Future<String?> _migratePubspec(
   return lines.join("\n");
 }
 
+int? _simpleConstraintMajor(String value) {
+  final match =
+      RegExp(r"^\^(\d+)\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$").firstMatch(value);
+  return match == null ? null : int.tryParse(match.group(1)!);
+}
+
+void _addManualDependencyFinding(
+  File file,
+  int line,
+  List<MigrationFinding> findings,
+  String description,
+  String recommendation,
+) {
+  findings.add(
+    MigrationFinding(
+      kind: MigrationFindingKind.manualReview,
+      location: MigrationLocation(file: file, line: line, column: 1),
+      description: description,
+      recommendation: recommendation,
+    ),
+  );
+}
+
 Future<String?> _migrateDartFile(
   File file,
   List<MigrationEdit> edits,
   List<MigrationFinding> findings,
+  int fromMajor,
 ) async {
   final content = await file.readAsString();
   var updated = content;
   var changed = false;
 
-  final safeReplacements = <String, String>{
-    "skipCheckVersion:": "skipInitialVersionCheck:",
-    "getSkipCheckVersion": "skipInitialVersionCheck",
-  };
+  final safeReplacements = fromMajor == 1
+      ? <String, String>{
+          "skipCheckVersion:": "skipInitialVersionCheck:",
+          "getSkipCheckVersion": "skipInitialVersionCheck",
+        }
+      : const <String, String>{};
 
   for (final entry in safeReplacements.entries) {
     if (updated.contains(entry.key)) {
@@ -251,7 +342,7 @@ Future<String?> _migrateDartFile(
     }
   }
 
-  _scanDartFindings(file, updated, findings);
+  _scanDartFindings(file, updated, findings, fromMajor);
 
   return changed ? updated : null;
 }
@@ -260,6 +351,7 @@ void _scanDartFindings(
   File file,
   String content,
   List<MigrationFinding> findings,
+  int fromMajor,
 ) {
   const legacyGetters = <String, String>{
     "needUpdate":
@@ -282,7 +374,7 @@ void _scanDartFindings(
           description:
               "Legacy compatibility getter `${entry.key}` is still in use.",
           recommendation:
-              "${entry.value} See the typed state migration section: $desktopUpdaterMigrationGuide",
+              "${entry.value} See the typed state migration section: ${migrationGuideFor(fromMajor)}",
         ),
       );
     }
@@ -290,7 +382,7 @@ void _scanDartFindings(
 
   const lowLevelApis = <String, String>{
     "prepareUpdateApp":
-        "Prefer DesktopUpdaterController or the 2.0 zip-first UpdateClient flow.",
+        "Prefer the current DesktopUpdaterController or UpdateClient flow.",
     "updateApp":
         "Prefer `dart run desktop_updater:package` for publishing and controller download/install APIs at runtime.",
     "versionCheck":
@@ -304,9 +396,48 @@ void _scanDartFindings(
           kind: MigrationFindingKind.lowLevelApi,
           location: _offsetLocation(file, content, match.start),
           description: "Low-level 1.x-style API `${entry.key}` is in use.",
-          recommendation: "${entry.value} See $desktopUpdaterMigrationGuide",
+          recommendation: "${entry.value} See ${migrationGuideFor(fromMajor)}",
         ),
       );
+    }
+  }
+
+  if (fromMajor == 2) {
+    const removed = <String, String>{
+      "diagnosticsLogPath":
+          "Diagnostics are app-owned in 3.0; remove the native diagnostics path.",
+      "requireIndexSignature":
+          "Pinned release keys are mandatory in 3.0; remove the optional flag.",
+      "requireDescriptorSignature":
+          "Pinned release keys are mandatory in 3.0; remove the optional flag.",
+      "installAndRelaunch":
+          "Use explicit prepare, commit-after-exit, cancel, and query operations.",
+      "scheduleInstallAndRelaunch":
+          "Use explicit prepare, commit-after-exit, cancel, and query operations.",
+      "RecoverPendingInstall":
+          "Use the platform's explicit resolve-after-exit operation.",
+      "allowedSignerThumbprints":
+          "Signer policy is installer-owned; remove caller-provided signer lists.",
+      "requiresElevation":
+          "Elevation policy is installer-owned; remove caller-provided elevation controls.",
+      "desktop_updater_schedule_install":
+          "The native schedule ABI was removed; migrate to explicit transaction calls.",
+      "desktop_updater_prepare_install_v2":
+          "The ABI1 tombstone is not a 3.0 public API; migrate to the versioned ABI2 surface.",
+    };
+    for (final entry in removed.entries) {
+      for (final match in RegExp("\\b${entry.key}\\b").allMatches(content)) {
+        findings.add(
+          MigrationFinding(
+            kind: MigrationFindingKind.manualReview,
+            location: _offsetLocation(file, content, match.start),
+            description:
+                "2.x API or native contract `${entry.key}` needs a 3.0 review.",
+            recommendation:
+                "${entry.value} See $desktopUpdaterMigrationGuideV2To3",
+          ),
+        );
+      }
     }
   }
 }
@@ -314,6 +445,7 @@ void _scanDartFindings(
 Future<void> _scanTextFile(
   File file,
   List<MigrationFinding> findings,
+  int fromMajor,
 ) async {
   final content = await file.readAsString();
   final oldCommands = <String>[
@@ -327,9 +459,9 @@ Future<void> _scanTextFile(
         MigrationFinding(
           kind: MigrationFindingKind.oldCliCommand,
           location: _offsetLocation(file, content, match.start),
-          description: "Old 1.x CLI command `$command` is still referenced.",
+          description: "Old CLI command `$command` is still referenced.",
           recommendation:
-              "Migrate publishing scripts to `dart run desktop_updater:package` and verify with `dart run desktop_updater:verify --release <release.json>`.",
+              "Migrate publishing scripts to `dart run desktop_updater:package` and verify with `dart run desktop_updater:verify --release <release.json>`. See ${migrationGuideFor(fromMajor)}.",
         ),
       );
     }

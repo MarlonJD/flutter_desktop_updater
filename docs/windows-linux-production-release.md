@@ -413,9 +413,9 @@ Keep diagnostics app-owned:
 - Use in-memory problem reports for ordinary UI support flows.
 - Add `UpdateDiagnosticsRecorder(sink: ...)` only when your app chooses a
   durable Dart lifecycle log path and retention policy.
-- Add `diagnosticsLogPath` plus an app-owned recovery store only when support
-  needs post-exit helper evidence. Elevated Windows helpers intentionally do
-  not receive the caller-selected path.
+- Add an app-owned diagnostics sink plus recovery store only when support needs
+  post-exit helper evidence. Elevated Windows helpers intentionally do not
+  receive a caller-selected diagnostics path.
 
 Recommended support wording:
 

@@ -32,9 +32,7 @@ RuntimeConfigurationValidation ValidateRuntimeConfiguration(
       configuration.current_build_number < 0) {
     return Failure("current_build_number must not be negative.");
   }
-  if ((configuration.require_index_signature ||
-       configuration.require_descriptor_signature) &&
-      configuration.pinned_public_keys_by_id.empty()) {
+  if (configuration.pinned_public_keys_by_id.empty()) {
     return Failure("At least one pinned public key is required.");
   }
   for (const auto& entry : configuration.pinned_public_keys_by_id) {

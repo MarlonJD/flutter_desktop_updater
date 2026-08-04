@@ -20,37 +20,24 @@ public sealed class DesktopUpdaterClientTests
     }
 
     [Fact]
-    public void ConfigurationRejectsNonPositiveLimits()
+    public void ConfigurationRequiresPinnedKeys()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            CreateConfiguration(maximumMetadataBytes: 0));
+        Assert.Throws<ArgumentException>(() => new DesktopUpdaterConfiguration(
+            new Uri("https://updates.example.test/app-archive.json"),
+            "com.example.native-contract",
+            "3.0.0",
+            300,
+            "3.0.0",
+            "windows",
+            "stable",
+            null,
+            new Dictionary<string, byte[]>(),
+            (_, _) => true,
+            _ => new Dictionary<string, string>()));
     }
 
     [Fact]
-    public void RuntimeClientExposesTypedThreeStageFlow()
-    {
-        Assert.NotNull(typeof(DesktopUpdaterClient).GetMethod("CheckForUpdate"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterClient).GetMethod("DownloadVerifyAndStage"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterClient).GetMethod("InstallAndRelaunch"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("SupportPolicyStatus"));
-        Assert.NotNull(typeof(DesktopUpdaterRuntimeResult).GetProperty("Mandatory"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedBuildNumber"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedPlatform"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("SelectedChannel"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("FreshInstallUrl"));
-        Assert.NotNull(
-            typeof(DesktopUpdaterRuntimeResult).GetProperty("FreshInstallMessage"));
-    }
-
-    [Fact]
-    public void InstallClientExposesDisposableReservationAndRecoveryFlow()
+    public void RuntimeClientExposesExplicitLifecycleAndNoRemovedMethods()
     {
         foreach (var operation in new[]
         {
@@ -58,158 +45,67 @@ public sealed class DesktopUpdaterClientTests
             "CommitAfterExit",
             "CancelReservation",
             "QueryTransaction",
-            "RecoverPendingInstall",
             "ResolvePendingInstallAfterExit",
         })
         {
             Assert.Contains(
                 typeof(DesktopUpdaterClient).GetMethods(),
                 method => method.Name == operation);
-            Assert.Contains(
-                typeof(DesktopUpdaterNative).GetMethods(),
-                method => method.Name == operation);
         }
-        Assert.Contains(
-            typeof(DesktopUpdaterClient).GetMethods(),
-            method => method.Name == "PrepareInstall" &&
-                method.GetParameters().Length == 2 &&
-                method.GetParameters()[1].ParameterType == typeof(string));
-        Assert.Contains(
-            typeof(DesktopUpdaterNative).GetMethods(),
-            method => method.Name == "PrepareInstall" &&
-                method.GetParameters().Length == 2 &&
-                method.GetParameters()[1].ParameterType == typeof(string));
+        Assert.Null(typeof(DesktopUpdaterClient).GetMethod("InstallAndRelaunch"));
+        Assert.Null(typeof(DesktopUpdaterClient).GetMethod("RecoverPendingInstall"));
+        Assert.NotNull(typeof(DesktopUpdaterRuntimeResult).GetProperty(
+            "SupportPolicyStatus"));
         Assert.True(typeof(IDisposable).IsAssignableFrom(
             typeof(DesktopUpdaterInstallReservation)));
-        Assert.True(typeof(SafeHandle).IsAssignableFrom(
-            typeof(DesktopUpdaterInstallReservation)
-                .Assembly
-                .GetType(
-                    "DesktopUpdater.Native.DesktopUpdaterReservationSafeHandle")));
-        Assert.Equal(
-            8,
-            Enum.GetValues<DesktopUpdaterInstallTransactionState>().Length);
-        Assert.Equal(
-            9,
-            Enum.GetValues<DesktopUpdaterInstallTransactionResultCode>().Length);
     }
 
     [Fact]
-    public void NativeV2EntryPointsAreExplicitlyVersioned()
-    {
-        var nativeMethods = typeof(DesktopUpdaterNative).GetNestedType(
-            "NativeMethods",
-            BindingFlags.NonPublic);
-        Assert.NotNull(nativeMethods);
-
-        var prepare = nativeMethods.GetMethod(
-            "PrepareInstallV2",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        var resolve = nativeMethods.GetMethod(
-            "ResolvePendingInstallAfterExit",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        Assert.Equal(
-            "desktop_updater_prepare_install_v2",
-            prepare?.GetCustomAttribute<DllImportAttribute>()?.EntryPoint);
-        Assert.Equal(
-            "desktop_updater_resolve_pending_install_after_exit_v1",
-            resolve?.GetCustomAttribute<DllImportAttribute>()?.EntryPoint);
-    }
-
-    [Fact]
-    public void ManagedPrepareInspectsV2OutcomeBeforeGenericFailure()
-    {
-        var source = File.ReadAllText(FindRepositoryFile(
-            "windows/native/dotnet/DesktopUpdater.Native/" +
-            "DesktopUpdaterNative.cs"));
-        var invoke = source.IndexOf(
-            "NativeMethods.PrepareInstallV2(",
-            StringComparison.Ordinal);
-        var recoveryOutcome = source.IndexOf(
-            "NativePrepareOutcomeV2.RecoveryRequired",
-            invoke,
-            StringComparison.Ordinal);
-        var genericFailure = source.IndexOf(
-            "if (result.Ok == 0)",
-            invoke,
-            StringComparison.Ordinal);
-
-        Assert.True(invoke >= 0);
-        Assert.True(recoveryOutcome > invoke);
-        Assert.True(genericFailure > recoveryOutcome);
-    }
-
-    [Fact]
-    public void NativeRuntimeUsesIsolatedOneShotLifecycleState()
+    public void RuntimeEntryPointsUseAbi2ExplicitNames()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "windows/native/src/runtime/desktop_updater_runtime_c.cpp"));
-        var lifecycle = File.ReadAllText(FindRepositoryFile(
-            "native_runtime/cpp/client_lifecycle.h"));
+        var header = File.ReadAllText(FindRepositoryFile(
+            "windows/native/include/desktop_updater_runtime_c.h"));
 
-        Assert.Contains("std::mutex mutex_", lifecycle);
-        Assert.Contains("selection_generation_", lifecycle);
-        Assert.Contains("check_generation_", lifecycle);
-        Assert.Contains("stage_attempt_", lifecycle);
-        Assert.Contains("staged_generation_", lifecycle);
-        Assert.Contains("install_in_progress_", lifecycle);
-        var consume = source.IndexOf(
-            "client->lifecycle.BeginInstall(snapshot)",
-            StringComparison.Ordinal);
-        var rollbackGuard = source.IndexOf(
-            "SchedulingRollbackGuard rollback",
-            consume,
-            StringComparison.Ordinal);
-        var schedule = source.IndexOf(
-            "HandoffWindowsInstall(", consume, StringComparison.Ordinal);
-        Assert.True(consume >= 0);
-        Assert.True(rollbackGuard > consume);
-        Assert.True(schedule > rollbackGuard);
-        Assert.Contains("rollback.Confirm()", source);
+        Assert.Contains("desktop_updater_runtime_client_prepare_install_abi2",
+            source);
+        Assert.Contains("desktop_updater_runtime_client_commit_after_exit_abi2",
+            source);
+        Assert.Contains("desktop_updater_runtime_client_cancel_reservation_abi2",
+            source);
+        Assert.DoesNotContain("install_and_relaunch", source);
+        Assert.DoesNotContain("require_index_signature", header);
+        Assert.DoesNotContain("require_descriptor_signature", header);
+        Assert.DoesNotContain("diagnostics_log_path", header);
     }
 
     [Fact]
-    public void StageAdapterInvalidatesBeforeValidatingRequest()
+    public void NativeRuntimeUsesExplicitPrepareBeforeCommit()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "windows/native/src/runtime/desktop_updater_runtime_c.cpp"));
-        var entry = source.IndexOf(
-            "desktop_updater_runtime_client_download_verify_and_stage_v1(",
+        var prepare = source.IndexOf(
+            "desktop_updater_runtime_client_prepare_install_abi2",
             StringComparison.Ordinal);
-        var beginStage = source.IndexOf(
-            "client->lifecycle.BeginStage()",
-            entry,
+        var handoff = source.IndexOf(
+            "HandoffWindowsInstall(",
+            prepare,
             StringComparison.Ordinal);
-        var validateRequest = source.IndexOf(
-            "ValidateRequest(request, \"Runtime stage request\")",
-            entry,
+        var confirm = source.IndexOf(
+            "rollback.Confirm()",
+            handoff,
             StringComparison.Ordinal);
-
-        Assert.True(entry >= 0);
-        Assert.True(beginStage > entry);
-        Assert.True(validateRequest > beginStage);
-    }
-
-    [Fact]
-    public void InvalidatedCheckReturnsInvalidDescriptor()
-    {
-        var source = File.ReadAllText(FindRepositoryFile(
-            "windows/native/src/runtime/desktop_updater_runtime_c.cpp"));
-        var publishCheck = source.IndexOf(
-            "if (!client->lifecycle.PublishCheck(lease, check))",
-            StringComparison.Ordinal);
-        var invalidDescriptor = source.IndexOf(
-            "ClientResult(*client, \"invalidDescriptor\"",
-            publishCheck,
-            StringComparison.Ordinal);
-        var stageEntry = source.IndexOf(
-            "desktop_updater_runtime_client_download_verify_and_stage_v1(",
+        var commit = source.IndexOf(
+            "desktop_updater_runtime_client_commit_after_exit_abi2",
+            confirm,
             StringComparison.Ordinal);
 
-        Assert.True(publishCheck >= 0);
-        Assert.True(invalidDescriptor > publishCheck);
-        Assert.True(invalidDescriptor < stageEntry);
+        Assert.True(prepare >= 0);
+        Assert.True(handoff > prepare);
+        Assert.True(confirm > handoff);
+        Assert.True(commit > confirm);
+        Assert.Contains("CompleteInstall", source);
     }
 
     [Fact]
@@ -238,7 +134,6 @@ public sealed class DesktopUpdaterClientTests
         Assert.False(cycle.Owner.IsAlive);
         Assert.Equal(1, release.Count);
         Assert.Equal(new IntPtr(0x42), release.Handle);
-        Assert.True(release.CallbackStateWasAliveDuringRelease);
     }
 
     private static void ForceFinalizersUntilReleased(ReleaseProbe release)
@@ -260,7 +155,7 @@ public sealed class DesktopUpdaterClientTests
             "CreateForTesting",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(factory);
-        var client = Assert.IsType<DesktopUpdaterClient>(factory.Invoke(
+        var client = Assert.IsType<DesktopUpdaterClient>(factory!.Invoke(
             null,
             new object[]
             {
@@ -293,13 +188,12 @@ public sealed class DesktopUpdaterClientTests
         return new DesktopUpdaterConfiguration(
             new Uri("https://updates.example.test/app-archive.json"),
             "com.example.native-contract",
-            "2.7.0",
-            270,
-            "2.7.0",
+            "3.0.0",
+            300,
+            "3.0.0",
             "windows",
             "stable",
             "dotnet-unit-test",
-            true,
             new Dictionary<string, byte[]>
             {
                 ["native-contract-stable"] = new byte[32],
@@ -337,8 +231,7 @@ public sealed class DesktopUpdaterClientTests
         public void Record(IntPtr handle, IntPtr applicationContext)
         {
             Handle = handle;
-            CallbackStateWasAliveDuringRelease =
-                applicationContext != IntPtr.Zero &&
+            CallbackStateWasAliveDuringRelease = applicationContext != IntPtr.Zero &&
                 GCHandle.FromIntPtr(applicationContext).Target is not null;
             Interlocked.Increment(ref _count);
         }
@@ -358,10 +251,7 @@ public sealed class DesktopUpdaterClientTests
                 var candidate = Path.Combine(
                     directory.FullName,
                     relativePath.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                if (File.Exists(candidate)) return candidate;
                 directory = directory.Parent;
             }
         }

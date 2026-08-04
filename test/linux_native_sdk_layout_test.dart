@@ -46,23 +46,32 @@ void main() {
       "linux/native/include/desktop_updater_version.h",
     );
 
-    expect(header, contains("enum class LinuxInstallOperation"));
+    expect(header, contains("struct InstallTargetProof"));
     expect(header, contains("struct InstallRequest"));
     expect(header, contains("std::string staging_path"));
     expect(header, contains("std::string install_root"));
     expect(header, contains("std::string executable_relative_path"));
     expect(header, contains("std::string package_id"));
     expect(header, contains("std::vector<std::string> removed_files"));
-    expect(header, contains("std::string diagnostics_log_path"));
+    expect(header, contains("std::string expected_provenance_sha256"));
+    expect(header, contains("std::string expected_artifact_sha256"));
+    expect(header, contains("enum class InstallTransactionState"));
     expect(header, contains("kRelaunchFailure = 8"));
     expect(header, isNot(contains("helper_executable_path")));
     expect(header, isNot(contains("std::string policy_id")));
+    expect(header, isNot(contains("diagnostics_log_path")));
     expect(header, contains("ValidateInstallRequest"));
-    expect(header, contains("ScheduleInstallAndRelaunch"));
-    expect(header, contains("kLegacySelfContainedBundle"));
+    expect(header, contains("PrepareInstall"));
+    expect(header, contains("CommitAfterExit"));
+    expect(header, contains("CancelReservation"));
+    expect(header, contains("QueryTransaction"));
+    expect(header, contains("RecoverPendingInstall"));
+    expect(header, isNot(contains("ScheduleInstallAndRelaunch")));
+    expect(header, isNot(contains("kLegacySelfContainedBundle")));
     expect(header, isNot(contains("Flutter")));
     expect(header, isNot(contains("Gtk")));
-    expect(version, contains("DESKTOP_UPDATER_NATIVE_API_VERSION 1u"));
+    expect(version, contains("DESKTOP_UPDATER_NATIVE_API_VERSION 2u"));
+    expect(version, contains('DESKTOP_UPDATER_NATIVE_VERSION_STRING "3.0.0"'));
   });
 
   test("Linux plugin links the source-first native directory", () {
@@ -171,8 +180,10 @@ void main() {
     expect(source, contains("SerializeCommonInstallRequest"));
     expect(header, contains("std::string transaction_id;"));
     expect(plugin, contains('ReadRequiredInstallString(args, "transactionId"'));
-    expect(plugin, contains("request.transaction_id = transaction_id;"));
-    expect(source, contains("request.transaction_id.empty()"));
+    expect(plugin, contains("HandoffNativeInstall(request, transaction_id)"));
+    expect(plugin, contains("PrepareInstall(request, transaction_id"));
+    expect(plugin, isNot(contains("request.transaction_id = transaction_id;")));
+    expect(source, contains("IsLowercaseUuidNonce(transaction_id)"));
     expect(source, contains("EndpointUnavailableStatus"));
     expect(source, isNot(contains("/bin/bash")));
     expect(source, isNot(contains("BuildInstallScriptForTesting")));

@@ -31,9 +31,9 @@ support workflow needs them.
    support needs post-relaunch state and collect the platform-owned helper log
    when post-exit evidence is required.
 
-Do not present `diagnosticsLogPath` as the destination of standalone helper
-events. Pick an app-owned support directory for your Dart diagnostics sink,
-show that path in your own Settings or support UI, and own retention, rotation,
+Do not present a helper path as the destination of standalone helper events.
+Pick an app-owned support directory for your Dart diagnostics sink, show that
+path in your own Settings or support UI, and own retention, rotation,
 encryption, and upload consent.
 
 ## macOS Privileged Helper Approval
@@ -118,26 +118,13 @@ Native helper logging is separate from the Dart lifecycle log. It starts only
 after the app hands off to the platform helper, so it is useful for
 locked-file replacement, rollback, cleanup, and relaunch failures.
 
-`diagnosticsLogPath` remains a compatibility input for existing Flutter and
-native callers, but the versioned standalone request converts diagnostics to a
-fixed `platformLog` destination. The standalone protocol-v1 Windows and Linux
-helpers do not receive, open, create, append to, or otherwise use that
-caller-provided path. App-owned Dart diagnostics and the package's in-memory
-problem report remain available before the helper handoff.
+The 3.0 native request has no diagnostics path. The standalone protocol-v1
+Windows and Linux helpers do not receive, open, create, append to, or otherwise
+use a caller-provided path. App-owned Dart diagnostics and the package's
+in-memory problem report remain available before helper handoff.
 
-For an app-owned durable file, configure `UpdateDiagnosticsRecorder` as shown
-above. Existing code may keep passing `diagnosticsLogPath` while migrating:
-
-```dart
-final helperLogFile =
-    File("${appOwnedSupportDir.path}/update-helper.jsonl");
-await helperLogFile.parent.create(recursive: true);
-
-final controller = DesktopUpdaterController(
-  appArchiveUrl: archiveUrl,
-  diagnosticsLogPath: helperLogFile.path,
-);
-```
+Configure `UpdateDiagnosticsRecorder` or an app-owned callback as shown above;
+collect helper evidence from the fixed platform sink with the user's consent.
 
 The standalone protocol-v1 Windows helper emits best-effort support events to
 the Windows Application Event Log

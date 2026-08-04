@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "artifact_stager.h"
+#include "desktop_updater_native_c.h"
 #include "release_contract.h"
 #include "stage_provenance.h"
 
@@ -44,6 +45,7 @@ WindowsStagedArtifact StageWindowsInnoInstaller(
 struct WindowsInstallHandoffResult {
   bool ok;
   std::string error_message;
+  desktop_updater_reservation_handle_abi2* reservation = nullptr;
 };
 
 WindowsInstallHandoffResult HandoffWindowsInstall(
@@ -51,7 +53,7 @@ WindowsInstallHandoffResult HandoffWindowsInstall(
     const std::wstring& install_root,
     const std::wstring& executable_relative_path,
     const std::wstring& expected_package_id,
-    const std::wstring& diagnostics_log_path,
+    const std::string& transaction_id,
     const std::vector<std::wstring>& removed_files,
     const std::string& expected_provenance_sha256,
     const ReleaseDescriptor& descriptor);

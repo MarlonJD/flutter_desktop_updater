@@ -70,10 +70,10 @@ desktop_updater::runtime::RuntimeConfiguration Configuration(
   desktop_updater::runtime::RuntimeConfiguration configuration;
   configuration.app_archive_url = archive_url;
   configuration.expected_package_id = package_id;
-  configuration.current_version = "2.7.0";
+  configuration.current_version = "3.0.0";
   configuration.has_current_build_number = true;
   configuration.current_build_number = 270;
-  configuration.current_updater_version = "2.7.0";
+  configuration.current_updater_version = "3.0.0";
   configuration.platform = "linux";
   configuration.channel = "stable";
   configuration.installation_identity = "linux-native-runtime-smoke";
@@ -148,9 +148,9 @@ int main(int argc, char** argv) try {
     if (lstat("/usr/bin", &before) != 0) {
       throw std::runtime_error("Unable to inspect protected /usr/bin root.");
     }
-    const auto rejected = client.InstallAndRelaunch(
-        "/usr/bin", executable_relative_path, {},
-        arguments.Required("--diagnostics-log"));
+    const auto rejected = client.PrepareInstall(
+        arguments.Required("--transaction-id"), "/usr/bin",
+        executable_relative_path, {});
     if (rejected.outcome !=
             desktop_updater::runtime::RuntimeOutcome::kInstallHandoffFailure ||
         lstat("/usr/bin", &after) != 0 || !SameMetadata(before, after)) {
@@ -161,15 +161,20 @@ int main(int argc, char** argv) try {
 
   WriteDiagnostics(smoke_root + "/runtime-diagnostics.log",
                    client.RedactedDiagnostics());
-  const auto handoff = client.InstallAndRelaunch(
-      arguments.Required("--install-root"), executable_relative_path, {},
-      arguments.Required("--diagnostics-log"));
-  if (handoff.outcome !=
+  const auto prepared = client.PrepareInstall(
+      arguments.Required("--transaction-id"), arguments.Required("--install-root"),
+      executable_relative_path, {});
+  if (prepared.outcome !=
       desktop_updater::runtime::RuntimeOutcome::kUpdateAvailable) {
-    throw std::runtime_error("InstallAndRelaunch failed: " + handoff.message);
+    throw std::runtime_error("PrepareInstall failed: " + prepared.message);
   }
-  std::cout << "InstallAndRelaunch scheduled " << handoff.release_version
-            << " from " << handoff.artifact_kind << std::endl;
+  const auto committed = client.CommitAfterExit();
+  if (committed.outcome !=
+      desktop_updater::runtime::RuntimeOutcome::kUpdateAvailable) {
+    throw std::runtime_error("CommitAfterExit failed: " + committed.message);
+  }
+  std::cout << "prepareInstall committed " << committed.release_version
+            << " from " << committed.artifact_kind << std::endl;
   return 0;
 } catch (const std::exception& error) {
   std::cerr << error.what() << std::endl;

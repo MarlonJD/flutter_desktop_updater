@@ -109,6 +109,11 @@ it under application-owned disposable roots. The third passes that staged
 artifact to the existing platform helper. A failed or non-update result cannot
 skip directly to a later stage.
 
+After a process restart, hosts can inspect the durable transaction with
+`queryTransaction(transactionID)` and resolve an interrupted handoff with
+`recoverPendingInstall(transactionID)`. These recovery calls remain bound to
+the transaction identity and platform-owned helper authority.
+
 Native runtime helpers do not accept a caller-selected diagnostics path. Hosts
 that need durable lifecycle evidence should persist app-owned diagnostics
 before handoff; platform helpers retain their fixed platform-owned logs.
@@ -154,13 +159,21 @@ if (check.Outcome != DesktopUpdaterOutcome.UpdateAvailable) return;
 var staged = client.DownloadVerifyAndStage(downloads, staging);
 if (staged.Outcome != DesktopUpdaterOutcome.UpdateAvailable) return;
 
-client.InstallAndRelaunch(removedFiles, diagnosticsLogPath);
+var prepared = client.PrepareInstall(
+    staged,
+    transactionId,
+    installRoot,
+    executableRelativePath,
+    removedFiles);
+if (prepared.Outcome != DesktopUpdaterOutcome.UpdateAvailable) return;
+client.CommitAfterExit();
 ```
 
 The versioned C equivalents are
-`desktop_updater_runtime_client_check_for_update_v1`,
-`desktop_updater_runtime_client_download_verify_and_stage_v1`, and
-`desktop_updater_runtime_client_install_and_relaunch_v1`.
+`desktop_updater_runtime_client_check_for_update_abi2`,
+`desktop_updater_runtime_client_download_verify_and_stage_abi2`,
+`desktop_updater_runtime_client_prepare_install_abi2`, and
+`desktop_updater_runtime_client_commit_after_exit_abi2`.
 
 ### Linux C++
 
@@ -177,8 +190,11 @@ const auto staged = client.DownloadVerifyAndStage(
 if (staged.outcome !=
     desktop_updater::runtime::RuntimeOutcome::kUpdateAvailable) return;
 
-client.InstallAndRelaunch(
-    install_root, executable_relative_path, removed_files, diagnostics_log);
+const auto prepared = client.PrepareInstall(
+    transaction_id, install_root, executable_relative_path, removed_files);
+if (prepared.outcome !=
+    desktop_updater::runtime::RuntimeOutcome::kUpdateAvailable) return;
+const auto committed = client.CommitAfterExit();
 ```
 
 The complete compile-and-smoke sources live in
@@ -275,7 +291,7 @@ message while switching on those stable typed values.
 
 ## Windows ABI Ownership
 
-`DESKTOP_UPDATER_RUNTIME_ABI_VERSION` is `1`. Every request and result starts
+`DESKTOP_UPDATER_RUNTIME_ABI_VERSION` is `2`. Every request and result starts
 with `abi_version` and `struct_size`. Callers set both fields and zero any
 unknown tail bytes. The DLL catches exceptions at the C boundary.
 
@@ -285,8 +301,8 @@ by-value runtime call. Any future result layout change requires a new result
 type and new versioned entry points.
 
 The runtime client is an opaque owned handle released with
-`desktop_updater_runtime_client_free_v1`. Result strings are owned by the DLL
-and released with `desktop_updater_runtime_result_free_v1`. Callback inputs are
+`desktop_updater_runtime_client_free_abi2`. Result strings are owned by the DLL
+and released with `desktop_updater_runtime_result_free_abi2`. Callback inputs are
 borrowed for the duration of the call. Header entries returned by the
 application remain application-owned until its release callback runs. The .NET
 wrapper owns callback delegates, header leases, native strings, result

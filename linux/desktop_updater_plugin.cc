@@ -79,13 +79,15 @@ struct NativeInstallHandoffResult {
 };
 
 NativeInstallHandoffResult HandoffNativeInstall(
-    const desktop_updater::native::InstallRequest& request) {
+    const desktop_updater::native::InstallRequest& request,
+    const std::string& transaction_id) {
   const auto validation =
       desktop_updater::native::ValidateInstallRequest(request);
   if (!validation.ok) return {false, false, validation.error};
   desktop_updater::native::InstallReservation reservation;
   const auto prepared =
-      desktop_updater::native::PrepareInstall(request, &reservation);
+      desktop_updater::native::PrepareInstall(request, transaction_id,
+                                              &reservation);
   if (!prepared.ok) return {false, true, prepared.error};
   const auto status = desktop_updater::native::CommitAfterExit(reservation);
   if (!is_accepted_install_handoff(reservation, status)) {
@@ -277,16 +279,13 @@ static void desktop_updater_plugin_handle_method_call(
               "Unable to derive the running Linux install target.", nullptr));
         } else {
           desktop_updater::native::InstallRequest request;
-          request.operation =
-              desktop_updater::native::LinuxInstallOperation::kInstall;
           request.staging_path = staging_path;
           request.install_root = install_root;
           request.executable_relative_path = executable_relative_path;
           request.package_id = expected_package_id;
           request.expected_provenance_sha256 = expected_provenance_sha256;
           request.expected_artifact_sha256 = expected_artifact_sha256;
-          request.transaction_id = transaction_id;
-          const auto result = HandoffNativeInstall(request);
+          const auto result = HandoffNativeInstall(request, transaction_id);
           if (!result.ok) {
             g_autoptr(FlValue) details = result.recovery_required
                                              ? RecoveryRequiredErrorDetails(

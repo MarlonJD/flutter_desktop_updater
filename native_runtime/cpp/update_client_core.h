@@ -24,8 +24,6 @@ struct ClientConfiguration {
   std::string platform;
   std::string channel;
   std::string installation_identity;
-  bool require_index_signature = true;
-  bool require_descriptor_signature = true;
   std::map<std::string, std::vector<std::uint8_t>> pinned_public_keys_by_id;
   std::function<bool(const std::string&, const std::string&)>
       minimum_os_resolver;

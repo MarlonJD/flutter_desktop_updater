@@ -2,7 +2,7 @@ import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
-  test("release CLI keeps help, subcommands, and usage exit code", () async {
+  test("3.0 release CLI keeps help and usage exit code", () async {
     final output = StringBuffer();
     final helpCode = await runReleaseCommand(["--help"], output: output);
 
@@ -29,6 +29,8 @@ void main() {
 
     expect(badOptionCode, 64);
     expect(
-        badOptionOutput.toString(), contains("definitely-not-a-real-option"));
+      badOptionOutput.toString(),
+      contains("definitely-not-a-real-option"),
+    );
   });
 }

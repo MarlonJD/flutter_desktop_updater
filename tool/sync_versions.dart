@@ -45,6 +45,10 @@ Future<(NativeSdkVersions, List<VersionFileChange>)> planVersionSync({
   expected["lib/src/package_version.dart"] = _dartVersionSource(versions);
   expected["macos/desktop_updater/Sources/DesktopUpdaterKit/"
       "DesktopUpdaterVersion.swift"] = _swiftVersionSource(versions);
+  expected["macos/install_helper/Sources/DesktopUpdaterInstallHelper/"
+      "HelperVersion.swift"] = await _helperVersionSource(root, versions);
+  expected["macos/install_helper/Configuration/Helper-Info.plist"] =
+      await _helperInfoPlist(root, versions);
   expected["windows/native/include/desktop_updater_version.h"] =
       await _nativeHeader(
     root,
@@ -166,6 +170,58 @@ public enum DesktopUpdaterVersion {
     public static let string = "${versions.canonical}"
 }
 """;
+}
+
+Future<String> _helperVersionSource(
+  Directory root,
+  NativeSdkVersions versions,
+) async {
+  const relativePath = "macos/install_helper/Sources/"
+      "DesktopUpdaterInstallHelper/HelperVersion.swift";
+  final source = await File(_join(root.path, relativePath)).readAsString();
+  final pattern = RegExp(
+    r'(^\s*static let semanticVersion = ")[^"]*(")',
+    multiLine: true,
+  );
+  if (!pattern.hasMatch(source)) {
+    throw FormatException("Helper semantic version anchor is missing.");
+  }
+  return source.replaceFirstMapped(
+    pattern,
+    (match) => "${match.group(1)}${versions.canonical}${match.group(2)}",
+  );
+}
+
+Future<String> _helperInfoPlist(
+  Directory root,
+  NativeSdkVersions versions,
+) async {
+  const relativePath = "macos/install_helper/Configuration/Helper-Info.plist";
+  var source = await File(_join(root.path, relativePath)).readAsString();
+  source = _replacePlistString(
+    source,
+    "CFBundleShortVersionString",
+    versions.canonical,
+  );
+  source = _replacePlistString(source, "CFBundleVersion", versions.canonical);
+  return source;
+}
+
+String _replacePlistString(
+  String source,
+  String key,
+  String value,
+) {
+  final pattern = RegExp(
+    '(<key>${RegExp.escape(key)}</key>\\s*<string>)[^<]*(</string>)',
+  );
+  if (!pattern.hasMatch(source)) {
+    throw FormatException("$key anchor is missing from Helper-Info.plist.");
+  }
+  return source.replaceFirstMapped(
+    pattern,
+    (match) => "${match.group(1)}$value${match.group(2)}",
+  );
 }
 
 Future<String> _nativeHeader(

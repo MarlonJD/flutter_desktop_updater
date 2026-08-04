@@ -42,7 +42,9 @@ void main() {
     expect(source, contains("expectedPackageIds"));
     expect(source, contains("expectedTeamIdentifier"));
     expect(source, contains(".desktop_updater_release_manifest.json"));
-    expect(source, contains("MacInstallHelper"));
+    expect(source, contains("RuntimeStagedArtifact"));
+    expect(source, contains("writeManifest"));
+    expect(source, contains("finalizePKGStage"));
   });
 
   test("Windows and Linux stagers bind package identity before helper handoff",
@@ -56,16 +58,19 @@ void main() {
     expect(windows, contains("innoInstaller"));
     expect(windows, contains("expected_package_id"));
     expect(windows, contains(".desktop_updater_release_manifest.json"));
-    expect(
-      windows,
-      contains("desktop_updater_schedule_install_and_relaunch_v1"),
-    );
+    expect(windows, contains("desktop_updater_prepare_install_abi2"));
+    expect(windows, contains("desktop_updater_commit_after_exit_abi2"));
+    expect(windows, contains("transaction_id"));
+    expect(windows, isNot(contains("schedule_install_and_relaunch")));
     expect(windows, contains("StageZipArchive"));
     expect(linux, contains("executable_relative_path"));
     expect(linux, contains("expected_package_id"));
     expect(linux, contains(".desktop_updater_release_manifest.json"));
     expect(linux, contains("ValidateLinuxInstallHandoff"));
     expect(linux, contains("HandoffLinuxInstall"));
+    expect(linux, contains("PrepareInstall"));
+    expect(linux, contains("transaction_id"));
+    expect(linux, isNot(contains("ScheduleInstallAndRelaunch")));
     expect(linux, contains("StageZipArchive"));
     expect(linux, isNot(contains('install_root = "/usr/bin"')));
   });

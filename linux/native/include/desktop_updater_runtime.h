@@ -45,8 +45,6 @@ struct RuntimeConfiguration {
   std::string platform;
   std::string channel = "stable";
   std::string installation_identity;
-  bool require_index_signature = true;
-  bool require_descriptor_signature = true;
   std::map<std::string, std::vector<std::uint8_t>> pinned_public_keys_by_id;
   MinimumOSResolver minimum_os_resolver;
   RequestHeadersProvider request_headers_provider;
@@ -96,11 +94,15 @@ class UpdateClient {
       const std::string& download_directory,
       const std::string& staging_directory,
       const std::string& executable_relative_path);
-  RuntimeResult InstallAndRelaunch(
+  RuntimeResult PrepareInstall(
+      const std::string& transaction_id,
       const std::string& install_root,
       const std::string& executable_relative_path,
-      const std::vector<std::string>& removed_files,
-      const std::string& diagnostics_log_path);
+      const std::vector<std::string>& removed_files);
+  RuntimeResult CommitAfterExit();
+  RuntimeResult CancelReservation();
+  RuntimeResult QueryTransaction(const std::string& transaction_id);
+  RuntimeResult RecoverPendingInstall(const std::string& transaction_id);
   std::vector<std::string> RedactedDiagnostics() const;
 
  private:

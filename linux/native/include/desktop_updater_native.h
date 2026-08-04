@@ -8,22 +8,10 @@
 namespace desktop_updater {
 namespace native {
 
-enum class LinuxInstallOperation {
-  kRestart,
-  kInstall,
-};
-
-enum class InstallTargetProofSource {
-  kRunningExecutableContext,
-  kLegacySelfContainedBundle,
-  kInstalledIdentityMarker,
-};
-
 struct InstallTargetProof {
   std::string canonical_root;
   std::string executable_relative_path;
   std::string package_id;
-  InstallTargetProofSource source;
 };
 
 struct InstallProvenanceEntry {
@@ -35,22 +23,17 @@ struct InstallProvenanceEntry {
 };
 
 struct InstallRequest {
-  LinuxInstallOperation operation;
   std::string staging_path;
   std::string install_root;
   std::string executable_relative_path;
   std::string package_id;
   std::vector<std::string> removed_files;
-  std::string diagnostics_log_path;
   std::string expected_provenance_sha256;
   std::string provenance_nonce;
   std::vector<InstallProvenanceEntry> provenance_entries;
   // Caller-owned artifact identity. The platform boundary must carry this
   // value through native validation instead of deriving it from the marker.
   std::string expected_artifact_sha256;
-  // Optional caller-owned durable transaction identity. Empty preserves the
-  // native SDK's backwards-compatible generated-ID behavior.
-  std::string transaction_id;
 };
 
 struct InstallResult {
@@ -101,6 +84,7 @@ struct InstallTransactionStatus {
 
 InstallResult ValidateInstallRequest(const InstallRequest& request);
 InstallResult PrepareInstall(const InstallRequest& request,
+                             const std::string& transaction_id,
                              InstallReservation* reservation);
 InstallTransactionStatus CommitAfterExit(
     const InstallReservation& reservation);
@@ -109,10 +93,7 @@ InstallTransactionStatus CancelReservation(
 InstallTransactionStatus QueryTransaction(const std::string& transaction_id);
 InstallTransactionStatus RecoverPendingInstall(
     const std::string& transaction_id);
-// Arms a same-user relaunch that starts after the caller exits. A successful
-// caller must terminate promptly so the replacement process can start.
 InstallResult RestartCurrentApplication();
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request);
 
 }  // namespace native
 }  // namespace desktop_updater

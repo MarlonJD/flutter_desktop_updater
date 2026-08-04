@@ -269,12 +269,6 @@ bool ResolveExistingPath(const std::string& path, std::string* resolved) {
   return true;
 }
 
-bool IsRealDirectory(const std::string& path) {
-  struct stat value = {};
-  return lstat(path.c_str(), &value) == 0 && S_ISDIR(value.st_mode) &&
-         !S_ISLNK(value.st_mode);
-}
-
 bool IsRealFile(const std::string& path) {
   struct stat value = {};
   return lstat(path.c_str(), &value) == 0 && S_ISREG(value.st_mode) &&
@@ -344,7 +338,6 @@ bool ProvenanceContainsExecutable(const InstallRequest& request) {
 
 InstallResult ProveInstallTarget(const InstallRequest& request,
                                  const std::string& running_executable,
-                                 bool legacy_fallback,
                                  InstallTargetProof* proof) {
   std::string canonical_root;
   std::string canonical_requested_executable;
@@ -363,24 +356,12 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
     return {false,
             "Linux staged inventory does not contain the running executable."};
   }
-  if (!legacy_fallback &&
-      ParentDirectory(canonical_requested_executable) != canonical_root) {
+  if (ParentDirectory(canonical_requested_executable) != canonical_root) {
     return {false,
             "Linux installed identity cannot authorize an ancestor of the "
             "running executable; use its exact parent as install root."};
   }
-  if (legacy_fallback &&
-      (!IsRealDirectory(JoinPath(request.install_root,
-                                 "data/flutter_assets")) ||
-       !IsRealFile(JoinPath(request.install_root,
-                            "lib/libflutter_linux_gtk.so")))) {
-    return {false,
-            "Legacy Linux installs require a self-contained Flutter bundle; "
-            "pass explicit installRoot and executableRelativePath or use a "
-            "fresh installer."};
-  }
-  if (!legacy_fallback &&
-      !HasMatchingInstallIdentityMarker(request.install_root,
+  if (!HasMatchingInstallIdentityMarker(request.install_root,
                                         request.package_id)) {
     return {false,
             "Linux explicit install root requires a matching root-level "
@@ -388,19 +369,13 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
   }
   if (proof != nullptr) {
     *proof = {canonical_root, request.executable_relative_path,
-              request.package_id,
-              legacy_fallback
-                  ? InstallTargetProofSource::kLegacySelfContainedBundle
-                  : InstallTargetProofSource::kInstalledIdentityMarker};
+              request.package_id};
   }
   return {true, ""};
 }
 
 InstallResult BindProvenanceToMarker(InstallRequest* request,
                                      std::string* canonical_marker) {
-  if (request->operation == LinuxInstallOperation::kRestart) {
-    return {true, ""};
-  }
   try {
     const runtime::internal::StageProvenanceBinding binding =
         runtime::internal::ReadStageProvenanceBinding(request->staging_path);
@@ -432,12 +407,6 @@ InstallResult BindProvenanceToMarker(InstallRequest* request,
 
 InstallResult ValidateNormalizedRequest(const InstallRequest& request,
                                         bool validate_provenance = true) {
-  if (!request.transaction_id.empty() &&
-      !IsLowercaseUuidNonce(request.transaction_id)) {
-    return {false,
-            "Linux install transaction ID must be a canonical lowercase "
-            "UUID v4."};
-  }
   if (!IsCanonicalAbsolutePath(request.install_root)) {
     return {false, "Linux install root must be an absolute canonical path."};
   }
@@ -474,9 +443,6 @@ InstallResult ValidateNormalizedRequest(const InstallRequest& request,
     return {false, "Linux executable resolves outside install root."};
   }
 
-  if (request.operation == LinuxInstallOperation::kRestart) {
-    return {true, ""};
-  }
   if (request.package_id.find_first_not_of(" \t\r\n") == std::string::npos) {
     return {false,
             "Linux install package identity is required; use a fresh "
@@ -590,19 +556,6 @@ std::vector<unsigned char> SecureRandomBytes(std::size_t length) {
     offset += static_cast<std::size_t>(count);
   }
   return result;
-}
-
-std::string NewTransactionId() {
-  std::vector<unsigned char> bytes = SecureRandomBytes(16);
-  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0f) | 0x40);
-  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3f) | 0x80);
-  std::ostringstream output;
-  output << std::hex << std::setfill('0');
-  for (std::size_t index = 0; index < bytes.size(); ++index) {
-    if (index == 4 || index == 6 || index == 8 || index == 10) output << '-';
-    output << std::setw(2) << static_cast<unsigned int>(bytes[index]);
-  }
-  return output.str();
 }
 
 std::string NewRequestNonce() {
@@ -735,6 +688,7 @@ std::string PackagedPolicyId(const InstallRequest& request);
 
 InstallResult SerializeCommonInstallRequest(
     const InstallRequest& request,
+    const std::string& transaction_id,
     std::string* canonical_request) {
   if (canonical_request == nullptr) {
     return {false, "Canonical helper request output must not be null."};
@@ -758,9 +712,7 @@ InstallResult SerializeCommonInstallRequest(
       throw std::runtime_error("running executable identity unavailable");
     }
     runtime::internal::LinuxNativeInstallEvidenceV1 evidence;
-    evidence.transaction_id = request.transaction_id.empty()
-                                  ? NewTransactionId()
-                                  : request.transaction_id;
+    evidence.transaction_id = transaction_id;
     evidence.policy_id = PackagedPolicyId(request);
     evidence.package_id = request.package_id;
     evidence.target_class = RequiresPrivilegedBroker(request.install_root)
@@ -959,30 +911,35 @@ InstallTransactionStatus EndpointUnavailableStatus(
 }  // namespace
 
 InstallResult PrepareInstall(const InstallRequest& request,
+                             const std::string& transaction_id,
                              InstallReservation* reservation) {
   if (reservation == nullptr) {
     return {false, "Install reservation output must not be null."};
   }
   *reservation = {};
+  if (!IsLowercaseUuidNonce(transaction_id)) {
+    return {false,
+            "Linux install transaction ID must be a canonical lowercase "
+            "UUID v4."};
+  }
   const InstallResult validation = ValidateInstallRequest(request);
   if (!validation.ok) {
     return validation;
   }
   InstallRequest normalized = request;
-  if (normalized.operation != LinuxInstallOperation::kRestart) {
-    const InstallResult binding = BindProvenanceToMarker(&normalized, nullptr);
-    if (!binding.ok) {
-      return binding;
-    }
-    const InstallResult target_proof =
-        ProveInstallTarget(normalized, CurrentExecutablePath(), false, nullptr);
-    if (!target_proof.ok) {
-      return target_proof;
-    }
+  const InstallResult binding = BindProvenanceToMarker(&normalized, nullptr);
+  if (!binding.ok) {
+    return binding;
+  }
+  const InstallResult target_proof =
+      ProveInstallTarget(normalized, CurrentExecutablePath(), nullptr);
+  if (!target_proof.ok) {
+    return target_proof;
   }
   std::string canonical_request;
   const InstallResult serialization =
-      SerializeCommonInstallRequest(normalized, &canonical_request);
+      SerializeCommonInstallRequest(normalized, transaction_id,
+                                    &canonical_request);
   if (!serialization.ok) {
     return serialization;
   }
@@ -1194,33 +1151,6 @@ InstallTransactionStatus RecoverPendingInstall(
             "",
             ""};
   }
-}
-
-InstallResult ScheduleInstallAndRelaunch(const InstallRequest& request) {
-  InstallReservation reservation;
-  const InstallResult prepare = PrepareInstall(request, &reservation);
-  if (!prepare.ok) return prepare;
-  if (!IsLowercaseUuidNonce(reservation.transaction_id) ||
-      reservation.ready_token.empty() ||
-      !IsLowercaseSHA256(reservation.response_digest_sha256) ||
-      !IsLowercaseSHA256(reservation.helper_endpoint_identity_sha256)) {
-    return {false, "Install helper returned an invalid reservation."};
-  }
-  const InstallTransactionStatus status = CommitAfterExit(reservation);
-  const bool accepted =
-      (status.state == InstallTransactionState::kCommitAccepted ||
-       status.state == InstallTransactionState::kCompleted) &&
-      (status.result_code == InstallTransactionResultCode::kAccepted ||
-       status.result_code == InstallTransactionResultCode::kSucceeded) &&
-      status.response_digest_sha256 == reservation.response_digest_sha256 &&
-      status.helper_endpoint_identity_sha256 ==
-          reservation.helper_endpoint_identity_sha256;
-  return accepted
-             ? InstallResult{true, ""}
-             : InstallResult{false,
-                             status.detail.empty()
-                                 ? "Install helper commit was not accepted."
-                                 : status.detail};
 }
 
 }  // namespace native

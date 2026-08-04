@@ -60,7 +60,7 @@ dart run desktop_updater release publish \
   --executable-relative-path bin/example \
   --app-name Example \
   --package-id com.example.app \
-  --version 2.7.0
+  --version 3.0.0
 ```
 
 The adapter configures and builds the target, then runs `cmake --install` into
@@ -239,12 +239,10 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-Supplying `trustedReleasePublicKeys` requires valid Ed25519 signatures on the
-final `app-archive.json` and selected `release.json` before selection or
-artifact download. Leaving it null preserves the released unsigned 2.x
-compatibility behavior for checks and downloads and is not
-production-authenticated. Native install handoff still requires a signed
-descriptor whose key is sealed into the helper policy. Key rotation can
+`trustedReleasePublicKeys` is required and must contain valid Ed25519 keys for
+the final `app-archive.json` and selected `release.json` before selection or
+artifact download. Native install handoff also requires a signed descriptor
+whose key is sealed into the helper policy. Key rotation can
 temporarily pin both the old and new public key IDs in the same map.
 
 ## Update Policy Modes
@@ -448,12 +446,11 @@ app-owned:
   pre-exit native scheduling fails, and `recoverPendingInstall()` converts an
   old-version relaunch or unverifiable current version into `UpdateFailed` with
   a redacted report. Store read, write, and clear failures are diagnostics-only.
-- `diagnosticsLogPath` remains accepted by `DesktopUpdaterController` and
-  `DesktopUpdater.installUpdate()` for compatibility. Protocol-v1 standalone
-  requests use a fixed `platformLog` destination instead: Windows writes fixed
-  Event Log records and Linux writes syslog plus helper-owned transaction
-  registry events. Those helpers do not receive or write the caller-selected
-  path. Logging failures do not block install, rollback, cleanup, or relaunch.
+- The 3.0 native API does not accept a caller-selected helper log path.
+  Protocol-v1 standalone requests use a fixed
+  `platformLog` destination instead: Windows writes fixed Event Log records and
+  Linux writes syslog plus helper-owned transaction registry events. Logging
+  failures do not block install, rollback, cleanup, or relaunch.
 - Install scheduling emits a small in-memory `UpdateCleanupReport` through
   `DesktopUpdaterController.lastCleanupReport` and the optional
   `onCleanupReport` callback. The report records the staging path, descriptor
@@ -494,7 +491,7 @@ Open Settings > Updates > Copy update report. If the app cannot open that
 screen, attach the update log from the location your app shows in Settings.
 ```
 
-Avoid presenting `diagnosticsLogPath` as a standalone-helper sink. If your app
+Native helpers do not accept a caller-selected diagnostics path. If your app
 writes a Dart lifecycle log, show the user the app-owned location and ask for
 explicit approval before sharing it.
 
@@ -663,8 +660,8 @@ Warnings to expect before production hardening:
   or another pinned descriptor signature policy before calling the flow
   production-trusted.
 - macOS privileged installation requires signed release metadata plus signed,
-  notarized, stapled, Gatekeeper-accepted application code. The legacy
-  `allowUnsignedMacOSUpdates` flag is rejected before helper handoff.
+  notarized, stapled, Gatekeeper-accepted application code. Unsigned
+  installation is rejected before helper handoff.
 
 4. Keep `pubspec.yaml` version current:
 
@@ -1256,10 +1253,9 @@ xcrun stapler validate Example.app
 codesign -dvvv --entitlements :- Example.app
 ```
 
-The runtime rejects unsigned macOS installation. The legacy
-`allowUnsignedMacOSUpdates` parameter remains source-compatible, but setting it
-fails before privileged helper handoff. Internal unsigned artifacts may be used
-for staging-only tests; they cannot exercise the protected install path.
+The runtime rejects unsigned macOS installation. Internal unsigned artifacts
+may be used for staging-only tests; they cannot exercise the protected install
+path.
 
 Mac App Store or sandboxed apps should use the store update channel instead of
 this direct self-updater.

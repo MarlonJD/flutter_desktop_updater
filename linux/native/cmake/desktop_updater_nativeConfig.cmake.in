@@ -10,3 +10,9 @@ get_filename_component(desktop_updater_native_PREFIX
 set(desktop_updater_native_HELPER_EXECUTABLE
   "${desktop_updater_native_PREFIX}/@CMAKE_INSTALL_LIBEXECDIR@/desktop-updater-helper")
 include("${CMAKE_CURRENT_LIST_DIR}/desktop_updater_nativeTargets.cmake")
+if("@DESKTOP_UPDATER_NATIVE_RUNTIME_BUILT@" STREQUAL "ON" AND
+   NOT TARGET desktop_updater::runtime)
+  message(FATAL_ERROR
+    "The installed desktop_updater runtime target is unavailable; "
+    "configure the package with DESKTOP_UPDATER_NATIVE_RUNTIME=ON.")
+endif()

@@ -67,7 +67,6 @@ public sealed class DesktopUpdaterConfiguration
         string platform,
         string channel,
         string? installationIdentity,
-        bool requireDescriptorSignature,
         IReadOnlyDictionary<string, byte[]> pinnedPublicKeysById,
         MinimumOSResolver minimumOSResolver,
         RequestHeadersProvider requestHeadersProvider,
@@ -75,8 +74,7 @@ public sealed class DesktopUpdaterConfiguration
         long maximumMetadataBytes = DefaultMaximumMetadataBytes,
         long maximumArchiveEntries = DefaultMaximumArchiveEntries,
         long maximumUncompressedBytes = DefaultMaximumUncompressedBytes,
-        long maximumSingleEntryBytes = DefaultMaximumSingleEntryBytes,
-        bool requireIndexSignature = true)
+        long maximumSingleEntryBytes = DefaultMaximumSingleEntryBytes)
     {
         if (appArchiveUrl is null)
         {
@@ -109,8 +107,7 @@ public sealed class DesktopUpdaterConfiguration
                 nameof(currentBuildNumber),
                 "currentBuildNumber must not be negative.");
         }
-        if ((requireIndexSignature || requireDescriptorSignature) &&
-            pinnedPublicKeysById.Count == 0)
+        if (pinnedPublicKeysById.Count == 0)
         {
             throw new ArgumentException(
                 "At least one pinned public key is required.",
@@ -151,8 +148,6 @@ public sealed class DesktopUpdaterConfiguration
         Platform = platform;
         Channel = channel;
         InstallationIdentity = installationIdentity;
-        RequireIndexSignature = requireIndexSignature;
-        RequireDescriptorSignature = requireDescriptorSignature;
         PinnedPublicKeysById = pinnedPublicKeysById.ToDictionary(
             entry => entry.Key,
             entry => entry.Value.ToArray());
@@ -181,10 +176,6 @@ public sealed class DesktopUpdaterConfiguration
     public string Channel { get; }
     /// <summary>Stable application-owned rollout identity.</summary>
     public string? InstallationIdentity { get; }
-    /// <summary>Whether app archive signatures are mandatory.</summary>
-    public bool RequireIndexSignature { get; }
-    /// <summary>Whether descriptor signatures are mandatory.</summary>
-    public bool RequireDescriptorSignature { get; }
     /// <summary>Ed25519 public keys indexed by pinned key ID.</summary>
     public IReadOnlyDictionary<string, byte[]> PinnedPublicKeysById { get; }
     /// <summary>Application callback for minimum-OS policy.</summary>
@@ -273,7 +264,7 @@ public sealed class DesktopUpdaterRuntimeResult
 /// <summary>Stateful check, verification, staging, and helper-handoff client.</summary>
 public sealed class DesktopUpdaterClient : IDisposable
 {
-    private const uint AbiVersion = 1;
+    private const uint AbiVersion = 2;
     private static readonly ReleaseHeadersDelegate ReleaseHeadersCallback =
         ReleaseHeaders;
     private static readonly IntPtr ReleaseHeadersPointer =
@@ -334,8 +325,6 @@ public sealed class DesktopUpdaterClient : IDisposable
                 InstallationIdentityUtf8 = configuration.InstallationIdentity is null
                     ? IntPtr.Zero
                     : AllocateUtf8(configuration.InstallationIdentity, allocations),
-                RequireIndexSignature = configuration.RequireIndexSignature ? 1 : 0,
-                RequireDescriptorSignature = configuration.RequireDescriptorSignature ? 1 : 0,
                 PinnedPublicKeys = keyArray,
                 PinnedPublicKeyCount = (nuint)nativeKeys.Length,
                 MinimumOSResolver = client.MinimumOSResolver,
@@ -447,12 +436,18 @@ public sealed class DesktopUpdaterClient : IDisposable
         }
     }
 
-    /// <summary>Hands the staged update to the versioned install helper.</summary>
-    public DesktopUpdaterRuntimeResult InstallAndRelaunch(
-        IReadOnlyList<string> removedFiles,
-        string? diagnosticsLogPath)
+    /// <summary>Prepares the staged update with an explicit transaction ID.</summary>
+    public DesktopUpdaterRuntimeResult PrepareInstall(
+        string transactionId,
+        IReadOnlyList<string> removedFiles)
     {
         ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(transactionId))
+        {
+            throw new ArgumentException(
+                "A transaction ID is required.",
+                nameof(transactionId));
+        }
         if (removedFiles is null)
         {
             throw new ArgumentNullException(nameof(removedFiles));
@@ -488,9 +483,7 @@ public sealed class DesktopUpdaterClient : IDisposable
             {
                 AbiVersion = AbiVersion,
                 StructSize = (nuint)Marshal.SizeOf<NativeInstallRequest>(),
-                DiagnosticsLogPathUtf8 = diagnosticsLogPath is null
-                    ? IntPtr.Zero
-                    : AllocateUtf8(diagnosticsLogPath, allocations),
+                TransactionIdUtf8 = AllocateUtf8(transactionId, allocations),
                 RemovedFilesUtf8 = pointerArray,
                 RemovedFileCount = (nuint)removedPointers.Length,
                 InstallRootUtf8 = AllocateUtf8(installRoot, allocations),
@@ -501,7 +494,7 @@ public sealed class DesktopUpdaterClient : IDisposable
                     _configuration.ExpectedPackageId,
                     allocations),
             };
-            var result = NativeMethods.InstallAndRelaunch(_client, ref request);
+            var result = NativeMethods.PrepareInstall(_client, ref request);
             return ConsumeResult(ref result);
         }
         finally
@@ -510,66 +503,55 @@ public sealed class DesktopUpdaterClient : IDisposable
         }
     }
 
-    /// <summary>Prepares a helper-owned install reservation.</summary>
-    public DesktopUpdaterInstallReservation PrepareInstall(
-        DesktopUpdaterInstallRequest request)
+    /// <summary>Commits the prepared runtime transaction.</summary>
+    public DesktopUpdaterRuntimeResult CommitAfterExit()
     {
         ThrowIfDisposed();
-        return DesktopUpdaterNative.PrepareInstall(request);
+        var result = NativeMethods.CommitAfterExit(_client);
+        return ConsumeResult(ref result);
     }
 
-    /// <summary>
-    /// Prepares a helper-owned reservation using a caller-persisted ID.
-    /// </summary>
-    public DesktopUpdaterInstallReservation PrepareInstall(
-        DesktopUpdaterInstallRequest request,
+    /// <summary>Cancels the prepared runtime transaction.</summary>
+    public DesktopUpdaterRuntimeResult CancelReservation()
+    {
+        ThrowIfDisposed();
+        var result = NativeMethods.CancelReservation(_client);
+        return ConsumeResult(ref result);
+    }
+
+    /// <summary>Queries a transaction without mutating helper state.</summary>
+    public DesktopUpdaterRuntimeResult QueryTransaction(string transactionId)
+    {
+        ThrowIfDisposed();
+        var pointer = AllocateUtf8(transactionId, out var allocations);
+        try
+        {
+            var result = NativeMethods.QueryTransaction(_client, pointer);
+            return ConsumeResult(ref result);
+        }
+        finally
+        {
+            FreeAllocations(allocations);
+        }
+    }
+
+    /// <summary>Resolves a pending transaction after the prior app exited.</summary>
+    public DesktopUpdaterRuntimeResult ResolvePendingInstallAfterExit(
         string transactionId)
     {
         ThrowIfDisposed();
-        return DesktopUpdaterNative.PrepareInstall(request, transactionId);
-    }
-
-    /// <summary>Commits one prepared helper reservation.</summary>
-    public DesktopUpdaterInstallTransactionStatus CommitAfterExit(
-        DesktopUpdaterInstallReservation reservation)
-    {
-        ThrowIfDisposed();
-        return DesktopUpdaterNative.CommitAfterExit(reservation);
-    }
-
-    /// <summary>Cancels one prepared helper reservation.</summary>
-    public DesktopUpdaterInstallTransactionStatus CancelReservation(
-        DesktopUpdaterInstallReservation reservation)
-    {
-        ThrowIfDisposed();
-        return DesktopUpdaterNative.CancelReservation(reservation);
-    }
-
-    /// <summary>Queries helper-owned state during application startup.</summary>
-    public DesktopUpdaterInstallTransactionStatus QueryTransaction(
-        string transactionId)
-    {
-        ThrowIfDisposed();
-        return DesktopUpdaterNative.QueryTransaction(transactionId);
-    }
-
-    /// <summary>Requests authoritative native recovery during startup.</summary>
-    public DesktopUpdaterInstallTransactionStatus RecoverPendingInstall(
-        string transactionId)
-    {
-        ThrowIfDisposed();
-        return DesktopUpdaterNative.RecoverPendingInstall(transactionId);
-    }
-
-    /// <summary>
-    /// Resolves an incomplete transaction after the previous app has exited.
-    /// </summary>
-    public DesktopUpdaterInstallTransactionStatus
-        ResolvePendingInstallAfterExit(string transactionId)
-    {
-        ThrowIfDisposed();
-        return DesktopUpdaterNative.ResolvePendingInstallAfterExit(
-            transactionId);
+        var pointer = AllocateUtf8(transactionId, out var allocations);
+        try
+        {
+            var result = NativeMethods.ResolvePendingInstallAfterExit(
+                _client,
+                pointer);
+            return ConsumeResult(ref result);
+        }
+        finally
+        {
+            FreeAllocations(allocations);
+        }
     }
 
     /// <inheritdoc />
@@ -715,6 +697,14 @@ public sealed class DesktopUpdaterClient : IDisposable
         return pointer;
     }
 
+    private static IntPtr AllocateUtf8(
+        string value,
+        out List<IntPtr> allocations)
+    {
+        allocations = new List<IntPtr>(1);
+        return AllocateUtf8(value, allocations);
+    }
+
     private static IntPtr AllocateStructArray<T>(
         IReadOnlyList<T> values,
         ICollection<IntPtr> allocations)
@@ -839,8 +829,6 @@ public sealed class DesktopUpdaterClient : IDisposable
         public IntPtr PlatformUtf8;
         public IntPtr ChannelUtf8;
         public IntPtr InstallationIdentityUtf8;
-        public int RequireIndexSignature;
-        public int RequireDescriptorSignature;
         public IntPtr PinnedPublicKeys;
         public nuint PinnedPublicKeyCount;
         public MinimumOSDelegate MinimumOSResolver;
@@ -889,7 +877,7 @@ public sealed class DesktopUpdaterClient : IDisposable
     {
         public uint AbiVersion;
         public nuint StructSize;
-        public IntPtr DiagnosticsLogPathUtf8;
+        public IntPtr TransactionIdUtf8;
         public IntPtr RemovedFilesUtf8;
         public nuint RemovedFileCount;
         public IntPtr InstallRootUtf8;
@@ -1081,21 +1069,21 @@ public sealed class DesktopUpdaterClient : IDisposable
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_abi_version_v1",
+            EntryPoint = "desktop_updater_runtime_abi_version_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         private static extern uint RuntimeAbiVersion();
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_result_size_v1",
+            EntryPoint = "desktop_updater_runtime_result_size_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         private static extern nuint RuntimeResultSize();
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_client_create_v1",
+            EntryPoint = "desktop_updater_runtime_client_create_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeRuntimeResult Create(
@@ -1103,7 +1091,7 @@ public sealed class DesktopUpdaterClient : IDisposable
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_client_check_for_update_v1",
+            EntryPoint = "desktop_updater_runtime_client_check_for_update_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeRuntimeResult CheckForUpdate(
@@ -1111,7 +1099,7 @@ public sealed class DesktopUpdaterClient : IDisposable
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_client_download_verify_and_stage_v1",
+            EntryPoint = "desktop_updater_runtime_client_download_verify_and_stage_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern NativeRuntimeResult DownloadVerifyAndStage(
@@ -1120,23 +1108,57 @@ public sealed class DesktopUpdaterClient : IDisposable
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_client_install_and_relaunch_v1",
-            ExactSpelling = true,
-            CallingConvention = CallingConvention.Cdecl)]
-        internal static extern NativeRuntimeResult InstallAndRelaunch(
+            EntryPoint = "desktop_updater_runtime_client_prepare_install_abi2",
+        ExactSpelling = true,
+        CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeRuntimeResult PrepareInstall(
             NativeClientHandle client,
             ref NativeInstallRequest request);
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_client_free_v1",
+            EntryPoint = "desktop_updater_runtime_client_commit_after_exit_abi2",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeRuntimeResult CommitAfterExit(
+            NativeClientHandle client);
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_client_cancel_reservation_abi2",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeRuntimeResult CancelReservation(
+            NativeClientHandle client);
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_client_query_transaction_abi2",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeRuntimeResult QueryTransaction(
+            NativeClientHandle client,
+            IntPtr transactionIdUtf8);
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_client_resolve_pending_install_after_exit_abi2",
+            ExactSpelling = true,
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern NativeRuntimeResult ResolvePendingInstallAfterExit(
+            NativeClientHandle client,
+            IntPtr transactionIdUtf8);
+
+        [DllImport(
+            "desktop_updater_runtime",
+            EntryPoint = "desktop_updater_runtime_client_free_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern void ClientFree(IntPtr client);
 
         [DllImport(
             "desktop_updater_runtime",
-            EntryPoint = "desktop_updater_runtime_result_free_v1",
+            EntryPoint = "desktop_updater_runtime_result_free_abi2",
             ExactSpelling = true,
             CallingConvention = CallingConvention.Cdecl)]
         internal static extern void ResultFree(ref NativeRuntimeResult result);

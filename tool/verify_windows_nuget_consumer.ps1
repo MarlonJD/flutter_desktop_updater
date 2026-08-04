@@ -65,7 +65,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $entryNames = @(
   "runtimes/win-x64/native/desktop_updater_native.dll",
-  "runtimes/win-x64/native/desktop_updater_runtime.dll"
+  "runtimes/win-x64/native/desktop_updater_runtime.dll",
+  "runtimes/win-x64/native/desktop_updater_install_helper.exe",
+  "runtimes/win-x64/native/desktop_updater_helper_policy.json"
 )
 $expectedHashes = @{}
 $archive = [System.IO.Compression.ZipFile]::OpenRead($package)
@@ -121,4 +123,4 @@ foreach ($fileName in $expectedHashes.Keys) {
   }
 }
 
-Write-Host "Verified isolated package restore and candidate DLL hashes for $ProjectPath"
+Write-Host "Verified isolated package restore and native/helper/policy hashes for $ProjectPath"

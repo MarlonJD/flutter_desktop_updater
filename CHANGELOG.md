@@ -1,3 +1,19 @@
+## 3.0.0
+
+* **Breaking:** require signed release metadata, pinned public keys, expected
+  package identity, and an app-owned durable recovery store.
+* **Breaking:** replace implicit native scheduling and generated transaction
+  IDs with explicit prepare, commit-after-exit, cancel, query, and recovery
+  operations.
+* **Breaking:** publish the ABI2 Windows native and runtime surfaces, remove
+  caller-controlled diagnostics/target policy inputs, and keep the old ABI1
+  prepare export only as a rejecting tombstone.
+* **Breaking:** remove Linux legacy target proof and require source-first
+  explicit transaction requests bound to the running executable and identity
+  marker.
+* Add the [2.x to 3.0 migration guide](docs/migration/2.x-to-3.0.md) and a
+  version-aware `desktop_updater:migrate --from 1|2` command.
+
 ## 2.7.0
 
 * Added production macOS DMG and PKG artifact publishing, validation, and local

@@ -1,10 +1,10 @@
 Update Problem Report
 Generated: 2026-06-16T12:00:00.000Z
-Package version: 2.2.0
+Package version: 3.0.0
 Platform: macos
 Channel: stable
 App version: 1.0.0+100
-Update version: 2.0.0
+Update version: 3.0.0
 Staging path: /tmp/staged
 Failure: Bad state: Authorization: <redacted> password=<redacted>
 

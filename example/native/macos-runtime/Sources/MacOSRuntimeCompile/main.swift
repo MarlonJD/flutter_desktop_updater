@@ -67,9 +67,9 @@ struct MacOSRuntimeSmoke {
                     string: "https://updates.example.test/app-archive.json"
                 )!,
                 expectedPackageId: "com.example.native-runtime-smoke",
-                currentVersion: "2.7.0",
+                currentVersion: "3.0.0",
                 currentBuildNumber: 270,
-                currentUpdaterVersion: "2.7.0",
+                currentUpdaterVersion: "3.0.0",
                 platform: "macos",
                 installationIdentity: "external-swiftpm-consumer",
                 pinnedPublicKeysById: [
@@ -101,7 +101,7 @@ struct MacOSRuntimeSmoke {
             expectedPackageId: packageId,
             currentVersion: arguments.optionalValue("--current-version") ?? "2.7.0",
             currentBuildNumber: arguments.optionalInt("--current-build-number") ?? 270,
-            currentUpdaterVersion: "2.7.0",
+            currentUpdaterVersion: "3.0.0",
             platform: "macos",
             installationIdentity: "macos-native-runtime-smoke",
             pinnedPublicKeysById: [

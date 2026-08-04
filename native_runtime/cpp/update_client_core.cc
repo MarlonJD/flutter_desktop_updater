@@ -88,8 +88,7 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
   } catch (const JsonError& error) {
     return Failure("invalidDescriptor", error.what());
   }
-  if ((configuration.require_index_signature || index.has_signature) &&
-      !VerifyIndexSignature(index, configuration.pinned_public_keys_by_id)) {
+  if (!VerifyIndexSignature(index, configuration.pinned_public_keys_by_id)) {
     return Failure("signatureFailure",
                    "App archive Ed25519 signature is invalid.");
   }
@@ -164,9 +163,7 @@ ClientCheckResult CheckForUpdateCore(const ClientConfiguration& configuration,
     result.message = "Descriptor does not match its selected index item.";
     return result;
   }
-  if ((configuration.require_descriptor_signature ||
-       result.descriptor.has_signature) &&
-      !VerifyDescriptorSignature(result.descriptor,
+  if (!VerifyDescriptorSignature(result.descriptor,
                                  configuration.pinned_public_keys_by_id)) {
     result.outcome = "signatureFailure";
     result.message = "Descriptor Ed25519 signature is invalid.";

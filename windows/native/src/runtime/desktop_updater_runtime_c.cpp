@@ -1,8 +1,10 @@
 #include "desktop_updater_runtime_c.h"
+#include "desktop_updater_runtime_c_compat.h"
 
 #include <windows.h>
 
 #include <cstring>
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -14,6 +16,7 @@
 
 #include "artifact_stager_windows.h"
 #include "client_lifecycle.h"
+#include "desktop_updater_native_c.h"
 #include "diagnostics.h"
 #include "sha256_bcrypt.h"
 #include "stage_provenance.h"
@@ -30,8 +33,6 @@ struct desktop_updater_runtime_client_v1 {
   std::string platform;
   std::string channel;
   std::string installation_identity;
-  bool require_index_signature;
-  bool require_descriptor_signature;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> pinned_public_keys;
   desktop_updater_runtime_minimum_os_resolver_v1 minimum_os_resolver;
   desktop_updater_runtime_headers_provider_v1 request_headers_provider;
@@ -46,6 +47,9 @@ struct desktop_updater_runtime_client_v1 {
   desktop_updater::runtime::internal::DiagnosticsRecorder diagnostics;
   std::mutex diagnostics_mutex;
   desktop_updater::runtime::internal::ClientLifecycleState lifecycle;
+  desktop_updater_reservation_handle_abi2* pending_reservation = nullptr;
+  desktop_updater::runtime::internal::InstallHandoff pending_handoff;
+  std::string pending_transaction_id;
 };
 
 namespace {
@@ -257,8 +261,6 @@ desktop_updater::runtime::internal::ClientConfiguration CoreConfiguration(
   result.platform = client->platform;
   result.channel = client->channel;
   result.installation_identity = client->installation_identity;
-  result.require_index_signature = client->require_index_signature;
-  result.require_descriptor_signature = client->require_descriptor_signature;
   result.pinned_public_keys_by_id = std::map<std::string,
       std::vector<std::uint8_t>>(client->pinned_public_keys.begin(),
                                 client->pinned_public_keys.end());
@@ -328,9 +330,7 @@ desktop_updater_runtime_client_create_v1(
         configuration->current_build_number < 0) {
       return Failure("current_build_number must not be negative.");
     }
-    if ((configuration->require_index_signature != 0 ||
-         configuration->require_descriptor_signature != 0) &&
-        configuration->pinned_public_key_count == 0) {
+    if (configuration->pinned_public_key_count == 0) {
       return Failure("At least one pinned public key is required.");
     }
     if (configuration->pinned_public_key_count > 0 &&
@@ -359,10 +359,6 @@ desktop_updater_runtime_client_create_v1(
     if (configuration->installation_identity_utf8 != nullptr) {
       client->installation_identity = configuration->installation_identity_utf8;
     }
-    client->require_index_signature =
-        configuration->require_index_signature != 0;
-    client->require_descriptor_signature =
-        configuration->require_descriptor_signature != 0;
     for (size_t index = 0; index < configuration->pinned_public_key_count;
          ++index) {
       const desktop_updater_runtime_pinned_key_v1& key =
@@ -565,28 +561,18 @@ desktop_updater_runtime_client_download_verify_and_stage_v1(
 }
 
 extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
-desktop_updater_runtime_client_install_and_relaunch_v1(
+desktop_updater_runtime_client_prepare_install_abi2(
     desktop_updater_runtime_client_v1* client,
     const desktop_updater_runtime_install_request_v1* request) {
   try {
     if (client == nullptr) return Failure("Runtime client is required.");
-    if (request == nullptr) {
-      throw std::invalid_argument("Runtime install request is required.");
+    ValidateRequest(request, "Runtime install request");
+    if (client->pending_reservation != nullptr) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "An install transaction is already prepared.");
     }
-    constexpr std::size_t kLegacyInstallRequestSize =
-        offsetof(desktop_updater_runtime_install_request_v1,
-                 install_root_utf8);
-    if (request->abi_version != DESKTOP_UPDATER_RUNTIME_ABI_VERSION ||
-        request->struct_size < kLegacyInstallRequestSize) {
-      throw std::invalid_argument(
-          "Runtime install request has an invalid ABI.");
-    }
-    constexpr std::size_t kTargetFieldsSize =
-        offsetof(desktop_updater_runtime_install_request_v1,
-                 expected_package_id_utf8) +
-        sizeof(request->expected_package_id_utf8);
-    const bool has_target_fields =
-        request->struct_size >= kTargetFieldsSize;
+    const std::string transaction_id =
+        RequiredString(request->transaction_id_utf8, "transaction_id");
     if (request->removed_file_count > 0 &&
         request->removed_files_utf8 == nullptr) {
       return ClientResult(*client, "installHandoffFailure",
@@ -598,18 +584,14 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
       removed_files.push_back(Utf8ToWide(RequiredString(
           request->removed_files_utf8[index], "removed file")));
     }
-    const std::wstring diagnostics =
-        request->diagnostics_log_path_utf8 == nullptr
-            ? std::wstring()
-            : Utf8ToWide(request->diagnostics_log_path_utf8);
     const std::string expected_package_id = RequiredString(
-        has_target_fields ? request->expected_package_id_utf8 : nullptr,
+        request->expected_package_id_utf8,
         "expected install package ID");
     const std::string install_root = RequiredString(
-        has_target_fields ? request->install_root_utf8 : nullptr,
+        request->install_root_utf8,
         "install root");
     const std::string executable_relative_path = RequiredString(
-        has_target_fields ? request->executable_relative_path_utf8 : nullptr,
+        request->executable_relative_path_utf8,
         "executable relative path");
     const auto snapshot = client->lifecycle.Snapshot();
     if (snapshot.staged_filesystem_path.empty() ||
@@ -637,24 +619,30 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
     RecordDiagnostic(client,
                      {"", "install", "info",
                       "Handing staged update to the Windows helper.", ""});
-    const auto scheduler_result =
+    const auto prepare_result =
         desktop_updater::runtime::internal::HandoffWindowsInstall(
             install_handoff.staged_filesystem_path.wstring(),
             Utf8ToWide(install_root),
             Utf8ToWide(executable_relative_path),
-            Utf8ToWide(expected_package_id), diagnostics,
+            Utf8ToWide(expected_package_id), transaction_id,
             removed_files, install_handoff.stage_provenance_sha256,
             snapshot.check.descriptor);
-    if (!scheduler_result.ok) {
+    if (!prepare_result.ok || prepare_result.reservation == nullptr) {
       return ClientResult(*client, "installHandoffFailure",
-                          scheduler_result.error_message);
+                          prepare_result.ok
+                              ? "Windows helper returned no reservation."
+                              : prepare_result.error_message);
     }
     if (!rollback.Confirm()) {
+      desktop_updater_reservation_release_abi2(prepare_result.reservation);
       return ClientResult(*client, "installHandoffFailure",
                           "Windows helper handoff confirmation failed.");
     }
+    client->pending_reservation = prepare_result.reservation;
+    client->pending_handoff = install_handoff;
+    client->pending_transaction_id = transaction_id;
     return ClientResult(*client, "updateAvailable",
-                        "Windows helper handoff scheduled.");
+                        "Windows helper install prepared.");
   } catch (const std::exception& error) {
     return client == nullptr
                ? Failure(error.what(),
@@ -666,9 +654,183 @@ desktop_updater_runtime_client_install_and_relaunch_v1(
   }
 }
 
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_commit_after_exit_abi2(
+    desktop_updater_runtime_client_v1* client) {
+  try {
+    if (client == nullptr) return Failure("Runtime client is required.");
+    if (client->pending_reservation == nullptr) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "No prepared install transaction is available.");
+    }
+    desktop_updater_transaction_status_abi2 status{};
+    status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
+    status.struct_size = sizeof(status);
+    desktop_updater_result_abi2 result =
+        desktop_updater_commit_after_exit_abi2(client->pending_reservation,
+                                               &status);
+    const std::string message =
+        result.error_message_utf8 == nullptr ? "" : result.error_message_utf8;
+    const bool accepted =
+        result.ok != 0 &&
+        (status.state == DESKTOP_UPDATER_TRANSACTION_COMMIT_ACCEPTED_ABI2 ||
+         status.state == DESKTOP_UPDATER_TRANSACTION_COMPLETED_ABI2);
+    desktop_updater_result_free_abi2(&result);
+    desktop_updater_transaction_status_free_abi2(&status);
+    if (!accepted) {
+      return ClientResult(
+          *client, "installHandoffFailure",
+          message.empty() ? "Windows helper commit was not accepted."
+                          : message);
+    }
+    if (!client->lifecycle.CompleteInstall(client->pending_handoff)) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "Windows helper commit lifecycle confirmation failed.");
+    }
+    try {
+      desktop_updater::runtime::internal::RemoveStagingDirectory(
+          client->pending_handoff.staged_filesystem_path);
+    } catch (...) {
+      // The helper owns the committed transaction; cleanup is best effort.
+    }
+    desktop_updater_reservation_release_abi2(client->pending_reservation);
+    client->pending_reservation = nullptr;
+    client->pending_handoff = {};
+    client->pending_transaction_id.clear();
+    return ClientResult(*client, "updateAvailable",
+                        "Windows helper commit accepted.");
+  } catch (const std::exception& error) {
+    return client == nullptr
+               ? Failure(error.what(),
+                         DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE)
+               : ClientResult(*client, "installHandoffFailure", error.what());
+  } catch (...) {
+    return Failure("Unknown native runtime commit failure.",
+                   DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE);
+  }
+}
+
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_cancel_reservation_abi2(
+    desktop_updater_runtime_client_v1* client) {
+  try {
+    if (client == nullptr) return Failure("Runtime client is required.");
+    if (client->pending_reservation == nullptr) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "No prepared install transaction is available.");
+    }
+    desktop_updater_transaction_status_abi2 status{};
+    status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
+    status.struct_size = sizeof(status);
+    desktop_updater_result_abi2 result =
+        desktop_updater_cancel_reservation_abi2(client->pending_reservation,
+                                                &status);
+    const std::string message =
+        result.error_message_utf8 == nullptr ? "" : result.error_message_utf8;
+    const bool cancelled =
+        result.ok != 0 &&
+        status.state == DESKTOP_UPDATER_TRANSACTION_CANCELLED_ABI2;
+    desktop_updater_result_free_abi2(&result);
+    desktop_updater_transaction_status_free_abi2(&status);
+    if (!cancelled) {
+      return ClientResult(
+          *client, "installHandoffFailure",
+          message.empty() ? "Windows helper cancellation was not accepted."
+                          : message);
+    }
+    if (!client->lifecycle.CompleteInstall(client->pending_handoff)) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "Windows helper cancellation lifecycle failed.");
+    }
+    try {
+      desktop_updater::runtime::internal::RemoveStagingDirectory(
+          client->pending_handoff.staged_filesystem_path);
+    } catch (...) {
+      // Cancellation is authoritative; cleanup is best effort.
+    }
+    desktop_updater_reservation_release_abi2(client->pending_reservation);
+    client->pending_reservation = nullptr;
+    client->pending_handoff = {};
+    client->pending_transaction_id.clear();
+    return ClientResult(*client, "updateAvailable",
+                        "Windows helper reservation cancelled.");
+  } catch (const std::exception& error) {
+    return client == nullptr
+               ? Failure(error.what(),
+                         DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE)
+               : ClientResult(*client, "installHandoffFailure", error.what());
+  } catch (...) {
+    return Failure("Unknown native runtime cancellation failure.",
+                   DESKTOP_UPDATER_RUNTIME_INSTALL_HANDOFF_FAILURE);
+  }
+}
+
+desktop_updater_runtime_result_v1 RunTransactionOperation(
+    desktop_updater_runtime_client_v1* client,
+    const char* transaction_id_utf8,
+    bool resolve) {
+  if (client == nullptr) return Failure("Runtime client is required.");
+  const std::wstring transaction_id =
+      Utf8ToWide(RequiredString(transaction_id_utf8, "transaction_id"));
+  desktop_updater_transaction_status_abi2 status{};
+  status.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
+  status.struct_size = sizeof(status);
+  desktop_updater_result_abi2 result =
+      resolve
+          ? desktop_updater_resolve_pending_install_after_exit_abi2(
+                reinterpret_cast<const std::uint16_t*>(transaction_id.c_str()),
+                &status)
+          : desktop_updater_query_transaction_abi2(
+                reinterpret_cast<const std::uint16_t*>(transaction_id.c_str()),
+                &status);
+  const std::string error =
+      result.error_message_utf8 == nullptr ? "" : result.error_message_utf8;
+  const std::string detail =
+      status.detail_utf8 == nullptr ? "" : status.detail_utf8;
+  const bool ok = result.ok != 0;
+  desktop_updater_result_free_abi2(&result);
+  desktop_updater_transaction_status_free_abi2(&status);
+  return ClientResult(
+      *client, ok ? "updateAvailable" : "installHandoffFailure",
+      ok ? (detail.empty() ? "Windows transaction status returned." : detail)
+         : (error.empty() ? "Windows transaction operation failed." : error));
+}
+
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_query_transaction_abi2(
+    desktop_updater_runtime_client_v1* client, const char* transaction_id_utf8) {
+  try {
+    return RunTransactionOperation(client, transaction_id_utf8, false);
+  } catch (const std::exception& error) {
+    return client == nullptr ? Failure(error.what())
+                             : ClientResult(*client, "installHandoffFailure",
+                                            error.what());
+  }
+}
+
+extern "C" desktop_updater_runtime_result_v1 DESKTOP_UPDATER_RUNTIME_CALL
+desktop_updater_runtime_client_resolve_pending_install_after_exit_abi2(
+    desktop_updater_runtime_client_v1* client, const char* transaction_id_utf8) {
+  try {
+    if (client != nullptr && client->pending_reservation != nullptr) {
+      return ClientResult(*client, "installHandoffFailure",
+                          "Resolve the prepared reservation before recovery.");
+    }
+    return RunTransactionOperation(client, transaction_id_utf8, true);
+  } catch (const std::exception& error) {
+    return client == nullptr ? Failure(error.what())
+                             : ClientResult(*client, "installHandoffFailure",
+                                            error.what());
+  }
+}
+
 extern "C" void DESKTOP_UPDATER_RUNTIME_CALL
 desktop_updater_runtime_client_free_v1(
     desktop_updater_runtime_client_v1* client) {
+  if (client != nullptr && client->pending_reservation != nullptr) {
+    desktop_updater_reservation_release_abi2(client->pending_reservation);
+    client->pending_reservation = nullptr;
+  }
   delete client;
 }
 

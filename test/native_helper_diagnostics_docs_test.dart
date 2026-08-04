@@ -9,7 +9,9 @@ void main() {
 
     expect(source, contains("desktop_updater: ^$version"));
     expect(source, contains("## Diagnostics And Recovery"));
-    expect(source, contains("diagnosticsLogPath"));
+    expect(source, isNot(contains("diagnosticsLogPath")));
+    expect(
+        source, contains("do not accept a caller-selected diagnostics path"));
     expect(source, contains("UpdateRecoveryStore"));
     expect(source, contains("docs/diagnostics-and-recovery.md"));
     expect(source, contains("docs/ui-widgets.md#diagnostics-and-support"));
@@ -49,7 +51,7 @@ void main() {
     );
     expect(source, contains("Where Logs Go"));
     expect(source, contains("UpdateDiagnosticsSink"));
-    expect(source, contains("diagnosticsLogPath"));
+    expect(source, isNot(contains("diagnosticsLogPath")));
     expect(source, contains("platformLog"));
     expect(source, contains("UpdateRecoveryStore"));
     expect(source, contains("one JSON object per line"));
@@ -74,23 +76,20 @@ void main() {
 
     expect(
       source,
-      contains(
-        "`diagnosticsLogPath` remains a compatibility input for existing "
-        "Flutter and native callers",
-      ),
+      contains("The 3.0 native request has no diagnostics path."),
     );
     expect(
       source,
       contains(
         "The standalone protocol-v1 Windows and Linux helpers do not receive, "
-        "open, create, append to, or otherwise use that caller-provided path.",
+        "open, create, append to, or otherwise use a caller-provided path.",
       ),
     );
     expect(
       source,
       contains(
         "App-owned Dart diagnostics and the package's in-memory problem "
-        "report remain available before the helper handoff.",
+        "report remain available before helper handoff.",
       ),
     );
     expect(source, contains("Windows Application Event Log"));
@@ -115,7 +114,10 @@ void main() {
       final source = File(
         path,
       ).readAsStringSync().replaceAll(RegExp(r"\s+"), " ");
-      expect(source, contains("compatibility-only diagnostics input"));
+      expect(
+        source,
+        contains("do not accept a caller-selected diagnostics path"),
+      );
       expect(source, contains("fixed platform-owned log"));
     }
   });

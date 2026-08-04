@@ -85,18 +85,21 @@ int Exchange(const fs::path& stage) {
   }
 
   desktop_updater::native::InstallRequest request;
-  request.operation =
-      desktop_updater::native::LinuxInstallOperation::kInstall;
   request.staging_path = fs::canonical(stage).string();
   request.install_root = install_root.string();
   request.executable_relative_path = executable.filename().string();
   request.package_id = kPackageId;
   request.expected_provenance_sha256 = Sha256File(
       stage / ".desktop_updater_stage_provenance.json");
+  request.expected_artifact_sha256 = Sha256File(
+      stage / ".desktop_updater_artifact.zip");
 
   desktop_updater::native::InstallReservation reservation;
+  const std::string transaction_id =
+      "123e4567-e89b-42d3-a456-426614174000";
   const auto prepared =
-      desktop_updater::native::PrepareInstall(request, &reservation);
+      desktop_updater::native::PrepareInstall(request, transaction_id,
+                                              &reservation);
   if (!prepared.ok || reservation.transaction_id.empty()) {
     std::cerr << "PrepareInstall failed: " << prepared.error << std::endl;
     return 3;

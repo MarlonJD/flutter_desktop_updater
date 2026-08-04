@@ -7,11 +7,11 @@ void main() {
   test("problem report redaction golden remains stable", () {
     final report = UpdateProblemReport(
       generatedAt: DateTime.utc(2026, 6, 16, 12),
-      packageVersion: "2.2.0",
+      packageVersion: "3.0.0",
       platform: "macos",
       channel: "stable",
       appVersion: "1.0.0+100",
-      updateVersion: "2.0.0",
+      updateVersion: "3.0.0",
       stagingPath: "/tmp/staged",
       failure: StateError("Authorization: Bearer abc password=hunter2"),
       entries: [
@@ -34,27 +34,27 @@ void main() {
     );
   });
 
-  test("recovery marker keeps 2.2.0 app-owned pending install fields", () {
-    final marker = UpdateInstallRecoveryMarker(
+  test("v3 recovery marker binds identity, stage, and transaction", () {
+    final marker = UpdateInstallRecoveryMarker.pendingV3(
       createdAt: DateTime.utc(2026, 6, 16, 12, 2),
-      packageVersion: "2.2.0",
+      packageVersion: "3.0.0",
       platform: "macos",
       channel: "stable",
       appVersion: "1.0.0+100",
-      updateVersion: "2.0.0",
-      updateBuildNumber: 200,
+      updateVersion: "3.0.0",
+      updateBuildNumber: 300,
+      expectedPackageId: "com.example.app",
       stagingPath: "/tmp/staged",
+      stageProvenanceSha256:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       diagnosticsText: "redacted diagnostics",
+      transactionId: "00000000-0000-4000-8000-000000000001",
     );
 
-    expect(marker.createdAt, DateTime.utc(2026, 6, 16, 12, 2));
-    expect(marker.packageVersion, "2.2.0");
-    expect(marker.platform, "macos");
-    expect(marker.channel, "stable");
-    expect(marker.appVersion, "1.0.0+100");
-    expect(marker.updateVersion, "2.0.0");
-    expect(marker.updateBuildNumber, 200);
-    expect(marker.stagingPath, "/tmp/staged");
+    expect(marker.packageVersion, "3.0.0");
+    expect(marker.expectedPackageId, "com.example.app");
+    expect(marker.stageProvenanceSha256, hasLength(64));
+    expect(marker.transactionId, "00000000-0000-4000-8000-000000000001");
     expect(marker.diagnosticsText, "redacted diagnostics");
   });
 }
