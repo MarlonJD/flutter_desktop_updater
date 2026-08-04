@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,34 @@ bool ReadRequiredInstallString(FlValue* args,
     *error = std::string(key) + " must not be empty.";
     return false;
   }
+  return true;
+}
+
+bool ReadOptionalInstallString(FlValue* args,
+                               const char* key,
+                               std::string* value,
+                               bool* present,
+                               std::string* error) {
+  FlValue* argument = fl_value_lookup_string(args, key);
+  if (argument == nullptr) {
+    *error = std::string(key) + " is required.";
+    return false;
+  }
+  if (fl_value_get_type(argument) == FL_VALUE_TYPE_NULL) {
+    value->clear();
+    *present = false;
+    return true;
+  }
+  if (fl_value_get_type(argument) != FL_VALUE_TYPE_STRING) {
+    *error = std::string(key) + " must be a string or null.";
+    return false;
+  }
+  *value = fl_value_get_string(argument);
+  if (value->empty()) {
+    *error = std::string(key) + " must not be empty when present.";
+    return false;
+  }
+  *present = true;
   return true;
 }
 
@@ -239,13 +268,18 @@ static void desktop_updater_plugin_handle_method_call(
     if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
           "InvalidArguments", "installUpdate expects a map.", nullptr));
-    } else if (fl_value_get_length(args) != 5) {
+    } else if (fl_value_get_length(args) != 9) {
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-          "InvalidArguments", "installUpdate expects exactly five arguments.",
+          "InvalidArguments", "installUpdate expects exactly nine arguments.",
           nullptr));
     } else {
       std::string staging_path;
       std::string expected_package_id;
+      std::string expected_version;
+      std::string expected_build_number;
+      bool expected_build_number_present = false;
+      std::string expected_platform;
+      std::string expected_channel;
       std::string expected_artifact_sha256;
       std::string expected_provenance_sha256;
       std::string transaction_id;
@@ -254,6 +288,16 @@ static void desktop_updater_plugin_handle_method_call(
                                      &argument_error) ||
           !ReadRequiredInstallString(args, "expectedPackageId",
                                      &expected_package_id, &argument_error) ||
+          !ReadRequiredInstallString(args, "updateVersion", &expected_version,
+                                     &argument_error) ||
+          !ReadOptionalInstallString(args, "updateBuildNumber",
+                                     &expected_build_number,
+                                     &expected_build_number_present,
+                                     &argument_error) ||
+          !ReadRequiredInstallString(args, "platform", &expected_platform,
+                                     &argument_error) ||
+          !ReadRequiredInstallString(args, "channel", &expected_channel,
+                                     &argument_error) ||
           !ReadRequiredInstallString(args, "expectedArtifactSha256",
                                      &expected_artifact_sha256,
                                      &argument_error) ||
@@ -270,6 +314,23 @@ static void desktop_updater_plugin_handle_method_call(
             "expectedArtifactSha256 must be a lowercase SHA-256 digest.",
             nullptr));
       } else {
+        std::int64_t expected_build_number_value = 0;
+        if (expected_build_number_present) {
+          try {
+            std::size_t consumed = 0;
+            expected_build_number_value = std::stoll(
+                expected_build_number, &consumed, 10);
+            if (consumed != expected_build_number.size()) {
+              throw std::invalid_argument("trailing characters");
+            }
+          } catch (const std::exception&) {
+            response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+                "InvalidArguments",
+                "updateBuildNumber must be an integer or null.", nullptr));
+            fl_method_call_respond(method_call, response, nullptr);
+            return;
+          }
+        }
         std::string install_root;
         std::string executable_relative_path;
         if (!CurrentExecutableTarget(&install_root,
@@ -285,6 +346,11 @@ static void desktop_updater_plugin_handle_method_call(
           request.package_id = expected_package_id;
           request.expected_provenance_sha256 = expected_provenance_sha256;
           request.expected_artifact_sha256 = expected_artifact_sha256;
+          request.expected_version = expected_version;
+          request.expected_platform = expected_platform;
+          request.expected_channel = expected_channel;
+          request.expected_build_number_present = expected_build_number_present;
+          request.expected_build_number = expected_build_number_value;
           const auto result = HandoffNativeInstall(request, transaction_id);
           if (!result.ok) {
             g_autoptr(FlValue) details = result.recovery_required

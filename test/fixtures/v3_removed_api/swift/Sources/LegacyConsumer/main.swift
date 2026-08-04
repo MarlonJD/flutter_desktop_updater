@@ -1,8 +1,8 @@
 import DesktopUpdaterKit
 
-let legacyRequest = MacInstallRequest(
-    stagingPath: "/tmp/stage",
-    allowUnsignedUpdates: true,
-    diagnosticsLogPath: "/tmp/desktop-updater.jsonl"
-)
-try MacInstallHelper().scheduleInstallAndRelaunch(legacyRequest)
+func legacyRequest() -> MacInstallRequest {
+    fatalError("fixture is compiled only")
+}
+
+let request = legacyRequest()
+try MacInstallHelper().scheduleInstallAndRelaunch(request)

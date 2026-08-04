@@ -47,7 +47,8 @@ Recommended release order:
 2. Sign the application `.exe` and any signable `.dll` files.
 3. Timestamp the signatures with an RFC 3161 timestamp server.
 4. Verify the signatures and fail CI if verification fails.
-5. Run `dart run desktop_updater:release publish --platform windows`.
+5. Run `dart run desktop_updater:release publish --platform windows` with
+   `--public-key-id`, `--private-key-env`, and `--public-keys-env`.
 6. Run `dart run desktop_updater:release validate ...` against the hosted
    package.
 

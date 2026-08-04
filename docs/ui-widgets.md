@@ -159,6 +159,11 @@ bottom sheet:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesLoader: (descriptor) {
     return myNotesApi.fetch(
       version: descriptor.version,
@@ -176,6 +181,11 @@ Simple hosted notes can use `releaseNotesUrl` instead:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
 );
 ```
@@ -341,6 +351,11 @@ is hidden unless your app supplies `onProblemReport`.
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   onProblemReport: (report) async {
     await myIssueReporter.send(report.toPlainText());
   },
@@ -374,6 +389,11 @@ across controller recreation, provide an app-owned `UpdatePreferences` adapter:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   preferences: MyUpdatePreferencesStore(),
 );
 ```
@@ -391,6 +411,11 @@ Staged rollouts use an app-owned stable identity. Pass an opaque
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   installationIdentity: myInstallIdentity,
 );
 ```
@@ -406,6 +431,11 @@ such as `checkStarted`, `checkFailed`, `updateSelected`, `downloadStarted`,
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   telemetry: (event) {
     analytics.record("desktop_update_${event.type.name}");
   },
@@ -424,6 +454,11 @@ status when known, and error text when scheduling or cleanup fails:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   onCleanupReport: (report) async {
     await myReleaseAuditStore.save(report);
   },
@@ -457,6 +492,11 @@ class AppUpdateLogSink implements UpdateDiagnosticsSink {
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   diagnosticsRecorder: UpdateDiagnosticsRecorder(
     sink: AppUpdateLogSink(appOwnedLogFile),
   ),
@@ -494,6 +534,10 @@ class AppUpdateRecoveryStore implements UpdateRecoveryStore {
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
   recoveryStore: AppUpdateRecoveryStore(),
 );
 ```
@@ -546,6 +590,11 @@ deterministic policy callback:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   isMinimumOSSupported: ({required platform, required minimumOS}) {
     return myRuntimePolicy.supports(platform, minimumOS);
   },

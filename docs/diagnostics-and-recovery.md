@@ -102,6 +102,11 @@ await dartLogFile.parent.create(recursive: true);
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   diagnosticsRecorder: UpdateDiagnosticsRecorder(
     sink: AppUpdateLogSink(dartLogFile),
   ),
@@ -246,6 +251,10 @@ class AppUpdateRecoveryStore implements UpdateRecoveryStore {
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
   recoveryStore: AppUpdateRecoveryStore(),
 );
 ```

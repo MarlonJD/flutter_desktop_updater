@@ -23,7 +23,8 @@ The package CI covers:
   external Flutter-free Swift consumer, and separate Flutter SwiftPM and
   CocoaPods fallback build/integration lanes;
 - Windows debug and release builds, named helper trust, pipe-spoofing,
-  transaction, and crash-recovery tests, integration tests, and update smokes;
+  transaction, and crash-recovery tests, integration tests, and two fresh
+  Debug plus two fresh Release update smokes;
 - Windows installed CMake and local NuGet consumers against the real shared
   DLL; the NuGet inventory includes the Release helper executable and sealed
   policy JSON alongside the native libraries;
@@ -80,10 +81,10 @@ exact revision runs successfully on the named target host.
 The standalone helpers now implement the transaction journal, cross-process
 target lock, Windows reparse checks, Linux mount/bind checks, and crash
 recovery. Implementation and workflow configuration are not execution
-evidence: the old Task 6 checkbox remains open until the mandatory secretless
-Windows and Linux target-host lanes pass for the current helper head. Ordinary
-source scans, mocks, dry runs, or unrelated CTest lanes must not be labeled as
-signed, elevated, notarized, or recovery evidence.
+evidence: each candidate must pass the mandatory secretless Windows and Linux
+target-host lanes for its exact helper head. Ordinary source scans, mocks, dry
+runs, or unrelated CTest lanes must not be labeled as signed, elevated,
+notarized, or recovery evidence.
 
 Evidence must stay literal: unavailable credentials or hosts are `blocked` or
 `not run`; unsigned executables are `candidate-only`; only completed required
@@ -153,7 +154,8 @@ Recommended high-level flow:
 
 1. Trigger the workflow from a version tag such as `v2.0.0`, or from a protected manual `workflow_dispatch`.
 2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
-3. Run `dart run desktop_updater:release publish --platform macos`.
+3. Run `dart run desktop_updater:release publish --platform macos` with
+   `--public-key-id`, `--private-key-env`, and `--public-keys-env`.
 4. Let the command upload versioned files first, validate hosted `release.json` and artifact bytes, upload `app-archive.json` last, and validate hosted update selection.
 5. Only then mark the release as published.
 
@@ -283,9 +285,10 @@ If CI fails with `No Keychain password item found`, the profile was not read fro
 ## macOS Advanced Low-Level CD Skeleton
 
 This is a low-level skeleton for an app repository that needs to own each
-packaging and upload step. Most apps should start with
-`dart run desktop_updater:release publish --platform macos` and only drop down
-to these commands when their release workflow needs that control.
+packaging and upload step. Most apps should start with the signed
+`dart run desktop_updater:release publish --platform macos` flow (including
+`--public-key-id`, `--private-key-env`, and `--public-keys-env`) and only drop
+down to these commands when their release workflow needs that control.
 
 ```yaml
 name: Publish desktop update
@@ -423,7 +426,9 @@ jobs:
         run: |
           curl -fsS "${{ vars.UPDATE_BASE_URL }}/releases/$RELEASE_VERSION/macos/release.json" \
             -o "$RUNNER_TEMP/release.json"
-          dart run desktop_updater:verify --release "$RUNNER_TEMP/release.json"
+          dart run desktop_updater:verify \
+            --release "$RUNNER_TEMP/release.json" \
+            --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 
       - name: Publish app archive last
         run: ./tool/ci/publish_app_archive.sh
@@ -467,7 +472,9 @@ dart run desktop_updater:package \
   --platform windows \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/windows/$APP_NAME-$VERSION-windows.zip"
-dart run desktop_updater:verify --release dist/$VERSION/windows/release.json
+dart run desktop_updater:verify \
+  --release dist/$VERSION/windows/release.json \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 Linux example:
@@ -484,7 +491,9 @@ dart run desktop_updater:package \
   --platform linux \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/linux/$APP_NAME-$VERSION-linux.zip"
-dart run desktop_updater:verify --release dist/$VERSION/linux/release.json
+dart run desktop_updater:verify \
+  --release dist/$VERSION/linux/release.json \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 Unsigned Windows and Linux Release builds are release-mechanics ready when build, packaging, download, SHA-256 verification, extraction, staging, and smoke tests pass. Treat them as production-trusted only after you add the signing or descriptor-authenticity gate your app requires.

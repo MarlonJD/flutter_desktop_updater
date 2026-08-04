@@ -34,6 +34,12 @@ struct InstallRequest {
   // Caller-owned artifact identity. The platform boundary must carry this
   // value through native validation instead of deriving it from the marker.
   std::string expected_artifact_sha256;
+  // Full signed descriptor bindings supplied by the app-owned handoff.
+  std::string expected_version;
+  std::string expected_platform;
+  std::string expected_channel;
+  bool expected_build_number_present = false;
+  std::int64_t expected_build_number = 0;
 };
 
 struct InstallResult {

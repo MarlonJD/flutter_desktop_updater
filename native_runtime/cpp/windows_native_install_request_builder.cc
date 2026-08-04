@@ -53,6 +53,18 @@ BuildWindowsNativeInstallTransactionRequestV1(
     const std::string artifact_kind = artifact.at("kind").string();
     const std::string artifact_sha256 = artifact.at("sha256").string();
     const std::int64_t artifact_length = artifact.at("length").integer();
+    const JsonValue* build_number = manifest.find("buildNumber");
+    const bool manifest_build_number_present =
+        build_number != nullptr && build_number->type() != JsonValue::Type::kNull;
+    if (!evidence.expected_version.empty() &&
+        (manifest.at("version").string() != evidence.expected_version ||
+         manifest.at("platform").string() != evidence.expected_platform ||
+         manifest.at("channel").string() != evidence.expected_channel ||
+         manifest_build_number_present != evidence.expected_build_number_present ||
+         (manifest_build_number_present &&
+          build_number->integer() != evidence.expected_build_number))) {
+      Fail("release descriptor version, build, and channel are not bound");
+    }
     const std::string descriptor_sha256 = sha256(canonical_manifest);
     const std::string ownership_nonce_sha256 = sha256(marker.nonce);
 
@@ -97,7 +109,6 @@ BuildWindowsNativeInstallTransactionRequestV1(
     request.current_identity.package_identity_sha256 =
         evidence.current_package_identity_sha256;
     request.desired_identity.version = manifest.at("version").string();
-    const JsonValue* build_number = manifest.find("buildNumber");
     request.desired_identity.build_number =
         build_number == nullptr ? 0 : build_number->integer();
     request.desired_identity.package_identity_sha256 = descriptor_sha256;

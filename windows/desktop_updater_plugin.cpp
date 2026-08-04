@@ -11,6 +11,7 @@
 #include <memory>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <variant>
 #include <vector>
@@ -137,6 +138,35 @@ bool ReadRequiredInstallString(const flutter::EncodableMap& arguments,
     *error = std::string(key) + " must contain valid UTF-8.";
     return false;
   }
+  return true;
+}
+
+bool ReadOptionalInstallString(const flutter::EncodableMap& arguments,
+                               const char* key,
+                               std::wstring* value,
+                               bool* present,
+                               std::string* error) {
+  const auto iterator = arguments.find(flutter::EncodableValue(key));
+  if (iterator == arguments.end()) {
+    *error = std::string(key) + " is required.";
+    return false;
+  }
+  if (std::holds_alternative<std::monostate>(iterator->second)) {
+    value->clear();
+    *present = false;
+    return true;
+  }
+  const auto* text = std::get_if<std::string>(&iterator->second);
+  if (text == nullptr || text->empty()) {
+    *error = std::string(key) + " must be a string or null.";
+    return false;
+  }
+  *value = Utf8ToWide(*text);
+  if (value->empty()) {
+    *error = std::string(key) + " must contain valid UTF-8.";
+    return false;
+  }
+  *present = true;
   return true;
 }
 
@@ -336,19 +366,33 @@ void DesktopUpdaterPlugin::HandleMethodCall(
       result->Error("InvalidArguments", "installUpdate expects a map.");
       return;
     }
-    if (arguments->size() != 5) {
+    if (arguments->size() != 9) {
       result->Error("InvalidArguments",
-                    "installUpdate expects exactly five arguments.");
+                    "installUpdate expects exactly nine arguments.");
       return;
     }
 
     desktop_updater::native::InstallRequest request;
     std::wstring transaction_id;
+    std::wstring build_number;
+    bool build_number_present = false;
     std::string argument_error;
     if (!ReadRequiredInstallString(*arguments, "stagingPath",
                                    &request.staging_path, &argument_error) ||
         !ReadRequiredInstallString(*arguments, "expectedPackageId",
                                    &request.expected_package_id,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "updateVersion",
+                                   &request.expected_version,
+                                   &argument_error) ||
+        !ReadOptionalInstallString(*arguments, "updateBuildNumber",
+                                   &build_number, &build_number_present,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "platform",
+                                   &request.expected_platform,
+                                   &argument_error) ||
+        !ReadRequiredInstallString(*arguments, "channel",
+                                   &request.expected_channel,
                                    &argument_error) ||
         !ReadRequiredInstallString(*arguments, "expectedArtifactSha256",
                                    &request.expected_artifact_sha256,
@@ -360,6 +404,23 @@ void DesktopUpdaterPlugin::HandleMethodCall(
                                    &transaction_id, &argument_error)) {
       result->Error("InvalidArguments", argument_error);
       return;
+    }
+
+    request.expected_build_number_present = build_number_present;
+    if (build_number_present) {
+      const std::string build_number_utf8 = WideToUtf8(build_number);
+      try {
+        std::size_t consumed = 0;
+        request.expected_build_number =
+            std::stoll(build_number_utf8, &consumed, 10);
+        if (consumed != build_number_utf8.size()) {
+          throw std::invalid_argument("trailing characters");
+        }
+      } catch (const std::exception&) {
+        result->Error("InvalidArguments",
+                      "updateBuildNumber must be an integer or null.");
+        return;
+      }
     }
 
     const std::string request_transaction_id = WideToUtf8(transaction_id);

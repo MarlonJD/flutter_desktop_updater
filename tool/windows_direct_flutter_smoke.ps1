@@ -3,7 +3,6 @@ param(
   [ValidateSet("Debug", "Release")]
   [string]$Configuration,
   [Parameter(Mandatory = $true)]
-  [string]$DiagnosticsPath,
   [string]$EvidencePath
 )
 
@@ -42,11 +41,7 @@ $primaryFailure = $null
 
 $smokeRootFullPath = [IO.Path]::GetFullPath($smokeRoot)
 $smokeRootWithSeparator = "$smokeRootFullPath$([IO.Path]::DirectorySeparatorChar)"
-if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
-  $evidenceBase = "$([IO.Path]::GetFullPath($DiagnosticsPath)).evidence"
-} else {
-  $evidenceBase = [IO.Path]::GetFullPath($EvidencePath)
-}
+$evidenceBase = [IO.Path]::GetFullPath($EvidencePath)
 if (
   [StringComparer]::OrdinalIgnoreCase.Equals($evidenceBase, $smokeRootFullPath) -or
   $evidenceBase.StartsWith($smokeRootWithSeparator, [StringComparison]::OrdinalIgnoreCase)
@@ -622,9 +617,7 @@ try {
   if (-not (Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf)) {
     throw "Windows $Configuration Flutter smoke diagnostics are unavailable."
   }
-  $destination = [IO.Path]::GetFullPath($DiagnosticsPath)
-  New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-  Copy-Item -LiteralPath $capturedDiagnostics -Destination $destination -Force
+  Save-WindowsFlutterSmokeEvidence
   $smokeSucceeded = $true
 } catch {
   $primaryFailure = $_.Exception.ToString()

@@ -2,8 +2,8 @@
 
 Flutter desktop updater plugin for macOS, Windows, and Linux.
 
-2.x uses one small update index, one release descriptor, and one verified
-artifact:
+3.0 uses one small signed update index, one signed release descriptor, and one
+verified artifact:
 
 ```text
 app-archive.json -> release.json -> app.zip / installer artifact
@@ -25,9 +25,18 @@ dependencies:
 
 Point your app at the hosted archive:
 
+Every 3.0 controller requires the expected package identity, pinned release
+keys, and an app-owned `UpdateRecoveryStore`. The snippets below use
+`appRecoveryStore` for that app-owned store.
+
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
 );
 ```
 
@@ -46,8 +55,17 @@ updates:
 Publish one platform:
 
 ```sh
-dart run desktop_updater:release publish --platform macos
+dart run desktop_updater:release publish \
+  --platform macos \
+  --public-key-id stable-2026 \
+  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
+
+Set the private-key environment variable from an external secret store and the
+public-key environment variable to the pinned JSON key map. Add
+`--initialize-feed` only when the hosted archive has been independently proven
+absent; otherwise provide the verified existing history.
 
 Before your first production release, run:
 
@@ -82,11 +100,13 @@ reusing the same helpers and trust rules. Hosts use `queryTransaction` and
 `recoverPendingInstall` after a restart. Its current merge gates require signed app-archive
 authority, owned stage provenance, explicit install target proof, mount and
 reparse rejection, a one-shot handoff, Windows Unicode paths and relative
-redirects, and Release NuGet packages with third-party notices. The current
-remediation head has not run its macOS, Windows, or Linux target-host jobs in
-CI. Windows junction/reparse and Linux mount/bind transaction mutation plus
-native transaction recovery journal work are `blocked`; signed DMG, PKG, and
-Inno smokes are `not run`. The preview therefore remains
+redirects, and Release NuGet packages with third-party notices. Target-host
+evidence is commit-bound: the audited baseline normal jobs passed, while each
+3.0 release candidate must rerun the named macOS, Windows, Linux, and Windows
+VM repetition gates for its exact commit. Windows junction/reparse and Linux
+mount/bind transaction mutation plus native transaction recovery journal work
+remain separately gated; signed DMG, PKG, and Inno smokes are `not run` until
+their credentialed lanes execute. The preview therefore remains
 `candidate-only` and is not production-ready.
 
 See [Native helper SDKs and standalone CLI](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md) for package
@@ -203,6 +223,11 @@ platform, channel, locale, account, or environment:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesLoader: (descriptor) {
     return myNotesApi.fetch(
       version: descriptor.version,
@@ -218,6 +243,11 @@ For a simple hosted file, pass `releaseNotesUrl` instead:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
 );
 ```
@@ -325,9 +355,11 @@ authenticity. The same key map verifies both `app-archive.json` and the selected
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
   trustedReleasePublicKeys: const {
     "stable-2026": "base64-raw-ed25519-public-key",
   },
+  recoveryStore: appRecoveryStore,
 );
 ```
 
@@ -336,10 +368,9 @@ update client. Each release must authenticate against one of the pinned Ed25519
 keys before policy selection or artifact download. Native install handoff also
 requires a signed `release.json` whose key is sealed into the native helper
 policy; an unsigned descriptor fails before native handoff and leaves no pending
-recovery marker.
-The low-level `DesktopUpdater.checkZipFirstUpdate` and
-`downloadZipFirstUpdate` methods accept the same key map, and callers must pass
-it to both operations.
+recovery marker. Low-level callers should keep one
+`DesktopUpdater().createZipFirstUpdateSession(...)` and use that session for
+both checking and downloading/staging.
 
 - macOS production updates should be Developer ID signed, hardened-runtime
   enabled, notarized, stapled, and Gatekeeper accepted before packaging.

@@ -25,7 +25,6 @@ import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
-import "package:flutter/services.dart";
 import "package:path/path.dart" as path;
 
 export "package:desktop_updater/src/core/update_client.dart"
@@ -726,11 +725,13 @@ class DesktopUpdaterController extends ChangeNotifier {
     final stageResult = _activeStageResult;
     final provenance = _stageProvenance;
     final provenanceSha256 = _stageProvenanceSha256;
+    final client = _client;
     if (stagingPath == null ||
         stagingPath.isEmpty ||
         stageResult == null ||
         provenance == null ||
-        provenanceSha256 == null) {
+        provenanceSha256 == null ||
+        client == null) {
       throw StateError("No downloaded update is ready to install.");
     }
 
@@ -753,16 +754,20 @@ class DesktopUpdaterController extends ChangeNotifier {
     );
     notifyListeners();
 
-    String? transactionId;
+    var dispatchAttempted = false;
     try {
       _validateNativeInstallTrust();
       final candidateTransactionId = _createInstallTransactionId();
-      transactionId = candidateTransactionId;
       final receipt = await _writePendingRecoveryMarker(
         stagingPath,
         candidateTransactionId,
       );
+      // Once the durable receipt exists, every failure from the dispatch
+      // boundary is ambiguous to the app. Keep the marker until authenticated
+      // recovery proves absence or terminal completion.
+      dispatchAttempted = true;
       await dispatchVerifiedInstall(
+        session: client,
         stageResult: stageResult,
         persistedTransaction: receipt,
       );
@@ -774,12 +779,7 @@ class DesktopUpdaterController extends ChangeNotifier {
       _state = UpdateInstalling(cleanupReport: cleanupReport);
       notifyListeners();
     } on Object catch (error) {
-      final preserveForNativeRecovery = transactionId != null &&
-          error is PlatformException &&
-          (error.code == "InstallRecoveryRequired" ||
-              (error.code == "InstallError" &&
-                  _hasRecoveryRequiredDetails(error.details)));
-      if (!preserveForNativeRecovery) {
+      if (!dispatchAttempted) {
         await _clearPendingRecoveryMarker();
       }
       _recordCleanupReport(
@@ -1216,11 +1216,6 @@ class DesktopUpdaterController extends ChangeNotifier {
     _cachedReleaseNotesKey = null;
     _releaseNotesState = const ReleaseNotesIdle();
   }
-}
-
-bool _hasRecoveryRequiredDetails(Object? details) {
-  return details is Map<Object?, Object?> &&
-      details["recoveryRequired"] == true;
 }
 
 String _normalizeControllerExpectedPackageId(String value) {

@@ -8,11 +8,15 @@ final class VerifiedPlatform extends DesktopUpdaterPlatform {
     final requiredPayload = <String>[
       request.stagingPath,
       request.expectedPackageId,
+      request.updateVersion,
+      request.updateBuildNumber?.toString() ?? "",
+      request.platform,
+      request.channel,
       request.expectedArtifactSha256,
       request.stageProvenanceSha256,
       request.transactionId,
     ];
-    assert(requiredPayload.length == 5);
+    assert(requiredPayload.length == 9);
   }
 
   @override

@@ -18,7 +18,11 @@ ArgParser buildValidateParser() {
     ..addFlag("help", abbr: "h", negatable: false)
     ..addOption("manifest")
     ..addOption("from-version")
-    ..addFlag("require-signature", negatable: false)
+    ..addFlag(
+      "candidate-only",
+      negatable: false,
+      help: "Validate an unsigned candidate without production trust checks.",
+    )
     ..addOption(
       "public-keys-env",
       help: "Environment variable containing JSON public key map.",
@@ -37,20 +41,27 @@ Future<int> runValidateCommand(
 
   final manifestFile = File(_required(results, "manifest"));
   final fromVersion = results["from-version"] as String?;
-  final requireSignature = results["require-signature"] as bool;
+  final candidateOnly = results["candidate-only"] as bool;
+  if (candidateOnly) {
+    output.writeln(
+      "candidate-only: unsigned validation; production validation "
+      "requires --public-keys-env.",
+    );
+  }
   final publicKeys = _releasePublicKeys(
     results: results,
+    candidateOnly: candidateOnly,
     environment: environment ?? Platform.environment,
   );
   await ReleaseValidator(
-    artifactVerifier: requireSignature
+    artifactVerifier: !candidateOnly
         ? ArtifactVerifier(
             policy: ArtifactVerificationPolicy.requireEd25519Signature(
               publicKeys: publicKeys!,
             ),
           )
         : const ArtifactVerifier(),
-    requireIndexSignature: requireSignature,
+    requireIndexSignature: !candidateOnly,
     indexSignatureVerifier: publicKeys == null
         ? null
         : Ed25519ReleaseIndexSignatureVerifier(publicKeys),
@@ -64,9 +75,10 @@ Future<int> runValidateCommand(
 
 Map<String, String>? _releasePublicKeys({
   required ArgResults results,
+  required bool candidateOnly,
   required Map<String, String> environment,
 }) {
-  if (!(results["require-signature"] as bool)) {
+  if (candidateOnly) {
     return null;
   }
 
@@ -174,6 +186,68 @@ class ReleaseValidator {
         await tempDir.delete(recursive: true);
       }
     }
+  }
+
+  /// Validates the frozen local publication package before manual handoff.
+  ///
+  /// Manual upload is still candidate-only when this validator is configured
+  /// without trust inputs, but the status is explicit in the caller's output.
+  Future<void> validateLocalReleaseFiles({
+    required Directory localRoot,
+    required PublishManifest manifest,
+    required StringSink output,
+  }) async {
+    final indexFile = File(path.join(localRoot.path, manifest.appArchive.path));
+    final index = ReleaseIndex.fromJson(
+      jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>,
+    );
+    final shouldVerifyIndex = requireIndexSignature;
+    if (shouldVerifyIndex &&
+        (indexSignatureVerifier == null ||
+            !await indexSignatureVerifier!.verify(index))) {
+      throw StateError("Local app-archive.json signature verification failed.");
+    }
+    final matchingItem = index.items.any(
+      (item) =>
+          item.version == manifest.release.version &&
+          item.buildNumber == manifest.release.buildNumber &&
+          item.platform == manifest.release.platform &&
+          item.channel == manifest.release.channel &&
+          item.release.toString() == manifest.release.url.toString(),
+    );
+    if (!matchingItem) {
+      throw StateError(
+        "Local app-archive.json does not contain the frozen release item.",
+      );
+    }
+    output.writeln("Local app archive: OK");
+    if (shouldVerifyIndex) {
+      output.writeln("Local app archive signature: OK");
+    }
+
+    final descriptorFile =
+        File(path.join(localRoot.path, manifest.release.path));
+    final descriptor = ReleaseDescriptor.fromJson(
+      jsonDecode(await descriptorFile.readAsString()) as Map<String, dynamic>,
+    );
+    await artifactVerifier.verifyDescriptor(descriptor);
+    _verifyDescriptorMatchesManifest(descriptor, manifest);
+    output.writeln("Local release descriptor: OK");
+
+    final artifactFile =
+        File(path.join(localRoot.path, manifest.artifact.path));
+    await artifactVerifier.verifyArtifactFile(
+      artifact: descriptor.artifact,
+      file: artifactFile,
+    );
+    output
+      ..writeln("Local artifact length: OK")
+      ..writeln("Local artifact SHA-256: OK");
+    await _validateMacOSArtifactTrust(
+      descriptor: descriptor,
+      artifactFile: artifactFile,
+      output: output,
+    );
   }
 
   Future<ReleaseDescriptor> _fetchReleaseDescriptor(

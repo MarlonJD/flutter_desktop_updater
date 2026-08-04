@@ -77,7 +77,7 @@ void main() {
     });
   });
 
-  test("installVerifiedUpdate sends exact five-entry installUpdate payload",
+  test("installVerifiedUpdate sends the complete descriptor-bound payload",
       () async {
     late MethodCall capturedCall;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -135,6 +135,7 @@ void main() {
       transactionId: "123e4567-e89b-42d3-a456-426614174000",
     );
     final request = await verifiedNativeInstallRequestFromStage(
+      session: client,
       stageResult: staged,
       receipt: persistedInstallTransactionFromExactReadback(
         written: marker,
@@ -148,6 +149,10 @@ void main() {
     expect(capturedCall.arguments, {
       "stagingPath": staged.stagingPath,
       "expectedPackageId": "com.example.app",
+      "updateVersion": "2.0.0",
+      "updateBuildNumber": 200,
+      "platform": "linux",
+      "channel": "stable",
       "expectedArtifactSha256": staged.descriptor.artifact.sha256,
       "stageProvenanceSha256": staged.stageProvenanceSha256,
       "transactionId": "123e4567-e89b-42d3-a456-426614174000",

@@ -81,6 +81,33 @@ void main() {
   });
 
   test(
+    "3.0 rejects Swift scheduleInstallAndRelaunch callers",
+    () async {
+      final result = await Process.run(
+        "swift",
+        const <String>[
+          "build",
+          "--package-path",
+          "test/fixtures/v3_removed_api/swift",
+          "--target",
+          "LegacyConsumer",
+        ],
+        runInShell: false,
+      );
+
+      expect(
+        result.exitCode,
+        isNot(0),
+        reason:
+            "Legacy Swift schedule API must not compile.\n${_output(result)}",
+      );
+      expect(_output(result), contains("scheduleInstallAndRelaunch"));
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+    skip: !Platform.isMacOS,
+  );
+
+  test(
     "3.0 rejects Swift unsigned runtime switches",
     () async {
       final result = await Process.run(

@@ -16,7 +16,7 @@ String? _customTooltip(Object error) {
   return null;
 }
 
-/// Demonstrates the desktop_updater 2.x zip-first runtime flow.
+/// Demonstrates the desktop_updater 3.0 signed zip-first runtime flow.
 class HomePage extends StatefulWidget {
   /// Creates the example home page.
   const HomePage({super.key});
@@ -39,7 +39,7 @@ class _HomePageState extends State<HomePage> {
   String _platformVersion = "Unknown platform version";
   String _appVersion = "Unknown app version";
   String _statusMessage =
-      "Ready. Configure DESKTOP_UPDATER_APP_ARCHIVE_URL with a hosted 2.x app-archive.json.";
+      "Ready. Configure DESKTOP_UPDATER_APP_ARCHIVE_URL with a hosted 3.0 signed app-archive.json.";
   bool _checkingForUpdates = false;
 
   bool get _hostedSmokeEnabled =>
@@ -62,7 +62,7 @@ class _HomePageState extends State<HomePage> {
         updateAvailableText: "Update available",
         newVersionAvailableText: "{} {} is available",
         newVersionLongText:
-            "The 2.x release descriptor points to one verified zip artifact. Download size: {} MB.",
+            "The 3.0 signed release descriptor points to one verified zip artifact. Download size: {} MB.",
         restartText: "Install update",
         warningTitleText: "Install staged update?",
         restartWarningText:
@@ -155,7 +155,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _checkingForUpdates = true;
-      _statusMessage = "Checking the 2.x release index...";
+      _statusMessage = "Checking the 3.0 signed release index...";
     });
 
     try {
@@ -172,7 +172,7 @@ class _HomePageState extends State<HomePage> {
             "Update ${descriptor.version} requires a fresh download.",
           ManualUpdateCheckBlockedBySupportPolicy(:final descriptor) =>
             "This version is no longer supported. Update ${descriptor.version} is required.",
-          ManualUpdateCheckUpToDate() => "No matching 2.x update was found.",
+          ManualUpdateCheckUpToDate() => "No matching 3.0 update was found.",
           ManualUpdateCheckFailed(:final error) =>
             "Update check failed: $error",
         };
@@ -345,7 +345,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("desktop_updater 2.x demo")),
+      appBar: AppBar(title: const Text("desktop_updater 3.0 demo")),
       body: Stack(
         children: [
           ListenableBuilder(
@@ -523,7 +523,7 @@ class _ContractCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              "This example uses the 2.x zip-first contract. The app checks an index, downloads the selected release descriptor, verifies the exact artifact, then stages it for the platform installer.",
+              "This example uses the 3.0 signed zip-first contract. The app checks a signed index, downloads the selected signed release descriptor, verifies the exact artifact, then stages it for the platform installer.",
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -542,7 +542,7 @@ class _ContractCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 2.x app-archive.json.",
+                      "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 3.0 signed app-archive.json.",
                     ),
                     SizedBox(height: 6),
                     Text(

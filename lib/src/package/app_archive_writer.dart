@@ -46,7 +46,14 @@ Future<ReleaseIndex> _readExistingIndex(
   }
 
   final json = jsonDecode(await archiveFile.readAsString());
-  return ReleaseIndex.fromJson(json as Map<String, dynamic>);
+  final index = ReleaseIndex.fromJson(json as Map<String, dynamic>);
+  if (index.signature != null) {
+    throw StateError(
+      "Cannot update a signed app-archive.json without re-signing it. "
+      "Use release publish for production metadata.",
+    );
+  }
+  return index;
 }
 
 bool _isSameReleaseSlot(ReleaseIndexItem left, ReleaseIndexItem right) {

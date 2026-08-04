@@ -931,18 +931,21 @@ jobs:
               throw "Windows debug smoke binary is not trusted: ${binary}: $($signature.Status)"
             }
           }
-      - name: Run update smoke
+      - name: Run update smoke Debug run 1
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-debug-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-debug-evidence")
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-1")
+      - name: Run update smoke Debug run 2
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-2")
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-debug-diagnostics
           path: |
-            reports/windows-update-smoke-debug-diagnostics.jsonl
-            reports/windows-update-smoke-debug-evidence
+            reports/windows-v3-debug-run-*
           if-no-files-found: ignore
       - name: Build example release
         working-directory: example
@@ -990,18 +993,21 @@ jobs:
               throw "Windows release smoke binary is not trusted: ${binary}: $($signature.Status)"
             }
           }
-      - name: Run update smoke release
+      - name: Run update smoke Release run 1
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-release-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-release-evidence")
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-1")
+      - name: Run update smoke Release run 2
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-2")
       - name: Upload update smoke release diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-release-diagnostics
           path: |
-            reports/windows-update-smoke-release-diagnostics.jsonl
-            reports/windows-update-smoke-release-evidence
+            reports/windows-v3-release-run-*
           if-no-files-found: ignore
       # The publish smoke rebuilds Release with its synthetic 9.9.9 version;
       # keep the updater smoke ahead of it so the 2.7.1 fixture remains newer
@@ -1318,7 +1324,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          output="$(swift build --package-path test/fixtures/v3_removed_api/swift 2>&1)"
+          output="$(swift build --package-path test/fixtures/v3_removed_api/swift --target LegacyConsumer 2>&1)"
           status=$?
           set -e
           printf '%s\n' "$output"
@@ -1328,6 +1334,19 @@ jobs:
           fi
           if [[ "$output" != *"scheduleInstallAndRelaunch"* ]]; then
             echo "Legacy macOS Swift fixture failed without its intended scheduleInstallAndRelaunch diagnostic." >&2
+            exit 1
+          fi
+          set +e
+          unsigned_output="$(swift build --package-path test/fixtures/v3_removed_api/swift --target LegacyUnsignedRuntimeConsumer 2>&1)"
+          unsigned_status=$?
+          set -e
+          printf '%s\n' "$unsigned_output"
+          if [ "$unsigned_status" -eq 0 ]; then
+            echo "Legacy macOS Swift unsigned consumer unexpectedly compiled." >&2
+            exit 1
+          fi
+          if [[ "$unsigned_output" != *"allowUnsignedUpdates"* ]]; then
+            echo "Legacy macOS Swift unsigned fixture failed without its intended allowUnsignedUpdates diagnostic." >&2
             exit 1
           fi
       - name: Upload macOS native helper test counts

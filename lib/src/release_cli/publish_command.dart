@@ -177,7 +177,7 @@ Future<int> runPublishCommand(
   return 0;
 }
 
-Future<ReleaseSigningOptions?> _releaseSigningOptions(
+Future<ReleaseSigningOptions> _releaseSigningOptions(
   ArgResults results, {
   required Directory projectRoot,
   required Map<String, String> environment,
@@ -191,8 +191,12 @@ Future<ReleaseSigningOptions?> _releaseSigningOptions(
   final hasFile = fileValue != null && fileValue.trim().isNotEmpty;
   final hasPublicKeysEnv =
       publicKeysEnvName != null && publicKeysEnvName.trim().isNotEmpty;
-  if (!hasKeyId && !hasEnv && !hasFile) {
-    return null;
+  if (!hasKeyId && !hasEnv && !hasFile && !hasPublicKeysEnv) {
+    throw const FormatException(
+      "Canonical release publish requires signed metadata: provide "
+      "--public-key-id, --public-keys-env, and exactly one of "
+      "--private-key-env or --private-key-file.",
+    );
   }
   if (!hasKeyId || !hasPublicKeysEnv || hasEnv == hasFile) {
     throw const FormatException(

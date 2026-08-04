@@ -174,7 +174,18 @@ const fixtureCode = "skipCheckVersion:";
     await File(path.join(fixture.path, "lib", "main.dart")).writeAsString("""
 void migrate() {
   const diagnosticsLogPath = "native.log";
+  checkZipFirstUpdate();
+  downloadZipFirstUpdate();
+  allowUnsignedMacOSUpdates = true;
+  final stagingPath = "/tmp/stage";
   scheduleInstallAndRelaunch();
+}
+""");
+    final macosSource = Directory(path.join(fixture.path, "macos"));
+    await macosSource.create(recursive: true);
+    await File(path.join(macosSource.path, "legacy.swift")).writeAsString("""
+func recover() {
+  RecoverPendingInstall()
 }
 """);
 
@@ -187,6 +198,31 @@ void migrate() {
     expect(result.hasSourceMajorMismatch, isFalse);
     expect(result.findings.map((finding) => finding.kind),
         contains(MigrationFindingKind.manualReview));
+    for (final removedApi in <String>[
+      "diagnosticsLogPath",
+      "checkZipFirstUpdate",
+      "downloadZipFirstUpdate",
+      "allowUnsignedMacOSUpdates",
+      "stagingPath",
+      "scheduleInstallAndRelaunch",
+      "RecoverPendingInstall",
+    ]) {
+      expect(
+        result.findings.any(
+          (finding) => finding.description.contains(removedApi),
+        ),
+        isTrue,
+        reason: "migration must detect $removedApi",
+      );
+    }
+    final recoveryFinding = result.findings.firstWhere(
+      (finding) => finding.description.contains("RecoverPendingInstall"),
+    );
+    expect(recoveryFinding.recommendation, contains("macOS"));
+    expect(
+      recoveryFinding.recommendation,
+      isNot(contains("Windows atomic")),
+    );
     expect(
       result.changedFiles.map((file) => path.basename(file.path)),
       contains("pubspec.yaml"),

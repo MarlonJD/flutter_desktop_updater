@@ -526,6 +526,7 @@ class ReleasePublisher {
       output: output,
       expectedRevision:
           signedHistory?.revision ?? const RemoteIndexRevision.absent(),
+      trustedReleasePublicKeys: signing?.trustedReleasePublicKeys,
     );
 
     return manifest;
@@ -1440,8 +1441,33 @@ Future<void> _uploadAndValidate({
   required ReleaseValidator validator,
   required StringSink output,
   required RemoteIndexRevision expectedRevision,
+  required Map<String, String>? trustedReleasePublicKeys,
 }) async {
   if (config is ManualUploadConfig) {
+    await validator.validateLocalReleaseFiles(
+      localRoot: localRoot,
+      manifest: manifest,
+      output: output,
+    );
+    output
+      ..writeln()
+      ..writeln(
+        validator.requireIndexSignature
+            ? "Signed manual publication package: ready for upload."
+            : "Candidate-only manual publication package: signatures are not "
+                "required.",
+      )
+      ..writeln("Frozen hosted app-archive revision: $expectedRevision")
+      ..writeln(
+        trustedReleasePublicKeys == null
+            ? "Trusted release public-key map: not configured (candidate-only)."
+            : "Trusted release public-key map: "
+                "${jsonEncode(trustedReleasePublicKeys)}",
+      )
+      ..writeln(
+        "Upload release.json and artifacts first; publish app-archive.json "
+        "last using the frozen revision above.",
+      );
     await provider.upload(
       localRoot: localRoot,
       manifest: manifest,

@@ -1125,6 +1125,12 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
   evidence.expected_provenance_sha256 = expected_provenance_sha256;
   evidence.expected_artifact_sha256 =
       WideToUtf8(request.expected_artifact_sha256);
+  evidence.expected_version = WideToUtf8(request.expected_version);
+  evidence.expected_platform = WideToUtf8(request.expected_platform);
+  evidence.expected_channel = WideToUtf8(request.expected_channel);
+  evidence.expected_build_number_present =
+      request.expected_build_number_present;
+  evidence.expected_build_number = request.expected_build_number;
   evidence.caller_process_id =
       static_cast<std::int64_t>(GetCurrentProcessId());
   evidence.caller_process_start_identity =

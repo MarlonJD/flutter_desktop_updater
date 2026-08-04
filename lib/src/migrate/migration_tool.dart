@@ -385,8 +385,8 @@ void _scanDartFindings(
         "Prefer the current DesktopUpdaterController or UpdateClient flow.",
     "updateApp":
         "Prefer `dart run desktop_updater:package` for publishing and controller download/install APIs at runtime.",
-    "versionCheck":
-        "Prefer DesktopUpdaterController.checkVersion or checkZipFirstUpdate.",
+    "versionCheck": "Prefer DesktopUpdaterController.checkVersion or "
+        "DesktopUpdater().createZipFirstUpdateSession(...).checkForUpdate().",
   };
   for (final entry in lowLevelApis.entries) {
     final matches = RegExp("\\b${entry.key}\\b").allMatches(content);
@@ -410,6 +410,18 @@ void _scanDartFindings(
           "Pinned release keys are mandatory in 3.0; remove the optional flag.",
       "requireDescriptorSignature":
           "Pinned release keys are mandatory in 3.0; remove the optional flag.",
+      "checkZipFirstUpdate":
+          "Use one createZipFirstUpdateSession(...), then call checkForUpdate().",
+      "downloadZipFirstUpdate":
+          "Use the same session's downloadVerifyAndStage(checkResult: ...) flow.",
+      "allowUnsignedMacOSUpdates":
+          "Remove unsigned macOS updates; sign and notarize the production artifact.",
+      "allowUnsignedUpdates":
+          "Remove unsigned updates and configure trustedReleasePublicKeys.",
+      "stagingPath":
+          "Do not install a raw staged path; stage through the owner session and call controller.restartApp().",
+      "installUpdate":
+          "Remove raw staged installation and call controller.restartApp() only after a verified stage.",
       "installAndRelaunch":
           "Use explicit prepare, commit-after-exit, cancel, and query operations.",
       "scheduleInstallAndRelaunch":
@@ -422,6 +434,8 @@ void _scanDartFindings(
           "Elevation policy is installer-owned; remove caller-provided elevation controls.",
       "desktop_updater_schedule_install":
           "The native schedule ABI was removed; migrate to explicit transaction calls.",
+      "desktop_updater_schedule_install_and_relaunch_v1":
+          "The native schedule ABI was removed; migrate to ABI2 prepare/commit/query operations.",
       "desktop_updater_prepare_install_v2":
           "The ABI1 tombstone is not a 3.0 public API; migrate to the versioned ABI2 surface.",
     };
@@ -433,8 +447,11 @@ void _scanDartFindings(
             location: _offsetLocation(file, content, match.start),
             description:
                 "2.x API or native contract `${entry.key}` needs a 3.0 review.",
-            recommendation:
-                "${entry.value} See $desktopUpdaterMigrationGuideV2To3",
+            recommendation: _migrationRecommendation(
+              file: file,
+              api: entry.key,
+              text: entry.value,
+            ),
           ),
         );
       }
@@ -461,11 +478,78 @@ Future<void> _scanTextFile(
           location: _offsetLocation(file, content, match.start),
           description: "Old CLI command `$command` is still referenced.",
           recommendation:
-              "Migrate publishing scripts to `dart run desktop_updater:package` and verify with `dart run desktop_updater:verify --release <release.json>`. See ${migrationGuideFor(fromMajor)}.",
+              "Migrate publishing scripts to `dart run desktop_updater:package` and verify with `dart run desktop_updater:verify --release <release.json> --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS`. See ${migrationGuideFor(fromMajor)}.",
         ),
       );
     }
   }
+
+  if (fromMajor != 2) {
+    return;
+  }
+
+  const removedNativeApis = <String, String>{
+    "checkZipFirstUpdate":
+        "Use one createZipFirstUpdateSession(...), then checkForUpdate().",
+    "downloadZipFirstUpdate":
+        "Use the same session's downloadVerifyAndStage(checkResult: ...) flow.",
+    "allowUnsignedMacOSUpdates":
+        "Remove unsigned macOS updates; sign and notarize the production artifact.",
+    "allowUnsignedUpdates":
+        "Remove unsigned updates and configure trusted release public keys.",
+    "diagnosticsLogPath":
+        "Diagnostics are app-owned in 3.0; remove the native diagnostics path.",
+    "stagingPath":
+        "Do not install a raw staged path; use the verified controller handoff.",
+    "installUpdate":
+        "Remove raw staged installation and use controller.restartApp() after verification.",
+    "scheduleInstallAndRelaunch":
+        "Use explicit prepare/commit/query operations for the target platform.",
+    "desktop_updater_schedule_install_and_relaunch_v1":
+        "Use the Windows ABI2 prepare/commit/query operations.",
+    "RecoverPendingInstall":
+        "Use authenticated query followed by the platform-specific recovery operation.",
+  };
+  for (final entry in removedNativeApis.entries) {
+    for (final match in RegExp("\\b${entry.key}\\b").allMatches(content)) {
+      findings.add(
+        MigrationFinding(
+          kind: MigrationFindingKind.manualReview,
+          location: _offsetLocation(file, content, match.start),
+          description:
+              "2.x API or native contract `${entry.key}` needs a 3.0 review.",
+          recommendation: _migrationRecommendation(
+            file: file,
+            api: entry.key,
+            text: entry.value,
+          ),
+        ),
+      );
+    }
+  }
+}
+
+String _migrationRecommendation({
+  required File file,
+  required String api,
+  required String text,
+}) {
+  final normalized = file.path.replaceAll("\\", "/").toLowerCase();
+  final platformAdvice = api == "RecoverPendingInstall"
+      ? normalized.contains("/windows/") || normalized.contains("windows-")
+          ? "Windows recovery uses authenticated query and "
+              "resolvePendingInstallTransactionAfterExit; do not call a mutating "
+              "legacy recovery API."
+          : normalized.contains("/macos/") || normalized.endsWith(".swift")
+              ? "macOS recovery uses authenticated queryTransaction followed by "
+                  "recoverPendingInstall; retain the marker until terminal proof."
+              : normalized.contains("/linux/")
+                  ? "Linux recovery uses authenticated query followed by the "
+                      "platform recovery capability; retain the marker until terminal proof."
+                  : "Use the platform recovery capability: Windows resolves "
+                      "after exit; macOS/Linux query then recover."
+      : null;
+  return "${platformAdvice ?? text} See $desktopUpdaterMigrationGuideV2To3";
 }
 
 MigrationLocation _firstLocation(File file, String content, String needle) {
@@ -541,5 +625,11 @@ bool _isInspectableTextFile(File file) {
     ".ps1",
     ".bat",
     ".cmd",
+    ".swift",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".h",
+    ".cs",
   }.contains(extension);
 }

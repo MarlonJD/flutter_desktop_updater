@@ -56,6 +56,10 @@ Future<int> runPackageCommand(
   out
     ..writeln("Artifact: ${result.artifact.path}")
     ..writeln("Release: ${result.releaseFile.path}")
+    ..writeln(
+      "candidate-only: release.json is unsigned; use release publish or "
+      "the signing command before production use.",
+    )
     ..writeln("app-archive.json item release: ${result.releaseFile.uri}");
   return 0;
 }

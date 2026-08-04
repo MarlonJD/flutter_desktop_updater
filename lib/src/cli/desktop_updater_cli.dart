@@ -37,7 +37,11 @@ Future<int> runDesktopUpdaterCli(
       case "package":
         return await runPackageCommand(commandArgs, output: out);
       case "verify":
-        return await runVerifyCommand(commandArgs, output: out);
+        return await runVerifyCommand(
+          commandArgs,
+          output: out,
+          environment: environment,
+        );
       case "app-archive":
         await runAppArchiveCommand(commandArgs, output: out);
         return 0;

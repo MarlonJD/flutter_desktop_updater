@@ -193,12 +193,8 @@ void main() {
       runner.lastIndexOf(r"Save-WindowsFlutterSmokeEvidence"),
       lessThan(runner.lastIndexOf(r"Remove-Item -LiteralPath $smokeRoot")),
     );
-    expect(
-      runner,
-      contains(
-        r"Copy-Item -LiteralPath $capturedDiagnostics -Destination $destination -Force",
-      ),
-    );
+    expect(runner, isNot(contains("DiagnosticsPath")));
+    expect(runner, contains(r"Save-WindowsFlutterSmokeEvidence"));
     expect(
       runner,
       isNot(
@@ -214,13 +210,25 @@ void main() {
     expect(
       workflow,
       contains(
-        r'-Configuration Debug -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-debug-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-debug-evidence")',
+        r'-Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-1")',
       ),
     );
     expect(
       workflow,
       contains(
-        r'-Configuration Release -DiagnosticsPath (Join-Path $PWD "reports/windows-update-smoke-release-diagnostics.jsonl") -EvidencePath (Join-Path $PWD "reports/windows-update-smoke-release-evidence")',
+        r'-Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-2")',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'-Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-1")',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'-Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-2")',
       ),
     );
     expect(
@@ -233,8 +241,7 @@ void main() {
           r"with:\s*"
           r"name: windows-update-smoke-debug-diagnostics\s*"
           r"path:\s*\|\s*"
-          r"reports/windows-update-smoke-debug-diagnostics\.jsonl\s*"
-          r"reports/windows-update-smoke-debug-evidence",
+          r"reports/windows-v3-debug-run-*",
         ),
       ),
     );
@@ -248,8 +255,7 @@ void main() {
           r"with:\s*"
           r"name: windows-update-smoke-release-diagnostics\s*"
           r"path:\s*\|\s*"
-          r"reports/windows-update-smoke-release-diagnostics\.jsonl\s*"
-          r"reports/windows-update-smoke-release-evidence",
+          r"reports/windows-v3-release-run-*",
         ),
       ),
     );
@@ -317,10 +323,7 @@ void main() {
     );
     expect(
       workflow,
-      contains(
-        r"-DiagnosticsPath (Join-Path $PWD "
-        '"reports/windows-update-smoke-release-diagnostics.jsonl")',
-      ),
+      isNot(contains("-DiagnosticsPath")),
     );
     expect(workflow, contains("actions/upload-artifact@v4"));
     expect(

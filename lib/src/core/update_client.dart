@@ -39,6 +39,8 @@ final class RetainedVerifiedStage {
     required this.stageRoot,
     required this.stagingPath,
     required this.state,
+    required this.ownerToken,
+    required this.generation,
   });
 
   /// Canonical owned stage root containing the provenance marker.
@@ -49,12 +51,20 @@ final class RetainedVerifiedStage {
 
   /// Verified marker digest and immutable provenance inventory.
   final StagedUpdateProvenanceState state;
+
+  /// Opaque client identity that owns this retained stage.
+  final Object ownerToken;
+
+  /// Check generation that produced this retained stage.
+  final int generation;
 }
 
 Future<void> _retainVerifiedStage({
   required Directory stageRoot,
   required String stagingPath,
   required StagedUpdateProvenanceState state,
+  required Object ownerToken,
+  required int generation,
 }) async {
   final canonicalRoot = path.normalize(await stageRoot.resolveSymbolicLinks());
   final canonicalStagingPath =
@@ -63,6 +73,8 @@ Future<void> _retainVerifiedStage({
     stageRoot: canonicalRoot,
     stagingPath: canonicalStagingPath,
     state: state,
+    ownerToken: ownerToken,
+    generation: generation,
   );
   _verifiedStages[canonicalRoot] = retained;
   _verifiedStages[canonicalStagingPath] = retained;
@@ -76,9 +88,16 @@ Future<void> _retainVerifiedStage({
 Future<RetainedVerifiedStage> claimRetainedVerifiedStageForDispatch({
   required UpdateStageResult stageResult,
   required String expectedPackageId,
+  required Object ownerToken,
+  required int generation,
 }) async {
   if (stageResult._claimedForDispatch) {
     throw StateError("Staged update has already been claimed for dispatch.");
+  }
+  if (!identical(stageResult._ownerToken, ownerToken) ||
+      stageResult._generation != generation) {
+    stageResult._claimedForDispatch = true;
+    throw StateError("Staged update belongs to a different update session.");
   }
   stageResult._claimedForDispatch = true;
   if (stageResult.descriptor.packageId != expectedPackageId) {
@@ -98,6 +117,8 @@ Future<RetainedVerifiedStage> claimRetainedVerifiedStageForDispatch({
   );
   final retained = _verifiedStages[canonical];
   if (retained == null ||
+      !identical(retained.ownerToken, ownerToken) ||
+      retained.generation != generation ||
       retained.state.markerSha256 != stageResult.stageProvenanceSha256 ||
       retained.state.provenance.canonicalJson !=
           stageResult.stageProvenance.canonicalJson) {
@@ -123,7 +144,6 @@ class UpdateClient {
     this.channel = "stable",
     UpdateRequestHeadersProvider? requestHeadersProvider,
     UpdateTransport? transport,
-    ArtifactVerifier? verifier,
     SafeZipExtractor extractor = const SafeZipExtractor(),
     Directory? stagingParent,
     ProcessRunner runProcess = defaultProcessRunner,
@@ -142,14 +162,11 @@ class UpdateClient {
             CompositeUpdateTransport(
               requestHeadersProvider: requestHeadersProvider,
             ),
-        _verifier = verifier ??
-            ArtifactVerifier(
-              policy: ArtifactVerificationPolicy.requireEd25519Signature(
-                publicKeys: normalizeReleasePublicKeys(
-                  trustedReleasePublicKeys,
-                ),
-              ),
-            ),
+        _verifier = ArtifactVerifier(
+          policy: ArtifactVerificationPolicy.requireEd25519Signature(
+            publicKeys: normalizeReleasePublicKeys(trustedReleasePublicKeys),
+          ),
+        ),
         _extractor = extractor,
         _stagingParent = stagingParent,
         _runProcess = runProcess,
@@ -182,6 +199,9 @@ class UpdateClient {
 
   /// Stable app-owned identity used for deterministic staged rollouts.
   final String? installationIdentity;
+
+  /// Opaque identity used to bind staged results to this client session.
+  Object get ownerTokenForDispatch => _ownerToken;
 
   final Object _ownerToken = Object();
   int _checkGeneration = 0;
@@ -324,7 +344,8 @@ class UpdateClient {
     required UpdateCheckResult checkResult,
     void Function(int receivedBytes, int? totalBytes)? onProgress,
   }) async {
-    final descriptor = _claimCheckResult(checkResult).descriptor;
+    final claimedCheck = _claimCheckResult(checkResult);
+    final descriptor = claimedCheck.descriptor;
     await _verifier.verifyDescriptor(descriptor);
     if (descriptor.packageId != expectedPackageId) {
       throw StateError(
@@ -393,6 +414,8 @@ class UpdateClient {
           stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
           nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
@@ -424,6 +447,8 @@ class UpdateClient {
           stagingRoot: stagingRoot,
           stagingPath: stagedApp.path,
           nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
@@ -450,6 +475,8 @@ class UpdateClient {
           stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
           nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
@@ -492,6 +519,8 @@ class UpdateClient {
         stagingRoot: stagingRoot,
         stagingPath: stagedPath,
         nonce: stagingNonce,
+        ownerToken: _ownerToken,
+        generation: claimedCheck._generation,
       );
     } catch (_) {
       if (await stagingRoot.exists()) {
@@ -506,6 +535,8 @@ class UpdateClient {
     required Directory stagingRoot,
     required String stagingPath,
     required String nonce,
+    required Object ownerToken,
+    required int generation,
   }) async {
     final state = await writeStagedUpdateProvenance(
       stageRoot: stagingRoot,
@@ -518,12 +549,16 @@ class UpdateClient {
       stageRoot: stagingRoot,
       stagingPath: stagingPath,
       state: state,
+      ownerToken: ownerToken,
+      generation: generation,
     );
     return UpdateStageResult._(
       descriptor: descriptor,
       stagingPath: stagingPath,
       stageProvenanceSha256: state.markerSha256,
       stageProvenance: state.provenance,
+      ownerToken: ownerToken,
+      generation: generation,
     );
   }
 
@@ -657,9 +692,14 @@ final class UpdateStageResult {
     required this.stagingPath,
     required this.stageProvenanceSha256,
     required this.stageProvenance,
-  });
+    required Object ownerToken,
+    required int generation,
+  })  : _ownerToken = ownerToken,
+        _generation = generation;
 
   bool _claimedForDispatch = false;
+  final Object _ownerToken;
+  final int _generation;
 
   /// Descriptor that was downloaded and staged.
   final ReleaseDescriptor descriptor;
@@ -672,6 +712,12 @@ final class UpdateStageResult {
 
   /// Immutable inventory retained with the verified stage state.
   final StagedUpdateProvenance stageProvenance;
+
+  /// Opaque client identity that owns this staged result.
+  Object get ownerTokenForDispatch => _ownerToken;
+
+  /// Check generation that produced this staged result.
+  int get generationForDispatch => _generation;
 }
 
 String _normalizeExpectedPackageId(String value) {

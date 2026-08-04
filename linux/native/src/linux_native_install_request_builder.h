@@ -34,6 +34,11 @@ struct LinuxNativeInstallEvidenceV1 {
   std::string stage_path_hint;
   std::string expected_provenance_sha256;
   std::string expected_artifact_sha256;
+  std::string expected_version;
+  std::string expected_platform;
+  std::string expected_channel;
+  bool expected_build_number_present = false;
+  std::int64_t expected_build_number = 0;
   std::int64_t caller_process_id = 0;
   std::string caller_process_start_identity;
   std::string caller_executable_sha256;

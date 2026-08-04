@@ -29,6 +29,12 @@ struct InstallRequest {
   std::vector<std::wstring> removed_files;
   std::wstring expected_provenance_sha256;
   std::wstring expected_artifact_sha256;
+  // Full signed descriptor bindings supplied by the app-owned handoff.
+  std::wstring expected_version;
+  std::wstring expected_platform;
+  std::wstring expected_channel;
+  bool expected_build_number_present = false;
+  std::int64_t expected_build_number = 0;
 };
 
 struct InstallResult {

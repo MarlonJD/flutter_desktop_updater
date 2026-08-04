@@ -99,6 +99,18 @@ sealed class VerifiedNativeInstallRequest {
   /// Expected package identity from signed metadata and durable receipt.
   String get expectedPackageId;
 
+  /// Expected update version from signed metadata and durable receipt.
+  String get updateVersion;
+
+  /// Nullable expected update build number from signed metadata and receipt.
+  int? get updateBuildNumber;
+
+  /// Expected target platform from signed metadata and durable receipt.
+  String get platform;
+
+  /// Expected release channel from signed metadata and durable receipt.
+  String get channel;
+
   /// Expected artifact SHA-256 from the signed descriptor.
   String get expectedArtifactSha256;
 
@@ -113,6 +125,10 @@ final class _VerifiedNativeInstallRequest extends VerifiedNativeInstallRequest {
   const _VerifiedNativeInstallRequest({
     required this.stagingPath,
     required this.expectedPackageId,
+    required this.updateVersion,
+    required this.updateBuildNumber,
+    required this.platform,
+    required this.channel,
     required this.expectedArtifactSha256,
     required this.stageProvenanceSha256,
     required this.transactionId,
@@ -122,6 +138,14 @@ final class _VerifiedNativeInstallRequest extends VerifiedNativeInstallRequest {
   final String stagingPath;
   @override
   final String expectedPackageId;
+  @override
+  final String updateVersion;
+  @override
+  final int? updateBuildNumber;
+  @override
+  final String platform;
+  @override
+  final String channel;
   @override
   final String expectedArtifactSha256;
   @override
@@ -201,16 +225,32 @@ final class AtomicAfterExitNativeInstallRecovery extends NativeInstallRecovery {
 
 /// Claims a staged result and receipt for exactly one native dispatch.
 Future<VerifiedNativeInstallRequest> verifiedNativeInstallRequestFromStage({
+  required UpdateClient session,
   required UpdateStageResult stageResult,
   required PersistedInstallTransaction receipt,
 }) async {
   final retained = await claimRetainedVerifiedStageForDispatch(
     stageResult: stageResult,
     expectedPackageId: receipt.expectedPackageId,
+    ownerToken: session.ownerTokenForDispatch,
+    generation: stageResult.generationForDispatch,
   );
+  final descriptor = stageResult.descriptor;
+  if (descriptor.packageId != receipt.expectedPackageId ||
+      descriptor.version != receipt.updateVersion ||
+      descriptor.buildNumber != receipt.updateBuildNumber ||
+      descriptor.platform != receipt.platform ||
+      descriptor.channel != receipt.channel) {
+    throw StateError(
+      "Persisted install transaction does not match the signed release "
+      "descriptor.",
+    );
+  }
   if (retained.stagingPath != receipt.stagingPath ||
       retained.state.markerSha256 != receipt.stageProvenanceSha256 ||
-      stageResult.stageProvenanceSha256 != receipt.stageProvenanceSha256) {
+      stageResult.stageProvenanceSha256 != receipt.stageProvenanceSha256 ||
+      retained.state.provenance.packageId != descriptor.packageId ||
+      retained.state.provenance.artifactSha256 != descriptor.artifact.sha256) {
     throw StateError(
       "Persisted install transaction does not match the verified stage.",
     );
@@ -218,7 +258,11 @@ Future<VerifiedNativeInstallRequest> verifiedNativeInstallRequestFromStage({
   return _VerifiedNativeInstallRequest(
     stagingPath: receipt.stagingPath,
     expectedPackageId: receipt.expectedPackageId,
-    expectedArtifactSha256: stageResult.descriptor.artifact.sha256,
+    updateVersion: receipt.updateVersion,
+    updateBuildNumber: receipt.updateBuildNumber,
+    platform: receipt.platform,
+    channel: receipt.channel,
+    expectedArtifactSha256: descriptor.artifact.sha256,
     stageProvenanceSha256: receipt.stageProvenanceSha256,
     transactionId: receipt.transactionId,
   );
@@ -226,10 +270,12 @@ Future<VerifiedNativeInstallRequest> verifiedNativeInstallRequestFromStage({
 
 /// Claims a verified stage and dispatches the resulting typed request.
 Future<void> dispatchVerifiedInstall({
+  required UpdateClient session,
   required UpdateStageResult stageResult,
   required PersistedInstallTransaction persistedTransaction,
 }) async {
   final request = await verifiedNativeInstallRequestFromStage(
+    session: session,
     stageResult: stageResult,
     receipt: persistedTransaction,
   );

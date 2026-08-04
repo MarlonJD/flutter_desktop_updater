@@ -21,6 +21,18 @@ final class PersistedInstallTransaction {
 
   /// Stage provenance digest bound to the marker.
   String get stageProvenanceSha256 => marker.stageProvenanceSha256!;
+
+  /// Update version bound to the durable marker.
+  String get updateVersion => marker.updateVersion!;
+
+  /// Nullable update build number bound to the durable marker.
+  int? get updateBuildNumber => marker.updateBuildNumber;
+
+  /// Target platform bound to the durable marker.
+  String get platform => marker.platform;
+
+  /// Release channel bound to the durable marker.
+  String get channel => marker.channel;
 }
 
 /// Creates a persistence receipt only after exact marker readback.

@@ -47,6 +47,7 @@ void main() {
         output.toString(),
         contains("app-archive.json updated: ${archive.path}"),
       );
+      expect(output.toString(), contains("candidate-only"));
     } finally {
       await tempDir.delete(recursive: true);
     }
