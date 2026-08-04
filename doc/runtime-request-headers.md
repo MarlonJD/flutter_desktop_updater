@@ -6,6 +6,11 @@ host that requires runtime-owned authentication headers.
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   requestHeadersProvider: (source) async {
     final token = await myAuth.currentUpdateToken();
     return {"authorization": "Bearer $token"};
@@ -35,6 +40,11 @@ hosted release notes document:
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   requestHeadersProvider: (source) async {
     final token = await myAuth.currentUpdateToken();
     return {"authorization": "Bearer $token"};
@@ -49,6 +59,11 @@ when release notes live behind a different auth boundary:
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   requestHeadersProvider: (source) async {
     if (source.path.endsWith("release-notes.json")) {
       return {"x-notes-auth": await myAuth.currentReleaseNotesToken()};

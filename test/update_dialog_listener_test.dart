@@ -1,7 +1,10 @@
 import "package:desktop_updater/desktop_updater.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
+
+import "fixtures/controller_v3_test_support.dart";
 
 void main() {
   testWidgets(
@@ -200,6 +203,53 @@ void main() {
 
     expect(find.byType(AlertDialog), findsNothing);
   });
+
+  testWidgets(
+    "approval failure dialog explains permission and exposes recovery actions",
+    (tester) async {
+      final controller = _TestDesktopUpdaterController()
+        ..showApprovalRequired();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return TextButton(
+                  onPressed: () {
+                    showUpdateDialog<void>(context, controller: controller);
+                  },
+                  child: const Text("Show update"),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text("Show update"));
+      await tester.pumpAndSettle();
+
+      expect(find.text("Administrator approval required"), findsOneWidget);
+      expect(
+        find.text(
+          "Allow this app to run in the background in System Settings > "
+          "General > Login Items & Extensions, then try the update again.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text("Open settings"), findsOneWidget);
+      expect(find.text("Try again"), findsOneWidget);
+
+      await tester.tap(find.text("Open settings"));
+      await tester.pump();
+      expect(controller.openSettingsCallCount, 1);
+
+      await tester.tap(find.text("Try again"));
+      await tester.pump();
+      expect(controller.restartAppCallCount, 1);
+    },
+  );
 }
 
 Widget _buildTestApp(
@@ -267,12 +317,16 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
   _TestDesktopUpdaterController()
       : super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
         );
 
   bool _skipUpdate = false;
   UpdateState _state = const UpdateIdle();
   int restartAppCallCount = 0;
+  int openSettingsCallCount = 0;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
     schemaVersion: 3,
@@ -332,6 +386,17 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
     notifyListeners();
   }
 
+  void showApprovalRequired() {
+    _state = UpdateFailed(
+      PlatformException(
+        code: "PrivilegedHelperApprovalRequired",
+        message: "Administrator approval is required.",
+      ),
+      report: _testProblemReport(),
+    );
+    notifyListeners();
+  }
+
   @override
   Future<void> makeSkipUpdate() async {
     _skipUpdate = true;
@@ -341,6 +406,11 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
   @override
   Future<void> restartApp() async {
     restartAppCallCount += 1;
+  }
+
+  @override
+  Future<void> openMacOSBackgroundItemsSettings() async {
+    openSettingsCallCount += 1;
   }
 }
 

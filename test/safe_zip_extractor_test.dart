@@ -24,6 +24,18 @@ void main() {
     );
   });
 
+  test("rejects updater control-plane files at the archive root", () async {
+    for (final fileName in <String>[
+      ".desktop_updater_artifact.zip",
+      ".DESKTOP_UPDATER_RELEASE_MANIFEST.JSON",
+      ".desktop_updater_stage_provenance.json",
+    ]) {
+      await _expectZipRejected(
+        Archive()..addFile(ArchiveFile.string(fileName, "x")),
+      );
+    }
+  });
+
   test("accepts nested valid paths", () async {
     final tempDir = await Directory.systemTemp.createTemp("zip_extract_");
     try {

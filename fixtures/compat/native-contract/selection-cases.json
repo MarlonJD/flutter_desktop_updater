@@ -1,0 +1,812 @@
+{
+  "schemaVersion": 1,
+  "parityCases": [
+    {
+      "name": "rollout identity trims surrounding whitespace",
+      "identity": " fixture-device-0 ",
+      "expectedNormalizedIdentity": "fixture-device-0"
+    },
+    {
+      "name": "whitespace-only rollout identity is absent",
+      "identity": " ",
+      "expectedSelectedVersion": null
+    },
+    {
+      "name": "minimum OS keys and values are trimmed",
+      "minimumOS": {
+        " macos ": " 13.0 "
+      },
+      "expectedMinimumOS": {
+        "macos": "13.0"
+      }
+    },
+    {
+      "name": "hyphen is valid inside prerelease identifier",
+      "candidate": "2.8.0-beta-hotfix.1",
+      "current": "2.8.0-beta.1"
+    },
+    {
+      "name": "first numeric build metadata component is the build number",
+      "candidate": "2.7.0+271.sha",
+      "current": "2.7.0+270.sha"
+    },
+    {
+      "name": "ISO offset and UTC deadline represent the same instant",
+      "left": "2026-07-10T03:00:00+03:00",
+      "right": "2026-07-10T00:00:00Z"
+    },
+    {
+      "name": "same-second fractional deadline remains warning",
+      "now": "2026-07-10T00:00:00.100Z",
+      "deadline": "2026-07-10T00:00:00.900Z",
+      "expectedOutcome": "supportPolicyWarning"
+    }
+  ],
+  "indexValidationCases": [
+    {
+      "name": "missing index channel defaults to stable",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.8.0",
+            "buildNumber": 280,
+            "platform": "macos",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.8.0/macos/stable/release.json"
+          }
+        ]
+      },
+      "expectedValid": true,
+      "expectedChannel": "stable"
+    },
+    {
+      "name": "present blank index channel is rejected",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.8.0",
+            "buildNumber": 280,
+            "platform": "macos",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.8.0/macos/stable/release.json",
+            "channel": " "
+          }
+        ]
+      },
+      "expectedValid": false
+    },
+    {
+      "name": "whitespace-only rollout salt",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.9.0",
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/macos/stable/release.json",
+            "rollout": {
+              "percentage": 50,
+              "salt": " \n "
+            }
+          }
+        ]
+      },
+      "expectedValid": false
+    }
+  ],
+  "versionComparisons": [
+    {
+      "name": "newer build number wins",
+      "candidate": "2.7.0+271",
+      "current": "2.7.0+270",
+      "expectedSign": 1
+    },
+    {
+      "name": "older build number loses",
+      "candidate": "3.0.0+100",
+      "current": "2.7.0+270",
+      "expectedSign": -1
+    },
+    {
+      "name": "stable follows prerelease",
+      "candidate": "2.8.0",
+      "current": "2.8.0-beta.1",
+      "expectedSign": 1
+    },
+    {
+      "name": "prerelease precedes stable",
+      "candidate": "2.8.0-beta.1",
+      "current": "2.8.0",
+      "expectedSign": -1
+    }
+  ],
+  "rolloutCases": [
+    {
+      "name": "zero percent excludes",
+      "percentage": 0,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": "fixture-device-245",
+      "bucket": 0,
+      "expectedIncluded": false
+    },
+    {
+      "name": "one percent includes bucket zero",
+      "percentage": 1,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": "fixture-device-245",
+      "bucket": 0,
+      "expectedIncluded": true
+    },
+    {
+      "name": "one percent excludes bucket one",
+      "percentage": 1,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": "fixture-device-90",
+      "bucket": 1,
+      "expectedIncluded": false
+    },
+    {
+      "name": "fifty percent includes bucket forty-nine",
+      "percentage": 50,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": "fixture-device-71",
+      "bucket": 49,
+      "expectedIncluded": true
+    },
+    {
+      "name": "fifty percent excludes bucket fifty",
+      "percentage": 50,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": "fixture-device-194",
+      "bucket": 50,
+      "expectedIncluded": false
+    },
+    {
+      "name": "one hundred percent includes without identity",
+      "percentage": 100,
+      "salt": "native-contract-rollout",
+      "channel": "stable",
+      "identity": null,
+      "bucket": null,
+      "expectedIncluded": true
+    }
+  ],
+  "selectionCases": [
+    {
+      "name": "platform filtering",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "3.0.0",
+            "buildNumber": 300,
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/3.0.0/macos/stable/release.json"
+          },
+          {
+            "version": "2.9.0",
+            "buildNumber": 290,
+            "platform": "windows",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/windows/stable/release.json"
+          },
+          {
+            "version": "2.8.0-beta.2",
+            "platform": "macos",
+            "channel": "beta",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.8.0-beta.2/macos/beta/release.json"
+          }
+        ]
+      },
+      "platform": "windows",
+      "channel": "stable",
+      "currentVersion": "2.7.0",
+      "identity": null,
+      "selectedVersion": "2.9.0",
+      "selectedBuildNumber": 290,
+      "selectedPlatform": "windows",
+      "selectedChannel": "stable",
+      "selectedRelease": "https://updates.example.test/releases/2.9.0/windows/stable/release.json"
+    },
+    {
+      "name": "channel filtering",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "3.0.0",
+            "buildNumber": 300,
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/3.0.0/macos/stable/release.json"
+          },
+          {
+            "version": "2.9.0",
+            "buildNumber": 290,
+            "platform": "windows",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/windows/stable/release.json"
+          },
+          {
+            "version": "2.8.0-beta.2",
+            "platform": "macos",
+            "channel": "beta",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.8.0-beta.2/macos/beta/release.json"
+          }
+        ]
+      },
+      "platform": "macos",
+      "channel": "beta",
+      "currentVersion": "2.7.0",
+      "identity": null,
+      "selectedVersion": "2.8.0-beta.2",
+      "selectedBuildNumber": null,
+      "selectedPlatform": "macos",
+      "selectedChannel": "beta",
+      "selectedRelease": "https://updates.example.test/releases/2.8.0-beta.2/macos/beta/release.json"
+    },
+    {
+      "name": "build-number tiebreaker",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.7.0",
+            "buildNumber": 271,
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+          },
+          {
+            "version": "2.7.0",
+            "buildNumber": 272,
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+          }
+        ]
+      },
+      "platform": "macos",
+      "channel": "stable",
+      "currentVersion": "2.7.0+270",
+      "identity": null,
+      "selectedVersion": "2.7.0",
+      "selectedBuildNumber": 272,
+      "selectedPlatform": "macos",
+      "selectedChannel": "stable",
+      "selectedRelease": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+    },
+    {
+      "name": "stable release follows prerelease",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.8.0",
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.8.0/macos/stable/release.json"
+          }
+        ]
+      },
+      "platform": "macos",
+      "channel": "stable",
+      "currentVersion": "2.8.0-beta.1",
+      "identity": null,
+      "selectedVersion": "2.8.0",
+      "selectedBuildNumber": null,
+      "selectedPlatform": "macos",
+      "selectedChannel": "stable",
+      "selectedRelease": "https://updates.example.test/releases/2.8.0/macos/stable/release.json"
+    },
+    {
+      "name": "rollout identity inside cohort",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.9.0",
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/macos/stable/release.json",
+            "rollout": {
+              "percentage": 50,
+              "salt": "native-contract-rollout"
+            }
+          }
+        ]
+      },
+      "platform": "macos",
+      "channel": "stable",
+      "currentVersion": "2.8.0",
+      "identity": "fixture-device-71",
+      "selectedVersion": "2.9.0",
+      "selectedBuildNumber": null,
+      "selectedPlatform": "macos",
+      "selectedChannel": "stable",
+      "selectedRelease": "https://updates.example.test/releases/2.9.0/macos/stable/release.json"
+    },
+    {
+      "name": "rollout identity outside cohort",
+      "index": {
+        "schemaVersion": 3,
+        "appName": "Example.app",
+        "items": [
+          {
+            "version": "2.9.0",
+            "platform": "macos",
+            "channel": "stable",
+            "mandatory": false,
+            "release": "https://updates.example.test/releases/2.9.0/macos/stable/release.json",
+            "rollout": {
+              "percentage": 50,
+              "salt": "native-contract-rollout"
+            }
+          }
+        ]
+      },
+      "platform": "macos",
+      "channel": "stable",
+      "currentVersion": "2.8.0",
+      "identity": "fixture-device-194",
+      "selectedVersion": null,
+      "selectedBuildNumber": null,
+      "selectedPlatform": null,
+      "selectedChannel": null,
+      "selectedRelease": null
+    }
+  ],
+  "minimumUpdaterCases": [
+    {
+      "current": "2.7.0",
+      "required": "2.6.0",
+      "expectedSupported": true,
+      "expectedOutcome": "updateAvailable"
+    },
+    {
+      "current": "2.7.0",
+      "required": "2.7.0",
+      "expectedSupported": true,
+      "expectedOutcome": "updateAvailable"
+    },
+    {
+      "current": "2.7.0",
+      "required": "2.8.0",
+      "expectedSupported": false,
+      "expectedOutcome": "unsupportedMinimumUpdater"
+    }
+  ],
+  "minimumOSCases": [
+    {
+      "name": "matching platform rejected by callback",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "platform": "macos",
+      "callbackResult": false,
+      "expectedAllowed": false,
+      "expectedOutcome": "unsupportedMinimumOS"
+    },
+    {
+      "name": "matching platform accepted by callback",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "platform": "macos",
+      "callbackResult": true,
+      "expectedAllowed": true,
+      "expectedOutcome": "updateAvailable"
+    },
+    {
+      "name": "missing platform policy remains allowed",
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "platform": "windows",
+      "callbackResult": false,
+      "expectedAllowed": true,
+      "expectedOutcome": "updateAvailable"
+    }
+  ],
+  "supportPolicyCases": [
+    {
+      "policy": {
+        "minimumSupportedVersion": "2.7.0",
+        "enforcedAfter": "2026-07-15T00:00:00.000Z"
+      },
+      "currentVersion": "2.6.0",
+      "now": "2026-07-14T23:59:59.000Z",
+      "expectedApplies": true,
+      "expectedEnforced": false,
+      "expectedOutcome": "supportPolicyWarning"
+    },
+    {
+      "policy": {
+        "minimumSupportedVersion": "2.7.0",
+        "enforcedAfter": "2026-07-15T00:00:00.000Z"
+      },
+      "currentVersion": "2.6.0",
+      "now": "2026-07-15T00:00:00.000Z",
+      "expectedApplies": true,
+      "expectedEnforced": true,
+      "expectedOutcome": "supportPolicyBlocked"
+    },
+    {
+      "policy": {
+        "minimumSupportedVersion": "2.7.0",
+        "enforcedAfter": "2026-07-15T00:00:00.000Z"
+      },
+      "currentVersion": "2.7.0",
+      "now": "2026-07-16T00:00:00.000Z",
+      "expectedApplies": false,
+      "expectedEnforced": false,
+      "expectedOutcome": "updateAvailable"
+    }
+  ],
+  "descriptorBindingCases": [
+    {
+      "name": "exact index descriptor binding",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "match"
+    },
+    {
+      "name": "descriptor version mismatch",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.1",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "invalidDescriptor"
+    },
+    {
+      "name": "descriptor build-number mismatch",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 999,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "invalidDescriptor"
+    },
+    {
+      "name": "descriptor platform mismatch",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "windows",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "invalidDescriptor"
+    },
+    {
+      "name": "descriptor channel mismatch",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "beta",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "invalidDescriptor"
+    },
+    {
+      "name": "expected package identity mismatch",
+      "indexItem": {
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": "com.example.native-contract",
+        "appName": "Example.app",
+        "version": "2.7.0",
+        "buildNumber": 270,
+        "platform": "macos",
+        "channel": "stable",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.other",
+      "expectedOutcome": "packageIdentityMismatch"
+    },
+    {
+      "name": "normalized descriptor and index identity binding",
+      "indexItem": {
+        "version": " 2.7.0 ",
+        "buildNumber": 270,
+        "platform": " macos ",
+        "channel": " stable ",
+        "mandatory": false,
+        "release": "https://updates.example.test/releases/2.7.0/macos/stable/release.json"
+      },
+      "descriptor": {
+        "schemaVersion": 3,
+        "packageId": " com.example.native-contract ",
+        "appName": "Example.app",
+        "version": " 2.7.0 ",
+        "buildNumber": 270,
+        "platform": " macos ",
+        "channel": " stable ",
+        "artifact": {
+          "kind": "zip",
+          "url": "https://updates.example.test/release-contract/macos-zip/artifact.zip",
+          "sha256": "adc1a5a6ed6312e6434ee540e2112d33510ca3479d41ad166068511b1fae0fb4",
+          "length": 42
+        },
+        "install": {
+          "strategy": "wholeBundleReplace"
+        },
+        "minimumUpdaterVersion": "2.0.0",
+        "minimumOS": {
+          "macos": "13.0"
+        },
+        "generatedAt": "2026-07-10T00:00:00.000Z"
+      },
+      "expectedPackageId": "com.example.native-contract",
+      "expectedOutcome": "match"
+    }
+  ],
+  "freshInstallCases": [
+    {
+      "input": {
+        "downloadUrl": "https://updates.example.test/download/latest",
+        "message": "Install the current signed build."
+      },
+      "expected": {
+        "downloadUrl": "https://updates.example.test/download/latest",
+        "message": "Install the current signed build."
+      },
+      "expectedOutcome": "freshInstallRequired",
+      "expectedArtifactDownload": false
+    },
+    {
+      "input": {
+        "downloadUrl": "https://updates.example.test/download/latest"
+      },
+      "expected": {
+        "downloadUrl": "https://updates.example.test/download/latest"
+      },
+      "expectedOutcome": "freshInstallRequired",
+      "expectedArtifactDownload": false
+    }
+  ]
+}

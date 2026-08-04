@@ -1,0 +1,65 @@
+#ifndef DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_WINDOWS_H_
+#define DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_WINDOWS_H_
+
+#include <filesystem>
+#include <string>
+#include <vector>
+
+#include "artifact_stager.h"
+#include "desktop_updater_native_c.h"
+#include "release_contract.h"
+#include "stage_provenance.h"
+
+namespace desktop_updater {
+namespace runtime {
+namespace internal {
+
+struct WindowsStagedArtifact {
+  std::filesystem::path stage_path;
+  StageProvenanceState provenance;
+};
+
+WindowsStagedArtifact StageWindowsZip(
+    const std::filesystem::path& archive_path,
+    const std::filesystem::path& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id,
+    const ArchiveLimits& limits);
+WindowsStagedArtifact StageWindowsZip(
+    const std::string& archive_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id,
+    const ArchiveLimits& limits);
+WindowsStagedArtifact StageWindowsInnoInstaller(
+    const std::filesystem::path& installer_path,
+    const std::filesystem::path& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id);
+WindowsStagedArtifact StageWindowsInnoInstaller(
+    const std::wstring& installer_path,
+    const std::string& destination_parent,
+    const ReleaseDescriptor& descriptor,
+    const std::string& expected_package_id);
+
+struct WindowsInstallHandoffResult {
+  bool ok;
+  std::string error_message;
+  desktop_updater_reservation_handle_abi2* reservation = nullptr;
+};
+
+WindowsInstallHandoffResult HandoffWindowsInstall(
+    const std::wstring& staging_path,
+    const std::wstring& install_root,
+    const std::wstring& executable_relative_path,
+    const std::wstring& expected_package_id,
+    const std::string& transaction_id,
+    const std::vector<std::wstring>& removed_files,
+    const std::string& expected_provenance_sha256,
+    const ReleaseDescriptor& descriptor);
+
+}  // namespace internal
+}  // namespace runtime
+}  // namespace desktop_updater
+
+#endif  // DESKTOP_UPDATER_RUNTIME_ARTIFACT_STAGER_WINDOWS_H_

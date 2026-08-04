@@ -13,6 +13,11 @@ Future<void> main(List<String> args) async {
       defaultsTo: ".",
       help: "Flutter app directory to migrate.",
     )
+    ..addOption(
+      "from",
+      help: "Source major version to migrate (1 or 2).",
+      allowed: <String>["1", "2"],
+    )
     ..addFlag(
       "apply",
       defaultsTo: false,
@@ -44,26 +49,41 @@ Future<void> main(List<String> args) async {
     throw const FormatException("Use either --apply or --dry-run, not both.");
   }
 
+  final fromValue = results["from"] as String?;
+  if (fromValue == null) {
+    stderr
+      ..writeln("The --from option is required; use --from 1 or --from 2.")
+      ..writeln(_usage(parser));
+    exitCode = 64;
+    return;
+  }
+
   final root = Directory(results["path"] as String);
-  final result = await migrateDesktopUpdaterProject(root: root, apply: apply);
+  final result = await migrateDesktopUpdaterProject(
+    root: root,
+    apply: apply,
+    fromMajor: int.parse(fromValue),
+  );
   stdout.write(_formatResult(result));
 
-  if ((results["check"] as bool) && (result.hasEdits || result.hasFindings)) {
+  if (result.hasSourceMajorMismatch ||
+      ((results["check"] as bool) && (result.hasEdits || result.hasFindings))) {
     exitCode = 1;
   }
 }
 
 String _usage(ArgParser parser) {
   return """
-Migrate a Flutter app from desktop_updater 1.x patterns to the 2.0 contract.
+Migrate a Flutter app from a declared desktop_updater 1.x or 2.x contract.
 
 By default this command runs in dry-run mode. Use --apply to write safe edits.
 Manual findings are reported with file and line references.
+The source major is never guessed; pass --from 1 or --from 2.
 
 Usage:
-  dart run desktop_updater:migrate --path .
-  dart run desktop_updater:migrate --path . --apply
-  dart run desktop_updater:migrate --path . --check
+  dart run desktop_updater:migrate --from 1 --path .
+  dart run desktop_updater:migrate --from 2 --path . --apply
+  dart run desktop_updater:migrate --from 2 --path . --check
 
 ${parser.usage}
 """;
@@ -71,10 +91,10 @@ ${parser.usage}
 
 String _formatResult(MigrationResult result) {
   final buffer = StringBuffer()
-    ..writeln("desktop_updater 2.0 migration")
+    ..writeln("desktop_updater ${result.apply ? "apply" : "migration"}")
     ..writeln("Path: ${result.root.path}")
     ..writeln("Mode: ${result.apply ? "apply" : "dry-run"}")
-    ..writeln("Guide: $desktopUpdaterMigrationGuide")
+    ..writeln("Guide: ${migrationGuideFor(result.fromMajor)}")
     ..writeln();
 
   final edits = result.apply ? result.appliedEdits : result.pendingEdits;

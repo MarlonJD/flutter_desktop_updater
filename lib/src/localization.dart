@@ -93,6 +93,18 @@ enum DesktopUpdateLocalizationKey {
   /// Message displayed when no release notes exist.
   releaseNotesEmptyText,
 
+  /// Title displayed when the macOS privileged helper needs approval.
+  macosPrivilegedHelperApprovalTitleText,
+
+  /// Body displayed when the macOS privileged helper needs approval.
+  macosPrivilegedHelperApprovalBodyText,
+
+  /// Settings action displayed when the macOS privileged helper needs approval.
+  macosPrivilegedHelperApprovalOpenSettingsText,
+
+  /// Retry action displayed when the macOS privileged helper needs approval.
+  macosPrivilegedHelperApprovalRetryText,
+
   /// Release notes label for feature entries.
   releaseNotesTypeFeatLabel,
 
@@ -185,6 +197,10 @@ class DesktopUpdateLocalization {
     this.releaseNotesErrorText,
     this.releaseNotesRetryText,
     this.releaseNotesEmptyText,
+    this.macosPrivilegedHelperApprovalTitleText,
+    this.macosPrivilegedHelperApprovalBodyText,
+    this.macosPrivilegedHelperApprovalOpenSettingsText,
+    this.macosPrivilegedHelperApprovalRetryText,
     this.macosMoveToApplicationsTitleText,
     this.macosMoveToApplicationsBodyText,
     this.macosMoveToApplicationsMoveText,
@@ -387,6 +403,27 @@ class DesktopUpdateLocalization {
         DesktopUpdateLocalizationKey.releaseNotesEmptyText,
         defaults.releaseNotesEmptyText!,
       ),
+      macosPrivilegedHelperApprovalTitleText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosPrivilegedHelperApprovalTitleText,
+        defaults.macosPrivilegedHelperApprovalTitleText!,
+      ),
+      macosPrivilegedHelperApprovalBodyText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosPrivilegedHelperApprovalBodyText,
+        defaults.macosPrivilegedHelperApprovalBodyText!,
+      ),
+      macosPrivilegedHelperApprovalOpenSettingsText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey
+            .macosPrivilegedHelperApprovalOpenSettingsText,
+        defaults.macosPrivilegedHelperApprovalOpenSettingsText!,
+      ),
+      macosPrivilegedHelperApprovalRetryText: _resolveText(
+        translate,
+        DesktopUpdateLocalizationKey.macosPrivilegedHelperApprovalRetryText,
+        defaults.macosPrivilegedHelperApprovalRetryText!,
+      ),
       macosMoveToApplicationsTitleText: _resolveText(
         translate,
         DesktopUpdateLocalizationKey.macosMoveToApplicationsTitleText,
@@ -542,6 +579,27 @@ class DesktopUpdateLocalization {
   /// Default: "No release notes available."
   final String? releaseNotesEmptyText;
 
+  /// Title shown when macOS requires privileged helper approval.
+  ///
+  /// Default: "Administrator approval required"
+  final String? macosPrivilegedHelperApprovalTitleText;
+
+  /// Explanation shown when macOS requires privileged helper approval.
+  ///
+  /// Default: "Allow this app to run in the background in System Settings >
+  /// General > Login Items & Extensions, then try the update again."
+  final String? macosPrivilegedHelperApprovalBodyText;
+
+  /// Settings action shown when macOS requires privileged helper approval.
+  ///
+  /// Default: "Open settings"
+  final String? macosPrivilegedHelperApprovalOpenSettingsText;
+
+  /// Retry action shown when macOS requires privileged helper approval.
+  ///
+  /// Default: "Try again"
+  final String? macosPrivilegedHelperApprovalRetryText;
+
   /// Title displayed by the macOS Move to Applications prompt.
   final String? macosMoveToApplicationsTitleText;
 
@@ -620,6 +678,12 @@ const defaultDesktopUpdateLocalization = DesktopUpdateLocalization(
   releaseNotesErrorText: "Could not load release notes.",
   releaseNotesRetryText: "Try again",
   releaseNotesEmptyText: "No release notes available.",
+  macosPrivilegedHelperApprovalTitleText: "Administrator approval required",
+  macosPrivilegedHelperApprovalBodyText:
+      "Allow this app to run in the background in System Settings > "
+      "General > Login Items & Extensions, then try the update again.",
+  macosPrivilegedHelperApprovalOpenSettingsText: "Open settings",
+  macosPrivilegedHelperApprovalRetryText: "Try again",
   macosMoveToApplicationsTitleText: "Move to Applications?",
   macosMoveToApplicationsBodyText:
       "Move this app to Applications so future launches use the installed copy.",
@@ -810,6 +874,22 @@ DesktopUpdateLocalization desktopUpdateLocalizationFromJson(
     releaseNotesErrorText: _readString(strings, "releaseNotesErrorText"),
     releaseNotesRetryText: _readString(strings, "releaseNotesRetryText"),
     releaseNotesEmptyText: _readString(strings, "releaseNotesEmptyText"),
+    macosPrivilegedHelperApprovalTitleText: _readString(
+      strings,
+      "macosPrivilegedHelperApprovalTitleText",
+    ),
+    macosPrivilegedHelperApprovalBodyText: _readString(
+      strings,
+      "macosPrivilegedHelperApprovalBodyText",
+    ),
+    macosPrivilegedHelperApprovalOpenSettingsText: _readString(
+      strings,
+      "macosPrivilegedHelperApprovalOpenSettingsText",
+    ),
+    macosPrivilegedHelperApprovalRetryText: _readString(
+      strings,
+      "macosPrivilegedHelperApprovalRetryText",
+    ),
     macosMoveToApplicationsTitleText: _readString(
       strings,
       "macosMoveToApplicationsTitleText",
@@ -902,6 +982,18 @@ DesktopUpdateLocalization mergeDesktopUpdateLocalizations(
         overrides.releaseNotesRetryText ?? base.releaseNotesRetryText,
     releaseNotesEmptyText:
         overrides.releaseNotesEmptyText ?? base.releaseNotesEmptyText,
+    macosPrivilegedHelperApprovalTitleText:
+        overrides.macosPrivilegedHelperApprovalTitleText ??
+            base.macosPrivilegedHelperApprovalTitleText,
+    macosPrivilegedHelperApprovalBodyText:
+        overrides.macosPrivilegedHelperApprovalBodyText ??
+            base.macosPrivilegedHelperApprovalBodyText,
+    macosPrivilegedHelperApprovalOpenSettingsText:
+        overrides.macosPrivilegedHelperApprovalOpenSettingsText ??
+            base.macosPrivilegedHelperApprovalOpenSettingsText,
+    macosPrivilegedHelperApprovalRetryText:
+        overrides.macosPrivilegedHelperApprovalRetryText ??
+            base.macosPrivilegedHelperApprovalRetryText,
     macosMoveToApplicationsTitleText:
         overrides.macosMoveToApplicationsTitleText ??
             base.macosMoveToApplicationsTitleText,

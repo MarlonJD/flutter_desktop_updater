@@ -120,6 +120,118 @@ const fixtureCode = "skipCheckVersion:";
     expect(reportedFiles, isNot(contains(migrator.path)));
     expect(reportedFiles, isNot(contains(migratorTest.path)));
   });
+
+  test("version-aware migration lanes enforce the source-major matrix",
+      () async {
+    final cases = <({
+      int from,
+      String constraint,
+      String? target,
+      bool mismatch,
+    })>[
+      (from: 1, constraint: "^1.4.0", target: "^2.0.0", mismatch: false),
+      (from: 1, constraint: "^2.0.0", target: null, mismatch: false),
+      (from: 1, constraint: "^2.7.0", target: null, mismatch: true),
+      (from: 1, constraint: "^3.0.0", target: null, mismatch: true),
+      (from: 2, constraint: "^1.9.0", target: null, mismatch: true),
+      (from: 2, constraint: "^2.7.0", target: "^3.0.0", mismatch: false),
+      (from: 2, constraint: "^3.0.0", target: null, mismatch: false),
+    ];
+
+    for (final migration in cases) {
+      final fixture = await _createVersionFixture(migration.constraint);
+      addTearDown(() => fixture.deleteSync(recursive: true));
+      final pubspec = File(path.join(fixture.path, "pubspec.yaml"));
+      final original = await pubspec.readAsString();
+
+      final result = await migrateDesktopUpdaterProject(
+        root: fixture,
+        fromMajor: migration.from,
+        apply: true,
+      );
+
+      expect(
+        result.hasSourceMajorMismatch,
+        migration.mismatch,
+        reason: "--from ${migration.from} with ${migration.constraint}",
+      );
+      if (migration.mismatch) {
+        expect(await pubspec.readAsString(), original);
+        expect(result.changedFiles, isEmpty);
+      } else if (migration.target != null) {
+        expect(await pubspec.readAsString(), contains(migration.target!));
+      } else {
+        expect(await pubspec.readAsString(), original);
+        expect(result.changedFiles, isEmpty);
+      }
+    }
+  });
+
+  test("2.x migration reports removed contract inputs without inventing values",
+      () async {
+    final fixture = await _createVersionFixture("^2.7.0");
+    addTearDown(() => fixture.deleteSync(recursive: true));
+    await File(path.join(fixture.path, "lib", "main.dart")).writeAsString("""
+void migrate() {
+  const diagnosticsLogPath = "native.log";
+  checkZipFirstUpdate();
+  downloadZipFirstUpdate();
+  allowUnsignedMacOSUpdates = true;
+  final stagingPath = "/tmp/stage";
+  scheduleInstallAndRelaunch();
+}
+""");
+    final macosSource = Directory(path.join(fixture.path, "macos"));
+    await macosSource.create(recursive: true);
+    await File(path.join(macosSource.path, "legacy.swift")).writeAsString("""
+func recover() {
+  RecoverPendingInstall()
+}
+""");
+
+    final result = await migrateDesktopUpdaterProject(
+      root: fixture,
+      fromMajor: 2,
+      apply: true,
+    );
+
+    expect(result.hasSourceMajorMismatch, isFalse);
+    expect(result.findings.map((finding) => finding.kind),
+        contains(MigrationFindingKind.manualReview));
+    for (final removedApi in <String>[
+      "diagnosticsLogPath",
+      "checkZipFirstUpdate",
+      "downloadZipFirstUpdate",
+      "allowUnsignedMacOSUpdates",
+      "stagingPath",
+      "scheduleInstallAndRelaunch",
+      "RecoverPendingInstall",
+    ]) {
+      expect(
+        result.findings.any(
+          (finding) => finding.description.contains(removedApi),
+        ),
+        isTrue,
+        reason: "migration must detect $removedApi",
+      );
+    }
+    final recoveryFinding = result.findings.firstWhere(
+      (finding) => finding.description.contains("RecoverPendingInstall"),
+    );
+    expect(recoveryFinding.recommendation, contains("macOS"));
+    expect(
+      recoveryFinding.recommendation,
+      isNot(contains("Windows atomic")),
+    );
+    expect(
+      result.changedFiles.map((file) => path.basename(file.path)),
+      contains("pubspec.yaml"),
+    );
+    final dartCode =
+        await File(path.join(fixture.path, "lib", "main.dart")).readAsString();
+    expect(dartCode, contains("scheduleInstallAndRelaunch"));
+    expect(dartCode, contains("diagnosticsLogPath"));
+  });
 }
 
 Future<Directory> _createMigrationFixture({String name = "fixture_app"}) async {
@@ -156,5 +268,18 @@ dart run desktop_updater:release macos
 dart run desktop_updater:archive macos
 """);
 
+  return root;
+}
+
+Future<Directory> _createVersionFixture(String constraint) async {
+  final root = await Directory.systemTemp.createTemp(
+    "desktop_updater_migrate_matrix_",
+  );
+  await Directory(path.join(root.path, "lib")).create(recursive: true);
+  await File(path.join(root.path, "pubspec.yaml")).writeAsString("""
+name: fixture_app
+dependencies:
+  desktop_updater: $constraint
+""");
   return root;
 }

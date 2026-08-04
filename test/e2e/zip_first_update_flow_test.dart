@@ -1,5 +1,9 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_client.dart";
 import "package:desktop_updater/src/release_manifest.dart";
 import "package:desktop_updater/src/version_info.dart";
@@ -15,7 +19,8 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(root: tempDir, baseUri: server.uri);
+      final fixture =
+          await buildReleaseFixture(root: tempDir, baseUri: server.uri);
 
       final client = UpdateClient(
         appArchiveUrl: server.uri.resolve("app-archive.json"),
@@ -24,6 +29,8 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
 
       final check = await client.checkForUpdate();
@@ -31,7 +38,7 @@ void main() {
 
       final progress = <int>[];
       final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
+        checkResult: check!,
         onProgress: (receivedBytes, _) => progress.add(receivedBytes),
       );
 
@@ -39,6 +46,27 @@ void main() {
       expect(
         File(path.join(staged.stagingPath, "app.txt")).readAsStringSync(),
         "version=2.0.0",
+      );
+      expect(
+        File(
+          path.join(staged.stagingPath, ".desktop_updater_artifact.zip"),
+        ).existsSync(),
+        isTrue,
+      );
+      final sidecar = File(
+        path.join(staged.stagingPath, stagedReleaseManifestFileName),
+      );
+      expect(sidecar.existsSync(), isTrue);
+      final sidecarJson = await sidecar.readAsString();
+      final sidecarMap = jsonDecode(sidecarJson) as Map<String, dynamic>;
+      expect(
+        sidecarJson,
+        jsonEncode(sortJsonValue(sidecarMap)),
+      );
+      expect(sidecarMap["version"], "2.0.0");
+      expect(
+        staged.stageProvenance.descriptorSha256,
+        sha256.convert(utf8.encode(sidecarJson)).toString(),
       );
     } finally {
       await server?.close();
@@ -51,7 +79,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "macos",
@@ -64,6 +92,8 @@ void main() {
           buildNumber: "100",
         ),
         platform: "macos",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
         runProcess: (_, arguments) async {
           final destination = arguments.last;
@@ -73,9 +103,7 @@ void main() {
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
       final sidecar = File(
         path.join(
           Directory(staged.stagingPath).parent.path,
@@ -84,7 +112,9 @@ void main() {
       );
 
       expect(sidecar.existsSync(), isTrue);
-      expect(await sidecar.readAsString(), contains('"schemaVersion": 3'));
+      final sidecarMap =
+          jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+      expect(sidecarMap["schemaVersion"], 3);
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);
@@ -96,7 +126,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "windows",
@@ -109,27 +139,28 @@ void main() {
           buildNumber: "100",
         ),
         platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
-      );
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
       final sidecar = File(
         path.join(staged.stagingPath, stagedReleaseManifestFileName),
       );
 
       expect(sidecar.existsSync(), isTrue);
-      expect(await sidecar.readAsString(), contains('"version": "2.0.0"'));
+      final sidecarMap =
+          jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+      expect(sidecarMap["version"], "2.0.0");
     } finally {
       await server?.close();
       await tempDir.delete(recursive: true);
     }
   });
 
-  test("removes stale staging directories before creating a new Windows stage",
-      () async {
+  test("preserves an unmarked stale staging-prefix directory", () async {
     final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
     UpdateServer? server;
     try {
@@ -142,7 +173,7 @@ void main() {
       );
 
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         platform: "windows",
@@ -155,13 +186,65 @@ void main() {
           buildNumber: "100",
         ),
         platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
       );
       final check = await client.checkForUpdate();
 
-      final staged = await client.downloadVerifyAndStage(
-        descriptor: check!.descriptor,
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
+
+      expect(staleStage.existsSync(), isTrue);
+      expect(Directory(staged.stagingPath).existsSync(), isTrue);
+    } finally {
+      await server?.close();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("removes a stale marker-bound stage before creating a Windows stage",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("zip_first_e2e_");
+    UpdateServer? server;
+    try {
+      const nonce = "123e4567-e89b-42d3-a456-426614174000";
+      final staleStage = await createOwnedStagingDirectory(
+        parent: tempDir,
+        nonce: nonce,
       );
+      await File(path.join(staleStage.path, "old.exe")).writeAsString("old");
+      await writeStagedUpdateProvenance(
+        stageRoot: staleStage,
+        nonce: nonce,
+        packageId: "com.example.app",
+        descriptorSha256: "a".padRight(64, "a"),
+        artifactSha256: "b".padRight(64, "b"),
+      );
+      await _setDirectoryLastModified(
+        staleStage,
+        DateTime.now().subtract(const Duration(days: 8)),
+      );
+
+      server = await UpdateServer.bind(tempDir);
+      final fixture = await buildReleaseFixture(
+        root: tempDir,
+        baseUri: server.uri,
+        platform: "windows",
+      );
+      final client = UpdateClient(
+        appArchiveUrl: server.uri.resolve("app-archive.json"),
+        currentVersion: DesktopVersionInfo.fromParts(
+          versionName: "1.0.0",
+          buildNumber: "100",
+        ),
+        platform: "windows",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        stagingParent: tempDir,
+      );
+      final check = await client.checkForUpdate();
+
+      final staged = await client.downloadVerifyAndStage(checkResult: check!);
 
       expect(staleStage.existsSync(), isFalse);
       expect(Directory(staged.stagingPath).existsSync(), isTrue);
@@ -176,7 +259,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         badChecksum: true,
@@ -189,11 +272,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
       final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(descriptor: check!.descriptor),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsA(isA<FileSystemException>()),
       );
     } finally {
@@ -207,7 +292,7 @@ void main() {
     UpdateServer? server;
     try {
       server = await UpdateServer.bind(tempDir);
-      await buildReleaseFixture(
+      final fixture = await buildReleaseFixture(
         root: tempDir,
         baseUri: server.uri,
         traversalZip: true,
@@ -220,11 +305,13 @@ void main() {
           buildNumber: "100",
         ),
         platform: "linux",
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
       );
       final check = await client.checkForUpdate();
 
       await expectLater(
-        client.downloadVerifyAndStage(descriptor: check!.descriptor),
+        client.downloadVerifyAndStage(checkResult: check!),
         throwsFormatException,
       );
     } finally {

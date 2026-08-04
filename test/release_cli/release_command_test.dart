@@ -2,13 +2,48 @@ import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive_io.dart";
+import "package:desktop_updater/src/release_cli/publish_command.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 import "../fixtures/release_publish_project.dart";
+import "../fixtures/update_server.dart";
 
 void main() {
+  test("publish parser accepts explicit signed feed history flags", () {
+    final results = buildPublishParser().parse([
+      "--platform",
+      "macos",
+      "--initialize-feed",
+      "--existing-app-archive",
+      "history/app-archive.json",
+    ]);
+
+    expect(results["initialize-feed"], isTrue);
+    expect(results["existing-app-archive"], "history/app-archive.json");
+  });
+
+  test("publish rejects missing signing inputs", () async {
+    final output = StringBuffer();
+
+    final exitCode = await runReleaseCommand(
+      const [
+        "publish",
+        "--platform",
+        "linux",
+        "--skip-build-for-test",
+      ],
+      output: output,
+    );
+
+    expect(exitCode, 64);
+    expect(
+      output.toString(),
+      contains("Canonical release publish requires signed metadata"),
+    );
+  });
+
   test("publish without upload provider prints manual upload instructions",
       () async {
     final fixture = await createReleasePublishFixture(
@@ -20,9 +55,14 @@ updates:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
-        projectRoot: fixture.root,
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
+          "publish",
+          "--platform",
+          fixture.platform,
+          "--skip-build-for-test",
+        ],
         output: output,
       );
 
@@ -74,15 +114,15 @@ updates:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        [
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
           "publish",
           "--platform",
           "macos",
           "--skip-build-for-test",
           "--notarize",
         ],
-        projectRoot: fixture.root,
         output: output,
       );
 
@@ -106,15 +146,15 @@ updates:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        [
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
           "publish",
           "--platform",
           fixture.platform,
           "--skip-build-for-test",
           "--mandatory",
         ],
-        projectRoot: fixture.root,
         output: output,
       );
 
@@ -147,8 +187,9 @@ updates:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        [
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
           "publish",
           "--platform",
           fixture.platform,
@@ -163,7 +204,6 @@ updates:
           "--fresh-install-message",
           "Install from a fresh download.",
         ],
-        projectRoot: fixture.root,
         output: output,
       );
 
@@ -247,8 +287,9 @@ updates:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        [
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
           "publish",
           "--platform",
           fixture.platform,
@@ -257,7 +298,6 @@ updates:
           "--dart-define=FEATURE_FLAG=true",
           "--skip-build-for-test",
         ],
-        projectRoot: fixture.root,
         output: output,
       );
 
@@ -291,9 +331,14 @@ additionalFiles:
           .writeAsString("{}");
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
-        projectRoot: fixture.root,
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
+          "publish",
+          "--platform",
+          fixture.platform,
+          "--skip-build-for-test",
+        ],
         output: output,
       );
 
@@ -333,15 +378,15 @@ macos:
     try {
       final output = StringBuffer();
 
-      final exitCode = await runReleaseCommand(
-        [
+      final exitCode = await _runSignedPublishCommand(
+        fixture: fixture,
+        args: [
           "publish",
           "--platform",
           "windows",
           "--skip-build-for-test",
           "--notarize",
         ],
-        projectRoot: fixture.root,
         output: output,
       );
 
@@ -394,19 +439,64 @@ macos:
 }
 
 class ReleasePublishFixture {
-  const ReleasePublishFixture(this.root, this.platform);
+  const ReleasePublishFixture(this.root, this.platform, this.server);
 
   final Directory root;
   final String platform;
+  final UpdateServer server;
 
-  Future<void> delete() => root.delete(recursive: true);
+  Future<void> delete() async {
+    await server.close();
+    await root.delete(recursive: true);
+  }
 }
 
 Future<ReleasePublishFixture> createReleasePublishFixture({
   required String config,
 }) async {
   final root = await Directory.systemTemp.createTemp("release_publish_");
-  await writeReleasePublishFixtureProject(root: root, config: config);
+  final webRoot = Directory(path.join(root.path, "web"));
+  await webRoot.create(recursive: true);
+  final server = await UpdateServer.bind(webRoot);
+  await writeReleasePublishFixtureProject(
+    root: root,
+    config: config.replaceAll(
+      "https://updates.example.com",
+      server.uri.toString(),
+    ),
+  );
 
-  return ReleasePublishFixture(root, releasePublishFixturePlatform);
+  return ReleasePublishFixture(root, releasePublishFixturePlatform, server);
 }
+
+Future<int> _runSignedPublishCommand({
+  required ReleasePublishFixture fixture,
+  required List<String> args,
+  required StringSink output,
+}) {
+  return runReleaseCommand(
+    [
+      ...args,
+      "--public-key-id",
+      _publishPublicKeyId,
+      "--private-key-env",
+      _publishPrivateKeyEnv,
+      "--public-keys-env",
+      _publishPublicKeysEnv,
+      "--initialize-feed",
+    ],
+    projectRoot: fixture.root,
+    output: output,
+    environment: {
+      _publishPrivateKeyEnv: _publishPrivateKeyBase64,
+      _publishPublicKeysEnv:
+          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
+    },
+  );
+}
+
+const _publishPublicKeyId = "stable-2026";
+const _publishPrivateKeyEnv = "DESKTOP_UPDATER_TEST_PRIVATE_KEY";
+const _publishPublicKeysEnv = "DESKTOP_UPDATER_TEST_PUBLIC_KEYS";
+const _publishPrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+const _publishPublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";

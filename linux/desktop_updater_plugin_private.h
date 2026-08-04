@@ -1,19 +1,13 @@
 #include <flutter_linux/flutter_linux.h>
 
-#include <string>
-#include <vector>
-
 #include "include/desktop_updater/desktop_updater_plugin.h"
+#include "desktop_updater_native.h"
 
-// This file exposes some plugin internals for unit testing. See
-// https://github.com/flutter/flutter/issues/88724 for current limitations
-// in the unit-testable API.
+// This file exposes the Flutter adapter surface used by the plugin test.
+// The updater implementation is tested independently in linux/native.
 
-// Handles the getPlatformVersion method call.
-FlMethodResponse *get_platform_version();
+FlMethodResponse* get_platform_version();
 
-// Schedules an absolute-path update helper for tests and plugin calls.
-bool schedule_install_update(const std::string &staging_path,
-                             const std::vector<std::string> &removed_files,
-                             const std::string &diagnostics_log_path,
-                             std::string *error);
+bool is_accepted_install_handoff(
+    const desktop_updater::native::InstallReservation& reservation,
+    const desktop_updater::native::InstallTransactionStatus& status);

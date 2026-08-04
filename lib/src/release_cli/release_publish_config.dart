@@ -15,12 +15,24 @@ class ReleasePublishOverrides {
     this.buildNumber,
     this.packageId,
     this.appName,
+    this.projectType,
+    this.artifactRoot,
+    this.executableRelativePath,
+    this.xcodeProject,
+    this.xcodeWorkspace,
+    this.xcodeScheme,
+    this.xcodeDerivedDataPath,
+    this.cmakeSourceDirectory,
+    this.cmakeBuildDirectory,
+    this.cmakeBuildTarget,
     this.dartDefines = const [],
     this.mandatory = false,
     this.minimumSupportedVersion,
     this.enforcedAfter,
     this.freshInstallUrl,
     this.freshInstallMessage,
+    this.existingAppArchive,
+    this.initializeFeed = false,
     this.notarize = false,
   });
 
@@ -32,6 +44,37 @@ class ReleasePublishOverrides {
   final int? buildNumber;
   final String? packageId;
   final String? appName;
+
+  /// Explicit project adapter type selected through the publish CLI.
+  final String? projectType;
+
+  /// Complete manual or already installed CMake artifact path.
+  final String? artifactRoot;
+
+  /// Executable path relative to a manual or CMake artifact root.
+  final String? executableRelativePath;
+
+  /// Explicit Xcode project path.
+  final String? xcodeProject;
+
+  /// Explicit Xcode workspace path.
+  final String? xcodeWorkspace;
+
+  /// Xcode scheme used for the Release build.
+  final String? xcodeScheme;
+
+  /// Optional deterministic Xcode derived-data directory.
+  final String? xcodeDerivedDataPath;
+
+  /// Optional CMake source directory.
+  final String? cmakeSourceDirectory;
+
+  /// Optional CMake build directory.
+  final String? cmakeBuildDirectory;
+
+  /// Required CMake application target when no installed tree is supplied.
+  final String? cmakeBuildTarget;
+
   final List<String> dartDefines;
 
   /// Whether app-archive.json should mark this release as mandatory.
@@ -40,6 +83,8 @@ class ReleasePublishOverrides {
   final DateTime? enforcedAfter;
   final Uri? freshInstallUrl;
   final String? freshInstallMessage;
+  final String? existingAppArchive;
+  final bool initializeFeed;
   final bool notarize;
 }
 
@@ -626,6 +671,8 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
     updatesUrl: _stringValue(installer, "updatesUrl"),
     privilegesRequired:
         _stringValue(installer, "privilegesRequired") ?? "lowest",
+    protectedHelperInstallDir:
+        _stringValue(installer, "protectedHelperInstallDir"),
     architecturesAllowed:
         _stringValue(installer, "architecturesAllowed") ?? "x64",
     architecturesInstallIn64BitMode:
@@ -664,6 +711,7 @@ void _validateInnoConfig(InnoPublishConfig config) {
       "windows.installer.requiresElevation must be auto, always, or never.",
     );
   }
+  resolveGeneratedProtectedHelperInstallDir(config);
 }
 
 Uri _normalizeBaseUrl(String value) {

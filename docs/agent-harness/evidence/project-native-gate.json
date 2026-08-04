@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "project-native-harness-gate"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "dart run tool/harness_gate.dart --candidate --attestation-key-file \"$HARNESS_ATTESTATION_KEY_FILE\"",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:55:37.847728Z",
+  "result": "passed",
+  "artifacts": [
+    "candidate-gate:candidate-pass-20260723T1355Z-source-014cd22",
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:tool/harness_gate.dart"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "dd198847e605a368a14b43220cc078bb2e2a5e93bd987a70b62b9fdd878abb6f"
+}

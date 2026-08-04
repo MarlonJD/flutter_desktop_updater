@@ -46,7 +46,7 @@ Future<void> main(List<String> args) async {
       _publishConfig(
         baseUrl: server.baseUrl,
         outputRoot: _joinAll([tempRoot.path, "dist", "desktop_updater"]),
-        copyCommand: _copyCommand(packageRoot),
+        copyCommand: _copyCommand(packageRoot, webRoot),
         notarize: notarize,
       ),
     );
@@ -57,6 +57,13 @@ Future<void> main(List<String> args) async {
       "publish",
       "--platform",
       platform,
+      "--public-key-id",
+      _smokePublicKeyId,
+      "--private-key-env",
+      _smokePrivateKeyEnv,
+      "--public-keys-env",
+      _smokePublicKeysEnv,
+      "--initialize-feed",
       "--config",
       configFile.path,
       "--version",
@@ -69,6 +76,11 @@ Future<void> main(List<String> args) async {
       "dart",
       publishArgs,
       workingDirectory: projectRoot.path,
+      environment: {
+        ...Platform.environment,
+        _smokePrivateKeyEnv: _smokePrivateKeyBase64,
+        _smokePublicKeysEnv: '{"$_smokePublicKeyId":"$_smokePublicKeyBase64"}',
+      },
     );
     final output = "${result.stdout}${result.stderr}";
     if (!output.contains("Hosted artifact SHA-256: OK") ||
@@ -131,7 +143,7 @@ String _requiredEnv(String name) {
   return value;
 }
 
-String _copyCommand(Directory packageRoot) {
+String _copyCommand(Directory packageRoot, Directory webRoot) {
   final script = File(
     _joinAll([
       packageRoot.path,
@@ -142,19 +154,21 @@ String _copyCommand(Directory packageRoot) {
       "copy_updates.dart",
     ]),
   );
-  return 'dart "${script.path}"';
+  return 'dart "${script.path}" unused "${webRoot.path}"';
 }
 
 Future<ProcessResult> _runChecked(
   String executable,
   List<String> arguments, {
   required String workingDirectory,
+  Map<String, String>? environment,
 }) async {
   stdout.writeln("\$ $executable ${arguments.join(" ")}");
   final result = await Process.run(
     executable,
     arguments,
     workingDirectory: workingDirectory,
+    environment: environment,
   );
   stdout.write(result.stdout);
   stderr.write(result.stderr);
@@ -168,6 +182,14 @@ Future<ProcessResult> _runChecked(
   }
   return result;
 }
+
+// These keys are deliberately synthetic and scoped to the local CI smoke.
+// Production publishing must use a secret-managed signing key instead.
+const _smokePublicKeyId = "stable-2026";
+const _smokePrivateKeyEnv = "DESKTOP_UPDATER_SMOKE_PRIVATE_KEY";
+const _smokePublicKeysEnv = "DESKTOP_UPDATER_SMOKE_PUBLIC_KEYS";
+const _smokePrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+const _smokePublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
 class _StaticServer {
   const _StaticServer(this._server, this._root);

@@ -25,6 +25,11 @@ final localization =
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   localization: localization,
 );
 ```

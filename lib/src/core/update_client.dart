@@ -6,7 +6,10 @@ import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/macos_staged_app_validator.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/staging_directory_cleanup.dart";
 import "package:desktop_updater/src/core/update_telemetry.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
@@ -26,6 +29,104 @@ typedef MinimumOSSupportChecker = bool Function({
   required String minimumOS,
 });
 
+final Map<String, RetainedVerifiedStage> _verifiedStages =
+    <String, RetainedVerifiedStage>{};
+
+/// Immutable verified stage state retained independently of its marker.
+final class RetainedVerifiedStage {
+  /// Creates retained proof for one verified stage.
+  const RetainedVerifiedStage._({
+    required this.stageRoot,
+    required this.stagingPath,
+    required this.state,
+    required this.ownerToken,
+    required this.generation,
+  });
+
+  /// Canonical owned stage root containing the provenance marker.
+  final String stageRoot;
+
+  /// Canonical platform-specific path handed to the native helper.
+  final String stagingPath;
+
+  /// Verified marker digest and immutable provenance inventory.
+  final StagedUpdateProvenanceState state;
+
+  /// Opaque client identity that owns this retained stage.
+  final Object ownerToken;
+
+  /// Check generation that produced this retained stage.
+  final int generation;
+}
+
+Future<void> _retainVerifiedStage({
+  required Directory stageRoot,
+  required String stagingPath,
+  required StagedUpdateProvenanceState state,
+  required Object ownerToken,
+  required int generation,
+}) async {
+  final canonicalRoot = path.normalize(await stageRoot.resolveSymbolicLinks());
+  final canonicalStagingPath =
+      path.normalize(await Directory(stagingPath).resolveSymbolicLinks());
+  final retained = RetainedVerifiedStage._(
+    stageRoot: canonicalRoot,
+    stagingPath: canonicalStagingPath,
+    state: state,
+    ownerToken: ownerToken,
+    generation: generation,
+  );
+  _verifiedStages[canonicalRoot] = retained;
+  _verifiedStages[canonicalStagingPath] = retained;
+}
+
+/// Atomically claims retained stage proof for one native dispatch attempt.
+///
+/// This package-internal API is misuse resistance for Dart callers. Native
+/// plugins still reload and validate descriptor/provenance/target evidence
+/// independently before privileged mutation.
+Future<RetainedVerifiedStage> claimRetainedVerifiedStageForDispatch({
+  required UpdateStageResult stageResult,
+  required String expectedPackageId,
+  required Object ownerToken,
+  required int generation,
+}) async {
+  if (stageResult._claimedForDispatch) {
+    throw StateError("Staged update has already been claimed for dispatch.");
+  }
+  if (!identical(stageResult._ownerToken, ownerToken) ||
+      stageResult._generation != generation) {
+    stageResult._claimedForDispatch = true;
+    throw StateError("Staged update belongs to a different update session.");
+  }
+  stageResult._claimedForDispatch = true;
+  if (stageResult.descriptor.packageId != expectedPackageId) {
+    throw StateError(
+      "Staged update package identity does not match the persisted request.",
+    );
+  }
+  final type = await FileSystemEntity.type(
+    stageResult.stagingPath,
+    followLinks: false,
+  );
+  if (type != FileSystemEntityType.directory) {
+    throw StateError("Staged update path is not a directory.");
+  }
+  final canonical = path.normalize(
+    await Directory(stageResult.stagingPath).resolveSymbolicLinks(),
+  );
+  final retained = _verifiedStages[canonical];
+  if (retained == null ||
+      !identical(retained.ownerToken, ownerToken) ||
+      retained.generation != generation ||
+      retained.state.markerSha256 != stageResult.stageProvenanceSha256 ||
+      retained.state.provenance.canonicalJson !=
+          stageResult.stageProvenance.canonicalJson) {
+    throw StateError("Retained verified stage provenance is unavailable.");
+  }
+  return retained;
+}
+
 /// Low-level zip-first update client used by the controller and direct APIs.
 ///
 /// The client reads an `app-archive.json`, selects the newest eligible release,
@@ -36,12 +137,13 @@ class UpdateClient {
   UpdateClient({
     required this.appArchiveUrl,
     required this.currentVersion,
+    required String expectedPackageId,
+    required Map<String, String> trustedReleasePublicKeys,
     DesktopVersionInfo? currentUpdaterVersion,
     String? platform,
     this.channel = "stable",
     UpdateRequestHeadersProvider? requestHeadersProvider,
     UpdateTransport? transport,
-    ArtifactVerifier verifier = const ArtifactVerifier(),
     SafeZipExtractor extractor = const SafeZipExtractor(),
     Directory? stagingParent,
     ProcessRunner runProcess = defaultProcessRunner,
@@ -50,20 +152,30 @@ class UpdateClient {
     MinimumOSSupportChecker? isMinimumOSSupported,
     DesktopUpdaterTelemetry? telemetry,
     this.installationIdentity,
-  })  : platform = platform ?? Platform.operatingSystem,
+  })  : expectedPackageId = _normalizeExpectedPackageId(expectedPackageId),
+        trustedReleasePublicKeys =
+            normalizeReleasePublicKeys(trustedReleasePublicKeys),
+        platform = platform ?? Platform.operatingSystem,
         _currentUpdaterVersion = currentUpdaterVersion ??
             DesktopVersionInfo.parse(desktopUpdaterPackageVersion),
         _transport = transport ??
             CompositeUpdateTransport(
               requestHeadersProvider: requestHeadersProvider,
             ),
-        _verifier = verifier,
+        _verifier = ArtifactVerifier(
+          policy: ArtifactVerificationPolicy.requireEd25519Signature(
+            publicKeys: normalizeReleasePublicKeys(trustedReleasePublicKeys),
+          ),
+        ),
         _extractor = extractor,
         _stagingParent = stagingParent,
         _runProcess = runProcess,
         _macosDistributionVerifier = macosDistributionVerifier,
         _isMinimumOSSupported = isMinimumOSSupported,
-        _telemetry = telemetry;
+        _telemetry = telemetry,
+        _indexSignatureVerifier = Ed25519ReleaseIndexSignatureVerifier(
+          trustedReleasePublicKeys,
+        );
 
   /// Hosted `app-archive.json` URL.
   final Uri appArchiveUrl;
@@ -79,8 +191,22 @@ class UpdateClient {
   /// Release channel used for release selection.
   final String channel;
 
+  /// App-owned expected package identity.
+  final String expectedPackageId;
+
+  /// Normalized trusted Ed25519 public keys.
+  final Map<String, String> trustedReleasePublicKeys;
+
   /// Stable app-owned identity used for deterministic staged rollouts.
   final String? installationIdentity;
+
+  /// Opaque identity used to bind staged results to this client session.
+  Object get ownerTokenForDispatch => _ownerToken;
+
+  final Object _ownerToken = Object();
+  int _checkGeneration = 0;
+
+  final Ed25519ReleaseIndexSignatureVerifier _indexSignatureVerifier;
   final UpdateTransport _transport;
   final ArtifactVerifier _verifier;
   final SafeZipExtractor _extractor;
@@ -92,16 +218,23 @@ class UpdateClient {
 
   /// Checks the archive and returns the newest eligible release, if any.
   Future<UpdateCheckResult?> checkForUpdate() async {
+    _checkGeneration += 1;
+    final generation = _checkGeneration;
     final tempDir = await Directory.systemTemp.createTemp(
       "desktop_updater_index_",
     );
 
     try {
       final indexFile = File(path.join(tempDir.path, "app-archive.json"));
-      await _transport.download(appArchiveUrl, indexFile);
+      await _downloadMetadata(appArchiveUrl, indexFile);
       final index = ReleaseIndex.fromJson(
         jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>,
       );
+      if (!await _indexSignatureVerifier.verify(index)) {
+        throw const FormatException(
+          "app-archive.json signature verification failed.",
+        );
+      }
 
       final item = selectReleaseIndexItem(
         index: index,
@@ -115,7 +248,7 @@ class UpdateClient {
       }
 
       final descriptorFile = File(path.join(tempDir.path, "release.json"));
-      await _transport.download(item.release, descriptorFile);
+      await _downloadMetadata(item.release, descriptorFile);
       final descriptor = ReleaseDescriptor.fromJson(
         jsonDecode(await descriptorFile.readAsString()) as Map<String, dynamic>,
       );
@@ -124,12 +257,20 @@ class UpdateClient {
       if (descriptor.platform != platform || descriptor.channel != channel) {
         return null;
       }
+      if (descriptor.packageId != expectedPackageId) {
+        throw FormatException(
+          "release.json packageId does not match expected package identity: "
+          "expected $expectedPackageId, got ${descriptor.packageId}.",
+        );
+      }
       _verifyDescriptorMatchesIndexItem(item: item, descriptor: descriptor);
       if (!_descriptorPolicyAllowsUpdate(descriptor)) {
         return null;
       }
 
-      return UpdateCheckResult(
+      return UpdateCheckResult._(
+        ownerToken: _ownerToken,
+        generation: generation,
         index: index,
         item: item,
         descriptor: descriptor,
@@ -141,19 +282,85 @@ class UpdateClient {
     }
   }
 
-  /// Downloads, verifies, extracts, and stages [descriptor].
-  Future<UpdateStageResult> downloadVerifyAndStage({
-    required ReleaseDescriptor descriptor,
+  Future<void> _downloadMetadata(Uri source, File destination) async {
+    final transport = _transport;
+    if (transport is BoundedUpdateTransport) {
+      await transport.downloadBounded(
+        source,
+        destination,
+        maximumBytes: maximumStableMetadataBytes,
+      );
+      return;
+    }
+
+    await transport.download(source, destination);
+    final downloadedBytes = await destination.length();
+    if (downloadedBytes <= maximumStableMetadataBytes) {
+      return;
+    }
+    await destination.delete();
+    throw UpdateDownloadSizeLimitException(
+      source: source,
+      maximumBytes: maximumStableMetadataBytes,
+      actualBytes: downloadedBytes,
+    );
+  }
+
+  Future<void> _downloadArtifact(
+    ReleaseArtifact artifact,
+    File destination, {
     void Function(int receivedBytes, int? totalBytes)? onProgress,
   }) async {
+    final transport = _transport;
+    if (transport is BoundedUpdateTransport) {
+      await transport.downloadBounded(
+        artifact.url,
+        destination,
+        maximumBytes: artifact.length,
+        onProgress: onProgress,
+      );
+      return;
+    }
+
+    await transport.download(
+      artifact.url,
+      destination,
+      onProgress: onProgress,
+    );
+    final downloadedBytes = await destination.length();
+    if (downloadedBytes <= artifact.length) {
+      return;
+    }
+    await destination.delete();
+    throw UpdateDownloadSizeLimitException(
+      source: artifact.url,
+      maximumBytes: artifact.length,
+      actualBytes: downloadedBytes,
+    );
+  }
+
+  /// Downloads, verifies, extracts, and stages [checkResult].
+  Future<UpdateStageResult> downloadVerifyAndStage({
+    required UpdateCheckResult checkResult,
+    void Function(int receivedBytes, int? totalBytes)? onProgress,
+  }) async {
+    final claimedCheck = _claimCheckResult(checkResult);
+    final descriptor = claimedCheck.descriptor;
     await _verifier.verifyDescriptor(descriptor);
+    if (descriptor.packageId != expectedPackageId) {
+      throw StateError(
+        "Checked release package identity no longer matches this client.",
+      );
+    }
     _ensureDescriptorPolicyAllowsDownload(descriptor);
 
     final stagingParent = _stagingParent ?? Directory.systemTemp;
     await cleanupStaleDesktopUpdaterStagingDirectories(parent: stagingParent);
-    final stagingRoot = await stagingParent.createTemp(
-      desktopUpdaterStagingPrefix,
-    );
+    final stagingRoot =
+        await createOwnedStagingDirectory(parent: stagingParent);
+    final stagingNonce = path
+        .basename(stagingRoot.path)
+        .substring(desktopUpdaterStagingPrefix.length);
     final artifactFile = File(
       path.join(
         stagingRoot.path,
@@ -161,14 +368,14 @@ class UpdateClient {
           "dmg" => "artifact.dmg",
           "pkgInstaller" => "artifact.pkg",
           "innoInstaller" => "artifact.exe",
-          _ => "artifact.zip",
+          _ => ".desktop_updater_artifact.zip",
         },
       ),
     );
 
     try {
-      await _transport.download(
-        descriptor.artifact.url,
+      await _downloadArtifact(
+        descriptor.artifact,
         artifactFile,
         onProgress: onProgress,
       );
@@ -200,11 +407,15 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
+          nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
@@ -229,11 +440,15 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagedApp.path,
+          nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
@@ -253,15 +468,20 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
-        return UpdateStageResult(
+        return await _finalizeStage(
           descriptor: descriptor,
+          stagingRoot: stagingRoot,
           stagingPath: stagingRoot.path,
+          nonce: stagingNonce,
+          ownerToken: _ownerToken,
+          generation: claimedCheck._generation,
         );
       }
 
       if (descriptor.platform == "macos") {
+        await _extractor.preflight(artifactFile);
         await runDittoExtractZip(
           archivePath: artifactFile.path,
           destination: stagingRoot.path,
@@ -283,19 +503,24 @@ class UpdateClient {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
-      } else if (descriptor.platform == "windows") {
+      } else if (descriptor.platform == "windows" ||
+          descriptor.platform == "linux") {
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
-          const JsonEncoder.withIndent("  ").convert(descriptor.toJson()),
+          jsonEncode(sortJsonValue(descriptor.toJson())),
         );
       }
 
-      return UpdateStageResult(
+      return await _finalizeStage(
         descriptor: descriptor,
+        stagingRoot: stagingRoot,
         stagingPath: stagedPath,
+        nonce: stagingNonce,
+        ownerToken: _ownerToken,
+        generation: claimedCheck._generation,
       );
     } catch (_) {
       if (await stagingRoot.exists()) {
@@ -303,6 +528,56 @@ class UpdateClient {
       }
       rethrow;
     }
+  }
+
+  Future<UpdateStageResult> _finalizeStage({
+    required ReleaseDescriptor descriptor,
+    required Directory stagingRoot,
+    required String stagingPath,
+    required String nonce,
+    required Object ownerToken,
+    required int generation,
+  }) async {
+    final state = await writeStagedUpdateProvenance(
+      stageRoot: stagingRoot,
+      nonce: nonce,
+      packageId: descriptor.packageId,
+      descriptorSha256: canonicalJsonSha256(descriptor.toJson()),
+      artifactSha256: descriptor.artifact.sha256,
+    );
+    await _retainVerifiedStage(
+      stageRoot: stagingRoot,
+      stagingPath: stagingPath,
+      state: state,
+      ownerToken: ownerToken,
+      generation: generation,
+    );
+    return UpdateStageResult._(
+      descriptor: descriptor,
+      stagingPath: stagingPath,
+      stageProvenanceSha256: state.markerSha256,
+      stageProvenance: state.provenance,
+      ownerToken: ownerToken,
+      generation: generation,
+    );
+  }
+
+  UpdateCheckResult _claimCheckResult(UpdateCheckResult result) {
+    if (!identical(result._ownerToken, _ownerToken)) {
+      result._claimed = true;
+      throw StateError(
+        "Update check result was created by a different UpdateClient.",
+      );
+    }
+    if (result._generation != _checkGeneration) {
+      result._claimed = true;
+      throw StateError("Update check result is stale.");
+    }
+    if (result._claimed) {
+      throw StateError("Update check result has already been used.");
+    }
+    result._claimed = true;
+    return result;
   }
 
   bool _descriptorPolicyAllowsUpdate(ReleaseDescriptor descriptor) {
@@ -384,13 +659,20 @@ void _verifyDescriptorMatchesIndexItem({
 }
 
 /// Successful update-check result with the selected index item and descriptor.
-class UpdateCheckResult {
+final class UpdateCheckResult {
   /// Creates an update-check result.
-  const UpdateCheckResult({
+  UpdateCheckResult._({
+    required Object ownerToken,
+    required int generation,
     required this.index,
     required this.item,
     required this.descriptor,
-  });
+  })  : _ownerToken = ownerToken,
+        _generation = generation;
+
+  final Object _ownerToken;
+  final int _generation;
+  bool _claimed = false;
 
   /// App archive that contained the selected release.
   final ReleaseIndex index;
@@ -403,16 +685,49 @@ class UpdateCheckResult {
 }
 
 /// Result returned after a release artifact has been verified and staged.
-class UpdateStageResult {
+final class UpdateStageResult {
   /// Creates a staged update result.
-  const UpdateStageResult({
+  UpdateStageResult._({
     required this.descriptor,
     required this.stagingPath,
-  });
+    required this.stageProvenanceSha256,
+    required this.stageProvenance,
+    required Object ownerToken,
+    required int generation,
+  })  : _ownerToken = ownerToken,
+        _generation = generation;
+
+  bool _claimedForDispatch = false;
+  final Object _ownerToken;
+  final int _generation;
 
   /// Descriptor that was downloaded and staged.
   final ReleaseDescriptor descriptor;
 
   /// Platform-specific path handed to the native install helper.
   final String stagingPath;
+
+  /// Digest retained by the verified client and required by install helpers.
+  final String stageProvenanceSha256;
+
+  /// Immutable inventory retained with the verified stage state.
+  final StagedUpdateProvenance stageProvenance;
+
+  /// Opaque client identity that owns this staged result.
+  Object get ownerTokenForDispatch => _ownerToken;
+
+  /// Check generation that produced this staged result.
+  int get generationForDispatch => _generation;
+}
+
+String _normalizeExpectedPackageId(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    throw ArgumentError.value(
+      value,
+      "expectedPackageId",
+      "must not be blank",
+    );
+  }
+  return normalized;
 }

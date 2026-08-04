@@ -2,10 +2,13 @@ import "dart:async";
 import "dart:io";
 
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
+import "package:desktop_updater_example/json_file_update_recovery_store.dart";
 import "package:desktop_updater_example/release_notes_examples.dart";
+import "package:desktop_updater_example/smoke_update_flow.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+
+const _placeholderPublicKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 String? _customTooltip(Object error) {
   if (error is SocketException) return "No internet connection.";
@@ -13,7 +16,7 @@ String? _customTooltip(Object error) {
   return null;
 }
 
-/// Demonstrates the desktop_updater 2.x zip-first runtime flow.
+/// Demonstrates the desktop_updater 3.0 signed zip-first runtime flow.
 class HomePage extends StatefulWidget {
   /// Creates the example home page.
   const HomePage({super.key});
@@ -29,23 +32,18 @@ class _HomePageState extends State<HomePage> {
       "https://updates.example.com/release-notes.json";
 
   final _desktopUpdaterPlugin = DesktopUpdater();
+  final _smokeConfiguration =
+      SmokeUpdateConfiguration.fromEnvironment(Platform.environment);
   late final DesktopUpdaterController _desktopUpdaterController;
 
   String _platformVersion = "Unknown platform version";
   String _appVersion = "Unknown app version";
   String _statusMessage =
-      "Ready. Configure DESKTOP_UPDATER_APP_ARCHIVE_URL with a hosted 2.x app-archive.json.";
+      "Ready. Configure DESKTOP_UPDATER_APP_ARCHIVE_URL with a hosted 3.0 signed app-archive.json.";
   bool _checkingForUpdates = false;
 
   bool get _hostedSmokeEnabled =>
       Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE"] == "1";
-
-  bool get _hostedSmokeAllowUnsignedMacOS =>
-      Platform.environment["DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"] ==
-      "1";
-
-  bool get _directSmokeAllowUnsignedMacOS =>
-      Platform.environment["DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"] == "1";
 
   @override
   void initState() {
@@ -53,15 +51,18 @@ class _HomePageState extends State<HomePage> {
 
     _desktopUpdaterController = DesktopUpdaterController(
       appArchiveUrl: _configuredAppArchiveUrl(),
+      expectedPackageId: _configuredExpectedPackageId(),
+      trustedReleasePublicKeys: _configuredTrustedReleasePublicKeys(),
+      recoveryStore: JsonFileUpdateRecoveryStore(
+        _configuredRecoveryStoreFile(),
+      ),
       releaseNotesUrl: _configuredReleaseNotesUrl(),
       skipInitialVersionCheck: true,
-      diagnosticsLogPath: _configuredHostedDiagnosticsLogPath(),
-      allowUnsignedMacOSUpdates: _hostedSmokeAllowUnsignedMacOS,
       localization: const DesktopUpdateLocalization(
         updateAvailableText: "Update available",
         newVersionAvailableText: "{} {} is available",
         newVersionLongText:
-            "The 2.x release descriptor points to one verified zip artifact. Download size: {} MB.",
+            "The 3.0 signed release descriptor points to one verified zip artifact. Download size: {} MB.",
         restartText: "Install update",
         warningTitleText: "Install staged update?",
         restartWarningText:
@@ -108,13 +109,43 @@ class _HomePageState extends State<HomePage> {
     return Uri.parse(value.trim());
   }
 
-  String? _configuredHostedDiagnosticsLogPath() {
-    final value =
-        Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"];
+  String _configuredExpectedPackageId() {
+    final smokeValue = Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"];
+    final value = smokeValue == null || smokeValue.trim().isEmpty
+        ? Platform.environment["DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"]
+        : smokeValue;
     if (value == null || value.trim().isEmpty) {
-      return null;
+      return "com.example.app";
     }
     return value.trim();
+  }
+
+  Map<String, String> _configuredTrustedReleasePublicKeys() {
+    return configuredTrustedReleasePublicKeys(
+      Platform.environment,
+      fallbackKeyId: "example-placeholder",
+      fallbackPublicKey: _placeholderPublicKey,
+    );
+  }
+
+  File _configuredRecoveryStoreFile() {
+    final configured = Platform.environment[recoveryStoreEnvironment];
+    if (configured != null && configured.trim().isNotEmpty) {
+      return File(configured.trim());
+    }
+    final stateRoot = Platform.isWindows
+        ? Platform.environment["LOCALAPPDATA"]
+        : Platform.environment["XDG_STATE_HOME"] ??
+            _joinPath(Platform.environment["HOME"], ".local/state");
+    final root = stateRoot == null || stateRoot.trim().isEmpty
+        ? Directory.systemTemp.path
+        : stateRoot.trim();
+    return File(
+      _joinPath(
+        root,
+        "desktop_updater_example/pending-install-stable.json",
+      )!,
+    );
   }
 
   Future<void> _checkForUpdatesManually() async {
@@ -124,7 +155,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _checkingForUpdates = true;
-      _statusMessage = "Checking the 2.x release index...";
+      _statusMessage = "Checking the 3.0 signed release index...";
     });
 
     try {
@@ -141,7 +172,7 @@ class _HomePageState extends State<HomePage> {
             "Update ${descriptor.version} requires a fresh download.",
           ManualUpdateCheckBlockedBySupportPolicy(:final descriptor) =>
             "This version is no longer supported. Update ${descriptor.version} is required.",
-          ManualUpdateCheckUpToDate() => "No matching 2.x update was found.",
+          ManualUpdateCheckUpToDate() => "No matching 3.0 update was found.",
           ManualUpdateCheckFailed(:final error) =>
             "Update check failed: $error",
         };
@@ -189,27 +220,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _runSmokeTestCommand() async {
-    final stagingPath = Platform.environment["DESKTOP_UPDATER_SMOKE_STAGING"];
-    if (stagingPath == null || stagingPath.isEmpty) {
+    final configuration = _smokeConfiguration;
+    if (!configuration.enabled) {
       return;
     }
 
-    final markerPath = Platform.environment["DESKTOP_UPDATER_SMOKE_MARKER"];
-    final diagnosticsLogPath =
-        Platform.environment["DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"];
-    final stagingDirectory = Directory(stagingPath);
-
-    if (!await stagingDirectory.exists()) {
-      await _writeSmokeMarker(markerPath, "staging-missing");
-      return;
-    }
-
-    await _writeSmokeMarker(markerPath, "installing");
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    await _desktopUpdaterPlugin.installUpdate(
-      stagingPath: stagingPath,
-      allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS,
-      diagnosticsLogPath: diagnosticsLogPath,
+    await runControllerOwnedSmokeUpdate(
+      configuration: configuration,
+      checkForUpdate: _desktopUpdaterController.checkVersion,
+      updateIsAvailable: () =>
+          _desktopUpdaterController.state is UpdateAvailable ||
+          _desktopUpdaterController.state is UpdateBlockedBySupportPolicy,
+      downloadAndStage: _desktopUpdaterController.downloadUpdate,
+      install: _desktopUpdaterController.restartApp,
+      writeMarker: (value) =>
+          _writeSmokeMarker(configuration.markerPath, value),
+      writeDiagnostics: (event) =>
+          _writeSmokeDiagnostics(configuration.diagnosticsLogPath, event),
     );
   }
 
@@ -220,24 +247,31 @@ class _HomePageState extends State<HomePage> {
 
     final markerPath =
         Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"];
+    final diagnosticsLogPath =
+        Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"];
 
     try {
       await _writeSmokeMarker(markerPath, "checking");
+      await _writeSmokeDiagnostics(diagnosticsLogPath, "checking");
       await _desktopUpdaterController.checkVersion();
 
       if (_desktopUpdaterController.state is! UpdateAvailable) {
         await _writeSmokeMarker(markerPath, "no-update");
+        await _writeSmokeDiagnostics(diagnosticsLogPath, "no-update");
         return;
       }
 
       await _writeSmokeMarker(markerPath, "downloading");
+      await _writeSmokeDiagnostics(diagnosticsLogPath, "downloading");
       await _desktopUpdaterController.downloadUpdate();
 
       await _writeSmokeMarker(markerPath, "installing");
+      await _writeSmokeDiagnostics(diagnosticsLogPath, "installing");
       await Future<void>.delayed(const Duration(milliseconds: 250));
       await _desktopUpdaterController.restartApp();
     } catch (error) {
       await _writeSmokeMarker(markerPath, "failed: $error");
+      await _writeSmokeDiagnostics(diagnosticsLogPath, "failed: $error");
       rethrow;
     }
   }
@@ -250,6 +284,23 @@ class _HomePageState extends State<HomePage> {
     final marker = File(markerPath);
     await marker.parent.create(recursive: true);
     await marker.writeAsString(value);
+  }
+
+  Future<void> _writeSmokeDiagnostics(
+    String? diagnosticsLogPath,
+    String event,
+  ) async {
+    if (diagnosticsLogPath == null || diagnosticsLogPath.isEmpty) {
+      return;
+    }
+
+    final diagnosticsLog = File(diagnosticsLogPath);
+    await diagnosticsLog.parent.create(recursive: true);
+    await diagnosticsLog.writeAsString(
+      "event=$event\n",
+      mode: FileMode.append,
+      flush: true,
+    );
   }
 
   Future<void> initPlatformState() async {
@@ -294,7 +345,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("desktop_updater 2.x demo")),
+      appBar: AppBar(title: const Text("desktop_updater 3.0 demo")),
       body: Stack(
         children: [
           ListenableBuilder(
@@ -472,7 +523,7 @@ class _ContractCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              "This example uses the 2.x zip-first contract. The app checks an index, downloads the selected release descriptor, verifies the exact artifact, then stages it for the platform installer.",
+              "This example uses the 3.0 signed zip-first contract. The app checks a signed index, downloads the selected signed release descriptor, verifies the exact artifact, then stages it for the platform installer.",
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -491,7 +542,7 @@ class _ContractCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 2.x app-archive.json.",
+                      "Set DESKTOP_UPDATER_APP_ARCHIVE_URL to point this demo at your hosted 3.0 signed app-archive.json.",
                     ),
                     SizedBox(height: 6),
                     Text(
@@ -635,4 +686,14 @@ class _InfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _joinPath(String? left, String right) {
+  if (left == null || left.isEmpty) {
+    return null;
+  }
+  if (left.endsWith(Platform.pathSeparator)) {
+    return "$left$right";
+  }
+  return "$left${Platform.pathSeparator}$right";
 }

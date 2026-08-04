@@ -5,6 +5,8 @@ import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "fixtures/controller_v3_test_support.dart";
+
 void main() {
   testWidgets("opens without notifying listeners during route build", (
     tester,
@@ -190,6 +192,9 @@ class _NotesTestController extends DesktopUpdaterController {
   })  : _factory = factory,
         super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
           releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
         );
@@ -223,6 +228,9 @@ class _CallbackNotesController extends DesktopUpdaterController {
   })  : _nextFuture = nextFuture,
         super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
           releaseNotesUrl: Uri.parse("https://example.com/notes.json"),
         );

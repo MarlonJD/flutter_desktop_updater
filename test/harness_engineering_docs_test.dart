@@ -1,5 +1,7 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart";
 import "package:flutter_test/flutter_test.dart";
 
 const harnessPlanPath =
@@ -12,21 +14,33 @@ const oldActiveHarnessPlanPath =
 void main() {
   test("agent harness entrypoints stay discoverable", () {
     final agents = File("AGENTS.md").readAsStringSync();
+    final architecture = File("ARCHITECTURE.md").readAsStringSync();
     final harness = File("docs/harness-engineering.md").readAsStringSync();
     final plansIndex = File("docs/exec-plans/index.md").readAsStringSync();
     final readme = File("README.md").readAsStringSync();
 
-    expect(agents, contains("docs/harness-engineering.md"));
-    expect(agents, contains("docs/exec-plans/index.md"));
+    expect(agents, contains("[architecture map](ARCHITECTURE.md)"));
+    expect(
+      agents,
+      contains("[harness operating model](docs/harness-engineering.md)"),
+    );
+    expect(
+      agents,
+      contains("[execution-plan ledger](docs/exec-plans/index.md)"),
+    );
     expect(agents, isNot(contains("docs/plans")));
     expect(agents, contains("flutter test --no-pub"));
     expect(agents, isNot(contains("OpenAI Harness Engineering")));
 
+    expect(architecture, contains("# Architecture"));
+    expect(architecture, contains("Dependency Direction"));
+    expect(architecture, contains("Update Flow"));
     expect(harness, contains("# Harness Engineering For desktop_updater"));
     expect(harness, contains("Agent-Readable Repository Map"));
     expect(harness, contains("Mechanical Quality Gates"));
-    expect(harness, contains("Staged Adoption Plan"));
+    expect(harness, contains("Agent Feedback Loops"));
     expect(harness, contains("test/harness_engineering_docs_test.dart"));
+    expect(harness, isNot(contains("Staged Adoption Plan")));
     expect(harness, isNot(contains("docs/plans")));
 
     expect(
@@ -114,6 +128,21 @@ void main() {
     expect(File("docs/migration/agent-prompt.md").existsSync(), isFalse);
     expect(File(oldActiveHarnessPlanPath).existsSync(), isFalse);
     expect(Directory("agent-harness").existsSync(), isFalse);
+    expect(Directory("docs/superpowers").existsSync(), isFalse);
+    expect(
+      File(
+        "docs/design-docs/"
+        "2026-07-11-cross-platform-privileged-install-helper-design.md",
+      ).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(
+        "docs/exec-plans/active/"
+        "2026-07-21-windows-linux-production-readiness.md",
+      ).existsSync(),
+      isTrue,
+    );
     expect(completedPlan.split("\n"), hasLength(lessThanOrEqualTo(120)));
     expect(completedPlan, isNot(contains("Non-Negotiable Constraints")));
     expect(completedPlan, isNot(contains("REQUIRED SUB-SKILL")));
@@ -131,7 +160,8 @@ void main() {
 
     final source = runner.readAsStringSync();
     const orderedCommands = [
-      "dart format --set-exit-if-changed .",
+      "dart run tool/harness_gate.dart --structural",
+      "dart format --output=none --set-exit-if-changed .",
       "flutter analyze --no-fatal-infos --no-pub",
       "flutter test --no-pub test/harness_engineering_docs_test.dart",
       "flutter test --no-pub",
@@ -159,6 +189,87 @@ void main() {
     expect(source, isNot(contains("SECRET")));
     expect(source, isNot(contains("PASSWORD")));
     expect(gitignore, contains("reports/harness-check.md"));
+  });
+
+  test("adopted harness authorities and coverage remain complete", () {
+    final config = jsonDecode(
+      File(
+        "docs/agent-harness/config.json",
+      ).readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final authorities = config["authorities"] as Map<String, dynamic>;
+    const expectedAuthorities = {
+      "instructions",
+      "architecture",
+      "planning",
+      "registry",
+      "environment",
+      "verification",
+      "coverage",
+      "certification",
+    };
+
+    expect(config["schema_version"], 1);
+    expect(authorities.keys.toSet(), expectedAuthorities);
+    expect(authorities, isNot(contains("exec_plan_index")));
+
+    for (final path in authorities.values.cast<String>()) {
+      expect(
+        File(path).existsSync(),
+        isTrue,
+        reason: "Configured harness authority must exist: $path",
+      );
+    }
+
+    final coverage =
+        File("docs/agent-harness/coverage-matrix.md").readAsStringSync();
+    final statusRows = RegExp(
+      r"^\| .+ \| .+ \| .+ \| (?:\[(?:verified|candidate|blocked|N/A)\]\([^)]+\)|(?:verified|candidate|blocked|N/A))(?:\s|$)",
+      multiLine: true,
+    ).allMatches(coverage);
+
+    expect(
+      statusRows,
+      hasLength(31),
+      reason: "The canonical harness inventory contains exactly 31 rows.",
+    );
+    expect(coverage, isNot(contains("TODO(harness)")));
+    expect(coverage, isNot(contains("<replace-with")));
+
+    final certification = jsonDecode(
+      File(
+        "docs/agent-harness/certification.json",
+      ).readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final coverageDigest = sha256.convert(utf8.encode(coverage)).toString();
+
+    expect(certification["schema_version"], 2);
+    expect(certification["claim"], "harness-ready");
+    expect(certification["profile"], "adaptive");
+    expect(certification["coverage_sha256"], coverageDigest);
+    expect(
+      certification["project_native_gate"]["command"],
+      contains("tool/harness_gate.dart"),
+    );
+    expect(certification["maintenance"]["triggers"], ["manual"]);
+  });
+
+  test("project-native structural harness gate passes", () async {
+    final result = await Process.run(
+      "dart",
+      ["run", "tool/harness_gate.dart", "--structural"],
+      runInShell: false,
+    );
+
+    expect(
+      result.exitCode,
+      0,
+      reason: "${result.stdout}\n${result.stderr}",
+    );
+    expect(
+      result.stdout.toString(),
+      contains("31/31 canonical coverage rows declared"),
+    );
   });
 
   test("harness docs describe runner and smoke evidence naming", () {
@@ -197,8 +308,10 @@ void main() {
         File(".github/workflows/desktop-updater-ci.yml").readAsStringSync();
 
     const diagnosticsPaths = [
-      "reports/windows-update-smoke-debug-diagnostics.jsonl",
-      "reports/windows-update-smoke-release-diagnostics.jsonl",
+      "reports/windows-v3-debug-run-1",
+      "reports/windows-v3-debug-run-2",
+      "reports/windows-v3-release-run-1",
+      "reports/windows-v3-release-run-2",
       "reports/linux-update-smoke-debug-diagnostics.jsonl",
       "reports/linux-update-smoke-release-diagnostics.jsonl",
     ];

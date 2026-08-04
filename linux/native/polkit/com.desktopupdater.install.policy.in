@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Desktop Updater</vendor>
+  <vendor_url>https://pub.dev/packages/desktop_updater</vendor_url>
+  <action id="com.desktopupdater.install">
+    <description>Install a verified desktop application update</description>
+    <message>Authentication is required to install this verified update</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/desktop-updater-helper</annotate>
+  </action>
+</policyconfig>

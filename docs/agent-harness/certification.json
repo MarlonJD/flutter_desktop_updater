@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "claim": "harness-ready",
+  "profile": "adaptive",
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "environment": "local-macos-workspace",
+  "issued_at": "2026-07-23T13:55:37.847728Z",
+  "expires_at": "2026-07-30T13:55:37.847728Z",
+  "coverage_sha256": "8fcd61eb2ea9e0ce7ef121ee581518431cc890b14224e118f77bacbfd252e181",
+  "evidence_root": "docs/agent-harness/evidence",
+  "project_native_gate": {
+    "command": "dart run tool/harness_gate.dart --candidate --attestation-key-file \"$HARNESS_ATTESTATION_KEY_FILE\"",
+    "evidence": "docs/agent-harness/evidence/project-native-gate.json"
+  },
+  "maintenance": {
+    "command": "dart run tool/harness_check.dart",
+    "triggers": [
+      "manual"
+    ],
+    "max_age_hours": 168,
+    "evidence": "docs/agent-harness/evidence/continuous-maintenance.json"
+  },
+  "production_authority": {
+    "owner": "Package release maintainers",
+    "approval_evidence": "docs/agent-harness/evidence/production-approval.json",
+    "rollback_evidence": "docs/agent-harness/evidence/production-rollback.json"
+  }
+}

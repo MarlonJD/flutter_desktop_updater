@@ -6,6 +6,8 @@ import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "fixtures/controller_v3_test_support.dart";
+
 const MethodChannel _channel = MethodChannel("desktop_updater");
 
 final _fakeNotes = ReleaseNotes.fromJson({
@@ -31,6 +33,9 @@ void main() {
   test("canLoadReleaseNotes is false before a descriptor is selected", () {
     final controller = DesktopUpdaterController(
       appArchiveUrl: null,
+      expectedPackageId: "com.example.test",
+      trustedReleasePublicKeys: controllerTestPublicKeys,
+      recoveryStore: ControllerTestRecoveryStore(),
       skipInitialVersionCheck: true,
       releaseNotesLoader: (_) async => _fakeNotes,
     );
@@ -175,6 +180,9 @@ class _ReleaseNotesControllerForTest extends DesktopUpdaterController {
     super.releaseNotesLoader,
   }) : super(
           appArchiveUrl: null,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
         );
 
@@ -186,11 +194,15 @@ class _ReleaseNotesControllerForTest extends DesktopUpdaterController {
 
 class _UrlReleaseNotesControllerForTest extends DesktopUpdaterController {
   _UrlReleaseNotesControllerForTest({
-    super.appArchiveUrl,
+    Uri? appArchiveUrl,
     required Uri releaseNotesUrl,
     ReleaseNotesFetcher? releaseNotesFetcher,
     super.requestHeadersProvider,
   }) : super.forTesting(
+          appArchiveUrl: appArchiveUrl,
+          expectedPackageId: "com.example.test",
+          trustedReleasePublicKeys: controllerTestPublicKeys,
+          recoveryStore: ControllerTestRecoveryStore(),
           skipInitialVersionCheck: true,
           releaseNotesUrl: releaseNotesUrl,
           releaseNotesFetcher: releaseNotesFetcher,

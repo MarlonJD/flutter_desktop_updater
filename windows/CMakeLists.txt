@@ -49,16 +49,28 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE
-  desktop_updater_native
   flutter
   flutter_wrapper_plugin
-)
+  desktop_updater_native_static
+  Version)
+add_dependencies(${PLUGIN_NAME} desktop_updater_install_helper)
+
+set(DESKTOP_UPDATER_PORTABLE_BUNDLED_FILES)
+if(DESKTOP_UPDATER_PORTABLE_PROVIDER)
+  # The native subproject always emits desktop_updater_helper_policy.json.
+  if(NOT DESKTOP_UPDATER_PORTABLE_POLICY_OUTPUT)
+    message(FATAL_ERROR "Portable helper policy output was not configured")
+  endif()
+  list(APPEND DESKTOP_UPDATER_PORTABLE_BUNDLED_FILES
+    "${DESKTOP_UPDATER_PORTABLE_POLICY_OUTPUT}")
+endif()
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(desktop_updater_bundled_libraries
-  ""
+  "$<TARGET_FILE:desktop_updater_install_helper>"
+  ${DESKTOP_UPDATER_PORTABLE_BUNDLED_FILES}
   PARENT_SCOPE
 )
 
@@ -94,10 +106,10 @@ add_executable(${TEST_RUNNER}
 )
 apply_standard_settings(${TEST_RUNNER})
 target_include_directories(${TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(${TEST_RUNNER} PRIVATE flutter_wrapper_plugin)
 target_link_libraries(${TEST_RUNNER} PRIVATE
-  desktop_updater_native
-  flutter_wrapper_plugin
-)
+  desktop_updater_native_static
+  Version)
 target_link_libraries(${TEST_RUNNER} PRIVATE gtest_main gmock)
 # flutter_wrapper_plugin has link dependencies on the Flutter DLL.
 add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD

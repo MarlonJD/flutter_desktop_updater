@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "OpenAI's fixed layered domain architecture"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "applicability review of the repository architecture map",
+  "exit_code": null,
+  "observed_at": "2026-07-23T13:55:13.451466Z",
+  "result": "not-applicable",
+  "artifacts": [
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:ARCHITECTURE.md",
+    "validation-report-sha256:600d48e89f64d189ed76b3697e17df1383fd00d952c9191e1b919b32843b055d:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "672181f72fd1f48d31f201a438c4b7c918e0f0c69efb8fc33a89fe0979b7fa55"
+}

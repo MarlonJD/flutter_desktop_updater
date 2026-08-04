@@ -2,368 +2,388 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
-String readWindowsNativeHelperSource() {
-  return File(
-    "windows/native/src/desktop_updater_native.cpp",
-  ).readAsStringSync();
-}
-
 void main() {
-  test(
-    "Linux helper uses bash when the generated script uses bash features",
-    () {
-      final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
+  const productionSources = <String>[
+    "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    "windows/native/src/desktop_updater_native.cpp",
+    "linux/native/src/desktop_updater_native.cc",
+  ];
+  const pluginSources = <String>[
+    "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    "windows/desktop_updater_plugin.cpp",
+    "linux/desktop_updater_plugin.cc",
+  ];
 
+  test("production install clients contain no generated script fallback", () {
+    final source = _readAll(productionSources);
+    for (final forbidden in <String>[
+      ".command",
+      "PowerShell",
+      "powershell.exe",
+      "/bin/sh",
+      "/bin/bash",
+      "sudo",
+      "LegacyScriptScheduleForRemoval",
+      "BuildInstallScriptForTesting",
+      "makeHelperScript",
+      "writeHelperScript",
+      "StartDetachedScript",
+      "StartDetachedPowerShell",
+    ]) {
+      expect(source, isNot(contains(forbidden)), reason: forbidden);
+    }
+    expect(source, isNot(matches(RegExp(r"desktop_updater_.+\.sh"))));
+    expect(source, isNot(contains(".ps1")));
+  });
+
+  test("Flutter adapters reserve then commit through native clients", () {
+    for (final path in pluginSources.skip(1)) {
+      final source = File(path).readAsStringSync();
+      expect(source, contains("PrepareInstall"), reason: path);
+      expect(source, contains("CommitAfterExit"), reason: path);
       expect(
         source,
-        contains('execl("/bin/bash", "bash", script_path.c_str(), nullptr);'),
+        isNot(contains("ScheduleInstallAndRelaunch")),
+        reason: path,
       );
-      expect(source, contains("#!/bin/bash"));
-      expect(source, contains("set -euo pipefail"));
-      expect(source, contains("removed=("));
-    },
-  );
+    }
 
-  test(
-    "native helpers append diagnostics only when an explicit path is passed",
-    () {
-      final macosSource = File(
-        "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-      ).readAsStringSync();
-      final linuxSource = File(
-        "linux/desktop_updater_plugin.cc",
-      ).readAsStringSync();
-      final windowsPluginSource = File(
-        "windows/desktop_updater_plugin.cpp",
-      ).readAsStringSync();
-      final windowsSource = readWindowsNativeHelperSource();
+    final mac = File(pluginSources.first).readAsStringSync();
+    expect(mac, contains("prepareInstall"));
+    expect(mac, contains("commitAfterExit"));
+    expect(mac, isNot(contains("scheduleInstallAndRelaunch")));
+    final macCommit = mac.indexOf("commitAfterExit");
+    expect(macCommit, isNonNegative);
+    expect(macCommit, lessThan(mac.indexOf("result(nil)", macCommit)));
 
-      expect(macosSource, contains("diagnosticsLogPath"));
-      expect(macosSource, contains("DIAGNOSTICS_LOG="));
-      expect(macosSource, contains("log_event \"helper scheduled\""));
-      expect(macosSource, contains(r'[ -n "$DIAGNOSTICS_LOG" ] || return 0'));
+    final windows = File(pluginSources[1]).readAsStringSync();
+    expect(
+      windows.indexOf("CommitAfterExit"),
+      lessThan(windows.indexOf("ExitProcess(0)")),
+    );
 
-      expect(linuxSource, contains("diagnosticsLogPath"));
-      expect(linuxSource, contains("diagnostics_log="));
-      expect(linuxSource, contains(r'log_event \"helper scheduled\"'));
-      expect(linuxSource, contains(r'[ -n \"$diagnostics_log\" ] || return 0'));
+    final linux = File(pluginSources[2]).readAsStringSync();
+    expect(
+      linux.indexOf("CommitAfterExit"),
+      lessThan(linux.indexOf("std::exit(0)")),
+    );
+  });
 
-      expect(windowsPluginSource, contains("diagnosticsLogPath"));
-      expect(windowsSource, contains(r"$diagnosticsLog = "));
+  test("native entry points expose only explicit reservation operations", () {
+    for (final path in productionSources.skip(1)) {
+      final source = File(path).readAsStringSync();
+      expect(source, contains("PrepareInstall"), reason: path);
+      expect(source, contains("CommitAfterExit"), reason: path);
       expect(
-        windowsSource,
-        contains("Write-DiagnosticsEvent 'helper scheduled'"),
+        source,
+        isNot(contains("ScheduleInstallAndRelaunch")),
+        reason: path,
       );
-      expect(
-        windowsSource,
-        contains(
-          r"if ([string]::IsNullOrWhiteSpace($diagnosticsLog)) { return }",
-        ),
-      );
-    },
-  );
-
-  test("native helpers include failure events for support diagnostics", () {
-    final macosSource = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-    ).readAsStringSync();
-    final linuxSource = File(
-      "linux/desktop_updater_plugin.cc",
-    ).readAsStringSync();
-    final windowsSource = readWindowsNativeHelperSource();
-
-    for (final source in <String>[macosSource, linuxSource, windowsSource]) {
-      expect(source, contains("backup failure"));
-      expect(source, contains("move failure"));
-      expect(source, contains("cleanup failure"));
-      expect(source, contains("rollback failure"));
     }
   });
 
-  test("Linux native test header exposes diagnostics log path scheduling", () {
-    final source = File(
-      "linux/desktop_updater_plugin_private.h",
+  test("target proof and provenance gates remain in native clients", () {
+    final mac = File(productionSources[0]).readAsStringSync();
+    expect(mac, contains("validateCompleteHandoff"));
+    expect(mac, contains("StageProvenance.verify"));
+    expect(mac, contains("invalidReservationResponse"));
+
+    final windows = File(productionSources[1]).readAsStringSync();
+    expect(windows, contains("ProveInstallTarget"));
+    expect(windows, contains("ValidateStagingRoot"));
+    expect(windows, contains("RegistryRecordMatchesInstallTarget"));
+    expect(windows, contains("InstalledIdentityMarkerMatchesJson"));
+    expect(
+      _functionBody(windows, "PrepareInstall"),
+      contains("ProveInstallTarget"),
+    );
+
+    final linux = File(productionSources[2]).readAsStringSync();
+    expect(linux, contains("ValidateNormalizedRequest"));
+    expect(linux, contains("BindProvenanceToMarker"));
+    expect(linux, contains("kInstalledIdentityMarkerName"));
+  });
+
+  test("installer strategies live in authenticated helper components", () {
+    final mac = _readAll(const [
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/InstallStrategy.swift",
+      "macos/install_helper/Sources/DesktopUpdaterInstallHelper/VerifiedInstallerHandoff.swift",
+    ]);
+    expect(mac, contains("verifiedInstallerHandoff"));
+    expect(mac, contains("macosInstaller"));
+
+    final windows = _readAll(const [
+      "windows/native/src/helper/install_strategy.cpp",
+      "windows/native/src/helper/verified_installer_handoff.cpp",
+    ]);
+    expect(windows, contains("verifiedInstallerHandoff"));
+    expect(windows, contains("Authenticode"));
+
+    final linux = _readAll(const [
+      "linux/native/src/helper/install_strategy.cc",
+      "linux/native/src/helper/system_package_transaction.cc",
+    ]);
+    expect(linux, contains("systemPackageTransaction"));
+    expect(linux, contains("externalManagedRefresh"));
+  });
+
+  test("compatible Flutter method and error names remain stable", () {
+    final source = _readAll(pluginSources);
+    for (final name in <String>[
+      "desktop_updater",
+      "restartApp",
+      "installUpdate",
+      "InvalidArguments",
+      "RestartError",
+      "InstallError",
+    ]) {
+      expect(source, contains(name), reason: name);
+    }
+  });
+
+  test("Windows and Linux install adapters accept only the nine-key request",
+      () {
+    final windowsPlugin = File(pluginSources[1]).readAsStringSync();
+    final linuxPlugin = File(pluginSources[2]).readAsStringSync();
+    const requiredKeys = <String>[
+      "stagingPath",
+      "expectedPackageId",
+      "updateVersion",
+      "updateBuildNumber",
+      "platform",
+      "channel",
+      "expectedArtifactSha256",
+      "stageProvenanceSha256",
+      "transactionId",
+    ];
+    const removedKeys = <String>[
+      "installRoot",
+      "executableRelativePath",
+      "packageId",
+      "removedFiles",
+      "diagnosticsLogPath",
+      "allowedSignerThumbprints",
+      "innoRequiresElevation",
+    ];
+
+    for (final source in [windowsPlugin, linuxPlugin]) {
+      for (final key in requiredKeys) {
+        expect(source, contains('"$key"'), reason: key);
+      }
+      for (final key in removedKeys) {
+        expect(source, isNot(contains('"$key"')), reason: key);
+      }
+    }
+    expect(windowsPlugin, contains("arguments->size() != 9"));
+    expect(windowsPlugin, contains("CurrentExecutablePath()"));
+    expect(linuxPlugin, contains("fl_value_get_length(args) != 9"));
+    expect(linuxPlugin, contains("CurrentExecutableTarget("));
+  });
+
+  test("Linux restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[2]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('strcmp(method, "restartApp")'),
+      plugin.indexOf('strcmp(method, "installUpdate")'),
+    );
+    final nativeHeader = File(
+      "linux/native/include/desktop_updater_native.h",
     ).readAsStringSync();
 
-    expect(source, contains("diagnostics_log_path"));
-  });
-
-  test("Linux helper prunes target before whole directory overlay", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    const pruneSnippet =
-        r'find \"$target\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +';
-    const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
-
-    final pruneIndex = source.indexOf(pruneSnippet);
-    final copyIndex = source.indexOf(copySnippet);
-
-    expect(pruneIndex, isNonNegative);
-    expect(copyIndex, isNonNegative);
-    expect(pruneIndex, lessThan(copyIndex));
-  });
-
-  test("Linux helper restores executable permission before commit cleanup", () {
-    final source = File("linux/desktop_updater_plugin.cc").readAsStringSync();
-    const copySnippet = r'cp -a \"$staging/.\" \"$target/\"';
-    const restoreSnippet = r'chmod +x \"$exe\"';
-    const existsSnippet = r'[ -e \"$exe\" ] && [ ! -x \"$exe\" ]';
-    const missingExecutableSnippet =
-        r'[ ! -e \"$exe\" ] && [ \"$skip_relaunch\" != \"1\" ]';
-    const cleanupSnippet = r'rm -rf \"$backup\"';
-    const trapDisabledSnippet = r"trap - ERR";
-    const relaunchSnippet = r'\"$exe\" &';
-
-    final copyIndex = source.indexOf(copySnippet);
-    final restoreIndex = source.indexOf(restoreSnippet);
-    final existsIndex = source.indexOf(existsSnippet);
-    final missingExecutableIndex = source.indexOf(missingExecutableSnippet);
-    final restoreSearchStart = restoreIndex < 0 ? 0 : restoreIndex;
-    final cleanupIndex = source.indexOf(cleanupSnippet, restoreSearchStart);
-    final trapDisabledIndex = source.indexOf(
-      trapDisabledSnippet,
-      restoreSearchStart,
-    );
-    final relaunchIndex = source.indexOf(relaunchSnippet);
-
-    expect(copyIndex, isNonNegative);
-    expect(existsIndex, isNonNegative);
-    expect(restoreIndex, isNonNegative);
-    expect(missingExecutableIndex, isNonNegative);
-    expect(cleanupIndex, isNonNegative);
-    expect(trapDisabledIndex, isNonNegative);
-    expect(relaunchIndex, isNonNegative);
-    expect(copyIndex, lessThan(restoreIndex));
-    expect(existsIndex, lessThan(restoreIndex));
-    expect(restoreIndex, lessThan(missingExecutableIndex));
-    expect(restoreIndex, lessThan(cleanupIndex));
-    expect(restoreIndex, lessThan(trapDisabledIndex));
-    expect(restoreIndex, lessThan(relaunchIndex));
-  });
-
-  test("Windows helper prunes target before whole directory overlay", () {
-    final source = readWindowsNativeHelperSource();
-    const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
-    const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
-
-    final pruneIndex = source.indexOf(pruneSnippet);
-    final removeIndex = source.indexOf(
-      r"Remove-Item -LiteralPath $_.FullName -Recurse -Force",
-    );
-    final copyIndex = source.indexOf(copySnippet);
-
-    expect(pruneIndex, isNonNegative);
+    expect(restartBranch, contains("RestartCurrentApplication"));
+    expect(restartBranch, isNot(contains("HandoffNativeInstall")));
+    expect(restartBranch, isNot(contains("PrepareInstall")));
     expect(
-      source,
-      contains(r"Remove-Item -LiteralPath $_.FullName -Recurse -Force"),
+        nativeHeader, contains("InstallResult RestartCurrentApplication();"));
+  });
+
+  test("Windows restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[1]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('method_name().compare("restartApp")'),
+      plugin.indexOf('method_name().compare("installUpdate")'),
     );
-    expect(removeIndex, isNonNegative);
-    expect(copyIndex, isNonNegative);
-    expect(pruneIndex, lessThan(copyIndex));
+    final nativeHeader = File(
+      "windows/native/include/desktop_updater_native.h",
+    ).readAsStringSync();
+    final nativeSource = File(productionSources[1]).readAsStringSync();
+
+    expect(restartBranch, contains("RestartCurrentApplication"));
+    expect(restartBranch, isNot(contains("HandoffNativeInstall")));
+    expect(restartBranch, isNot(contains("PrepareInstall")));
+    expect(restartBranch, isNot(contains("InstallRequest")));
+    expect(
+      nativeHeader,
+      contains("InstallResult RestartCurrentApplication();"),
+    );
+    expect(
+      nativeHeader,
+      contains("bool AwaitRestartParentExitIfRequested();"),
+    );
+    final restart = _functionBody(nativeSource, "RestartCurrentApplication");
+    expect(restart, contains("CurrentExecutablePath"));
+    expect(restart, contains("CreateProcessW"));
+    expect(restart, contains("PROC_THREAD_ATTRIBUTE_HANDLE_LIST"));
+    expect(restart, isNot(contains("PrepareInstall")));
+    expect(restartBranch, contains("if (!restart.ok)"));
+    expect(restartBranch, contains('result->Error("RestartError"'));
+    expect(
+      restartBranch.indexOf('result->Error("RestartError"'),
+      lessThan(restartBranch.indexOf("ExitProcess(0)")),
+    );
   });
 
-  test("Windows helper preserves Inno uninstall artifacts during prune", () {
-    final source = readWindowsNativeHelperSource();
-    const predicateSnippet = "function Test-InstallerOwnedWindowsFile";
-    const preserveCondition =
-        r"$_.PSIsContainer -or -not (Test-InstallerOwnedWindowsFile $_.Name)";
-    const preserveEvent = "preserve installer file";
-    const pruneSnippet = r"Get-ChildItem -LiteralPath $target -Force";
-    const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
-
-    final predicateIndex = source.indexOf(predicateSnippet);
-    final pruneIndex = source.indexOf(pruneSnippet);
-    final conditionIndex = source.indexOf(preserveCondition);
-    final eventIndex = source.indexOf(preserveEvent);
-    final copyIndex = source.indexOf(copySnippet);
-
-    expect(predicateIndex, isNonNegative);
-    expect(pruneIndex, isNonNegative);
-    expect(conditionIndex, isNonNegative);
-    expect(eventIndex, isNonNegative);
-    expect(copyIndex, isNonNegative);
-    expect(predicateIndex, lessThan(pruneIndex));
-    expect(pruneIndex, lessThan(copyIndex));
-    expect(conditionIndex, lessThan(copyIndex));
-  });
-
-  test("Windows helper retries staging cleanup after successful copy", () {
-    final source = readWindowsNativeHelperSource();
-    const cleanupFunction = "function Remove-StagingDirectoryWithRetry";
-    const retryEvent = "Write-DiagnosticsEvent 'cleanup retry'";
-    const cleanupCall = r"Remove-StagingDirectoryWithRetry -Path $staging";
-    const moveSuccess = "Write-DiagnosticsEvent 'move success'";
-    const relaunchSnippet = r"Start-Process -FilePath $exe";
-
-    final functionIndex = source.indexOf(cleanupFunction);
-    final retryIndex = source.indexOf(retryEvent);
-    final moveSuccessIndex = source.indexOf(moveSuccess);
-    final cleanupCallIndex = source.indexOf(cleanupCall);
-    final relaunchIndex = source.indexOf(relaunchSnippet);
-
-    expect(functionIndex, isNonNegative);
-    expect(retryIndex, isNonNegative);
-    expect(moveSuccessIndex, isNonNegative);
-    expect(cleanupCallIndex, isNonNegative);
-    expect(relaunchIndex, isNonNegative);
-    expect(functionIndex, lessThan(moveSuccessIndex));
-    expect(moveSuccessIndex, lessThan(cleanupCallIndex));
-    expect(cleanupCallIndex, lessThan(relaunchIndex));
-  });
-
-  test("Windows helper updates uninstall DisplayVersion after overlay", () {
-    final source = readWindowsNativeHelperSource();
-    const copySnippet =
-        r"Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force";
-    const registrySnippet = r"Update-UninstallDisplayVersion -Version";
-
-    final copyIndex = source.indexOf(copySnippet);
-    final registryIndex = source.indexOf(registrySnippet);
-    final relaunchIndex = source.indexOf(r"Start-Process -FilePath $exe");
-
-    expect(source, contains(r".desktop_updater_release_manifest.json"));
-    expect(source, contains("DisplayVersion"));
-    expect(copyIndex, isNonNegative);
-    expect(registryIndex, isNonNegative);
-    expect(relaunchIndex, isNonNegative);
-    expect(copyIndex, lessThan(registryIndex));
-    expect(registryIndex, lessThan(relaunchIndex));
-  });
-
-  test("Windows helper executes staged Inno installer from manifest", () {
-    final source = readWindowsNativeHelperSource();
-
-    const manifestSnippet =
-        r"$manifest = Join-Path $staging '.desktop_updater_release_manifest.json'";
-    const strategySnippet =
-        r"if ($descriptor.install.strategy -eq 'innoInstaller')";
-    const invokeSnippet = "function Invoke-InnoInstallerUpdate";
-    const installerPathSnippet =
-        r"$installer = Join-Path $staging 'installer.exe'";
-    const startSnippet = "Write-DiagnosticsEvent 'inno installer start'";
-    const waitSnippet = r"Start-Process -FilePath $installer";
-
-    final manifestIndex = source.indexOf(manifestSnippet);
-    final strategyIndex = source.indexOf(strategySnippet);
-    final invokeIndex = source.indexOf(invokeSnippet);
-    final installerPathIndex = source.indexOf(installerPathSnippet);
-    final startIndex = source.indexOf(startSnippet);
-    final waitIndex = source.indexOf(waitSnippet);
-
-    expect(invokeIndex, isNonNegative);
-    expect(manifestIndex, isNonNegative);
-    expect(strategyIndex, isNonNegative);
-    expect(installerPathIndex, isNonNegative);
-    expect(startIndex, isNonNegative);
-    expect(waitIndex, isNonNegative);
-    expect(invokeIndex, lessThan(strategyIndex));
-    expect(invokeIndex, lessThan(waitIndex));
-  });
-
-  test(
-    "macOS helper opens staged PKG installers without silent privilege escalation",
-    () {
-      final source = File(
-        "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-      ).readAsStringSync();
-
-      expect(source, contains("pkgInstaller"));
-      expect(source, contains("launchMode"));
-      expect(source, contains("installerApp"));
-      expect(source, contains("installer.pkg"));
-      expect(source, contains("pkg installer open"));
-      expect(source, contains("/usr/bin/open"));
-      expect(source, isNot(contains("/usr/sbin/installer -pkg")));
-      expect(source, isNot(contains("sudo")));
-      expect(source, isNot(contains("osascript")));
-
-      final pkgBranchIndex = source.indexOf("pkg manifest loaded");
-      final appValidationIndex = source.indexOf(r'case "$STAGING" in');
-      expect(pkgBranchIndex, isNonNegative);
-      expect(appValidationIndex, isNonNegative);
-      expect(pkgBranchIndex, lessThan(appValidationIndex));
-    },
-  );
-
-  test("macOS move to Applications avoids destructive replacement", () {
-    final source = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+  test("macOS restart bypasses the privileged install transaction", () {
+    final plugin = File(pluginSources[0]).readAsStringSync();
+    final restartBranch = plugin.substring(
+      plugin.indexOf('case "restartApp"'),
+      plugin.indexOf('case "installUpdate"'),
+    );
+    final restartSource = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/"
+      "MacApplicationRestarter.swift",
     ).readAsStringSync();
 
-    expect(source, contains("sourceURL.path == destinationURL.path"));
-    expect(source, contains("desktop_updater_move_staging"));
-    expect(source, contains("desktop_updater_move_backup"));
-    expect(source, contains("restoreMoveBackup"));
-    expect(
-      source,
-      isNot(contains("try fileManager.removeItem(at: destinationURL)")),
+    expect(restartBranch, contains("restartCurrentApplication"));
+    expect(restartBranch, isNot(contains("handoffInstallAndRelaunch")));
+    expect(restartBranch, isNot(contains("prepareInstall")));
+    expect(restartBranch, isNot(contains("MacInstallRequest")));
+    final restart = plugin.substring(
+      plugin.indexOf("private func restartCurrentApplication"),
+      plugin.indexOf("private func prepareAndCommitInstall"),
     );
+    expect(restart, contains("scheduleCurrentApplicationRestart"));
+    expect(restart, contains("exit(EXIT_SUCCESS)"));
+    expect(restartSource, contains("Bundle.main.executableURL"));
+    expect(restartSource, contains("posix_spawn"));
+    expect(restartSource, contains("POSIX_SPAWN_CLOEXEC_DEFAULT"));
+    expect(
+      restartSource,
+      contains("posix_spawn_file_actions_addinherit_np"),
+    );
+    expect(
+      restartSource,
+      contains("awaitRestartParentExitIfRequested"),
+    );
+    final registration = plugin.substring(
+      plugin.indexOf("public static func register"),
+      plugin.indexOf("public func handle"),
+    );
+    expect(registration, contains("awaitRestartParentExitIfRequested"));
+    expect(registration, contains("_exit"));
+    final errorBranch = restart.substring(restart.indexOf("} catch {"));
+    expect(errorBranch, contains('code: "RestartError"'));
+    expect(errorBranch, isNot(contains("exit(")));
   });
 
-  test(
-    "Windows helper verifies Authenticode thumbprints for Inno installers",
-    () {
-      final source = readWindowsNativeHelperSource();
+  test("macOS install binds the caller transaction ID to the helper", () {
+    final plugin = File(pluginSources[0]).readAsStringSync();
+    final installBranch = plugin.substring(
+      plugin.indexOf('case "installUpdate"'),
+      plugin.indexOf('case "queryInstallTransaction"'),
+    );
+    final handoff = plugin.substring(
+      plugin.indexOf("private func prepareAndCommitInstall"),
+      plugin.indexOf("private func queryInstallTransaction"),
+    );
 
-      expect(source, contains("function Test-AuthenticodePolicy"));
-      expect(
-        source,
-        contains(r"Get-AuthenticodeSignature -FilePath $installer"),
-      );
-      expect(source, contains("SignerCertificate"));
-      expect(source, contains("Thumbprint"));
-      expect(source, contains("inno authenticode verified"));
-      expect(source, contains("inno authenticode failure"));
-    },
-  );
-
-  test(
-    "Windows helper requests UAC with verified script for protected targets",
-    () {
-      final source = readWindowsNativeHelperSource();
-
-      expect(source, contains("#include <shellapi.h>"));
-      expect(source, contains("IsProcessElevated"));
-      expect(source, contains("CanWriteDirectory"));
-      expect(source, contains("StartElevatedPowerShell"));
-      expect(
-        source,
-        contains("launch_mode == PowerShellLaunchMode::kElevated"),
-      );
-      expect(source, contains("ShellExecuteExW"));
-      expect(source, contains('L"runas"'));
-      expect(source, contains("-EncodedCommand"));
-      expect(source, contains("SHA256"));
-      expect(source, contains(r"Invoke-Expression $scriptText"));
-      expect(source, contains("Write-DiagnosticsEvent 'elevation requested'"));
-      expect(
-        source,
-        contains(
-          "Target directory is protected or not writable. "
-          "Requesting UAC elevation.",
+    expect(installBranch, contains('arguments["transactionId"]'));
+    expect(installBranch, contains("transactionID: transactionID"));
+    expect(handoff, contains("transactionID: String,"));
+    expect(
+      handoff,
+      matches(
+        RegExp(
+          r"helper\.prepareInstall\(\s*request,\s*"
+          r"transactionID: transactionID\s*\)",
+          multiLine: true,
         ),
-      );
-      expect(source, contains("User cancelled the Windows UAC update prompt."));
-    },
-  );
-
-  test("Windows helper treats Program Files roots as protected installs", () {
-    final source = readWindowsNativeHelperSource();
-
-    expect(source, contains("IsKnownProtectedInstallDirectory"));
-    expect(source, contains("ProtectedInstallRootPaths"));
-    expect(
-      source,
-      contains("IsKnownProtectedInstallDirectory(target_directory"),
-    );
-    expect(source, contains("const bool target_is_protected"));
-    expect(
-      source,
-      contains(
-        "if (!process_is_elevated && "
-        "(target_is_protected || !target_is_writable))",
       ),
     );
   });
+
+  test("macOS and Linux ambiguous handoffs preserve recovery markers", () {
+    final macPlugin = File(pluginSources[0]).readAsStringSync();
+    final macInstallBranch = macPlugin.substring(
+      macPlugin.indexOf("private func prepareAndCommitInstall"),
+      macPlugin.indexOf("private func queryInstallTransaction"),
+    );
+    final linuxPlugin = File(pluginSources[2]).readAsStringSync();
+    final linuxInstallBranch = linuxPlugin.substring(
+      linuxPlugin.indexOf('strcmp(method, "installUpdate")'),
+      linuxPlugin.indexOf('strcmp(method, "queryInstallTransaction")'),
+    );
+
+    expect(
+      macInstallBranch,
+      contains("MacInstallClientError.installRecoveryRequired"),
+    );
+    expect(macInstallBranch, contains('"recoveryRequired": true'));
+    expect(linuxPlugin, contains("RecoveryRequiredErrorDetails"));
+    expect(linuxPlugin, contains('"recoveryRequired"'));
+    expect(linuxInstallBranch, contains("result.recovery_required"));
+    expect(
+      linuxInstallBranch,
+      matches(
+        RegExp(
+          r"RecoveryRequiredErrorDetails\(\s*transaction_id,\s*"
+          r"result\.error\s*\)",
+          multiLine: true,
+        ),
+      ),
+    );
+  });
+
+  test(
+    "Windows install handoff keeps released errors with recovery details",
+    () {
+      final source = File(pluginSources[1]).readAsStringSync();
+      final recoveryDetails = _functionBody(
+        source,
+        "RecoveryRequiredErrorDetails",
+      );
+      final restartBranch = source.substring(
+        source.indexOf('method_name().compare("restartApp")'),
+        source.indexOf('method_name().compare("installUpdate")'),
+      );
+      final installBranch = source.substring(
+        source.indexOf('method_name().compare("installUpdate")'),
+        source.indexOf('method_name().compare("queryInstallTransaction")'),
+      );
+
+      expect(
+        recoveryDetails,
+        contains('flutter::EncodableValue("recoveryRequired")'),
+      );
+      expect(recoveryDetails, contains("flutter::EncodableValue(true)"));
+      expect(
+        restartBranch,
+        isNot(contains("RecoveryRequiredErrorDetails")),
+      );
+      expect(
+        installBranch,
+        contains(
+          RegExp(
+            r"if\s*\(recovery_required\)\s*\{\s*"
+            r'result->Error\(\s*"InstallError",\s*error,\s*'
+            r"RecoveryRequiredErrorDetails\(\)\)",
+          ),
+        ),
+      );
+      expect(source, isNot(contains('"InstallRecoveryRequired"')));
+      expect(source, isNot(contains('"RestartRecoveryRequired"')));
+    },
+  );
+}
+
+String _readAll(Iterable<String> paths) =>
+    paths.map((path) => File(path).readAsStringSync()).join("\n");
+
+String _functionBody(String source, String functionName) {
+  source = source.replaceAll("\r\n", "\n");
+  final start = source.indexOf(functionName);
+  expect(start, isNonNegative, reason: functionName);
+  final nextFunction = source.indexOf("\n}\n\n", start);
+  expect(nextFunction, isNonNegative, reason: functionName);
+  return source.substring(start, nextFunction + 2);
 }

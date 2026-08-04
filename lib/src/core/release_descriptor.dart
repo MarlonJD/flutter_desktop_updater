@@ -30,12 +30,12 @@ class ReleaseDescriptor {
   factory ReleaseDescriptor.fromJson(Map<String, dynamic> json) {
     final descriptor = ReleaseDescriptor(
       schemaVersion: json["schemaVersion"] as int? ?? 0,
-      packageId: json["packageId"] as String? ?? "",
+      packageId: (json["packageId"] as String? ?? "").trim(),
       appName: json["appName"] as String? ?? "",
-      version: json["version"] as String? ?? "",
+      version: (json["version"] as String? ?? "").trim(),
       buildNumber: json["buildNumber"] as int?,
-      platform: json["platform"] as String? ?? "",
-      channel: json["channel"] as String? ?? "stable",
+      platform: (json["platform"] as String? ?? "").trim(),
+      channel: (json["channel"] as String? ?? "stable").trim(),
       artifact: ReleaseArtifact.fromJson(
         json["artifact"] as Map<String, dynamic>? ?? const {},
       ),
@@ -156,15 +156,26 @@ class ReleaseDescriptor {
     if (packageId.trim().isEmpty) {
       throw const FormatException("release.json packageId is required.");
     }
+    if (appName.trim().isEmpty) {
+      throw const FormatException("release.json appName is required.");
+    }
     if (version.trim().isEmpty) {
       throw const FormatException("release.json version is required.");
     }
     if (platform.trim().isEmpty) {
       throw const FormatException("release.json platform is required.");
     }
+    if (channel.trim().isEmpty) {
+      throw const FormatException("release.json channel is required.");
+    }
     if (buildNumber != null && buildNumber! < 0) {
       throw const FormatException(
         "release.json buildNumber must be zero or greater when provided.",
+      );
+    }
+    if (artifact.kind == "pkgInstaller" && buildNumber == null) {
+      throw const FormatException(
+        "release.json buildNumber is required for pkgInstaller artifacts.",
       );
     }
     artifact.validate();
@@ -230,9 +241,12 @@ List<String> _parseStringList(Object? value, String displayName) {
   if (value is! List) {
     throw FormatException("release.json $displayName must be a list.");
   }
-  return List.unmodifiable([
-    for (final entry in value) entry.toString(),
-  ]);
+  if (value.any((entry) => entry is! String)) {
+    throw FormatException(
+      "release.json $displayName must contain only strings.",
+    );
+  }
+  return List.unmodifiable(value.cast<String>());
 }
 
 /// Download metadata for the artifact referenced by a descriptor.
@@ -285,6 +299,11 @@ class ReleaseArtifact {
         kind != "pkgInstaller" &&
         kind != "innoInstaller") {
       throw FormatException("Unsupported release artifact kind: $kind");
+    }
+    if (!url.isAbsolute) {
+      throw const FormatException(
+        "release.json artifact.url must be absolute.",
+      );
     }
     if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
       throw const FormatException(
@@ -363,6 +382,11 @@ class ReleaseDeltaArtifact {
     if (kind != "bsdiff") {
       throw FormatException("Unsupported release delta artifact kind: $kind");
     }
+    if (!url.isAbsolute) {
+      throw const FormatException(
+        "release.json deltaArtifacts.url must be absolute.",
+      );
+    }
     if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(sha256)) {
       throw const FormatException(
         "release.json deltaArtifacts.sha256 must be 64 lowercase hex "
@@ -390,7 +414,7 @@ class ReleaseInstall {
   /// Parses install metadata from the descriptor `install` object.
   factory ReleaseInstall.fromJson(Map<String, dynamic> json) {
     return ReleaseInstall(
-      strategy: json["strategy"] as String? ?? "",
+      strategy: (json["strategy"] as String? ?? "").trim(),
       inno: json["inno"] == null
           ? null
           : ReleaseInnoInstall.fromJson(
@@ -541,12 +565,21 @@ class ReleaseMacOSPkgInstall {
     required this.launchMode,
     required this.expectedPackageIds,
     required this.relaunchAfterInstall,
-  });
+  }) : _wireLaunchMode = launchMode;
+
+  const ReleaseMacOSPkgInstall._({
+    required this.launchMode,
+    required this.expectedPackageIds,
+    required this.relaunchAfterInstall,
+    required String wireLaunchMode,
+  }) : _wireLaunchMode = wireLaunchMode;
 
   /// Parses PKG installer metadata.
   factory ReleaseMacOSPkgInstall.fromJson(Map<String, dynamic> json) {
-    return ReleaseMacOSPkgInstall(
-      launchMode: json["launchMode"] as String? ?? "installerApp",
+    final wireLaunchMode = json["launchMode"] as String? ?? "installerApp";
+    return ReleaseMacOSPkgInstall._(
+      launchMode: _normalizedMacOSPkgLaunchMode(wireLaunchMode),
+      wireLaunchMode: wireLaunchMode,
       expectedPackageIds: _parseStringList(
         json["expectedPackageIds"],
         "install.macosPkg.expectedPackageIds",
@@ -555,19 +588,24 @@ class ReleaseMacOSPkgInstall {
     );
   }
 
-  /// Native handoff mode. The runtime currently supports Installer.app only.
+  /// Native handoff mode. The runtime supports only the bundled privileged
+  /// helper's fixed `/usr/sbin/installer` execution path.
   final String launchMode;
 
   /// Package identifiers expected inside the installer package metadata.
   final List<String> expectedPackageIds;
 
-  /// Whether the app should relaunch after Installer.app completes.
+  /// Whether the app should relaunch after the verified installer completes.
   final bool relaunchAfterInstall;
+
+  /// Exact schema-v3 launch token retained for signature verification and
+  /// staging. Runtime behavior is exposed through normalized [launchMode].
+  final String _wireLaunchMode;
 
   /// Converts this policy to descriptor JSON.
   Map<String, dynamic> toJson() {
     return {
-      "launchMode": launchMode,
+      "launchMode": _wireLaunchMode,
       "expectedPackageIds": expectedPackageIds,
       "relaunchAfterInstall": relaunchAfterInstall,
     };
@@ -575,9 +613,10 @@ class ReleaseMacOSPkgInstall {
 
   /// Validates the PKG policy.
   void validate() {
-    if (launchMode != "installerApp") {
+    if (launchMode != "privilegedInstallerTool") {
       throw const FormatException(
-        "release.json install.macosPkg.launchMode must be installerApp.",
+        "release.json install.macosPkg.launchMode must be "
+        "privilegedInstallerTool.",
       );
     }
     if (expectedPackageIds.isEmpty) {
@@ -586,6 +625,14 @@ class ReleaseMacOSPkgInstall {
       );
     }
   }
+}
+
+String _normalizedMacOSPkgLaunchMode(Object? value) {
+  final launchMode = value as String? ?? "installerApp";
+  if (launchMode == "installerApp" || launchMode == "privilegedInstallerTool") {
+    return "privilegedInstallerTool";
+  }
+  return launchMode;
 }
 
 /// Windows Inno Setup installer execution policy from `release.json`.

@@ -1,10 +1,80 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>DesktopUpdater.Native</PackageId>
-    <Description>Windows native updater bindings for desktop_updater.</Description>
+    <Version>3.0.0</Version>
+    <Authors>desktop_updater contributors</Authors>
+    <BuildInParallel>false</BuildInParallel>
+    <Description>Versioned .NET wrapper and native Windows install helper for desktop_updater.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/MarlonJD/flutter_desktop_updater</RepositoryUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(NativeDllPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native"
+      Condition="'$(NativeDllPath)' != ''" />
+    <None
+      Include="$(RuntimeDllPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native"
+      Condition="'$(RuntimeDllPath)' != ''" />
+    <None
+      Include="$(InstallHelperPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native/desktop_updater_install_helper.exe"
+      Condition="'$(InstallHelperPath)' != ''" />
+    <None
+      Include="$(HelperPolicyPath)"
+      Pack="true"
+      PackagePath="runtimes/win-x64/native/desktop_updater_helper_policy.json"
+      Condition="'$(HelperPolicyPath)' != ''" />
+    <None
+      Include="README.md"
+      Pack="true"
+      PackagePath="/" />
+    <None
+      Include="../../THIRD_PARTY_NOTICES.md"
+      Link="THIRD_PARTY_NOTICES.md"
+      Pack="true"
+      PackagePath="/THIRD_PARTY_NOTICES.md" />
+    <None
+      Include="buildTransitive/DesktopUpdater.Native.targets"
+      Pack="true"
+      PackagePath="buildTransitive/DesktopUpdater.Native.targets" />
+  </ItemGroup>
+
+  <Target Name="VerifyNativeDllForPack" BeforeTargets="Pack">
+    <Error
+      Condition="'$(NativeDllPath)' == ''"
+      Text="NativeDllPath must point to the built desktop_updater_native.dll." />
+    <Error
+      Condition="'$(NativeDllPath)' != '' and !Exists('$(NativeDllPath)')"
+      Text="Native desktop_updater DLL was not found: $(NativeDllPath)" />
+    <Error
+      Condition="'$(RuntimeDllPath)' == ''"
+      Text="RuntimeDllPath must point to the built desktop_updater_runtime.dll." />
+    <Error
+      Condition="'$(RuntimeDllPath)' != '' and !Exists('$(RuntimeDllPath)')"
+      Text="Native desktop_updater runtime DLL was not found: $(RuntimeDllPath)" />
+    <Error
+      Condition="'$(InstallHelperPath)' == ''"
+      Text="InstallHelperPath must point to the built desktop_updater_install_helper.exe." />
+    <Error
+      Condition="'$(InstallHelperPath)' != '' and !Exists('$(InstallHelperPath)')"
+      Text="Native desktop_updater install helper was not found: $(InstallHelperPath)" />
+    <Error
+      Condition="'$(HelperPolicyPath)' == ''"
+      Text="HelperPolicyPath must point to a consumer-specific sealed helper policy." />
+    <Error
+      Condition="'$(HelperPolicyPath)' != '' and !Exists('$(HelperPolicyPath)')"
+      Text="Native desktop_updater helper policy was not found: $(HelperPolicyPath)" />
+  </Target>
 </Project>

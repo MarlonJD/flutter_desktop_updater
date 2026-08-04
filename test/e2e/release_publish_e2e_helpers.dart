@@ -55,7 +55,7 @@ Future<ReleasePublishE2eFixture> createReleasePublishE2eFixture({
     config: """
 updates:
   baseUrl: ${baseUrl ?? server.uri}
-$providerConfig
+${providerConfig.replaceAll("{{WEB_ROOT}}", webRoot.path)}
 """,
   );
 
@@ -275,15 +275,38 @@ bool get releasePublishE2eEnabled {
 Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
   final output = StringBuffer();
   final exitCode = await runReleaseCommand(
-    ["publish", "--platform", fixture.platform, "--skip-build-for-test"],
+    [
+      "publish",
+      "--platform",
+      fixture.platform,
+      "--skip-build-for-test",
+      "--public-key-id",
+      _publishPublicKeyId,
+      "--private-key-env",
+      _publishPrivateKeyEnv,
+      "--public-keys-env",
+      _publishPublicKeysEnv,
+      "--initialize-feed",
+    ],
     projectRoot: fixture.projectRoot,
     output: output,
+    environment: {
+      _publishPrivateKeyEnv: _publishPrivateKeyBase64,
+      _publishPublicKeysEnv:
+          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
+    },
   );
   if (exitCode != 0) {
     throw StateError("release publish failed:\n$output");
   }
   return output;
 }
+
+const _publishPublicKeyId = "stable-2026";
+const _publishPrivateKeyEnv = "DESKTOP_UPDATER_TEST_PRIVATE_KEY";
+const _publishPublicKeysEnv = "DESKTOP_UPDATER_TEST_PUBLIC_KEYS";
+const _publishPrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+const _publishPublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
 Future<StringBuffer> validateFixture(ReleasePublishE2eFixture fixture) async {
   final output = StringBuffer();
@@ -294,9 +317,15 @@ Future<StringBuffer> validateFixture(ReleasePublishE2eFixture fixture) async {
       fixture.manifestFile.path,
       "--from-version",
       "2.0.0+200",
+      "--public-keys-env",
+      _publishPublicKeysEnv,
     ],
     projectRoot: fixture.projectRoot,
     output: output,
+    environment: {
+      _publishPublicKeysEnv:
+          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
+    },
   );
   if (exitCode != 0) {
     throw StateError("release validate failed:\n$output");

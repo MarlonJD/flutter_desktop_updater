@@ -1,6 +1,6 @@
-# desktop_updater 2.x example
+# desktop_updater 3.0 example
 
-This app demonstrates the desktop_updater 2.x zip-first update flow:
+This app demonstrates the desktop_updater 3.0 signed zip-first update flow:
 
 ```text
 app-archive.json -> release.json -> zip artifact
@@ -12,7 +12,7 @@ The example does not check the network automatically on startup. Press
 ## Configure
 
 By default the app displays `https://updates.example.com/app-archive.json`.
-Point it at your own hosted 2.x index before testing a real update:
+Point it at your own hosted 3.0 signed index before testing a real update:
 
 ```sh
 DESKTOP_UPDATER_APP_ARCHIVE_URL=https://updates.example.com/app-archive.json \

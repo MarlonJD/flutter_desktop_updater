@@ -202,7 +202,8 @@ windows:
     }
   });
 
-  test("macos unsigned internal flow warns only", () async {
+  test("macos missing trust gate warns that privileged install is blocked",
+      () async {
     final root = await _createProject(config: _minimalConfig);
     try {
       final output = StringBuffer();
@@ -220,7 +221,11 @@ windows:
           "WARNING: macOS production releases should enable macos.notarize or run an app-owned notarization gate before packaging.",
         ),
       );
-      expect(output.toString(), contains("allowUnsignedMacOSUpdates"));
+      expect(
+        output.toString(),
+        contains("privileged helper requires signed release metadata"),
+      );
+      expect(output.toString(), isNot(contains("allowUnsignedMacOSUpdates")));
     } finally {
       await root.delete(recursive: true);
     }

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example",
+  "version": "2.7.0",
+  "buildNumber": 274,
+  "platform": "windows",
+  "channel": "stable",
+  "artifact": {
+    "kind": "innoInstaller",
+    "url": "https://updates.example.test/release-contract/windows-inno-installer/artifact.exe",
+    "sha256": "d8744cf9114b0fed470a345bd43151ae7b27945008549fb7b7c75c0c8e349b01",
+    "length": 54
+  },
+  "install": {
+    "strategy": "innoInstaller",
+    "inno": {
+      "silentArgs": [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART"
+      ],
+      "inheritInstallDirectory": true,
+      "logFileName": "desktop_updater_inno_install.log",
+      "relaunchAfterInstall": true,
+      "requiresElevation": "auto",
+      "authenticode": {
+        "required": true,
+        "sha256Thumbprints": [
+          "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+        ]
+      }
+    }
+  },
+  "minimumUpdaterVersion": "2.5.0",
+  "minimumOS": {
+    "windows": "10.0.19045"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

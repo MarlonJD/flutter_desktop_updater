@@ -1,8 +1,10 @@
 import "dart:io";
 
 import "package:args/args.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
+import "package:path/path.dart" as path;
 
 ArgParser buildPublishParser() {
   return ArgParser()
@@ -12,10 +14,49 @@ ArgParser buildPublishParser() {
     ..addOption("config")
     ..addOption("output")
     ..addOption("channel")
+    ..addOption(
+      "public-key-id",
+      help: "Pinned Ed25519 key id for the final app archive signature.",
+    )
+    ..addOption(
+      "private-key-env",
+      help: "Environment variable containing the base64 Ed25519 private seed.",
+    )
+    ..addOption(
+      "private-key-file",
+      help: "External file containing the base64 Ed25519 private seed.",
+    )
+    ..addOption(
+      "public-keys-env",
+      help: "Environment variable containing JSON public key map.",
+    )
+    ..addFlag(
+      "initialize-feed",
+      negatable: false,
+      help: "Create a signed feed only when no hosted app-archive.json exists.",
+    )
+    ..addOption(
+      "existing-app-archive",
+      help: "Path to the already-hosted signed app-archive.json history to "
+          "extend. When the hosted feed exists, bytes must match exactly.",
+    )
     ..addOption("version")
     ..addOption("build-number")
     ..addOption("package-id")
     ..addOption("app-name")
+    ..addOption(
+      "project-type",
+      allowed: ["flutter", "xcode", "cmake", "manual"],
+    )
+    ..addOption("artifact-root")
+    ..addOption("executable-relative-path")
+    ..addOption("xcode-project")
+    ..addOption("xcode-workspace")
+    ..addOption("xcode-scheme")
+    ..addOption("xcode-derived-data")
+    ..addOption("cmake-source")
+    ..addOption("cmake-build-directory")
+    ..addOption("cmake-build-target")
     ..addMultiOption(
       "dart-define",
       splitCommas: false,
@@ -58,6 +99,7 @@ Future<int> runPublishCommand(
   ArgResults results, {
   required Directory projectRoot,
   required StringSink output,
+  Map<String, String>? environment,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildPublishParser().usage);
@@ -92,6 +134,16 @@ Future<int> runPublishCommand(
     buildNumber: _optionalInt(results, "build-number"),
     packageId: results["package-id"] as String?,
     appName: results["app-name"] as String?,
+    projectType: results["project-type"] as String?,
+    artifactRoot: results["artifact-root"] as String?,
+    executableRelativePath: results["executable-relative-path"] as String?,
+    xcodeProject: results["xcode-project"] as String?,
+    xcodeWorkspace: results["xcode-workspace"] as String?,
+    xcodeScheme: results["xcode-scheme"] as String?,
+    xcodeDerivedDataPath: results["xcode-derived-data"] as String?,
+    cmakeSourceDirectory: results["cmake-source"] as String?,
+    cmakeBuildDirectory: results["cmake-build-directory"] as String?,
+    cmakeBuildTarget: results["cmake-build-target"] as String?,
     dartDefines: List<String>.unmodifiable(
       results["dart-define"] as List<String>,
     ),
@@ -103,18 +155,81 @@ Future<int> runPublishCommand(
     freshInstallUrl:
         freshInstallUrlValue == null ? null : Uri.parse(freshInstallUrlValue),
     freshInstallMessage: freshInstallMessage,
+    existingAppArchive: results["existing-app-archive"] as String?,
+    initializeFeed: results["initialize-feed"] as bool,
     notarize: results["notarize"] as bool,
   );
   final publisher = ReleasePublisher(
     skipBuild: results["skip-build-for-test"] as bool,
   );
+  final signing = await _releaseSigningOptions(
+    results,
+    projectRoot: projectRoot,
+    environment: environment ?? Platform.environment,
+  );
   await publisher.publish(
     projectRoot: projectRoot,
     platform: platform,
     overrides: overrides,
+    signing: signing,
     output: output,
   );
   return 0;
+}
+
+Future<ReleaseSigningOptions> _releaseSigningOptions(
+  ArgResults results, {
+  required Directory projectRoot,
+  required Map<String, String> environment,
+}) async {
+  final publicKeyId = results["public-key-id"] as String?;
+  final envName = results["private-key-env"] as String?;
+  final fileValue = results["private-key-file"] as String?;
+  final publicKeysEnvName = results["public-keys-env"] as String?;
+  final hasKeyId = publicKeyId != null && publicKeyId.trim().isNotEmpty;
+  final hasEnv = envName != null && envName.trim().isNotEmpty;
+  final hasFile = fileValue != null && fileValue.trim().isNotEmpty;
+  final hasPublicKeysEnv =
+      publicKeysEnvName != null && publicKeysEnvName.trim().isNotEmpty;
+  if (!hasKeyId && !hasEnv && !hasFile && !hasPublicKeysEnv) {
+    throw const FormatException(
+      "Canonical release publish requires signed metadata: provide "
+      "--public-key-id, --public-keys-env, and exactly one of "
+      "--private-key-env or --private-key-file.",
+    );
+  }
+  if (!hasKeyId || !hasPublicKeysEnv || hasEnv == hasFile) {
+    throw const FormatException(
+      "Publishing signatures require --public-key-id, --public-keys-env, "
+      "and exactly one of --private-key-env or --private-key-file.",
+    );
+  }
+  final publicKeysJson = environment[publicKeysEnvName.trim()];
+  if (publicKeysJson == null || publicKeysJson.trim().isEmpty) {
+    throw FormatException(
+      "Missing environment variable ${publicKeysEnvName.trim()}.",
+    );
+  }
+  final trustedReleasePublicKeys = decodeReleasePublicKeysJson(publicKeysJson);
+  late final String privateKey;
+  if (hasEnv) {
+    final value = environment[envName.trim()];
+    if (value == null || value.trim().isEmpty) {
+      throw FormatException("Missing environment variable ${envName.trim()}.");
+    }
+    privateKey = value;
+  } else {
+    final value = fileValue!.trim();
+    final file = File(
+      path.isAbsolute(value) ? value : path.join(projectRoot.path, value),
+    );
+    privateKey = await file.readAsString();
+  }
+  return ReleaseSigningOptions(
+    publicKeyId: publicKeyId.trim(),
+    privateKeyBase64: privateKey,
+    trustedReleasePublicKeys: trustedReleasePublicKeys,
+  );
 }
 
 int? _optionalInt(ArgResults results, String name) {

@@ -13,6 +13,16 @@ abstract interface class SftpRemoteFileClient {
   });
 }
 
+abstract interface class ExclusiveLeaseSftpRemoteFileClient
+    implements SftpRemoteFileClient {
+  Future<IndexPublishReceipt> writeIndexFileWithLease({
+    required File file,
+    required String remotePath,
+    required SftpUploadConfig config,
+    required RemoteIndexRevision expectedRevision,
+  });
+}
+
 class SftpRemoteWrite {
   const SftpRemoteWrite({
     required this.file,
@@ -46,6 +56,7 @@ class SftpUploadProvider implements OrderedUploadProvider {
       manifest: manifest,
       config: config,
       output: output,
+      expectedRevision: const RemoteIndexRevision.absent(),
     );
     return const UploadResult(uploaded: true);
   }
@@ -68,18 +79,34 @@ class SftpUploadProvider implements OrderedUploadProvider {
   }
 
   @override
-  Future<void> uploadAppArchive({
+  Future<IndexPublishReceipt> uploadAppArchive({
     required Directory localRoot,
     required PublishManifest manifest,
     required UploadConfig config,
     required StringSink output,
+    required RemoteIndexRevision expectedRevision,
   }) async {
+    final leaseClient = client;
+    if (leaseClient is! ExclusiveLeaseSftpRemoteFileClient) {
+      throw const FormatException(
+        "SFTP upload requires a conditional index write or tested exclusive "
+        "publication lease before publishing app-archive.json.",
+      );
+    }
     final sftpConfig = _sftpConfig(config);
-    await client.writeFile(
+    final receipt = await leaseClient.writeIndexFileWithLease(
       file: File(path.join(localRoot.path, manifest.appArchive.path)),
       remotePath: _remotePath(sftpConfig.remotePath, manifest.appArchive.path),
       config: sftpConfig,
+      expectedRevision: expectedRevision,
     );
+    await verifyOrderedIndexPublishReceipt(
+      localRoot: localRoot,
+      manifest: manifest,
+      expectedRevision: expectedRevision,
+      receipt: receipt,
+    );
+    return receipt;
   }
 }
 

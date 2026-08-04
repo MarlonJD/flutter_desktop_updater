@@ -116,7 +116,9 @@ void main() {
     await expectLater(
       ArtifactVerifier(
         policy: ArtifactVerificationPolicy.requireEd25519Signature(
-          publicKeys: const {"other-key": "abc"},
+          publicKeys: const {
+            "other-key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          },
         ),
       ).verifyDescriptor(signed.descriptor),
       throwsA(isA<StateError>()),

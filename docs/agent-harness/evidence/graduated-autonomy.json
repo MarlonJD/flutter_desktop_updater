@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "Autonomy increases only after test, review, recovery, and escalation loops exist"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "review registry statuses and operating-loop escalation levels",
+  "exit_code": 0,
+  "observed_at": "2026-07-23T13:55:13.451466Z",
+  "result": "passed",
+  "artifacts": [
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:docs/agent-harness/registry.md",
+    "validation-report-sha256:600d48e89f64d189ed76b3697e17df1383fd00d952c9191e1b919b32843b055d:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "9e43b79a6023140d0f65fc0c3c2087d7a00d2108ce24702c922c5b05c17710b0"
+}

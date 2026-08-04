@@ -6,6 +6,41 @@ import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("strict public key configuration normalizes ids and rejects ambiguity",
+      () async {
+    final signed = await _signedDescriptor(
+      signatureKeyId: " stable-2026 ",
+    );
+
+    final verifier = Ed25519ReleaseSignatureVerifier({
+      " stable-2026 ": signed.publicKey,
+    });
+
+    expect(await verifier.verify(signed.descriptor), isTrue);
+
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({
+        "stable-2026": signed.publicKey,
+        " stable-2026 ": signed.publicKey,
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({" ": signed.publicKey}),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({"stable-2026": "not base64"}),
+      throwsFormatException,
+    );
+    expect(
+      () => Ed25519ReleaseSignatureVerifier({
+        "stable-2026": base64Encode(List<int>.filled(31, 0)),
+      }),
+      throwsFormatException,
+    );
+  });
+
   test("valid Ed25519 signature passes", () async {
     final signed = await _signedDescriptor();
 
@@ -13,6 +48,38 @@ void main() {
       _publicKeyId: signed.publicKey,
     });
 
+    expect(await verifier.verify(signed.descriptor), isTrue);
+  });
+
+  test("signed legacy PKG wire token remains verifiable", () async {
+    final signed = await _signedDescriptor(
+      descriptorJson: {
+        ..._descriptorJson(),
+        "artifact": {
+          "kind": "pkgInstaller",
+          "url": "https://cdn.example.com/Example.pkg",
+          "sha256": "b" * 64,
+          "length": 24,
+        },
+        "install": {
+          "strategy": "pkgInstaller",
+          "macosPkg": {
+            "launchMode": "installerApp",
+            "expectedPackageIds": ["com.example.app.pkg"],
+            "relaunchAfterInstall": false,
+          },
+        },
+        "minimumUpdaterVersion": "2.6.0",
+      },
+    );
+    final verifier = Ed25519ReleaseSignatureVerifier({
+      _publicKeyId: signed.publicKey,
+    });
+
+    expect(
+      signed.descriptor.install.macosPkg!.launchMode,
+      "privilegedInstallerTool",
+    );
     expect(await verifier.verify(signed.descriptor), isTrue);
   });
 
@@ -28,12 +95,11 @@ void main() {
     expect(await verifier.verify(tampered), isFalse);
   });
 
-  test("missing public key fails", () async {
-    final signed = await _signedDescriptor();
-
-    final verifier = Ed25519ReleaseSignatureVerifier(const {});
-
-    expect(await verifier.verify(signed.descriptor), isFalse);
+  test("empty public key map is rejected at configuration", () {
+    expect(
+      () => Ed25519ReleaseSignatureVerifier(const {}),
+      throwsFormatException,
+    );
   });
 
   test("malformed base64 signature fails", () async {
@@ -109,15 +175,19 @@ const _privateSeed = <int>[
   31,
 ];
 
-Future<_SignedDescriptor> _signedDescriptor() async {
+Future<_SignedDescriptor> _signedDescriptor({
+  Map<String, dynamic>? descriptorJson,
+  String signatureKeyId = _publicKeyId,
+}) async {
+  final json = descriptorJson ?? _descriptorJson();
   final algorithm = Ed25519();
   final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
   final publicKey = await keyPair.extractPublicKey();
   final descriptorToSign = ReleaseDescriptor.fromJson({
-    ..._descriptorJson(),
+    ...json,
     "signature": {
       "algorithm": "ed25519",
-      "publicKeyId": _publicKeyId,
+      "publicKeyId": signatureKeyId,
       "value": "",
     },
   });
@@ -126,10 +196,10 @@ Future<_SignedDescriptor> _signedDescriptor() async {
     keyPair: keyPair,
   );
   final descriptor = ReleaseDescriptor.fromJson({
-    ..._descriptorJson(),
+    ...json,
     "signature": {
       "algorithm": "ed25519",
-      "publicKeyId": _publicKeyId,
+      "publicKeyId": signatureKeyId,
       "value": base64Encode(signature.bytes),
     },
   });

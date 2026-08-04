@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/staging_directory_cleanup.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -8,12 +9,22 @@ void main() {
   test("deletes only stale desktop updater staging directories", () async {
     final root = await Directory.systemTemp.createTemp("staging_cleanup_");
     try {
-      final oldStage =
-          await Directory(path.join(root.path, "desktop_updater_stage_old"))
-              .create();
-      final recentStage =
-          await Directory(path.join(root.path, "desktop_updater_stage_recent"))
-              .create();
+      final oldStage = await _ownedStage(
+        root,
+        "123e4567-e89b-42d3-a456-426614174000",
+      );
+      final recentStage = await _ownedStage(
+        root,
+        "223e4567-e89b-42d3-a456-426614174000",
+      );
+      final forgedStage = await Directory(
+        path.join(
+          root.path,
+          "desktop_updater_stage_323e4567-e89b-42d3-a456-426614174000",
+        ),
+      ).create();
+      final forgedSentinel = File(path.join(forgedStage.path, "sentinel.txt"));
+      await forgedSentinel.writeAsString("not updater owned");
       final unrelated =
           await Directory(path.join(root.path, "other_stage_old")).create();
       final stageFile =
@@ -33,6 +44,10 @@ void main() {
         unrelated,
         now.subtract(const Duration(days: 8)),
       );
+      await _setLastModified(
+        forgedStage,
+        now.subtract(const Duration(days: 8)),
+      );
       await stageFile.setLastModified(now.subtract(const Duration(days: 8)));
 
       final report = await cleanupStaleDesktopUpdaterStagingDirectories(
@@ -42,9 +57,12 @@ void main() {
 
       expect(oldStage.existsSync(), isFalse);
       expect(recentStage.existsSync(), isTrue);
+      expect(forgedStage.existsSync(), isTrue);
+      expect(forgedSentinel.readAsStringSync(), "not updater owned");
       expect(unrelated.existsSync(), isTrue);
       expect(stageFile.existsSync(), isTrue);
-      expect(report.scanned, 4);
+      expect(root.existsSync(), isTrue);
+      expect(report.scanned, 5);
       expect(report.deleted, 1);
       expect(report.failedPaths, isEmpty);
     } finally {
@@ -56,8 +74,7 @@ void main() {
     final root = await Directory.systemTemp.createTemp("staging_cleanup_");
     try {
       final protectedStage =
-          await Directory(path.join(root.path, "desktop_updater_stage_keep"))
-              .create();
+          await _ownedStage(root, "423e4567-e89b-42d3-a456-426614174000");
       final now = DateTime.utc(2026, 7, 7, 12);
       await _setLastModified(
         protectedStage,
@@ -78,6 +95,20 @@ void main() {
       await root.delete(recursive: true);
     }
   });
+}
+
+Future<Directory> _ownedStage(Directory parent, String nonce) async {
+  final stage = await createOwnedStagingDirectory(parent: parent, nonce: nonce);
+  await writeStagedUpdateProvenance(
+    stageRoot: stage,
+    nonce: nonce,
+    packageId: "com.example.app",
+    descriptorSha256:
+        "1111111111111111111111111111111111111111111111111111111111111111",
+    artifactSha256:
+        "2222222222222222222222222222222222222222222222222222222222222222",
+  );
+  return stage;
 }
 
 Future<void> _setLastModified(FileSystemEntity entity, DateTime value) async {

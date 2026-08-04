@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "query secrets",
+      "timestamp": "2026-07-10T12:00:00.000Z",
+      "stage": "download",
+      "level": "info",
+      "message": "GET https://updates.example.test/release.json?token=abc&safe=1",
+      "error": null,
+      "expectedLogLine": "2026-07-10T12:00:00.000Z info download: GET https://updates.example.test/release.json?token=<redacted>&safe=1"
+    },
+    {
+      "name": "authorization and password",
+      "timestamp": "2026-07-10T12:00:00.000Z",
+      "stage": "descriptor",
+      "level": "error",
+      "message": "Authorization: Bearer abc password=hunter2",
+      "error": "signature=deadbeef",
+      "expectedLogLine": "2026-07-10T12:00:00.000Z error descriptor: Authorization: <redacted> password=<redacted> Error: FormatException: signature=<redacted>"
+    },
+    {
+      "name": "credential aliases",
+      "timestamp": "2026-07-10T12:00:00.000Z",
+      "stage": "verify",
+      "level": "warning",
+      "message": "credential=my-value publicKey=abc secret=hidden",
+      "error": null,
+      "expectedLogLine": "2026-07-10T12:00:00.000Z warning verify: credential=<redacted> publicKey=<redacted> secret=<redacted>"
+    }
+  ]
+}

@@ -61,6 +61,7 @@ windows:
     supportUrl: https://example.com/support
     updatesUrl: https://updates.example.com/
     privilegesRequired: admin
+    protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0
     silentArgs:
       - /VERYSILENT
       - /SUPPRESSMSGBOXES
@@ -79,6 +80,13 @@ Important fields:
 - `outputBaseName`: optional installer filename stem. Defaults to
   `<app>-<version>-windows-setup`.
 - `privilegesRequired`: `admin` or `lowest`. Defaults to `lowest`.
+- `protectedHelperInstallDir`: required only for generated administrative
+  installers. It must use the exact security-epoch generation leaf
+  `C:\Program Files\DesktopUpdaterHelperGenerationV1--<package-id>--<release-version>`,
+  remain disjoint from the app tree, and exactly match the native client's
+  compiled `DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR` value. The generation
+  leaf is a direct child of trusted Program Files; the legacy nested
+  `DesktopUpdater\Helpers` layout is rejected.
 - `silentArgs`: installer args used by the updater. Defaults to
   `/VERYSILENT`, `/SUPPRESSMSGBOXES`, and `/NORESTART`.
 - `requiresElevation`: descriptor hint: `auto`, `always`, or `never`.
@@ -91,14 +99,78 @@ Use `x64compatible` for both architecture fields when an x64 Flutter build
 should also install on Arm64 Windows 11 through x64 emulation. The legacy
 `x64` identifier matches x64 Windows only.
 
+Set the same protected directory before the Windows native client is
+configured. For a native CMake build, pass it directly:
+
+```powershell
+cmake -S windows/native -B windows/native/build `
+  '-DDESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR=C:/Program Files/DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0'
+```
+
+For a Flutter Windows host, set the cache variable in the host's
+`windows/CMakeLists.txt` before the generated Flutter plugin graph is added:
+
+```cmake
+set(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR
+  "C:/Program Files/DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0"
+  CACHE PATH "Protected desktop_updater helper directory" FORCE)
+```
+
+The release packager compares `protectedHelperInstallDir` with the nearest
+build `CMakeCache.txt` when that cache is available and fails on a missing or
+different cache value. Externally built signed inputs may not include their
+local cache, so the explicit configured directory remains required and must be
+shared by the build and installer pipelines.
+
 ## Generated Script Mode
 
-In generated mode the CLI writes a conservative `.iss` file next to the
-installer artifact and invokes Inno Setup Compiler.
+In generated mode the CLI writes a conservative `.iss` file and its canonical
+`*.install-identity.json` source next to the installer artifact, then invokes
+Inno Setup Compiler. Keep the identity sidecar with the generated script if you
+archive or recompile it; the `.iss` intentionally references that immutable
+source instead of regenerating identity at install time.
 
 Generated scripts:
 
 - Install the Flutter Windows Release directory into `{app}`.
+- For an administrative install, require the Release directory to contain the
+  signed `desktop_updater_install_helper.exe` and consumer-specific sealed
+  `desktop_updater_helper_policy.json`.
+- Install those two files into `protectedHelperInstallDir`, outside `{app}`.
+- Before mutation, `PrepareToInstall` verifies that the configured generation
+  leaf is a direct child of trusted Program Files, is outside the app tree, and
+  has no reparse point in its trusted parent ancestry. It does not read, hash,
+  validate, or execute a pre-existing final leaf.
+- For every installer run, create a cryptographically random fresh sibling
+  under Program Files. That directory inherits trusted Program Files authority
+  before the installer hardens it or copies the helper pair. No historically
+  caller-writable `DesktopUpdater\Helpers\<package>` directory is used as a
+  creation, mutation, or execution authority.
+- Replace inherited ACLs with a protected DACL, set the owner to the built-in
+  Administrators SID, grant write authority only to SYSTEM and Administrators,
+  and grant Users read/execute access. Every fixed-system `icacls.exe` call is
+  checked for a nonzero result. The fresh directory and both files are
+  reparse-checked and matched to the packaged SHA-256 digests.
+- At `ssPostInstall`, quarantine any exact final leaf without inspecting or
+  executing it, atomically rename the fresh protected generation into the exact
+  final path, then invoke `--validate-endpoint` and `--register-endpoint` only
+  from that fresh leaf. Empty, helper-only, policy-only, unsafe-complete, and
+  interrupted same-release leaves are self-repaired on retry. A validation
+  failure quarantines the fresh leaf and leaves the final path empty. If
+  registration fails after it starts, the already validated fresh leaf remains
+  at the final path for an idempotent retry. A historical leaf is never restored
+  after endpoint validation or registration begins because a registry write can
+  have become durable before the helper reports failure.
+- Keep older version-addressed generation leaves and endpoint records in place,
+  so older apps and pending transactions retain their exact prior path/hash
+  binding.
+- Install canonical `.desktop_updater_install_identity.json` into `{app}` so a
+  protected recovery host can prove an Inno-installed target even after the
+  original caller exits.
+- Mark the protected directory, helper, and policy `uninsneveruninstall` and do
+  not add uninstall rules for DesktopUpdater transaction registry state. This
+  preserves the authority and state needed to finish recovery until a native,
+  pending-transaction-aware unregister operation exists.
 - Use `DefaultDirName={autopf}\<app name>`.
 - Create a Start Menu shortcut.
 - Add a post-install launch action that is skipped during silent installs.
@@ -108,7 +180,11 @@ Generated scripts:
 Run:
 
 ```sh
-dart run desktop_updater:release publish --platform windows
+dart run desktop_updater:release publish \
+  --platform windows \
+  --public-key-id stable-2026 \
+  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 The generated `release.json` points at the installer `.exe` and uses:
@@ -123,6 +199,10 @@ The generated `release.json` points at the installer `.exe` and uses:
   }
 }
 ```
+
+A generated `PrivilegesRequired=lowest` installer remains an unprivileged
+app-only installer and does not accept `protectedHelperInstallDir` or register
+an elevated endpoint.
 
 ## Custom Script Mode
 
@@ -146,6 +226,22 @@ Keep these responsibilities in your script:
 - Correct install directory behavior.
 - Signing and timestamping if your pipeline signs through Inno.
 - File list, uninstall, repair, and upgrade behavior.
+- Install the signed helper and sealed policy outside the atomically replaced
+  app tree in the exact direct-Program-Files generation leaf compiled into the
+  native client. Do not reuse the legacy nested helper parent and do not
+  unregister older endpoint versions while they can still own pending
+  transactions.
+- Install canonical `.desktop_updater_install_identity.json` in the app
+  root.
+- Provision into a fresh installer-trusted sibling, verify the pair and digests,
+  and promote it atomically. Never execute a pre-existing final leaf after a
+  path-based digest check.
+- Establish the trusted owner and protected DACL required by the helper before
+  calling `--register-endpoint`, fail the install on any nonzero result, and
+  preserve helper, policy, and pending transaction state during uninstall.
+
+The CLI does not silently rewrite a custom script or infer its privileged
+provisioning policy.
 
 ## Runtime Behavior
 
@@ -169,15 +265,11 @@ not add new files to Inno's uninstall log.
 
 ## Diagnostics
 
-When `diagnosticsLogPath` is supplied, Windows helper diagnostics can include:
-
-- `inno manifest loaded`
-- `inno authenticode verified`
-- `inno authenticode failure`
-- `inno installer start`
-- `inno installer success`
-- `inno installer failure exitCode=<code>`
-- `inno relaunch attempt`
+The 3.0 native API has no caller-selected diagnostics path. The standalone
+Windows helper emits fixed, best-effort lifecycle events to the Windows
+Application Event Log under
+`DesktopUpdater.InstallHelper.ProtocolV1`. App-owned Dart and in-memory
+diagnostics remain available before handoff.
 
 The Inno installer log file defaults to
 `desktop_updater_inno_install.log` under the system temp directory.
@@ -188,9 +280,13 @@ Useful local checks:
 
 ```sh
 dart run desktop_updater:release doctor --platform windows
-dart run desktop_updater:release publish --platform windows
-dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 2.4.0+240
-dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json
+dart run desktop_updater:release publish \
+  --platform windows \
+  --public-key-id stable-2026 \
+  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 2.4.0+240 --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 Run the full Inno smoke locally on a Windows machine with PowerShell 7 and
@@ -208,15 +304,27 @@ verifies that the version 2 payload is removed. Pass `-KeepArtifacts` to retain
 the disposable fixture after a failure. This lane is intentionally local-only
 and does not require production Authenticode credentials.
 
+The repository's source and Dart tests verify the generated contract only.
+Authenticode validation, the resulting owner/DACL metadata, nonzero
+registration retry behavior, UAC behavior, and recovery-preserving uninstall
+still require signed Windows target-host evidence; they are not proven by a
+macOS package build.
+
 ## Migration Notes
 
 For apps already installed with Inno:
 
 1. Keep the same `AppId`.
-2. Publish the next Windows update in Inno installer mode.
-3. Verify that the installer upgrades the existing app in place.
-4. Verify uninstall after update removes files added by the new version.
-5. Keep direct zip releases on their existing channel until you intentionally
+2. Compile the next native client and configure the installer with the matching
+   `DesktopUpdaterHelperGenerationV1--<package-id>--<release-version>` path.
+   Do not carry the legacy nested `DesktopUpdater\Helpers` path into the new
+   release.
+3. Publish the next Windows update in Inno installer mode. Older endpoint paths
+   remain registered and on disk for pending transactions.
+4. Verify that the installer upgrades the existing app in place and that an
+   interrupted same-release retry repairs the generation leaf.
+5. Verify uninstall after update removes files added by the new version.
+6. Keep direct zip releases on their existing channel until you intentionally
    migrate those users.
 
 Do not edit or regenerate `unins###.dat` from the updater. Inno owns uninstall

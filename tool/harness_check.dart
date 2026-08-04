@@ -4,16 +4,28 @@ const reportPath = "reports/harness-check.md";
 
 const harnessCommands = [
   HarnessCommand(
-    "Format",
-    "dart format --set-exit-if-changed .",
+    "Harness structure",
+    "dart run tool/harness_gate.dart --structural",
     "dart",
-    ["format", "--set-exit-if-changed", "."],
+    ["run", "tool/harness_gate.dart", "--structural"],
+  ),
+  HarnessCommand(
+    "Format",
+    "dart format --output=none --set-exit-if-changed .",
+    "dart",
+    ["format", "--output=none", "--set-exit-if-changed", "."],
   ),
   HarnessCommand(
     "Analyze",
     "flutter analyze --no-fatal-infos --no-pub",
     "flutter",
     ["analyze", "--no-fatal-infos", "--no-pub"],
+  ),
+  HarnessCommand(
+    "Version check",
+    "dart run tool/version_check.dart",
+    "dart",
+    ["run", "tool/version_check.dart"],
   ),
   HarnessCommand(
     "Focused harness test",

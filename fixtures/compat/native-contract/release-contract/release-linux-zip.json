@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example",
+  "version": "2.7.0",
+  "buildNumber": 275,
+  "platform": "linux",
+  "channel": "stable",
+  "artifact": {
+    "kind": "zip",
+    "url": "https://updates.example.test/release-contract/linux-zip/artifact.zip",
+    "sha256": "dd14ff8c3daf4b5048bf8579be7840f119cc3d0b2ecd4f6841fbb59f7a660d68",
+    "length": 42
+  },
+  "install": {
+    "strategy": "wholeDirectoryReplace"
+  },
+  "minimumUpdaterVersion": "2.0.0",
+  "minimumOS": {
+    "linux": "glibc-2.35"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

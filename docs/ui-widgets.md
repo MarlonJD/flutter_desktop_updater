@@ -122,7 +122,23 @@ wrapper widgets handle placement.
   update active, hide "Not now", and show "Save first" plus "Restart" so users
   can save unsaved work without skipping the required update.
 - `UpdateFailed`: shows a retry action and, when a diagnostics report exists,
-  a "View report" action.
+  a "View report" action. When macOS reports
+  `PrivilegedHelperApprovalRequired`, the stock card and dialog instead explain
+  that background-item permission is required, show `Open settings`, and show
+  `Try again` for the retained staged update.
+
+Writable macOS directory-replacement targets stay on the unprivileged helper
+path. PKG installer updates always require the `SMAppService` root daemon
+because the fixed system-installer operation needs root, so this approval UI
+can appear for PKG even when the app's parent directory is writable.
+It is a first-enable or revoked-approval recovery UI, not a prompt that should
+appear for every update; an already enabled daemon is reused.
+Custom UI can use `isMacOSPrivilegedHelperApprovalRequiredError(state.error)`
+and call `controller.openMacOSBackgroundItemsSettings()` to provide the same
+recovery action.
+The stock title, explanation, settings action, and retry action are localized
+through the four `macosPrivilegedHelperApproval*Text` fields on
+`DesktopUpdateLocalization`.
 
 ## Release Notes Patterns
 
@@ -143,6 +159,11 @@ bottom sheet:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesLoader: (descriptor) {
     return myNotesApi.fetch(
       version: descriptor.version,
@@ -160,6 +181,11 @@ Simple hosted notes can use `releaseNotesUrl` instead:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
 );
 ```
@@ -325,6 +351,11 @@ is hidden unless your app supplies `onProblemReport`.
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   onProblemReport: (report) async {
     await myIssueReporter.send(report.toPlainText());
   },
@@ -358,6 +389,11 @@ across controller recreation, provide an app-owned `UpdatePreferences` adapter:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   preferences: MyUpdatePreferencesStore(),
 );
 ```
@@ -375,6 +411,11 @@ Staged rollouts use an app-owned stable identity. Pass an opaque
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   installationIdentity: myInstallIdentity,
 );
 ```
@@ -390,6 +431,11 @@ such as `checkStarted`, `checkFailed`, `updateSelected`, `downloadStarted`,
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   telemetry: (event) {
     analytics.record("desktop_update_${event.type.name}");
   },
@@ -408,6 +454,11 @@ status when known, and error text when scheduling or cleanup fails:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   onCleanupReport: (report) async {
     await myReleaseAuditStore.save(report);
   },
@@ -441,6 +492,11 @@ class AppUpdateLogSink implements UpdateDiagnosticsSink {
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   diagnosticsRecorder: UpdateDiagnosticsRecorder(
     sink: AppUpdateLogSink(appOwnedLogFile),
   ),
@@ -478,6 +534,10 @@ class AppUpdateRecoveryStore implements UpdateRecoveryStore {
 
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
   recoveryStore: AppUpdateRecoveryStore(),
 );
 ```
@@ -491,20 +551,15 @@ while the old version or an unverifiable version becomes `UpdateFailed(report)`.
 Store failures are captured as diagnostics warnings and do not crash startup or
 block install handoff.
 
-For post-exit native helper diagnostics, pass an explicit app-owned log path.
-The helpers append bounded JSONL-style lifecycle events only when a path is
-provided; logging failures are ignored so update install and rollback work are
-not blocked by support logging:
+For a durable app-owned log, configure an `UpdateDiagnosticsRecorder` sink.
+The 3.0 native API does not expose a caller-selected diagnostics path. The
+standalone protocol-v1 helpers convert diagnostics to a fixed `platformLog`
+destination. Use the `UpdateDiagnosticsRecorder` example above for durable
+app-owned lifecycle logs.
 
-```dart
-final controller = DesktopUpdaterController(
-  appArchiveUrl: archiveUrl,
-  diagnosticsLogPath: appOwnedHelperLogFile.path,
-);
-```
-
-Use this with an app-owned recovery store when support needs evidence from
-after the Flutter process has exited.
+Use an app-owned recovery store for startup UX. Collect post-exit helper
+evidence from the Windows Application Event Log or the Linux helper-owned
+transaction-registry log.
 
 For support flows, keep the integration level explicit:
 
@@ -512,9 +567,9 @@ For support flows, keep the integration level explicit:
    files and uploads nothing.
 2. App-owned Dart lifecycle log: add `UpdateDiagnosticsRecorder(sink: ...)`
    when your app wants a redacted durable log at a path it controls.
-3. App-owned native helper log plus recovery store: add `diagnosticsLogPath`
-   and `UpdateRecoveryStore` when support needs post-exit install, rollback,
-   cleanup, or relaunch evidence.
+3. Platform helper log plus recovery store: add `UpdateRecoveryStore` and
+   collect the fixed platform helper log when support needs post-exit install,
+   rollback, cleanup, or relaunch evidence.
 
 Suggested user-facing support copy:
 
@@ -535,6 +590,11 @@ deterministic policy callback:
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
+  expectedPackageId: "com.example.app",
+  trustedReleasePublicKeys: const {
+    "stable-2026": "base64-raw-ed25519-public-key",
+  },
+  recoveryStore: appRecoveryStore,
   isMinimumOSSupported: ({required platform, required minimumOS}) {
     return myRuntimePolicy.supports(platform, minimumOS);
   },

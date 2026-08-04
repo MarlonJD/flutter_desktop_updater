@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.example.desktop-updater.helper</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>DesktopUpdaterInstallHelper</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>3.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>3.0.0</string>
+  <key>DesktopUpdaterSealedPolicy</key>
+  <data>
+  eyJhbGxvd2VkQXBwbGljYXRpb25TaWduZXIiOnsia2luZCI6ImFwcGxlRGVzaWduYXRlZFJlcXVpcmVtZW50IiwidmFsdWUiOiJpZGVudGlmaWVyIGNvbS5leGFtcGxlLmFwcCBhbmQgYW5jaG9yIGFwcGxlIGdlbmVyaWMifSwiYWxsb3dlZEhlbHBlclNpZ25lciI6eyJraW5kIjoiYXBwbGVEZXNpZ25hdGVkUmVxdWlyZW1lbnQiLCJ2YWx1ZSI6ImlkZW50aWZpZXIgY29tLmV4YW1wbGUuZGVza3RvcC11cGRhdGVyLmhlbHBlciBhbmQgYW5jaG9yIGFwcGxlIGdlbmVyaWMifSwiYWxsb3dlZEluc3RhbGxSb290cyI6WyIvQXBwbGljYXRpb25zIl0sImFsbG93ZWRTdHJhdGVnaWVzIjpbeyJwcm92aWRlciI6InBsYXRmb3JtRGlyZWN0b3J5Iiwic3RyYXRlZ3kiOiJkaXJlY3RvcnlSZXBsYWNlIn0seyJwcm92aWRlciI6Im1hY29zSW5zdGFsbGVyIiwic3RyYXRlZ3kiOiJ2ZXJpZmllZEluc3RhbGxlckhhbmRvZmYifV0sImFsbG93ZWRUYXJnZXRDbGFzc2VzIjpbImFwcGxpY2F0aW9uQnVuZGxlIiwicHJvdGVjdGVkQXBwbGljYXRpb24iXSwiYXBwbGljYXRpb25QYWNrYWdlSWQiOiJjb20uZXhhbXBsZS5hcHAiLCJoZWxwZXJTZXJ2aWNlSWQiOiJjb20uZXhhbXBsZS5kZXNrdG9wLXVwZGF0ZXIuaGVscGVyIiwibWluaW11bUhlbHBlclByb3RvY29sVmVyc2lvbiI6MSwicG9saWN5SWQiOiJjb20uZXhhbXBsZS5kZXNrdG9wLXVwZGF0ZXIucHJpdmlsZWdlZCIsInBvbGljeVZlcnNpb24iOjMsInJlbGVhc2VSb290UHVibGljS2V5cyI6W3siYWxnb3JpdGhtIjoiZWQyNTUxOSIsImtleUlkIjoic3RhYmxlLTIwMjYiLCJwdWJsaWNLZXlCYXNlNjQiOiJBUUlEQkFVR0J3Z0pDZ3NNRFE0UEVCRVNFeFFWRmhjWUdSb2JIQjBlSHlBPSJ9XX0=
+  </data>
+  <key>DesktopUpdaterSealedPolicySHA256</key>
+  <string>15d2d21582e931463c5e55a853f5757dcb33f047bad24fd6439f433e2bc94a75</string>
+</dict>
+</plist>

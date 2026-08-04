@@ -5,22 +5,37 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
-  test("generated macOS helper rechecks staged app before install work", () {
+  test("native macOS client rechecks staged app before provenance work", () {
     final source = File(
-      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
     ).readAsStringSync();
 
-    final symlinkCheck = source.indexOf(r'if [ -L "$STAGING" ]; then');
-    final directoryCheck = source.indexOf(r'if [ ! -d "$STAGING" ]; then');
-    final manifestCheck = source.indexOf(
-      r'MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"',
+    final appValidation =
+        source.indexOf("try validateStagingPath(stagingPath)");
+    final provenanceCheck = source.indexOf("StageProvenance.verify(");
+    final validator = source.indexOf("func validateStagingPath(");
+    final resourceCheck = source.indexOf(
+      ".resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])",
+      validator,
+    );
+    final symlinkCheck = source.indexOf(
+      "if values.isSymbolicLink == true",
+      validator,
+    );
+    final directoryCheck = source.indexOf(
+      "if values.isDirectory != true",
+      validator,
     );
 
+    expect(appValidation, isNonNegative);
+    expect(provenanceCheck, isNonNegative);
+    expect(validator, isNonNegative);
+    expect(resourceCheck, isNonNegative);
     expect(symlinkCheck, isNonNegative);
     expect(directoryCheck, isNonNegative);
-    expect(manifestCheck, isNonNegative);
-    expect(symlinkCheck, lessThan(manifestCheck));
-    expect(directoryCheck, lessThan(manifestCheck));
+    expect(appValidation, lessThan(provenanceCheck));
+    expect(resourceCheck, lessThan(symlinkCheck));
+    expect(symlinkCheck, lessThan(directoryCheck));
     expect(
       source,
       contains(

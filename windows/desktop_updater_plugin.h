@@ -5,8 +5,28 @@
 #include <flutter/plugin_registrar_windows.h>
 
 #include <memory>
+#include <string>
+#include <vector>
+
+#include "desktop_updater_native.h"
 
 namespace desktop_updater {
+
+enum class ProductVersionBuildParseResult {
+  kBuildNumber,
+  kNoBuildNumber,
+  kInvalid,
+};
+
+ProductVersionBuildParseResult ParseProductVersionBuildNumber(
+    const std::wstring& product_version,
+    std::wstring* build_number);
+
+bool IsCanonicalInstallTransactionId(const std::string& transaction_id);
+
+bool IsAcceptedInstallHandoff(
+    const native::InstallReservation& reservation,
+    const native::InstallTransactionStatus& status);
 
 class DesktopUpdaterPlugin : public flutter::Plugin {
  public:

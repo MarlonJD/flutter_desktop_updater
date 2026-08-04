@@ -1,0 +1,966 @@
+{
+  "invalidTransitions": [
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "name": "swap skips durable backup",
+      "to": "targetActivated"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "name": "manager invents file rollback",
+      "to": "rolledBack"
+    },
+    {
+      "from": "completed",
+      "machine": "swap",
+      "name": "terminal state is immutable",
+      "to": "prepared"
+    }
+  ],
+  "journal": {
+    "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "backupName": ".example.desktop-updater-backup-00000000",
+    "evidence": {
+      "targetIdentitySha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "journalName": ".example.desktop-updater-journal-00000000.json",
+    "lockName": ".example.desktop-updater-lock",
+    "ownerGeneration": 1,
+    "packageId": "com.example.app",
+    "policyId": "com.example.desktop-updater",
+    "preparedName": ".example.desktop-updater-prepared-00000000",
+    "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "schemaVersion": 1,
+    "state": "prepared",
+    "strategy": "directoryReplace",
+    "targetName": "example",
+    "transactionId": "00000000-0000-4000-8000-000000000001"
+  },
+  "recoveryCases": [
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalNotDurable"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "swap death before prepared journal durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": false,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "discardPrepared",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "preparedTargetAuthoritative"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "swap death after prepared durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "discardPrepared",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "preparedTargetAuthoritative"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "swap death before backupCreated durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "restoreBackup",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "backupReadyToRestore"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "swap death after backupCreated durable",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "missing"
+      }
+    },
+    {
+      "expected": {
+        "action": "restoreBackup",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "backupReadyToRestore"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "swap death before targetActivated durable",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "missing"
+      }
+    },
+    {
+      "expected": {
+        "action": "acceptActivated",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "activatedTargetVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "targetActivated"
+      },
+      "name": "swap death after targetActivated durable",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedNew"
+      }
+    },
+    {
+      "expected": {
+        "action": "acceptActivated",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "activatedTargetVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "targetActivated"
+      },
+      "name": "swap death before completed durable",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedNew"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "completedTargetVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "completed"
+      },
+      "name": "swap death after completed durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedNew"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalNotDurable"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "manager death before prepared journal durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": false,
+        "manager": "verifiedOld",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "managerOldStateVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "manager death after prepared durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "verifiedOld",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "managerOldStateVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "manager death before managerStarted durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "verifiedOld",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "managerVerificationPending"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "managerStarted"
+      },
+      "name": "manager death after managerStarted durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "pending",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "managerVerificationPending"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "managerStarted"
+      },
+      "name": "manager death before verificationPending durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "pending",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "managerVerificationPending"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "verificationPending"
+      },
+      "name": "manager death after verificationPending durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "pending",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "acceptManagerState",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "managerNewStateVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "verificationPending"
+      },
+      "name": "manager death before completed durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "verifiedNew",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "completedManagerStateVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "completed"
+      },
+      "name": "manager death after completed durable",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "verifiedNew",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "rollbackVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "rolledBack"
+      },
+      "name": "repeated recovery after rollback",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedNewTarget",
+        "reason": "completedTargetVerified"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "completed"
+      },
+      "name": "repeated recovery after completion",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedNew"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "transactionBusy"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "live owner recovery rejection",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": true,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalCorrupt"
+      },
+      "journal": {
+        "envelopeValid": false,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "torn journal write",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "missing"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalCorrupt"
+      },
+      "journal": {
+        "envelopeValid": false,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "targetActivated"
+      },
+      "name": "short journal write",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedNew"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalNotDurable"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "disk full before journal replacement",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": false,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "missing"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalDirectoryFlushFailed"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "directory flush failure",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": false,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "missing"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "journalCorrupt"
+      },
+      "journal": {
+        "envelopeValid": false,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "corrupt journal",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "unsupportedJournalVersion"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 2,
+        "state": "prepared"
+      },
+      "name": "unknown journal version",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "siblingNameMismatch"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "injected prepared sibling name",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": false,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "ownerGenerationMismatch"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "prepared"
+      },
+      "name": "owner generation mismatch",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 2,
+        "ownerLive": false,
+        "prepared": "verifiedNew",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "ambiguousObservedState"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "backupCreated"
+      },
+      "name": "ambiguous target and backup state",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": false,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    },
+    {
+      "expected": {
+        "action": "restoreBackup",
+        "cleanupAuthorized": true,
+        "outcome": "verifiedOldTarget",
+        "reason": "activatedTargetRejected"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "swap",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "targetActivated"
+      },
+      "name": "activated target fails verification with valid backup",
+      "observed": {
+        "backup": "verifiedOld",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "notApplicable",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "unknown"
+      }
+    },
+    {
+      "expected": {
+        "action": "none",
+        "cleanupAuthorized": false,
+        "outcome": "manualActionRequired",
+        "reason": "managerStateUnknown"
+      },
+      "journal": {
+        "envelopeValid": true,
+        "machine": "manager",
+        "ownerGeneration": 1,
+        "schemaVersion": 1,
+        "state": "verificationPending"
+      },
+      "name": "package manager state is unknown",
+      "observed": {
+        "backup": "missing",
+        "directoryFlushSucceeded": true,
+        "journalDurable": true,
+        "manager": "unknown",
+        "observationsUnambiguous": true,
+        "observedOwnerGeneration": 1,
+        "ownerLive": false,
+        "prepared": "missing",
+        "siblingNamesMatch": true,
+        "target": "verifiedOld"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "states": [
+    "prepared",
+    "backupCreated",
+    "targetActivated",
+    "managerStarted",
+    "verificationPending",
+    "completed",
+    "rolledBack",
+    "manualActionRequired"
+  ],
+  "validTransitions": [
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "backupCreated"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "targetActivated"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "completed"
+    },
+    {
+      "from": "prepared",
+      "machine": "manager",
+      "to": "managerStarted"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "to": "verificationPending"
+    },
+    {
+      "from": "verificationPending",
+      "machine": "manager",
+      "to": "completed"
+    },
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "rolledBack"
+    },
+    {
+      "from": "prepared",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "backupCreated",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "targetActivated",
+      "machine": "swap",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "managerStarted",
+      "machine": "manager",
+      "to": "manualActionRequired"
+    },
+    {
+      "from": "verificationPending",
+      "machine": "manager",
+      "to": "manualActionRequired"
+    }
+  ]
+}

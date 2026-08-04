@@ -7,6 +7,8 @@ cmake_minimum_required(VERSION 3.10)
 set(PROJECT_NAME "desktop_updater")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
+add_subdirectory("native")
+
 # This value is used when generating builds using this plugin, so it must
 # not be changed.
 set(PLUGIN_NAME "desktop_updater_plugin")
@@ -40,12 +42,14 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+target_link_libraries(${PLUGIN_NAME} PRIVATE desktop_updater_native)
+add_dependencies(${PLUGIN_NAME} desktop-updater-helper)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(desktop_updater_bundled_libraries
-  ""
+  "$<TARGET_FILE:desktop-updater-helper>"
   PARENT_SCOPE
 )
 
@@ -86,6 +90,7 @@ apply_standard_settings(${TEST_RUNNER})
 target_include_directories(${TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter)
 target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::GTK)
+target_link_libraries(${TEST_RUNNER} PRIVATE desktop_updater_native)
 target_link_libraries(${TEST_RUNNER} PRIVATE gtest_main gmock)
 
 # Enable automatic test discovery.

@@ -20,6 +20,14 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>DesktopUpdaterInstallHelperServiceID</key>
+	<string>net.monolib.updater.helper</string>
+	<key>DesktopUpdaterInstallHelperRequirement</key>
+	<string>identifier net.monolib.updater.helper and anchor apple generic and certificate leaf[subject.OU] = "UPK4SC93AN"</string>
+	<key>DesktopUpdaterInstallHelperLaunchDaemonPlistName</key>
+	<string>net.monolib.updater.helper.plist</string>
+	<key>DesktopUpdaterInstallPolicyID</key>
+	<string>net.monolib.updater.privileged</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>

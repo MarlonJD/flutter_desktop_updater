@@ -4,6 +4,7 @@ import "dart:io";
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
@@ -30,6 +31,7 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
+          "--candidate-only",
         ],
         projectRoot: fixture.projectRoot,
         output: output,
@@ -62,6 +64,7 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.4.0+240",
+          "--candidate-only",
         ],
         projectRoot: fixture.projectRoot,
         output: output,
@@ -215,15 +218,23 @@ void main() {
   });
 
   test("verify command skips zip extraction for Inno installers", () {
-    final source = File("bin/verify.dart").readAsStringSync();
+    final entrypoint = File("bin/verify.dart").readAsStringSync();
+    final source = File(
+      "lib/src/cli/verify_command.dart",
+    ).readAsStringSync();
 
+    expect(entrypoint, contains("runVerifyCommand(args)"));
     expect(source, contains('descriptor.artifact.kind == "innoInstaller"'));
     expect(source, contains("Installer artifact verified."));
   });
 
   test("verify command supports macOS DMG and PKG artifact gates", () {
-    final source = File("bin/verify.dart").readAsStringSync();
+    final entrypoint = File("bin/verify.dart").readAsStringSync();
+    final source = File(
+      "lib/src/cli/verify_command.dart",
+    ).readAsStringSync();
 
+    expect(entrypoint, contains("runVerifyCommand(args)"));
     expect(source, contains('descriptor.artifact.kind == "dmg"'));
     expect(source, contains('descriptor.artifact.kind == "pkgInstaller"'));
     expect(source, contains("macOS artifact trust validation: not run"));
@@ -263,6 +274,7 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
+          "--candidate-only",
         ],
         projectRoot: fixture.projectRoot,
         output: output,
@@ -285,6 +297,7 @@ void main() {
     );
     try {
       await _signHostedRelease(fixture);
+      await _signHostedIndex(fixture);
       final output = StringBuffer();
 
       final exitCode = await runReleaseCommand(
@@ -294,7 +307,6 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
-          "--require-signature",
           "--public-keys-env",
           "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
         ],
@@ -324,6 +336,7 @@ void main() {
     );
     try {
       final releaseFile = await _signHostedRelease(fixture);
+      await _signHostedIndex(fixture);
       final json =
           jsonDecode(await releaseFile.readAsString()) as Map<String, dynamic>;
       final artifact = json["artifact"] as Map<String, dynamic>;
@@ -345,7 +358,6 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
-          "--require-signature",
           "--public-keys-env",
           "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
         ],
@@ -367,6 +379,61 @@ void main() {
         output.toString(),
         isNot(contains("release.json artifact SHA-256 mismatch")),
       );
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("validate rejects a tampered signed app archive before selection",
+      () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+    );
+    try {
+      await _signHostedRelease(fixture);
+      final indexFile = await _signHostedIndex(fixture);
+      final json =
+          jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>;
+      final items = json["items"] as List<dynamic>;
+      await indexFile.writeAsString(
+        "${const JsonEncoder.withIndent("  ").convert({
+              ...json,
+              "items": [
+                {
+                  ...(items.single as Map<String, dynamic>),
+                  "mandatory": true,
+                },
+              ],
+            })}\n",
+      );
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        [
+          "validate",
+          "--manifest",
+          fixture.manifestFile.path,
+          "--from-version",
+          "2.0.0+200",
+          "--public-keys-env",
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+        ],
+        projectRoot: fixture.projectRoot,
+        output: output,
+        environment: {
+          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
+            _publicKeyId: fixture.publicKey,
+          }),
+        },
+      );
+
+      expect(exitCode, 1);
+      expect(
+        output.toString(),
+        contains("app-archive.json signature verification failed."),
+      );
+      expect(output.toString(), isNot(contains("Update selection: OK")));
     } finally {
       await fixture.delete();
     }
@@ -557,7 +624,7 @@ Map<String, Object?> _installDescriptorForArtifactKind(
       return {
         "strategy": "pkgInstaller",
         "macosPkg": {
-          "launchMode": "installerApp",
+          "launchMode": "privilegedInstallerTool",
           "expectedPackageIds": ["com.example.app.pkg"],
           "relaunchAfterInstall": false,
         },
@@ -651,4 +718,37 @@ Future<File> _signHostedRelease(HostedPublishFixture fixture) async {
         })}\n",
   );
   return releaseFile;
+}
+
+Future<File> _signHostedIndex(HostedPublishFixture fixture) async {
+  final indexFile = File(
+    path.join(fixture.projectRoot.path, "web", "app-archive.json"),
+  );
+  final json =
+      jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>;
+  final indexToSign = ReleaseIndex.fromJson({
+    ...json,
+    "signature": {
+      "algorithm": "ed25519",
+      "publicKeyId": _publicKeyId,
+      "value": "",
+    },
+  });
+  final algorithm = Ed25519();
+  final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
+  final signature = await algorithm.sign(
+    indexToSign.canonicalSignatureBytes(),
+    keyPair: keyPair,
+  );
+  await indexFile.writeAsString(
+    "${const JsonEncoder.withIndent("  ").convert({
+          ...json,
+          "signature": {
+            "algorithm": "ed25519",
+            "publicKeyId": _publicKeyId,
+            "value": base64Encode(signature.bytes),
+          },
+        })}\n",
+  );
+  return indexFile;
 }

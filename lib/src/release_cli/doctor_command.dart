@@ -202,7 +202,7 @@ void _writeMacOSDiagnostics(
     return;
   }
   output.writeln(
-    "WARNING: macOS production releases should enable macos.notarize or run an app-owned notarization gate before packaging. Unsigned/internal flows can use allowUnsignedMacOSUpdates, but are not production-trusted.",
+    "WARNING: macOS production releases should enable macos.notarize or run an app-owned notarization gate before packaging. The privileged helper requires signed release metadata and signed, notarized application code; unsigned staging cannot be installed.",
   );
 }
 

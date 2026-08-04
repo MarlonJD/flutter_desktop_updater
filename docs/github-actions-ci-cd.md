@@ -15,9 +15,80 @@ It runs on push, pull request, and manual `workflow_dispatch`.
 
 The package CI covers:
 
-- Dart formatting, analysis, tests, CLI entrypoints, and `dart pub publish --dry-run`;
-- Windows debug and release builds, native tests, integration tests, and update smoke tests;
-- Linux debug and release builds, native tests, integration tests, and update smoke tests under `xvfb`.
+- synchronized Dart/Swift/C++/CMake/NuGet versions, generated native contract
+  and install-helper fixtures, sealed helper-policy drift checks, Dart
+  formatting, analysis, full tests, CLI entrypoints, and
+  `dart pub publish --dry-run`;
+- macOS SwiftPM helper tests, a named unprivileged crash-recovery suite, an
+  external Flutter-free Swift consumer, and separate Flutter SwiftPM and
+  CocoaPods fallback build/integration lanes;
+- Windows debug and release builds, named helper trust, pipe-spoofing,
+  transaction, and crash-recovery tests, integration tests, and two fresh
+  Debug plus two fresh Release update smokes;
+- Windows installed CMake and local NuGet consumers against the real shared
+  DLL; the NuGet inventory includes the Release helper executable and sealed
+  policy JSON alongside the native libraries;
+- Linux protected-root and unprivileged helper/recovery tests, a privileged
+  mount-namespace rejection test, installed CMake/pkg-config consumers,
+  integration tests, and update smokes under `xvfb`.
+
+Each secretless helper lane rejects zero-test discovery. It uploads a small
+redacted count artifact with fixed `platform`, `suite`, and `testCount` fields;
+raw helper diagnostics are not uploaded as merge-gate evidence.
+
+### Standalone CLI candidate matrix
+
+Native-host jobs compile and checksum these exact executable candidates:
+
+```text
+desktop-updater-macos-arm64
+desktop-updater-macos-x64
+desktop-updater-windows-x64.exe
+desktop-updater-linux-x64
+```
+
+Each uploaded artifact includes its executable and `SHA256SUMS`. These outputs
+are explicitly `candidate-only`: the matrix proves compilation, command
+startup, architecture, and checksum generation, but does not substitute for
+the approved production signing workflow. macOS and Windows public assets must
+pass their repository signing/notarization policy after their final bytes are
+built.
+
+### Native SDK Target-Host Gates
+
+Package contents are not accepted from source unit tests alone. The target-host
+jobs must install or pack each helper, consume it from outside the source
+target, and run the relevant native tests:
+
+- macOS runs root `DesktopUpdaterKit` SwiftPM tests, an external SwiftPM
+  executable, and both Flutter integration modes;
+- Windows installs the CMake export, loads the shared C ABI DLL through the
+  external CMake and .NET consumers, validates the NuGet package version and
+  contents, and rejects a zero-test CTest run;
+- Linux installs the CMake export and pkg-config metadata, checks the canonical
+  version, runs the external consumer, proves protected roots fail closed, and
+  rejects a zero-test CTest run.
+
+The current native merge-gate configuration also contains the normal macOS,
+Windows, and Linux ZIP runtime smokes; the exact CocoaPods macOS 10.14
+six-source typecheck; both current Flutter macOS integration modes; Windows
+Unicode paths and relative redirects; Release NuGet packing, notice checks,
+isolated P/Invoke consumption, and DLL hash proof; and Linux standard plus
+multiarch pkg-config consumers. Every CTest invocation rejects “No tests were
+found.” These are configured gates, not `verified in CI` evidence until that
+exact revision runs successfully on the named target host.
+
+The standalone helpers now implement the transaction journal, cross-process
+target lock, Windows reparse checks, Linux mount/bind checks, and crash
+recovery. Implementation and workflow configuration are not execution
+evidence: each candidate must pass the mandatory secretless Windows and Linux
+target-host lanes for its exact helper head. Ordinary source scans, mocks, dry
+runs, or unrelated CTest lanes must not be labeled as signed, elevated,
+notarized, or recovery evidence.
+
+Evidence must stay literal: unavailable credentials or hosts are `blocked` or
+`not run`; unsigned executables are `candidate-only`; only completed required
+target-host and publisher-trust gates can be called `production-ready`.
 
 Windows and Linux update smoke tests pass an explicit helper diagnostics log
 path to the example app. The workflow uploads that log only when the job has
@@ -27,10 +98,53 @@ diagnostics run. The package does not upload helper logs by default.
 
 The package CI intentionally does not publish app update artifacts. Automatic updates belong to the app that is shipping the update because that app owns the bundle ID, signing identity, notarization credentials, versioning, update hosting, and release approval policy.
 
-The full macOS DMG/PKG production smoke is local/manual unless a workflow is
-explicitly given Developer ID Application, Developer ID Installer, keychain, and
-notary credentials. CI runs without those credentials should label that evidence
-as `not run`, not as production-ready Apple trust.
+The credential and privileged helper gates are separate manual jobs:
+
+- `macos-smappservice-helper` runs on a separately provisioned self-hosted
+  `desktop-updater-smappservice` runner when
+  `DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E=1`. Its administrator-approved signed
+  apps exercise the bundled root daemon/XPC recovery path. A separately
+  provisioned root-owned runtime app and signed, notarized PKG then exercise
+  the real `/Applications` installer handoff and verify the installed package
+  receipt. Configure these non-secret absolute target-host values:
+  `DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID`,
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION`, and
+  `DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD`. The PKG runtime app must
+  be installed directly under `/Applications`, start at `2.7.0+270`, use the
+  `MacOSRuntimeCompile` executable, remain root-owned, and have its bundled
+  daemon approved before dispatch. Its PKG must install the same app as the
+  configured `2.7.1+271` target and preserve stapled trust. The
+  `macos-notarized` hosted job separately owns Developer ID/notary credentials
+  and proves the exact approval-required result; it is not privileged install
+  success evidence.
+- `windows-elevated-helper` runs only on a self-hosted
+  `desktop-updater-uac` runner when
+  `DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E=1`. It signs the fixed Release
+  helper, verifies Authenticode, and exercises the interactive UAC boundary.
+- `linux-polkit-helper` runs only on a self-hosted
+  `desktop-updater-polkit` runner when
+  `DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E=1`. The runner needs CMake, OpenSSL,
+  `jq`, polkit with an interactive authentication agent, and passwordless
+  `sudo` for bounded fixture setup, static audit, and cleanup only. The job
+  builds a test-only caller and crash-injection helper, seals the actual
+  helper/caller SHA-256 values and deterministic test Ed25519 public key into
+  the root-owned package policy, and audits the fixed installed bytes
+  separately. Its non-root step then uses the public native API and `pkexec`
+  fixed broker to mutate a protected root-owned target, query completed durable
+  state, kill the helper exactly after the target-to-backup rename, and prove a
+  fresh broker converges recovery. Configuration is not execution evidence;
+  this lane remains `not run` until that self-hosted job passes for the current
+  head.
+
+The signed/notarized DMG and PKG smokes still need Developer ID Application,
+Developer ID Installer, keychain, and notary credentials. Signed Windows
+artifact smokes still need their explicit Windows signing credentials. When a
+variable, credential, or required host is unavailable, the lane is `not run`;
+no ordinary job substitutes for publisher-trust or production-ready evidence.
 
 ## App Repository CD
 
@@ -38,9 +152,10 @@ Use an app-owned workflow when you want CI/CD to publish real desktop updates.
 
 Recommended high-level flow:
 
-1. Trigger the workflow from a version tag such as `v2.0.0`, or from a protected manual `workflow_dispatch`.
+1. Trigger the workflow from a version tag such as `v3.0.0`, or from a protected manual `workflow_dispatch`.
 2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
-3. Run `dart run desktop_updater:release publish --platform macos`.
+3. Run `dart run desktop_updater:release publish --platform macos` with
+   `--public-key-id`, `--private-key-env`, and `--public-keys-env`.
 4. Let the command upload versioned files first, validate hosted `release.json` and artifact bytes, upload `app-archive.json` last, and validate hosted update selection.
 5. Only then mark the release as published.
 
@@ -94,7 +209,7 @@ DESKTOP_UPDATER_RELEASE_SIGNING_PRIVATE_KEY
 DESKTOP_UPDATER_RELEASE_SIGNING_PUBLIC_KEY
 ```
 
-The current 2.0 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
+The current 3.0 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
 
 ## macOS Signing And Notarization
 
@@ -170,9 +285,10 @@ If CI fails with `No Keychain password item found`, the profile was not read fro
 ## macOS Advanced Low-Level CD Skeleton
 
 This is a low-level skeleton for an app repository that needs to own each
-packaging and upload step. Most apps should start with
-`dart run desktop_updater:release publish --platform macos` and only drop down
-to these commands when their release workflow needs that control.
+packaging and upload step. Most apps should start with the signed
+`dart run desktop_updater:release publish --platform macos` flow (including
+`--public-key-id`, `--private-key-env`, and `--public-keys-env`) and only drop
+down to these commands when their release workflow needs that control.
 
 ```yaml
 name: Publish desktop update
@@ -310,7 +426,9 @@ jobs:
         run: |
           curl -fsS "${{ vars.UPDATE_BASE_URL }}/releases/$RELEASE_VERSION/macos/release.json" \
             -o "$RUNNER_TEMP/release.json"
-          dart run desktop_updater:verify --release "$RUNNER_TEMP/release.json"
+          dart run desktop_updater:verify \
+            --release "$RUNNER_TEMP/release.json" \
+            --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 
       - name: Publish app archive last
         run: ./tool/ci/publish_app_archive.sh
@@ -326,11 +444,11 @@ The final `app-archive.json` should point at the hosted descriptor, not at a fol
   "appName": "Example App",
   "items": [
     {
-      "version": "2.0.0",
-      "buildNumber": 200,
+      "version": "3.0.0",
+      "buildNumber": 300,
       "platform": "macos",
       "channel": "stable",
-      "release": "https://updates.example.com/releases/2.0.0/macos/release.json"
+      "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
     }
   ]
 }
@@ -354,7 +472,9 @@ dart run desktop_updater:package \
   --platform windows \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/windows/$APP_NAME-$VERSION-windows.zip"
-dart run desktop_updater:verify --release dist/$VERSION/windows/release.json
+dart run desktop_updater:verify \
+  --release dist/$VERSION/windows/release.json \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 Linux example:
@@ -371,7 +491,9 @@ dart run desktop_updater:package \
   --platform linux \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/linux/$APP_NAME-$VERSION-linux.zip"
-dart run desktop_updater:verify --release dist/$VERSION/linux/release.json
+dart run desktop_updater:verify \
+  --release dist/$VERSION/linux/release.json \
+  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
 ```
 
 Unsigned Windows and Linux Release builds are release-mechanics ready when build, packaging, download, SHA-256 verification, extraction, staging, and smoke tests pass. Treat them as production-trusted only after you add the signing or descriptor-authenticity gate your app requires.

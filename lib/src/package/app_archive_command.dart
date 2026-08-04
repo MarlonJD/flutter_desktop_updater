@@ -49,6 +49,10 @@ Future<void> runAppArchiveCommand(
 
   out
     ..writeln("app-archive.json updated: ${archiveFile.path}")
+    ..writeln(
+      "candidate-only: app-archive.json is unsigned; use release publish "
+      "for production metadata.",
+    )
     ..writeln("Items: ${index.items.length}")
     ..writeln("Release: ${item.release}");
 }

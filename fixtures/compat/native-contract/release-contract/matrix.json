@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "macos-zip",
+      "platform": "macos",
+      "artifactKind": "zip",
+      "artifactPath": "macos-zip/artifact.zip",
+      "descriptorPath": "release-macos-zip.json"
+    },
+    {
+      "id": "macos-dmg",
+      "platform": "macos",
+      "artifactKind": "dmg",
+      "artifactPath": "macos-dmg/artifact.dmg",
+      "descriptorPath": "release-macos-dmg.json"
+    },
+    {
+      "id": "macos-pkg-installer",
+      "platform": "macos",
+      "artifactKind": "pkgInstaller",
+      "artifactPath": "macos-pkg-installer/artifact.pkg",
+      "descriptorPath": "release-macos-pkg.json"
+    },
+    {
+      "id": "windows-zip",
+      "platform": "windows",
+      "artifactKind": "zip",
+      "artifactPath": "windows-zip/artifact.zip",
+      "descriptorPath": "release-windows-zip.json"
+    },
+    {
+      "id": "windows-inno-installer",
+      "platform": "windows",
+      "artifactKind": "innoInstaller",
+      "artifactPath": "windows-inno-installer/artifact.exe",
+      "descriptorPath": "release-windows-inno.json"
+    },
+    {
+      "id": "linux-zip",
+      "platform": "linux",
+      "artifactKind": "zip",
+      "artifactPath": "linux-zip/artifact.zip",
+      "descriptorPath": "release-linux-zip.json"
+    }
+  ]
+}

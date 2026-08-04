@@ -1,130 +1,123 @@
 # Harness Engineering For desktop_updater
 
-This document applies harness-engineering principles to `desktop_updater`: make
-the repository readable to agents, turn project taste into mechanical checks,
-and keep feedback loops local, repeatable, and cheap.
+The repository harness should let an agent discover intent, make a scoped
+change, observe the result, and leave durable evidence without relying on chat
+history.
 
 ## Agent-Readable Repository Map
 
-`AGENTS.md` is the compact entrypoint. It should point agents to the relevant
-project knowledge without becoming a long handbook.
+[AGENTS.md](../AGENTS.md) is the concise entrypoint.
+[ARCHITECTURE.md](../ARCHITECTURE.md) owns system boundaries and dependency
+direction. [README.md](../README.md) owns the package overview and common user
+flows. The [documentation map](index.md) routes deeper product and operational
+guidance in `docs/` and `doc/`. The
+[agent harness](agent-harness/index.md) owns repository-native capability,
+verification, evidence, and certification contracts.
 
-The durable knowledge base is:
-
-- `README.md` for package overview and common user-facing flows.
-- `docs/` and `doc/` for publishing, diagnostics, localization, UI, migration,
-  and runtime policy guidance.
-- `docs/exec-plans/index.md` for repository-backed execution plans.
-- `docs/harness-engineering.md` for the agent operating model.
-- `.github/workflows/desktop-updater-ci.yml` for the broad CI truth.
-
-When a decision must survive future agent runs, put it in one of those files and
-add a focused test when drift would be expensive.
+Use the [execution-plan ledger](exec-plans/index.md) for restartable work and
+[GitHub Actions CI/CD](github-actions-ci-cd.md) for the current platform-lane,
+secret, and target-host contract. Durable cross-cutting rationale belongs in
+`docs/design-docs/`, not in tool- or skill-specific documentation trees.
 
 ## Mechanical Quality Gates
 
-Prefer gates that an agent can run, read, and fix without external context.
-
-The local validation ladder is:
+Run the narrowest useful command first:
 
 ```sh
 flutter test --no-pub test/<focused_test>.dart
-dart format --set-exit-if-changed .
+dart format --output=none --set-exit-if-changed .
 flutter analyze --no-fatal-infos
 flutter test --no-pub
 dart pub publish --dry-run
 ```
 
-To run the full local ladder with a small review artifact:
+Run the complete local ladder and write a review artifact with:
 
 ```sh
 dart run tool/harness_check.dart
 ```
 
-The runner executes format, analyze, the focused harness docs test, the full
-Flutter test suite, and publish dry-run in that order. It writes command output
-and exit status to `reports/harness-check.md`. Keep it local and secretless;
-platform services, signing credentials, and release approvals belong in CI or
-manual release lanes.
+The secretless runner executes format, analyze, version consistency, the
+focused harness test, the full Flutter suite, and publish dry-run. It records
+command output and exit status in the ignored `reports/harness-check.md`.
+Platform services, signing credentials, release approval, and installed-system
+mutation remain in the CI or manual lanes documented by
+[GitHub Actions CI/CD](github-actions-ci-cd.md).
 
-The broad platform gates are in GitHub Actions:
+`test/harness_engineering_docs_test.dart` mechanically protects the repository
+routes, plan index, local runner, and evidence naming contract.
 
-- Dart package formatting, analysis, tests, CLI entrypoints, and publish dry
-  run.
-- Windows debug/release builds, native tests, integration tests, release publish
-  smoke, and update smoke.
-- Linux debug/release builds, native tests, integration tests, release publish
-  smoke, and update smoke.
-- macOS notarized publish smoke only when explicitly dispatched with secrets.
+For a harness authority or contract change, run the read-only structural gate
+first:
 
-`test/harness_engineering_docs_test.dart` is the first harness guard. It keeps
-the agent map, this document, and the completed staged implementation record
-discoverable.
+```sh
+dart run tool/harness_gate.dart --structural
+```
+
+The structural mode checks routing, authority configuration, the complete
+31-capability inventory, manifest shape, and scaffold-marker removal. Full
+certification uses `dart run tool/harness_gate.dart --attestation-key-file
+"$HARNESS_ATTESTATION_KEY_FILE"` from a clean direct-child attestation commit.
+See [Harness-ready certification](agent-harness/certification.md).
+
+## Evidence Contract
+
+Evidence language is literal:
+
+- `preview` describes API maturity.
+- `verified locally` and `verified in CI` identify where a command passed.
+- `not run` means the exact gate was not exercised.
+- `blocked` names a missing dependency, credential, approval, or host.
+- `candidate-only` means release trust remains incomplete.
+- `production-ready` requires every applicable target-host package, artifact,
+  trust, cleanup, and release gate to pass.
+
+A workflow definition is configuration, not execution evidence. Source scans,
+mocks, unsigned helpers, and packaging dry runs cannot replace signed,
+elevated, notarized, or installed-system behavior.
+
+For UI or native behavior, keep a screenshot, bounded diagnostics log, or policy
+response under `reports/` when it explains the result better than terminal
+output. Platform smoke diagnostics use
+`reports/<platform>-update-smoke-<mode>-diagnostics.jsonl`. macOS notarized
+smoke requires manual release approval and secrets; Windows and Linux
+target-host evidence normally belongs to their named CI or manual lanes.
 
 ## Agent Feedback Loops
 
-Use feedback loops in this order:
-
-1. Reproduce or protect the behavior with a focused Dart or Flutter test.
-2. Run the focused command and read the failure.
-3. Make the smallest change that satisfies the test.
+1. Reproduce or protect behavior with a focused test.
+2. Run the focused command and inspect the failure.
+3. Make the smallest change that satisfies the behavior.
 4. Widen to format, analyze, and relevant test groups.
-5. Use platform smoke tests or CI lanes only when native behavior changed.
-
-For UI or native update behavior, leave evidence under `reports/` when a
-screenshot, diagnostics log, or policy response explains the result better than
-terminal output alone.
-
-Use mechanical platform smoke evidence names:
-`reports/<platform>-update-smoke-<mode>-diagnostics.jsonl`. Local work can use
-that path when no secrets are needed. Windows and Linux smoke evidence usually
-belongs to CI. macOS notarized smoke requires manual release approval and
-secrets.
+5. Use native builds, platform smoke, or CI only when that boundary changed.
+6. Record lasting decisions in the owning document and repeated failures in a
+   focused test or the [tech-debt tracker](exec-plans/tech-debt-tracker.md).
 
 ## Entropy Controls
 
-Agents copy local patterns. Keep the patterns worth copying:
+- Keep one canonical home for each rule; link instead of copying mutable CI or
+  release detail.
+- Keep active plans only under `docs/exec-plans/active/` and index every one.
+- Keep durable design rationale under `docs/design-docs/`.
+- Remove superseded examples, stale prompt routers, and redundant collection
+  indexes after their consumers are updated.
+- Add a mechanical guard only for a stable invariant or repeated failure, with
+  an actionable failure message.
 
-- Put long-lived decisions in docs instead of one-off prompt text.
-- Add doc drift tests for important user-facing claims.
-- Avoid broad rewrites when a focused rule or test would preserve the invariant.
-- Keep plan status in `docs/exec-plans/index.md` so future work can resume
-  without chat history.
-- Remove obsolete examples and docs when replacing a workflow.
+The completed
+[agent harness engineering plan](exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md)
+retains adoption history; this operating document contains only the current
+contract.
 
-## Staged Adoption Plan
+## Certification Boundary
 
-The original staged adoption plan was tracked in `docs/exec-plans/` and moved to
-`docs/exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md` after
-verification. The stages below remain as adoption history.
+`verified locally` means the named local command passed. It does not mean
+`harness-ready`. That bounded claim requires every row in the
+[coverage matrix](agent-harness/coverage-matrix.md) to have fresh HMAC-v2
+evidence bound to a source commit, a clean direct-child attestation commit, the
+repository-native full gate, and an external skill result of `CERT000`.
 
-Stage 0 added the foundation:
-
-- Add a short `AGENTS.md` repo map.
-- Add this harness model.
-- Track the harness plan in `docs/exec-plans/`.
-- Add `test/harness_engineering_docs_test.dart`.
-
-Stage 1 hardened doc freshness:
-
-- Check that `docs/exec-plans/index.md` links every active plan that should
-  remain discoverable.
-- Check that important README claims have matching deeper docs.
-- Check that harness and diagnostics docs avoid stale references to plans as
-  user-facing guidance.
-
-Stage 2 added a local harness runner:
-
-- Create a single Dart tool that runs the validation ladder in a predictable
-  order.
-- Emit a small Markdown report under `reports/` for agent and human review.
-- Keep the tool local and secretless.
-
-Stage 3 improved app-readable evidence:
-
-- Standardize screenshot and diagnostics-log naming under `reports/`.
-- Document when a platform smoke requires manual approval, CI, or secrets.
-- Add focused tests for any new evidence format before relying on it in plans.
-
-Do not treat these stages as release gates for unrelated feature work. They are
-scaffolding that makes agent-driven changes easier to verify.
+The default maintenance mode is manual. Installation of an external skill does
+not run checks, schedule maintenance, grant Git or production authority, or
+certify this repository. Hosted CI automation is not part of the current
+adoption.

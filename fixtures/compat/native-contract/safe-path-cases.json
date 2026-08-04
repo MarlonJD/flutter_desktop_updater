@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "archivePathCases": [
+    {
+      "name": "nested bundle path",
+      "input": "Example.app/Contents/MacOS/Example",
+      "expectedValid": true,
+      "expectedNormalized": "Example.app/Contents/MacOS/Example"
+    },
+    {
+      "name": "backslash normalization",
+      "input": "folder\\nested\\file.txt",
+      "expectedValid": true,
+      "expectedNormalized": "folder/nested/file.txt"
+    },
+    {
+      "name": "dot segment normalization",
+      "input": "folder/./file.txt",
+      "expectedValid": true,
+      "expectedNormalized": "folder/file.txt"
+    },
+    {
+      "name": "parent traversal",
+      "input": "../escape.txt",
+      "expectedValid": false,
+      "expectedNormalized": null,
+      "expectedErrorContains": "Unsafe update path: ../escape.txt"
+    },
+    {
+      "name": "absolute POSIX path",
+      "input": "/etc/passwd",
+      "expectedValid": false,
+      "expectedNormalized": null,
+      "expectedErrorContains": "Unsafe update path: /etc/passwd"
+    },
+    {
+      "name": "Windows drive-prefixed path",
+      "input": "C:\\Windows\\System32",
+      "expectedValid": false,
+      "expectedNormalized": null,
+      "expectedErrorContains": "Unsafe update path: C:\\Windows\\System32"
+    }
+  ],
+  "symlinkTargetCases": [
+    {
+      "name": "nested relative symlink target",
+      "target": "Versions/Current/Example",
+      "expectedValid": true
+    },
+    {
+      "name": "absolute symlink target",
+      "target": "/tmp/escape",
+      "expectedValid": false
+    },
+    {
+      "name": "traversing symlink target",
+      "target": "../escape",
+      "expectedValid": false
+    },
+    {
+      "name": "drive-prefixed symlink target",
+      "target": "C:\\escape",
+      "expectedValid": false
+    }
+  ],
+  "rootBoundaryCases": [
+    {
+      "root": "/opt/example-app",
+      "candidate": "/opt/example-app/bin/example",
+      "expectedWithin": true
+    },
+    {
+      "root": "/opt/example-app",
+      "candidate": "/opt/example-app-other/bin/example",
+      "expectedWithin": false
+    },
+    {
+      "root": "/opt/example-app",
+      "candidate": "/etc/passwd",
+      "expectedWithin": false
+    }
+  ],
+  "entityTypeCases": [
+    {
+      "entityType": "directory",
+      "expectedValid": true
+    },
+    {
+      "entityType": "symbolicLink",
+      "expectedValid": false
+    }
+  ],
+  "linuxInstallRootCases": [
+    {
+      "root": "/",
+      "expectedValid": false
+    },
+    {
+      "root": "/bin",
+      "expectedValid": false
+    },
+    {
+      "root": "/sbin",
+      "expectedValid": false
+    },
+    {
+      "root": "/usr",
+      "expectedValid": false
+    },
+    {
+      "root": "/usr/bin",
+      "expectedValid": false
+    },
+    {
+      "root": "/usr/sbin",
+      "expectedValid": false
+    },
+    {
+      "root": "/usr/local",
+      "expectedValid": false
+    },
+    {
+      "root": "/usr/local/bin",
+      "expectedValid": false
+    },
+    {
+      "root": "/opt",
+      "expectedValid": false
+    },
+    {
+      "root": "/etc",
+      "expectedValid": false
+    },
+    {
+      "root": "/var",
+      "expectedValid": false
+    },
+    {
+      "root": "/home",
+      "expectedValid": false
+    },
+    {
+      "root": "/opt/example-app",
+      "expectedValid": true
+    }
+  ]
+}

@@ -153,4 +153,43 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test("rejects updating a signed app archive without re-signing", () async {
+    final tempDir = await Directory.systemTemp.createTemp("app_archive_");
+    try {
+      final archive = File(path.join(tempDir.path, "app-archive.json"));
+      await archive.writeAsString(
+        const JsonEncoder.withIndent("  ").convert({
+          "schemaVersion": 3,
+          "appName": "Example App",
+          "items": const <Map<String, Object?>>[],
+          "signature": {
+            "algorithm": "ed25519",
+            "publicKeyId": "stable-2026",
+            "value": "signed-value",
+          },
+        }),
+      );
+
+      await expectLater(
+        upsertAppArchive(
+          archiveFile: archive,
+          appName: "Example App",
+          item: ReleaseIndexItem(
+            version: "3.0.0",
+            buildNumber: 300,
+            platform: "macos",
+            channel: "stable",
+            mandatory: false,
+            release: Uri.parse(
+              "https://updates.example.com/releases/3.0.0/macos/release.json",
+            ),
+          ),
+        ),
+        throwsStateError,
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
 }

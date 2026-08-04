@@ -5,6 +5,59 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
+  test("macOS retail builds use the dedicated signed helper embed tooling", () {
+    final embed = readRequiredFile(
+      "macos/install_helper/embed_install_helper.sh",
+    );
+    final verify = readRequiredFile(
+      "macos/install_helper/verify_install_helper_layout.sh",
+    );
+    final podspec = readRequiredFile("macos/desktop_updater.podspec");
+    final package = readRequiredFile("macos/desktop_updater/Package.swift");
+    final project = readRequiredFile(
+      "example/macos/Runner.xcodeproj/project.pbxproj",
+    );
+
+    expect(embed, contains("swift build"));
+    expect(embed, contains("-c release"));
+    expect(embed, isNot(contains("/.build/debug/")));
+    expect(embed, contains("DESKTOP_UPDATER_HELPER_INFO_TEMPLATE"));
+    expect(embed, contains("DesktopUpdaterSealedPolicySHA256"));
+    expect(embed, contains("DesktopUpdaterInstallPolicyID"));
+    expect(embed, contains("DesktopUpdaterInstallHelperServiceID"));
+    expect(embed, contains("DesktopUpdaterInstallHelperRequirement"));
+    expect(embed, contains("DesktopUpdaterInstallHelperLaunchDaemonPlistName"));
+    expect(embed, contains("BundleProgram"));
+    expect(embed, isNot(contains("SMPrivilegedExecutables")));
+    expect(embed, isNot(contains("SMAuthorizedClients")));
+    expect(embed, isNot(contains("SMJobBless")));
+    expect(embed, contains("Contents/Helpers/DesktopUpdaterInstallHelper"));
+    expect(embed, contains("Contents/Library/LaunchDaemons"));
+    expect(embed, contains("codesign"));
+    expect(embed, contains("verify_install_helper_layout.sh"));
+
+    expect(verify, contains("codesign --verify --strict"));
+    expect(verify, contains("codesign -d -r-"));
+    expect(verify, contains("lipo -archs"));
+    expect(verify, contains('otool -arch "\$arch"'));
+    expect(verify, contains("PlistBuddy"));
+    expect(verify, contains('Print :MachServices:\$helper_id'));
+    expect(verify, contains("BundleProgram"));
+    expect(verify, contains("Contents/Library/LaunchDaemons"));
+    expect(verify, isNot(contains("SMPrivilegedExecutables")));
+    expect(verify, isNot(contains("SMAuthorizedClients")));
+    expect(verify, isNot(contains("SMJobBless")));
+    expect(verify, contains("DesktopUpdaterSealedPolicy"));
+    expect(verify, contains("DesktopUpdaterInstallHelperServiceID"));
+
+    expect(podspec, contains("embed_install_helper.sh"));
+    expect(package, contains("embed_install_helper.sh"));
+    expect(package, contains('.library(name: "DesktopUpdaterKit"'));
+    expect(project, contains("Embed Desktop Updater Install Helper"));
+    expect(project, contains("embed_install_helper.sh"));
+    expect(project, contains("CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;"));
+  });
+
   test("exposes top-level DMG helper surface with injected runner", () async {
     final commands = <String>[];
     final mounted = await mountDmgReadOnly(
@@ -254,4 +307,10 @@ void main() {
 
     expect(commands.last, "/usr/bin/hdiutil detach /Volumes/Example");
   });
+}
+
+String readRequiredFile(String path) {
+  final file = File(path);
+  expect(file.existsSync(), isTrue, reason: "$path must exist");
+  return file.existsSync() ? file.readAsStringSync() : "";
 }

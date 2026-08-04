@@ -16,6 +16,22 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
+      - name: Check generated native contract fixtures
+        run: dart run tool/generate_native_contract_fixtures.dart --check
+      - name: Check generated native install helper fixtures
+        run: dart run tool/generate_native_install_helper_fixtures.dart --check
+      - name: Check generated native install helper policies
+        run: dart run tool/generate_native_install_helper_policy.dart --check-fixtures
+      - name: Record portable native helper fixture counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          fixture_count="$(grep -h '"name"' fixtures/compat/native-install-helper/v1/*.json | wc -l | tr -d ' ')"
+          test "$fixture_count" -gt 0
+          printf 'platform=portable\nsuite=native-install-helper-fixtures\ntestCount=%s\n' "$fixture_count" > reports/native-helper-common-test-counts.txt
+      - name: Check synchronized native SDK versions
+        run: dart run tool/version_check.dart
       - name: Check formatting
         run: dart format --set-exit-if-changed .
       - name: Analyze
@@ -24,17 +40,89 @@ jobs:
         run: flutter test --no-pub
       - name: Check CLI entrypoints
         run: |
+          dart run desktop_updater --help
+          dart run desktop_updater --version
+          dart run desktop_updater release publish --help
+          dart run desktop_updater package --help
+          dart run desktop_updater verify --help
+          dart run desktop_updater app-archive --help
           dart run desktop_updater:package --help
           dart run desktop_updater:verify --help
+          dart run desktop_updater:app_archive --help
           dart run desktop_updater:release publish --help
       - name: Pub publish dry-run
         run: dart pub publish --dry-run
+      - name: Upload portable native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-portable
+          path: reports/native-helper-common-test-counts.txt
+          if-no-files-found: ignore
+
+  cli-candidates:
+    name: Standalone CLI candidate (${{ matrix.artifact }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            artifact: desktop-updater-macos-arm64
+            checksum: shasum -a 256
+          - runner: macos-15-intel
+            artifact: desktop-updater-macos-x64
+            checksum: shasum -a 256
+          - runner: windows-latest
+            artifact: desktop-updater-windows-x64.exe
+          - runner: ubuntu-latest
+            artifact: desktop-updater-linux-x64
+            checksum: sha256sum
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build and checksum Unix candidate-only CLI
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          dart compile exe bin/desktop_updater.dart -o "artifacts/${{ matrix.artifact }}"
+          chmod +x "artifacts/${{ matrix.artifact }}"
+          "artifacts/${{ matrix.artifact }}" --version
+          cd artifacts
+          ${{ matrix.checksum }} "${{ matrix.artifact }}" > SHA256SUMS
+      - name: Build and checksum Windows candidate-only CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          dart compile exe bin/desktop_updater.dart -o "artifacts/${{ matrix.artifact }}"
+          & "artifacts/${{ matrix.artifact }}" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash "artifacts/${{ matrix.artifact }}" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.artifact }}" | Set-Content artifacts/SHA256SUMS
+      # CI outputs are unsigned candidate-only evidence. Production macOS and
+      # Windows assets must use the repository's approved signing workflows.
+      - name: Upload candidate-only CLI and SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-candidate-only
+          path: |
+            artifacts/${{ matrix.artifact }}
+            artifacts/SHA256SUMS
+          if-no-files-found: error
 
   windows:
     name: Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -42,16 +130,761 @@ jobs:
         run: flutter config --enable-windows-desktop
       - name: Install dependencies
         run: flutter pub get
-      - name: Configure standalone native tests
-        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON
-      - name: Build standalone native tests
-        run: cmake --build windows/native/build --config Debug
-      - name: Run standalone native tests
-        run: ctest --test-dir windows/native/build -C Debug --output-on-failure
-      - name: Restore .NET native binding tests
-        run: dotnet restore windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj
-      - name: Run .NET native binding tests
-        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj --configuration Debug --no-restore
+      - name: Prepare hosted Windows ZIP smoke signing trust
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
+          New-Item -ItemType Directory -Path $signingRoot -Force | Out-Null
+          $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+          Write-Host "Hosted Windows ZIP smoke RSA key is ready."
+          $certificateRequest = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+            [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new("CN=Desktop Updater Hosted ZIP Smoke"),
+            $rsa,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+          )
+          $codeSigningOids = [System.Security.Cryptography.OidCollection]::new()
+          $codeSigningOids.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($codeSigningOids, $true)
+          ) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
+              [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature,
+              $true
+            )
+          ) | Out-Null
+          $certificateRequest.CertificateExtensions.Add(
+            [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true)
+          ) | Out-Null
+          $smokeCertificate = $certificateRequest.CreateSelfSigned(
+            ([System.DateTimeOffset]::UtcNow).AddMinutes(-5),
+            ([System.DateTimeOffset]::UtcNow).AddHours(2)
+          )
+          if (-not $smokeCertificate.HasPrivateKey) {
+            throw "Hosted Windows ZIP smoke certificate has no private key."
+          }
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          [System.IO.File]::WriteAllBytes(
+            (Join-Path $signingRoot "hosted-smoke.pfx"),
+            $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $pfxPassword)
+          )
+          $certificatePath = Join-Path $signingRoot "hosted-smoke.cer"
+          [System.IO.File]::WriteAllBytes(
+            $certificatePath,
+            $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          )
+          $smokeCertificate.Thumbprint | Set-Content -LiteralPath (Join-Path $signingRoot "hosted-smoke.thumbprint") -NoNewline
+          Write-Host "Hosted Windows ZIP smoke certificate is ready."
+          try {
+            $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
+            foreach ($storeName in @("Root", "TrustedPublisher")) {
+              & certutil.exe -f -addstore $storeName $certificatePath
+              if ($LASTEXITCODE -ne 0) {
+                throw "certutil failed to add hosted Windows ZIP smoke trust to $storeName."
+              }
+              $storeName | Add-Content -LiteralPath $trustedStoresPath
+              Write-Host "Hosted Windows ZIP smoke $storeName trust is ready."
+            }
+          } finally {
+            $smokeCertificate.Dispose()
+            $rsa.Dispose()
+          }
+      - name: Configure standalone Windows native SDK tests
+        run: cmake -S windows/native -B windows/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+      - name: Build standalone Windows native SDK tests
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "windows-native-sdk-build.log"
+          cmake --build windows/native/build --config Release 2>&1 |
+            Tee-Object -FilePath $log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            $detail = (Get-Content -LiteralPath $log -Tail 60 -ErrorAction SilentlyContinue) -join "`n"
+            $detail = [regex]::Replace($detail, '\x1B\[[0-?]*[ -/]*[@-~]', '')
+            $detail = [regex]::Replace($detail, '[^\x09\x0A\x0D\x20-\x7E]', '')
+            if ($detail.Length -gt 3500) {
+              $detail = $detail.Substring($detail.Length - 3500)
+            }
+            $detail = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows native SDK build failed::$detail"
+            exit $buildExit
+          }
+      - name: Emit baseline Windows durable-state fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $baselineCommit = "2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          $overlayCommit = "fcd767ccfe9140f0787925f80cceb57553c1170a"
+          $baseline = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows"
+          $baselineBuild = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows-build"
+          $patch = Join-Path $env:RUNNER_TEMP "desktop-updater-baseline-windows-fixture-overlay.patch"
+          $output = Join-Path $env:GITHUB_WORKSPACE "artifacts/native-durable-state/windows"
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+
+          try {
+            git worktree add --detach $baseline $baselineCommit
+            if ($LASTEXITCODE -ne 0) { throw "Could not create baseline worktree." }
+            git diff --binary $baselineCommit $overlayCommit -- windows/native/CMakeLists.txt windows/native/test/helper/native_durable_state_fixture_emitter.cpp |
+              Set-Content -LiteralPath $patch -Encoding utf8NoBOM
+            if ($LASTEXITCODE -ne 0) { throw "Could not create baseline emitter overlay." }
+            git -C $baseline apply --whitespace=nowarn $patch
+            if ($LASTEXITCODE -ne 0) { throw "Could not apply baseline emitter overlay." }
+            cmake -S (Join-Path $baseline "windows/native") -B $baselineBuild -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            cmake --build $baselineBuild --config Release --target desktop_updater_native_durable_state_fixture_emitter
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $baselineEmitter = Join-Path $baselineBuild "Release/desktop_updater_native_durable_state_fixture_emitter.exe"
+            & $baselineEmitter $output
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $baselineEmitter --verify $output
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $fixture = Join-Path $env:GITHUB_WORKSPACE "test/fixtures/compat/native-durable-state/2.7.0/windows"
+            & $baselineEmitter --verify $fixture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $emitted = Get-ChildItem -LiteralPath $output -Filter *.json | Sort-Object Name
+            if ($emitted.Count -ne 5) { throw "Baseline emitter wrote an unexpected fixture set." }
+            foreach ($file in $emitted) {
+              $frozen = Join-Path $fixture $file.Name
+              if (-not (Test-Path -LiteralPath $frozen -PathType Leaf)) {
+                throw "Frozen fixture is missing $($file.Name)."
+              }
+              $emittedHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+              $frozenHash = (Get-FileHash -LiteralPath $frozen -Algorithm SHA256).Hash
+              if ($emittedHash -ne $frozenHash) {
+                throw "Baseline fixture bytes differ from the frozen $($file.Name)."
+              }
+            }
+            $serializerCommit = (git -C $baseline rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            if (Test-Path -LiteralPath $baseline) {
+              git worktree remove --force $baseline
+            }
+          }
+
+          $currentEmitter = "windows/native/build/Release/desktop_updater_native_durable_state_fixture_emitter.exe"
+          & $currentEmitter --verify test/fixtures/compat/native-durable-state/2.7.0/windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem -LiteralPath $output -Filter *.json |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            } | Set-Content -LiteralPath "$output/SHA256SUMS" -Encoding ascii
+          @(
+            "serializerCommit=$serializerCommit"
+            "overlayCommit=$overlayCommit"
+            "readerCommit=$env:GITHUB_SHA"
+            "runnerOS=$env:RUNNER_OS"
+            "runnerArch=$env:RUNNER_ARCH"
+            "command=$baselineEmitter $output"
+          ) | Set-Content -LiteralPath "$output/PROVENANCE.txt" -Encoding ascii
+      - name: Upload baseline Windows durable-state fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-durable-state-windows-${{ github.sha }}
+          path: artifacts/native-durable-state/windows
+          if-no-files-found: error
+      - name: Run Windows helper trust, pipe, transaction, and crash recovery tests
+        shell: pwsh
+        run: |
+          $filter = "(WindowsHelperAuth|WindowsOneShotTransport|WindowsInstallAuthorizer|WindowsFileTransaction|WindowsCrashRecovery)"
+          ctest --test-dir windows/native/build -C Release -R $filter --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $inventory = & ctest --test-dir windows/native/build -C Release -N -R $filter 2>&1
+          $inventory | ForEach-Object { Write-Host $_ }
+          $match = [regex]::Match(($inventory -join "`n"), "Total Tests:\s*([1-9][0-9]*)")
+          if (-not $match.Success) {
+            throw "Windows helper CTest registered zero trust/recovery tests."
+          }
+          New-Item -ItemType Directory -Path reports -Force | Out-Null
+          "platform=windows`nsuite=helper-trust-pipe-transaction-recovery`ntestCount=$($match.Groups[1].Value)" | Set-Content reports/windows-helper-test-counts.txt
+      - name: Run unprivileged Windows install helper smoke
+        shell: pwsh
+        run: ./tool/windows_install_helper_smoke.ps1 -Mode Unprivileged -BuildDirectory windows/native/build
+      # Signed interactive UAC remains credential- and host-gated. The script
+      # fails closed unless the fixed helper is Authenticode-valid and an
+      # operator explicitly enables an interactive elevation prompt.
+      - name: Run Windows Unicode and relative redirect target-host gates
+        shell: pwsh
+        run: |
+          $serverOut = Join-Path $env:RUNNER_TEMP "native-transport-server.out"
+          $serverErr = Join-Path $env:RUNNER_TEMP "native-transport-server.err"
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_transport_fixture_server.dart", "--port", "43891"
+          ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43891/health" | Out-Null
+                $ready = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 250
+              }
+            }
+            if (-not $ready) {
+              Get-Content $serverOut, $serverErr -ErrorAction SilentlyContinue
+              throw "Native transport fixture server did not start."
+            }
+            $env:DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL = "http://127.0.0.1:43891"
+            $output = & ctest --test-dir windows/native/build -C Release --output-on-failure 2>&1
+            $exitCode = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host $_ }
+            if ($exitCode -ne 0) { exit $exitCode }
+            if (($output -join "`n") -match "No tests were found") {
+              throw "Standalone Windows native CTest registered zero tests."
+            }
+          } finally {
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
+      - name: Install Windows native SDK
+        run: cmake --install windows/native/build --config Release --prefix windows/native/install
+      - name: Verify installed Windows third-party notices
+        shell: pwsh
+        run: |
+          $notice = "windows/native/install/share/doc/desktop_updater_native/THIRD_PARTY_NOTICES.md"
+          if (-not (Test-Path -LiteralPath $notice -PathType Leaf)) {
+            throw "Installed Windows SDK is missing $notice"
+          }
+      - name: Configure installed Windows CMake consumer
+        shell: pwsh
+        run: cmake -S example/native/windows-cmake -B example/native/windows-cmake/build "-DCMAKE_PREFIX_PATH=$env:GITHUB_WORKSPACE/windows/native/install"
+      - name: Build installed Windows CMake consumer
+        run: cmake --build example/native/windows-cmake/build --config Release
+      - name: Run installed Windows CMake consumer
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir example/native/windows-cmake/build -C Release --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Windows installed consumer CTest registered zero tests."
+          }
+      - name: Run .NET native DLL consumer tests
+        run: dotnet test windows/native/dotnet/DesktopUpdater.Native.Tests/DesktopUpdater.Native.Tests.csproj --configuration Release
+      - name: Reject Debug CRT dependencies from Release native DLLs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $visualStudio = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($visualStudio)) {
+            throw "Unable to locate Visual Studio C++ tools."
+          }
+          $dumpbin = Get-ChildItem "$visualStudio/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $dumpbin) { throw "Unable to locate dumpbin.exe." }
+          $debugRuntimePattern = '(?i)\b(?:ucrtbased|vcruntime\d+(?:_\d+)?d|msvcp\d+(?:_[a-z_]+)?d)\.dll\b'
+          $releaseDlls = @(
+            "windows/native/build/Release/desktop_updater_native.dll",
+            "windows/native/build/Release/desktop_updater_runtime.dll"
+          )
+          foreach ($dll in $releaseDlls) {
+            $dependencies = (& $dumpbin.FullName /dependents $dll | Out-String)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($dependencies -match $debugRuntimePattern) {
+              throw "$dll depends on Debug CRT $($Matches[0])"
+            }
+          }
+      - name: Pack DesktopUpdater.Native
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)\s*$'
+          if ($versionLine.Matches.Count -ne 1) {
+            throw "Unable to read the canonical version from pubspec.yaml."
+          }
+          $version = $versionLine.Matches[0].Groups[1].Value
+          $nativeDll = (Resolve-Path windows/native/build/Release/desktop_updater_native.dll).Path
+          $runtimeDll = (Resolve-Path windows/native/build/Release/desktop_updater_runtime.dll).Path
+          $installHelper = (Resolve-Path windows/native/build/Release/desktop_updater_install_helper.exe).Path
+          $fixture = Get-Content -Raw fixtures/compat/native-install-helper/v1/policy-cases.json | ConvertFrom-Json
+          $validPolicy = $fixture.cases | Where-Object { $_.expectedValid -eq $true } | Select-Object -First 1
+          if ($null -eq $validPolicy -or [string]::IsNullOrWhiteSpace($validPolicy.canonicalJson)) {
+            throw "No canonical helper policy fixture is available for NuGet packing."
+          }
+          $helperPolicy = Join-Path $env:RUNNER_TEMP "desktop_updater_helper_policy.json"
+          [IO.File]::WriteAllText($helperPolicy, $validPolicy.canonicalJson, [Text.UTF8Encoding]::new($false))
+          dotnet pack windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj --configuration Release --output windows/native/artifacts "-p:PackageVersion=$version" "-p:NativeDllPath=$nativeDll" "-p:RuntimeDllPath=$runtimeDll" "-p:InstallHelperPath=$installHelper" "-p:HelperPolicyPath=$helperPolicy"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify DesktopUpdater.Native package contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $package = "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg"
+          $packagePath = (Resolve-Path $package).Path
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($packagePath)
+          try {
+            $entries = @($archive.Entries | ForEach-Object { $_.FullName })
+            $required = @(
+              "lib/net8.0/DesktopUpdater.Native.dll",
+              "lib/netstandard2.0/DesktopUpdater.Native.dll",
+              "runtimes/win-x64/native/desktop_updater_native.dll",
+              "runtimes/win-x64/native/desktop_updater_runtime.dll",
+              "runtimes/win-x64/native/desktop_updater_install_helper.exe",
+              "runtimes/win-x64/native/desktop_updater_helper_policy.json",
+              "buildTransitive/DesktopUpdater.Native.targets",
+              "THIRD_PARTY_NOTICES.md"
+            )
+            foreach ($entry in $required) {
+              if ($entries -notcontains $entry) {
+                throw "NuGet package is missing $entry"
+              }
+            }
+            $nuspec = $archive.GetEntry("DesktopUpdater.Native.nuspec")
+            if ($null -eq $nuspec) {
+              throw "NuGet package is missing DesktopUpdater.Native.nuspec"
+            }
+            $reader = [System.IO.StreamReader]::new($nuspec.Open())
+            try {
+              $nuspecText = $reader.ReadToEnd()
+            } finally {
+              $reader.Dispose()
+            }
+            $escapedVersion = [regex]::Escape($env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION)
+            if ($nuspecText -notmatch "<version>$escapedVersion</version>") {
+              throw "NuGet package version does not match pubspec.yaml"
+            }
+          } finally {
+            $archive.Dispose()
+          }
+      - name: Run isolated Release NuGet P/Invoke consumer
+        shell: pwsh
+        run: |
+          $laneRoot = Join-Path $env:RUNNER_TEMP "desktop-updater-nuget-regular"
+          $build = Join-Path $laneRoot "build"
+          $packageSource = (Resolve-Path windows/native/artifacts).Path
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet/DesktopUpdater.Consumer.csproj -LaneRoot $laneRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet (Join-Path $build "DesktopUpdater.Consumer.dll")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows native runtime ZIP smoke
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ConfirmPreference = "None"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
+          $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
+          $packageSource = (Resolve-Path windows/native/artifacts).Path
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
+          $build = Join-Path $smokeRoot "build"
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Hosted Windows ZIP smoke runtime consumer is ready."
+          $pfx = Join-Path $signingRoot "hosted-smoke.pfx"
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          if (-not (Test-Path -LiteralPath $pfx -PathType Leaf)) {
+            throw "Hosted Windows ZIP smoke PFX is unavailable."
+          }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found for hosted Windows ZIP smoke."
+          }
+          foreach ($binary in @(
+            (Join-Path $build "DesktopUpdater.RuntimeCompile.exe"),
+            (Join-Path $build "desktop_updater_install_helper.exe")
+          )) {
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Hosted Windows ZIP smoke failed to trust ${binary}: $($signature.Status)"
+            }
+          }
+          Write-Host "Hosted Windows ZIP smoke signing trust is ready."
+          $install = Join-Path $smokeRoot "install"
+          $payload = Join-Path $smokeRoot "payload"
+          Copy-Item -LiteralPath $build -Destination $install -Recurse
+          Copy-Item -LiteralPath $build -Destination $payload -Recurse
+          "2.7.0" | Set-Content (Join-Path $install "version.txt")
+          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
+          $installedIdentity = '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}'
+          $installedIdentity | Set-Content -LiteralPath (Join-Path $install ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
+          $installedIdentity | Set-Content -LiteralPath (Join-Path $payload ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
+          foreach ($root in @($install, $payload)) {
+            $caller = Join-Path $root "DesktopUpdater.RuntimeCompile.exe"
+            $helper = Join-Path $root "desktop_updater_install_helper.exe"
+            $callerSha256 = (Get-FileHash -LiteralPath $caller -Algorithm SHA256).Hash.ToLowerInvariant()
+            $helperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+            $portablePolicy = [ordered]@{
+              allowedApplicationSigner = [ordered]@{ kind = "sha256"; value = $callerSha256 }
+              allowedHelperSigner = [ordered]@{ kind = "sha256"; value = $helperSha256 }
+              allowedInstallRoots = @()
+              allowedStrategies = @(
+                [ordered]@{ provider = "platformDirectory"; strategy = "directoryReplace" }
+              )
+              allowedTargetClasses = @("sameUserWritable")
+              applicationPackageId = "com.example.native-runtime-smoke"
+              helperServiceId = "com.example.desktop-updater.helper"
+              minimumHelperProtocolVersion = 1
+              policyId = "com.example.desktop-updater.portable"
+              policyVersion = 1
+              releaseRootPublicKeys = @(
+                [ordered]@{
+                  algorithm = "ed25519"
+                  keyId = "native-runtime-smoke-stable"
+                  publicKeyBase64 = "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y="
+                }
+              )
+            }
+            $canonicalPolicy = $portablePolicy | ConvertTo-Json -Compress -Depth 8
+            [IO.File]::WriteAllText(
+              (Join-Path $root "desktop_updater_helper_policy.json"),
+              $canonicalPolicy,
+              [Text.UTF8Encoding]::new($false)
+            )
+          }
+          $artifact = Join-Path $smokeRoot "update.zip"
+          Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $artifact
+          $ready = Join-Path $smokeRoot "ready.json"
+          $serverOut = Join-Path $smokeRoot "server.out"
+          $serverErr = Join-Path $smokeRoot "server.err"
+          $smokeUser = $null
+          $smokeUserCreated = $false
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_runtime_smoke_server.dart",
+            "--artifact", $artifact,
+            "--artifact-kind", "zip",
+            "--platform", "windows",
+            "--package-id", "com.example.native-runtime-smoke",
+            "--app-name", "NativeRuntimeSmoke",
+            "--ready-file", $ready,
+            "--port", "43892"
+          ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              if (Test-Path -LiteralPath $ready) {
+                try {
+                  Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
+                  break
+                } catch {}
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not (Test-Path -LiteralPath $ready)) {
+              Get-Content $serverOut, $serverErr -ErrorAction SilentlyContinue
+              throw "Native runtime ZIP server did not start."
+            }
+            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
+            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+            $helperEventProvider = "DesktopUpdater.InstallHelper.ProtocolV1"
+            $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+            $smokeUserName = "duzip$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+            $smokePasswordText = "Du!9$([Guid]::NewGuid().ToString('N'))"
+            $smokePassword = ConvertTo-SecureString $smokePasswordText -AsPlainText -Force
+            $smokeUser = New-LocalUser -Name $smokeUserName -Password $smokePassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword
+            $smokeUserCreated = $true
+            $users = Get-LocalGroup -SID "S-1-5-32-545"
+            $isUser = @(
+              Get-LocalGroupMember -Group $users.Name |
+                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
+            ).Count -ne 0
+            if (-not $isUser) {
+              Add-LocalGroupMember -Group $users.Name -Member $smokeUser
+            }
+            $administrators = Get-LocalGroup -SID "S-1-5-32-544"
+            $isAdministrator = @(
+              Get-LocalGroupMember -Group $administrators.Name |
+                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
+            ).Count -ne 0
+            if ($isAdministrator) {
+              throw "Hosted Windows ZIP smoke account unexpectedly has administrator authority."
+            }
+            & icacls.exe $smokeRoot /grant:r "*$($smokeUser.SID.Value):(OI)(CI)F" /T /C | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Hosted Windows ZIP smoke account could not own its disposable lane."
+            }
+            $userTemp = Join-Path $smokeRoot "user-temp"
+            New-Item -ItemType Directory -Path $userTemp -Force | Out-Null
+            $smokeCredential = [System.Management.Automation.PSCredential]::new(
+              "$env:COMPUTERNAME\$smokeUserName",
+              $smokePassword
+            )
+            $profilesDirectory = [Environment]::ExpandEnvironmentVariables(
+              (Get-ItemProperty -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" -Name ProfilesDirectory).ProfilesDirectory
+            )
+            $smokeUserProfile = Join-Path $profilesDirectory $smokeUserName
+            $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
+            $smokeEnvironment = @{
+              APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
+              DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
+              DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+              HOME = $smokeUserProfile
+              HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
+              HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
+              LOCALAPPDATA = $smokeLocalAppData
+              TEMP = $userTemp
+              TMP = $userTemp
+              USERDOMAIN = $env:COMPUTERNAME
+              USERNAME = $smokeUserName
+              USERPROFILE = $smokeUserProfile
+            }
+            $smokePasswordText = $null
+            $helperEventStart = Get-Date
+            Write-Host "Hosted Windows ZIP smoke update handoff is starting."
+            $runtimeOut = Join-Path $smokeRoot "runtime.out"
+            $runtimeErr = Join-Path $smokeRoot "runtime.err"
+            $originalTemp = $env:TEMP
+            $originalTmp = $env:TMP
+            try {
+              $env:TEMP = $userTemp
+              $env:TMP = $userTemp
+              $profileProbeOut = Join-Path $smokeRoot "profile-probe.out"
+              $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
+              $profileProbeScript = @(
+                '$ErrorActionPreference = "Stop"'
+                '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
+                'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
+                '  throw "LocalApplicationData is unavailable."'
+                '}'
+                '$expectedLocalAppData = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA'
+                'if (-not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath($localAppData), [IO.Path]::GetFullPath($expectedLocalAppData))) {'
+                '  throw "LocalApplicationData resolved outside the standard-user profile."'
+                '}'
+                '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
+                '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
+                'try {'
+                '  [IO.File]::WriteAllText($probe, "ready", [Text.UTF8Encoding]::new($false))'
+                '} finally {'
+                '  Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue'
+                '}'
+                'Write-Output "Hosted Windows ZIP smoke LocalAppData is ready."'
+              ) -join [Environment]::NewLine
+              $profileProbePath = Join-Path $smokeRoot "profile-probe.ps1"
+              [IO.File]::WriteAllText(
+                $profileProbePath,
+                $profileProbeScript,
+                [Text.UTF8Encoding]::new($false)
+              )
+              $profileProbeShell = (Get-Process -Id $PID).Path
+              # CreateProcessWithLogonW limits credentialed command lines to
+              # 1024 characters, so keep the probe body out of ArgumentList.
+              $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File", $profileProbePath
+              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
+              Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
+              if ($profileProbeProcess.ExitCode -ne 0) {
+                throw "Hosted Windows ZIP smoke could not initialize LocalAppData for the standard user."
+              }
+              $runtimeProcess = Start-Process -FilePath (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") -ArgumentList @(
+                "--smoke",
+                "--app-archive-url", $serverInfo.appArchiveUrl,
+                "--public-key-base64", $serverInfo.publicKeyBase64,
+                "--package-id", "com.example.native-runtime-smoke",
+                "--smoke-root", (Join-Path $smokeRoot "runtime"),
+                "--diagnostics-log", $diagnosticsPath
+              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr -Wait -PassThru
+            } finally {
+              $env:TEMP = $originalTemp
+              $env:TMP = $originalTmp
+            }
+            Get-Content $runtimeOut, $runtimeErr -ErrorAction SilentlyContinue
+            $runtimeExit = $runtimeProcess.ExitCode
+            if ($runtimeExit -ne 0) {
+              $helperEvents = @(
+                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
+                  Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" }
+              )
+              foreach ($helperEvent in $helperEvents) {
+                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
+              }
+              throw "Hosted Windows ZIP smoke standard-user runtime exited with code $runtimeExit."
+            }
+            Write-Host "Hosted Windows ZIP smoke update handoff returned."
+            $stagingRoot = Join-Path $smokeRoot "runtime/staging"
+            # Portable restage deliberately protects the replacement tree for
+            # SYSTEM and the standard-user caller only.  Keep filesystem
+            # assertions under that same caller identity; the runner account
+            # should inspect protocol evidence, not bypass the target DACL.
+            $postSmokeStatePath = Join-Path $smokeRoot "post-smoke-state.json"
+            $postSmokeVerifyOut = Join-Path $smokeRoot "post-smoke-verify.out"
+            $postSmokeVerifyErr = Join-Path $smokeRoot "post-smoke-verify.err"
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_INSTALL"] = $install
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_STAGING"] = $stagingRoot
+            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_VERIFY_OUT"] = $postSmokeStatePath
+            $postSmokeScript = @'
+            $ErrorActionPreference = "Stop"
+            $versionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL "version.txt"
+            $stagingRoot = $env:DESKTOP_UPDATER_SMOKE_STAGING
+            $versionReady = $false
+            $stagingClean = $false
+            for ($attempt = 0; $attempt -lt 600; $attempt++) {
+              try {
+                $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
+                $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
+              } catch {
+                $versionReady = $false
+                $stagingClean = $false
+              }
+              if ($versionReady -and $stagingClean) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            [ordered]@{
+              versionReady = $versionReady
+              stagingClean = $stagingClean
+            } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
+            if (-not $versionReady) { throw "Standard-user ZIP smoke did not observe version 2.7.1." }
+            if (-not $stagingClean) { throw "Standard-user ZIP smoke observed an owned staging child." }
+          '@
+            $postSmokeScriptPath = Join-Path $smokeRoot "post-smoke-verify.ps1"
+            [IO.File]::WriteAllText(
+              $postSmokeScriptPath,
+              $postSmokeScript,
+              [Text.UTF8Encoding]::new($false)
+            )
+            $postSmokeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+              "-NoLogo",
+              "-NoProfile",
+              "-NonInteractive",
+              "-File", $postSmokeScriptPath
+            ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $postSmokeVerifyOut -RedirectStandardError $postSmokeVerifyErr -Wait -PassThru
+            Get-Content $postSmokeVerifyOut, $postSmokeVerifyErr -ErrorAction SilentlyContinue
+            if ($postSmokeProcess.ExitCode -ne 0) {
+              throw "Hosted Windows ZIP smoke standard-user filesystem verification exited with code $($postSmokeProcess.ExitCode)."
+            }
+            $postSmokeState = Get-Content -Raw -LiteralPath $postSmokeStatePath | ConvertFrom-Json
+            $versionReady = [bool]$postSmokeState.versionReady
+            $stagingClean = [bool]$postSmokeState.stagingClean
+            $moveComplete = $false
+            $cleanupComplete = $false
+            for ($attempt = 0; $attempt -lt 600; $attempt++) {
+              $helperEvents = @(
+                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
+                  Where-Object { $_.ProviderName -eq $helperEventProvider }
+              )
+              $moveComplete = @($helperEvents | Where-Object { $_.Id -eq 1008 }).Count -gt 0
+              $cleanupComplete = @($helperEvents | Where-Object { $_.Id -eq 1014 }).Count -gt 0
+              if ($versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not $versionReady) {
+              throw "Windows ZIP runtime smoke did not install version 2.7.1."
+            }
+            if (-not $stagingClean) {
+              throw "Windows ZIP runtime smoke left an owned staging child."
+            }
+            if (-not $moveComplete -or -not $cleanupComplete) {
+              foreach ($helperEvent in $helperEvents) {
+                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
+              }
+              throw "Windows ZIP runtime smoke helper events are incomplete."
+            }
+          } finally {
+            if (Test-Path -LiteralPath $ready) {
+              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+              try {
+                Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43892/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null
+              } catch {}
+            }
+            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            if ($smokeUserCreated) {
+              Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+            }
+          }
+      - name: Windows native runtime Inno smoke
+        if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_P12_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_P12_BASE64 }}
+          WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+            throw "Signed Inno runtime smoke credentials are required."
+          }
+          choco install innosetup --no-progress -y
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-inno"
+          $packageSource = (Resolve-Path windows/native/artifacts).Path
+          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
+          $build = Join-Path $smokeRoot "build"
+          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $install = Join-Path $smokeRoot "install"
+          $payload = Join-Path $smokeRoot "payload"
+          Copy-Item -LiteralPath $build -Destination $install -Recurse
+          Copy-Item -LiteralPath $build -Destination $payload -Recurse
+          "2.7.0" | Set-Content (Join-Path $install "version.txt")
+          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
+          $iss = Join-Path $smokeRoot "runtime-smoke.iss"
+          @(
+            "[Setup]",
+            "AppId=NativeRuntimeSmoke",
+            "AppName=NativeRuntimeSmoke",
+            "AppVersion=2.7.1",
+            "DefaultDirName={autopf}\NativeRuntimeSmoke",
+            "OutputDir=$smokeRoot",
+            "OutputBaseFilename=native-runtime-smoke",
+            "Uninstallable=no",
+            "PrivilegesRequired=lowest",
+            "ArchitecturesAllowed=x64compatible",
+            "[Files]",
+            "Source: `"$payload\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs"
+          ) | Set-Content -LiteralPath $iss -Encoding UTF8
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installer = Join-Path $smokeRoot "native-runtime-smoke.exe"
+          $pfx = Join-Path $smokeRoot "code-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_P12_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found." }
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CODE_SIGNING_P12_PASSWORD $installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:WINDOWS_CODE_SIGNING_P12_PASSWORD)
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $publisher = ([BitConverter]::ToString($sha256.ComputeHash($certificate.RawData))).Replace('-', '') } finally { $sha256.Dispose(); $certificate.Dispose() }
+          $ready = Join-Path $smokeRoot "ready.json"
+          $server = Start-Process dart -ArgumentList @(
+            "run", "tool/native_runtime_smoke_server.dart",
+            "--artifact", $installer,
+            "--artifact-kind", "innoInstaller",
+            "--platform", "windows",
+            "--package-id", "com.example.native-runtime-smoke",
+            "--app-name", "NativeRuntimeSmoke",
+            "--publisher-thumbprint", $publisher,
+            "--ready-file", $ready,
+            "--port", "43895"
+          ) -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              if (Test-Path -LiteralPath $ready) {
+                try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null; break } catch {}
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null
+            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
+            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            for ($attempt = 0; $attempt -lt 240; $attempt++) {
+              if ((Test-Path (Join-Path $install "version.txt")) -and ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -eq "2.7.1")) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") { throw "Windows Inno runtime smoke did not install version 2.7.1." }
+            $diagnostics = Get-Content -Raw (Join-Path $smokeRoot "helper-diagnostics.jsonl")
+            if ($diagnostics -notmatch '"event":"inno authenticode verified"' -or $diagnostics -notmatch '"event":"inno installer success"') { throw "Windows Inno runtime smoke diagnostics are incomplete." }
+          } finally {
+            if (Test-Path -LiteralPath $ready) {
+              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
+              try { Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43895/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null } catch {}
+            }
+            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Build example
         working-directory: example
         run: flutter build windows --debug
@@ -60,22 +893,59 @@ jobs:
         run: cmake --build build/windows/x64 --config Debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Flutter Windows Debug CTest registered zero tests."
+          }
       - name: Run integration tests
         working-directory: example
         run: flutter test integration_test -d windows
       - name: Rebuild example for smoke
         working-directory: example
         run: flutter build windows --debug
-      - name: Run update smoke
+      - name: Sign Windows debug smoke binaries
         working-directory: example
-        run: dart run tool/updater_smoke.dart --diagnostics-log ../reports/windows-update-smoke-debug-diagnostics.jsonl
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pfx = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing/hosted-smoke.pfx"
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found for Windows debug smoke." }
+          foreach ($binary in @(
+            "build/windows/x64/runner/Debug/desktop_updater_example.exe",
+            "build/windows/x64/runner/Debug/desktop_updater_install_helper.exe"
+          )) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Windows debug smoke binary is missing: $binary"
+            }
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Windows debug smoke binary is not trusted: ${binary}: $($signature.Status)"
+            }
+          }
+      - name: Run update smoke Debug run 1
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-1")
+      - name: Run update smoke Debug run 2
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-2")
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-debug-diagnostics
-          path: reports/windows-update-smoke-debug-diagnostics.jsonl
+          path: |
+            reports/windows-v3-debug-run-*
           if-no-files-found: ignore
       - name: Build example release
         working-directory: example
@@ -85,30 +955,498 @@ jobs:
         run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure
+        shell: pwsh
+        run: |
+          $output = & ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { exit $exitCode }
+          if (($output -join "`n") -match "No tests were found") {
+            throw "Flutter Windows Release CTest registered zero tests."
+          }
+      - name: Assert forged raw MethodChannel payload fails Windows plugin boundary
+        working-directory: example
+        run: flutter test integration_test/plugin_integration_test.dart -d windows --name "forged raw MethodChannel payload fails native validation"
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
-      - name: Run release publish smoke
+      - name: Sign Windows release smoke binaries
         working-directory: example
-        run: dart run tool/release_publish_smoke.dart --platform windows
-      - name: Run update smoke release
-        working-directory: example
-        run: dart run tool/updater_smoke.dart --config Release --diagnostics-log ../reports/windows-update-smoke-release-diagnostics.jsonl
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pfx = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing/hosted-smoke.pfx"
+          $pfxPassword = "desktop-updater-hosted-smoke-only"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found for Windows release smoke." }
+          foreach ($binary in @(
+            "build/windows/x64/runner/Release/desktop_updater_example.exe",
+            "build/windows/x64/runner/Release/desktop_updater_install_helper.exe"
+          )) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Windows release smoke binary is missing: $binary"
+            }
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $signature = Get-AuthenticodeSignature -FilePath $binary
+            if ($signature.Status -ne "Valid") {
+              throw "Windows release smoke binary is not trusted: ${binary}: $($signature.Status)"
+            }
+          }
+      - name: Run update smoke Release run 1
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-1")
+      - name: Run update smoke Release run 2
+        shell: pwsh
+        run: |
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-2")
       - name: Upload update smoke release diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-smoke-release-diagnostics
-          path: reports/windows-update-smoke-release-diagnostics.jsonl
+          path: |
+            reports/windows-v3-release-run-*
           if-no-files-found: ignore
+      # The publish smoke rebuilds Release with its synthetic 9.9.9 version;
+      # keep the updater smoke ahead of it so the 2.7.1 fixture remains newer
+      # than the app under test.
+      - name: Run release publish smoke
+        working-directory: example
+        run: dart run tool/release_publish_smoke.dart --platform windows
+      - name: Assert removed Windows C/C++ and .NET consumers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $failures = @()
+          $cmakeBuild = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake"
+          $cmakeStdoutPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake.stdout.log"
+          $cmakeStderrPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-cmake.stderr.log"
+          Remove-Item -LiteralPath $cmakeStdoutPath, $cmakeStderrPath -Force -ErrorAction SilentlyContinue
+          $cmakeProcess = Start-Process -FilePath "cmake" -ArgumentList @(
+            "-S",
+            "test/fixtures/v3_removed_api/windows-cmake",
+            "-B",
+            $cmakeBuild,
+            "-DDESKTOP_UPDATER_SOURCE_ROOT=$env:GITHUB_WORKSPACE"
+          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput $cmakeStdoutPath -RedirectStandardError $cmakeStderrPath
+          $cmakeExit = $cmakeProcess.ExitCode
+          $cmakeText = @(
+            (Get-Content -Raw -LiteralPath $cmakeStdoutPath -ErrorAction SilentlyContinue),
+            (Get-Content -Raw -LiteralPath $cmakeStderrPath -ErrorAction SilentlyContinue)
+          ) -join [Environment]::NewLine
+          Write-Host $cmakeText
+          if ($cmakeExit -ne 0) {
+            if ($cmakeText -match "unexpectedly compiled: desktop_updater_schedule_install_and_relaunch_v1") {
+              $failures += "Windows C/C++ legacy ABI consumers unexpectedly compiled."
+            } else {
+              $failures += "Windows C/C++ fixture failed without its expected assertion: $cmakeText"
+            }
+          }
+          $dotnetStdoutPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-dotnet.stdout.log"
+          $dotnetStderrPath = Join-Path $env:RUNNER_TEMP "desktop-updater-v3-removed-windows-dotnet.stderr.log"
+          Remove-Item -LiteralPath $dotnetStdoutPath, $dotnetStderrPath -Force -ErrorAction SilentlyContinue
+          $dotnetProcess = Start-Process -FilePath "dotnet" -ArgumentList @(
+            "build",
+            "test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj",
+            "--nologo",
+            "-p:UseSharedCompilation=false"
+          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput $dotnetStdoutPath -RedirectStandardError $dotnetStderrPath
+          $dotnetExit = $dotnetProcess.ExitCode
+          $dotnetText = @(
+            (Get-Content -Raw -LiteralPath $dotnetStdoutPath -ErrorAction SilentlyContinue),
+            (Get-Content -Raw -LiteralPath $dotnetStderrPath -ErrorAction SilentlyContinue)
+          ) -join [Environment]::NewLine
+          Write-Host $dotnetText
+          if ($dotnetExit -eq 0) {
+            $failures += "Windows .NET legacy consumer unexpectedly compiled: ScheduleInstallAndRelaunch"
+          } elseif ($dotnetText -notmatch "ScheduleInstallAndRelaunch") {
+            $failures += "Windows .NET fixture failed without the intended ScheduleInstallAndRelaunch diagnostic: $dotnetText"
+          }
+          if ($failures.Count -gt 0) { throw ($failures -join [Environment]::NewLine) }
+      - name: Upload Windows native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-windows
+          path: reports/windows-helper-test-counts.txt
+          if-no-files-found: ignore
+      - name: Cleanup hosted Windows ZIP smoke signing trust
+        if: always()
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
+          $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
+          $thumbprintPath = Join-Path $signingRoot "hosted-smoke.thumbprint"
+          $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
+          if (
+            (Test-Path -LiteralPath $thumbprintPath -PathType Leaf) -and
+            (Test-Path -LiteralPath $trustedStoresPath -PathType Leaf)
+          ) {
+            $thumbprint = (Get-Content -Raw -LiteralPath $thumbprintPath).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+              $trustedStores = @(Get-Content -LiteralPath $trustedStoresPath)
+              [array]::Reverse($trustedStores)
+              foreach ($storeName in $trustedStores) {
+                if ($storeName -notin @("Root", "TrustedPublisher")) {
+                  throw "Unexpected hosted Windows ZIP smoke certificate store: $storeName"
+                }
+                & certutil.exe -f -delstore $storeName $thumbprint
+                if ($LASTEXITCODE -ne 0) {
+                  throw "certutil failed to remove hosted Windows ZIP smoke trust from $storeName."
+                }
+              }
+            }
+          }
+          Remove-Item -LiteralPath $signingRoot -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+  windows-elevated-helper:
+    name: Windows Authenticode/UAC Helper (not run unless enabled)
+    runs-on: [self-hosted, Windows, X64, desktop-updater-uac]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Configure Release helper
+        run: cmake -S windows/native -B windows/native/build-elevated -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=OFF
+      - name: Build Release helper
+        run: cmake --build windows/native/build-elevated --config Release --target desktop_updater_install_helper
+      - name: Sign fixed helper with Authenticode
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_P12_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_P12_BASE64 }}
+          WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+            throw "Authenticode helper smoke credentials are required."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_P12_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found." }
+          $helper = (Resolve-Path windows/native/build-elevated/Release/desktop_updater_install_helper.exe).Path
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CODE_SIGNING_P12_PASSWORD $helper
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-AuthenticodeSignature -LiteralPath $helper).Status -ne "Valid") {
+            throw "Signed helper did not pass Authenticode verification."
+          }
+      - name: Run Authenticode and interactive UAC helper smoke
+        shell: pwsh
+        env:
+          DESKTOP_UPDATER_ALLOW_INTERACTIVE_UAC_SMOKE: "1"
+        run: ./tool/windows_install_helper_smoke.ps1 -Mode Elevated -BuildDirectory windows/native/build-elevated
+      - name: Remove ephemeral signing credential
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx") -Force -ErrorAction SilentlyContinue
+
+  macos-native:
+    name: macOS Native Consumer
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Validate macOS install helper configuration
+        run: |
+          plutil -lint macos/install_helper/Configuration/Helper-Info.plist
+          plutil -lint macos/install_helper/Configuration/Helper-Launchd.plist
+      - name: Run macOS install helper tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/macos-install-helper-tests.log"
+          set +e
+          swift test --package-path macos/install_helper 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            printf '::error title=macOS install helper tests failed::%s\n' "$detail"
+            exit "$status"
+          fi
+      - name: Run macOS unprivileged crash recovery suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path macos/install_helper --filter MacCrashRecoveryTests 2>&1 | tee "$RUNNER_TEMP/macos-crash-recovery-test.log"
+          output="$(cat "$RUNNER_TEMP/macos-crash-recovery-test.log")"
+          test_count="$(printf '%s\n' "$output" | sed -n 's/.*Executed \([0-9][0-9]*\) tests.*/\1/p' | tail -1)"
+          test -n "$test_count"
+          test "$test_count" -gt 0
+          mkdir -p reports
+          printf 'platform=macos\nsuite=unprivileged-crash-recovery\ntestCount=%s\n' "$test_count" > reports/macos-helper-test-counts.txt
+      - name: Reproduce frozen macOS durable-state fixtures from baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_commit="2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          predecessor_commit="73aa730efbf1384eef9b74d7eb87ee655d81c0b5"
+          overlay_commit="fcd767ccfe9140f0787925f80cceb57553c1170a"
+          baseline="$RUNNER_TEMP/desktop-updater-baseline-macos"
+          predecessor="$RUNNER_TEMP/desktop-updater-predecessor-macos"
+          patch="$RUNNER_TEMP/desktop-updater-baseline-macos-fixture-overlay.patch"
+          output="$RUNNER_TEMP/desktop-updater-baseline-macos-fixtures"
+          predecessor_output="$RUNNER_TEMP/desktop-updater-predecessor-macos-fixtures"
+          fixture="$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/2.7.0/macos"
+          cleanup() {
+            git worktree remove --force "$baseline" >/dev/null 2>&1 || true
+            git worktree remove --force "$predecessor" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$baseline" "$baseline_commit"
+          git diff --binary "$baseline_commit" "$overlay_commit" -- macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/BaselineDurableStateFixtureEmitterTests.swift > "$patch"
+          git -C "$baseline" apply --whitespace=nowarn "$patch"
+          mkdir -p "$output"
+          DESKTOP_UPDATER_DURABLE_FIXTURE_OUTPUT="$output" swift test --package-path "$baseline/macos/install_helper" --filter BaselineDurableStateFixtureEmitterTests/testEmitPreparedBaselineAndPredecessorJournals
+          for name in directory-journal-schema1.json verified-installer-journal-schema2.json; do
+            cmp -- "$output/$name" "$fixture/$name"
+          done
+          # Schema 1 belongs solely to its historical 73aa730 writer below.
+          rm -f "$output/verified-installer-journal-schema1.json"
+          test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 2
+
+          recovery_root="$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-root"
+          recovery_stage_root="$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-stage"
+          recovery_transaction="00000000-0000-4000-8000-000000000041"
+          recovery_journal="$recovery_root/.Example.app.desktop-updater-$recovery_transaction.journal.json"
+          recovery_prepared="$recovery_root/.Example.app.desktop-updater-$recovery_transaction.prepared"
+          rm -rf "$recovery_root" "$recovery_stage_root"
+          mkdir -p "$recovery_root/Example.app" "$recovery_stage_root/Stage.app"
+          printf 'old' > "$recovery_root/Example.app/version.txt"
+          printf 'new' > "$recovery_stage_root/Stage.app/version.txt"
+          set +e
+          DESKTOP_UPDATER_CRASH_ROOT="$recovery_root" \
+          DESKTOP_UPDATER_CRASH_STAGE="$recovery_stage_root/Stage.app" \
+          DESKTOP_UPDATER_CRASH_TRANSACTION="$recovery_transaction" \
+          DESKTOP_UPDATER_CRASH_POINT="afterPreparedJournalFlush" \
+            swift test --package-path "$baseline/macos/install_helper" --filter MacCrashProcessWorkerTests/testCrashAtConfiguredPoint 2>&1 | tee "$RUNNER_TEMP/desktop-updater-baseline-macos-recovery-crash.log"
+          recovery_crash_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$recovery_crash_status" -eq 0 ]; then
+            echo "Baseline macOS crash worker unexpectedly exited successfully." >&2
+            exit 1
+          fi
+          test -s "$recovery_journal"
+          test -d "$recovery_prepared"
+          test "$(cat "$recovery_root/Example.app/version.txt")" = old
+          recovery_journal_sha="$(shasum -a 256 "$recovery_journal" | awk '{print $1}')"
+          DESKTOP_UPDATER_BASELINE_RECOVERY_ROOT="$recovery_root" \
+          DESKTOP_UPDATER_BASELINE_RECOVERY_TRANSACTION="$recovery_transaction" \
+          DESKTOP_UPDATER_BASELINE_RECOVERY_JOURNAL_SHA256="$recovery_journal_sha" \
+            swift test --package-path macos/install_helper --filter MacPersistentRecoveryTests/testCurrentReaderRecoversBaselinePreparedJournalWithoutRewrite
+
+          git worktree add --detach "$predecessor" "$predecessor_commit"
+          git -C "$predecessor" apply --whitespace=nowarn "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/73aa730-swift-sdk-compat.patch"
+          cp "$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/writers/macos/PredecessorSchema1FixtureWriterTests.swift" "$predecessor/macos/install_helper/Tests/DesktopUpdaterInstallHelperTests/"
+          mkdir -p "$predecessor_output"
+          DESKTOP_UPDATER_PREDECESSOR_DURABLE_FIXTURE_OUTPUT="$predecessor_output" swift test --package-path "$predecessor/macos/install_helper" --filter PredecessorSchema1FixtureWriterTests/testEmitPreparedSchema1JournalFromHistoricalWriter
+          cmp -- "$predecessor_output/verified-installer-journal-schema1.json" "$fixture/verified-installer-journal-schema1.json"
+          test "$(find "$predecessor_output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 1
+      - name: Verify frozen macOS durable-state fixtures
+        env:
+          DESKTOP_UPDATER_DURABLE_FIXTURE_INPUT: ${{ github.workspace }}/test/fixtures/compat/native-durable-state/2.7.0/macos
+        run: swift test --package-path macos/install_helper --filter BaselineDurableStateFixtureReaderTests
+      - name: Run unprivileged macOS install helper smoke
+        run: dart run tool/macos_install_helper_smoke.dart --mode unprivileged
+      - name: Typecheck macOS 10.14 CocoaPods fallback source set
+        run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
+      - name: Run DesktopUpdaterKit SwiftPM tests
+        run: swift test --package-path .
+      - name: Run external SwiftPM consumer
+        run: swift run --package-path example/native/macos
+      - name: macOS native runtime ZIP candidate rejection smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/native-runtime-macos-zip"
+          ready_file="$smoke_root/ready.json"
+          package_id="com.example.native-runtime-smoke"
+          app_name="NativeRuntimeSmoke.app"
+          rm -rf "$smoke_root"
+          mkdir -p "$smoke_root/install" "$smoke_root/payload"
+          export DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE"
+          export DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="$smoke_root/install"
+          export DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$package_id"
+          export DESKTOP_UPDATER_RUNTIME_APP_NAME="NativeRuntimeSmoke"
+          export DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="-"
+          runtime_packager="$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh"
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="2.7.0" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="270" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$smoke_root/package-work-v1" \
+            "$runtime_packager" "$smoke_root/install/$app_name"
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="2.7.1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="271" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$smoke_root/package-work-v2" \
+            "$runtime_packager" "$smoke_root/payload/$app_name"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$smoke_root/payload/$app_name" "$smoke_root/update.zip"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$smoke_root/update.zip" \
+            --artifact-kind zip \
+            --platform macos \
+            --package-id "$package_id" \
+            --app-name "$app_name" \
+            --ready-file "$ready_file" \
+            --port 43892 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43892/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$smoke_root"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43892/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43892/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000042"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          set +e
+          "$smoke_root/install/$app_name/Contents/MacOS/MacOSRuntimeCompile" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$package_id" \
+            --smoke-root "$smoke_root/runtime" \
+            --transaction-id "$transaction_id" 2>&1 | tee "$smoke_root/client.log"
+          client_exit=${PIPESTATUS[0]}
+          set -e
+          test "$client_exit" -ne 0
+          grep -q '"event":"smokeFailed"' "$smoke_root/client.log"
+          test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.0"
+          test -d "$smoke_root/runtime/staging"
+          test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test ! -e "$smoke_root/helper-diagnostics.jsonl"
+      - name: Assert removed macOS Swift consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(swift build --package-path test/fixtures/v3_removed_api/swift --target LegacyConsumer 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Legacy macOS Swift consumer unexpectedly compiled: scheduleInstallAndRelaunch" >&2
+            exit 1
+          fi
+          if [[ "$output" != *"scheduleInstallAndRelaunch"* ]]; then
+            echo "Legacy macOS Swift fixture failed without its intended scheduleInstallAndRelaunch diagnostic." >&2
+            exit 1
+          fi
+          set +e
+          unsigned_output="$(swift build --package-path test/fixtures/v3_removed_api/swift --target LegacyUnsignedRuntimeConsumer 2>&1)"
+          unsigned_status=$?
+          set -e
+          printf '%s\n' "$unsigned_output"
+          if [ "$unsigned_status" -eq 0 ]; then
+            echo "Legacy macOS Swift unsigned consumer unexpectedly compiled." >&2
+            exit 1
+          fi
+          if [[ "$unsigned_output" != *"allowUnsignedUpdates"* ]]; then
+            echo "Legacy macOS Swift unsigned fixture failed without its intended allowUnsignedUpdates diagnostic." >&2
+            exit 1
+          fi
+      - name: Upload macOS native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-macos
+          path: reports/macos-helper-test-counts.txt
+          if-no-files-found: ignore
+
+  macos-flutter:
+    name: macOS Flutter (${{ matrix.integration }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        integration: [swiftpm, cocoapods]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+      - name: Enable SwiftPM integration
+        if: matrix.integration == 'swiftpm'
+        run: flutter config --enable-swift-package-manager
+      - name: Enable CocoaPods fallback integration
+        if: matrix.integration == 'cocoapods'
+        run: flutter config --no-enable-swift-package-manager
+      - name: Clean CocoaPods fallback build
+        if: matrix.integration == 'cocoapods'
+        working-directory: example
+        run: flutter clean
+      - name: Install example dependencies
+        working-directory: example
+        run: flutter pub get
+      - name: Configure ad hoc CI signing
+        working-directory: example
+        run: |
+          sed -i '' \
+            -e 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "-";/g' \
+            -e 's/"CODE_SIGN_IDENTITY\[sdk=macosx\*\]" = "Apple Development";/"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";/g' \
+            -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+            -e '/DEVELOPMENT_TEAM = /d' \
+            macos/Runner.xcodeproj/project.pbxproj
+      - name: Build macOS example
+        working-directory: example
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/macos-flutter-build-${{ matrix.integration }}.log"
+          set +e
+          flutter build macos --debug 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            printf '::error title=macOS Flutter build failed::%s\n' "$detail"
+            exit "$status"
+          fi
+      - name: Run macOS integration tests
+        working-directory: example
+        run: flutter test integration_test -d macos
+      - name: Assert forged raw MethodChannel payload fails macOS plugin boundary
+        working-directory: example
+        run: flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
 
   macos-notarized:
     name: macOS Notarized Publish
     runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
-    # The full DMG/PKG production smoke is local/manual unless a future
-    # workflow_dispatch lane explicitly configures Developer ID Application,
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1')
+    # Signed production and native runtime lanes remain explicit
+    # workflow_dispatch gates requiring Developer ID Application,
     # Developer ID Installer, and notary credentials:
     # dart run tool/macos_production_smoke.dart all --cleanup
     steps:
@@ -140,6 +1478,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "DESKTOP_UPDATER_MACOS_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
       - name: Configure notary profile
+        if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -156,24 +1495,920 @@ jobs:
             --keychain "$DESKTOP_UPDATER_MACOS_KEYCHAIN"
           echo "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=$DESKTOP_UPDATER_MACOS_NOTARY_PROFILE" >> "$GITHUB_ENV"
       - name: Run notarized release publish smoke
+        if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
         working-directory: example
         env:
           DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E: "1"
           DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
         run: dart run tool/release_publish_smoke.dart --platform macos --notarize
+      - name: macOS native runtime DMG smoke
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_DEV_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
+          DESKTOP_UPDATER_DEV_ID_INSTALLER: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER }}
+          DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_TEST_VERSION_V1: "2.7.0"
+          DESKTOP_UPDATER_TEST_VERSION_V2: "2.7.1"
+          DESKTOP_UPDATER_TEST_BUILD_V1: "270"
+          DESKTOP_UPDATER_TEST_BUILD_V2: "271"
+          DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+          DESKTOP_UPDATER_RUNTIME_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart run tool/macos_production_smoke.dart dmg-update
+          app_name="Desktop Updater Smoke"
+          app_path="/Applications/$app_name.app"
+          artifact="$DESKTOP_UPDATER_TEST_WORKDIR/$app_name.dmg"
+          runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-dmg-runtime"
+          runtime_install_root="$runtime_root/install"
+          runtime_app="$runtime_install_root/$app_name.app"
+          ready_file="$runtime_root/ready.json"
+          mkdir -p "$runtime_install_root"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="$runtime_install_root" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V1" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_app"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind dmg \
+            --platform macos \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --app-name "$app_name.app" \
+            --ready-file "$ready_file" \
+            --port 43893 > "$runtime_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43893/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43893/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:43893/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000043"
+          team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test -n "$team_id"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$runtime_app/Contents/MacOS/MacOSRuntimeCompile" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --smoke-root "$runtime_root/client" \
+            --transaction-id "$transaction_id" \
+            --expected-team-identifier "$team_id" 2>&1 | \
+            tee "$runtime_root/client.log"
+          grep -q 'prepareInstall committed' "$runtime_root/client.log"
+      - name: macOS native runtime PKG approval-required smoke
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_DEV_ID_APP: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
+          DESKTOP_UPDATER_DEV_ID_INSTALLER: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER }}
+          DESKTOP_UPDATER_NOTARY_PROFILE: desktop-updater-notary
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+          DESKTOP_UPDATER_TEST_VERSION_V1: "2.7.0"
+          DESKTOP_UPDATER_TEST_VERSION_V2: "2.7.1"
+          DESKTOP_UPDATER_TEST_BUILD_V1: "270"
+          DESKTOP_UPDATER_TEST_BUILD_V2: "271"
+          DESKTOP_UPDATER_KEEP_MACOS_SMOKE: "1"
+          DESKTOP_UPDATER_RUNTIME_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_name="Desktop Updater Smoke"
+          app_path="/Applications/$app_name.app"
+          runtime_root="$DESKTOP_UPDATER_TEST_WORKDIR/native-pkg-runtime"
+          runtime_package_root="$runtime_root/packaged"
+          runtime_v1_app="$runtime_package_root/v1/$app_name.app"
+          runtime_v2_app="$runtime_package_root/v2/$app_name.app"
+          artifact="$runtime_root/$app_name.pkg"
+          ready_file="$runtime_root/ready.json"
+          mkdir -p "$runtime_package_root/v1" "$runtime_package_root/v2"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="/Applications" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V1" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V1" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work-v1" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_v1_app"
+          DESKTOP_UPDATER_PACKAGE_PATH="$GITHUB_WORKSPACE" \
+          DESKTOP_UPDATER_RUNTIME_ALLOWED_INSTALL_ROOT="/Applications" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+          DESKTOP_UPDATER_RUNTIME_APP_NAME="$app_name" \
+          DESKTOP_UPDATER_RUNTIME_APP_VERSION="$DESKTOP_UPDATER_TEST_VERSION_V2" \
+          DESKTOP_UPDATER_RUNTIME_APP_BUILD_NUMBER="$DESKTOP_UPDATER_TEST_BUILD_V2" \
+          DESKTOP_UPDATER_RUNTIME_CODE_SIGN_IDENTITY="$DESKTOP_UPDATER_DEV_ID_APP" \
+          DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE="$DESKTOP_UPDATER_NOTARY_PROFILE" \
+          DESKTOP_UPDATER_RUNTIME_PACKAGE_WORK_DIR="$runtime_root/package-work-v2" \
+          DESKTOP_UPDATER_RUNTIME_PKG_OUTPUT="$artifact" \
+          DESKTOP_UPDATER_RUNTIME_PKG_INSTALLER_IDENTITY="$DESKTOP_UPDATER_DEV_ID_INSTALLER" \
+          DESKTOP_UPDATER_RUNTIME_PKG_RECEIPT_ID="$DESKTOP_UPDATER_TEST_BUNDLE_ID.pkg" \
+            "$GITHUB_WORKSPACE/example/native/macos-runtime/package_smoke_app.sh" "$runtime_v2_app"
+          test -x "$runtime_v1_app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          test -x "$runtime_v2_app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          /usr/sbin/pkgutil --check-signature "$artifact"
+          /usr/sbin/spctl --assess --type install "$artifact"
+          /usr/bin/xcrun stapler validate "$artifact"
+          owner_marker="$app_path/Contents/Resources/desktop_updater_smoke_owner.txt"
+          if [ -e "$app_path" ]; then
+            test -f "$owner_marker"
+            grep -q 'desktop_updater macOS production smoke' "$owner_marker"
+            grep -q "packageId=$DESKTOP_UPDATER_TEST_BUNDLE_ID" "$owner_marker"
+            mv "$app_path" "$runtime_root/production-v1.app"
+          fi
+          /usr/bin/ditto "$runtime_v1_app" "$app_path"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path"
+          /usr/sbin/spctl --assess --type execute --verbose=2 "$app_path"
+          /usr/bin/xcrun stapler validate "$app_path"
+          team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test "$team_id" = "$DESKTOP_UPDATER_RUNTIME_TEAM_ID"
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind pkgInstaller \
+            --platform macos \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --app-name "$app_name.app" \
+            --version "$DESKTOP_UPDATER_TEST_VERSION_V2" \
+            --build-number "$DESKTOP_UPDATER_TEST_BUILD_V2" \
+            --ready-file "$ready_file" \
+            --port 43894 > "$runtime_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43894/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43894/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:43894/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000044"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$app_path/Contents/MacOS/MacOSRuntimeCompile" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
+            --smoke-root "$runtime_root/client" \
+            --transaction-id "$transaction_id" \
+            --expected-team-identifier "$team_id" \
+            --expect-helper-approval-required 2>&1 | tee "$runtime_root/client.log"
+          grep -q 'Expected SMAppService admin approval requirement' "$runtime_root/client.log"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")" = "2.7.0"
+          test -d "$runtime_root/client/staging"
+          test -n "$(find "$runtime_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test -s "$runtime_root/client/runtime-diagnostics.log"
+      - name: Clean native runtime macOS smoke roots
+        if: always() && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        env:
+          DESKTOP_UPDATER_TEST_BUNDLE_ID: com.example.native-runtime-smoke
+          DESKTOP_UPDATER_TEST_WORKDIR: ${{ runner.temp }}/native-runtime-macos-signed
+        run: dart run tool/macos_production_smoke.dart cleanup
+
+  macos-smappservice-helper:
+    name: macOS SMAppService Privileged Helper (not run unless enabled)
+    runs-on: [self-hosted, macOS, desktop-updater-smappservice]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run signed bundled SMAppService daemon and XPC recovery smoke
+        env:
+          DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP }}
+          DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP/Contents/Helpers/DesktopUpdaterInstallHelper"
+          signature="$(codesign -d --verbose=4 "$helper" 2>&1)"
+          printf '%s\n' "$signature"
+          printf '%s\n' "$signature" | grep -q 'flags=.*runtime'
+          mkdir -p reports
+          dart run tool/macos_install_helper_smoke.dart --mode privileged | \
+            tee reports/macos-smappservice-recovery.jsonl
+      - name: Run preapproved signed PKG target-host smoke
+        env:
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION }}
+          DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD: ${{ vars.DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION \
+            DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD; do
+            test -n "${!variable:-}"
+          done
+          app="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_APP")"
+          artifact="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$DESKTOP_UPDATER_SMAPPSERVICE_PKG_SMOKE_ARTIFACT")"
+          receipt_id="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_RECEIPT_ID"
+          expected_version="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_VERSION"
+          expected_build="$DESKTOP_UPDATER_SMAPPSERVICE_PKG_EXPECTED_BUILD"
+          test "$(dirname "$app")" = /Applications
+          test -d "$app"
+          test -f "$artifact"
+          test "${artifact##*.}" = pkg
+          [[ "$receipt_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
+          [[ "$expected_build" =~ ^[0-9]+$ ]]
+          info="$app/Contents/Info.plist"
+          package_id="$(plutil -extract CFBundleIdentifier raw -o - "$info")"
+          app_name="$(basename "$app")"
+          executable="$(plutil -extract CFBundleExecutable raw -o - "$info")"
+          service_id="$(plutil -extract DesktopUpdaterInstallHelperServiceID raw -o - "$info")"
+          test "$executable" = MacOSRuntimeCompile
+          test "$receipt_id" = "$package_id.pkg"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$info")" = 2.7.0
+          test "$(plutil -extract CFBundleVersion raw -o - "$info")" = 270
+          test "$(stat -f '%u:%g' "$app")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/MacOS/$executable")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/Helpers/DesktopUpdaterInstallHelper")" = 0:0
+          test -x "$app/Contents/MacOS/$executable"
+          test -x "$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          test -f "$app/Contents/Library/LaunchDaemons/$service_id.plist"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          pkgutil --check-signature "$artifact"
+          spctl --assess --type install --verbose=2 "$artifact"
+          xcrun stapler validate "$artifact"
+          team_id="$(codesign -dv --verbose=4 "$app" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          helper_team_id="$(codesign -dv --verbose=4 "$app/Contents/Helpers/DesktopUpdaterInstallHelper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test -n "$team_id"
+          test "$helper_team_id" = "$team_id"
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/native-runtime-macos-pkg-target-host.XXXXXX")"
+          ready_file="$smoke_root/ready.json"
+          mkdir -p reports
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$artifact" \
+            --artifact-kind pkgInstaller \
+            --platform macos \
+            --package-id "$package_id" \
+            --app-name "$app_name" \
+            --version "$expected_version" \
+            --build-number "$expected_build" \
+            --ready-file "$ready_file" \
+            --port 43895 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          shutdown_server() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43895/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap shutdown_server EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43895/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43895/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000045"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          "$app/Contents/MacOS/$executable" \
+            --smoke \
+            --app-archive-url "$archive_url" \
+            --public-key-base64 "$public_key" \
+            --package-id "$package_id" \
+            --smoke-root "$smoke_root/client" \
+            --transaction-id "$transaction_id" \
+            --expected-team-identifier "$team_id" 2>&1 | \
+            tee "$smoke_root/client.log"
+          grep -q 'prepareInstall committed' "$smoke_root/client.log"
+          installed=0
+          for attempt in $(seq 1 240); do
+            version="$(plutil -extract CFBundleShortVersionString raw -o - "$info" 2>/dev/null || true)"
+            build="$(plutil -extract CFBundleVersion raw -o - "$info" 2>/dev/null || true)"
+            if [ "$version" = "$expected_version" ] && \
+               [ "$build" = "$expected_build" ] && \
+               pkgutil --pkg-info "$receipt_id" >/dev/null 2>&1; then
+              installed=1
+              break
+            fi
+            sleep 0.5
+          done
+          test "$installed" -eq 1
+          pkgutil --pkg-info-plist "$receipt_id" > "$smoke_root/receipt.plist"
+          test "$(plutil -extract pkg-version raw -o - "$smoke_root/receipt.plist")" = "$expected_version"
+          post_info="$app/Contents/Info.plist"
+          post_package_id="$(plutil -extract CFBundleIdentifier raw -o - "$post_info")"
+          post_executable="$(plutil -extract CFBundleExecutable raw -o - "$post_info")"
+          post_service_id="$(plutil -extract DesktopUpdaterInstallHelperServiceID raw -o - "$post_info")"
+          test "$post_package_id" = "$package_id"
+          test "$post_executable" = "$executable"
+          test "$post_service_id" = "$service_id"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$post_info")" = "$expected_version"
+          test "$(plutil -extract CFBundleVersion raw -o - "$post_info")" = "$expected_build"
+          post_helper="$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+          post_launchd="$app/Contents/Library/LaunchDaemons/$post_service_id.plist"
+          test -x "$app/Contents/MacOS/$post_executable"
+          test -x "$post_helper"
+          test -f "$post_launchd"
+          test "$(plutil -extract Label raw -o - "$post_launchd")" = "$post_service_id"
+          test "$(plutil -extract BundleProgram raw -o - "$post_launchd")" = Contents/Helpers/DesktopUpdaterInstallHelper
+          test "$(stat -f '%u:%g' "$app")" = 0:0
+          test "$(stat -f '%u:%g' "$app/Contents/MacOS/$post_executable")" = 0:0
+          test "$(stat -f '%u:%g' "$post_helper")" = 0:0
+          test "$(stat -f '%u:%g' "$post_launchd")" = 0:0
+          codesign --verify --strict --verbose=2 "$post_helper"
+          post_app_team_id="$(codesign -dv --verbose=4 "$app" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          post_helper_team_id="$(codesign -dv --verbose=4 "$post_helper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+          test "$post_app_team_id" = "$team_id"
+          test "$post_helper_team_id" = "$team_id"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          launchctl print "system/$post_service_id" > "$smoke_root/launchd.txt"
+          grep -Eq '^[[:space:]]*pid = [1-9][0-9]*$' "$smoke_root/launchd.txt"
+          for attempt in $(seq 1 120); do
+            if [ -d "$smoke_root/client/staging" ] && \
+               [ -z "$(find "$smoke_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+              break
+            fi
+            sleep 0.25
+          done
+          test -d "$smoke_root/client/staging"
+          test -z "$(find "$smoke_root/client/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test -s "$smoke_root/client/runtime-diagnostics.log"
+          printf 'platform=macos\nsuite=smappservice-pkg-target-host\nprivilegedDaemonExecuted=true\npackageReceiptVerified=true\ninstalledHelperVerified=true\ninstalledLaunchDaemonVerified=true\ninstalledVersion=%s\ninstalledBuild=%s\n' \
+            "$expected_version" "$expected_build" \
+            > reports/macos-smappservice-pkg.txt
+      - name: Upload macOS SMAppService target-host evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smappservice-target-host-evidence
+          path: |
+            reports/macos-smappservice-recovery.jsonl
+            reports/macos-smappservice-pkg.txt
+          if-no-files-found: ignore
+
+  linux-polkit-helper:
+    name: Linux Installed Polkit Broker (not run unless enabled)
+    runs-on: [self-hosted, Linux, X64, desktop-updater-polkit]
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test-only caller and sealed fixed broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          build="$RUNNER_TEMP/desktop-updater-polkit-build"
+          package_id=com.example.desktop-updater.polkit-e2e
+          allowed_root="/opt/desktop-updater-polkit-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cmake -S linux/native -B "$build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON \
+            -DDESKTOP_UPDATER_ENABLE_POLKIT_E2E_FAULT_INJECTION=ON
+          cmake --build "$build" \
+            --target desktop-updater-helper linux_polkit_e2e_fixture
+          helper_sha="$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')"
+          caller_sha="$(sha256sum "$build/linux_polkit_e2e_fixture" | awk '{print $1}')"
+          # linux_polkit_e2e_fixture --canonical-policy uses a deterministic,
+          # test-only Ed25519 key and binds the actual helper/caller bytes.
+          canonical_policy_json="$(
+            "$build/linux_polkit_e2e_fixture" --canonical-policy \
+              "$caller_sha" "$helper_sha" "$allowed_root"
+          )"
+          test "$(printf '%s' "$canonical_policy_json" | jq -cS .)" = "$canonical_policy_json"
+          canonical_policy_sha="$(printf '%s' "$canonical_policy_json" | sha256sum | awk '{print $1}')"
+          escaped_policy_json="$(printf '%s' "$canonical_policy_json" | jq -Rs .)"
+          escaped_policy_json="${escaped_policy_json#\"}"
+          escaped_policy_json="${escaped_policy_json%\"}"
+          cmake -S linux/native -B "$build" \
+            -DDESKTOP_UPDATER_INSTALL_SYSTEM_BROKER=ON \
+            "-DDESKTOP_UPDATER_HELPER_POLICY_PACKAGE_ID=$package_id" \
+            "-DDESKTOP_UPDATER_HELPER_SHA256=$helper_sha" \
+            "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_JSON=$escaped_policy_json" \
+            "-DDESKTOP_UPDATER_HELPER_CANONICAL_POLICY_SHA256=$canonical_policy_sha"
+          cmake --build "$build" \
+            --target desktop-updater-helper linux_polkit_e2e_fixture
+          test "$(sha256sum "$build/desktop-updater-helper" | awk '{print $1}')" = "$helper_sha"
+          test "$(sha256sum "$build/linux_polkit_e2e_fixture" | awk '{print $1}')" = "$caller_sha"
+          sudo -n install -d -o root -g root -m 0755 \
+            /usr/libexec /usr/share/polkit-1/actions \
+            /etc/desktop-updater/policies
+          sudo -n install -o root -g root -m 0755 \
+            "$build/desktop-updater-helper" \
+            /usr/libexec/desktop-updater-helper
+          sudo -n install -o root -g root -m 0755 \
+            "$build/linux_polkit_e2e_fixture" \
+            /usr/libexec/desktop-updater-polkit-e2e-fixture
+          sudo -n install -o root -g root -m 0644 \
+            "$build/com.desktopupdater.install.policy" \
+            /usr/share/polkit-1/actions/com.desktopupdater.install.policy
+          sudo -n install -o root -g root -m 0644 \
+            "$build/$package_id.json" \
+            "/etc/desktop-updater/policies/$package_id.json"
+          {
+            printf 'DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID=%s\n' "$package_id"
+            printf 'DESKTOP_UPDATER_LINUX_HELPER_SHA256=%s\n' "$helper_sha"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256=%s\n' "$caller_sha"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT=%s\n' "$allowed_root"
+            printf 'DESKTOP_UPDATER_LINUX_E2E_CALLER=%s\n' \
+              /usr/libexec/desktop-updater-polkit-e2e-fixture
+          } >> "$GITHUB_ENV"
+      - name: Run installed broker static audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          sudo -n env \
+            DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID="$DESKTOP_UPDATER_LINUX_POLICY_PACKAGE_ID" \
+            DESKTOP_UPDATER_LINUX_HELPER_SHA256="$DESKTOP_UPDATER_LINUX_HELPER_SHA256" \
+            DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256="$DESKTOP_UPDATER_LINUX_E2E_CALLER_SHA256" \
+            DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT="$DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT" \
+            DESKTOP_UPDATER_LINUX_E2E_CALLER="$DESKTOP_UPDATER_LINUX_E2E_CALLER" \
+            sh tool/linux_install_helper_smoke.sh --mode root-broker-audit | \
+            tee reports/linux-polkit-static-audit.txt
+      - name: Run real non-root polkit broker E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          sh tool/linux_install_helper_smoke.sh --mode root-broker | \
+            tee reports/linux-polkit-root-broker-e2e.txt
+      - name: Upload installed polkit broker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installed-polkit-broker-evidence
+          path: reports/linux-polkit-*.txt
+          if-no-files-found: error
+      - name: Remove installed broker smoke artifacts
+        if: always()
+        shell: bash
+        run: |
+          sudo -n rm -f \
+            /var/lib/desktop-updater/desktop-updater-polkit-e2e-crash-after-backup \
+            /usr/libexec/desktop-updater-helper \
+            /usr/libexec/desktop-updater-polkit-e2e-fixture \
+            /usr/share/polkit-1/actions/com.desktopupdater.install.policy \
+            /etc/desktop-updater/policies/com.example.desktop-updater.polkit-e2e.json
+          case "${DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT:-}" in
+            /opt/desktop-updater-polkit-e2e-*)
+              sudo -n rm -rf -- "$DESKTOP_UPDATER_LINUX_E2E_ALLOWED_ROOT"
+              ;;
+          esac
 
   linux:
     name: Linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libgtk-3-dev ninja-build pkg-config xvfb
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev libgtk-3-dev libssl-dev ninja-build pkg-config xvfb zip
+      - name: Configure standalone Linux native tests
+        run: cmake -S linux/native -B linux/native/build -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+      - name: Build standalone Linux native tests
+        run: cmake --build linux/native/build
+      - name: Emit baseline Linux durable-state fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_commit="2f91208f0de95b9656b0ce2a28258e70a2920b86"
+          overlay_commit="fcd767ccfe9140f0787925f80cceb57553c1170a"
+          baseline="$RUNNER_TEMP/desktop-updater-baseline-linux"
+          baseline_build="$RUNNER_TEMP/desktop-updater-baseline-linux-build"
+          patch="$RUNNER_TEMP/desktop-updater-baseline-linux-fixture-overlay.patch"
+          output="$GITHUB_WORKSPACE/artifacts/native-durable-state/linux"
+          fixture="$GITHUB_WORKSPACE/test/fixtures/compat/native-durable-state/2.7.0/linux"
+          cleanup() {
+            git worktree remove --force "$baseline" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$baseline" "$baseline_commit"
+          git diff --binary "$baseline_commit" "$overlay_commit" -- linux/native/CMakeLists.txt linux/native/test/helper/native_durable_state_fixture_emitter.cc > "$patch"
+          git -C "$baseline" apply --whitespace=nowarn "$patch"
+          cmake -S "$baseline/linux/native" -B "$baseline_build" -DDESKTOP_UPDATER_NATIVE_BUILD_TESTS=ON -DDESKTOP_UPDATER_NATIVE_RUNTIME=ON
+          cmake --build "$baseline_build" --target desktop_updater_native_durable_state_fixture_emitter
+
+          mkdir -p "$output"
+          baseline_emitter="$baseline_build/desktop_updater_native_durable_state_fixture_emitter"
+          "$baseline_emitter" "$output"
+          "$baseline_emitter" --verify "$output"
+          "$baseline_emitter" --verify "$fixture"
+          for frozen in "$fixture"/*.json; do
+            cmp -- "$output/$(basename "$frozen")" "$frozen"
+          done
+          test "$(find "$output" -maxdepth 1 -name '*.json' -type f | wc -l)" -eq 3
+          linux/native/build/desktop_updater_native_durable_state_fixture_emitter --verify "$fixture"
+          (
+            cd "$output"
+            sha256sum ./*.json | sed 's#  \./#  #' > SHA256SUMS
+          )
+          {
+            printf 'serializerCommit=%s\n' "$(git -C "$baseline" rev-parse HEAD)"
+            printf 'overlayCommit=%s\n' "$overlay_commit"
+            printf 'readerCommit=%s\n' "$GITHUB_SHA"
+            printf 'runnerOS=%s\n' "$RUNNER_OS"
+            printf 'runnerArch=%s\n' "$RUNNER_ARCH"
+            printf 'command=%s\n' "$baseline_emitter $output"
+          } > "$output/PROVENANCE.txt"
+      - name: Upload baseline Linux durable-state fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-durable-state-linux-${{ github.sha }}
+          path: artifacts/native-durable-state/linux
+          if-no-files-found: error
+      - name: Run Linux unprivileged helper and crash recovery tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          filter='(LinuxHelperAuth|linux_transaction|linux_crash_recovery)'
+          log="$RUNNER_TEMP/linux-helper-recovery-tests.log"
+          deferred_failure="$RUNNER_TEMP/desktop-updater-v3-linux-recovery-contract-failure.txt"
+          rm -f "$deferred_failure"
+          set +e
+          ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail="$(tail -n 60 "$log" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tail -c 3500)"
+            detail=${detail//'%'/'%25'}
+            detail=${detail//$'\r'/'%0D'}
+            detail=${detail//$'\n'/'%0A'}
+            expected_failed_ctest='linux_crash_recovery.LinuxCrashRecovery.FreshProcessesRecoverPreparedCrashWithoutReencoding (Failed)'
+            actual_failed_ctest="$(sed -n '/The following tests FAILED:/,/Errors while running CTest/p' "$log" | sed -n 's/^[[:space:]]*[0-9][0-9]* - //p')"
+            if ! grep -Fq '[  FAILED  ] LinuxCrashRecovery.FreshProcessReaderResolvesPreparedJournal' "$log" || \
+              ! grep -Fq '[  FAILED  ] LinuxCrashRecovery.FreshProcessesRecoverPreparedCrashWithoutReencoding' "$log" || \
+              ! grep -Fq 'LinuxRecoveryOutcome::kRecovered' "$log" || \
+              ! grep -Fq 'Which is: 4-byte object <03-00 00-00>' "$log" || \
+              [ "$actual_failed_ctest" != "$expected_failed_ctest" ]; then
+              printf '::error title=Linux helper and recovery tests failed unexpectedly::%s\n' "$detail"
+              exit "$status"
+            fi
+            printf '%s\n' 'Fresh-process Linux recovery remained manual-action-required instead of kRecovered.' > "$deferred_failure"
+            printf '::notice title=Deferred expected Linux recovery contract failure::%s\n' "$detail"
+          fi
+          test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
+          test -n "$test_count"
+          mkdir -p reports
+          printf 'platform=linux\nsuite=unprivileged-helper-recovery\ntestCount=%s\n' "$test_count" > reports/linux-helper-test-counts.txt
+      - name: Run Linux privileged mount namespace rejection test
+        shell: bash
+        run: |
+          set -euo pipefail
+          filter='^linux_transaction\.LinuxFileTransaction\.(RejectsBindMountAndMountIdChange|CleanupRejectsNestedBindMountBeforeDeletingBackingData)$'
+          sudo ctest --test-dir linux/native/build -R "$filter" --output-on-failure --no-tests=error | tee "$RUNNER_TEMP/linux-privileged-mount-test.log"
+          if grep -q 'Skipped' "$RUNNER_TEMP/linux-privileged-mount-test.log"; then
+            echo "Linux privileged mount namespace test was skipped"
+            exit 1
+          fi
+          test_count="$(ctest --test-dir linux/native/build -N -R "$filter" | sed -n 's/Total Tests: *\([1-9][0-9]*\)/\1/p')"
+          test -n "$test_count"
+          test "$test_count" -ge 2
+          printf 'platform=linux\nsuite=privileged-mount-namespace\ntestCount=%s\n' "$test_count" >> reports/linux-helper-test-counts.txt
+      - name: Run unprivileged Linux install helper smoke
+        run: sh tool/linux_install_helper_smoke.sh --mode unprivileged
+      - name: Run Linux native tamper target-host gates
+        run: |
+          dart run tool/native_transport_fixture_server.dart --port 43891 >"$RUNNER_TEMP/native-transport-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:43891/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/native-transport-server.log"
+            exit 1
+          fi
+          export DESKTOP_UPDATER_TRANSPORT_FIXTURE_URL=http://127.0.0.1:43891
+          deferred_recovery_test='^linux_crash_recovery\.LinuxCrashRecovery\.FreshProcessesRecoverPreparedCrashWithoutReencoding$'
+          set +e
+          output="$(ctest --test-dir linux/native/build -E "$deferred_recovery_test" --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux native CTest registered zero tests"
+            exit 1
+          fi
+      - name: Install Linux native SDK
+        run: cmake --install linux/native/build --prefix "$PWD/linux/native/install"
+      - name: Verify Linux portable retail inventory
+        run: |
+          test -x linux/native/install/libexec/desktop-updater-helper
+          test ! -e linux/native/install/share/polkit-1/actions/com.desktopupdater.install.policy
+          test ! -e linux/native/install/etc/desktop-updater/policies
+      - name: Verify installed Linux third-party notices
+        run: test -f linux/native/install/share/doc/desktop_updater_native/THIRD_PARTY_NOTICES.md
+      - name: Verify installed Linux pkg-config version
+        run: |
+          expected="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
+          actual="$(PKG_CONFIG_PATH="$PWD/linux/native/install/lib/pkgconfig" pkg-config --modversion desktop_updater_native)"
+          test "$actual" = "$expected"
+      - name: Build and run installed Linux pkg-config consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-pkg-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174101"
+          runtime="/tmp/du-${UID}-pkg"
+          test ! -e "$prefix"
+          test ! -e "$runtime"
+          cp -a linux/native/install "$prefix"
+          pc_path="$prefix/lib/pkgconfig"
+          helper="$(realpath "$(PKG_CONFIG_PATH="$pc_path" pkg-config --variable=helper desktop_updater_native)")"
+          test "$helper" = "$prefix/libexec/desktop-updater-helper"
+          mkdir -p "$prefix/bin"
+          c++ -std=c++17 example/native/linux-cmake/main.cpp \
+            $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
+            "-DDESKTOP_UPDATER_INSTALLED_HELPER_PATH=\"$helper\"" \
+            -o "$prefix/bin/linux_installed_consumer"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.1 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
+          XDG_RUNTIME_DIR="$runtime" XDG_STATE_HOME="$prefix/state" \
+            "$prefix/bin/linux_installed_consumer" --exchange "$stage"
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.1
+          rmdir "$runtime"
+      - name: Configure Linux multiarch pkg-config package
+        run: |
+          cmake -S linux/native -B linux/native/build-multiarch \
+            -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu
+          cmake --build linux/native/build-multiarch
+          cmake --install linux/native/build-multiarch \
+            --prefix "$PWD/linux/native/install-multiarch"
+      - name: Build and run Linux multiarch pkg-config consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-multiarch-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174102"
+          runtime="/tmp/du-${UID}-multi"
+          test ! -e "$prefix"
+          test ! -e "$runtime"
+          cp -a linux/native/install-multiarch "$prefix"
+          pc_path="$prefix/lib/x86_64-linux-gnu/pkgconfig"
+          helper="$(realpath "$(PKG_CONFIG_PATH="$pc_path" pkg-config --variable=helper desktop_updater_native)")"
+          test "$helper" = "$prefix/libexec/desktop-updater-helper"
+          mkdir -p "$prefix/bin"
+          c++ -std=c++17 example/native/linux-cmake/main.cpp \
+            $(PKG_CONFIG_PATH="$pc_path" pkg-config --cflags --libs desktop_updater_native) \
+            "-DDESKTOP_UPDATER_INSTALLED_HELPER_PATH=\"$helper\"" \
+            -o "$prefix/bin/linux_installed_consumer"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.2 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
+          XDG_RUNTIME_DIR="$runtime" XDG_STATE_HOME="$prefix/state" \
+            "$prefix/bin/linux_installed_consumer" --exchange "$stage"
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.2
+          rmdir "$runtime"
+      - name: Configure installed Linux CMake consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$PWD/linux/native/install-cmake-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174103"
+          test ! -e "$prefix"
+          cp -a linux/native/install "$prefix"
+          cmake -S example/native/linux-cmake \
+            -B example/native/linux-cmake/build \
+            -DCMAKE_PREFIX_PATH="$prefix" \
+            -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DDESKTOP_UPDATER_LINUX_CONSUMER_STAGE="$stage"
+      - name: Build installed Linux CMake consumer
+        run: |
+          cmake --build example/native/linux-cmake/build
+          cmake --install example/native/linux-cmake/build
+      - name: Run installed Linux CMake consumer
+        run: |
+          set -euo pipefail
+          package_id=com.example.desktop-updater.installed-consumer
+          prefix="$PWD/linux/native/install-cmake-consumer"
+          stage="$PWD/linux/native/desktop_updater_stage_123e4567-e89b-42d3-a456-426614174103"
+          runtime="/tmp/du-${UID}-cmake"
+          helper="$prefix/libexec/desktop-updater-helper"
+          test ! -e "$runtime"
+          linux/native/build/linux_polkit_e2e_fixture \
+            --prepare-portable-consumer-stage "$stage" 2.7.3 \
+            "$prefix/bin/linux_installed_consumer" linux_installed_consumer \
+            "$package_id"
+          printf '{"packageId":"%s","schemaVersion":1}' "$package_id" \
+            > "$prefix/bin/.desktop_updater_install_identity.json"
+          caller_sha="$(sha256sum "$prefix/bin/linux_installed_consumer" | awk '{print $1}')"
+          helper_sha="$(sha256sum "$helper" | awk '{print $1}')"
+          umask 077
+          linux/native/build/linux_polkit_e2e_fixture \
+            --canonical-portable-consumer-policy \
+            "$caller_sha" "$helper_sha" "$package_id" \
+            > "$prefix/libexec/desktop-updater-helper.policy.json"
+          mkdir -m 0700 "$runtime" "$prefix/state"
+          set +e
+          output="$(XDG_RUNTIME_DIR="$runtime" \
+            XDG_STATE_HOME="$prefix/state" \
+            ctest --test-dir example/native/linux-cmake/build \
+              --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux installed consumer CTest registered zero tests"
+            exit 1
+          fi
+          for attempt in $(seq 1 100); do
+            test -f "$prefix/bin/version.txt" && break
+            sleep 0.05
+          done
+          test "$(cat "$prefix/bin/version.txt")" = 2.7.3
+          rmdir "$runtime"
+      - name: Linux native runtime ZIP smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S example/native/linux-cmake-runtime -B example/native/linux-cmake-runtime/build -DCMAKE_PREFIX_PATH="$PWD/linux/native/install"
+          cmake --build example/native/linux-cmake-runtime/build
+          set +e
+          compile_output="$(ctest --test-dir example/native/linux-cmake-runtime/build --output-on-failure 2>&1)"
+          compile_status=$?
+          set -e
+          printf '%s\n' "$compile_output"
+          if [ "$compile_status" -ne 0 ]; then exit "$compile_status"; fi
+          if [[ "$compile_output" == *"No tests were found"* ]]; then
+            echo "Linux runtime consumer CTest registered zero tests"
+            exit 1
+          fi
+          smoke_root="$RUNNER_TEMP/native-runtime-linux-zip"
+          ready_file="$smoke_root/ready.json"
+          package_id="com.example.native-runtime-smoke"
+          transaction_id="00000000-0000-4000-8000-000000000043"
+          rm -rf "$smoke_root"
+          mkdir -p "$smoke_root/install" "$smoke_root/payload"
+          consumer_bin="$PWD/example/native/linux-cmake-runtime/build/runtime_compile"
+          helper_source="$PWD/linux/native/install/libexec/desktop-updater-helper"
+          test -x "$helper_source"
+          for root in "$smoke_root/install" "$smoke_root/payload"; do
+            install -m 0755 "$consumer_bin" "$root/runtime_compile"
+            install -m 0755 "$helper_source" "$root/desktop-updater-helper"
+            caller_sha="$(sha256sum "$root/runtime_compile" | awk '{print $1}')"
+            helper_sha="$(sha256sum "$root/desktop-updater-helper" | awk '{print $1}')"
+            (
+              umask 077
+              linux/native/build/linux_polkit_e2e_fixture \
+                --canonical-portable-consumer-policy \
+                "$caller_sha" "$helper_sha" "$package_id" \
+                native-runtime-smoke-stable \
+                uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y= \
+                > "$root/desktop-updater-helper.policy.json"
+            )
+            test "$(stat -c '%a' "$root/runtime_compile")" = 755
+            test "$(stat -c '%a' "$root/desktop-updater-helper")" = 755
+            test "$(stat -c '%a' "$root/desktop-updater-helper.policy.json")" = 600
+            test "$(stat -c '%u:%g' "$root/desktop-updater-helper")" = "$(id -u):$(id -g)"
+            test "$(stat -c '%u:%g' "$root/desktop-updater-helper.policy.json")" = "$(id -u):$(id -g)"
+          done
+          printf '2.7.0\n' > "$smoke_root/install/version.txt"
+          printf '2.7.1\n' > "$smoke_root/payload/version.txt"
+          printf '%s' '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}' > "$smoke_root/install/.desktop_updater_install_identity.json"
+          printf '%s' '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}' > "$smoke_root/payload/.desktop_updater_install_identity.json"
+          (cd "$smoke_root/payload" && zip -qr "$smoke_root/update.zip" .)
+          dart run tool/native_runtime_smoke_server.dart \
+            --artifact "$smoke_root/update.zip" \
+            --artifact-kind zip \
+            --platform linux \
+            --package-id "$package_id" \
+            --app-name NativeRuntimeSmoke \
+            --ready-file "$ready_file" \
+            --port 43892 > "$smoke_root/server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            if [ -f "$ready_file" ]; then
+              token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["shutdownToken"])' "$ready_file")"
+              curl --silent --request POST "http://127.0.0.1:43892/shutdown?token=$token" >/dev/null 2>&1 || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$smoke_root"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if [ -f "$ready_file" ] && curl --fail --silent http://127.0.0.1:43892/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          test -f "$ready_file"
+          curl --fail --silent http://127.0.0.1:43892/health >/dev/null
+          archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
+          public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyHex"])' "$ready_file")"
+          export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          export XDG_STATE_HOME="$smoke_root/state"
+          mkdir -p "$XDG_STATE_HOME"
+          chmod 700 "$XDG_STATE_HOME"
+          "$smoke_root/install/runtime_compile" \
+            --smoke \
+            --verify-protected-root \
+            --app-archive-url "$archive_url" \
+            --public-key-hex "$public_key" \
+            --package-id "$package_id" \
+            --smoke-root "$smoke_root/runtime" \
+            --install-root "$smoke_root/install" \
+            --executable-relative-path runtime_compile \
+            --transaction-id "$transaction_id" \
+            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl"
+          for attempt in $(seq 1 120); do
+            if [ "$(tr -d '\r\n' < "$smoke_root/install/version.txt" 2>/dev/null || true)" = "2.7.1" ]; then break; fi
+            sleep 0.25
+          done
+          test "$(tr -d '\r\n' < "$smoke_root/install/version.txt")" = "2.7.1"
+          test -x "$smoke_root/install/desktop-updater-helper"
+          test -f "$smoke_root/install/desktop-updater-helper.policy.json"
+          test "$(stat -c '%a' "$smoke_root/install/desktop-updater-helper")" = 755
+          test "$(stat -c '%a' "$smoke_root/install/desktop-updater-helper.policy.json")" = 600
+          test "$(stat -c '%u:%g' "$smoke_root/install/desktop-updater-helper")" = "$(id -u):$(id -g)"
+          test "$(stat -c '%u:%g' "$smoke_root/install/desktop-updater-helper.policy.json")" = "$(id -u):$(id -g)"
+          test -d "$smoke_root/runtime/staging"
+          test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          events_log="$smoke_root/state/desktop-updater/transactions/events.jsonl"
+          for attempt in $(seq 1 120); do
+            if grep -q "\"event\":\"transaction completed\"" "$events_log" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          grep -q "\"event\":\"activation verified\"" "$events_log"
+          grep -q "\"event\":\"transaction completed\"" "$events_log"
+          test -s "$smoke_root/runtime/runtime-diagnostics.log"
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop
       - name: Install dependencies
@@ -186,7 +2421,17 @@ jobs:
         run: cmake --build build/linux/x64/debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/linux/x64/debug --output-on-failure
+        run: |
+          set +e
+          output="$(ctest --test-dir build/linux/x64/debug --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux Flutter debug CTest registered zero tests"
+            exit 1
+          fi
       - name: Run integration tests
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
@@ -211,7 +2456,20 @@ jobs:
         run: cmake --build build/linux/x64/release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/linux/x64/release --output-on-failure
+        run: |
+          set +e
+          output="$(ctest --test-dir build/linux/x64/release --output-on-failure 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [[ "$output" == *"No tests were found"* ]]; then
+            echo "Linux Flutter release CTest registered zero tests"
+            exit 1
+          fi
+      - name: Assert forged raw MethodChannel payload fails Linux plugin boundary
+        working-directory: example
+        run: xvfb-run -a flutter test integration_test/plugin_integration_test.dart -d linux --name "forged raw MethodChannel payload fails native validation"
       - name: Run integration tests release
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
@@ -227,4 +2485,36 @@ jobs:
         with:
           name: linux-update-smoke-release-diagnostics
           path: reports/linux-update-smoke-release-diagnostics.jsonl
+          if-no-files-found: ignore
+      - name: Assert removed Linux CMake consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          failures=()
+          deferred_recovery_failure="$RUNNER_TEMP/desktop-updater-v3-linux-recovery-contract-failure.txt"
+          if [ -s "$deferred_recovery_failure" ]; then
+            failures+=("$(<"$deferred_recovery_failure")")
+          fi
+          fixture_build="$RUNNER_TEMP/desktop-updater-v3-removed-linux-cmake"
+          cmake -S test/fixtures/v3_removed_api/linux-cmake -B "$fixture_build" -DDESKTOP_UPDATER_SOURCE_ROOT="$GITHUB_WORKSPACE"
+          set +e
+          output="$(cmake --build "$fixture_build" 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            failures+=("Legacy Linux CMake consumer unexpectedly compiled: ScheduleInstallAndRelaunch")
+          elif [[ "$output" != *"ScheduleInstallAndRelaunch"* ]]; then
+            failures+=("Legacy Linux CMake fixture failed without its intended ScheduleInstallAndRelaunch diagnostic.")
+          fi
+          if [ "${#failures[@]}" -ne 0 ]; then
+            printf '%s\n' "${failures[@]}" >&2
+            exit 1
+          fi
+      - name: Upload Linux native helper test counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-helper-test-counts-linux
+          path: reports/linux-helper-test-counts.txt
           if-no-files-found: ignore

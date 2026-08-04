@@ -11,7 +11,7 @@ void main() {
     expect(source, contains("dmg-first-install"));
     expect(source, contains("move-to-applications"));
     expect(source, contains("dmg-update"));
-    expect(source, contains("pkg-installer"));
+    expect(source, contains("pkg-artifact"));
     expect(source, contains("pkg-install-verify"));
     expect(source, contains("all"));
     expect(source, contains("--cleanup"));
@@ -34,7 +34,7 @@ void main() {
     expect(source, contains("desktop_updater_smoke_owner.txt"));
     expect(source, contains("--cleanup-forget-receipt"));
     expect(source, contains("pkgutil --forget"));
-    expect(source, contains("silent privileged install not run"));
+    expect(source, contains("pkg-artifact: install handoff not attempted"));
   });
 
   test("normal app update smoke uses direct staged app replacement", () {
@@ -59,7 +59,7 @@ void main() {
       () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 
-    final hostedFlow = source.indexOf("expectInstallerHandoff: false");
+    final hostedFlow = source.indexOf("_runHostedUpdateSmoke(");
     final replacementEvidence =
         source.indexOf("dmg-update: whole-bundle replacement OK");
     final relaunchEvidence = source.indexOf("dmg-update: v2 relaunch OK");
@@ -71,17 +71,65 @@ void main() {
     expect(source, contains("--relaunch"));
   });
 
-  test("PKG installer smoke stages through hosted flow before handoff", () {
+  test("PKG artifact smoke builds trust-verified artifact only", () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
 
-    final hostedFlow = source.indexOf("expectInstallerHandoff: true");
-    final installerEvidence =
-        source.indexOf("pkg-installer: Installer.app handoff OK");
+    final pkgStart = source.indexOf("Future<void> pkgArtifact() async");
+    final pkgEnd = source.indexOf("Future<void> pkgInstallVerify() async");
 
-    expect(hostedFlow, isNonNegative);
-    expect(installerEvidence, greaterThan(hostedFlow));
-    expect(source, contains("--expect-installer-handoff"));
-    expect(source, contains("pkg-installer: staged PKG update flow OK"));
+    expect(pkgStart, isNonNegative);
+    expect(pkgEnd, greaterThan(pkgStart));
+    final pkg = source.substring(pkgStart, pkgEnd);
+    expect(pkg, contains("_buildSignedPkg"));
+    expect(pkg, contains("_verifyPkgTrust"));
+    expect(
+      pkg,
+      contains(
+        "pkg-artifact: signed, notarized, stapled artifact ready",
+      ),
+    );
+    expect(pkg, contains("pkg-artifact: install handoff not attempted"));
+    expect(pkg, isNot(contains("_withHostedRelease")));
+    expect(pkg, isNot(contains("_installSmokeAppToApplications")));
+    expect(source, isNot(contains("--expect-installer-handoff")));
+    expect(source, isNot(contains("Installer.app handoff OK")));
+  });
+
+  test("PKG smoke artifacts preserve the fixed verifier component shape", () {
+    final productionSmoke =
+        File("tool/macos_production_smoke.dart").readAsStringSync();
+    final packageSmoke = File(
+      "example/native/macos-runtime/package_smoke_app.sh",
+    ).readAsStringSync();
+
+    for (final source in [productionSmoke, packageSmoke]) {
+      expect(source, contains('component.pkg'));
+      expect(source, isNot(contains('MacOSRuntimeSmoke-component.pkg')));
+      expect(source, isNot(contains('\$appName-component.pkg')));
+    }
+    expect(
+      packageSmoke,
+      contains(
+        r'/usr/sbin/pkgutil --expand-full "$pkg_output" "$expanded_pkg"',
+      ),
+    );
+    expect(
+      packageSmoke,
+      contains(
+        r'payload_app="$expanded_pkg/component.pkg/Payload/$(/usr/bin/basename "$app_bundle")"',
+      ),
+    );
+    expect(
+      packageSmoke,
+      contains(
+        r'"$payload_app/Contents/Helpers/DesktopUpdaterInstallHelper"',
+      ),
+    );
+    expect(packageSmoke, contains(r'[ ! -L "$payload_app" ]'));
+    expect(
+      packageSmoke.indexOf('/usr/sbin/pkgutil --expand-full'),
+      lessThan(packageSmoke.indexOf(r'notarytool submit "$pkg_output"')),
+    );
   });
 
   test("PKG install verification is explicit and outside all smoke", () {

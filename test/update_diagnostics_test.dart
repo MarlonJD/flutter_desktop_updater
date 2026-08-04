@@ -1,3 +1,6 @@
+import "dart:convert";
+import "dart:io";
+
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -295,6 +298,33 @@ void main() {
     expect(line, isNot(contains("abc password")));
     expect(line, isNot(contains("hunter2")));
     expect(line, isNot(contains("deadbeef")));
+  });
+
+  test("native contract redaction cases remain byte-stable", () {
+    final fixture = jsonDecode(
+      File(
+        "fixtures/compat/native-contract/diagnostics-redaction-cases.json",
+      ).readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final cases =
+        (fixture["cases"] as List<dynamic>).cast<Map<String, dynamic>>();
+
+    for (final entry in cases) {
+      final error = entry["error"] as String?;
+      final diagnostic = UpdateDiagnosticEntry(
+        timestamp: DateTime.parse(entry["timestamp"] as String),
+        stage: UpdateDiagnosticStage.values.byName(entry["stage"] as String),
+        level: UpdateDiagnosticLevel.values.byName(entry["level"] as String),
+        message: entry["message"] as String,
+        error: error == null ? null : FormatException(error),
+      );
+
+      expect(
+        diagnostic.toRedactedLogLine(),
+        entry["expectedLogLine"],
+        reason: entry["name"] as String,
+      );
+    }
   });
 }
 

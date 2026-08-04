@@ -379,28 +379,70 @@ class UpdateDialogWidget extends StatelessWidget {
             listenable: notifier,
             builder: (context, child) {
               final state = notifier.state;
+              final localization = notifier.getLocalization;
               if (state is UpdateFailed) {
+                final approvalRequired =
+                    isMacOSPrivilegedHelperApprovalRequiredError(state.error);
                 return AlertDialog(
                   backgroundColor: backgroundColor,
                   iconColor: iconColor,
                   shadowColor: shadowColor,
                   title: Text(
-                    "Update failed",
+                    approvalRequired
+                        ? localization
+                                ?.macosPrivilegedHelperApprovalTitleText ??
+                            defaultDesktopUpdateLocalization
+                                .macosPrivilegedHelperApprovalTitleText!
+                        : "Update failed",
                     style: TextStyle(color: textColor),
                   ),
                   content: Text(
-                    "Please try again later.",
+                    approvalRequired
+                        ? localization?.macosPrivilegedHelperApprovalBodyText ??
+                            defaultDesktopUpdateLocalization
+                                .macosPrivilegedHelperApprovalBodyText!
+                        : "Please try again later.",
                     style: TextStyle(color: textColor),
                   ),
                   actions: [
-                    TextButton.icon(
-                      icon: Icon(Icons.refresh, color: buttonIconColor),
-                      label: Text(
-                        "Check again",
-                        style: TextStyle(color: buttonTextColor),
+                    if (approvalRequired) ...[
+                      TextButton.icon(
+                        icon: Icon(Icons.settings, color: buttonIconColor),
+                        label: Text(
+                          localization
+                                  ?.macosPrivilegedHelperApprovalOpenSettingsText ??
+                              defaultDesktopUpdateLocalization
+                                  .macosPrivilegedHelperApprovalOpenSettingsText!,
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          unawaited(
+                            notifier.openMacOSBackgroundItemsSettings(),
+                          );
+                        },
                       ),
-                      onPressed: notifier.checkVersion,
-                    ),
+                      TextButton.icon(
+                        icon: Icon(Icons.refresh, color: buttonIconColor),
+                        label: Text(
+                          localization
+                                  ?.macosPrivilegedHelperApprovalRetryText ??
+                              defaultDesktopUpdateLocalization
+                                  .macosPrivilegedHelperApprovalRetryText!,
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: () {
+                          unawaited(notifier.restartApp());
+                        },
+                      ),
+                    ] else
+                      TextButton.icon(
+                        icon: Icon(Icons.refresh, color: buttonIconColor),
+                        label: Text(
+                          "Check again",
+                          style: TextStyle(color: buttonTextColor),
+                        ),
+                        onPressed: notifier.checkVersion,
+                      ),
                     if (state.report != null)
                       TextButton.icon(
                         icon: Icon(

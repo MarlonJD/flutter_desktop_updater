@@ -70,6 +70,7 @@ set_target_properties(${BINARY_NAME}
 )
 
 # Enable the test target.
+enable_testing()
 set(include_desktop_updater_tests TRUE)
 
 # Generated plugin build rules, which manage building the plugins and adding

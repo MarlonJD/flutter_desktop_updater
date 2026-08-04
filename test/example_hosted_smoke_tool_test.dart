@@ -16,8 +16,8 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"));
-    expect(source, contains("--expect-installer-handoff"));
-    expect(source, contains("pkg installer opened"));
+    expect(source, isNot(contains("--expect-installer-handoff")));
+    expect(source, isNot(contains("pkg installer opened")));
     expect(source, contains("if (!productionGates)"));
     expect(source, contains("checking"));
     expect(source, contains("downloading"));
@@ -36,15 +36,12 @@ void main() {
     );
   });
 
-  test("hosted installer handoff waits for all diagnostics events", () {
+  test("hosted smoke does not preserve the retired Installer.app success mode",
+      () {
     final source =
         File("example/tool/hosted_update_smoke.dart").readAsStringSync();
 
-    expect(source, contains("expectedEvents.every"));
-    expect(source, contains("missingEvents"));
-    expect(
-      source,
-      contains("Timed out waiting for helper diagnostics events"),
-    );
+    expect(source, isNot(contains("expectInstallerHandoff")));
+    expect(source, isNot(contains("Installer.app handoff scheduled")));
   });
 }

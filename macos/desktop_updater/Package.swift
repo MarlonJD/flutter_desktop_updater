@@ -1,7 +1,16 @@
 // swift-tools-version: 5.9
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
+import Foundation
 import PackageDescription
+
+let installHelperEmbedTool = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("../install_helper/embed_install_helper.sh")
+    .standardizedFileURL.path
+guard FileManager.default.isExecutableFile(atPath: installHelperEmbedTool) else {
+    fatalError("Missing executable install helper embed tool: \(installHelperEmbedTool)")
+}
 
 let package = Package(
     name: "desktop_updater",
@@ -9,15 +18,25 @@ let package = Package(
         .macOS("10.15")
     ],
     products: [
-        .library(name: "desktop-updater", targets: ["desktop_updater"])
+        .library(name: "DesktopUpdaterKit", targets: ["DesktopUpdaterKit"]),
+        .library(
+            name: "desktop-updater",
+            type: .static,
+            targets: ["desktop_updater"]
+        )
     ],
     dependencies: [
         .package(name: "FlutterFramework", path: "../FlutterFramework")
     ],
     targets: [
         .target(
+            name: "DesktopUpdaterKit",
+            path: "Sources/DesktopUpdaterKit"
+        ),
+        .target(
             name: "desktop_updater",
             dependencies: [
+                "DesktopUpdaterKit",
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             resources: [
@@ -32,9 +51,28 @@ let package = Package(
                 // https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
             ]
         ),
+        .executableTarget(
+            name: "MacApplicationRestartFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "Tests/Fixtures/MacApplicationRestartFixture"
+        ),
+        .executableTarget(
+            name: "MacApplicationRestartImpostorFixture",
+            dependencies: ["DesktopUpdaterKit"],
+            path: "Tests/Fixtures/MacApplicationRestartImpostorFixture"
+        ),
         .testTarget(
             name: "desktop_updaterTests",
             dependencies: ["desktop_updater"]
+        ),
+        .testTarget(
+            name: "DesktopUpdaterKitTests",
+            dependencies: [
+                "DesktopUpdaterKit",
+                "MacApplicationRestartFixture",
+                "MacApplicationRestartImpostorFixture"
+            ],
+            path: "Tests/DesktopUpdaterKitTests"
         )
     ]
 )

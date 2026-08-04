@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 3,
+  "packageId": "com.example.native-contract",
+  "appName": "Example",
+  "version": "2.7.0",
+  "buildNumber": 273,
+  "platform": "windows",
+  "channel": "stable",
+  "artifact": {
+    "kind": "zip",
+    "url": "https://updates.example.test/release-contract/windows-zip/artifact.zip",
+    "sha256": "be5749a47461f92dbd7f37b34bb1a0190013a966c6f170dfa1906f2df7bcf9ee",
+    "length": 44
+  },
+  "install": {
+    "strategy": "wholeDirectoryReplace"
+  },
+  "minimumUpdaterVersion": "2.0.0",
+  "minimumOS": {
+    "windows": "10.0.19045"
+  },
+  "generatedAt": "2026-07-10T00:00:00.000Z"
+}

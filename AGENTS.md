@@ -7,9 +7,16 @@ knowledge belongs in `docs/`.
 
 - Read this file first, then follow the most local instruction file that applies
   to the files you touch.
-- Use `docs/harness-engineering.md` for the agent harness model, validation
-  ladder, and staged adoption plan.
-- Use `docs/exec-plans/index.md` to find active and completed execution plans.
+- Use the [architecture map](ARCHITECTURE.md) for system boundaries and
+  dependency direction.
+- Use the [documentation map](docs/index.md) to locate canonical product,
+  security, reliability, publishing, and platform guidance.
+- Use the [harness operating model](docs/harness-engineering.md) for validation,
+  evidence, and maintenance rules.
+- Use the [agent harness](docs/agent-harness/index.md) for repository-native
+  capabilities, verification mapping, and certification boundaries.
+- Use the [execution-plan ledger](docs/exec-plans/index.md) to find active and
+  completed work.
 - Do not create, switch, rename, or delete branches unless the user explicitly
   asks for that branch action.
 - Do not post GitHub comments or PR reviews through connector identities. Draft
@@ -26,7 +33,9 @@ knowledge belongs in `docs/`.
 - Native plugin code: `macos/`, `windows/`, and `linux/`.
 - Example host app and platform smoke tools: `example/`.
 - Package docs: `README.md`, `docs/`, and `doc/`.
-- Repository-backed execution plans: `docs/exec-plans/`.
+- Durable design decisions: [docs/design-docs/](docs/design-docs/).
+- Repository-backed execution plans:
+  [docs/exec-plans/](docs/exec-plans/index.md).
 
 ## Validation Ladder
 
@@ -34,11 +43,15 @@ Use the narrowest useful command first, then widen before handoff:
 
 ```sh
 flutter test --no-pub test/<focused_test>.dart
-dart format --set-exit-if-changed .
+dart format --output=none --set-exit-if-changed .
 flutter analyze --no-fatal-infos
 flutter test --no-pub
 dart pub publish --dry-run
 ```
+
+For harness-only changes, run `dart run tool/harness_gate.dart --structural`
+before the focused documentation test. A structural pass is not the
+source/attestation-bound `harness-ready` claim.
 
 Platform lanes are heavier and usually belong to CI or explicit release work:
 

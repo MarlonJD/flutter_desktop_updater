@@ -23,6 +23,30 @@ void main() {
     expect(index.items.single.release.path, "/release.json");
   });
 
+  test("normalizes release index identity fields", () {
+    final index = ReleaseIndex.fromJson({
+      "schemaVersion": 3,
+      "appName": "Example App",
+      "items": [
+        {
+          "version": " 2.0.0 ",
+          "platform": " macos ",
+          "channel": " stable ",
+          "mandatory": false,
+          "release": "https://updates.example.com/release.json",
+        },
+      ],
+    });
+
+    final item = index.items.single;
+    expect(item.version, "2.0.0");
+    expect(item.platform, "macos");
+    expect(item.channel, "stable");
+    expect(item.toJson(), containsPair("version", "2.0.0"));
+    expect(item.toJson(), containsPair("platform", "macos"));
+    expect(item.toJson(), containsPair("channel", "stable"));
+  });
+
   test("rejects indexes without the 2.x schema", () {
     expect(
       () => ReleaseIndex.fromJson({

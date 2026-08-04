@@ -5,6 +5,7 @@ import "package:flutter_test/flutter_test.dart";
 void main() {
   test("updater smoke supports Linux Release output", () {
     final source = File("example/tool/updater_smoke.dart").readAsStringSync();
+    final appSource = File("example/lib/app.dart").readAsStringSync();
 
     expect(source, contains("--config Debug|Release"));
     expect(source, contains('"linux"'));
@@ -12,7 +13,10 @@ void main() {
     expect(source, contains("config.toLowerCase()"));
     expect(source, contains('"bundle"'));
     expect(source, contains('"desktop_updater_example"'));
+    expect(source, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
+    expect(source, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"));
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
+    expect(appSource, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
     expect(source, contains(r'"event":"$event"'));
     expect(source, contains("--diagnostics-log <path>"));
   });

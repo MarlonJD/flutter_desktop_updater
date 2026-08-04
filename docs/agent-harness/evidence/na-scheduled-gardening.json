@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "repository_commit": "014cd2276dad7d0840c8308d30a3ddeabdfd769c",
+  "repository_identity": "scm://github.com/MarlonJD/flutter_desktop_updater",
+  "deployment_target_id": "harness://github.com/MarlonJD/flutter_desktop_updater/repository-harness",
+  "capabilities": [
+    "Scheduled Codex documentation gardening and quality-scoring agents open targeted repair pull requests"
+  ],
+  "environment": "local-macos-workspace",
+  "command": "applicability review of the entropy automation decision",
+  "exit_code": null,
+  "observed_at": "2026-07-23T13:55:13.451466Z",
+  "result": "not-applicable",
+  "artifacts": [
+    "git:014cd2276dad7d0840c8308d30a3ddeabdfd769c:docs/agent-harness/entropy-cleanup-checklist.md",
+    "validation-report-sha256:600d48e89f64d189ed76b3697e17df1383fd00d952c9191e1b919b32843b055d:reports/harness-check.md"
+  ],
+  "issuer": "repository-native-harness-evidence-generator",
+  "key_id": "aa32c9a406cd925be541c6443ea7845ba0478ee2b16a8764b6aa49380234dc71",
+  "signature": "14b6c107cb8a89c6e77afab24a3825c7168a368a9d9f54ad190679059dd26796"
+}

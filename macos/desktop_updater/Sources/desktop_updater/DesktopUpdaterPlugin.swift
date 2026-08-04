@@ -1,8 +1,18 @@
 import Cocoa
+import Darwin
 import FlutterMacOS
+import Security
+import ServiceManagement
+#if canImport(DesktopUpdaterKit)
+import DesktopUpdaterKit
+#endif
 
 public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     public static func register(with registrar: FlutterPluginRegistrar) {
+        guard MacApplicationRestarter
+            .awaitRestartParentExitIfRequested() else {
+            _exit(78)
+        }
         let channel = FlutterMethodChannel(
             name: "desktop_updater",
             binaryMessenger: registrar.messenger
@@ -16,39 +26,54 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         case "getPlatformVersion":
             result("macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
         case "restartApp":
-            scheduleInstallAndRelaunch(
-                stagingPath: nil,
-                removedFiles: [],
-                diagnosticsLogPath: nil,
-                result: result
-            )
+            restartCurrentApplication(result: result)
         case "installUpdate":
             guard
                 let arguments = call.arguments as? [String: Any],
                 let stagingPath = arguments["stagingPath"] as? String,
-                !stagingPath.isEmpty
+                !stagingPath.isEmpty,
+                let expectedPackageID = arguments["expectedPackageId"]
+                    as? String,
+                !expectedPackageID.isEmpty,
+                let expectedArtifactSHA256 = arguments[
+                    "expectedArtifactSha256"
+                ] as? String,
+                isSHA256(expectedArtifactSHA256),
+                let stageProvenanceSHA256 = arguments[
+                    "stageProvenanceSha256"
+                ] as? String,
+                isSHA256(stageProvenanceSHA256),
+                let transactionID = arguments["transactionId"] as? String,
+                isCanonicalTransactionID(transactionID),
+                Set(arguments.keys) == [
+                    "stagingPath",
+                    "expectedPackageId",
+                    "expectedArtifactSha256",
+                    "stageProvenanceSha256",
+                    "transactionId",
+                ]
             else {
                 result(
                     FlutterError(
                         code: "InvalidArguments",
-                        message: "installUpdate requires a stagingPath.",
+                        message: "installUpdate requires the canonical signed handoff payload.",
                         details: nil
                     )
                 )
                 return
             }
-
-            let removedFiles = arguments["removedFiles"] as? [String] ?? []
-            let allowUnsignedMacOSUpdates =
-                arguments["allowUnsignedMacOSUpdates"] as? Bool ?? false
-            let diagnosticsLogPath = arguments["diagnosticsLogPath"] as? String
-            scheduleInstallAndRelaunch(
+            prepareAndCommitInstall(
                 stagingPath: stagingPath,
-                removedFiles: removedFiles,
-                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-                diagnosticsLogPath: diagnosticsLogPath,
+                expectedPackageID: expectedPackageID,
+                expectedArtifactSHA256: expectedArtifactSHA256,
+                stageProvenanceSHA256: stageProvenanceSHA256,
+                transactionID: transactionID,
                 result: result
             )
+        case "queryInstallTransaction":
+            queryInstallTransaction(call.arguments, result: result)
+        case "recoverPendingInstallTransaction":
+            recoverPendingInstallTransaction(call.arguments, result: result)
         case "getExecutablePath":
             result(Bundle.main.executablePath)
         case "getCurrentVersion":
@@ -67,245 +92,314 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 replaceExisting: replaceExisting,
                 result: result
             )
+        case "openMacOSBackgroundItemsSettings":
+            guard #available(macOS 13.0, *) else {
+                result(
+                    FlutterError(
+                        code: "Unsupported",
+                        message: "Background item settings require macOS 13 or later.",
+                        details: nil
+                    )
+                )
+                return
+            }
+            SMAppService.openSystemSettingsLoginItems()
+            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }
     }
 
-    private func scheduleInstallAndRelaunch(
-        stagingPath: String?,
-        removedFiles _: [String],
-        allowUnsignedMacOSUpdates: Bool = false,
-        diagnosticsLogPath: String? = nil,
-        result: @escaping FlutterResult
-    ) {
+    private func restartCurrentApplication(result: @escaping FlutterResult) {
         do {
-            if let stagingPath {
-                let values: URLResourceValues
-                do {
-                    values = try URL(fileURLWithPath: stagingPath)
-                        .resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
-                } catch {
-                    result(
-                        FlutterError(
-                            code: "InstallError",
-                            message: "Staged macOS update directory does not exist.",
-                            details: stagingPath
-                        )
-                    )
-                    return
-                }
-                if values.isSymbolicLink == true {
-                    result(
-                        FlutterError(
-                            code: "InstallError",
-                            message: "Staged macOS update must be a real .app directory, not a symlink.",
-                            details: stagingPath
-                        )
-                    )
-                    return
-                }
-                if values.isDirectory != true {
-                    result(
-                        FlutterError(
-                            code: "InstallError",
-                            message: "Staged macOS update directory does not exist.",
-                            details: stagingPath
-                        )
-                    )
-                    return
-                }
-            }
-
-            let scriptURL = try writeHelperScript(
-                stagingPath: stagingPath,
-                allowUnsignedMacOSUpdates: allowUnsignedMacOSUpdates,
-                diagnosticsLogPath: diagnosticsLogPath
-            )
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = [scriptURL.path]
-            try process.run()
-
+            try MacApplicationRestarter()
+                .scheduleCurrentApplicationRestart()
             result(nil)
-            DispatchQueue.main.async {
-                NSApplication.shared.terminate(nil)
-            }
+            exit(EXIT_SUCCESS)
         } catch {
             result(
                 FlutterError(
-                    code: "InstallError",
-                    message: "Unable to schedule update installation.",
+                    code: "RestartError",
+                    message: "Unable to schedule application restart.",
                     details: error.localizedDescription
                 )
             )
         }
     }
 
-    private func writeHelperScript(
-        stagingPath: String?,
-        allowUnsignedMacOSUpdates: Bool,
-        diagnosticsLogPath: String?
-    ) throws -> URL {
-        let bundlePath = Bundle.main.bundlePath
-        let helperName = "desktop_updater_\(UUID().uuidString).sh"
-        let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(helperName)
-        let allowUnsignedValue = allowUnsignedMacOSUpdates ? "1" : ""
-        #if DEBUG
-            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"${DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS:-\(allowUnsignedValue)}\""
-        #else
-            let smokeGateBypassAssignment = "ALLOW_UNSIGNED_MACOS=\"\(allowUnsignedValue)\""
-        #endif
+    private func prepareAndCommitInstall(
+        stagingPath: String,
+        expectedPackageID: String,
+        expectedArtifactSHA256: String,
+        stageProvenanceSHA256: String,
+        transactionID: String,
+        result: @escaping FlutterResult
+    ) {
+        do {
+            let stagedURL = URL(fileURLWithPath: stagingPath)
+            let stageRoot = stagedURL.pathExtension.lowercased() == "app"
+                ? stagedURL.deletingLastPathComponent()
+                : stagedURL
+            let verifiedStage = try MacVerifiedStage.loadAndVerify(
+                stagedPath: stagedURL,
+                stageRoot: stageRoot,
+                expectedPackageID: expectedPackageID,
+                trustedReleasePublicKeys: try Self.trustedReleasePublicKeys()
+            )
+            guard verifiedStage.provenance.markerSHA256
+                    == stageProvenanceSHA256,
+                  verifiedStage.provenance.marker.artifactSha256
+                    == expectedArtifactSHA256 else {
+                throw NSError(
+                    domain: "desktop_updater.install_binding",
+                    code: 1
+                )
+            }
+            let request = MacInstallRequest(verifiedStage: verifiedStage)
+            let helper = MacInstallHelper()
+            let reservation = try helper.prepareInstall(
+                request,
+                transactionID: transactionID
+            )
+            let status = try helper.commitAfterExit(reservation)
+            guard status.state == .commitAccepted || status.state == .completed,
+                  status.resultCode == .accepted || status.resultCode == .succeeded,
+                  status.responseDigestSHA256 == reservation.responseDigestSHA256,
+                  status.helperEndpointIdentitySHA256 ==
+                    reservation.helperEndpointIdentitySHA256
+            else {
+                throw MacInstallClientError.invalidReservationResponse
+            }
 
-        var script = """
-        #!/bin/sh
-        set -eu
-
-        PID="\(ProcessInfo.processInfo.processIdentifier)"
-        STAGING=\(shellQuote(stagingPath ?? ""))
-        BUNDLE=\(shellQuote(bundlePath))
-        DIAGNOSTICS_LOG=\(shellQuote(diagnosticsLogPath ?? ""))
-        SKIP_RELAUNCH="${DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH:-}"
-        \(smokeGateBypassAssignment)
-
-        log_event() {
-          [ -n "$DIAGNOSTICS_LOG" ] || return 0
-          printf '{"timestamp":"%s","event":"%s"}\\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" >> "$DIAGNOSTICS_LOG" 2>/dev/null || true
+            result(nil)
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        } catch {
+            if error as? MacInstallClientError ==
+                .privilegedHelperApprovalRequired
+            {
+                result(
+                    FlutterError(
+                        code: "PrivilegedHelperApprovalRequired",
+                        message: "Administrator approval is required before installing this update.",
+                        details: [
+                            "action": "openMacOSBackgroundItemsSettings",
+                            "settingsPath": "System Settings > General > Login Items & Extensions",
+                        ]
+                    )
+                )
+                return
+            }
+            if (error as? MacInstallClientError) ==
+                MacInstallClientError.installRecoveryRequired
+            {
+                result(
+                    FlutterError(
+                        code: "InstallError",
+                        message: "Unable to confirm update installation handoff.",
+                        details: [
+                            "recoveryRequired": true,
+                            "transactionId": transactionID,
+                        ]
+                    )
+                )
+                return
+            }
+            result(
+                FlutterError(
+                    code: "InstallError",
+                    message: "Unable to prepare update installation.",
+                    details: nil
+                )
+            )
         }
-
-        log_event "helper scheduled"
-        log_event "waiting for parent process"
-        while kill -0 "$PID" 2>/dev/null; do
-          sleep 0.5
-        done
-        log_event "parent process exited"
-
-        """
-
-        script += """
-        if [ -n "$STAGING" ]; then
-          log_event "staging path validation"
-          MANIFEST="$STAGING/.desktop_updater_release_manifest.json"
-          if [ -f "$MANIFEST" ] && \\
-             /usr/bin/grep -q '"strategy"[[:space:]]*:[[:space:]]*"pkgInstaller"' "$MANIFEST" && \\
-             /usr/bin/grep -q '"launchMode"[[:space:]]*:[[:space:]]*"installerApp"' "$MANIFEST"; then
-            log_event "pkg manifest loaded"
-            PKG="$STAGING/installer.pkg"
-            if [ ! -f "$PKG" ]; then
-              echo "Staged macOS PKG installer is missing." >&2
-              exit 1
-            fi
-            log_event "pkg installer open"
-            if /usr/bin/open "$PKG"; then
-              log_event "pkg installer opened"
-              rm -f "$0"
-              exit 0
-            fi
-            log_event "pkg installer open failure"
-            exit 1
-          fi
-
-          case "$STAGING" in
-            *.app) ;;
-            *)
-              echo "Staged macOS update must be a complete .app bundle." >&2
-              exit 1
-              ;;
-          esac
-          if [ -L "$STAGING" ]; then
-            echo "Staged macOS update must be a real .app directory, not a symlink." >&2
-            exit 1
-          fi
-          if [ ! -d "$STAGING" ]; then
-            echo "Staged macOS update directory does not exist." >&2
-            exit 1
-          fi
-
-          MANIFEST="$(dirname "$STAGING")/.desktop_updater_release_manifest.json"
-          if [ ! -f "$MANIFEST" ]; then
-            echo "Staged update manifest is missing." >&2
-            exit 1
-          fi
-
-          EXPECTED_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$BUNDLE/Contents/Info.plist")"
-          ACTUAL_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$STAGING/Contents/Info.plist")"
-          if [ "$ACTUAL_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
-            echo "CFBundleIdentifier mismatch: expected $EXPECTED_BUNDLE_ID, got $ACTUAL_BUNDLE_ID" >&2
-            exit 1
-          fi
-
-          if [ "$ALLOW_UNSIGNED_MACOS" != "1" ]; then
-            log_event "package identity checks"
-            EXPECTED_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$BUNDLE" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-            if [ -z "$EXPECTED_TEAM_ID" ]; then
-              echo "Installed app TeamIdentifier could not be read." >&2
-              exit 1
-            fi
-
-            /usr/bin/codesign --verify --deep --strict --verbose=2 "$STAGING"
-            /usr/sbin/spctl --assess --type execute --verbose=2 "$STAGING"
-            /usr/bin/xcrun stapler validate "$STAGING"
-
-            ACTUAL_TEAM_ID="$(/usr/bin/codesign -dv --verbose=4 "$STAGING" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-            if [ "$ACTUAL_TEAM_ID" != "$EXPECTED_TEAM_ID" ]; then
-              echo "TeamIdentifier mismatch: expected $EXPECTED_TEAM_ID, got $ACTUAL_TEAM_ID" >&2
-              exit 1
-            fi
-          else
-            echo "Skipping macOS signing gates because allowUnsignedMacOSUpdates or the debug smoke bypass is enabled." >&2
-          fi
-
-          TARGET_PARENT="$(dirname "$BUNDLE")"
-          TARGET_NAME="$(basename "$BUNDLE")"
-          BACKUP="$TARGET_PARENT/.$TARGET_NAME.desktop_updater_backup.$$"
-
-          log_event "backup start"
-          if /bin/mv "$BUNDLE" "$BACKUP"; then
-            log_event "backup success"
-          else
-            log_event "backup failure"
-            exit 1
-          fi
-          log_event "move start"
-          if /bin/mv "$STAGING" "$BUNDLE"; then
-            log_event "move success"
-            log_event "cleanup start"
-            if /bin/rm -rf "$BACKUP" && /bin/rm -rf "$(dirname "$MANIFEST")"; then
-              log_event "cleanup success"
-            else
-              log_event "cleanup failure"
-            fi
-          else
-            log_event "move failure"
-            log_event "rollback start"
-            if /bin/rm -rf "$BUNDLE" && /bin/mv "$BACKUP" "$BUNDLE"; then
-              log_event "rollback success"
-            else
-              log_event "rollback failure"
-            fi
-            exit 1
-          fi
-        fi
-
-        if [ "$SKIP_RELAUNCH" != "1" ]; then
-          log_event "relaunch attempt"
-          open -n "$BUNDLE"
-        fi
-        rm -f "$0"
-        """
-
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: scriptURL.path
-        )
-        return scriptURL
     }
 
-    private func shellQuote(_ value: String) -> String {
-        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    @_spi(DesktopUpdaterSmoke)
+    public static func loadVerifiedStageForSmokeHost(
+        stagedPath: URL,
+        stageRoot: URL,
+        expectedPackageID: String
+    ) throws -> MacVerifiedStage {
+        try MacVerifiedStage.loadAndVerify(
+            stagedPath: stagedPath,
+            stageRoot: stageRoot,
+            expectedPackageID: expectedPackageID,
+            trustedReleasePublicKeys: try trustedReleasePublicKeys()
+        )
+    }
+
+    private static func trustedReleasePublicKeys() throws -> [String: Data] {
+        let helperURL = Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Helpers/DesktopUpdaterInstallHelper"
+        )
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(
+            helperURL as CFURL,
+            [],
+            &staticCode
+        ) == errSecSuccess,
+            let staticCode,
+            SecStaticCodeCheckValidity(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
+                nil
+            ) == errSecSuccess else {
+            throw NSError(domain: "desktop_updater.release_keys", code: 1)
+        }
+        var signingInformation: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &signingInformation
+        ) == errSecSuccess,
+            let values = signingInformation as? [String: Any],
+            let plist = values[kSecCodeInfoPList as String]
+                as? [String: Any],
+            let sealedPolicy = plist["DesktopUpdaterSealedPolicy"] as? Data,
+            let expectedPolicySHA256 = plist[
+                "DesktopUpdaterSealedPolicySHA256"
+            ] as? String,
+            let policy = try JSONSerialization.jsonObject(
+                with: sealedPolicy
+            ) as? [String: Any],
+            try StageProvenance.canonicalJSONSHA256(policy)
+                == expectedPolicySHA256,
+            policy["applicationPackageId"] as? String
+                == Bundle.main.bundleIdentifier,
+            let releaseKeys = policy["releaseRootPublicKeys"]
+                as? [[String: Any]],
+            !releaseKeys.isEmpty else {
+            throw NSError(domain: "desktop_updater.release_keys", code: 2)
+        }
+        var result: [String: Data] = [:]
+        for key in releaseKeys {
+            guard Set(key.keys) == [
+                "algorithm", "keyId", "publicKeyBase64",
+            ],
+                key["algorithm"] as? String == "ed25519",
+                let keyID = key["keyId"] as? String,
+                !keyID.isEmpty,
+                result[keyID] == nil,
+                let encoded = key["publicKeyBase64"] as? String,
+                let publicKey = Data(base64Encoded: encoded),
+                publicKey.count == 32 else {
+                throw NSError(
+                    domain: "desktop_updater.release_keys",
+                    code: 3
+                )
+            }
+            result[keyID] = publicKey
+        }
+        return result
+    }
+
+    private func queryInstallTransaction(
+        _ arguments: Any?,
+        result: @escaping FlutterResult
+    ) {
+        withTransactionID(arguments, result: result) { transactionID in
+            try MacInstallHelper().queryTransaction(transactionID)
+        }
+    }
+
+    private func recoverPendingInstallTransaction(
+        _ arguments: Any?,
+        result: @escaping FlutterResult
+    ) {
+        withTransactionID(arguments, result: result) { transactionID in
+            try MacInstallHelper().recoverPendingInstall(transactionID)
+        }
+    }
+
+    private func withTransactionID(
+        _ arguments: Any?,
+        result: @escaping FlutterResult,
+        operation: (String) throws -> InstallTransactionStatus
+    ) {
+        guard let values = arguments as? [String: Any],
+              let transactionID = values["transactionId"] as? String,
+              !transactionID.isEmpty
+        else {
+            result(
+                FlutterError(
+                    code: "InvalidArguments",
+                    message: "transactionId must be a string.",
+                    details: nil
+                )
+            )
+            return
+        }
+        do {
+            result(transactionStatusMap(try operation(transactionID)))
+        } catch {
+            result(
+                FlutterError(
+                    code: "InstallError",
+                    message: "Unable to query native install status.",
+                    details: nil
+                )
+            )
+        }
+    }
+
+    private func isCanonicalTransactionID(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func isSHA256(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9a-f]{64}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func transactionStatusMap(
+        _ status: InstallTransactionStatus
+    ) -> [String: Any] {
+        return [
+            "transactionId": status.transactionID,
+            "state": transactionStateName(status.state),
+            "resultCode": transactionResultName(status.resultCode),
+            "detail": status.detail,
+            "responseDigestSha256": status.responseDigestSHA256,
+            "helperEndpointIdentitySha256":
+                status.helperEndpointIdentitySHA256,
+        ]
+    }
+
+    private func transactionStateName(
+        _ state: InstallTransactionState
+    ) -> String {
+        switch state {
+        case .unknown: return "unknown"
+        case .prepared: return "prepared"
+        case .commitAccepted: return "commitAccepted"
+        case .completed: return "completed"
+        case .cancelled: return "cancelled"
+        case .expired: return "expired"
+        case .rolledBack: return "rolledBack"
+        case .manualActionRequired: return "manualActionRequired"
+        }
+    }
+
+    private func transactionResultName(
+        _ code: InstallTransactionResultCode
+    ) -> String {
+        switch code {
+        case .none: return "none"
+        case .accepted: return "accepted"
+        case .succeeded: return "succeeded"
+        case .rejected: return "rejected"
+        case .endpointUnavailable: return "endpointUnavailable"
+        case .authenticationFailed: return "authenticationFailed"
+        case .invalidResponse: return "invalidResponse"
+        case .recoveryRequired: return "recoveryRequired"
+        }
     }
 
     private func macOSInstallLocationStatus() -> [String: Any] {
@@ -391,18 +485,25 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 try? fileManager.removeItem(at: backupURL)
             }
 
-            let configuration = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.openApplication(
-                at: destinationURL,
-                configuration: configuration
-            ) { _, error in
+            if #available(macOS 10.15, *) {
+                let configuration = NSWorkspace.OpenConfiguration()
+                NSWorkspace.shared.openApplication(
+                    at: destinationURL,
+                    configuration: configuration
+                ) { _, error in
+                    self.completeCopiedAppLaunch(error: error, result: result)
+                }
+            } else {
+                let launched = NSWorkspace.shared.launchApplication(
+                    destinationURL.path
+                )
                 DispatchQueue.main.async {
-                    if let error {
+                    if !launched {
                         result(
                             FlutterError(
                                 code: "LaunchFailed",
                                 message: "Unable to launch the copied app.",
-                                details: error.localizedDescription
+                                details: destinationURL.path
                             )
                         )
                         return
@@ -419,6 +520,26 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                     details: error.localizedDescription
                 )
             )
+        }
+    }
+
+    private func completeCopiedAppLaunch(
+        error: Error?,
+        result: @escaping FlutterResult
+    ) {
+        DispatchQueue.main.async {
+            if let error {
+                result(
+                    FlutterError(
+                        code: "LaunchFailed",
+                        message: "Unable to launch the copied app.",
+                        details: error.localizedDescription
+                    )
+                )
+                return
+            }
+            result(nil)
+            NSApplication.shared.terminate(nil)
         }
     }
 

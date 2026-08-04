@@ -1,6 +1,7 @@
 build/
 docs/
 reports/
+script/
 Frameworks
 Frameworks/
 macos/FlutterFramework

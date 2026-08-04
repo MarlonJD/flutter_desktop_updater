@@ -4,6 +4,7 @@ import "package:desktop_updater/desktop_updater_inherited_widget.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/localization.dart";
+import "package:desktop_updater/src/macos_privileged_helper_approval.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:desktop_updater/widget/release_notes_bottom_sheet.dart";
 import "package:desktop_updater/widget/update_problem_report_dialog.dart";
@@ -250,6 +251,52 @@ class _UpdateCardActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = notifier.state;
 
+    if (state is UpdateFailed &&
+        isMacOSPrivilegedHelperApprovalRequiredError(state.error)) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          FilledButton.icon(
+            icon: const Icon(Icons.settings),
+            label: Text(
+              notifier.getLocalization
+                      ?.macosPrivilegedHelperApprovalOpenSettingsText ??
+                  defaultDesktopUpdateLocalization
+                      .macosPrivilegedHelperApprovalOpenSettingsText!,
+            ),
+            onPressed: () {
+              unawaited(notifier.openMacOSBackgroundItemsSettings());
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: Text(
+              notifier.getLocalization
+                      ?.macosPrivilegedHelperApprovalRetryText ??
+                  defaultDesktopUpdateLocalization
+                      .macosPrivilegedHelperApprovalRetryText!,
+            ),
+            onPressed: () {
+              unawaited(notifier.restartApp());
+            },
+          ),
+          if (state.report != null)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.assignment_outlined),
+              label: const Text("View report"),
+              onPressed: () {
+                showUpdateProblemReportDialog(
+                  context,
+                  controller: notifier,
+                  report: state.report!,
+                );
+              },
+            ),
+        ],
+      );
+    }
+
     return switch (state) {
       UpdateDownloading() => FilledButton.icon(
           icon: SizedBox(
@@ -402,6 +449,11 @@ String _availableVersionText(DesktopUpdaterController notifier) {
 String _longUpdateText(DesktopUpdaterController notifier) {
   final state = notifier.state;
   if (state is UpdateFailed) {
+    if (isMacOSPrivilegedHelperApprovalRequiredError(state.error)) {
+      return notifier.getLocalization?.macosPrivilegedHelperApprovalBodyText ??
+          defaultDesktopUpdateLocalization
+              .macosPrivilegedHelperApprovalBodyText!;
+    }
     return "Please try again later.";
   }
   if (state is UpdateFreshInstallRequired) {
@@ -524,5 +576,10 @@ String _updateFailedTooltip(
 ) {
   final custom = loc?.onUpdateFailedTooltip?.call(error);
   if (custom != null) return custom;
+  if (isMacOSPrivilegedHelperApprovalRequiredError(error)) {
+    return loc?.macosPrivilegedHelperApprovalTitleText ??
+        defaultDesktopUpdateLocalization
+            .macosPrivilegedHelperApprovalTitleText!;
+  }
   return loc?.updateFailedTooltipText ?? "Update failed. Please try again.";
 }

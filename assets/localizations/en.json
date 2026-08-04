@@ -25,6 +25,10 @@
     "releaseNotesErrorText": "Could not load release notes.",
     "releaseNotesRetryText": "Try again",
     "releaseNotesEmptyText": "No release notes available.",
+    "macosPrivilegedHelperApprovalTitleText": "Administrator approval required",
+    "macosPrivilegedHelperApprovalBodyText": "Allow this app to run in the background in System Settings > General > Login Items & Extensions, then try the update again.",
+    "macosPrivilegedHelperApprovalOpenSettingsText": "Open settings",
+    "macosPrivilegedHelperApprovalRetryText": "Try again",
     "releaseNotesTypeLabels": {
       "feat": "New features",
       "fix": "Bug fixes",

@@ -5,11 +5,11 @@ security boundaries of its desktop update flow.
 
 ## Supported Versions
 
-The actively maintained line is `2.x`. Security fixes are released on the latest
-`2.x` version unless a project-specific migration note says otherwise.
+The actively maintained line is `3.x`. Security fixes are released on the latest
+`3.x` version unless a project-specific migration note says otherwise.
 
-The `1.x` line is legacy. Applications still on `1.x` should migrate to `2.x`
-before relying on production update distribution.
+The `1.x` and `2.x` lines are legacy. Applications still on either line should
+migrate to `3.0` before relying on production update distribution.
 
 ## Reporting A Vulnerability
 
@@ -29,7 +29,7 @@ Useful report details:
 - operating system and architecture;
 - update source shape, such as direct HTTPS, S3-compatible storage, SFTP, FTP,
   or a custom upload command;
-- whether signed `release.json` descriptors are required by the app;
+- whether the app pins the required signed metadata public keys;
 - a minimal reproduction or proof sketch;
 - expected impact, such as rollback, metadata spoofing, path traversal, stale
   file retention, or publisher-trust bypass.
@@ -40,7 +40,7 @@ release.
 
 ## Update Security Model
 
-`desktop_updater` 2.x uses a zip-first contract:
+`desktop_updater` 3.0 uses a signed zip-first contract:
 
 ```text
 app-archive.json -> release.json -> app.zip
@@ -53,8 +53,10 @@ The updater treats these files as different trust layers:
 - `release.json` points to one zip artifact and records its expected length and
   SHA-256 digest.
 - The downloaded artifact is verified before staging or installing it.
-- Optional Ed25519 descriptor signatures can authenticate `release.json`
-  metadata when the app pins trusted public keys.
+- Ed25519 signatures on both `app-archive.json` and `release.json` are required
+  for production trust, and the app pins the corresponding public keys before
+  selecting or downloading an update. Unsigned artifacts are candidate-only and
+  must not be published as a production feed.
 
 The selected `app-archive.json` item and downloaded `release.json` must agree on
 release identity: version, build number when present, platform, and channel.
@@ -77,13 +79,17 @@ publisher still owns platform trust.
 
 ## Hardening Summary
 
-Recent 2.x hardening includes:
+Recent 3.0 hardening includes:
 
 - release selection binding between `app-archive.json` and `release.json`;
 - hosted `release validate` rejection for descriptor identity mismatches;
 - SHA-256 and length verification before staging;
 - safe zip extraction checks;
-- signed `release.json` support with app-pinned Ed25519 public keys;
+- mandatory signed index and descriptor verification with app-pinned Ed25519
+  public keys;
+- owner/session/generation and full descriptor binding across stage and native
+  install handoff;
+- durable recovery markers retained after ambiguous native dispatch outcomes;
 - top-level staged macOS `.app` symlink rejection, with a native helper recheck;
 - Windows and Linux whole-directory pruning before replacement so stale target
   files do not survive an update;
@@ -100,7 +106,7 @@ For production releases, prefer:
 - long, immutable cache TTLs for versioned `release.json` files and artifacts;
 - signed descriptors with release private keys kept outside the repository;
 - CI gates for platform signing, package generation, hosted validation, and
-  post-upload `release validate --require-signature` where applicable;
+  post-upload `release validate --public-keys-env <ENV>`;
 - uploading versioned files first and exposing `app-archive.json` last.
 
 Internal scan artifacts, temporary reports, credentials, signing keys, and

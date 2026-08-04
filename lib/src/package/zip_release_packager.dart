@@ -61,6 +61,18 @@ class ZipReleasePackager implements ReleasePackager {
     ReleasePackageRequest request,
     File artifact,
   ) async {
+    final addsInstalledIdentity =
+        request.platform == "windows" || request.platform == "linux";
+    if (addsInstalledIdentity) {
+      await _rejectReservedUpdaterControlPlaneRoots(
+        request.input,
+        caseInsensitive: true,
+      );
+      await _rejectReservedInstalledIdentityMarker(
+        request.input,
+        caseInsensitive: request.platform == "windows",
+      );
+    }
     if (await artifact.exists()) {
       await artifact.delete();
     }
@@ -76,18 +88,112 @@ class ZipReleasePackager implements ReleasePackager {
 
     final encoder = ZipFileEncoder();
     final input = request.input;
-    if (input is Directory) {
+    if (input is! Directory && input is! File) {
+      throw FileSystemException("Package input does not exist", input.path);
+    }
+    if (addsInstalledIdentity) {
+      final marker = File("${artifact.path}.install_identity.tmp");
+      try {
+        await marker.writeAsString(
+          jsonEncode(<String, Object?>{
+            "packageId": request.packageId,
+            "schemaVersion": 1,
+          }),
+          flush: true,
+        );
+        encoder.create(artifact.path);
+        if (input is Directory) {
+          await encoder.addDirectory(
+            input,
+            includeDirName: false,
+            followLinks: false,
+          );
+        } else {
+          await encoder.addFile(input as File);
+        }
+        await encoder.addFile(marker, _installedIdentityMarkerName);
+        await encoder.close();
+      } finally {
+        if (await marker.exists()) {
+          await marker.delete();
+        }
+      }
+    } else if (input is Directory) {
       await encoder.zipDirectory(
         input,
         filename: artifact.path,
         followLinks: false,
       );
-    } else if (input is File) {
-      encoder.create(artifact.path);
-      await encoder.addFile(input);
-      await encoder.close();
     } else {
-      throw FileSystemException("Package input does not exist", input.path);
+      encoder.create(artifact.path);
+      await encoder.addFile(input as File);
+      await encoder.close();
+    }
+  }
+}
+
+const String _installedIdentityMarkerName =
+    ".desktop_updater_install_identity.json";
+const Set<String> _updaterControlPlaneRootNames = {
+  ".desktop_updater_artifact.zip",
+  ".desktop_updater_release_manifest.json",
+  ".desktop_updater_stage_provenance.json",
+};
+
+Future<void> _rejectReservedUpdaterControlPlaneRoots(
+  FileSystemEntity input, {
+  required bool caseInsensitive,
+}) async {
+  bool isReserved(String candidate) {
+    final normalized = caseInsensitive ? candidate.toLowerCase() : candidate;
+    return _updaterControlPlaneRootNames.contains(normalized);
+  }
+
+  if (input is File) {
+    if (isReserved(path.basename(input.path))) {
+      throw StateError(
+        "Package input uses a reserved updater control-plane file.",
+      );
+    }
+    return;
+  }
+  if (input is! Directory) {
+    return;
+  }
+  await for (final entity in input.list(followLinks: false)) {
+    if (isReserved(path.basename(entity.path))) {
+      throw StateError(
+        "Package input uses a reserved updater control-plane file.",
+      );
+    }
+  }
+}
+
+Future<void> _rejectReservedInstalledIdentityMarker(
+  FileSystemEntity input, {
+  required bool caseInsensitive,
+}) async {
+  bool isReserved(String candidate) => caseInsensitive
+      ? candidate.toLowerCase() == _installedIdentityMarkerName.toLowerCase()
+      : candidate == _installedIdentityMarkerName;
+
+  if (isReserved(path.basename(input.path))) {
+    throw StateError(
+      "Package input contains the reserved installed identity marker.",
+    );
+  }
+  if (input is Directory) {
+    await for (final entity in input.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (isReserved(path.basename(entity.path))) {
+        throw StateError(
+          "Package input contains the reserved installed identity marker.",
+        );
+      } else {
+        continue;
+      }
     }
   }
 }

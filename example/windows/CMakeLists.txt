@@ -53,6 +53,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 add_subdirectory("runner")
 
 # Enable the test target.
+enable_testing()
 set(include_desktop_updater_tests TRUE)
 
 # Generated plugin build rules, which manage building the plugins and adding

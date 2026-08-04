@@ -14,7 +14,14 @@ A new Flutter plugin project.
   s.author           = { 'Your Company' => 'email@example.com' }
 
   s.source           = { :path => '.' }
-  s.source_files = 'desktop_updater/Sources/desktop_updater/**/*'
+  s.source_files = [
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'DesktopUpdaterVersion.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'Diagnostics.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacApplicationRestarter.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallHelper.swift'),
+    File.join('desktop_updater', 'Sources', 'DesktopUpdaterKit', 'MacInstallRequest.swift'),
+    File.join('desktop_updater', 'Sources', 'desktop_updater', 'DesktopUpdaterPlugin.swift')
+  ]
 
   # If your plugin requires a privacy manifest, for example if it collects user
   # data, update the PrivacyInfo.xcprivacy file to describe your plugin's
@@ -23,6 +30,14 @@ A new Flutter plugin project.
   # s.resource_bundles = {'desktop_updater_privacy' => ['desktop_updater/Sources/desktop_updater/PrivacyInfo.xcprivacy']}
 
   s.dependency 'FlutterMacOS'
+
+  s.preserve_paths = [
+    'install_helper/Package.swift',
+    'install_helper/Configuration/*.plist',
+    'install_helper/Sources/**/*.swift',
+    'install_helper/embed_install_helper.sh',
+    'install_helper/verify_install_helper_layout.sh'
+  ]
 
   s.platform = :osx, '10.14'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }

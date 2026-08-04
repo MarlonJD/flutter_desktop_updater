@@ -10,12 +10,12 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_MARKER"));
     expect(source, contains("DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG"));
-    expect(source, contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS"));
     expect(
       source,
-      contains("diagnosticsLogPath: _configuredHostedDiagnosticsLogPath()"),
+      contains("_writeSmokeDiagnostics(diagnosticsLogPath"),
     );
-    expect(source, contains("allowUnsignedMacOSUpdates:"));
+    expect(
+        source, isNot(contains("DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS")));
     expect(source, contains("_runHostedSmokeTestCommand"));
     expect(source, contains("checkVersion()"));
     expect(source, contains("downloadUpdate()"));
@@ -30,15 +30,23 @@ void main() {
     expect(source, isNot(contains("Running on: 1.0.0+1")));
   });
 
-  test("direct smoke can explicitly allow unsigned macOS updates", () {
-    final source = File("example/lib/app.dart").readAsStringSync();
+  test("direct smoke uses controller flow without unsigned compatibility", () {
+    final appSource = File("example/lib/app.dart").readAsStringSync();
+    final helperSource =
+        File("example/lib/smoke_update_flow.dart").readAsStringSync();
+    final directSmokeSource = "$appSource\n$helperSource";
 
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(
-      source,
-      contains("allowUnsignedMacOSUpdates: _directSmokeAllowUnsignedMacOS"),
+      directSmokeSource,
+      isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")),
     );
-    expect(source, contains("diagnosticsLogPath: diagnosticsLogPath"));
+    expect(helperSource, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
+    expect(appSource, contains("runControllerOwnedSmokeUpdate("));
+    expect(directSmokeSource, isNot(contains("allowUnsignedMacOSUpdates:")));
+    expect(
+      directSmokeSource,
+      isNot(contains("diagnosticsLogPath: diagnosticsLogPath")),
+    );
+    expect(directSmokeSource, isNot(contains("raw-smoke-handoff-removed")));
   });
 }
