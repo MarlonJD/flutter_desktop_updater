@@ -2013,8 +2013,6 @@ jobs:
           if-no-files-found: error
       - name: Run Linux unprivileged helper and crash recovery tests
         shell: bash
-        env:
-          DESKTOP_UPDATER_DEBUG_RECOVERY: "1"
         run: |
           set -euo pipefail
           filter='(LinuxHelperAuth|linux_transaction|linux_crash_recovery)'
