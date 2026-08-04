@@ -1105,12 +1105,12 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
         "Running app identity does not match the sealed helper policy.");
   }
 
-  if (!IsTransactionId(transaction_id)) {
+  if (!IsTransactionId(requested_transaction_id)) {
     throw std::runtime_error("Install transaction ID is invalid.");
   }
   const std::string nonce = SecureRequestNonce();
   WindowsNativeInstallEvidenceV1 evidence;
-  evidence.transaction_id = transaction_id;
+  evidence.transaction_id = requested_transaction_id;
   evidence.policy_id = context.policy.policy_id();
   evidence.package_id = package_id;
   evidence.target_path_hint = RequestPath(target_path);
