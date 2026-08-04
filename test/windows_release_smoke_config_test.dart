@@ -349,7 +349,7 @@ void main() {
     );
     expect(
       releaseSignIndex,
-      greaterThan(workflow.indexOf("- name: Run release publish smoke")),
+      lessThan(workflow.indexOf("- name: Run release publish smoke")),
     );
     expect(
       releaseSignIndex,
