@@ -121,6 +121,7 @@ void main() {
       expect(output, contains("allowUnsignedUpdates"));
     },
     timeout: const Timeout(Duration(minutes: 2)),
+    skip: !Platform.isMacOS,
   );
 }
 

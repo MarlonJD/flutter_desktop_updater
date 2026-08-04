@@ -19,7 +19,17 @@ std::string TransactionIDFromStage(const std::string& stage) {
   if (leaf.rfind(kStagePrefix, 0) != 0) {
     throw std::runtime_error("stage leaf must use the owned updater prefix");
   }
-  return leaf.substr(sizeof(kStagePrefix) - 1);
+  std::string transaction_id = leaf.substr(sizeof(kStagePrefix) - 1);
+  if (transaction_id.size() != 36 || transaction_id[8] != '-' ||
+      transaction_id[13] != '-' || transaction_id[18] != '-' ||
+      transaction_id[23] != '-') {
+    throw std::runtime_error("stage leaf must contain a UUID transaction seed");
+  }
+  // The helper restages the signed payload as desktop_updater_stage_<id>.
+  // Keep the explicit transaction identity separate from the caller-owned
+  // source stage so the helper does not collide with that source directory.
+  transaction_id.back() = transaction_id.back() == '0' ? '1' : '0';
+  return transaction_id;
 }
 
 }  // namespace

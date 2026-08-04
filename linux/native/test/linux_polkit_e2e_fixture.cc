@@ -100,6 +100,15 @@ std::string StageNonce(const fs::path& stage) {
   return nonce;
 }
 
+std::string TransactionIDFromStage(const fs::path& stage) {
+  std::string transaction_id = StageNonce(stage);
+  // The helper restages the signed payload as desktop_updater_stage_<id>.
+  // Keep the explicit transaction identity separate from the caller-owned
+  // source stage so the helper does not collide with that source directory.
+  transaction_id.back() = transaction_id.back() == '0' ? '1' : '0';
+  return transaction_id;
+}
+
 std::string Base64(const unsigned char* bytes, std::size_t length) {
   static constexpr char alphabet[] =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -470,8 +479,8 @@ int Install(const fs::path& target,
       stage / ".desktop_updater_artifact.zip");
   desktop_updater::native::InstallReservation reservation;
   const auto prepared =
-      desktop_updater::native::PrepareInstall(request, StageNonce(stage),
-                                              &reservation);
+      desktop_updater::native::PrepareInstall(
+          request, TransactionIDFromStage(stage), &reservation);
   if (!prepared.ok) {
     WriteFile(output, "prepareError=" + prepared.error + "\n", 0600);
     return 2;
