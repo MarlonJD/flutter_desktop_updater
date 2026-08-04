@@ -1050,7 +1050,8 @@ jobs:
           $dotnetProcess = Start-Process -FilePath "dotnet" -ArgumentList @(
             "build",
             "test/fixtures/v3_removed_api/windows-dotnet/LegacyConsumer.csproj",
-            "--nologo"
+            "--nologo",
+            "-p:UseSharedCompilation=false"
           ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput $dotnetStdoutPath -RedirectStandardError $dotnetStderrPath
           $dotnetExit = $dotnetProcess.ExitCode
           $dotnetText = @(
