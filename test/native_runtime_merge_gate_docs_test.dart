@@ -159,8 +159,7 @@ void main() {
     expect(ledger, contains("96/96"));
     expect(ledger, contains("Notarized Developer ID"));
     expect(ledger, contains("one explicit mount-namespace skip"));
-    expect(
-        ledger, contains("Run #709"));
+    expect(ledger, contains("Run #709"));
   });
 
   test("execution plan records the final verification and review verdict", () {
