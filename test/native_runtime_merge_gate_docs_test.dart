@@ -72,7 +72,7 @@ const _workflowCommands = <String, Map<String, List<String>>>{
     "Run external SwiftPM consumer": <String>[
       "swift run --package-path example/native/macos",
     ],
-    "macOS native runtime ZIP package and unsigned rejection smoke": <String>[
+    "macOS native runtime ZIP candidate rejection smoke": <String>[
       "dart run tool/native_runtime_smoke_server.dart",
     ],
   },

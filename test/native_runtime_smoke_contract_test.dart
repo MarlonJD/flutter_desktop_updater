@@ -30,7 +30,8 @@ void main() {
     for (final source in [swiftClient, swiftSample]) {
       expect(source, contains("checkForUpdate"));
       expect(source, contains("downloadVerifyAndStage"));
-      expect(source, contains("installAndRelaunch"));
+      expect(source, contains("prepareInstall"));
+      expect(source, contains("commitAfterExit"));
     }
     for (final source in [linuxHeader, linuxSample]) {
       expect(source, contains("CheckForUpdate"));
@@ -57,7 +58,7 @@ void main() {
     expect(server, contains("delete(recursive: true)"));
 
     for (final lane in [
-      "macOS native runtime ZIP package and unsigned rejection smoke",
+      "macOS native runtime ZIP candidate rejection smoke",
       "macOS native runtime DMG smoke",
       "macOS native runtime PKG approval-required smoke",
       "Run preapproved signed PKG target-host smoke",
@@ -120,7 +121,7 @@ void main() {
     );
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final zipStart = workflow.indexOf(
-      "- name: macOS native runtime ZIP package and unsigned rejection smoke",
+      "- name: macOS native runtime ZIP candidate rejection smoke",
     );
     final zipEnd = workflow.indexOf("\n  macos-flutter:", zipStart);
     final dmgStart = workflow.indexOf(
@@ -216,14 +217,7 @@ void main() {
           r'-mindepth 1 -maxdepth 1 -print -quit)"',
         ),
       ).allMatches(workflow),
-      hasLength(1),
-    );
-    expect(
-      workflow,
-      contains(
-        r'test -n "$(find "$smoke_root/runtime/staging" '
-        r'-mindepth 1 -maxdepth 1 -print -quit)"',
-      ),
+      hasLength(2),
     );
     expect(
       workflow,
@@ -231,28 +225,49 @@ void main() {
     );
   });
 
-  test("macOS ZIP smoke rejects unsigned handoff before helper launch", () {
+  test("macOS runtime command surface has no unsigned mode", () {
     final sample = readFile(
       "example/native/macos-runtime/Sources/MacOSRuntimeCompile/main.swift",
     );
+
+    expect(sample, isNot(contains("--allow-unsigned-updates")));
+    expect(sample, isNot(contains("--expect-unsigned-handoff-rejection")));
+    expect(sample, isNot(contains("allowUnsignedUpdates")));
+    expect(
+        sample, isNot(contains("Expected unsigned install handoff rejection")));
+  });
+
+  test("macOS candidate ZIP smoke uses explicit transaction and fails closed",
+      () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
     final start = workflow.indexOf(
-      "- name: macOS native runtime ZIP package and unsigned rejection smoke",
+      "- name: macOS native runtime ZIP candidate rejection smoke",
     );
-    final end = workflow.indexOf("\n  macos-flutter:", start);
+    final end = workflow.indexOf(
+        "\n      - name: Assert removed macOS Swift consumer", start);
 
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
     final lane = workflow.substring(start, end);
-    expect(sample, contains("--expect-unsigned-handoff-rejection"));
-    expect(sample, contains("Expected unsigned install handoff rejection"));
-    expect(lane, contains("--expect-unsigned-handoff-rejection"));
-    expect(lane, contains("Expected unsigned install handoff rejection"));
-    expect(lane, contains(r'test ! -e "$smoke_root/helper-diagnostics.jsonl"'));
-    expect(lane, contains('= "2.7.0"'));
-    expect(lane, isNot(contains('= "2.7.1"')));
-    expect(lane, isNot(contains('"event":"move success"')));
-    expect(lane, isNot(contains('"event":"cleanup success"')));
+    expect(lane,
+        contains('transaction_id="00000000-0000-4000-8000-000000000042"'));
+    expect(lane, contains(r'--transaction-id "$transaction_id"'));
+    expect(lane, contains('client_exit=\${PIPESTATUS[0]}'));
+    expect(
+      lane,
+      contains(r'''grep -q '"event":"smokeFailed"' "$smoke_root/client.log"'''),
+    );
+    expect(
+      lane,
+      contains(
+        r'test -z "$(find "$smoke_root/runtime/staging" '
+        r'-mindepth 1 -maxdepth 1 -print -quit)"',
+      ),
+    );
+    expect(lane, isNot(contains("--allow-unsigned-artifact")));
+    expect(lane, isNot(contains("--allow-unsigned-updates")));
+    expect(lane, isNot(contains("--expect-unsigned-handoff-rejection")));
+    expect(lane, isNot(contains("--diagnostics-log")));
   });
 
   test("hosted macOS PKG smoke records the required admin approval", () {

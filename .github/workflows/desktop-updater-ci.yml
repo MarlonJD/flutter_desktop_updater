@@ -1241,7 +1241,7 @@ jobs:
         run: swift test --package-path .
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
-      - name: macOS native runtime ZIP package and unsigned rejection smoke
+      - name: macOS native runtime ZIP candidate rejection smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -1272,7 +1272,6 @@ jobs:
             --platform macos \
             --package-id "$package_id" \
             --app-name "$app_name" \
-            --allow-unsigned-artifact \
             --ready-file "$ready_file" \
             --port 43892 > "$smoke_root/server.log" 2>&1 &
           server_pid=$!
@@ -1293,23 +1292,24 @@ jobs:
           curl --fail --silent http://127.0.0.1:43892/health >/dev/null
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000042"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
+          set +e
           "$smoke_root/install/$app_name/Contents/MacOS/MacOSRuntimeCompile" \
             --smoke \
             --app-archive-url "$archive_url" \
             --public-key-base64 "$public_key" \
             --package-id "$package_id" \
             --smoke-root "$smoke_root/runtime" \
-            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl" \
-            --allow-unsigned-updates \
-            --expect-unsigned-handoff-rejection 2>&1 | tee "$smoke_root/client.log"
-          grep -q 'Expected unsigned install handoff rejection' "$smoke_root/client.log"
+            --transaction-id "$transaction_id" 2>&1 | tee "$smoke_root/client.log"
+          client_exit=${PIPESTATUS[0]}
+          set -e
+          test "$client_exit" -ne 0
+          grep -q '"event":"smokeFailed"' "$smoke_root/client.log"
           test "$(tr -d '\r\n' < "$smoke_root/install/$app_name/Contents/Resources/version.txt")" = "2.7.0"
           test -d "$smoke_root/runtime/staging"
-          test -n "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
+          test -z "$(find "$smoke_root/runtime/staging" -mindepth 1 -maxdepth 1 -print -quit)"
           test ! -e "$smoke_root/helper-diagnostics.jsonl"
-          test -s "$smoke_root/runtime/runtime-diagnostics.log"
-          grep -q 'Verified native artifact is staged.' "$smoke_root/runtime/runtime-diagnostics.log"
       - name: Assert removed macOS Swift consumer
         shell: bash
         run: |
