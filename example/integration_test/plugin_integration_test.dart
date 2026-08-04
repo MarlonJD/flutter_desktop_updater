@@ -68,12 +68,11 @@ void main() {
               "Unable to prepare update installation.",
             )
             .having((error) => error.details, "sanitized details", isNull)
-        : Platform.isWindows
-            // Ordinary example builds do not carry a consumer-bound portable
-            // policy, so Windows may reject this request before payload
-            // binding. The plugin boundary must still fail closed.
+        : Platform.isWindows || Platform.isLinux
+            // The forged map intentionally omits the complete v3 payload.
+            // Windows and Linux must reject it before any install binding.
             ? isA<PlatformException>()
-                .having((error) => error.code, "code", "InstallError")
+                .having((error) => error.code, "code", "InvalidArguments")
             : isA<PlatformException>()
                 .having((error) => error.code, "code", "InstallError")
                 .having(
