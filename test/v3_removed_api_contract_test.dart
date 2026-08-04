@@ -99,6 +99,24 @@ void main() {
       reason:
           "Legacy Swift unsigned controls must not compile.\n${_output(result)}",
     );
+    final output = _output(result);
+    final fixtureSource = File(
+      "test/fixtures/v3_removed_api/swift/"
+      "Sources/LegacyUnsignedRuntimeConsumer/main.swift",
+    ).readAsStringSync();
+    for (final removedSurface in <String>[
+      "requireIndexSignature",
+      "requireDescriptorSignature",
+      "allowUnsignedUpdates",
+    ]) {
+      expect(
+        fixtureSource,
+        contains(removedSurface),
+        reason:
+            "Legacy Swift fixture must exercise the removed $removedSurface surface.",
+      );
+    }
+    expect(output, contains("allowUnsignedUpdates"));
   });
 }
 

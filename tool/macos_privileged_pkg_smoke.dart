@@ -1,6 +1,7 @@
 import "dart:convert";
 import "dart:ffi";
 import "dart:io";
+import "dart:math";
 
 import "package:args/args.dart";
 import "package:crypto/crypto.dart" as crypto;
@@ -43,6 +44,16 @@ final _servicePattern = RegExp(
   r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
   r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$",
 );
+
+String _newTransactionId() {
+  final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  final hex =
+      bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();
+  return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-"
+      "${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
+}
 
 typedef _ProcPIDPathNative = Int32 Function(
   Int32,
@@ -391,7 +402,7 @@ final class _PrivilegedPkgSmoke {
       expectApproval: false,
     );
     if (result.exitCode != 0 ||
-        !result.output.contains("installAndRelaunch scheduled $_v2Version")) {
+        !result.output.contains("prepareInstall committed $_v2Version")) {
       if (_typedApprovalEvent(result) != null) {
         if (request.openSettings) await _openBackgroundItemsSettings();
         throw const _ApprovalPause();
@@ -909,7 +920,7 @@ final class _PrivilegedPkgSmoke {
         "MacOS",
         metadata.executable,
       );
-      final diagnostics = path.join(request.smokeRoot.path, "helper.jsonl");
+      final transactionID = _newTransactionId();
       final result = await Process.run(host, [
         "--smoke",
         "--app-archive-url",
@@ -920,8 +931,8 @@ final class _PrivilegedPkgSmoke {
         _bundleIdentifier,
         "--smoke-root",
         request.smokeRoot.path,
-        "--diagnostics-log",
-        diagnostics,
+        "--transaction-id",
+        transactionID,
         "--expected-team-identifier",
         _teamIdentifier,
         if (currentVersion != null) ...[

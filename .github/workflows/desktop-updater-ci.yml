@@ -1516,6 +1516,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:43893/health >/dev/null
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000043"
           team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
           test -n "$team_id"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
@@ -1525,14 +1526,10 @@ jobs:
             --public-key-base64 "$public_key" \
             --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
             --smoke-root "$runtime_root/client" \
-            --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
-            --expected-team-identifier "$team_id"
-          for attempt in $(seq 1 120); do
-            if grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl" 2>/dev/null; then break; fi
-            sleep 0.25
-          done
-          grep -q '"event":"move success"' "$runtime_root/helper-diagnostics.jsonl"
-          grep -q '"event":"cleanup success"' "$runtime_root/helper-diagnostics.jsonl"
+            --transaction-id "$transaction_id" \
+            --expected-team-identifier "$team_id" 2>&1 | \
+            tee "$runtime_root/client.log"
+          grep -q 'prepareInstall committed' "$runtime_root/client.log"
       - name: macOS native runtime PKG approval-required smoke
         if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:
@@ -1626,6 +1623,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:43894/health >/dev/null
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000044"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
           "$app_path/Contents/MacOS/MacOSRuntimeCompile" \
             --smoke \
@@ -1633,7 +1631,7 @@ jobs:
             --public-key-base64 "$public_key" \
             --package-id "$DESKTOP_UPDATER_TEST_BUNDLE_ID" \
             --smoke-root "$runtime_root/client" \
-            --diagnostics-log "$runtime_root/helper-diagnostics.jsonl" \
+            --transaction-id "$transaction_id" \
             --expected-team-identifier "$team_id" \
             --expect-helper-approval-required 2>&1 | tee "$runtime_root/client.log"
           grep -q 'Expected SMAppService admin approval requirement' "$runtime_root/client.log"
@@ -1757,6 +1755,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:43895/health >/dev/null
           archive_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["appArchiveUrl"])' "$ready_file")"
           public_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKeyBase64"])' "$ready_file")"
+          transaction_id="00000000-0000-4000-8000-000000000045"
           export DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH=1
           "$app/Contents/MacOS/$executable" \
             --smoke \
@@ -1764,10 +1763,10 @@ jobs:
             --public-key-base64 "$public_key" \
             --package-id "$package_id" \
             --smoke-root "$smoke_root/client" \
-            --diagnostics-log "$smoke_root/helper-diagnostics.jsonl" \
+            --transaction-id "$transaction_id" \
             --expected-team-identifier "$team_id" 2>&1 | \
             tee "$smoke_root/client.log"
-          grep -q 'installAndRelaunch scheduled' "$smoke_root/client.log"
+          grep -q 'prepareInstall committed' "$smoke_root/client.log"
           installed=0
           for attempt in $(seq 1 240); do
             version="$(plutil -extract CFBundleShortVersionString raw -o - "$info" 2>/dev/null || true)"

@@ -183,11 +183,11 @@ void main() {
     }
   });
 
-  test("native runtime docs enumerate both metadata signature requirements",
-      () {
+  test("native runtime docs make metadata signatures mandatory", () {
     final runtimeApi = _read("docs/native-runtime-api.md");
-    expect(runtimeApi, contains("- `requireIndexSignature`"));
-    expect(runtimeApi, contains("- `requireDescriptorSignature`"));
+    expect(runtimeApi, contains("`pinnedPublicKeysById`"));
+    expect(runtimeApi, isNot(contains("requireIndexSignature")));
+    expect(runtimeApi, isNot(contains("requireDescriptorSignature")));
   });
 
   test("released Flutter facades document pinned metadata trust", () {

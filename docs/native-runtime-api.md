@@ -220,8 +220,6 @@ Every platform configuration carries the same application-owned inputs:
 - `platform`
 - `channel`
 - `installationIdentity`
-- `requireIndexSignature`
-- `requireDescriptorSignature`
 - `pinnedPublicKeysById`
 - `minimumOSResolver`
 - `requestHeadersProvider`

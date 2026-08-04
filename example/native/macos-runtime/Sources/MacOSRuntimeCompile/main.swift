@@ -163,6 +163,43 @@ private struct Arguments {
 
     init(_ values: [String]) throws {
         self.values = values
+        let knownFlags: Set<String> = [
+            "--smoke",
+            "--probe-helper",
+            "--refresh-mismatched-helper",
+            "--hold-helper-active",
+            "--expect-helper-approval-required",
+        ]
+        let knownValueOptions: Set<String> = [
+            "--recover-transaction",
+            "--terminate-helper-for-recovery-smoke",
+            "--query-transaction",
+            "--app-archive-url",
+            "--public-key-base64",
+            "--package-id",
+            "--smoke-root",
+            "--transaction-id",
+            "--current-version",
+            "--current-build-number",
+            "--expected-team-identifier",
+        ]
+        var index = 1
+        while index < values.count {
+            let argument = values[index]
+            guard argument.hasPrefix("--") else {
+                throw SmokeFailure("Unexpected positional argument \(argument).")
+            }
+            if knownFlags.contains(argument) {
+                index += 1
+                continue
+            }
+            guard knownValueOptions.contains(argument),
+                  index + 1 < values.count,
+                  !values[index + 1].hasPrefix("--") else {
+                throw SmokeFailure("Unknown or incomplete argument \(argument).")
+            }
+            index += 2
+        }
         let operationCount = [
             optionalValue("--recover-transaction") != nil,
             optionalValue("--query-transaction") != nil,

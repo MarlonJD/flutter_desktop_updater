@@ -235,6 +235,33 @@ void main() {
     expect(sample, isNot(contains("allowUnsignedUpdates")));
     expect(
         sample, isNot(contains("Expected unsigned install handoff rejection")));
+    expect(sample, contains("Unknown or incomplete argument"));
+  });
+
+  test(
+      "macOS signed native lanes use explicit transactions and app diagnostics",
+      () {
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final nativeStart = workflow.indexOf("\n  macos-native:");
+    final nativeEnd = workflow.indexOf("\n  macos-flutter:", nativeStart);
+    final notarizedStart = workflow.indexOf("\n  macos-notarized:");
+    final notarizedEnd = workflow.indexOf(
+      "\n  macos-smappservice-helper:",
+      notarizedStart,
+    );
+    expect(nativeStart, greaterThanOrEqualTo(0));
+    expect(nativeEnd, greaterThan(nativeStart));
+    expect(notarizedStart, greaterThanOrEqualTo(0));
+    expect(notarizedEnd, greaterThan(notarizedStart));
+    final jobs = <String>[
+      workflow.substring(nativeStart, nativeEnd),
+      workflow.substring(notarizedStart, notarizedEnd),
+    ];
+    final combined = jobs.join("\n");
+    expect(RegExp(r"--transaction-id").allMatches(combined), hasLength(3));
+    expect(combined, isNot(contains("--diagnostics-log")));
+    expect(combined, isNot(contains("installAndRelaunch scheduled")));
+    expect(combined, contains("runtime-diagnostics.log"));
   });
 
   test("macOS candidate ZIP smoke uses explicit transaction and fails closed",

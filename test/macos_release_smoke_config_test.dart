@@ -12,7 +12,8 @@ void main() {
     expect(source, contains('"Products"'));
     expect(source, contains('"desktop_updater_example.app"'));
     expect(source, contains('"Contents"'));
-    expect(source, contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS"));
+    expect(
+        source, isNot(contains("DESKTOP_UPDATER_SMOKE_ALLOW_UNSIGNED_MACOS")));
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(source, contains("--diagnostics-log <path>"));
   });
