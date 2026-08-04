@@ -68,13 +68,19 @@ void main() {
               "Unable to prepare update installation.",
             )
             .having((error) => error.details, "sanitized details", isNull)
-        : isA<PlatformException>()
-            .having((error) => error.code, "code", "InstallError")
-            .having(
-              _platformExceptionText,
-              "message/details",
-              contains(_expectedForgedBindingMessage()),
-            );
+        : Platform.isWindows
+            // Ordinary example builds do not carry a consumer-bound portable
+            // policy, so Windows may reject this request before payload
+            // binding. The plugin boundary must still fail closed.
+            ? isA<PlatformException>()
+                .having((error) => error.code, "code", "InstallError")
+            : isA<PlatformException>()
+                .having((error) => error.code, "code", "InstallError")
+                .having(
+                  _platformExceptionText,
+                  "message/details",
+                  contains(_expectedForgedBindingMessage()),
+                );
     await expectLater(
       const MethodChannel("desktop_updater").invokeMethod<void>(
         "installUpdate",
