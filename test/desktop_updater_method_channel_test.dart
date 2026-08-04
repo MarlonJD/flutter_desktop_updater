@@ -150,7 +150,7 @@ void main() {
       "stagingPath": staged.stagingPath,
       "expectedPackageId": "com.example.app",
       "updateVersion": "2.0.0",
-      "updateBuildNumber": 200,
+      "updateBuildNumber": "200",
       "platform": "linux",
       "channel": "stable",
       "expectedArtifactSha256": staged.descriptor.artifact.sha256,

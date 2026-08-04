@@ -30,7 +30,7 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
       "stagingPath": request.stagingPath,
       "expectedPackageId": request.expectedPackageId,
       "updateVersion": request.updateVersion,
-      "updateBuildNumber": request.updateBuildNumber,
+      "updateBuildNumber": request.updateBuildNumber?.toString(),
       "platform": request.platform,
       "channel": request.channel,
       "expectedArtifactSha256": request.expectedArtifactSha256,
