@@ -791,6 +791,8 @@ void main() {
     expect(tool, contains("\"events.jsonl\""));
     expect(tool, contains("\"activation verified\""));
     expect(tool, contains("\"transaction completed\""));
+    expect(tool, contains("_cleanupControllerStage("));
+    expect(tool, contains("deleteOwnedStagingDirectory("));
     expect(tool, contains("stdoutSubscription.cancel()"));
     expect(tool, contains("stderrSubscription.cancel()"));
     expect(

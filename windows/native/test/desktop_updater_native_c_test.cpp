@@ -9,27 +9,31 @@
 
 namespace {
 
-constexpr std::uint16_t kTransactionId[] =
+constexpr char16_t kTransactionId[] =
     u"00000000-0000-4000-8000-000000000012";
-constexpr std::uint16_t kStagingPath[] = u"C:\\staged\\update.exe";
-constexpr std::uint16_t kProvenanceDigest[] =
+constexpr char16_t kStagingPath[] = u"C:\\staged\\update.exe";
+constexpr char16_t kProvenanceDigest[] =
     u"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-constexpr std::uint16_t kArtifactDigest[] =
+constexpr char16_t kArtifactDigest[] =
     u"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-constexpr std::uint16_t kInstallRoot[] = u"C:\\Program Files\\Example";
-constexpr std::uint16_t kExecutable[] = u"Example.exe";
-constexpr std::uint16_t kPackageId[] = u"com.example.desktop";
+constexpr char16_t kInstallRoot[] = u"C:\\Program Files\\Example";
+constexpr char16_t kExecutable[] = u"Example.exe";
+constexpr char16_t kPackageId[] = u"com.example.desktop";
+
+const std::uint16_t* U16(const char16_t* value) {
+  return reinterpret_cast<const std::uint16_t*>(value);
+}
 
 desktop_updater_install_request_abi2 ValidRequest() {
   desktop_updater_install_request_abi2 request{};
   request.abi_version = DESKTOP_UPDATER_NATIVE_ABI_VERSION;
   request.struct_size = sizeof(request);
-  request.staging_path = kStagingPath;
-  request.expected_provenance_sha256 = kProvenanceDigest;
-  request.expected_artifact_sha256 = kArtifactDigest;
-  request.install_root = kInstallRoot;
-  request.executable_relative_path = kExecutable;
-  request.expected_package_id = kPackageId;
+  request.staging_path = U16(kStagingPath);
+  request.expected_provenance_sha256 = U16(kProvenanceDigest);
+  request.expected_artifact_sha256 = U16(kArtifactDigest);
+  request.install_root = U16(kInstallRoot);
+  request.executable_relative_path = U16(kExecutable);
+  request.expected_package_id = U16(kPackageId);
   return request;
 }
 
@@ -84,7 +88,7 @@ TEST(DesktopUpdaterNativeCAbi2, NullRequestDoesNotTouchOutputs) {
       reinterpret_cast<desktop_updater_reservation_handle_abi2*>(0x1234);
 
   auto result = desktop_updater_prepare_install_abi2(
-      nullptr, kTransactionId, &reservation, &status);
+      nullptr, U16(kTransactionId), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation,
@@ -105,7 +109,7 @@ TEST(DesktopUpdaterNativeCAbi2, Abi1PrefixIsRejectedBeforeLaterRead) {
   desktop_updater_reservation_handle_abi2* reservation = nullptr;
 
   auto result = desktop_updater_prepare_install_abi2(
-      &request, kTransactionId, &reservation, &status);
+      &request, U16(kTransactionId), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation, nullptr);
@@ -125,7 +129,7 @@ TEST(DesktopUpdaterNativeCAbi2, TruncatedPrefixIsRejectedBeforeLaterRead) {
   desktop_updater_reservation_handle_abi2* reservation = nullptr;
 
   auto result = desktop_updater_prepare_install_abi2(
-      &request, kTransactionId, &reservation, &status);
+      &request, U16(kTransactionId), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation, nullptr);
@@ -144,7 +148,7 @@ TEST(DesktopUpdaterNativeCAbi2, InvalidUtf16IsRejected) {
   desktop_updater_reservation_handle_abi2* reservation = nullptr;
 
   auto result = desktop_updater_prepare_install_abi2(
-      &request, kTransactionId, &reservation, &status);
+      &request, U16(kTransactionId), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation, nullptr);
@@ -161,7 +165,7 @@ TEST(DesktopUpdaterNativeCAbi2, MissingRequestFieldIsRejected) {
   desktop_updater_reservation_handle_abi2* reservation = nullptr;
 
   auto result = desktop_updater_prepare_install_abi2(
-      &request, kTransactionId, &reservation, &status);
+      &request, U16(kTransactionId), &reservation, &status);
 
   EXPECT_EQ(result.ok, 0);
   EXPECT_EQ(reservation, nullptr);

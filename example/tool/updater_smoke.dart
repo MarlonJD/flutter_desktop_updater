@@ -11,6 +11,8 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 // ignore: implementation_imports
 import "package:desktop_updater/src/core/release_index.dart";
+// ignore: implementation_imports
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 
 const _smokePackageId = "com.example.desktop_updater";
 const _smokePublicKeyId = "native-runtime-smoke-stable";
@@ -281,12 +283,6 @@ Future<void> main(List<String> args) async {
       "Timed out waiting for staged file to be copied into "
       "$effectiveInstallRoot",
     );
-    await _waitFor(
-      () => !controllerStageRoot.existsSync(),
-      const Duration(seconds: 10),
-      "Timed out waiting for controller staging directory cleanup.",
-    );
-
     if (Platform.isLinux && linuxStateHome != null) {
       await _expectLinuxTransactionEvents(
         stateHome: linuxStateHome,
@@ -318,8 +314,11 @@ Future<void> main(List<String> args) async {
       );
     }
 
+    await _cleanupControllerStage(controllerStageRoot);
+
     stdout
       ..writeln("Smoke update installed: ${installedSentinel.path}")
+      ..writeln("Controller staging cleanup verified.")
       ..writeln("Helper diagnostics log: $diagnosticsLogPath")
       ..writeln(
         relaunch
@@ -335,6 +334,27 @@ Future<void> main(List<String> args) async {
       await tempRoot.delete(recursive: true);
     }
   }
+}
+
+Future<void> _cleanupControllerStage(Directory stageRoot) async {
+  if (!stageRoot.existsSync()) {
+    return;
+  }
+  final stageName = _basename(stageRoot.path);
+  const prefix = "desktop_updater_stage_";
+  if (!stageName.startsWith(prefix)) {
+    throw StateError("Controller returned a non-owned staging directory.");
+  }
+  await deleteOwnedStagingDirectory(
+    parent: stageRoot.parent,
+    stageRoot: stageRoot,
+    nonce: stageName.substring(prefix.length),
+  );
+  await _waitFor(
+    () => !stageRoot.existsSync(),
+    const Duration(seconds: 10),
+    "Timed out waiting for controller staging directory cleanup.",
+  );
 }
 
 String? _defaultAppPath(String config) {
