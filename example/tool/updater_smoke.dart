@@ -129,6 +129,7 @@ Future<void> main(List<String> args) async {
     stageParent: payloadRoot,
   );
   final markerPath = _join(tempRoot.path, "marker.txt");
+  final relaunchMarkerPath = _join(tempRoot.path, "relaunch-marker.txt");
   final recoveryStorePath = _join(tempRoot.path, "pending-install.json");
   final diagnosticsLogPath =
       _absolutePath(_argValue(args, "--diagnostics-log")) ??
@@ -233,6 +234,8 @@ Future<void> main(List<String> args) async {
         "DESKTOP_UPDATER_RECOVERY_STORE_PATH": recoveryStorePath,
         "DESKTOP_UPDATER_SMOKE_MARKER": markerPath,
         "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
+        if (Platform.isMacOS && relaunch)
+          "DESKTOP_UPDATER_SMOKE_RELAUNCH_MARKER": relaunchMarkerPath,
         if (linuxStateHome != null) "XDG_STATE_HOME": linuxStateHome.path,
         if (linuxXauthority != null) "XAUTHORITY": linuxXauthority.path,
         if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
@@ -307,6 +310,13 @@ Future<void> main(List<String> args) async {
         "macOS helper diagnostics use the platform-owned log; the smoke "
         "file contains Dart lifecycle events only.",
       );
+      if (relaunch) {
+        await _waitForFileText(
+          relaunchMarkerPath,
+          "relaunch",
+          const Duration(seconds: 45),
+        );
+      }
     } else {
       if (Platform.isWindows) {
         if (!relaunch) {

@@ -1,127 +1,93 @@
-# macOS `desktop_updater` 3.1.0 E2E issues
+# macOS `desktop_updater` 3.1 E2E issues and evidence
 
-Date: 2026-08-05
+Run date: 2026-08-06
 
-This report records the macOS production-smoke run on the existing checkout.
-The updater package version and the consumer smoke-app version matrix are kept
-separate throughout:
+Evidence labels in this report are literal: `verified locally`, `blocked`, and
+`not run` are not interchangeable.
 
-- updater package: `desktop_updater` 3.1.0
-- smoke app v1: `1.0.0+100`
-- smoke app v2: `1.1.0+110`
-- smoke bundle ID: `com.example.desktopUpdaterSmoke`
-- smoke installation target: `/Applications/Desktop Updater Smoke.app`
-- notary profile used: `general-notary` only
+## Scope and version separation
 
-The initial smoke run was performed without branch, commit, push, or GitHub
-writes. After the user explicitly requested the confirmed PR #67 fix to be
-published, only the PR-related production source and focused test were updated
-on the contributor branch; the smoke-harness and other E2E corrections below
-were not included in that PR. The final durable evidence file is this report.
+The historical PR #67 reproduction targeted the `desktop_updater` 3.1.0
+runtime. The current checkout has since been released as 3.1.1. These are
+separate from the consumer smoke application versions:
 
-## Executive status
-
-The main notarized artifact lanes are now verified locally:
-
-- signed/notarized/stapled app v1 and v2: passed
-- signed/notarized/stapled DMG first install and move-to-Applications: passed
-- signed/notarized/stapled DMG artifact trust and v1 → v2 hosted update: artifact
-  and whole-bundle replacement passed; the harness timed out while waiting for
-  the relaunched process
-- signed/notarized/stapled PKG artifact: passed
-- direct app update: v1 → v2 whole-bundle replacement passed
-- no-notary app/DMG/PKG negative trust lane: passed with the expected
-  Gatekeeper/stapler rejections
-- no-notary protected ZIP update: correctly rejected before installation
-- unprivileged helper/recoverable-swap smoke: passed
-
-The following production lanes are not complete and must not be reported as
-production-ready:
-
-- administrator-approved PKG install/receipt verification
-- privileged helper/background-service install
-- live recovery transaction with forced helper termination
-- live rollback/recovered swap and live native helper logger events
-
-Those lanes were blocked by the administrator authorization handoff and by the
-target app not being root-owned. The background activity setting itself is
-currently enabled, but that setting does not replace administrator approval or
-root-owned installation.
-
-## Baseline, branch, and version evidence
-
-| Check | Result |
+| Item | Value |
 | --- | --- |
 | branch | `main` |
-| HEAD | `80dab9c docs: align 3.1 controller examples (#68)` |
-| root `pubspec.yaml` | `version: 3.1.0` |
-| v1 consumer | `1.0.0+100` |
-| v2 consumer | `1.1.0+110` |
+| current HEAD | `1402ef7 chore: remove internal superpowers artifacts` |
+| current root package | `desktop_updater` 3.1.1 |
+| historical PR #67 target | `desktop_updater` 3.1.0 |
+| smoke app v1 | 1.0.0+100 |
+| smoke app v2 | 1.1.0+110 |
 | bundle ID | `com.example.desktopUpdaterSmoke` |
-| notary profile | `general-notary` |
+| allowed installed app | `/Applications/Desktop Updater Smoke.app` |
 | smoke work directory | `/tmp/desktop_updater_macos_smoke` |
+| notary profile | `general-notary` only |
 
-`flutter pub get` and `(cd example && flutter pub get)` completed. The example
-lockfile received generated-only dependency changes during the run and was
-restored. No private key, password, API key, token, Apple credential, release
-private seed, certificate identity, or certificate fingerprint is included in
-this report.
+The final installed smoke app is v2 (`1.1.0`, build `110`) and contains the
+expected v2 sentinel. No unrelated `/Applications` app was changed.
 
-Developer ID Application and Developer ID Installer identities were discovered
-and used without recording their values. The `general-notary` profile worked
-for the successful submissions. The explicitly requested invocation including
-`--keychain "$HOME/Library/Keychains/login.keychain-db"` did not find the
-profile, while the profile-only invocation did; only `general-notary` was used
-and `desktop-updater-notary` was never used.
+The implementation and harness changes from this validation task are included
+in this PR. The generated `example/pubspec.lock` changes and generated .NET
+`bin/`/`obj/` directories were restored/removed; no source-generated
+dependency change remains.
 
-Release key generation was run against a temporary directory outside the
-checkout. Profile creation succeeded and a repeated invocation was idempotent.
-No key material was exported or imported.
+## Environment and credentials
 
-## Smoke fixture metadata
+`doctor` verified locally that Developer ID Application, Developer ID
+Installer, Flutter/Dart tooling, signing tools, and the `general-notary`
+keychain profile are available. Notary submissions used `general-notary`; the
+`desktop-updater-notary` profile was not used.
 
-The production smoke fixture now emits the required v2 metadata:
+Credential status: present and validated locally, with all values redacted.
+This report contains no certificate identity, fingerprint, private key,
+password, API key, token, Apple credential, authorization secret, or release
+private seed. The release keygen profile was created in a temporary directory
+outside the checkout, repeated successfully for idempotence, and no key
+material was exported or imported.
 
-- descriptor version/build: `1.1.0+110`
-- index version/build: `1.1.0+110`
-- v1/v2 build commands: `1.0.0+100` and `1.1.0+110`
+Evidence:
 
-The stale `2.7.1` metadata was not used as a successful result. The generic
-controller test helper was given an independent non-production default so its
-older `2.0.1` baseline remains meaningful; the production smoke command passes
-the required `1.1.0+110` values explicitly.
+- `reports/macos-production-smoke/doctor-2026-08-05T204252.238125Z.log`
+- `/tmp/desktop_updater_macos_smoke`
 
-## Computer Use and Background Activity
+## Executive result
 
-Using `node_repl` and `@oai/sky`, System Settings was opened at General → Login
-Items & Extensions. The smoke background item was toggled off and then on. A
-fresh accessibility-tree read after the final action reported the smoke item
-as `Value: on`; a screenshot of the final state was shown to the user. No
-further setting toggle was performed.
+The non-administrator portion is complete and verified locally:
 
-The privileged lane was not marked successful merely because this setting is
-on. The final smoke app ownership was `marlonjd:staff`, not `root:wheel`, and
-the administrator-approved install command remained at the OS authorization
-handoff. No password was entered by the agent.
+- signed/notarized/stapled app artifacts: passed
+- direct app update 1.0.0+100 → 1.1.0+110: passed
+- DMG first-install and read-only mount/detach: passed
+- move-to-Applications using only the smoke app: passed
+- hosted notarized DMG update and relaunch marker: passed
+- signed/notarized/stapled PKG artifact: passed
+- unprivileged helper and recoverable-swap smoke: passed
+- no-notary trust negatives and protected handoff rejection: passed
+- corrupted ZIP/DMG/PKG rejection checks: passed
+- focused/full Flutter and SwiftPM contract suites: passed
 
-## PR #67: macOS MethodChannel payload mismatch
+The following are deliberately `blocked`/`not run` because they require direct
+administrator authorization, root-owned `/Applications` state, or forced
+privileged-helper termination:
 
-Status: confirmed locally from the prior MacBook Pro real-app run, fixed in the
-working tree for the subsequent smoke runs, and merged through PR #67.
+- PKG install/update/receipt verification
+- privileged helper/background-service live install
+- live recovery after forced helper termination
+- live rollback/recovered swap against a root-owned target
+- live privileged helper logger events
 
-PR publication evidence:
+The Login Items & Extensions background activity approval was already enabled.
+It was not toggled during this run. Enabled background activity does not remove
+the administrator/root-owned install requirement.
 
-- contributor head: `Nicoeevee:main`
-- original contributor fix commit retained: `eae93d0`
-- maintainer follow-up commit: `41e849a`
-- merged PR: https://github.com/MarlonJD/flutter_desktop_updater/pull/67
-- merge commit: `503ff86`
-- contributor comment: https://github.com/MarlonJD/flutter_desktop_updater/pull/67#issuecomment-5196021877
+## PR #67 macOS MethodChannel payload issue
 
-The local checkout was returned to `main` at `80dab9c`; the unrelated
-uncommitted smoke/E2E work was restored and was not pushed as part of PR #67.
+Status: `confirmed locally` historically; the current implementation is fixed
+and the fix was exercised by the real Flutter macOS smoke app.
 
-The pre-fix Dart handoff sent nine keys on macOS:
+PR: <https://github.com/MarlonJD/flutter_desktop_updater/pull/67>
+
+Before the fix, Dart sent these nine keys on macOS:
 
 ```text
 stagingPath
@@ -135,7 +101,7 @@ stageProvenanceSha256
 transactionId
 ```
 
-The native macOS `installUpdate` contract accepts exactly five:
+The native macOS `installUpdate` contract accepts exactly these five keys:
 
 ```text
 stagingPath
@@ -146,367 +112,263 @@ transactionId
 ```
 
 The four invalid extras were `updateVersion`, `updateBuildNumber`, `platform`,
-and `channel`. The exact observed native error was:
+and `channel`. The exact real-app error was:
 
 ```text
 code: InvalidArguments
 message: installUpdate requires the canonical signed handoff payload.
 ```
 
-The prior MacBook Pro run produced this error through the real signed,
-notarized, stapled Flutter macOS app at the smoke path during a 2.7.0 → 2.7.1
-handoff. That version pair is historical defect evidence only; the requested
-consumer matrix for this run is 1.0.0+100 → 1.1.0+110.
+The historical MacBook Pro run reproduced this through a Developer ID signed,
+notarized, stapled Flutter app at `/Applications/Desktop Updater Smoke.app`
+using the 2.7.0 → 2.7.1 fixture pair. That pair is defect evidence only; the
+current consumer matrix is 1.0.0+100 → 1.1.0+110.
 
-The current Dart MethodChannel implementation sends the exact five-key map on
-macOS and retains the full descriptor map for other platforms. The focused
-channel test now forces the macOS target platform and asserts the canonical
-five-key set. No new PR-specific red test was added.
+The current Dart implementation sends the canonical five-key map on macOS and
+keeps the descriptor fields for non-macOS targets. The current direct and DMG
+smokes completed without `InvalidArguments`.
 
-Existing tests missed the issue because the generic MethodChannel test asserted
-the full nine-key payload and the controller contract test did not model the
-macOS native exact-key set. A real macOS integration assertion should remain a
-future maintenance recommendation.
+The old generic MethodChannel test missed the defect because it asserted the
+full nine-key payload without modeling the macOS native exact-key contract.
+The focused contract coverage now forces macOS and asserts the canonical
+five-key behavior. No new unrelated red test was introduced.
 
 ## Lane 1: Developer ID signed, not notarized
 
-Status: verified locally as a negative lane.
+Status: `verified locally` as a negative lane. These artifacts are not
+production-trust artifacts.
 
-Evidence artifacts:
+Artifacts:
 
 - `/tmp/desktop_updater_macos_smoke/no-notary-v1/Desktop Updater Smoke.app`
 - `/tmp/desktop_updater_macos_smoke/no-notary-v2/Desktop Updater Smoke.app`
 - `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke No Notary.dmg`
 - `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke No Notary.pkg`
 
-Observed controls:
-
-| Artifact/control | Result |
+| Check | Result |
 | --- | --- |
-| no-notary v1/v2 `codesign --verify --deep --strict` | passed |
-| no-notary v1/v2 `spctl --assess --type execute` | rejected, exit 3; unnotarized Developer ID |
-| no-notary v1/v2 `xcrun stapler validate` | failed, exit 65 |
-| no-notary DMG `spctl --assess --type open` | rejected, exit 3 |
-| no-notary DMG stapler validation | failed, exit 65 |
-| no-notary DMG readonly attach/detach | passed after resolving the actual mounted volume name |
-| no-notary PKG `pkgutil --check-signature` | passed; package is signed |
-| no-notary PKG `spctl --assess --type install` | rejected, exit 3 |
-| no-notary PKG stapler validation | failed, exit 65 |
+| v1/v2 app `codesign --verify --deep --strict` | accepted |
+| v1/v2 app `spctl --assess --type execute` | rejected, exit 3, unnotarized Developer ID |
+| v1/v2 app `xcrun stapler validate` | rejected, exit 65 |
+| DMG `spctl --assess --type open` | rejected, exit 3 |
+| DMG stapler validation | rejected, exit 65 |
+| DMG read-only mount/detach | passed |
+| PKG `pkgutil --check-signature` | signed package accepted |
+| PKG `spctl --assess --type install` | rejected, exit 3 |
+| PKG stapler validation | rejected, exit 65 |
 
-The no-notary protected ZIP update was run with a clean v1 smoke app and a
-no-notary v2 staged app. The new macOS ZIP trust gate rejected the staged app
-at Gatekeeper assessment with `source=Unnotarized Developer ID`; the v1 app
-remained installed and the v2 sentinel was not installed.
+The no-notary v1/v2 protected handoff was also attempted only in `/tmp`, not
+in `/Applications` and not through the PKG installer. It failed closed with:
+
+```text
+helperBootstrapFailure:DesktopUpdaterInstallHelper.MacOneShotAuthorizationError.targetAuthenticationFailed
+PlatformException(InstallError, Unable to confirm update installation handoff.,
+{recoveryRequired: true, transactionId: <redacted>}, null)
+```
+
+The target remained v1 (`1.0.0+100`) and no v2 sentinel was installed. This is
+recorded as an expected protected-install negative, not as an updater bug. The
+error also binds target authentication/authorization to the negative result;
+it is not evidence that notarization alone is the only failing predicate.
 
 Evidence:
 
-- `/tmp/desktop_updater_macos_smoke/no-notary-protected-update-dartfix.log`
-- `/tmp/desktop_updater_macos_smoke/no-notary-protected-diagnostics-dartfix.jsonl`
+- `/tmp/desktop_updater_macos_smoke/no-notary-trust-2026-08-06.log`
+- `/tmp/desktop_updater_macos_smoke/no-notary-dmg-mount-2026-08-06.log`
+- `/tmp/desktop_updater_macos_smoke/no-notary-live-diagnostics.jsonl`
 
-This is the expected protected-install rejection, not an updater regression.
-No-notary DMG/PKG privileged installation or recovery was claimed as a live
-success; those require the blocked administrator lane.
+## Lane 2: notarized and stapled artifacts
 
-## Lane 2: notarized and stapled
+### App and direct update
 
-### App artifact and direct app update
+Status: `verified locally`.
 
-`doctor` passed the macOS host, both required Developer ID identity classes, and
-the `general-notary` profile. The production app-update lane produced and
-verified v1 and v2. Both app bundles passed codesign, Gatekeeper execute
-assessment, and stapler validation.
+Both app bundles passed `codesign --verify --deep --strict`, Gatekeeper execute
+assessment, and stapler validation. The real smoke app completed the
+1.0.0+100 → 1.1.0+110 direct update and ended at v2 with the v2 sentinel.
+Diagnostics contained:
+
+```text
+event=checking
+event=downloading
+event=installing
+event=relaunch
+```
 
 Evidence:
 
 - `/tmp/desktop_updater_macos_smoke/apps/1.0.0/Desktop Updater Smoke.app`
 - `/tmp/desktop_updater_macos_smoke/apps/1.1.0/Desktop Updater Smoke.app`
-- `reports/macos-production-smoke/app-update-2026-08-05T175431.864968Z.log`
 - `/tmp/desktop_updater_macos_smoke/direct-app-smoke-diagnostics.jsonl`
+- `reports/macos-production-smoke/app-update-2026-08-05T191841.919444Z.log`
 
-Direct app update result:
+No `InvalidArguments` was observed in the current canonical-payload run.
 
-- real Flutter macOS app at `/Applications/Desktop Updater Smoke.app`
-- v1 installed successfully
-- v1 → v2 whole-bundle replacement passed
-- v2 version/build and sentinel were observed
-- no `InvalidArguments` occurred after the canonical five-key fix
-- the production tool did not emit a separate successful relaunch marker in
-  the direct-app log, so relaunch evidence is recorded as incomplete rather
-  than assumed
+### DMG first-install and move-to-Applications
 
-The direct diagnostics file contains the app-owned lifecycle events
-`checking`, `downloading`, and `installing`.
+Status: `verified locally`.
 
-### DMG first install and move-to-Applications
-
-Both lanes passed with a DMG containing only the smoke app.
+The DMG contained only the smoke app. DMG primary-signature assessment,
+read-only mount, contained app codesign/Gatekeeper/stapler validation, copy to
+the exact `/Applications/Desktop Updater Smoke.app` path, relaunch, and
+detach all passed.
 
 Evidence:
 
-- `reports/macos-production-smoke/dmg-first-install-2026-08-05T175906.610415Z.log`
-- `reports/macos-production-smoke/move-to-applications-2026-08-05T180145.294738Z.log`
 - `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.dmg`
+- `reports/macos-production-smoke/dmg-first-install-2026-08-05T204304.515226Z.log`
+- `reports/macos-production-smoke/move-to-applications-2026-08-05T204603.866646Z.log`
 
-The DMG primary signature, readonly mount, contained app Gatekeeper trust,
-stapler validation, copy to the exact smoke path, relaunch of the copied app,
-and detach all passed. No unrelated `/Applications` application was changed.
+### Hosted DMG update
 
-### DMG update
+Status: `verified locally` after fixing two harness issues.
 
-The first hosted attempt correctly exposed an unsigned `app-archive.json`
-fixture problem and failed signature verification. The hosted smoke harness was
-then corrected to serve a signed release index/descriptor and to pass the
-matching public trust configuration into the child Flutter app process.
+The first attempt exposed an unsigned `app-archive.json` fixture and failed
+signature verification. The next attempts installed v2 but timed out because
+the hosted wrapper waited for a relaunch diagnostics line that it did not
+consolidate from its successful relaunch marker. The wrapper now passes both
+diagnostics hooks and appends `event=relaunch` only after the app-produced
+relaunch marker is observed.
 
-The rerun passed DMG artifact SHA-256, DMG primary signature, readonly mount,
-contained app trust, hosted signed metadata, and whole-bundle v1 → v2
-replacement. The command ended with a timeout waiting for the relaunched app
-process after replacement; that observation is recorded separately from the
-successful update operation.
+The final run passed v1/v2 app signing and notarization, DMG SHA-256 binding,
+DMG primary signature, read-only mount/detach, contained app trust, signed
+hosted metadata, whole-bundle replacement, and relaunch marker observation.
 
 Evidence:
 
-- `reports/macos-production-smoke/dmg-update-2026-08-05T181707.881522Z.log`
+- `reports/macos-production-smoke/dmg-update-2026-08-05T210059.587793Z.log`
 - `/tmp/desktop_updater_macos_smoke/hosted-smoke-diagnostics-dmg.jsonl`
 - `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.dmg`
 
-The diagnostics file retains the two earlier unsigned-feed failures followed
-by the successful `checking`, `downloading`, and `installing` sequence. It was
-scanned for private-key, password, API-key, token, authorization-secret, and
-Apple-credential material and was clean.
+The hosted diagnostics file contains earlier failed-attempt lines followed by
+the successful lifecycle and relaunch lines; the failure lines are retained as
+evidence of the detected fixture/harness issues, not as the final lane result.
 
 ### PKG artifact
 
-The notarized/stapled PKG artifact lane passed:
+Status: `verified locally`; installation intentionally not attempted.
 
-- Developer ID Installer signing
-- notarization with `general-notary`
-- stapling and stapler validation
-- `pkgutil --check-signature`
-- `spctl --assess --type install`
-- receipt-ready package construction
+The v2 PKG passed Developer ID Installer signing, `pkgutil --check-signature`,
+`spctl --assess --type install`, notarization, and stapler validation. The
+artifact was built for the smoke app and was not installed.
 
 Evidence:
 
 - `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.pkg`
-- `reports/macos-production-smoke/pkg-artifact-2026-08-05T182244.193016Z.log`
+- `reports/macos-production-smoke/pkg-artifact-2026-08-05T210520.741277Z.log`
 
-The artifact command intentionally did not perform the administrator install;
-that is a separate lane.
-
-### PKG install/receipt lane
-
-Status: blocked, not successful.
-
-`pkg-install-verify` built and notarized the v1 preparation app, then reached
-the administrator-approved replacement command. The `osascript` authorization
-handoff waited for administrator approval; no password was entered by the
-agent, and the lane was stopped. A noninteractive admin check was also
-negative. No PKG receipt was present after the interrupted handoff.
-
-Evidence:
-
-- `reports/macos-production-smoke/pkg-install-verify-2026-08-05T182543.926129Z.log`
-- `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.pkg`
-
-The current `/Applications/Desktop Updater Smoke.app` is v2 with the v2
-sentinel and Apple trust, but that state came from the DMG update lane, not a
-successful PKG install. Its current ownership is `marlonjd:staff`; it is not
-evidence of the root-owned privileged installer lane.
-
-## Helper, privileged, and recovery lanes
+## Helper, diagnostics, and recovery
 
 ### Unprivileged helper
 
-Passed:
+Status: `verified locally`.
 
-```text
-dart run tool/macos_install_helper_smoke.dart --mode unprivileged
+The unprivileged helper smoke passed canonical protocol parsing and a
+recoverable swap:
+
+```json
+{"schemaVersion":1,"mode":"unprivileged","canonicalProtocolParsed":true,"recoverableSwapExecuted":true}
 ```
 
-The command verified the unprivileged file transaction, canonical helper
-protocol parsing, and recoverable swap behavior.
+Evidence: `/tmp/desktop_updater_macos_smoke/unprivileged-helper-smoke-2026-08-06.log`
 
-### Privileged helper and PKG smoke
+### Recovery
 
-The source parser was checked for the required fields: mode, v1-app,
-recovery-app, v1-pkg, v2-pkg, git-commit, artifact-sha256,
-notarization-submission-id, evidence-dir, smoke-root, and optional open-settings.
+Live privileged recovery is `blocked`, not successful. The following were not
+run because they require administrator authorization, root-owned target state,
+or forced termination of the privileged helper:
 
-The live lane was not completed because:
+- `pkg-install-verify`
+- `dart run tool/macos_install_helper_smoke.dart --mode privileged`
+- `dart run tool/macos_privileged_pkg_smoke.dart ...`
+- `dart run tool/macos_privileged_pkg_recovery_smoke.dart ...`
+- root-owned `/Applications` setup and forced helper termination
 
-- `/Applications/Desktop Updater Smoke.app` was not root-owned (`root:wheel`)
-- the staged smoke app was user-owned as expected for a source stage, but no
-  administrator authorization was available to establish the protected target
-- the `osascript with administrator privileges` handoff remained waiting
+Contract and state-machine coverage is verified locally: prepare/commit,
+`recoveryRequired`, query/recover, rollback/recovered-swap, journal cleanup,
+staging cleanup, ownership/provenance binding, and crash-boundary cases are
+covered by the SwiftPM and Flutter contract suites below. That coverage must
+not be presented as live root-owned recovery evidence.
 
-### Recovery smoke
+### Diagnostics and logger
 
-The recovery parser was checked for app, pkg, receipt-id, expected-version,
-expected-build, git-commit, artifact-sha256, notarization-submission-id,
-evidence, and smoke-root. The live recovery sequence was not run because its
-preconditions require the completed privileged baseline and root-owned target.
+The app-owned smoke diagnostics recorded `checking`, `downloading`,
+`installing`, and `relaunch`. Native helper recovery/logger events were not
+claimed live because the privileged lane was blocked. Contract redaction tests
+passed; no private key, password, API key, token, Apple credential, or
+authorization secret appeared in the evidence files.
 
-Therefore the following are **not** live verified in this run:
-
-- prepare/commit against the installed privileged helper
-- forced helper/app termination in a production transaction
-- `recoveryRequired` query and recover transaction
-- rollback or recovered swap against `/Applications`
-- old-target preservation during live recovery
-- transaction-journal and staging cleanup after live recovery
-- live receipt/version/build and relaunch after recovery
-- live helper identity/provenance and root ownership evidence
-
-The recovery contract tests and native Swift recovery tests passed; they are
-contract evidence, not a substitute for this blocked privileged lane.
-
-## Logger and diagnostics
-
-Verified app-owned diagnostics:
-
-- direct app: `checking`, `downloading`, `installing`
-- hosted DMG: failed unsigned-feed attempts followed by successful
-  `checking`, `downloading`, `installing`
-- no sensitive values found in the JSONL diagnostics files
-
-The macOS native source defines the helper event vocabulary and accepts a
-platform-log diagnostics destination, but no actual named OSLog/Logger emission
-was observed for the requested helper events. The following native events are
-therefore **not** claimed as live verified:
-
-```text
-helper scheduled
-backup start
-backup success
-move start
-move success
-cleanup start
-cleanup success
-recovery
-rollback
-recovery marker cleared
-```
-
-Native diagnostics/redaction contract tests passed, including checks that
-private-key and token material is removed from exported diagnostics.
-
-## Negative/failure matrix
+## Failure and negative-test matrix
 
 | Failure case | Result |
 | --- | --- |
-| extra MethodChannel keys | confirmed locally; exact `InvalidArguments` reproduced in the prior real-app run |
-| missing canonical key | expected rejection covered by helper/native contract tests |
-| malformed transaction ID | expected rejection covered by helper/native contract tests |
-| malformed SHA-256 | expected rejection covered by helper/native contract tests |
-| wrong package ID | expected rejection covered by descriptor/helper contract tests |
-| wrong artifact hash | expected rejection covered by artifact/native contract tests |
-| wrong stage provenance hash | expected rejection covered by staged-provenance/native contract tests |
-| staging path outside owned root | expected rejection covered by native helper contract tests |
-| corrupted/truncated ZIP and ZIP metadata | expected rejection covered by resource-limit/adversarial tests |
-| corrupted DMG/PKG byte mutation | not run as a live production artifact mutation |
-| invalid release signature | expected rejection covered by signature verifier tests; unsigned hosted feed failed live before harness correction |
-| unsigned app | expected rejection covered by Gatekeeper/native negative controls |
-| Developer ID signed but not notarized app | live no-notary Gatekeeper rejection passed |
-| unstapled app/DMG/PKG | live stapler failures passed as expected |
-| Gatekeeper rejection | live no-notary app/DMG/PKG rejection passed |
-| helper approval missing | live privileged handoff blocked at administrator authorization; no false success claimed |
-| forced helper termination | contract/native recovery tests only; live privileged lane blocked |
-| recovery-required transaction | contract/native recovery tests only; live privileged lane blocked |
-| failed rollback/recovery | contract/native recovery tests only; live privileged lane blocked |
-| diagnostics/recovery marker missing | contract coverage passed; no live privileged marker sequence claimed |
+| extra MethodChannel keys | historical real-app `InvalidArguments` confirmed; current macOS payload fixed |
+| missing canonical key | rejected by native contract tests |
+| malformed transaction ID | rejected by native/Dart contract tests |
+| malformed SHA-256 | rejected by native/Dart contract tests |
+| wrong package ID | rejected by signed-stage tests |
+| wrong artifact hash | rejected by signed-stage tests |
+| wrong stage provenance hash | rejected by signed-stage tests |
+| staging path outside owned root / symlink | rejected by stage/provenance tests |
+| corrupted ZIP | `unzip -t` rejected, exit 2 |
+| corrupted DMG | `spctl` rejected, exit 1; read-only attach rejected, exit 1 |
+| corrupted PKG | `pkgutil --check-signature` rejected, exit 1 |
+| invalid release signature | rejected by Dart/Swift signature tests; unsigned hosted fixture was detected |
+| unsigned app | rejected by trust/contract gates |
+| Developer ID signed but not notarized | codesign accepted; Gatekeeper/stapler rejected |
+| unstapled artifact | stapler rejected; Gatekeeper rejected where applicable |
+| Gatekeeper rejection | observed as expected negative |
+| helper approval missing | live privileged lane blocked; typed approval contract passes |
+| forced helper termination | live lane blocked; crash/recovery contracts pass |
+| recovery-required transaction | live lane blocked; query/recovery contracts pass |
+| failed rollback/recovery | live lane blocked; rollback/idempotence contracts pass |
+| missing diagnostics/recovery marker | harness fixed; app relaunch marker observed |
 
-## Test results
+Evidence for corrupted artifacts:
+`/tmp/desktop_updater_macos_smoke/negative-artifacts-2026-08-06/results.log`.
 
-Passed locally:
+## Verification totals
 
-- focused Flutter macOS/channel/layout/helper/privileged contract and ZIP E2E
-  set: 64 passed
-- isolated negative/signature/artifact/helper/PKG audit set: 63 passed
-- full Flutter suite: 816 passed, 4 skipped
-- root Swift package: 139 passed, 0 failed
-- `macos/install_helper` Swift package: 147 passed, 6 skipped, 0 failed
-- `dart format` on changed Dart files
-- `git diff --check`
+The following commands passed locally:
 
-The full Flutter suite retains two failures in
-`test/release_cli/release_publisher_build_test.dart`:
+- requested focused Flutter suite: `55` tests passed
+- full `flutter test --no-pub`: `818` passed, `4` skipped
+- root `swift test`: `140` passed, `0` failed
+- `swift test --package-path macos/install_helper`: `147` passed, `6` skipped,
+  `0` failed
+- `dart format --output=none --set-exit-if-changed .`: passed
+- `flutter analyze --no-fatal-infos`: exit 0; 649 pre-existing info-level
+  diagnostics, no analyzer errors
 
-- macOS publish uses DMG packager when configured
-- macOS publish uses PKG packager when configured
+The direct `swift test --package-path macos/desktop_updater` package lane was
+not used because this checkout does not contain the generated sibling
+`macos/FlutterFramework` package required by that package manifest. The root
+SwiftPM suite was the available native DesktopUpdaterKit test harness.
 
-Both fake packagers create placeholder text artifacts, while the production
-publisher verifier correctly invokes real Gatekeeper/pkgutil checks. The DMG
-placeholder is rejected as having no usable signature and the PKG placeholder
-cannot be parsed as a package. This is a test-fixture/verifier integration
-issue, not evidence that the real notarized smoke artifacts failed. It remains
-unfixed because relaxing the production verifier would be the wrong fix.
+## Fixes applied during this validation
 
-The separate SwiftPM plugin package test remains blocked by the repository's
-missing generated ignored `macos/FlutterFramework` package. The root Swift
-package and install-helper package were run successfully instead.
+The implementation/harness changes included in this PR are:
 
-## Evidence paths
+- canonical five-key macOS MethodChannel handoff;
+- restart reservation before helper commit, with cancellation on commit
+  failure;
+- child executable identity proof using the running executable path and a
+  replacement-vnode barrier before install re-exec;
+- relaunch marker propagation before plugin registration and duplicate smoke
+  suppression on relaunch;
+- hosted smoke signed-feed trust configuration and relaunch diagnostics
+  consolidation;
+- non-macOS test seam for fake packagers without weakening production macOS
+  validation.
 
-Retained machine evidence under `/tmp`:
+These are validation fixes only; this PR contains the local changes from this
+validation run.
 
-- `/tmp/desktop_updater_macos_smoke/apps/1.0.0/Desktop Updater Smoke.app`
-- `/tmp/desktop_updater_macos_smoke/apps/1.1.0/Desktop Updater Smoke.app`
-- `/tmp/desktop_updater_macos_smoke/no-notary-v1/Desktop Updater Smoke.app`
-- `/tmp/desktop_updater_macos_smoke/no-notary-v2/Desktop Updater Smoke.app`
-- `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.dmg`
-- `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke No Notary.dmg`
-- `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke.pkg`
-- `/tmp/desktop_updater_macos_smoke/Desktop Updater Smoke No Notary.pkg`
-- `/tmp/desktop_updater_macos_smoke/direct-app-smoke-diagnostics.jsonl`
-- `/tmp/desktop_updater_macos_smoke/hosted-smoke-diagnostics-dmg.jsonl`
-- `/tmp/desktop_updater_macos_smoke/no-notary-protected-update-dartfix.log`
-- `/tmp/desktop_updater_macos_smoke/no-notary-protected-diagnostics-dartfix.jsonl`
+## Remaining action
 
-Transient production command log names captured before cleanup:
-
-- `app-update-2026-08-05T175431.864968Z.log`
-- `dmg-first-install-2026-08-05T175906.610415Z.log`
-- `move-to-applications-2026-08-05T180145.294738Z.log`
-- `dmg-update-2026-08-05T181707.881522Z.log`
-- `pkg-artifact-2026-08-05T182244.193016Z.log`
-- `pkg-install-verify-2026-08-05T182543.926129Z.log`
-
-Per the user’s durable-evidence rule, transient files under
-`reports/macos-production-smoke/` other than this report are removed during
-final cleanup. The `/tmp` artifact and diagnostics paths above are not copied
-into the repository.
-
-## Implemented corrections during this run
-
-The following corrections were required to obtain meaningful E2E evidence:
-
-1. macOS MethodChannel `installUpdate` now sends the native canonical five-key
-   payload.
-2. macOS ZIP staging preserves symlinks and validates staged app codesign,
-   Gatekeeper, stapler, bundle ID, and team identity before protected staging.
-3. The smoke app identifiers and fixture metadata are bound to the requested
-   smoke app and `1.0.0+100 → 1.1.0+110` matrix.
-4. Hosted production smoke metadata is signed and the matching trusted public
-   configuration is forwarded to the child smoke app process.
-5. Temporary helper debugging was removed so helper errors do not expose raw
-   error objects or credential-adjacent data.
-
-## Remaining recommendations
-
-- Complete the administrator-approved PKG install once the user performs the
-  macOS authorization handoff; verify receipt, root ownership, helper
-  identity, and installed v2 trust before calling the lane complete.
-- Run the privileged recovery smoke with a notarized v1/v2 PKG pair and record
-  every recovery marker, journal, stage, ownership, and relaunch assertion.
-- Fix the DMG/PKG publisher test fakes by injecting a verifier process or using
-  valid test artifacts; do not weaken production Gatekeeper/pkgutil checks.
-- Make the production smoke relaunch observer use a durable marker or a robust
-  exact-bundle process check so a successful replacement is not followed by a
-  false timeout.
-- If platform-log helper diagnostics are a release requirement, implement and
-  verify actual macOS Logger/OSLog emission for the event vocabulary above.
-- Add a real macOS integration assertion for the exact five-key MethodChannel
-  handoff in a later user-owned test plan.
-- Store the `general-notary` keychain profile where both the profile-only and
-  explicitly selected login-keychain invocations resolve consistently.
+To close the remaining lanes, an authorized operator must run the PKG install
+and privileged/recovery smoke with a root-owned smoke target, complete any
+System Settings background-item approval if macOS requests it, and capture the
+receipt, ownership, helper identity/provenance, recovery journal cleanup, and
+native logger evidence. No administrator password was entered or requested in
+this run.

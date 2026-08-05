@@ -81,12 +81,13 @@ do {
         let oldProcessExited = exitProof.map {
             FileManager.default.fileExists(atPath: $0.path)
         } ?? false
-        try write(
-            "executable=\(executable)\n"
+            try write(
+                "executable=\(executable)\n"
                 + "oldProcessExited=\(oldProcessExited)\n"
+                + "restarted=\(environment["DESKTOP_UPDATER_RESTARTED"] == "1")\n"
                 + "unrelatedDescriptorClosed=\(unrelatedDescriptorClosed)\n",
-            to: restartProof
-        )
+                to: restartProof
+            )
         exit(0)
     }
 

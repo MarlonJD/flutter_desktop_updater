@@ -44,7 +44,10 @@ void main() {
     expect(source, contains("example/tool/updater_smoke.dart"));
     expect(source, contains("--staged-app"));
     expect(source, contains("app-update: whole-bundle replacement OK"));
-    expect(source, contains("app-update: v2 relaunch OK"));
+    expect(
+      source,
+      contains("app-update: v2 relaunch marker observed by the relaunched app"),
+    );
   });
 
   test("macOS production smoke clears stale sentinel from v1 app builds", () {
@@ -62,7 +65,9 @@ void main() {
     final hostedFlow = source.indexOf("_runHostedUpdateSmoke(");
     final replacementEvidence =
         source.indexOf("dmg-update: whole-bundle replacement OK");
-    final relaunchEvidence = source.indexOf("dmg-update: v2 relaunch OK");
+    final relaunchEvidence = source.indexOf(
+      "dmg-update: v2 relaunch marker observed by the relaunched app",
+    );
 
     expect(hostedFlow, isNonNegative);
     expect(replacementEvidence, greaterThan(hostedFlow));

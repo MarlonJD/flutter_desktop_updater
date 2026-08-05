@@ -12,6 +12,42 @@ public enum MacApplicationRestartError: Error, Equatable {
     case readinessProofInvalid
 }
 
+public final class MacApplicationRestartReservation {
+    private let lock = NSLock()
+    private var commitHandler: (() -> Void)?
+    private var cancelHandler: (() -> Void)?
+
+    init(
+        commit: @escaping () -> Void,
+        cancel: @escaping () -> Void
+    ) {
+        commitHandler = commit
+        cancelHandler = cancel
+    }
+
+    public func commit() {
+        lock.lock()
+        let handler = commitHandler
+        commitHandler = nil
+        cancelHandler = nil
+        lock.unlock()
+        handler?()
+    }
+
+    public func cancel() {
+        lock.lock()
+        let handler = cancelHandler
+        commitHandler = nil
+        cancelHandler = nil
+        lock.unlock()
+        handler?()
+    }
+
+    deinit {
+        cancel()
+    }
+}
+
 extension MacApplicationRestartError: LocalizedError {
     public var errorDescription: String? {
         switch self {
@@ -40,6 +76,8 @@ public struct MacApplicationRestarter {
         "DESKTOP_UPDATER_RESTART_LIFETIME_FD"
     private static let readinessDescriptorEnvironment =
         "DESKTOP_UPDATER_RESTART_READY_FD"
+    private static let restartedEnvironment = "DESKTOP_UPDATER_RESTARTED"
+    private static let reexecEnvironment = "DESKTOP_UPDATER_RESTART_REEXEC"
 
     private let currentExecutableURL: () -> URL?
     private let schedule: (URL) throws -> Void
@@ -47,9 +85,11 @@ public struct MacApplicationRestarter {
     public init() {
         currentExecutableURL = { Bundle.main.executableURL }
         schedule = { executableURL in
-            try DarwinMacApplicationRestartScheduler.schedule(
-                executableURL: executableURL
+            let reservation = try DarwinMacApplicationRestartScheduler.schedule(
+                executableURL: executableURL,
+                reexecAfterReplacement: false
             )
+            reservation.commit()
         }
     }
 
@@ -68,6 +108,19 @@ public struct MacApplicationRestarter {
             throw MacApplicationRestartError.executableUnavailable
         }
         try schedule(executableURL)
+    }
+
+    public func prepareCurrentApplicationRestart()
+        throws -> MacApplicationRestartReservation {
+        guard let executableURL = currentExecutableURL(),
+              executableURL.isFileURL,
+              !executableURL.path.isEmpty else {
+            throw MacApplicationRestartError.executableUnavailable
+        }
+        return try DarwinMacApplicationRestartScheduler.schedule(
+            executableURL: executableURL,
+            reexecAfterReplacement: true
+        )
     }
 
     public static func awaitRestartParentExitIfRequested() -> Bool {
@@ -106,7 +159,71 @@ public struct MacApplicationRestarter {
             retryingRead(lifetimeDescriptor, $0, 1)
         }
         close(lifetimeDescriptor)
-        return lifetimeResult == 0
+        guard lifetimeResult == 0 else {
+            unsetenv(restartedEnvironment)
+            return false
+        }
+        setenv(restartedEnvironment, "1", 1)
+        guard reexecCurrentExecutableIfRequested() else {
+            unsetenv(restartedEnvironment)
+            return false
+        }
+        return true
+    }
+
+    private static func reexecCurrentExecutableIfRequested() -> Bool {
+        guard let value = getenv(reexecEnvironment),
+              String(cString: value) == "1" else {
+            return true
+        }
+        guard let executableURL = Bundle.main.executableURL,
+              executableURL.isFileURL,
+              !executableURL.path.isEmpty else {
+            unsetenv(reexecEnvironment)
+            return false
+        }
+        guard waitForReplacement(
+            executablePath: executableURL.path
+        ) else {
+            unsetenv(reexecEnvironment)
+            return false
+        }
+
+        var arguments = CommandLine.arguments
+        if arguments.isEmpty {
+            arguments = [executableURL.path]
+        }
+        var pointers = arguments.map { strdup($0) }
+        pointers.append(nil)
+        defer {
+            for pointer in pointers where pointer != nil {
+                free(pointer)
+            }
+        }
+        unsetenv(reexecEnvironment)
+        let result = pointers.withUnsafeMutableBufferPointer { buffer in
+            executableURL.path.withCString { executable in
+                execve(executable, buffer.baseAddress, environ)
+            }
+        }
+        return result == 0
+    }
+
+    private static func waitForReplacement(executablePath: String) -> Bool {
+        guard let currentIdentity = try? MacExecutableVnodeIdentity.current()
+        else {
+            return false
+        }
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            if let pathIdentity = try? MacExecutableVnodeIdentity.pathIdentity(
+                executablePath
+            ), pathIdentity != currentIdentity {
+                return true
+            }
+            usleep(10_000)
+        } while Date() < deadline
+        return false
     }
 
     private static func strictDescriptor(_ value: String) -> Int32? {
@@ -132,7 +249,10 @@ public struct MacApplicationRestarter {
 private enum DarwinMacApplicationRestartScheduler {
     private static let readinessTimeoutMilliseconds: Int32 = 10_000
 
-    static func schedule(executableURL: URL) throws {
+    static func schedule(
+        executableURL: URL,
+        reexecAfterReplacement: Bool
+    ) throws -> MacApplicationRestartReservation {
         let expectedExecutableIdentity = try MacExecutableVnodeIdentity.current()
         let executablePath = executableURL.path
         guard executableURL.isFileURL,
@@ -163,7 +283,8 @@ private enum DarwinMacApplicationRestartScheduler {
         }
         let environment = childEnvironment(
             lifetimeDescriptor: lifetimePipe[0],
-            readinessDescriptor: readinessPipe[1]
+            readinessDescriptor: readinessPipe[1],
+            reexecAfterReplacement: reexecAfterReplacement
         )
         var child: pid_t = 0
         let spawnResult: Int32
@@ -190,8 +311,10 @@ private enum DarwinMacApplicationRestartScheduler {
             throw MacApplicationRestartError.processCreationFailed
         }
 
-        guard (try? MacExecutableVnodeIdentity.process(child))
-                == expectedExecutableIdentity else {
+        let childExecutableIdentity = waitForExecutableIdentity(
+            child: child
+        )
+        guard childExecutableIdentity == expectedExecutableIdentity else {
             terminateAndWait(child)
             closePair(readinessPipe)
             closePair(lifetimePipe)
@@ -234,32 +357,69 @@ private enum DarwinMacApplicationRestartScheduler {
             throw MacApplicationRestartError.readinessProofInvalid
         }
 
-        // The replacement process is already the exact current executable,
-        // but its plugin registration remains blocked until this descriptor
-        // is closed by kernel process teardown.
-        MacRestartLifetimeBarriers.retain(lifetimePipe[1])
+        let pending = DarwinMacApplicationRestartProcess(
+            child: child,
+            lifetimeDescriptor: lifetimePipe[1]
+        )
+        lifetimePipe[1] = -1
+        return MacApplicationRestartReservation(
+            commit: pending.commit,
+            cancel: pending.cancel
+        )
+    }
+
+    private static func waitForExecutableIdentity(
+        child: pid_t
+    ) -> MacExecutableVnodeIdentity? {
+        let deadline = Date().addingTimeInterval(
+            TimeInterval(readinessTimeoutMilliseconds) / 1_000
+        )
+        var observed: MacExecutableVnodeIdentity?
+        repeat {
+            observed = try? MacExecutableVnodeIdentity.process(child)
+            if observed != nil {
+                return observed
+            }
+            if kill(child, 0) != 0 && errno == ESRCH {
+                return nil
+            }
+            usleep(10_000)
+        } while Date() < deadline
+        return observed
     }
 
     private static func childEnvironment(
         lifetimeDescriptor: Int32,
-        readinessDescriptor: Int32
+        readinessDescriptor: Int32,
+        reexecAfterReplacement: Bool
     ) -> [String] {
         let lifetimePrefix =
             "DESKTOP_UPDATER_RESTART_LIFETIME_FD="
         let readinessPrefix =
             "DESKTOP_UPDATER_RESTART_READY_FD="
+        let restartedPrefix = "DESKTOP_UPDATER_RESTARTED="
+        let reexecPrefix = "DESKTOP_UPDATER_RESTART_REEXEC="
         var result: [String] = []
         var cursor = environ
         while let entry = cursor.pointee {
             let value = String(cString: entry)
             if !value.hasPrefix(lifetimePrefix),
-               !value.hasPrefix(readinessPrefix) {
+               !value.hasPrefix(readinessPrefix),
+               !value.hasPrefix(restartedPrefix),
+               !value.hasPrefix(reexecPrefix) {
                 result.append(value)
             }
             cursor = cursor.advanced(by: 1)
         }
         result.append("\(lifetimePrefix)\(lifetimeDescriptor)")
         result.append("\(readinessPrefix)\(readinessDescriptor)")
+        // The marker must be present in the exec environment. Setting it
+        // after plugin registration is too late for Dart's immutable
+        // Platform.environment snapshot.
+        result.append("\(restartedPrefix)1")
+        if reexecAfterReplacement {
+            result.append("\(reexecPrefix)1")
+        }
         return result
     }
 
@@ -370,6 +530,44 @@ private enum DarwinMacApplicationRestartScheduler {
     }
 }
 
+private final class DarwinMacApplicationRestartProcess {
+    private let lock = NSLock()
+    private let child: pid_t
+    private var lifetimeDescriptor: Int32
+
+    init(child: pid_t, lifetimeDescriptor: Int32) {
+        self.child = child
+        self.lifetimeDescriptor = lifetimeDescriptor
+    }
+
+    func commit() {
+        lock.lock()
+        guard lifetimeDescriptor >= 0 else {
+            lock.unlock()
+            return
+        }
+        let descriptor = lifetimeDescriptor
+        lifetimeDescriptor = -1
+        lock.unlock()
+        MacRestartLifetimeBarriers.retain(descriptor)
+    }
+
+    func cancel() {
+        lock.lock()
+        guard lifetimeDescriptor >= 0 else {
+            lock.unlock()
+            return
+        }
+        let descriptor = lifetimeDescriptor
+        lifetimeDescriptor = -1
+        lock.unlock()
+        _ = kill(child, SIGKILL)
+        var status: Int32 = 0
+        while waitpid(child, &status, 0) < 0 && errno == EINTR {}
+        close(descriptor)
+    }
+}
+
 private struct MacExecutableVnodeIdentity: Equatable {
     let device: UInt32
     let inode: UInt64
@@ -386,32 +584,37 @@ private struct MacExecutableVnodeIdentity: Equatable {
     }
 
     static func process(_ processIdentifier: pid_t) throws -> Self {
-        var address: UInt64 = 0
-        while true {
-            var information = proc_regionwithpathinfo()
-            let result = proc_pidinfo(
+        var path = [CChar](
+            repeating: 0,
+            count: 4096
+        )
+        let length = path.withUnsafeMutableBufferPointer { buffer in
+            proc_pidpath(
                 processIdentifier,
-                PROC_PIDREGIONPATHINFO,
-                address,
-                &information,
-                Int32(MemoryLayout.size(ofValue: information))
+                buffer.baseAddress,
+                UInt32(buffer.count)
             )
-            guard result == MemoryLayout.size(ofValue: information) else {
-                break
-            }
-            let region = information.prp_prinfo
-            if region.pri_offset == 0,
-               region.pri_protection & UInt32(VM_PROT_EXECUTE) != 0,
-               information.prp_vip.vip_vi.vi_type == Int32(VREG.rawValue) {
-                return identity(information)
-            }
-            let next = region.pri_address.addingReportingOverflow(
-                region.pri_size
-            )
-            guard !next.overflow, next.partialValue > address else { break }
-            address = next.partialValue
         }
-        throw MacApplicationRestartError.executableIdentityMismatch
+        guard length > 0, length < path.count else {
+            throw MacApplicationRestartError.executableIdentityMismatch
+        }
+        return try pathIdentity(String(cString: path))
+    }
+
+    fileprivate static func pathIdentity(_ path: String) throws -> Self {
+        var status = stat()
+        let result = path.withCString { value in
+            Darwin.lstat(value, &status)
+        }
+        guard result == 0,
+              status.st_mode & S_IFMT == S_IFREG else {
+            throw MacApplicationRestartError.executableIdentityMismatch
+        }
+        return Self(
+            device: UInt32(status.st_dev),
+            inode: status.st_ino,
+            generation: UInt32(status.st_gen)
+        )
     }
 
     private static func regionIdentity(

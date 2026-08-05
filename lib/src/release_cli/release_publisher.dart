@@ -84,6 +84,7 @@ class ReleasePublisher {
     this.runProcess = defaultProcessRunner,
     this.runHookCommand = defaultReleaseHookCommandRunner,
     this.httpClient,
+    this.isMacOSHost,
     BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
   }) : _startBuildProcess = startBuildProcess;
 
@@ -99,6 +100,7 @@ class ReleasePublisher {
   final ProcessRunner runProcess;
   final ReleaseHookCommandRunner runHookCommand;
   final http.Client? httpClient;
+  final bool? isMacOSHost;
   final BuildProcessStarter _startBuildProcess;
 
   Future<PublishManifest> publish({
@@ -443,7 +445,7 @@ class ReleasePublisher {
     );
     await manifest.writeTo(layout.manifestFile);
 
-    var publicationValidator = ReleaseValidator();
+    var publicationValidator = ReleaseValidator(isMacOSHost: isMacOSHost);
     if (signing != null) {
       final publicKeyId = signing.publicKeyId.trim();
       final keyPair = await Ed25519().newKeyPairFromSeed(
@@ -508,6 +510,7 @@ class ReleasePublisher {
         artifactVerifier: strictArtifactVerifier,
         requireIndexSignature: true,
         indexSignatureVerifier: indexSignatureVerifier,
+        isMacOSHost: isMacOSHost,
       );
       output.writeln("Signed final app-archive.json.");
     }
