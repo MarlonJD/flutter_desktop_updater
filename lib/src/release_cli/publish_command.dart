@@ -1,9 +1,11 @@
 import "dart:io";
 
 import "package:args/args.dart";
-import "package:desktop_updater/src/core/release_signature_verifier.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
+import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:path/path.dart" as path;
 
 ArgParser buildPublishParser() {
@@ -29,6 +31,11 @@ ArgParser buildPublishParser() {
     ..addOption(
       "public-keys-env",
       help: "Environment variable containing JSON public key map.",
+    )
+    ..addOption(
+      "key-profile",
+      help:
+          "Feed-bound public key profile; defaults to desktop_updater.keys.json.",
     )
     ..addFlag(
       "initialize-feed",
@@ -100,6 +107,7 @@ Future<int> runPublishCommand(
   required Directory projectRoot,
   required StringSink output,
   Map<String, String>? environment,
+  ReleaseKeySecretStore? keyStore,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildPublishParser().usage);
@@ -162,74 +170,58 @@ Future<int> runPublishCommand(
   final publisher = ReleasePublisher(
     skipBuild: results["skip-build-for-test"] as bool,
   );
-  final signing = await _releaseSigningOptions(
-    results,
+  final profileValue = (results["key-profile"] as String?)?.trim();
+  final hasExplicitSigningOption = const [
+    "public-key-id",
+    "private-key-env",
+    "private-key-file",
+    "public-keys-env",
+  ].any((name) {
+    final value = results[name] as String?;
+    return value != null && value.trim().isNotEmpty;
+  });
+  if (!hasExplicitSigningOption && profileValue == null) {
+    final defaultProfile = defaultReleaseKeyProfileFile(projectRoot);
+    if (!await defaultProfile.exists()) {
+      throw const FormatException(
+        "Canonical release publish requires signed metadata: provide "
+        "--public-key-id, --public-keys-env, and exactly one of "
+        "--private-key-env or --private-key-file, or run release keygen.",
+      );
+    }
+  }
+  if (profileValue != null) {
+    final profileFile = File(
+      path.isAbsolute(profileValue)
+          ? profileValue
+          : path.join(projectRoot.path, profileValue),
+    );
+    if (!await profileFile.exists()) {
+      throw FormatException(
+        "Release key profile was not found: ${profileFile.path}.",
+      );
+    }
+  }
+  final config = await ReleasePublishConfig.load(
+    projectRoot: projectRoot,
+    cliOverrides: overrides,
+  );
+  final signing = await resolveReleaseSigningOptions(
+    results: results,
     projectRoot: projectRoot,
     environment: environment ?? Platform.environment,
+    expectedFeedUrl: config.baseUrl.resolve("app-archive.json"),
+    keyStore: keyStore,
   );
   await publisher.publish(
     projectRoot: projectRoot,
     platform: platform,
     overrides: overrides,
     signing: signing,
+    loadedConfig: config,
     output: output,
   );
   return 0;
-}
-
-Future<ReleaseSigningOptions> _releaseSigningOptions(
-  ArgResults results, {
-  required Directory projectRoot,
-  required Map<String, String> environment,
-}) async {
-  final publicKeyId = results["public-key-id"] as String?;
-  final envName = results["private-key-env"] as String?;
-  final fileValue = results["private-key-file"] as String?;
-  final publicKeysEnvName = results["public-keys-env"] as String?;
-  final hasKeyId = publicKeyId != null && publicKeyId.trim().isNotEmpty;
-  final hasEnv = envName != null && envName.trim().isNotEmpty;
-  final hasFile = fileValue != null && fileValue.trim().isNotEmpty;
-  final hasPublicKeysEnv =
-      publicKeysEnvName != null && publicKeysEnvName.trim().isNotEmpty;
-  if (!hasKeyId && !hasEnv && !hasFile && !hasPublicKeysEnv) {
-    throw const FormatException(
-      "Canonical release publish requires signed metadata: provide "
-      "--public-key-id, --public-keys-env, and exactly one of "
-      "--private-key-env or --private-key-file.",
-    );
-  }
-  if (!hasKeyId || !hasPublicKeysEnv || hasEnv == hasFile) {
-    throw const FormatException(
-      "Publishing signatures require --public-key-id, --public-keys-env, "
-      "and exactly one of --private-key-env or --private-key-file.",
-    );
-  }
-  final publicKeysJson = environment[publicKeysEnvName.trim()];
-  if (publicKeysJson == null || publicKeysJson.trim().isEmpty) {
-    throw FormatException(
-      "Missing environment variable ${publicKeysEnvName.trim()}.",
-    );
-  }
-  final trustedReleasePublicKeys = decodeReleasePublicKeysJson(publicKeysJson);
-  late final String privateKey;
-  if (hasEnv) {
-    final value = environment[envName.trim()];
-    if (value == null || value.trim().isEmpty) {
-      throw FormatException("Missing environment variable ${envName.trim()}.");
-    }
-    privateKey = value;
-  } else {
-    final value = fileValue!.trim();
-    final file = File(
-      path.isAbsolute(value) ? value : path.join(projectRoot.path, value),
-    );
-    privateKey = await file.readAsString();
-  }
-  return ReleaseSigningOptions(
-    publicKeyId: publicKeyId.trim(),
-    privateKeyBase64: privateKey,
-    trustedReleasePublicKeys: trustedReleasePublicKeys,
-  );
 }
 
 int? _optionalInt(ArgResults results, String name) {

@@ -1,3 +1,14 @@
+## 3.1.0
+
+* Added automatic Ed25519 release-key profiles with fingerprint-derived key IDs
+  and idempotent `release keygen` setup.
+* Added protected local-key storage on macOS/Linux and Windows DPAPI storage
+  without plaintext Windows fallback.
+* Added encrypted key export/import, public-only export, existing 3.0 key
+  adoption, and two-phase pending-key rotation.
+* Added profile-backed publish, sign, and validate flows while retaining the
+  complete direct environment/file signing contract for CI.
+
 ## 3.0.0
 
 * **Breaking:** require signed release metadata, pinned public keys, expected

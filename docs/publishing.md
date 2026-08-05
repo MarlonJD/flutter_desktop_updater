@@ -1,34 +1,33 @@
 # Publishing Desktop Updates
 
-Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) before publishing.
+Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow with the 3.1 profile-based signing workflow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) before publishing.
 
-This guide covers the app-owned release publishing flow for desktop_updater 3.0.
+This guide covers the app-owned release publishing flow for desktop_updater 3.1.
 The happy path is:
 
 ```sh
-dart run desktop_updater:release publish \
-  --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
-dart run desktop_updater:release publish \
-  --platform windows \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
-dart run desktop_updater:release publish \
-  --platform linux \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+dart run desktop_updater:release keygen
+dart run desktop_updater:release publish --platform macos
+dart run desktop_updater:release publish --platform windows
+dart run desktop_updater:release publish --platform linux
 ```
 
-Canonical publishing requires all three trust inputs: a pinned key ID, one
-private-key source, and the public-key map. Keep the private key in an
-external secret store; set `DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS` to the
-non-secret JSON map. Add `--initialize-feed` only after independently proving
-that the hosted archive is absent. Lower-level `package`, `app-archive`, and
-candidate-only validation tools do not publish production metadata.
+`keygen` creates one persistent feed-bound profile with an automatic
+fingerprint-derived key ID. It is idempotent and must not be used casually for
+an already-published feed; use `keys adopt` for an existing `stable-2026`-style
+identity. The profile-backed workflow keeps private material in protected
+local storage and does not edit shell profiles or persistent environment
+variables. See [Release key management](release-key-management.md) for moving
+profiles between computers and rotating keys safely.
+
+For CI and established feeds, the complete direct contract remains supported:
+`--public-key-id`, one of `--private-key-env`/`--private-key-file`, and
+`--public-keys-env`. Those flags are advanced/CI guidance, not deprecated.
+Keep private values in an external secret store and set the public-key map as a
+non-secret environment value. Add `--initialize-feed` only after independently
+proving that the hosted archive is absent. Lower-level `package`,
+`app-archive`, and candidate-only validation tools do not publish production
+metadata.
 
 The command builds one platform, packages the release, writes a consistent local
 layout, optionally uploads it, and validates the hosted update path.

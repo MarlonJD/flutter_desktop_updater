@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.0.0
+  desktop_updater: ^3.1.0
 ```
 
 Point your app at the hosted archive:
@@ -54,18 +54,20 @@ updates:
   baseUrl: https://updates.example.com
 ```
 
-Publish one platform:
+Create the feed-bound signing profile once, then publish any desktop platform:
 
 ```sh
-dart run desktop_updater:release publish \
-  --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+dart run desktop_updater:release keygen
+dart run desktop_updater:release publish --platform macos
 ```
 
-Set the private-key environment variable from an external secret store and the
-public-key environment variable to the pinned JSON key map. Add
+The generated `desktop_updater.keys.json` contains public metadata only. Its
+private seed stays outside the repository in the platform-appropriate local
+store. See the [release key management guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/release-key-management.md) for
+encrypted backup/import, existing 3.0 key adoption, and two-phase rotation.
+For CI or an established feed, the advanced direct-signing flags remain
+supported. Set the private-key environment variable from an external secret
+store and the public-key environment variable to the pinned JSON key map. Add
 `--initialize-feed` only when the hosted archive has been independently proven
 absent; otherwise provide the verified existing history.
 

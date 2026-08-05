@@ -154,8 +154,11 @@ Recommended high-level flow:
 
 1. Trigger the workflow from a version tag such as `v3.0.0`, or from a protected manual `workflow_dispatch`.
 2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
-3. Run `dart run desktop_updater:release publish --platform macos` with
-   `--public-key-id`, `--private-key-env`, and `--public-keys-env`.
+3. Run `dart run desktop_updater:release publish --platform macos` with the
+   complete direct signing inputs `--public-key-id`, `--private-key-env` (or
+   `--private-key-file`), and `--public-keys-env`. CI should keep signing
+   material in the runner's secret store; local profiles are the normal
+   developer workflow.
 4. Let the command upload versioned files first, validate hosted `release.json` and artifact bytes, upload `app-archive.json` last, and validate hosted update selection.
 5. Only then mark the release as published.
 

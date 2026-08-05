@@ -8,7 +8,7 @@ if(POLICY CMP0135)
 endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-project(desktop_updater_native VERSION 3.0.0 LANGUAGES C CXX)
+project(desktop_updater_native VERSION 3.1.0 LANGUAGES C CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)

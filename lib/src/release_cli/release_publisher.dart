@@ -106,12 +106,14 @@ class ReleasePublisher {
     required String platform,
     required ReleasePublishOverrides overrides,
     ReleaseSigningOptions? signing,
+    ReleasePublishConfig? loadedConfig,
     required StringSink output,
   }) async {
-    final config = await ReleasePublishConfig.load(
-      projectRoot: projectRoot,
-      cliOverrides: overrides,
-    );
+    final config = loadedConfig ??
+        await ReleasePublishConfig.load(
+          projectRoot: projectRoot,
+          cliOverrides: overrides,
+        );
     if (overrides.notarize && platform != "macos") {
       throw const FormatException(
         "--notarize is only supported with --platform macos.",
