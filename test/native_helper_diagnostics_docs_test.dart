@@ -6,8 +6,30 @@ void main() {
   test("README surfaces native helper diagnostics and current setup", () {
     final source = File("README.md").readAsStringSync();
     final version = _currentPackageVersion();
+    final keygenOffset =
+        source.indexOf("dart run desktop_updater:release keygen");
+    final controllerOffset = source.indexOf("DesktopUpdaterController(");
 
     expect(source, contains("desktop_updater: ^$version"));
+    expect(keygenOffset, greaterThanOrEqualTo(0));
+    expect(controllerOffset, greaterThan(keygenOffset));
+    expect(source, contains("Public key map:"));
+    expect(source, contains("desktop_updater.keys.json"));
+    expect(source, contains("release-key.dukey"));
+    expect(source, contains("expectedPackageIdForCurrentPlatform"));
+    expect(source, contains("PRODUCT_BUNDLE_IDENTIFIER"));
+    expect(source, contains("APPLICATION_ID"));
+    expect(source, contains("JsonFileUpdateRecoveryStore"));
+    expect(source, contains("getApplicationSupportDirectory"));
+    expect(source, contains("`recoveryStore` is required in 3.1"));
+    expect(
+      source,
+      isNot(
+        contains(
+          '"stable-2026": "base64-raw-ed25519-public-key"',
+        ),
+      ),
+    );
     expect(source, contains("## Diagnostics And Recovery"));
     expect(source, isNot(contains("diagnosticsLogPath")));
     expect(
@@ -19,6 +41,16 @@ void main() {
     expect(source, contains("docs/windows-inno-installer-updates.md"));
     expect(source, isNot(contains("native helper diagnostics plan")));
     expect(source, isNot(contains("docs/plans")));
+  });
+
+  test("release key docs bridge keygen output to runtime trust and backup", () {
+    final source = File("docs/release-key-management.md").readAsStringSync();
+
+    expect(source, contains("complete `Public key map`"));
+    expect(source, contains("`trustedReleasePublicKeys`"));
+    expect(source, contains("does not load `desktop_updater.keys.json`"));
+    expect(source, contains("release-key.dukey"));
+    expect(source, contains("outside the repository"));
   });
 
   test("support docs describe app-owned diagnostics levels", () {
@@ -44,6 +76,7 @@ void main() {
 
   test("diagnostics docs explain log locations and helper behavior", () {
     final source = File("docs/diagnostics-and-recovery.md").readAsStringSync();
+    final normalizedSource = source.replaceAll(RegExp(r"\s+"), " ");
 
     expect(
       source,
@@ -54,6 +87,20 @@ void main() {
     expect(source, isNot(contains("diagnosticsLogPath")));
     expect(source, contains("platformLog"));
     expect(source, contains("UpdateRecoveryStore"));
+    expect(
+      normalizedSource,
+      contains(
+        "Every 3.1 `DesktopUpdaterController` therefore requires an "
+        "`UpdateRecoveryStore`",
+      ),
+    );
+    expect(
+      normalizedSource,
+      contains(
+        "A failed write or mismatched readback blocks native install "
+        "dispatch.",
+      ),
+    );
     expect(source, contains("one JSON object per line"));
     expect(source, contains("helper scheduled"));
     expect(source, contains("relaunch attempt"));
@@ -76,7 +123,7 @@ void main() {
 
     expect(
       source,
-      contains("The 3.0 native request has no diagnostics path."),
+      contains("The 3.1 native request has no diagnostics path."),
     );
     expect(
       source,

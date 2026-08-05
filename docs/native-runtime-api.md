@@ -143,7 +143,7 @@ try client.commitAfterExit(reservation)
 ```
 
 Production ZIP and DMG staging rechecks the application bundle and publisher.
-Unsigned staging switches are not part of the 3.0 runtime surface. The install
+Unsigned staging switches are not part of the 3.1 runtime surface. The install
 handoff requires signed descriptor authority and signed application code; PKG
 trust is never disabled.
 

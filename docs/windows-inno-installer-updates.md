@@ -181,8 +181,7 @@ Run:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform windows \
-  --key-profile desktop_updater.keys.json
+  --platform windows
 ```
 
 The generated `release.json` points at the installer `.exe` and uses:
@@ -263,7 +262,7 @@ not add new files to Inno's uninstall log.
 
 ## Diagnostics
 
-The 3.0 native API has no caller-selected diagnostics path. The standalone
+The 3.1 native API has no caller-selected diagnostics path. The standalone
 Windows helper emits fixed, best-effort lifecycle events to the Windows
 Application Event Log under
 `DesktopUpdater.InstallHelper.ProtocolV1`. App-owned Dart and in-memory
@@ -279,10 +278,9 @@ Useful local checks:
 ```sh
 dart run desktop_updater:release doctor --platform windows
 dart run desktop_updater:release publish \
-  --platform windows \
-  --key-profile desktop_updater.keys.json
-dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 2.4.0+240 --key-profile desktop_updater.keys.json
-dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json --key-profile desktop_updater.keys.json
+  --platform windows
+dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 3.0.0+300
+dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json
 ```
 
 Run the full Inno smoke locally on a Windows machine with PowerShell 7 and

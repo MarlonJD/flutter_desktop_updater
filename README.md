@@ -2,8 +2,8 @@
 
 Flutter desktop updater plugin for macOS, Windows, and Linux.
 
-3.0 uses one small signed update index, one signed release descriptor, and one
-verified artifact:
+The 3.1 release uses the signed schema-v3 update flow: one small signed update
+index, one signed release descriptor, and one verified artifact:
 
 ```text
 app-archive.json -> release.json -> app.zip / installer artifact
@@ -25,27 +25,6 @@ dependencies:
   desktop_updater: ^3.1.0
 ```
 
-Point your app at the hosted archive:
-
-Every 3.0 controller requires the expected package identity, pinned release
-keys, and an app-owned `UpdateRecoveryStore`. The snippets below use
-`appRecoveryStore` for that app-owned store.
-
-```dart
-final controller = DesktopUpdaterController(
-  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
-  recoveryStore: appRecoveryStore,
-);
-```
-
-Private update hosts can add runtime authentication headers for update metadata,
-artifacts, and hosted release notes with `requestHeadersProvider`; see
-[Runtime request headers](doc/runtime-request-headers.md).
-
 Add `desktop_updater.yaml` at your app repository root, next to
 `pubspec.yaml`:
 
@@ -54,29 +33,136 @@ updates:
   baseUrl: https://updates.example.com
 ```
 
-Create the feed-bound signing profile once, then publish any desktop platform:
+Generate the feed-bound signing profile before constructing the controller:
 
 ```sh
 dart run desktop_updater:release keygen
-dart run desktop_updater:release publish --platform macos
 ```
 
-The generated `desktop_updater.keys.json` contains public metadata only. Its
-private seed stays outside the repository in the platform-appropriate local
-store. See the [release key management guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/release-key-management.md) for
-encrypted backup/import, existing 3.0 key adoption, and two-phase rotation.
-For an existing 3.0 feed, use the one-time `release keys adopt --input ...
---output ...` migration flow, export the encrypted bundle, and delete the
-plaintext input. CI and other machines import only that encrypted bundle; raw
-private-key environment variables and files are not supported. Add
-`--initialize-feed` only when the hosted archive has been independently proven
-absent; otherwise provide the verified existing history.
+`keygen` prints the generated map and writes the same public metadata to
+`desktop_updater.keys.json`:
 
-Before your first production release, run:
+```text
+Public key map:
+{
+  "release-0123456789abcdef01234567": "base64-raw-ed25519-public-key"
+}
+```
+
+Copy the complete printed map into `trustedReleasePublicKeys`; do not type a
+new key ID or generate a second key. The example values above are placeholders.
+`desktop_updater.keys.json` contains no private key and is safe to review and
+commit. The private seed remains in protected local storage.
+
+Back up the private signing material immediately after `keygen`:
+
+```sh
+dart run desktop_updater:release keys export \
+  --output release-key.dukey \
+  --passphrase-env DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
+```
+
+Set `DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE` to a passphrase of at least 12
+characters before running the command.
+
+Keep `release-key.dukey` outside the repository and store its passphrase
+separately in a password manager or CI secret store. CI and other computers
+restore it with `release keys import`. See the
+[release key management guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/release-key-management.md)
+for backup/import, existing 3.0 key adoption, and two-phase rotation. Existing
+3.0 feeds must use that one-time adoption flow instead of `keygen`.
+
+Every 3.1 controller also requires the expected package identity and an
+app-owned `UpdateRecoveryStore`. The package ID must exactly match the
+`packageId` written into the current platform's `release.json`. The Flutter
+publisher resolves its default as follows:
+
+| Platform | Default package ID source |
+| --- | --- |
+| macOS | `PRODUCT_BUNDLE_IDENTIFIER` in `macos/Runner/Configs/AppInfo.xcconfig` |
+| Windows | `name` in `pubspec.yaml` |
+| Linux | `APPLICATION_ID` in `linux/CMakeLists.txt`; otherwise publishing requires `--package-id` |
+
+If you publish with `--package-id`, use that exact override in the controller.
+Platform identifiers may differ, so select the value at runtime when needed.
+
+`recoveryStore` is required in 3.1. It is not an update-state value; it is a
+durable storage adapter for a pending install marker. Before native install
+handoff, the controller writes the marker and reads it back exactly. On the
+next launch it uses the marker to verify whether the update completed. Copy or
+adapt the repository's
+[file-backed `JsonFileUpdateRecoveryStore`](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/example/lib/json_file_update_recovery_store.dart)
+and place its file in your app's persistent support directory. The complete
+controller setup below uses `path_provider` to resolve that directory:
+
+```sh
+flutter pub add path_provider
+```
+
+```dart
+import "dart:io";
+
+import "package:desktop_updater/desktop_updater.dart";
+import "package:path_provider/path_provider.dart";
+
+import "json_file_update_recovery_store.dart";
+
+// Replace this entire map with the exact "Public key map" printed by keygen.
+const trustedReleasePublicKeys = <String, String>{
+  "release-0123456789abcdef01234567":
+      "base64-raw-ed25519-public-key",
+};
+
+String expectedPackageIdForCurrentPlatform() {
+  if (Platform.isMacOS) return "com.example.app";
+  if (Platform.isWindows) return "example_app";
+  if (Platform.isLinux) return "com.example.app";
+  throw UnsupportedError("desktop_updater requires a desktop platform.");
+}
+
+Future<JsonFileUpdateRecoveryStore> createUpdateRecoveryStore() async {
+  final appSupportDirectory = await getApplicationSupportDirectory();
+  final separator = Platform.pathSeparator;
+  return JsonFileUpdateRecoveryStore(
+    File(
+      "${appSupportDirectory.path}${separator}desktop_updater"
+      "${separator}pending-install-stable.json",
+    ),
+  );
+}
+
+Future<DesktopUpdaterController> createDesktopUpdaterController() async {
+  final recoveryStore = await createUpdateRecoveryStore();
+
+  return DesktopUpdaterController(
+    appArchiveUrl: Uri.parse(
+      "https://updates.example.com/app-archive.json",
+    ),
+    expectedPackageId: expectedPackageIdForCurrentPlatform(),
+    trustedReleasePublicKeys: trustedReleasePublicKeys,
+    recoveryStore: recoveryStore,
+  );
+}
+```
+
+Private update hosts can add runtime authentication headers for update metadata,
+artifacts, and hosted release notes with `requestHeadersProvider`; see
+[Runtime request headers](doc/runtime-request-headers.md).
+
+Before the first production publish, verify the platform toolchain:
 
 ```sh
 dart run desktop_updater:release doctor --platform macos
 ```
+
+Then publish the platform after the generated public key is pinned in the app:
+
+```sh
+dart run desktop_updater:release publish --platform macos
+```
+
+Add `--initialize-feed` only when the hosted archive has been independently
+proven absent; otherwise provide the verified existing history.
 
 With only `updates.baseUrl`, publish creates an upload-ready package under
 `dist/desktop_updater` and prints the manual upload and validate instructions.
@@ -107,7 +193,7 @@ authority, owned stage provenance, explicit install target proof, mount and
 reparse rejection, a one-shot handoff, Windows Unicode paths and relative
 redirects, and Release NuGet packages with third-party notices. Target-host
 evidence is commit-bound: the audited baseline normal jobs passed, while each
-3.0 release candidate must rerun the named macOS, Windows, Linux, and Windows
+3.1 release candidate must rerun the named macOS, Windows, Linux, and Windows
 VM repetition gates for its exact commit. Windows junction/reparse and Linux
 mount/bind transaction mutation plus native transaction recovery journal work
 remain separately gated; signed DMG, PKG, and Inno smokes are `not run` until
@@ -223,16 +309,16 @@ flags, and the built-in card, sliver, and dialog behavior for each state.
 ## Release Notes
 
 Use `releaseNotesLoader` when notes should depend on the selected descriptor,
-platform, channel, locale, account, or environment:
+platform, channel, locale, account, or environment. These examples reuse the
+generated key map and recovery-store factory from Quick Start:
 
 ```dart
+final recoveryStore = await createUpdateRecoveryStore();
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
-  recoveryStore: appRecoveryStore,
+  expectedPackageId: expectedPackageIdForCurrentPlatform(),
+  trustedReleasePublicKeys: trustedReleasePublicKeys,
+  recoveryStore: recoveryStore,
   releaseNotesLoader: (descriptor) {
     return myNotesApi.fetch(
       version: descriptor.version,
@@ -246,13 +332,12 @@ final controller = DesktopUpdaterController(
 For a simple hosted file, pass `releaseNotesUrl` instead:
 
 ```dart
+final recoveryStore = await createUpdateRecoveryStore();
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
-  recoveryStore: appRecoveryStore,
+  expectedPackageId: expectedPackageIdForCurrentPlatform(),
+  trustedReleasePublicKeys: trustedReleasePublicKeys,
+  recoveryStore: recoveryStore,
   releaseNotesUrl: Uri.parse("https://updates.example.com/release-notes.json"),
 );
 ```
@@ -336,8 +421,9 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-3.0.0 adds explicit app-owned diagnostics and recovery wiring for support flows. The default stays
-quiet: no package-owned files, uploads, telemetry, or storage.
+The 3.1.0 release retains the explicit app-owned diagnostics and recovery wiring
+introduced in 3.0. The default stays quiet: no package-owned files, uploads,
+telemetry, or storage.
 
 Use in-memory problem reports for normal support, add an app-owned diagnostics
 sink for durable Dart lifecycle logs, and add an app-owned
@@ -358,17 +444,16 @@ authenticity. The same key map verifies both `app-archive.json` and the selected
 `release.json` before policy selection or artifact download:
 
 ```dart
+final recoveryStore = await createUpdateRecoveryStore();
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
-  recoveryStore: appRecoveryStore,
+  expectedPackageId: expectedPackageIdForCurrentPlatform(),
+  trustedReleasePublicKeys: trustedReleasePublicKeys,
+  recoveryStore: recoveryStore,
 );
 ```
 
-`trustedReleasePublicKeys` is required for every 3.0 controller and low-level
+`trustedReleasePublicKeys` is required for every 3.1 controller and low-level
 update client. Each release must authenticate against one of the pinned Ed25519
 keys before policy selection or artifact download. Native install handoff also
 requires a signed `release.json` whose key is sealed into the native helper
@@ -416,6 +501,8 @@ and the local Apple-trust smoke harness, see
   written, how helper diagnostics work, and how to wire support collection.
 - [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
+- [3.0 to 3.1 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/3.0-to-3.1.md): profile-based release
+  signing, one-time key adoption, and encrypted bundle import.
 - [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md): breaking contract,
   explicit transactions, pinned trust, and migration commands.
 - [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md): historical migration
