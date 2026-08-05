@@ -5,6 +5,7 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
@@ -15,6 +16,20 @@ import "package:path/path.dart" as path;
 import "../fixtures/update_server.dart";
 
 void main() {
+  test("validate parser rejects removed direct signing flags", () {
+    for (final option in const [
+      "--public-key-id",
+      "--private-key-env",
+      "--private-key-file",
+      "--public-keys-env",
+    ]) {
+      expect(
+        () => buildValidateParser().parse([option, "value"]),
+        throwsA(isA<FormatException>()),
+      );
+    }
+  });
+
   test("validate simulates an older version and verifies hosted artifact",
       () async {
     final fixture = await createHostedPublishFixture(
@@ -307,16 +322,11 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
-          "--public-keys-env",
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+          "--key-profile",
+          fixture.profileFile.path,
         ],
         projectRoot: fixture.projectRoot,
         output: output,
-        environment: {
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
-            _publicKeyId: fixture.publicKey,
-          }),
-        },
       );
 
       expect(exitCode, 0);
@@ -358,16 +368,11 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
-          "--public-keys-env",
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+          "--key-profile",
+          fixture.profileFile.path,
         ],
         projectRoot: fixture.projectRoot,
         output: output,
-        environment: {
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
-            _publicKeyId: fixture.publicKey,
-          }),
-        },
       );
 
       expect(exitCode, 1);
@@ -416,16 +421,11 @@ void main() {
           fixture.manifestFile.path,
           "--from-version",
           "2.0.0+200",
-          "--public-keys-env",
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS",
+          "--key-profile",
+          fixture.profileFile.path,
         ],
         projectRoot: fixture.projectRoot,
         output: output,
-        environment: {
-          "DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS": jsonEncode({
-            _publicKeyId: fixture.publicKey,
-          }),
-        },
       );
 
       expect(exitCode, 1);
@@ -446,12 +446,14 @@ class HostedPublishFixture {
     required this.manifestFile,
     required this.server,
     required this.publicKey,
+    required this.profileFile,
   });
 
   final Directory projectRoot;
   final File manifestFile;
   final UpdateServer server;
   final String publicKey;
+  final File profileFile;
 
   Future<void> delete() async {
     await server.close();
@@ -497,6 +499,19 @@ Future<HostedPublishFixture> createHostedPublishFixture({
   final algorithm = Ed25519();
   final keyPair = await algorithm.newKeyPairFromSeed(_privateSeed);
   final publicKey = await keyPair.extractPublicKey();
+  final profileFile = File(
+    path.join(projectRoot.path, "desktop_updater.keys.json"),
+  );
+  await writeReleaseKeyProfile(
+    profileFile,
+    ReleaseKeyProfile(
+      profileId: "0123456789abcdef0123456789abcdef",
+      feedUrl: server.uri.resolve("app-archive.json").toString(),
+      activeKeyId: _publicKeyId,
+      pendingKeyId: null,
+      publicKeys: {_publicKeyId: base64Encode(publicKey.bytes)},
+    ),
+  );
 
   await File(path.join(webRoot.path, "app-archive.json")).writeAsString(
     "${const JsonEncoder.withIndent("  ").convert({
@@ -572,6 +587,7 @@ Future<HostedPublishFixture> createHostedPublishFixture({
     manifestFile: manifestFile,
     server: server,
     publicKey: base64Encode(publicKey.bytes),
+    profileFile: profileFile,
   );
 }
 

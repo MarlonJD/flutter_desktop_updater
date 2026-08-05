@@ -106,12 +106,14 @@ class ReleasePublisher {
     required String platform,
     required ReleasePublishOverrides overrides,
     ReleaseSigningOptions? signing,
+    ReleasePublishConfig? loadedConfig,
     required StringSink output,
   }) async {
-    final config = await ReleasePublishConfig.load(
-      projectRoot: projectRoot,
-      cliOverrides: overrides,
-    );
+    final config = loadedConfig ??
+        await ReleasePublishConfig.load(
+          projectRoot: projectRoot,
+          cliOverrides: overrides,
+        );
     if (overrides.notarize && platform != "macos") {
       throw const FormatException(
         "--notarize is only supported with --platform macos.",
@@ -453,7 +455,7 @@ class ReleasePublisher {
       if (activePublicKey == null ||
           activePublicKey != base64Encode(publicKey.bytes)) {
         throw const FormatException(
-          "Active signing key does not match --public-keys-env.",
+          "Active signing key does not match the release key profile.",
         );
       }
       final strictArtifactVerifier = ArtifactVerifier(

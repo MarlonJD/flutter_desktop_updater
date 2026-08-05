@@ -1,3 +1,24 @@
+## 3.1.0
+
+* **Breaking:** remove the 3.0 direct environment/file release-signing command
+  path. `release publish`, `release sign`, and `release validate` now use only
+  the feed-bound `desktop_updater.keys.json` profile or `--key-profile`.
+* **Breaking:** make standalone `verify` profile-backed and remove its direct
+  public-key environment input.
+* **Breaking:** make `keys adopt` migration-only. It accepts one strict JSON
+  input, preserves the existing key ID, writes a profile, and exports an
+  encrypted bundle; plaintext adoption input must be deleted afterward.
+* Add the [3.0 to 3.1 release-key guide](docs/migration/3.0-to-3.1.md).
+
+* Added automatic Ed25519 release-key profiles with fingerprint-derived key IDs
+  and idempotent `release keygen` setup.
+* Added protected local-key storage on macOS/Linux and Windows DPAPI storage
+  without plaintext Windows fallback.
+* Added encrypted key export/import, public-only export, existing 3.0 key
+  adoption, and two-phase pending-key rotation.
+* Added profile-backed publish, sign, and validate flows; the direct
+  environment/file signing contract from 3.0 was removed in 3.1.0.
+
 ## 3.0.0
 
 * **Breaking:** require signed release metadata, pinned public keys, expected

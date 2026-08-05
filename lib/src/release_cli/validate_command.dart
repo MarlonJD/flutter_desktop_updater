@@ -7,8 +7,8 @@ import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
-import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
+import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:http/http.dart" as http;
 import "package:path/path.dart" as path;
@@ -24,34 +24,40 @@ ArgParser buildValidateParser() {
       help: "Validate an unsigned candidate without production trust checks.",
     )
     ..addOption(
-      "public-keys-env",
-      help: "Environment variable containing JSON public key map.",
+      "key-profile",
+      help:
+          "Feed-bound public key profile; defaults to desktop_updater.keys.json.",
     );
 }
 
 Future<int> runValidateCommand(
   ArgResults results, {
+  required Directory projectRoot,
   required StringSink output,
-  Map<String, String>? environment,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildValidateParser().usage);
     return 0;
   }
 
-  final manifestFile = File(_required(results, "manifest"));
+  final manifestFile = _resolveManifestFile(
+    projectRoot,
+    _required(results, "manifest"),
+  );
+  final manifest = await PublishManifest.readFrom(manifestFile);
   final fromVersion = results["from-version"] as String?;
   final candidateOnly = results["candidate-only"] as bool;
   if (candidateOnly) {
     output.writeln(
       "candidate-only: unsigned validation; production validation "
-      "requires --public-keys-env.",
+      "requires a release key profile.",
     );
   }
-  final publicKeys = _releasePublicKeys(
+  final publicKeys = await resolveReleasePublicKeys(
     results: results,
+    projectRoot: projectRoot,
     candidateOnly: candidateOnly,
-    environment: environment ?? Platform.environment,
+    expectedFeedUrl: manifest.appArchive.url,
   );
   await ReleaseValidator(
     artifactVerifier: !candidateOnly
@@ -71,23 +77,6 @@ Future<int> runValidateCommand(
     output: output,
   );
   return 0;
-}
-
-Map<String, String>? _releasePublicKeys({
-  required ArgResults results,
-  required bool candidateOnly,
-  required Map<String, String> environment,
-}) {
-  if (candidateOnly) {
-    return null;
-  }
-
-  final envName = _required(results, "public-keys-env");
-  final value = environment[envName];
-  if (value == null || value.trim().isEmpty) {
-    throw FormatException("Missing environment variable $envName.");
-  }
-  return decodeReleasePublicKeysJson(value);
 }
 
 class ReleaseValidator {
@@ -326,6 +315,13 @@ class ReleaseValidator {
 String _artifactExtensionForUrl(Uri url) {
   final extension = path.extension(url.path);
   return extension.isEmpty ? ".bin" : extension;
+}
+
+File _resolveManifestFile(Directory projectRoot, String value) {
+  final trimmed = value.trim();
+  return File(
+    path.isAbsolute(trimmed) ? trimmed : path.join(projectRoot.path, trimmed),
+  );
 }
 
 DesktopVersionInfo _currentVersionForValidation({
