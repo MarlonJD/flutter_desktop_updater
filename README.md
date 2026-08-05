@@ -2,8 +2,8 @@
 
 Flutter desktop updater plugin for macOS, Windows, and Linux.
 
-3.0 uses one small signed update index, one signed release descriptor, and one
-verified artifact:
+The 3.1 release uses the 3.0 update schema: one small signed update index, one
+signed release descriptor, and one verified artifact:
 
 ```text
 app-archive.json -> release.json -> app.zip / installer artifact
@@ -27,7 +27,7 @@ dependencies:
 
 Point your app at the hosted archive:
 
-Every 3.0 controller requires the expected package identity, pinned release
+Every 3.1 controller requires the expected package identity, pinned release
 keys, and an app-owned `UpdateRecoveryStore`. The snippets below use
 `appRecoveryStore` for that app-owned store.
 
@@ -107,7 +107,7 @@ authority, owned stage provenance, explicit install target proof, mount and
 reparse rejection, a one-shot handoff, Windows Unicode paths and relative
 redirects, and Release NuGet packages with third-party notices. Target-host
 evidence is commit-bound: the audited baseline normal jobs passed, while each
-3.0 release candidate must rerun the named macOS, Windows, Linux, and Windows
+3.1 release candidate must rerun the named macOS, Windows, Linux, and Windows
 VM repetition gates for its exact commit. Windows junction/reparse and Linux
 mount/bind transaction mutation plus native transaction recovery journal work
 remain separately gated; signed DMG, PKG, and Inno smokes are `not run` until
@@ -336,8 +336,9 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-3.0.0 adds explicit app-owned diagnostics and recovery wiring for support flows. The default stays
-quiet: no package-owned files, uploads, telemetry, or storage.
+The 3.1.0 release retains the explicit app-owned diagnostics and recovery wiring
+introduced in 3.0. The default stays quiet: no package-owned files, uploads,
+telemetry, or storage.
 
 Use in-memory problem reports for normal support, add an app-owned diagnostics
 sink for durable Dart lifecycle logs, and add an app-owned
@@ -368,7 +369,7 @@ final controller = DesktopUpdaterController(
 );
 ```
 
-`trustedReleasePublicKeys` is required for every 3.0 controller and low-level
+`trustedReleasePublicKeys` is required for every 3.1 controller and low-level
 update client. Each release must authenticate against one of the pinned Ed25519
 keys before policy selection or artifact download. Native install handoff also
 requires a signed `release.json` whose key is sealed into the native helper
@@ -416,6 +417,8 @@ and the local Apple-trust smoke harness, see
   written, how helper diagnostics work, and how to wire support collection.
 - [GitHub Actions CI/CD guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/github-actions-ci-cd.md): longer CI
   skeletons and secret handling.
+- [3.0 to 3.1 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/3.0-to-3.1.md): profile-based release
+  signing, one-time key adoption, and encrypted bundle import.
 - [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md): breaking contract,
   explicit transactions, pinned trust, and migration commands.
 - [1.x to 2.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/1.x-to-2.0.md): historical migration
