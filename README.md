@@ -16,7 +16,7 @@ artifact length and SHA-256 before installation.
 
 ## Quick Start
 
-Upgrading from 2.x or 3.0? Read the [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md) and the [3.0 to 3.1 release-key guide](docs/migration/3.0-to-3.1.md) before changing the dependency. The 3.1 release removes direct release-key options; removed paths are not compatibility aliases.
+Upgrading from 2.x or 3.0? Read the [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md) and the [3.0 to 3.1 release-key guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/3.0-to-3.1.md) before changing the dependency. The 3.1 release removes direct release-key options; removed paths are not compatibility aliases.
 
 Add the package:
 
