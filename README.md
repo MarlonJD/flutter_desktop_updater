@@ -25,19 +25,25 @@ dependencies:
   desktop_updater: ^3.1.0
 ```
 
-Point your app at the hosted archive:
+Point your app at the hosted archive and construct the 3.1 controller:
 
 Every 3.1 controller requires the expected package identity, pinned release
-keys, and an app-owned `UpdateRecoveryStore`. The snippets below use
-`appRecoveryStore` for that app-owned store.
+keys, and an app-owned `UpdateRecoveryStore`. The snippets below assume
+`appRecoveryStore` is your durable implementation of that interface. The
+package does not choose a storage backend; the repository example includes a
+[file-backed implementation](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/example/lib/json_file_update_recovery_store.dart).
 
 ```dart
+import "package:desktop_updater/desktop_updater.dart";
+
+const trustedReleasePublicKeys = <String, String>{
+  "stable-2026": "base64-raw-ed25519-public-key",
+};
+
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
   expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
+  trustedReleasePublicKeys: trustedReleasePublicKeys,
   recoveryStore: appRecoveryStore,
 );
 ```
