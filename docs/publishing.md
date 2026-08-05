@@ -10,6 +10,10 @@ The happy path is:
 
 ```sh
 dart run desktop_updater:release keygen
+dart run desktop_updater:release keys export \
+  --output release-key.dukey \
+  --passphrase-env DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
+dart run desktop_updater:release doctor --platform macos
 dart run desktop_updater:release publish --platform macos
 dart run desktop_updater:release publish --platform windows
 dart run desktop_updater:release publish --platform linux
@@ -22,6 +26,13 @@ identity. The profile-backed workflow keeps private material in protected
 local storage and does not edit shell profiles or persistent environment
 variables. See [Release key management](release-key-management.md) for moving
 profiles between computers and rotating keys safely.
+
+Before the first publish, copy the exact `Public key map` printed by `keygen`
+into the application's `trustedReleasePublicKeys`, ship that pinned trust with
+the client, and keep the encrypted `release-key.dukey` backup outside the
+repository. The [README quick start](../README.md#quick-start) shows the
+complete controller setup, including platform-specific package IDs and the
+required durable recovery store.
 
 The default public profile is `desktop_updater.keys.json` in the application
 project root, so the commands below omit `--key-profile`. Pass that option only
@@ -243,7 +254,7 @@ stores the Ed25519 signature inline:
 ```json
 "signature": {
   "algorithm": "ed25519",
-  "publicKeyId": "stable-2026",
+  "publicKeyId": "release-0123456789abcdef01234567",
   "value": "base64-raw-ed25519-signature"
 }
 ```
@@ -254,14 +265,17 @@ length, and SHA-256. It does not replace app-owned platform trust: Authenticode,
 Apple Developer ID notarization, native package signing, store review, and
 Linux repository signing remain the app publisher's responsibility.
 
-Production Flutter apps should pin the corresponding public keys at runtime:
+Production Flutter apps should pin the corresponding public keys at runtime.
+Here, `appRecoveryStore` is the concrete durable `UpdateRecoveryStore` created
+in the [README quick start](../README.md#quick-start):
 
 ```dart
 final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
   expectedPackageId: "com.example.app",
   trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
+    "release-0123456789abcdef01234567":
+        "base64-raw-ed25519-public-key",
   },
   recoveryStore: appRecoveryStore,
 );
@@ -570,7 +584,8 @@ final controller = DesktopUpdaterController(
   appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
   expectedPackageId: "com.example.app",
   trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
+    "release-0123456789abcdef01234567":
+        "base64-raw-ed25519-public-key",
   },
   recoveryStore: appRecoveryStore,
   requestHeadersProvider: (source) async {
@@ -607,7 +622,9 @@ URLs, signed URLs, proxy URLs, or app-owned request headers.
 
 ## Common Minimum Setup
 
-Do this once in the app repository.
+Do this once in the app repository. The
+[README quick start](../README.md#quick-start) contains the copy-ready
+controller and recovery-store wiring; this section focuses on publishing.
 
 1. Add the runtime dependency:
 
@@ -616,20 +633,7 @@ dependencies:
   desktop_updater: ^3.1.0
 ```
 
-2. Point the app at the hosted archive:
-
-```dart
-final controller = DesktopUpdaterController(
-  appArchiveUrl: Uri.parse("https://updates.example.com/app-archive.json"),
-  expectedPackageId: "com.example.app",
-  trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
-  },
-  recoveryStore: appRecoveryStore,
-);
-```
-
-3. Add `desktop_updater.yaml` at the app repository root, next to
+2. Add `desktop_updater.yaml` at the app repository root, next to
    `pubspec.yaml`:
 
 ```yaml
@@ -661,7 +665,30 @@ https://updates.example.com/releases/3.1.0/macos/release.json
 https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip
 ```
 
-Run the doctor before the first production release for each platform:
+3. Generate the feed-bound signing profile:
+
+```sh
+dart run desktop_updater:release keygen
+```
+
+Copy the exact `Public key map` printed by `keygen` into the controller's
+`trustedReleasePublicKeys`. Use the current platform's exact package identity
+for `expectedPackageId`, and provide the required durable
+`UpdateRecoveryStore`, as shown in the README. Commit
+`desktop_updater.keys.json`; it contains public metadata only.
+
+Back up the private signing material before publishing:
+
+```sh
+dart run desktop_updater:release keys export \
+  --output release-key.dukey \
+  --passphrase-env DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
+```
+
+Keep the encrypted bundle outside the repository and keep the passphrase in a
+separate password manager or CI secret store.
+
+4. Run the doctor before the first production release for each platform:
 
 ```sh
 dart run desktop_updater:release doctor --platform macos
@@ -702,7 +729,7 @@ Warnings to expect before production hardening:
   notarized, stapled, Gatekeeper-accepted application code. Unsigned
   installation is rejected before helper handoff.
 
-4. Keep `pubspec.yaml` version current:
+5. Keep `pubspec.yaml` version current:
 
 ```yaml
 version: 3.1.0+310
@@ -718,7 +745,7 @@ dart run desktop_updater:release publish \
   --build-number 310
 ```
 
-5. Publish one platform:
+6. Publish one platform:
 
 ```sh
 dart run desktop_updater:release publish \
@@ -751,7 +778,7 @@ the index; upload versioned release files and artifacts first, then publish
 testing, label it candidate-only and validate it only with `--candidate-only`;
 do not publish it as a production feed.
 
-6. Validate after manual upload:
+7. Validate after manual upload:
 
 ```sh
 dart run desktop_updater:release validate \

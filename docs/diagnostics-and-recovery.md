@@ -15,7 +15,7 @@ standalone helpers separately use fixed platform-owned sinks described below.
 | In-memory problem report | No path | Package keeps it in memory | When check, download, verify, stage, or install handoff fails | Show/copy `UpdateFailed.report.toPlainText()` or use `onProblemReport` after a user action |
 | Dart lifecycle log | No path unless your app supplies a sink | Your `UpdateDiagnosticsSink` | While the Flutter process is running update checks, downloads, verification, staging, and native handoff | Persist redacted `UpdateDiagnosticEntry` lines in your app-owned support location |
 | Native helper log | Windows Application Event Log; Linux syslog plus helper-owned `events.jsonl` | The helper selects a fixed `platformLog` sink; the caller does not provide a path | After the app process hands off install, rollback, cleanup, recovery, and relaunch work | Collect the platform log with user consent; do not expect a caller-selected JSONL file |
-| Pending install recovery marker | No marker unless your app supplies a store | Your `UpdateRecoveryStore` | Immediately before native install handoff, then cleared after a verified relaunch | Turn "the app relaunched but stayed on the old version" into `UpdateFailed(report)` on next startup |
+| Pending install recovery marker | App-owned durable storage; the package selects no path | Your required `UpdateRecoveryStore` | Immediately before native install handoff, then cleared after a verified relaunch | Turn "the app relaunched but stayed on the old version" into `UpdateFailed(report)` on next startup |
 | Cleanup report | In memory on the controller | Optional `onCleanupReport` callback | After install scheduling or cleanup evidence is available | Save scheduling or cleanup evidence in your app-owned audit trail |
 
 ## Recommended Setup
@@ -25,11 +25,13 @@ support workflow needs them.
 
 1. **In-memory problem report only.** Use the default problem report for
    ordinary UI support.
-2. **App-owned Dart lifecycle log.** Add a Dart lifecycle sink when support
+2. **Required app-owned recovery store.** Every 3.1 controller supplies a
+   durable `UpdateRecoveryStore`, even when no extra support logging is needed.
+3. **App-owned Dart lifecycle log.** Add a Dart lifecycle sink when support
    needs a durable update flow log.
-3. **Platform helper log plus recovery store.** Add `UpdateRecoveryStore` when
-   support needs post-relaunch state and collect the platform-owned helper log
-   when post-exit evidence is required.
+4. **Platform helper log plus recovery store.** Collect the platform-owned
+   helper log alongside the required recovery marker when post-exit evidence
+   is needed.
 
 Do not present a helper path as the destination of standalone helper events.
 Pick an app-owned support directory for your Dart diagnostics sink, show that
@@ -104,7 +106,8 @@ final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
   expectedPackageId: "com.example.app",
   trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
+    "release-0123456789abcdef01234567":
+        "base64-raw-ed25519-public-key",
   },
   recoveryStore: appRecoveryStore,
   diagnosticsRecorder: UpdateDiagnosticsRecorder(
@@ -214,9 +217,9 @@ lose the staged update.
 ## Recovery Store
 
 Platform helper diagnostics tell you what happened inside the helper. They do
-not by themselves decide whether the next app launch succeeded. Add an
-`UpdateRecoveryStore` when you want the next startup to detect unfinished or
-unverified installs.
+not by themselves decide whether the next app launch succeeded. Every 3.1
+`DesktopUpdaterController` therefore requires an `UpdateRecoveryStore`; it is
+not optional support state.
 
 Flutter `UpdateRecoveryStore` is not a native transaction journal. It records
 an app-owned expectation across relaunch; it does not provide a cross-process
@@ -253,20 +256,25 @@ final controller = DesktopUpdaterController(
   appArchiveUrl: archiveUrl,
   expectedPackageId: "com.example.app",
   trustedReleasePublicKeys: const {
-    "stable-2026": "base64-raw-ed25519-public-key",
+    "release-0123456789abcdef01234567":
+        "base64-raw-ed25519-public-key",
   },
   recoveryStore: AppUpdateRecoveryStore(),
 );
 ```
 
-When a recovery store is present, `restartApp()` writes a pending marker before
-native handoff. On the next startup, `DesktopUpdaterController` checks the
-marker before the first automatic update check. If the current app version does
-not match the expected update version or build number, the controller enters
-`UpdateFailed` with a redacted problem report.
+The store must complete `writePendingInstall` only after durable replacement
+and exact readback are possible. Copy or adapt the repository's
+[file-backed implementation](../example/lib/json_file_update_recovery_store.dart)
+instead of using an in-memory store in production.
 
-Store read, write, and clear failures are recorded as diagnostics warnings and
-do not crash startup or block native install scheduling.
+Before native handoff, `restartApp()` writes a pending marker and immediately
+reads it back. A failed write or mismatched readback blocks native install
+dispatch. On the next startup, `DesktopUpdaterController` checks the marker
+before the first automatic update check. If the current app version does not
+match the expected update version or build number, the controller enters
+`UpdateFailed` with a redacted problem report. Startup read failures and marker
+cleanup failures are recorded as warnings so they do not crash startup.
 
 ## Support Flow
 

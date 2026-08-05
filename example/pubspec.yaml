@@ -1,5 +1,5 @@
 name: desktop_updater_example
-description: Demonstrates the desktop_updater 3.0 signed zip-first update flow.
+description: Demonstrates the desktop_updater 3.1 signed zip-first update flow.
 publish_to: "none"
 version: "2.0.1+201"
 

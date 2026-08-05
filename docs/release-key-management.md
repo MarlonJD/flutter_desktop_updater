@@ -10,9 +10,6 @@ From the application project that contains `desktop_updater.yaml`:
 
 ```sh
 dart run desktop_updater:release keygen
-dart run desktop_updater:release publish --platform macos
-dart run desktop_updater:release publish --platform windows
-dart run desktop_updater:release publish --platform linux
 ```
 
 `keygen` resolves the exact `updates.baseUrl/app-archive.json` feed, generates
@@ -30,6 +27,40 @@ repair a missing private secret by silently generating a new key.
 
 The profile is safe to review and commit. It contains no private seed,
 passphrase, secret-store path, or environment value.
+
+`keygen` also prints the profile's complete `Public key map`. Copy that map
+unchanged into the application's `trustedReleasePublicKeys` before publishing
+or shipping the client:
+
+```dart
+const trustedReleasePublicKeys = <String, String>{
+  "release-0123456789abcdef01234567":
+      "base64-raw-ed25519-public-key",
+};
+```
+
+The values above are placeholders showing the generated shape. Use the exact
+key ID and Base64 public key printed by your own `keygen` command. The runtime
+does not load `desktop_updater.keys.json`: trust must remain pinned in the
+compiled application instead of following a mutable local file.
+
+Create an encrypted backup before the first publish:
+
+```sh
+dart run desktop_updater:release keys export \
+  --output release-key.dukey \
+  --passphrase-env DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
+```
+
+Keep the bundle outside the repository and keep its passphrase in a separate
+password manager or CI secret store. After the public map is pinned and the
+backup is stored, publish each required platform:
+
+```sh
+dart run desktop_updater:release publish --platform macos
+dart run desktop_updater:release publish --platform windows
+dart run desktop_updater:release publish --platform linux
+```
 
 Use `--config`, `--base-url`, or `--key-profile` when the project uses a
 non-default location.
