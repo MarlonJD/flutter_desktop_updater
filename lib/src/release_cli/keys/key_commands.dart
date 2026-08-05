@@ -66,13 +66,12 @@ Future<int> runKeysCommand(
     output.writeln(buildKeysParser().usage);
     return 0;
   }
-  final command = results.command!;
-  final child = command.command;
+  final child = results.command;
   if (child == null || (child["help"] as bool)) {
     output.writeln(buildKeysParser().usage);
     return 0;
   }
-  switch (command.name) {
+  switch (child.name) {
     case "show":
       final manager = await _managerFromProfileCommand(
         child,
@@ -192,7 +191,7 @@ Future<int> runKeysCommand(
       await manager.activate(output);
       return 0;
   }
-  throw FormatException("Unsupported key command: ${command.name}.");
+  throw FormatException("Unsupported key command: ${child.name}.");
 }
 
 ArgParser _profileCommandParser() {

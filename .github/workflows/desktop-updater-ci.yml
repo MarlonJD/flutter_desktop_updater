@@ -172,7 +172,7 @@ jobs:
         run: dart format --set-exit-if-changed .
       - name: Analyze
         run: flutter analyze --no-fatal-infos
-      - name: Test complete Dart surface
+      - name: Test Dart surface
         if: needs.changes.outputs.full == 'true'
         run: flutter test --no-pub
       - name: Test release CLI surface
