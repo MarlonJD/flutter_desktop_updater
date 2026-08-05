@@ -2,8 +2,8 @@
 
 Flutter desktop updater plugin for macOS, Windows, and Linux.
 
-The 3.1 release uses the 3.0 update schema: one small signed update index, one
-signed release descriptor, and one verified artifact:
+The 3.1 release uses the signed schema-v3 update flow: one small signed update
+index, one signed release descriptor, and one verified artifact:
 
 ```text
 app-archive.json -> release.json -> app.zip / installer artifact

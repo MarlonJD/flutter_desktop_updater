@@ -552,7 +552,7 @@ Store failures are captured as diagnostics warnings and do not crash startup or
 block install handoff.
 
 For a durable app-owned log, configure an `UpdateDiagnosticsRecorder` sink.
-The 3.0 native API does not expose a caller-selected diagnostics path. The
+The 3.1 native API does not expose a caller-selected diagnostics path. The
 standalone protocol-v1 helpers convert diagnostics to a fixed `platformLog`
 destination. Use the `UpdateDiagnosticsRecorder` example above for durable
 app-owned lifecycle logs.

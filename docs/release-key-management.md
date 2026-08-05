@@ -129,11 +129,15 @@ a separately managed client-trust migration.
 
 ```sh
 dart run desktop_updater:release keys show
-dart run desktop_updater:release sign --key-profile desktop_updater.keys.json \
+dart run desktop_updater:release sign \
   --config desktop_updater.yaml --release dist/desktop_updater/releases/.../release.json
-dart run desktop_updater:release validate --key-profile desktop_updater.keys.json \
+dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
+
+These commands use the default `desktop_updater.keys.json` profile. Add
+`--key-profile config/release.keys.json` only when the profile is stored at a
+custom path, and use that same path for every profile-backed command.
 
 Profile-backed `publish` and `sign` bind the profile to the exact configured
 `app-archive.json` URL. Profile-backed `validate` binds it to the feed URL in

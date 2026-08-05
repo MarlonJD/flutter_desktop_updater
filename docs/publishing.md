@@ -1,6 +1,9 @@
 # Publishing Desktop Updates
 
-Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow with the 3.1 profile-based signing workflow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) and [3.0 to 3.1 release-key guide](migration/3.0-to-3.1.md) before publishing.
+New releases use the schema-v3 update flow with the 3.1 profile-based signing
+workflow. If you are upgrading an existing 3.0 feed, follow the [3.0 to 3.1
+release-key guide](migration/3.0-to-3.1.md) before publishing; the older 2.x
+bridge is documented in the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md).
 
 This guide covers the app-owned release publishing flow for desktop_updater 3.1.
 The happy path is:
@@ -20,6 +23,11 @@ local storage and does not edit shell profiles or persistent environment
 variables. See [Release key management](release-key-management.md) for moving
 profiles between computers and rotating keys safely.
 
+The default public profile is `desktop_updater.keys.json` in the application
+project root, so the commands below omit `--key-profile`. Pass that option only
+when the profile was created at a custom path, for example
+`--key-profile config/release.keys.json`.
+
 For CI and established feeds, import an encrypted release-key bundle into the
 runner's protected local key store and use the same profile-backed commands.
 Raw private-key environment variables and files are not supported. Add
@@ -35,7 +43,6 @@ Build-time Dart defines can be forwarded to Flutter with repeated
 
 ```sh
 dart run desktop_updater:release publish --platform windows \
-  --key-profile desktop_updater.keys.json \
   --dart-define=MY_VAR=value \
   --dart-define=FEATURE_FLAG=true
 ```
@@ -54,7 +61,6 @@ For a native macOS application, select one explicit Xcode container and scheme:
 ```sh
 dart run desktop_updater release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --project-type xcode \
   --xcode-workspace Example.xcworkspace \
   --xcode-scheme Example
@@ -73,7 +79,6 @@ installed tree:
 ```sh
 dart run desktop_updater release publish \
   --platform linux \
-  --key-profile desktop_updater.keys.json \
   --project-type cmake \
   --cmake-source . \
   --cmake-build-directory out/release \
@@ -81,7 +86,7 @@ dart run desktop_updater release publish \
   --executable-relative-path bin/example \
   --app-name Example \
   --package-id com.example.app \
-  --version 3.0.0
+  --version 3.1.0
 ```
 
 The adapter configures and builds the target, then runs `cmake --install` into
@@ -146,12 +151,12 @@ best release for the current platform, channel, and installed version.
   "appName": "Example App",
   "items": [
     {
-      "version": "2.0.1",
-      "buildNumber": 201,
+      "version": "3.1.0",
+      "buildNumber": 310,
       "platform": "macos",
       "channel": "stable",
       "mandatory": false,
-      "release": "https://updates.example.com/releases/2.0.1/macos/release.json"
+      "release": "https://updates.example.com/releases/3.1.0/macos/release.json"
     }
   ]
 }
@@ -165,13 +170,13 @@ artifact; Windows can also use an Inno Setup installer artifact.
   "schemaVersion": 3,
   "packageId": "com.example.app",
   "appName": "Example.app",
-  "version": "2.0.1",
-  "buildNumber": 201,
+  "version": "3.1.0",
+  "buildNumber": 310,
   "platform": "macos",
   "channel": "stable",
   "artifact": {
     "kind": "zip",
-    "url": "https://updates.example.com/releases/2.0.1/macos/Example-2.0.1-macos.zip",
+    "url": "https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip",
     "sha256": "64-lowercase-hex-characters",
     "length": 12345678
   },
@@ -216,9 +221,9 @@ zip until delta verification and patch application ship with their own tests.
 ```json
 "deltaArtifacts": [
   {
-    "fromVersion": "2.1.4",
+    "fromVersion": "3.0.0",
     "kind": "bsdiff",
-    "url": "https://updates.example.com/releases/2.2.0/macos/2.1.4-to-2.2.0.patch",
+    "url": "https://updates.example.com/releases/3.1.0/macos/3.0.0-to-3.1.0.patch",
     "sha256": "64-lowercase-hex-characters",
     "length": 456
   }
@@ -276,7 +281,6 @@ updates that must keep appearing until installed:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --mandatory
 ```
 
@@ -320,17 +324,17 @@ top level because the app needs the policy before downloading any artifact:
   "schemaVersion": 3,
   "appName": "Example App",
   "supportPolicy": {
-    "minimumSupportedVersion": "2.4.0",
+    "minimumSupportedVersion": "3.0.0",
     "enforcedAfter": "2026-07-15T00:00:00Z"
   },
   "items": [
     {
-      "version": "2.4.0",
+      "version": "3.0.0",
       "buildNumber": 240,
       "platform": "macos",
       "channel": "stable",
       "mandatory": true,
-      "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+      "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
     }
   ]
 }
@@ -354,7 +358,7 @@ transition, or updater-runtime transition.
 
 ```json
 {
-  "version": "2.4.0",
+  "version": "3.0.0",
   "buildNumber": 240,
   "platform": "macos",
   "channel": "stable",
@@ -363,7 +367,7 @@ transition, or updater-runtime transition.
     "downloadUrl": "https://example.com/download/latest",
     "message": "This update must be installed from a fresh download."
   },
-  "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+  "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
 }
 ```
 
@@ -390,7 +394,6 @@ Mandatory only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --mandatory
 ```
 
@@ -401,8 +404,7 @@ Support deadline only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
-  --minimum-supported-version 2.4.0 \
+  --minimum-supported-version 3.0.0 \
   --enforced-after 2026-07-15T00:00:00Z
 ```
 
@@ -414,7 +416,6 @@ Fresh install only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --fresh-install-url https://example.com/download/latest \
   --fresh-install-message "This update must be installed from a fresh download."
 ```
@@ -427,9 +428,8 @@ Mandatory update with a fail-safe deadline and fresh download fallback:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --mandatory \
-  --minimum-supported-version 2.4.0 \
+  --minimum-supported-version 3.0.0 \
   --enforced-after 2026-07-15T00:00:00Z \
   --fresh-install-url https://example.com/download/latest \
   --fresh-install-message "This update must be installed from a fresh download."
@@ -474,7 +474,7 @@ app-owned:
   pre-exit native scheduling fails, and `recoverPendingInstall()` converts an
   old-version relaunch or unverifiable current version into `UpdateFailed` with
   a redacted report. Store read, write, and clear failures are diagnostics-only.
-- The 3.0 native API does not accept a caller-selected helper log path.
+- The 3.1 native API does not accept a caller-selected helper log path.
   Protocol-v1 standalone requests use a fixed
   `platformLog` destination instead: Windows writes fixed Event Log records and
   Linux writes syslog plus helper-owned transaction registry events. Logging
@@ -649,7 +649,6 @@ Use `--config` only when your release config lives somewhere else:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --config tool/release/desktop_updater.yaml
 ```
 
@@ -658,8 +657,8 @@ hosted paths by default:
 
 ```text
 https://updates.example.com/app-archive.json
-https://updates.example.com/releases/2.0.1/macos/release.json
-https://updates.example.com/releases/2.0.1/macos/Example-2.0.1-macos.zip
+https://updates.example.com/releases/3.1.0/macos/release.json
+https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip
 ```
 
 Run the doctor before the first production release for each platform:
@@ -706,7 +705,7 @@ Warnings to expect before production hardening:
 4. Keep `pubspec.yaml` version current:
 
 ```yaml
-version: 2.0.1+201
+version: 3.1.0+310
 ```
 
 By default, `release publish` reads `version` and build metadata from
@@ -715,17 +714,15 @@ By default, `release publish` reads `version` and build metadata from
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
-  --version 2.0.1 \
-  --build-number 201
+  --version 3.1.0 \
+  --build-number 310
 ```
 
 5. Publish one platform:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform macos \
-  --key-profile desktop_updater.keys.json
+  --platform macos
 ```
 
 With only the minimum config, the command writes:
@@ -758,8 +755,7 @@ do not publish it as a production feed.
 
 ```sh
 dart run desktop_updater:release validate \
-  --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --key-profile desktop_updater.keys.json
+  --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
 
 Use `--from-version` to simulate a specific installed version:
@@ -767,8 +763,7 @@ Use `--from-version` to simulate a specific installed version:
 ```sh
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --from-version 2.0.0+200 \
-  --key-profile desktop_updater.keys.json
+  --from-version 3.0.0+300
 ```
 
 Without `--from-version`, validation uses the previous hosted release for the
@@ -781,8 +776,7 @@ feed-bound profile used by signing:
 
 ```sh
 dart run desktop_updater:release validate \
-  --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --key-profile desktop_updater.keys.json
+  --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
 
 ## Recommended Setup
@@ -797,7 +791,7 @@ For production, start from the minimum setup and add:
 - S3-compatible storage, SFTP, or a custom upload command in CI.
 - Platform publisher-trust gates before packaging.
 - A release approval step before publishing `app-archive.json`.
-- `release validate --key-profile desktop_updater.keys.json` after
+- `release validate` after
   every production upload.
 
 ### Signing release metadata
@@ -807,9 +801,8 @@ before uploading them:
 
 ```sh
 dart run desktop_updater:release sign \
-  --release dist/desktop_updater/releases/2.2.0/linux/release.json \
-  --app-archive dist/desktop_updater/app-archive.json \
-  --key-profile desktop_updater.keys.json
+  --release dist/desktop_updater/releases/3.1.0/linux/release.json \
+  --app-archive dist/desktop_updater/app-archive.json
 ```
 
 The profile is the only release-signing key input. It contains public metadata;
@@ -824,8 +817,7 @@ using the same key material as the descriptor signing step:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform linux \
-  --key-profile desktop_updater.keys.json
+  --platform linux
 ```
 
 Ordered upload providers publish versioned descriptor and artifact files first,
@@ -923,13 +915,12 @@ Common CLI overrides:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --config tool/release/desktop_updater.yaml \
   --base-url https://updates.example.com \
   --output dist/desktop_updater \
   --channel beta \
-  --version 2.0.1 \
-  --build-number 201 \
+  --version 3.1.0 \
+  --build-number 310 \
   --package-id com.example.app \
   --app-name Example.app
 ```
@@ -1041,7 +1032,6 @@ Use the CLI flag:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --key-profile desktop_updater.keys.json \
   --notarize
 ```
 
@@ -1086,8 +1076,7 @@ Command:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform macos \
-  --key-profile desktop_updater.keys.json
+  --platform macos
 ```
 
 What the command does:
@@ -1311,8 +1300,7 @@ Command:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform windows \
-  --key-profile desktop_updater.keys.json
+  --platform windows
 ```
 
 What the command does:
@@ -1414,8 +1402,7 @@ Command:
 
 ```sh
 dart run desktop_updater:release publish \
-  --platform linux \
-  --key-profile desktop_updater.keys.json
+  --platform linux
 ```
 
 What the command does:
@@ -1567,16 +1554,14 @@ Example:
 
 ```sh
 dart run desktop_updater:release validate \
-  --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --key-profile desktop_updater.keys.json
+  --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
 
 Signed validation:
 
 ```sh
 dart run desktop_updater:release validate \
-  --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --key-profile desktop_updater.keys.json
+  --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
 
 ## Low-Level Commands
@@ -1588,15 +1573,15 @@ Package a release manually:
 ```sh
 dart run desktop_updater:package \
   --input build/macos/Build/Products/Release/Example.app \
-  --output dist/2.0.1/macos \
+  --output dist/3.1.0/macos \
   --package-id com.example.app \
   --app-name Example.app \
-  --version 2.0.1 \
-  --build-number 201 \
+  --version 3.1.0 \
+  --build-number 310 \
   --platform macos \
   --channel stable \
   --install-strategy wholeBundleReplace \
-  --artifact-url https://updates.example.com/releases/2.0.1/macos/Example-2.0.1-macos.zip
+  --artifact-url https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip
 ```
 
 Update `app-archive.json`:
@@ -1605,19 +1590,18 @@ Update `app-archive.json`:
 dart run desktop_updater:app_archive upsert \
   --archive dist/app-archive.json \
   --app-name "Example App" \
-  --version 2.0.1 \
-  --build-number 201 \
+  --version 3.1.0 \
+  --build-number 310 \
   --platform macos \
   --channel stable \
-  --release-url https://updates.example.com/releases/2.0.1/macos/release.json
+  --release-url https://updates.example.com/releases/3.1.0/macos/release.json
 ```
 
 Verify one release descriptor and artifact:
 
 ```sh
 dart run desktop_updater:verify \
-  --release dist/2.0.1/macos/release.json \
-  --key-profile desktop_updater.keys.json
+  --release dist/3.1.0/macos/release.json
 ```
 
 ## CI
@@ -1632,7 +1616,7 @@ Typical flow:
 3. Restore signing credentials for the target platform.
 4. Build/sign/notarize/staple when required.
 5. Run the signed `dart run desktop_updater:release publish
-   --platform <platform> --key-profile desktop_updater.keys.json` command.
+   --platform <platform>` command.
 6. Fail the job if upload or hosted validation fails.
 
 The package's own provider e2e tests are Docker-gated:

@@ -123,7 +123,7 @@ Native helper logging is separate from the Dart lifecycle log. It starts only
 after the app hands off to the platform helper, so it is useful for
 locked-file replacement, rollback, cleanup, and relaunch failures.
 
-The 3.0 native request has no diagnostics path. The standalone protocol-v1
+The 3.1 native request has no diagnostics path. The standalone protocol-v1
 Windows and Linux helpers do not receive, open, create, append to, or otherwise
 use a caller-provided path. App-owned Dart diagnostics and the package's
 in-memory problem report remain available before helper handoff.

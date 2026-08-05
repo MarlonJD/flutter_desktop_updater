@@ -172,7 +172,8 @@ Recommended high-level flow:
 2. Apply the platform publisher-authenticity layer, such as macOS signing, notarization, and stapling before packaging.
 3. Import the encrypted release-key bundle into the runner's protected local
    key store, then run `dart run desktop_updater:release publish --platform
-   macos --key-profile desktop_updater.keys.json`. CI must not receive a raw
+   macos`. The command uses the default `desktop_updater.keys.json` public
+   profile. CI must not receive a raw
    private key through an environment variable or file; the bundle passphrase
    is the only signing secret supplied to the import step.
 4. Let the command upload versioned files first, validate hosted `release.json` and artifact bytes, upload `app-archive.json` last, and validate hosted update selection.
@@ -221,14 +222,17 @@ WINDOWS_CERTIFICATE_PASSWORD
 WINDOWS_TIMESTAMP_URL
 ```
 
-For Linux direct zip distribution, add a release descriptor authenticity layer before treating the lane as production-trusted:
+For Linux direct zip distribution, restore the encrypted release-key bundle and
+use the profile-backed `release publish`, `release sign`, or `verify` commands
+before treating the lane as production-trusted. Do not add raw release-key
+environment variables; the 3.1 CLI does not accept direct private/public key
+inputs.
 
 ```text
-DESKTOP_UPDATER_RELEASE_SIGNING_PRIVATE_KEY
-DESKTOP_UPDATER_RELEASE_SIGNING_PUBLIC_KEY
+DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
 ```
 
-The current 3.0 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
+The current 3.1 package CI proves Linux and Windows release mechanics. Publisher trust for Windows and Linux depends on the app's release policy and credentials.
 
 ## macOS Signing And Notarization
 
@@ -305,8 +309,8 @@ If CI fails with `No Keychain password item found`, the profile was not read fro
 
 This is a low-level skeleton for an app repository that needs to own each
 packaging and upload step. Most apps should start with the signed
-`dart run desktop_updater:release publish --platform macos --key-profile
-desktop_updater.keys.json` flow and only drop down to these commands when
+`dart run desktop_updater:release publish --platform macos` flow and only drop
+down to these commands when
 their release workflow needs that control.
 
 ```yaml
@@ -446,8 +450,7 @@ jobs:
           curl -fsS "${{ vars.UPDATE_BASE_URL }}/releases/$RELEASE_VERSION/macos/release.json" \
             -o "$RUNNER_TEMP/release.json"
           dart run desktop_updater:verify \
-            --release "$RUNNER_TEMP/release.json" \
-            --key-profile desktop_updater.keys.json
+            --release "$RUNNER_TEMP/release.json"
 
       - name: Publish app archive last
         run: ./tool/ci/publish_app_archive.sh
@@ -463,11 +466,11 @@ The final `app-archive.json` should point at the hosted descriptor, not at a fol
   "appName": "Example App",
   "items": [
     {
-      "version": "3.0.0",
-      "buildNumber": 300,
+      "version": "3.1.0",
+      "buildNumber": 310,
       "platform": "macos",
       "channel": "stable",
-      "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
+      "release": "https://updates.example.com/releases/3.1.0/macos/release.json"
     }
   ]
 }
@@ -492,8 +495,7 @@ dart run desktop_updater:package \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/windows/$APP_NAME-$VERSION-windows.zip"
 dart run desktop_updater:verify \
-  --release dist/$VERSION/windows/release.json \
-  --key-profile desktop_updater.keys.json
+  --release dist/$VERSION/windows/release.json
 ```
 
 Linux example:
@@ -511,8 +513,7 @@ dart run desktop_updater:package \
   --channel "$UPDATE_CHANNEL" \
   --artifact-url "$UPDATE_BASE_URL/releases/$VERSION/linux/$APP_NAME-$VERSION-linux.zip"
 dart run desktop_updater:verify \
-  --release dist/$VERSION/linux/release.json \
-  --key-profile desktop_updater.keys.json
+  --release dist/$VERSION/linux/release.json
 ```
 
 Unsigned Windows and Linux Release builds are release-mechanics ready when build, packaging, download, SHA-256 verification, extraction, staging, and smoke tests pass. Treat them as production-trusted only after you add the signing or descriptor-authenticity gate your app requires.

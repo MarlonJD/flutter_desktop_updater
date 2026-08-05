@@ -76,7 +76,7 @@ void main() {
 
     expect(
       source,
-      contains("The 3.0 native request has no diagnostics path."),
+      contains("The 3.1 native request has no diagnostics path."),
     );
     expect(
       source,
