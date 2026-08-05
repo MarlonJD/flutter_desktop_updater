@@ -26,21 +26,21 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
   @override
   Future<void> installVerifiedUpdate(
       VerifiedNativeInstallRequest request) async {
-    // macOS native plugin accepts exactly the five canonical handoff keys and
-    // rejects any extra key with "InvalidArguments: installUpdate requires the
-    // canonical signed handoff payload." Other platforms keep the full payload.
-    final isMacOS = defaultTargetPlatform == TargetPlatform.macOS;
     final arguments = <String, Object?>{
       "stagingPath": request.stagingPath,
       "expectedPackageId": request.expectedPackageId,
-      if (!isMacOS) "updateVersion": request.updateVersion,
-      if (!isMacOS) "updateBuildNumber": request.updateBuildNumber?.toString(),
-      if (!isMacOS) "platform": request.platform,
-      if (!isMacOS) "channel": request.channel,
       "expectedArtifactSha256": request.expectedArtifactSha256,
       "stageProvenanceSha256": request.stageProvenanceSha256,
       "transactionId": request.transactionId,
     };
+    if (defaultTargetPlatform != TargetPlatform.macOS) {
+      arguments.addAll({
+        "updateVersion": request.updateVersion,
+        "updateBuildNumber": request.updateBuildNumber?.toString(),
+        "platform": request.platform,
+        "channel": request.channel,
+      });
+    }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }
 
