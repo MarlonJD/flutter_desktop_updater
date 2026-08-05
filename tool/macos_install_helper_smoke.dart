@@ -18,7 +18,7 @@ const _hostPhases = <String>{
 };
 const _appEnvironment = "DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP";
 const _stagedAppEnvironment = "DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP";
-const _protectedSmokeRoot = "/Applications/DesktopUpdaterSMAppServiceSmoke";
+const _protectedSmokeRoot = "/Applications";
 
 Future<void> main(List<String> arguments) async {
   try {
@@ -532,10 +532,11 @@ void _validateSmokeApplications({
   required _BundleMetadata appMetadata,
   required _BundleMetadata stagedMetadata,
 }) {
-  if (path.dirname(app.path) != _protectedSmokeRoot) {
+  if (path.dirname(app.path) != _protectedSmokeRoot ||
+      path.basename(app.path) != "Desktop Updater Smoke.app") {
     throw StateError(
       "SMAppService smoke target must be installed directly under "
-      "$_protectedSmokeRoot",
+      "$_protectedSmokeRoot as Desktop Updater Smoke.app",
     );
   }
   if (path.basename(app.path) != path.basename(stagedApp.path) ||

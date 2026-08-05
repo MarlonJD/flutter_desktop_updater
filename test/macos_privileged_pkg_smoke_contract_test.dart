@@ -14,16 +14,16 @@ void main() {
     final source = smokeFile.readAsStringSync();
 
     for (final value in [
-      "/Applications/Desktop Updater SMAppService PKG E2E.app",
-      "net.monolib.updater",
-      "net.monolib.updater.pkg",
+      "/Applications/Desktop Updater Smoke.app",
+      "com.example.desktopUpdaterSmoke",
+      "com.example.desktopUpdaterSmoke.pkg",
       "desktop_updater macOS production smoke",
       "desktop_updater_smoke_owner.txt",
       "UPK4SC93AN",
-      "2.7.0",
-      "270",
-      "2.7.1",
-      "271",
+      "1.0.0",
+      "100",
+      "1.1.0",
+      "110",
     ]) {
       expect(source, contains(value), reason: value);
     }
@@ -53,7 +53,7 @@ void main() {
     expect(source, contains("privilegedInstallerTool"));
     expect(source, contains("pkgInstaller"));
     expect(source, contains("minimumUpdaterVersion"));
-    expect(source, contains("2.7.0"));
+    expect(source, contains("3.1.0"));
     expect(source, contains("owned stage"));
 
     for (final forbidden in [
@@ -114,8 +114,8 @@ void main() {
       "approval.json",
       "_waitForFixedInstallerManager",
       "/usr/sbin/installer",
-      "/private/var/tmp/net.monolib.updater.pkg-recovery.ready",
-      "/private/var/tmp/net.monolib.updater.pkg-recovery.release",
+      "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.ready",
+      "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release",
       "root:wheel:600",
       "_probeInstalledLaunchDaemon",
       "--probe-helper",

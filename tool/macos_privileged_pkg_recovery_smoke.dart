@@ -10,19 +10,19 @@ import "package:path/path.dart" as path;
 
 import "native_runtime_smoke_server.dart" as smoke_server;
 
-const _targetPath = "/Applications/Desktop Updater SMAppService PKG E2E.app";
-const _bundleIdentifier = "net.monolib.updater";
-const _receiptIdentifier = "net.monolib.updater.pkg";
+const _targetPath = "/Applications/Desktop Updater Smoke.app";
+const _bundleIdentifier = "com.example.desktopUpdaterSmoke";
+const _receiptIdentifier = "com.example.desktopUpdaterSmoke.pkg";
 const _ownerMarkerName = "desktop_updater_smoke_owner.txt";
 const _ownerMarkerText = "desktop_updater macOS production smoke";
 const _teamIdentifier = "UPK4SC93AN";
-const _executableName = "MacOSRuntimeCompile";
-const _serviceIdentifier = "net.monolib.updater.helper";
-const _baselineVersion = "2.7.0";
-const _baselineBuild = "270";
+const _executableName = "desktop_updater_example";
+const _serviceIdentifier = "com.example.desktopUpdaterSmoke.helper";
+const _baselineVersion = "1.0.0";
+const _baselineBuild = "100";
 const _artifactKind = "pkgInstaller";
 const _launchMode = "privilegedInstallerTool";
-const _minimumUpdaterVersion = "2.7.0";
+const _minimumUpdaterVersion = "3.1.0";
 const _managerStartedEvent = "managerStarted";
 const _transactionRetryAttempts = 10;
 const _transactionRetryDelay = Duration(milliseconds: 500);
@@ -30,10 +30,11 @@ const _replaySafeTransactionOperations = {
   "--query-transaction",
   "--recover-transaction",
 };
-const _readyMarker = "/private/var/tmp/net.monolib.updater.pkg-recovery.ready";
+const _readyMarker =
+    "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.ready";
 const _releaseMarker =
-    "/private/var/tmp/net.monolib.updater.pkg-recovery.release";
-const _evidencePath = "reports/macos-privileged-updater/recovery.json";
+    "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release";
+const _evidencePath = "/tmp/desktop_updater_macos_smoke/recovery.json";
 
 final _commitPattern = RegExp(r"^[0-9a-f]{40}$");
 final _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
@@ -384,8 +385,8 @@ final class _RecoverySmoke {
   Future<void> _validatePreconditions() async {
     if (request.app.path != _targetPath ||
         request.receiptIdentifier != _receiptIdentifier ||
-        request.expectedVersion != "2.7.1" ||
-        request.expectedBuild != "271" ||
+        request.expectedVersion != "1.1.0" ||
+        request.expectedBuild != "110" ||
         path.normalize(request.evidence.path) != _evidencePath ||
         !path.isAbsolute(request.pkg.path) ||
         !path.isAbsolute(request.smokeRoot.path) ||

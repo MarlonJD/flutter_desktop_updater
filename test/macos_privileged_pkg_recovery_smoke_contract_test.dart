@@ -237,8 +237,8 @@ void main() {
     final source = harness.readAsStringSync();
 
     for (final value in [
-      "/Applications/Desktop Updater SMAppService PKG E2E.app",
-      "net.monolib.updater.pkg",
+      "/Applications/Desktop Updater Smoke.app",
+      "com.example.desktopUpdaterSmoke.pkg",
       "/usr/sbin/installer",
       "managerStarted",
       "recoveryRequired",
@@ -278,8 +278,9 @@ void main() {
       "tool/macos_privileged_pkg_recovery_smoke.dart",
     ).readAsStringSync();
 
-    expect(source, contains('"net.monolib.updater.helper"'));
-    expect(source, isNot(contains('"net.monolib.updater.installer"')));
+    expect(source, contains('"com.example.desktopUpdaterSmoke.helper"'));
+    expect(
+        source, isNot(contains('"com.example.desktopUpdaterSmoke.installer"')));
   });
 
   test("recovery refreshes the installed helper after manager exit", () {

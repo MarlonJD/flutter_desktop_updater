@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.1.0
+  desktop_updater: ^3.1.1
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -421,7 +421,7 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-The 3.1.0 release retains the explicit app-owned diagnostics and recovery wiring
+The 3.1.1 release retains the explicit app-owned diagnostics and recovery wiring
 introduced in 3.0. The default stays quiet: no package-owned files, uploads,
 telemetry, or storage.
 

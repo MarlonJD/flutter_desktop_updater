@@ -767,7 +767,7 @@ const _strategyProviders = <String, Set<String>>{
 };
 
 final _identifierPattern = RegExp(
-  r"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$",
+  r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,126}[A-Za-z0-9])?$",
 );
 final _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
 final _keyIdPattern = RegExp(r"^[A-Za-z0-9._-]{1,128}$");

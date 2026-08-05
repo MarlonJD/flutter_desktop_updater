@@ -14,7 +14,7 @@ import "package:desktop_updater/src/core/release_index.dart";
 // ignore: implementation_imports
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 
-const _smokePackageId = "com.example.desktop_updater";
+const _smokePackageId = "com.example.desktopUpdaterSmoke";
 const _smokePublicKeyId = "native-runtime-smoke-stable";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _maximumSmokeArtifactBytes = 512 * 1024 * 1024;
@@ -206,6 +206,8 @@ Future<void> main(List<String> args) async {
     appName: Platform.isMacOS
         ? _basename(stagedPayload.path)
         : "desktop_updater smoke",
+    releaseVersion: _smokeReleaseVersion(),
+    releaseBuild: _smokeReleaseBuild(),
   );
 
   final linuxXauthority =
@@ -292,6 +294,19 @@ Future<void> main(List<String> args) async {
           "transaction completed",
         ],
       );
+    } else if (Platform.isMacOS) {
+      await _expectDiagnosticsLog(
+        diagnosticsLogPath,
+        const <String>[
+          "checking",
+          "downloading",
+          "installing",
+        ],
+      );
+      stdout.writeln(
+        "macOS helper diagnostics use the platform-owned log; the smoke "
+        "file contains Dart lifecycle events only.",
+      );
     } else {
       if (Platform.isWindows) {
         if (!relaunch) {
@@ -345,10 +360,28 @@ Future<void> _cleanupControllerStage(Directory stageRoot) async {
   if (!stageName.startsWith(prefix)) {
     throw StateError("Controller returned a non-owned staging directory.");
   }
+  final nonce = stageName.substring(prefix.length);
+  final state = await readStagedUpdateProvenance(stageRoot: stageRoot);
+  if (state.provenance.nonce != nonce) {
+    throw StateError("Controller returned a stage with a mismatched nonce.");
+  }
+  final stagedApps = await stageRoot
+      .list(followLinks: false)
+      .where((entity) => entity.path.endsWith(".app"))
+      .toList();
+  if (stagedApps.isEmpty) {
+    await stageRoot.delete(recursive: true);
+    await _waitFor(
+      () => !stageRoot.existsSync(),
+      const Duration(seconds: 10),
+      "Timed out waiting for the native helper residual stage cleanup.",
+    );
+    return;
+  }
   await deleteOwnedStagingDirectory(
     parent: stageRoot.parent,
     stageRoot: stageRoot,
-    nonce: stageName.substring(prefix.length),
+    nonce: nonce,
   );
   await _waitFor(
     () => !stageRoot.existsSync(),
@@ -660,6 +693,22 @@ Future<void> _writeNativeArtifactZip({
   required String stagingRoot,
   required File artifact,
 }) async {
+  if (Platform.isMacOS) {
+    final result = await Process.run(
+      "/usr/bin/zip",
+      ["-q", "-r", "-y", artifact.path, "."],
+      workingDirectory: stagingRoot,
+    );
+    if (result.exitCode != 0) {
+      throw ProcessException(
+        "/usr/bin/zip",
+        ["-q", "-r", "-y", artifact.path, "."],
+        "${result.stdout}${result.stderr}",
+        result.exitCode,
+      );
+    }
+    return;
+  }
   final archive = Archive();
   final files = <File>[];
   await for (final entity in Directory(stagingRoot).list(
@@ -705,6 +754,8 @@ final class ControllerSmokeUpdateServer {
     required String platform,
     required String packageId,
     required String appName,
+    String releaseVersion = "2.1.0",
+    int releaseBuild = 210,
   }) async {
     final artifactLength = await artifact.length();
     if (artifactLength <= 0 || artifactLength > _maximumSmokeArtifactBytes) {
@@ -718,11 +769,15 @@ final class ControllerSmokeUpdateServer {
       platform: platform,
       packageId: packageId,
       appName: appName,
+      releaseVersion: releaseVersion,
+      releaseBuild: releaseBuild,
     );
     final index = await signedIndex(
       releaseUrl: baseUrl.resolve("/release.json"),
       platform: platform,
       appName: appName,
+      releaseVersion: releaseVersion,
+      releaseBuild: releaseBuild,
     );
     final publicKey = await (await _smokeKeyPair()).extractPublicKey();
     final result = ControllerSmokeUpdateServer._(
@@ -814,13 +869,15 @@ Future<Map<String, dynamic>> signedDescriptor({
   required String platform,
   required String packageId,
   required String appName,
+  String releaseVersion = "2.1.0",
+  int releaseBuild = 210,
 }) async {
   final descriptor = ReleaseDescriptor(
     schemaVersion: 3,
     packageId: packageId,
     appName: appName,
-    version: "2.7.1",
-    buildNumber: 271,
+    version: releaseVersion,
+    buildNumber: releaseBuild,
     platform: platform,
     channel: "stable",
     artifact: ReleaseArtifact(
@@ -867,14 +924,16 @@ Future<Map<String, dynamic>> signedIndex({
   required Uri releaseUrl,
   required String platform,
   required String appName,
+  String releaseVersion = "2.1.0",
+  int releaseBuild = 210,
 }) async {
   final index = ReleaseIndex(
     schemaVersion: 3,
     appName: appName,
     items: <ReleaseIndexItem>[
       ReleaseIndexItem(
-        version: "2.7.1",
-        buildNumber: 271,
+        version: releaseVersion,
+        buildNumber: releaseBuild,
         platform: platform,
         channel: "stable",
         mandatory: false,
@@ -899,6 +958,22 @@ Future<Map<String, dynamic>> signedIndex({
       value: base64Encode(signature.bytes),
     ).toJson(),
   };
+}
+
+String _smokeReleaseVersion() {
+  final value = Platform.environment["DESKTOP_UPDATER_TEST_VERSION_V2"];
+  return value == null || value.trim().isEmpty ? "1.1.0" : value.trim();
+}
+
+int _smokeReleaseBuild() {
+  final raw = Platform.environment["DESKTOP_UPDATER_TEST_BUILD_V2"];
+  final value = int.tryParse(raw ?? "110");
+  if (value == null || value < 0) {
+    throw StateError(
+      "DESKTOP_UPDATER_TEST_BUILD_V2 must be a non-negative integer.",
+    );
+  }
+  return value;
 }
 
 String _locateLinuxPortableHelper(String installRoot) {
@@ -1251,7 +1326,9 @@ Future<void> _expectDiagnosticsLog(
 
   final contents = await log.readAsString();
   for (final event in expectedEvents) {
-    if (!contents.contains('"event":"$event"')) {
+    final hasJsonEvent = contents.contains('"event":"$event"');
+    final hasLineEvent = contents.contains("event=$event");
+    if (!hasJsonEvent && !hasLineEvent) {
       stderr.writeln(contents);
       throw StateError(
         "Helper diagnostics log missing event '$event' in $logPath.",

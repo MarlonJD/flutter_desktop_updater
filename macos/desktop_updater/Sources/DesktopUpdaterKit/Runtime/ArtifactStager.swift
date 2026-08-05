@@ -336,8 +336,17 @@ public struct MacArtifactStager {
             archive,
             maximumEntries: UInt64(limits.maximumArchiveEntries)
         ) {
-            guard entry.type == .regular || entry.type == .directory else {
+            guard entry.type == .regular || entry.type == .directory
+                || entry.type == .symbolicLink else {
                 throw unsafeArchive("ZIP links and special entries are unsafe.")
+            }
+            if entry.type == .symbolicLink {
+                guard let target = entry.symbolicLinkTarget,
+                      target == (try normalizeSafeArchivePath(target)) else {
+                    throw unsafeArchive(
+                        "ZIP symlink target is absolute or escapes staging."
+                    )
+                }
             }
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
                 throw unsafeArchive("ZIP entry size is invalid.")
@@ -506,9 +515,10 @@ public struct MacArtifactStager {
     }
 }
 
-private enum ZipCentralEntryType {
+private enum ZipCentralEntryType: Equatable {
     case regular
     case directory
+    case symbolicLink
     case linkOrSpecial
 }
 
@@ -516,6 +526,7 @@ private struct ZipCentralEntry {
     let path: String
     let uncompressedSize: UInt64
     let type: ZipCentralEntryType
+    let symbolicLinkTarget: String?
 }
 
 private func readZipCentralDirectory(
@@ -662,6 +673,7 @@ private func readZipCentralDirectory(
             localOffset32: zipUInt32(header, 42),
             diskStart16: zipUInt16(header, 34)
         )
+        let compressionMethod = zipUInt16(header, 10)
         guard resolved.diskStart == 0,
               localOffsets.insert(resolved.localOffset).inserted
         else {
@@ -677,20 +689,35 @@ private func readZipCentralDirectory(
         let localFilenameLength = Int(zipUInt16(localHeader, 26))
         let localExtraLength = Int(zipUInt16(localHeader, 28))
         let localVariableLength = localFilenameLength + localExtraLength
+        let localVariableOffset = try zipCheckedAdd(
+            resolved.localOffset,
+            30
+        )
         let localVariable = try readZipBytes(
             handle,
-            offset: resolved.localOffset + 30,
+            offset: localVariableOffset,
             count: localVariableLength
         )
         let localFilename = Data(localVariable.prefix(localFilenameLength))
         guard zipUInt32(localHeader, 0) == 0x0403_4b50,
               zipUInt16(localHeader, 6) == flags,
-              zipUInt16(localHeader, 8) == zipUInt16(header, 10),
+              zipUInt16(localHeader, 8) == compressionMethod,
               localFilename == filenameData
         else {
             throw unsafeArchive(
                 "ZIP local and central directory entries do not match."
             )
+        }
+        let localDataOffset = try zipCheckedAdd(
+            resolved.localOffset,
+            UInt64(30 + localVariableLength)
+        )
+        let localDataEnd = try zipCheckedAdd(
+            localDataOffset,
+            resolved.compressedSize
+        )
+        guard localDataEnd <= size else {
+            throw unsafeArchive("ZIP entry data escapes the archive.")
         }
         let externalAttributes = zipUInt32(header, 38)
         let hostSystem = UInt8(truncatingIfNeeded: versionMadeBy >> 8)
@@ -699,11 +726,35 @@ private func readZipCentralDirectory(
             hostSystem: hostSystem,
             externalAttributes: externalAttributes
         )
+        var symbolicLinkTarget: String?
+        if type == .symbolicLink {
+            guard compressionMethod == 0,
+                  resolved.compressedSize == resolved.uncompressedSize,
+                  resolved.uncompressedSize > 0,
+                  resolved.uncompressedSize <= 4096 else {
+                throw unsafeArchive(
+                    "ZIP symlink entry must use a bounded stored target."
+                )
+            }
+            let targetData = try readZipBytes(
+                handle,
+                offset: localDataOffset,
+                count: Int(resolved.uncompressedSize)
+            )
+            guard let target = String(data: targetData, encoding: .utf8),
+                  target == (try normalizeSafeArchivePath(target)) else {
+                throw unsafeArchive(
+                    "ZIP symlink target is invalid or escapes staging."
+                )
+            }
+            symbolicLinkTarget = target
+        }
         result.append(
             ZipCentralEntry(
                 path: path,
                 uncompressedSize: resolved.uncompressedSize,
-                type: type
+                type: type,
+                symbolicLinkTarget: symbolicLinkTarget
             )
         )
         cursor = next
@@ -728,6 +779,8 @@ private func zipEntryType(
             return .directory
         case 0o100000:
             return .regular
+        case 0o120000:
+            return .symbolicLink
         default:
             return .linkOrSpecial
         }
@@ -740,6 +793,7 @@ private func zipEntryType(
 
 private struct Zip64CentralValues {
     let uncompressedSize: UInt64
+    let compressedSize: UInt64
     let localOffset: UInt64
     let diskStart: UInt32
 }
@@ -758,6 +812,7 @@ private func resolveZip64CentralValues(
     if !requiresZip64 {
         return Zip64CentralValues(
             uncompressedSize: UInt64(uncompressed32),
+            compressedSize: UInt64(compressed32),
             localOffset: UInt64(localOffset32),
             diskStart: UInt32(diskStart16)
         )
@@ -792,7 +847,9 @@ private func resolveZip64CentralValues(
             let uncompressed = uncompressed32 == UInt32.max
                 ? try read64()
                 : UInt64(uncompressed32)
-            if compressed32 == UInt32.max { _ = try read64() }
+            let compressed = compressed32 == UInt32.max
+                ? try read64()
+                : UInt64(compressed32)
             let localOffset = localOffset32 == UInt32.max
                 ? try read64()
                 : UInt64(localOffset32)
@@ -801,6 +858,7 @@ private func resolveZip64CentralValues(
                 : UInt32(diskStart16)
             return Zip64CentralValues(
                 uncompressedSize: uncompressed,
+                compressedSize: compressed,
                 localOffset: localOffset,
                 diskStart: diskStart
             )

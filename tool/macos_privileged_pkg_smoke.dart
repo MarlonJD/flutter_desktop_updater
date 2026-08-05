@@ -10,28 +10,29 @@ import "package:path/path.dart" as path;
 
 import "native_runtime_smoke_server.dart" as smoke_server;
 
-const _targetPath = "/Applications/Desktop Updater SMAppService PKG E2E.app";
-const _bundleIdentifier = "net.monolib.updater";
-const _receiptIdentifier = "net.monolib.updater.pkg";
+const _targetPath = "/Applications/Desktop Updater Smoke.app";
+const _bundleIdentifier = "com.example.desktopUpdaterSmoke";
+const _receiptIdentifier = "com.example.desktopUpdaterSmoke.pkg";
 const _ownerMarkerText = "desktop_updater macOS production smoke";
 const _ownerMarkerName = "desktop_updater_smoke_owner.txt";
 const _teamIdentifier = "UPK4SC93AN";
-const _v1Version = "2.7.0";
-const _v1Build = "270";
-const _v2Version = "2.7.1";
-const _v2Build = "271";
+const _v1Version = "1.0.0";
+const _v1Build = "100";
+const _v2Version = "1.1.0";
+const _v2Build = "110";
 const _artifactKind = "pkgInstaller";
 const _launchMode = "privilegedInstallerTool";
-const _minimumUpdaterVersion = "2.7.0";
+const _minimumUpdaterVersion = "3.1.0";
 const _approvalCode = "PrivilegedHelperApprovalRequired";
 const _settingsAction = "openMacOSBackgroundItemsSettings";
 const _settingsInstructions =
     "System Settings > General > Login Items & Extensions > "
     "Allow in the Background: enable the Desktop Updater smoke helper.";
 const _openSettingsOption = "--open-settings";
-const _readyMarker = "/private/var/tmp/net.monolib.updater.pkg-recovery.ready";
+const _readyMarker =
+    "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.ready";
 const _releaseMarker =
-    "/private/var/tmp/net.monolib.updater.pkg-recovery.release";
+    "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release";
 
 final _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
 final _commitPattern = RegExp(r"^[0-9a-f]{40}$");
@@ -224,7 +225,7 @@ final class _PrivilegedPkgSmoke {
       )) {
         stdout.writeln(
           jsonEncode(
-            {"status": "verified locally", "baseline": "2.7.0+270"},
+            {"status": "verified locally", "baseline": "1.0.0+100"},
           ),
         );
         return;
@@ -304,7 +305,7 @@ final class _PrivilegedPkgSmoke {
         required: false,
       );
       stdout.writeln(
-        jsonEncode({"status": "verified locally", "baseline": "2.7.0+270"}),
+        jsonEncode({"status": "verified locally", "baseline": "1.0.0+100"}),
       );
     } finally {
       await v1Payload.close();
@@ -338,7 +339,7 @@ final class _PrivilegedPkgSmoke {
       await payload.close();
     }
     stdout.writeln(
-      jsonEncode({"status": "verified locally", "baseline": "2.7.0+270"}),
+      jsonEncode({"status": "verified locally", "baseline": "1.0.0+100"}),
     );
   }
 
@@ -482,7 +483,7 @@ final class _PrivilegedPkgSmoke {
     };
     await _writeEvidence("elevation.json", evidence, kind: "elevation");
     stdout.writeln(
-      jsonEncode({"status": "verified locally", "installed": "2.7.1+271"}),
+      jsonEncode({"status": "verified locally", "installed": "1.1.0+110"}),
     );
   }
 
@@ -767,7 +768,7 @@ final class _PrivilegedPkgSmoke {
     final executable = await _plistValue(info, "CFBundleExecutable");
     final service =
         await _plistValue(info, "DesktopUpdaterInstallHelperServiceID");
-    if (executable != "MacOSRuntimeCompile" ||
+    if (executable != "desktop_updater_example" ||
         !_servicePattern.hasMatch(service)) {
       throw const _SmokeFailure("bundle-metadata-invalid");
     }

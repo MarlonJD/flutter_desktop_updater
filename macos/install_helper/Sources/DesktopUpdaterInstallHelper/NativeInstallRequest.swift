@@ -273,7 +273,7 @@ private enum NativeRequestValidation {
     static let sha256 = #"^[0-9a-f]{64}$"#
     static let readyToken = #"^[A-Za-z0-9_-]{43}$"#
     static let dottedIdentifier =
-        #"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"#
+        #"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,126}[A-Za-z0-9])?$"#
     static let keyID = #"^[A-Za-z0-9._-]{1,128}$"#
     static let signature = #"^[A-Za-z0-9+/]{86}==$"#
 

@@ -96,6 +96,12 @@ void main() {
         trustedReleasePublicKeys: fixture.publicKeys,
         stagingParent: tempDir,
         runProcess: (_, arguments) async {
+          if (arguments.contains("CFBundleIdentifier")) {
+            return ProcessResult(0, 0, "com.example.app\n", "");
+          }
+          if (arguments.contains("-dv")) {
+            return ProcessResult(0, 0, "", "TeamIdentifier=ABCDE12345\n");
+          }
           final destination = arguments.last;
           await Directory(path.join(destination, "Example")).create();
           return ProcessResult(0, 0, "", "");

@@ -67,6 +67,25 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_APP_ARCHIVE_URL": appArchiveUrl.trim(),
       "DESKTOP_UPDATER_HOSTED_SMOKE": "1",
       "DESKTOP_UPDATER_HOSTED_SMOKE_MARKER": markerPath,
+      if (Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"]
+              ?.trim()
+              .isNotEmpty ??
+          false)
+        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID":
+            Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"]!.trim(),
+      if (Platform.environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID"]
+              ?.trim()
+              .isNotEmpty ??
+          false)
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID": Platform
+            .environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID"]!
+            .trim(),
+      if (Platform.environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"]
+              ?.trim()
+              .isNotEmpty ??
+          false)
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY":
+            Platform.environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"]!.trim(),
       if (diagnosticsLogPath != null)
         "DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
       if (!productionGates) "DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS": "1",

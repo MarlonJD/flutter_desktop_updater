@@ -20,11 +20,11 @@ void main() {
     final helperSigner = policy["allowedHelperSigner"] as Map<String, dynamic>;
     expect(
       applicationSigner["value"],
-      "identifier net.monolib.updater",
+      "identifier com.example.desktopUpdaterSmoke",
     );
     expect(
       helperSigner["value"],
-      "identifier net.monolib.updater.helper",
+      "identifier com.example.desktopUpdaterSmoke.helper",
     );
     final canonicalPolicy = policySource.endsWith("\n")
         ? policySource.substring(0, policySource.length - 1)
@@ -96,7 +96,11 @@ void main() {
     expect(smoke, contains("DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP"));
     expect(
       smoke,
-      contains("/Applications/DesktopUpdaterSMAppServiceSmoke"),
+      contains('const _protectedSmokeRoot = "/Applications";'),
+    );
+    expect(
+      smoke,
+      contains("Desktop Updater Smoke.app"),
     );
     expect(smoke, contains("path.dirname(app.path)"));
     expect(smoke, isNot(contains("DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_HOST")));
@@ -128,7 +132,7 @@ void main() {
     expect(policy, contains('"keyId":"native-runtime-smoke-stable"'));
     expect(
       policy,
-      contains('"/Applications/DesktopUpdaterSMAppServiceSmoke"'),
+      contains('"allowedInstallRoots":["/Applications"]'),
     );
     expect(
       policy,
@@ -149,7 +153,7 @@ void main() {
       contains("DesktopUpdaterInstallHelperLaunchDaemonPlistName"),
     );
     expect(infoPlist, isNot(contains("SMPrivilegedExecutables")));
-    expect(infoPlist, contains("net.monolib.updater.helper"));
+    expect(infoPlist, contains("com.example.desktopUpdaterSmoke.helper"));
 
     expect(workflow, isNot(contains("DESKTOP_UPDATER_SMJOBBLESS")));
     expect(workflow, isNot(contains("SMJobBless")));

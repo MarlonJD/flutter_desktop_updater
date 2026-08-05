@@ -350,11 +350,11 @@
 			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Helpers/DesktopUpdaterInstallHelper",
-				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Library/LaunchDaemons/net.monolib.updater.helper.plist",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Library/LaunchDaemons/com.example.desktopUpdaterSmoke.helper.plist",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"c41fab5fdc0d488787769ae4c48e38cc0882e5ef0287b9eee2017880cab7659d\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy-Debug.json\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256=\"8723563f4555f31b317e2a2d6b894ac58795828ce10c08e470e89e88a99e06b5\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
+			shellScript = "DESKTOP_UPDATER_HELPER_INFO_TEMPLATE=\"${PROJECT_DIR}/../../macos/install_helper/Configuration/Helper-Info.plist\" DESKTOP_UPDATER_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json\" DESKTOP_UPDATER_SEALED_POLICY_SHA256=\"212a3e16f05f5047099d802cebe600a828cb7c50bc473f06d7f14bb523d569dc\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH=\"${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy-Debug.json\" DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256=\"fff3f84c6636894db6baf39b00bf65657e5dbcd3db1fe17ac3e5e5e422cab9bc\" \"${PROJECT_DIR}/../../macos/install_helper/embed_install_helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -530,7 +530,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 0.1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = net.monolib.updater;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterSmoke;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 			};
@@ -671,7 +671,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 0.1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = net.monolib.updater;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterSmoke;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -702,7 +702,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 0.1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = net.monolib.updater;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterSmoke;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 			};

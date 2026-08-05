@@ -8,7 +8,7 @@
 PRODUCT_NAME = desktop_updater_example
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterExample
+PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterSmoke
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.

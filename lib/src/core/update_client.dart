@@ -16,6 +16,7 @@ import "package:desktop_updater/src/io/composite_update_transport.dart";
 import "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 import "package:desktop_updater/src/io/update_transport.dart";
+import "package:desktop_updater/src/app_paths.dart";
 import "package:desktop_updater/src/macos_update.dart";
 import "package:desktop_updater/src/package_version.dart";
 import "package:desktop_updater/src/release_manifest.dart"
@@ -500,6 +501,9 @@ class UpdateClient {
           : stagingRoot.path;
       if (descriptor.platform == "macos") {
         await rejectTopLevelMacOSAppSymlink(stagedPath);
+        if (Platform.isMacOS && descriptor.artifact.kind == "zip") {
+          await _verifyMacOSZipAppTrust(Directory(stagedPath));
+        }
         await File(
           path.join(stagingRoot.path, stagedReleaseManifestFileName),
         ).writeAsString(
@@ -528,6 +532,28 @@ class UpdateClient {
       }
       rethrow;
     }
+  }
+
+  Future<void> _verifyMacOSZipAppTrust(Directory stagedApp) async {
+    final currentApp = currentInstallDirectory();
+    if (!currentApp.path.endsWith(".app")) {
+      return;
+    }
+    final currentAppIdentity = await readMacOSAppIdentity(
+      appDirectory: currentApp,
+      runProcess: _runProcess,
+    );
+    if (currentAppIdentity.bundleIdentifier != expectedPackageId) {
+      throw StateError(
+        "Current macOS app bundle identity does not match the updater client.",
+      );
+    }
+    await verifyMacOSNativeGates(
+      appDirectory: stagedApp,
+      expectedBundleIdentifier: expectedPackageId,
+      expectedTeamIdentifier: currentAppIdentity.teamIdentifier,
+      runProcess: _runProcess,
+    );
   }
 
   Future<UpdateStageResult> _finalizeStage({

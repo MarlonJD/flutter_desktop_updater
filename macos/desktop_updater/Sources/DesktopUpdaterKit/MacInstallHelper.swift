@@ -63,7 +63,7 @@ private enum HelperProtocolValidation {
 
     static func isDottedIdentifier(_ value: String) -> Bool {
         guard let range = value.range(
-            of: #"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"#,
+            of: #"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,126}[A-Za-z0-9])?$"#,
             options: .regularExpression
         ) else {
             return false

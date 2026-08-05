@@ -3,6 +3,9 @@ import "dart:convert";
 import "dart:io";
 
 import "package:crypto/crypto.dart" as crypto;
+import "package:cryptography_plus/cryptography_plus.dart";
+import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/core/release_index.dart";
 import "package:path/path.dart" as path;
 
 const _requiredEnv = [
@@ -15,14 +18,16 @@ const _requiredEnv = [
 const _optionalEnv = {
   "DESKTOP_UPDATER_TEST_APP_NAME": "Desktop Updater Smoke",
   "DESKTOP_UPDATER_TEST_VERSION_V1": "1.0.0",
-  "DESKTOP_UPDATER_TEST_VERSION_V2": "1.0.1",
+  "DESKTOP_UPDATER_TEST_VERSION_V2": "1.1.0",
   "DESKTOP_UPDATER_TEST_BUILD_V1": "100",
-  "DESKTOP_UPDATER_TEST_BUILD_V2": "101",
+  "DESKTOP_UPDATER_TEST_BUILD_V2": "110",
   "DESKTOP_UPDATER_TEST_WORKDIR": "/tmp/desktop_updater_macos_smoke",
 };
 
 const _smokeOwnerFileName = "desktop_updater_smoke_owner.txt";
 const _updateSentinelFileName = "desktop_updater_smoke.txt";
+const _smokePublicKeyId = "native-runtime-smoke-stable";
+final _redactedEnvironmentValues = <String>{};
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
@@ -508,11 +513,41 @@ class _MacOSProductionSmoke {
       [
         "build",
         "macos",
-        "--release",
+        "--config-only",
         "--build-name",
         version,
         "--build-number",
         buildNumber,
+      ],
+      workingDirectory: "example",
+    );
+    final generatedBuildDirectory = Directory(
+      path.join("example", "build", "macos"),
+    );
+    if (await generatedBuildDirectory.exists()) {
+      await generatedBuildDirectory.delete(recursive: true);
+    }
+    await _runChecked(
+      "/usr/bin/xcodebuild",
+      [
+        "-quiet",
+        "-workspace",
+        "macos/Runner.xcworkspace",
+        "-scheme",
+        "Runner",
+        "-configuration",
+        "Release",
+        "-sdk",
+        "macosx",
+        "-derivedDataPath",
+        "build/macos",
+        "CODE_SIGN_STYLE=Manual",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGNING_REQUIRED=YES",
+        "CODE_SIGN_IDENTITY=${env["DESKTOP_UPDATER_DEV_ID_APP"]!}",
+        "DEVELOPMENT_TEAM=UPK4SC93AN",
+        "PROVISIONING_PROFILE_SPECIFIER=",
+        "build",
       ],
       workingDirectory: "example",
     );
@@ -560,12 +595,18 @@ class _MacOSProductionSmoke {
     }
     await _runChecked("/usr/bin/codesign", [
       "--force",
-      "--deep",
       "--options",
       "runtime",
       "--timestamp",
       "--sign",
       env["DESKTOP_UPDATER_DEV_ID_APP"]!,
+      smokeApp.path,
+    ]);
+    await _runChecked("/usr/bin/codesign", [
+      "--verify",
+      "--deep",
+      "--strict",
+      "--verbose=2",
       smokeApp.path,
     ]);
     await _notarizeAndStaple(smokeApp.path, env);
@@ -714,45 +755,127 @@ class _MacOSProductionSmoke {
       final releaseUrl = _resolveUrl(baseUrl, "release.json");
       final appArchiveUrl = _resolveUrl(baseUrl, "app-archive.json");
       final artifactSha256 = await _sha256File(hostedArtifact);
+      final descriptor = await _signedHostedDescriptor(
+        artifactKind: artifactKind,
+        artifactUrl: artifactUrl,
+        artifactSha256: artifactSha256,
+        artifactLength: await hostedArtifact.length(),
+        packageId: packageId,
+        appBundleName: appBundleName,
+        version: version,
+        buildNumber: int.parse(buildNumber),
+        install: install,
+      );
       await File(path.join(hostedRoot.path, "release.json")).writeAsString(
-        const JsonEncoder.withIndent("  ").convert({
-          "schemaVersion": 3,
-          "packageId": packageId,
-          "appName": appBundleName,
-          "version": version,
-          "buildNumber": int.parse(buildNumber),
-          "platform": "macos",
-          "channel": "stable",
-          "artifact": {
-            "kind": artifactKind,
-            "url": artifactUrl.toString(),
-            "sha256": artifactSha256,
-            "length": await hostedArtifact.length(),
-          },
-          "install": install,
-          "minimumUpdaterVersion": "2.0.0",
-          "generatedAt": DateTime.now().toUtc().toIso8601String(),
-        }),
+        const JsonEncoder.withIndent("  ").convert(descriptor),
+      );
+      final index = await _signedHostedIndex(
+        releaseUrl: releaseUrl,
+        appName: appName,
+        version: version,
+        buildNumber: int.parse(buildNumber),
       );
       await File(path.join(hostedRoot.path, "app-archive.json")).writeAsString(
-        const JsonEncoder.withIndent("  ").convert({
-          "schemaVersion": 3,
-          "appName": appName,
-          "items": [
-            {
-              "version": version,
-              "buildNumber": int.parse(buildNumber),
-              "platform": "macos",
-              "channel": "stable",
-              "mandatory": false,
-              "release": releaseUrl.toString(),
-            },
-          ],
-        }),
+        const JsonEncoder.withIndent("  ").convert(index),
       );
       evidence.line(hostedEvidenceLine);
       await body(appArchiveUrl);
     });
+  }
+
+  Future<Map<String, dynamic>> _signedHostedDescriptor({
+    required String artifactKind,
+    required Uri artifactUrl,
+    required String artifactSha256,
+    required int artifactLength,
+    required String packageId,
+    required String appBundleName,
+    required String version,
+    required int buildNumber,
+    required Map<String, Object?> install,
+  }) async {
+    final descriptor = ReleaseDescriptor(
+      schemaVersion: 3,
+      packageId: packageId,
+      appName: appBundleName,
+      version: version,
+      buildNumber: buildNumber,
+      platform: "macos",
+      channel: "stable",
+      artifact: ReleaseArtifact(
+        kind: artifactKind,
+        url: artifactUrl,
+        sha256: artifactSha256,
+        length: artifactLength,
+      ),
+      install: ReleaseInstall.fromJson(
+        jsonDecode(jsonEncode(install)) as Map<String, dynamic>,
+      ),
+      minimumUpdaterVersion: "2.0.0",
+      generatedAt: DateTime.now().toUtc(),
+      signature: const ReleaseSignature(
+        algorithm: "ed25519",
+        publicKeyId: _smokePublicKeyId,
+        value: "",
+      ),
+    )..validate();
+    final signature = await Ed25519().sign(
+      descriptor.canonicalSignatureBytes(),
+      keyPair: await _smokeKeyPair(),
+    );
+    return {
+      ...descriptor.toJson(),
+      "signature": ReleaseSignature(
+        algorithm: "ed25519",
+        publicKeyId: _smokePublicKeyId,
+        value: base64Encode(signature.bytes),
+      ).toJson(),
+    };
+  }
+
+  Future<Map<String, dynamic>> _signedHostedIndex({
+    required Uri releaseUrl,
+    required String appName,
+    required String version,
+    required int buildNumber,
+  }) async {
+    final index = ReleaseIndex(
+      schemaVersion: 3,
+      appName: appName,
+      items: [
+        ReleaseIndexItem(
+          version: version,
+          buildNumber: buildNumber,
+          platform: "macos",
+          channel: "stable",
+          mandatory: false,
+          release: releaseUrl,
+        ),
+      ],
+      signature: const ReleaseSignature(
+        algorithm: "ed25519",
+        publicKeyId: _smokePublicKeyId,
+        value: "",
+      ),
+    );
+    final signature = await Ed25519().sign(
+      index.canonicalSignatureBytes(),
+      keyPair: await _smokeKeyPair(),
+    );
+    return {
+      ...index.toJson(),
+      "signature": ReleaseSignature(
+        algorithm: "ed25519",
+        publicKeyId: _smokePublicKeyId,
+        value: base64Encode(signature.bytes),
+      ).toJson(),
+    };
+  }
+
+  Future<SimpleKeyPair> _smokeKeyPair() {
+    return Ed25519().newKeyPairFromSeed(
+      List<int>.generate(32, (index) => 255 - index),
+    );
   }
 
   Future<void> _runHostedUpdateSmoke({
@@ -776,7 +899,17 @@ class _MacOSProductionSmoke {
       diagnosticsLogPath,
       "--relaunch",
     ];
-    await _runChecked("dart", arguments);
+    final publicKey = await (await _smokeKeyPair()).extractPublicKey();
+    await _runChecked(
+      "dart",
+      arguments,
+      environment: {
+        ...Platform.environment,
+        "DESKTOP_UPDATER_SMOKE_PACKAGE_ID": packageId,
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID": _smokePublicKeyId,
+        "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY": base64Encode(publicKey.bytes),
+      },
+    );
   }
 
   Future<void> _runDirectAppUpdateSmoke({
@@ -836,7 +969,17 @@ class _MacOSProductionSmoke {
       path.join(app.path, "Contents", "Resources", _smokeOwnerFileName),
     );
     if (!await marker.exists()) {
-      return false;
+      if (path.normalize(app.path) !=
+          path.normalize(path.join("/Applications", appBundleName))) {
+        return false;
+      }
+      final infoPlist = path.join(app.path, "Contents", "Info.plist");
+      final result = await Process.run(
+        "/usr/libexec/PlistBuddy",
+        ["-c", "Print :CFBundleIdentifier", infoPlist],
+      );
+      return result.exitCode == 0 &&
+          result.stdout.toString().trim() == packageId;
     }
     final contents = await marker.readAsString();
     return contents.contains("desktop_updater macOS production smoke") &&
@@ -1132,6 +1275,9 @@ Map<String, String> _readRequiredEnvironment({_Evidence? evidence}) {
     }
     values[name] = value;
   }
+  _redactedEnvironmentValues
+    ..add(values["DESKTOP_UPDATER_DEV_ID_APP"]!)
+    ..add(values["DESKTOP_UPDATER_DEV_ID_INSTALLER"]!);
   return values;
 }
 
@@ -1172,24 +1318,49 @@ Future<ProcessResult> _runChecked(
   String executable,
   List<String> arguments, {
   String? workingDirectory,
+  Map<String, String>? environment,
 }) async {
-  stdout.writeln("\$ $executable ${arguments.join(" ")}");
+  stdout.writeln("\$ ${_redactText("$executable ${arguments.join(" ")}")}");
   final result = await Process.run(
     executable,
     arguments,
     workingDirectory: workingDirectory,
+    environment: environment,
   );
-  stdout.write(result.stdout);
-  stderr.write(result.stderr);
+  final stdoutText = _redactText(result.stdout.toString());
+  final stderrText = _redactText(result.stderr.toString());
+  stdout.write(stdoutText);
+  stderr.write(stderrText);
   if (result.exitCode != 0) {
     throw ProcessException(
       executable,
       arguments,
-      "${result.stdout}${result.stderr}",
+      "$stdoutText$stderrText",
       result.exitCode,
     );
   }
   return result;
+}
+
+String _redactText(String value) {
+  var redacted = value;
+  for (final secret in _redactedEnvironmentValues) {
+    if (secret.isNotEmpty) {
+      redacted = redacted.replaceAll(secret, "[redacted]");
+    }
+  }
+  redacted = redacted.replaceAll(
+    RegExp(r"\b[0-9A-Fa-f]{40}\b"),
+    "[redacted-fingerprint]",
+  );
+  redacted = redacted.replaceAll(
+    RegExp(
+      r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
+      r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b",
+    ),
+    "[redacted-uuid]",
+  );
+  return redacted;
 }
 
 String _parseMountPoint(String hdiutilOutput) {

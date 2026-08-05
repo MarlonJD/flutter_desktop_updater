@@ -1,3 +1,18 @@
+## 3.1.1
+
+* Fixed the macOS `installUpdate` MethodChannel handoff to send the canonical
+  five-key payload required by the native plugin. A real Flutter macOS smoke
+  app update from `1.0.0+100` to `1.1.0+110` passed with signed, notarized, and
+  stapled artifacts.
+* Hardened macOS ZIP staging and protected install validation, and aligned the
+  native helper, policy, recovery-smoke, and diagnostics contracts with the
+  verified install flow.
+* Validation note: notarized app update, DMG first-install/move, DMG artifact
+  trust, and DMG replacement were exercised. PKG artifact trust also passed.
+  Administrator-approved PKG installation, privileged helper/recovery/rollback,
+  final relaunch observation, and native Logger/OSLog evidence remain in
+  progress and are not claimed as complete in this release.
+
 ## 3.1.0
 
 * **Breaking:** remove the 3.0 direct environment/file release-signing command

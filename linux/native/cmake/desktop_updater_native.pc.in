@@ -9,7 +9,7 @@ portable_mode=unprivileged
 
 Name: desktop_updater_native
 Description: Flutter-free Linux desktop updater install helper
-Version: 3.1.0
+Version: 3.1.1
 Libs: -L${libdir} -ldesktop_updater_native
 Requires: libcrypto
 Cflags: -I${includedir}

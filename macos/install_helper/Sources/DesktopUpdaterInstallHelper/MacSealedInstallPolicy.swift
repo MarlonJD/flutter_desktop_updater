@@ -305,7 +305,7 @@ struct MacSealedInstallPolicyV1: Equatable {
     private static func identifier(_ value: Any?) -> String? {
         guard let value = value as? String,
               value.range(
-                  of: #"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$"#,
+                  of: #"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,126}[A-Za-z0-9])?$"#,
                   options: .regularExpression
               ) != nil else {
             return nil

@@ -5,10 +5,10 @@ import "package:flutter_test/flutter_test.dart";
 import "../tool/sync_versions.dart";
 
 void main() {
-  test("3.1.0 version sync covers every generated release surface", () async {
+  test("3.1.1 version sync covers every generated release surface", () async {
     final (versions, changes) = await planVersionSync();
 
-    expect(versions.canonical, "3.1.0");
+    expect(versions.canonical, "3.1.1");
     expect(changes, isEmpty);
     expect(
       changes.where((change) => change.path.contains("lock")),
