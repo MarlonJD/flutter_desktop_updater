@@ -2,6 +2,8 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/doctor_command.dart";
+import "package:desktop_updater/src/release_cli/keys/key_commands.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/publish_command.dart";
 import "package:desktop_updater/src/release_cli/sign_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
@@ -11,11 +13,14 @@ Future<int> runReleaseCommand(
   Directory? projectRoot,
   StringSink? output,
   Map<String, String>? environment,
+  ReleaseKeySecretStore? keyStore,
 }) async {
   final out = output ?? stdout;
   final parser = ArgParser()
     ..addFlag("help", abbr: "h", negatable: false)
     ..addCommand("doctor", buildDoctorParser())
+    ..addCommand("keygen", buildKeygenParser())
+    ..addCommand("keys", buildKeysParser())
     ..addCommand("publish", buildPublishParser())
     ..addCommand("sign", buildSignParser())
     ..addCommand("validate", buildValidateParser());
@@ -40,20 +45,35 @@ Future<int> runReleaseCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
+          keyStore: keyStore,
+        );
+      case "keygen":
+        return await runKeygenCommand(
+          command,
+          projectRoot: projectRoot ?? Directory.current,
+          output: out,
+          keyStore: keyStore,
+        );
+      case "keys":
+        return await runKeysCommand(
+          command,
+          projectRoot: projectRoot ?? Directory.current,
+          output: out,
           environment: environment,
+          keyStore: keyStore,
         );
       case "sign":
         return await runSignCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
-          environment: environment,
+          keyStore: keyStore,
         );
       case "validate":
         return await runValidateCommand(
           command,
           output: out,
-          environment: environment,
+          projectRoot: projectRoot ?? Directory.current,
         );
     }
     out.writeln("Unsupported release command: ${command.name}");
@@ -73,8 +93,9 @@ Publish and validate desktop updater releases.
 
 Usage:
   dart run desktop_updater:release doctor --platform macos
+  dart run desktop_updater:release keygen
   dart run desktop_updater:release publish --platform macos
-  dart run desktop_updater:release sign --release dist/desktop_updater/releases/2.2.0/macos/release.json --public-key-id stable-2026 --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
+  dart run desktop_updater:release sign --release dist/desktop_updater/releases/3.1.0/macos/release.json
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json
 
 ${parser.usage}

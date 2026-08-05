@@ -5,6 +5,9 @@ import "package:args/args.dart";
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
+import "package:desktop_updater/src/release_cli/release_publish_config.dart";
+import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
 import "package:path/path.dart" as path;
 
 /// Builds the argument parser for `desktop_updater:release sign`.
@@ -16,26 +19,23 @@ ArgParser buildSignParser() {
       "app-archive",
       help: "Path to the final app-archive.json file to sign.",
     )
-    ..addOption("public-key-id", help: "Pinned public key id to write.")
+    ..addOption("config",
+        help: "Path to desktop_updater.yaml for profile mode.")
+    ..addOption("base-url", help: "Override updates.baseUrl for profile mode.")
     ..addOption(
-      "private-key-env",
-      help: "Environment variable containing base64 raw Ed25519 private seed.",
-    )
-    ..addOption(
-      "private-key-file",
-      help: "External file containing base64 raw Ed25519 private seed.",
+      "key-profile",
+      help:
+          "Feed-bound public key profile; defaults to desktop_updater.keys.json.",
     );
 }
 
 /// Runs `release sign` for a local `release.json` descriptor.
 ///
-/// The private key must come from [environment] or an external key file so
-/// secrets do not need to live in package configuration.
 Future<int> runSignCommand(
   ArgResults results, {
   required Directory projectRoot,
   required StringSink output,
-  Map<String, String>? environment,
+  ReleaseKeySecretStore? keyStore,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildSignParser().usage);
@@ -50,11 +50,18 @@ Future<int> runSignCommand(
       "Provide --release, --app-archive, or both.",
     );
   }
-  final publicKeyId = _required(results, "public-key-id");
-  final privateKey = await _readPrivateKey(
+  final config = await ReleasePublishConfig.load(
+    projectRoot: projectRoot,
+    cliOverrides: ReleasePublishOverrides(
+      configPath: results["config"] as String?,
+      baseUrl: results["base-url"] as String?,
+    ),
+  );
+  final signing = await resolveReleaseSigningOptions(
     results: results,
     projectRoot: projectRoot,
-    environment: environment ?? Platform.environment,
+    expectedFeedUrl: config.baseUrl.resolve("app-archive.json"),
+    keyStore: keyStore,
   );
 
   if (releaseValue != null && releaseValue.trim().isNotEmpty) {
@@ -64,8 +71,8 @@ Future<int> runSignCommand(
     );
     await ReleaseDescriptorSigner().sign(
       releaseFile: releaseFile,
-      publicKeyId: publicKeyId,
-      privateKeyBase64: privateKey,
+      publicKeyId: signing.publicKeyId,
+      privateKeyBase64: signing.privateKeyBase64,
     );
     output
       ..writeln("Signed release descriptor:")
@@ -79,8 +86,8 @@ Future<int> runSignCommand(
     );
     await ReleaseIndexSigner().sign(
       appArchiveFile: appArchiveFile,
-      publicKeyId: publicKeyId,
-      privateKeyBase64: privateKey,
+      publicKeyId: signing.publicKeyId,
+      privateKeyBase64: signing.privateKeyBase64,
     );
     output
       ..writeln("Signed app archive:")
@@ -89,7 +96,7 @@ Future<int> runSignCommand(
   }
   output
     ..writeln("Public key id:")
-    ..writeln(publicKeyId);
+    ..writeln(signing.publicKeyId);
   return 0;
 }
 
@@ -220,33 +227,6 @@ List<int> _decodePrivateSeed(String value) {
   return seed;
 }
 
-Future<String> _readPrivateKey({
-  required ArgResults results,
-  required Directory projectRoot,
-  required Map<String, String> environment,
-}) async {
-  final envName = results["private-key-env"] as String?;
-  final filePath = results["private-key-file"] as String?;
-  final hasEnv = envName != null && envName.trim().isNotEmpty;
-  final hasFile = filePath != null && filePath.trim().isNotEmpty;
-  if (hasEnv == hasFile) {
-    throw const FormatException(
-      "Provide exactly one of --private-key-env or --private-key-file.",
-    );
-  }
-
-  if (hasEnv) {
-    final value = environment[envName.trim()];
-    if (value == null || value.trim().isEmpty) {
-      throw FormatException("Missing environment variable ${envName.trim()}.");
-    }
-    return value;
-  }
-
-  final keyFile = _resolveFile(projectRoot: projectRoot, value: filePath!);
-  return keyFile.readAsString();
-}
-
 File _resolveFile({
   required Directory projectRoot,
   required String value,
@@ -256,12 +236,4 @@ File _resolveFile({
     return File(expanded);
   }
   return File(path.join(projectRoot.path, expanded));
-}
-
-String _required(ArgResults results, String name) {
-  final value = results[name] as String?;
-  if (value == null || value.trim().isEmpty) {
-    throw FormatException("Missing --$name.");
-  }
-  return value.trim();
 }

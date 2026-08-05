@@ -189,10 +189,11 @@ literally.
 10. Remove Linux's `kLegacySelfContainedBundle` target proof and generated
     transaction behavior. Require explicit install root, running executable
     proof, package identity, signed provenance, and transaction ID.
-11. Require a key ID and exactly one private-key source in canonical
-    `release publish`, plus `--public-keys-env` containing the trusted old/new
-    rotation map. Derive the active public key from the private seed and require
-    an exact map match. Do not infer a new feed from an empty output directory:
+11. Require the feed-bound release-key profile in canonical `release publish`.
+    The profile contains the trusted old/new rotation map while private material
+    remains in protected storage. Derive the active public key from the stored
+    seed and require an exact map match. Do not infer a new feed from an empty
+    output directory:
     fetch and verify the hosted prior index by default, or require an explicit
     signed `--existing-app-archive`; only `--initialize-feed` plus a verified
     hosted absence may begin without history. Freeze the verified history and
@@ -347,7 +348,7 @@ for every file in that group.
 - Modify `lib/src/release_cli/publish_command.dart` and
   `lib/src/release_cli/release_publisher.dart` so canonical publish rejects
   missing signing/history options before build work, parses
-  `--public-keys-env`, `--existing-app-archive`, and `--initialize-feed`,
+  `--key-profile`, `--existing-app-archive`, and `--initialize-feed`,
   derives and matches the active public key, acquires and verifies prior
   history, signs final descriptor and index after hooks, writes the manifest
   last, strictly validates locally, and then uses conditional ordered
@@ -359,7 +360,7 @@ for every file in that group.
   custom-command views with an isolated `localRoot` and no disallowed local
   paths.
 - Modify `lib/src/release_cli/validate_command.dart` so normal hosted
-  validation removes `--require-signature`, requires `--public-keys-env`, and
+  validation removes `--require-signature`, requires a feed-bound key profile, and
   always verifies signatures. Make the generative `ReleaseValidator`
   constructor private; add `ReleaseValidator.production(publicKeys: ...)` and
   a non-CLI `ReleaseValidator.candidateOnlyForTesting()` that always emits the
@@ -1319,11 +1320,10 @@ listed in the file map.
 
   Implement this order exactly:
 
-  1. Require `--public-key-id`, exactly one private-key source, and
-     `--public-keys-env`. The named environment variable contains the same
-     JSON `{keyId: base64PublicKey}` map used by strict validation. Derive the
-     active public key and require it to match the normalized map entry before
-     build/package work.
+  1. Require `--key-profile` (or the default profile path). The profile contains
+     the same JSON `{keyId: base64PublicKey}` map used by strict validation.
+     Derive the active public key from protected local storage and require it to
+     match the normalized map entry before build/package work.
   2. Resolve history before build work. By default, bounded-fetch the hosted
      `app-archive.json` under `baseUrl`, require HTTP success, and verify its
      signature against the trusted old/new map. `--existing-app-archive` uses

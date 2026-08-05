@@ -478,7 +478,7 @@ Future<void> _scanTextFile(
           location: _offsetLocation(file, content, match.start),
           description: "Old CLI command `$command` is still referenced.",
           recommendation:
-              "Migrate publishing scripts to `dart run desktop_updater:package` and verify with `dart run desktop_updater:verify --release <release.json> --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS`. See ${migrationGuideFor(fromMajor)}.",
+              "Migrate publishing scripts to the feed-bound `desktop_updater.keys.json` profile and verify with `dart run desktop_updater:verify --release <release.json> --key-profile desktop_updater.keys.json`. See ${migrationGuideFor(fromMajor)}.",
         ),
       );
     }

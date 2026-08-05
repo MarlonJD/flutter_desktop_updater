@@ -1,5 +1,8 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:path/path.dart" as path;
 
@@ -12,12 +15,14 @@ class ReleasePublishE2eFixture {
     required this.webRoot,
     required this.server,
     required this.platform,
+    required this.keyStore,
   });
 
   final Directory projectRoot;
   final Directory webRoot;
   final UpdateServer server;
   final String platform;
+  final ReleaseKeySecretStore keyStore;
 
   File get manifestFile {
     return File(
@@ -49,12 +54,33 @@ Future<ReleasePublishE2eFixture> createReleasePublishE2eFixture({
   final webRoot = Directory(path.join(projectRoot.path, "web"));
   await webRoot.create();
   final server = await UpdateServer.bind(webRoot);
+  final configuredBaseUrl = baseUrl ?? server.uri;
+  final keyStore = LocalFileReleaseKeyStore(
+    rootDirectory: Directory(path.join(projectRoot.path, ".release-key-store")),
+  );
+  await writeReleaseKeyProfile(
+    File(path.join(projectRoot.path, "desktop_updater.keys.json")),
+    ReleaseKeyProfile(
+      profileId: "0123456789abcdef0123456789abcdef",
+      feedUrl: configuredBaseUrl.resolve("app-archive.json").toString(),
+      activeKeyId: _publishPublicKeyId,
+      pendingKeyId: null,
+      publicKeys: const {
+        _publishPublicKeyId: _publishPublicKeyBase64,
+      },
+    ),
+  );
+  await keyStore.write(
+    profileId: "0123456789abcdef0123456789abcdef",
+    keyId: _publishPublicKeyId,
+    seed: base64Decode(_publishPrivateKeyBase64),
+  );
 
   await writeReleasePublishFixtureProject(
     root: projectRoot,
     config: """
 updates:
-  baseUrl: ${baseUrl ?? server.uri}
+  baseUrl: $configuredBaseUrl
 ${providerConfig.replaceAll("{{WEB_ROOT}}", webRoot.path)}
 """,
   );
@@ -64,6 +90,7 @@ ${providerConfig.replaceAll("{{WEB_ROOT}}", webRoot.path)}
     webRoot: webRoot,
     server: server,
     platform: releasePublishFixturePlatform,
+    keyStore: keyStore,
   );
 }
 
@@ -280,21 +307,11 @@ Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
       "--platform",
       fixture.platform,
       "--skip-build-for-test",
-      "--public-key-id",
-      _publishPublicKeyId,
-      "--private-key-env",
-      _publishPrivateKeyEnv,
-      "--public-keys-env",
-      _publishPublicKeysEnv,
       "--initialize-feed",
     ],
     projectRoot: fixture.projectRoot,
     output: output,
-    environment: {
-      _publishPrivateKeyEnv: _publishPrivateKeyBase64,
-      _publishPublicKeysEnv:
-          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
-    },
+    keyStore: fixture.keyStore,
   );
   if (exitCode != 0) {
     throw StateError("release publish failed:\n$output");
@@ -303,8 +320,6 @@ Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
 }
 
 const _publishPublicKeyId = "stable-2026";
-const _publishPrivateKeyEnv = "DESKTOP_UPDATER_TEST_PRIVATE_KEY";
-const _publishPublicKeysEnv = "DESKTOP_UPDATER_TEST_PUBLIC_KEYS";
 const _publishPrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 const _publishPublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
@@ -317,15 +332,11 @@ Future<StringBuffer> validateFixture(ReleasePublishE2eFixture fixture) async {
       fixture.manifestFile.path,
       "--from-version",
       "2.0.0+200",
-      "--public-keys-env",
-      _publishPublicKeysEnv,
+      "--key-profile",
+      path.join(fixture.projectRoot.path, "desktop_updater.keys.json"),
     ],
     projectRoot: fixture.projectRoot,
     output: output,
-    environment: {
-      _publishPublicKeysEnv:
-          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
-    },
   );
   if (exitCode != 0) {
     throw StateError("release validate failed:\n$output");

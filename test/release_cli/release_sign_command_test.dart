@@ -6,13 +6,14 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
 import "package:desktop_updater/src/core/release_signature_verifier.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
-  test(
-      "release sign reads private key from env and writes descriptor signature",
+  test("release sign reads the feed-bound profile and signs a descriptor",
       () async {
     final fixture = await _createReleaseFile();
     try {
@@ -23,16 +24,12 @@ void main() {
           "sign",
           "--release",
           fixture.releaseFile.path,
-          "--public-key-id",
-          _publicKeyId,
-          "--private-key-env",
-          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY",
+          "--key-profile",
+          fixture.profileFile.path,
         ],
         projectRoot: fixture.root,
         output: output,
-        environment: {
-          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY": fixture.privateKey,
-        },
+        keyStore: fixture.keyStore,
       );
 
       expect(exitCode, 0);
@@ -59,44 +56,7 @@ void main() {
     }
   });
 
-  test("release sign reads private key from external file path", () async {
-    final fixture = await _createReleaseFile();
-    try {
-      final keyFile = File(path.join(fixture.root.path, "release.key"))
-        ..writeAsStringSync("${fixture.privateKey}\n");
-      final output = StringBuffer();
-
-      final exitCode = await runReleaseCommand(
-        [
-          "sign",
-          "--release",
-          fixture.releaseFile.path,
-          "--public-key-id",
-          _publicKeyId,
-          "--private-key-file",
-          keyFile.path,
-        ],
-        projectRoot: fixture.root,
-        output: output,
-      );
-
-      expect(exitCode, 0);
-      final descriptor = ReleaseDescriptor.fromJson(
-        jsonDecode(await fixture.releaseFile.readAsString())
-            as Map<String, dynamic>,
-      );
-      expect(
-        await Ed25519ReleaseSignatureVerifier({
-          _publicKeyId: fixture.publicKey,
-        }).verify(descriptor),
-        isTrue,
-      );
-    } finally {
-      await fixture.delete();
-    }
-  });
-
-  test("release sign signs the final app archive with the descriptor key",
+  test("release sign signs the final app archive with the profile key",
       () async {
     final fixture = await _createReleaseFile();
     try {
@@ -109,16 +69,10 @@ void main() {
           fixture.releaseFile.path,
           "--app-archive",
           fixture.appArchiveFile.path,
-          "--public-key-id",
-          _publicKeyId,
-          "--private-key-env",
-          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY",
         ],
         projectRoot: fixture.root,
         output: output,
-        environment: {
-          "DESKTOP_UPDATER_RELEASE_PRIVATE_KEY": fixture.privateKey,
-        },
+        keyStore: fixture.keyStore,
       );
 
       expect(exitCode, 0);
@@ -139,30 +93,54 @@ void main() {
     }
   });
 
-  test("release sign requires env or external file key source", () async {
+  test("release sign reports the migration path when the profile is missing",
+      () async {
     final fixture = await _createReleaseFile();
     try {
+      await fixture.profileFile.delete();
       final output = StringBuffer();
 
       final exitCode = await runReleaseCommand(
-        [
-          "sign",
-          "--release",
-          fixture.releaseFile.path,
-          "--public-key-id",
-          _publicKeyId,
-        ],
+        ["sign", "--release", fixture.releaseFile.path],
         projectRoot: fixture.root,
         output: output,
+        keyStore: fixture.keyStore,
       );
 
       expect(exitCode, 64);
-      expect(
-        output.toString(),
-        contains(
-          "Provide exactly one of --private-key-env or --private-key-file.",
-        ),
-      );
+      expect(output.toString(), contains("release key profile"));
+      expect(output.toString(), contains("release keys adopt --input"));
+      expect(output.toString(), contains("must be deleted"));
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("release sign rejects removed direct signing options", () async {
+    final fixture = await _createReleaseFile();
+    try {
+      for (final option in const [
+        "--public-key-id",
+        "--private-key-env",
+        "--private-key-file",
+      ]) {
+        final output = StringBuffer();
+        final exitCode = await runReleaseCommand(
+          [
+            "sign",
+            "--release",
+            fixture.releaseFile.path,
+            option,
+            "value",
+          ],
+          projectRoot: fixture.root,
+          output: output,
+          keyStore: fixture.keyStore,
+        );
+
+        expect(exitCode, 64);
+        expect(output.toString(), contains("Could not find an option named"));
+      }
     } finally {
       await fixture.delete();
     }
@@ -231,11 +209,35 @@ Future<_ReleaseSignFixture> _createReleaseFile() async {
           ],
         })}\n",
   );
+  await File(path.join(root.path, "desktop_updater.yaml")).writeAsString(
+    "updates:\n  baseUrl: https://cdn.example.com\n",
+  );
+  final profileFile = File(path.join(root.path, "desktop_updater.keys.json"));
+  const profileId = "0123456789abcdef0123456789abcdef";
+  await writeReleaseKeyProfile(
+    profileFile,
+    ReleaseKeyProfile(
+      profileId: profileId,
+      feedUrl: "https://cdn.example.com/app-archive.json",
+      activeKeyId: _publicKeyId,
+      pendingKeyId: null,
+      publicKeys: {_publicKeyId: base64Encode(publicKey.bytes)},
+    ),
+  );
+  final keyStore = LocalFileReleaseKeyStore(
+    rootDirectory: Directory(path.join(root.path, ".release-key-store")),
+  );
+  await keyStore.write(
+    profileId: profileId,
+    keyId: _publicKeyId,
+    seed: _privateSeed,
+  );
   return _ReleaseSignFixture(
     root: root,
     releaseFile: releaseFile,
     appArchiveFile: appArchiveFile,
-    privateKey: base64Encode(_privateSeed),
+    profileFile: profileFile,
+    keyStore: keyStore,
     publicKey: base64Encode(publicKey.bytes),
   );
 }
@@ -266,14 +268,16 @@ class _ReleaseSignFixture {
     required this.root,
     required this.releaseFile,
     required this.appArchiveFile,
-    required this.privateKey,
+    required this.profileFile,
+    required this.keyStore,
     required this.publicKey,
   });
 
   final Directory root;
   final File releaseFile;
   final File appArchiveFile;
-  final String privateKey;
+  final File profileFile;
+  final ReleaseKeySecretStore keyStore;
   final String publicKey;
 
   Future<void> delete() => root.delete(recursive: true);

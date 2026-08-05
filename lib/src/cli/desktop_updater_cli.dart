@@ -40,7 +40,7 @@ Future<int> runDesktopUpdaterCli(
         return await runVerifyCommand(
           commandArgs,
           output: out,
-          environment: environment,
+          projectRoot: projectRoot ?? Directory.current,
         );
       case "app-archive":
         await runAppArchiveCommand(commandArgs, output: out);

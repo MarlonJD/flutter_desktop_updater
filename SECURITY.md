@@ -96,6 +96,11 @@ Recent 3.0 hardening includes:
 - opt-in notarized macOS `release publish` flow that signs nested Flutter
   frameworks before the outer app bundle and verifies the notarized result
   before packaging.
+- feed-bound release-key profiles with automatic Ed25519 key IDs, protected
+  local private-key storage, authenticated encrypted export/import, existing
+  3.0 key adoption, and two-phase rotation. macOS/Linux use restrictive local
+  file permissions; Windows uses DPAPI `CurrentUser` without a plaintext
+  fallback. Key profiles are not runtime trust authorities.
 
 ## Release Operation Guidance
 
@@ -106,7 +111,7 @@ For production releases, prefer:
 - long, immutable cache TTLs for versioned `release.json` files and artifacts;
 - signed descriptors with release private keys kept outside the repository;
 - CI gates for platform signing, package generation, hosted validation, and
-  post-upload `release validate --public-keys-env <ENV>`;
+  post-upload `release validate --key-profile desktop_updater.keys.json`;
 - uploading versioned files first and exposing `app-archive.json` last.
 
 Internal scan artifacts, temporary reports, credentials, signing keys, and

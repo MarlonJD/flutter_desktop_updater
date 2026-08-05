@@ -2,6 +2,8 @@ import "dart:convert";
 import "dart:io";
 
 import "package:archive/archive_io.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/publish_command.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -24,24 +26,46 @@ void main() {
     expect(results["existing-app-archive"], "history/app-archive.json");
   });
 
+  test("publish parser rejects removed direct signing flags", () {
+    for (final option in const [
+      "--public-key-id",
+      "--private-key-env",
+      "--private-key-file",
+      "--public-keys-env",
+    ]) {
+      expect(
+        () => buildPublishParser().parse(["--platform", "macos", option, "x"]),
+        throwsA(isA<FormatException>()),
+      );
+    }
+  });
+
   test("publish rejects missing signing inputs", () async {
-    final output = StringBuffer();
-
-    final exitCode = await runReleaseCommand(
-      const [
-        "publish",
-        "--platform",
-        "linux",
-        "--skip-build-for-test",
-      ],
-      output: output,
+    final fixture = await createReleasePublishFixture(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+""",
     );
+    try {
+      await fixture.profileFile.delete();
+      final output = StringBuffer();
+      final exitCode = await runReleaseCommand(
+        const [
+          "publish",
+          "--platform",
+          "linux",
+          "--skip-build-for-test",
+        ],
+        projectRoot: fixture.root,
+        output: output,
+      );
 
-    expect(exitCode, 64);
-    expect(
-      output.toString(),
-      contains("Canonical release publish requires signed metadata"),
-    );
+      expect(exitCode, 64);
+      expect(output.toString(), contains("No release key profile was found"));
+    } finally {
+      await fixture.delete();
+    }
   });
 
   test("publish without upload provider prints manual upload instructions",
@@ -439,11 +463,20 @@ macos:
 }
 
 class ReleasePublishFixture {
-  const ReleasePublishFixture(this.root, this.platform, this.server);
+  const ReleasePublishFixture(
+    this.root,
+    this.platform,
+    this.server,
+    this.keyStore,
+  );
 
   final Directory root;
   final String platform;
   final UpdateServer server;
+  final ReleaseKeySecretStore keyStore;
+
+  File get profileFile =>
+      File(path.join(root.path, "desktop_updater.keys.json"));
 
   Future<void> delete() async {
     await server.close();
@@ -458,6 +491,14 @@ Future<ReleasePublishFixture> createReleasePublishFixture({
   final webRoot = Directory(path.join(root.path, "web"));
   await webRoot.create(recursive: true);
   final server = await UpdateServer.bind(webRoot);
+  final keyStore = LocalFileReleaseKeyStore(
+    rootDirectory: Directory(path.join(root.path, ".release-key-store")),
+  );
+  await keyStore.write(
+    profileId: "0123456789abcdef0123456789abcdef",
+    keyId: _publishPublicKeyId,
+    seed: base64Decode(_publishPrivateKeyBase64),
+  );
   await writeReleasePublishFixtureProject(
     root: root,
     config: config.replaceAll(
@@ -466,7 +507,24 @@ Future<ReleasePublishFixture> createReleasePublishFixture({
     ),
   );
 
-  return ReleasePublishFixture(root, releasePublishFixturePlatform, server);
+  final profileFile = File(path.join(root.path, "desktop_updater.keys.json"));
+  final profile = ReleaseKeyProfile(
+    profileId: "0123456789abcdef0123456789abcdef",
+    feedUrl: server.uri.resolve("app-archive.json").toString(),
+    activeKeyId: _publishPublicKeyId,
+    pendingKeyId: null,
+    publicKeys: const {
+      _publishPublicKeyId: _publishPublicKeyBase64,
+    },
+  );
+  await writeReleaseKeyProfile(profileFile, profile);
+
+  return ReleasePublishFixture(
+    root,
+    releasePublishFixturePlatform,
+    server,
+    keyStore,
+  );
 }
 
 Future<int> _runSignedPublishCommand({
@@ -477,26 +535,14 @@ Future<int> _runSignedPublishCommand({
   return runReleaseCommand(
     [
       ...args,
-      "--public-key-id",
-      _publishPublicKeyId,
-      "--private-key-env",
-      _publishPrivateKeyEnv,
-      "--public-keys-env",
-      _publishPublicKeysEnv,
       "--initialize-feed",
     ],
     projectRoot: fixture.root,
     output: output,
-    environment: {
-      _publishPrivateKeyEnv: _publishPrivateKeyBase64,
-      _publishPublicKeysEnv:
-          '{"$_publishPublicKeyId":"$_publishPublicKeyBase64"}',
-    },
+    keyStore: fixture.keyStore,
   );
 }
 
 const _publishPublicKeyId = "stable-2026";
-const _publishPrivateKeyEnv = "DESKTOP_UPDATER_TEST_PRIVATE_KEY";
-const _publishPublicKeysEnv = "DESKTOP_UPDATER_TEST_PUBLIC_KEYS";
 const _publishPrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 const _publishPublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
