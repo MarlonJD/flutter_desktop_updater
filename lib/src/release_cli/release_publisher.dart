@@ -455,7 +455,7 @@ class ReleasePublisher {
       if (activePublicKey == null ||
           activePublicKey != base64Encode(publicKey.bytes)) {
         throw const FormatException(
-          "Active signing key does not match --public-keys-env.",
+          "Active signing key does not match the release key profile.",
         );
       }
       final strictArtifactVerifier = ArtifactVerifier(

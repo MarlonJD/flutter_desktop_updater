@@ -1,11 +1,9 @@
-import "dart:convert";
 import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_manager.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
-import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
 import "package:path/path.dart" as path;
 
 /// Builds the first-run `release keygen` parser.
@@ -132,12 +130,26 @@ Future<int> runKeysCommand(
       return 0;
     case "adopt":
       final config = await _loadConfigFromResults(projectRoot, child);
-      final material = await readDirectReleaseSigningMaterial(
-        results: child,
-        projectRoot: projectRoot,
-        environment: environment ?? Platform.environment,
-        requirePublicKeys: true,
+      final inputFile = _resolveFile(projectRoot, child["input"] as String?);
+      final outputFile = _resolveFile(projectRoot, child["output"] as String?);
+      if (path.normalize(inputFile.absolute.path) ==
+          path.normalize(outputFile.absolute.path)) {
+        throw const FormatException(
+          "The plaintext adoption input and encrypted bundle output must be different files.",
+        );
+      }
+      if (await outputFile.exists() && !(child["force"] as bool)) {
+        throw StateError(
+          "Refusing to overwrite the encrypted bundle at ${outputFile.path}; "
+          "pass --force to replace it.",
+        );
+      }
+      final passphrase = await _readPassphrase(
+        child,
+        environment ?? Platform.environment,
+        output,
       );
+      final adoptionInput = await readLegacyReleaseKeyAdoptionInput(inputFile);
       final manager = _manager(
         projectRoot: projectRoot,
         feedUrl: config.baseUrl.resolve("app-archive.json"),
@@ -145,11 +157,23 @@ Future<int> runKeysCommand(
         keyStore: keyStore,
       );
       await manager.adopt(
-        publicKeyId: material.publicKeyId,
-        privateKeyBase64: base64Encode(material.privateSeed),
-        trustedPublicKeys: material.trustedPublicKeys,
+        input: adoptionInput,
         output: output,
       );
+      await manager.export(
+        outputFile: outputFile,
+        passphrase: passphrase,
+        publicOnly: false,
+        force: child["force"] as bool,
+      );
+      output
+        ..writeln("Exported encrypted release key bundle: ${outputFile.path}")
+        ..writeln(
+          "Delete the plaintext adoption input now: ${inputFile.path}",
+        )
+        ..writeln(
+          "CI and other machines must import only the encrypted bundle.",
+        );
       return 0;
     case "rotate":
       final manager = await _managerFromProfileCommand(
@@ -201,10 +225,19 @@ ArgParser _importParser() {
 
 ArgParser _adoptParser() {
   return _profileCommandParser()
-    ..addOption("public-key-id")
-    ..addOption("private-key-env")
-    ..addOption("private-key-file")
-    ..addOption("public-keys-env");
+    ..addOption(
+      "input",
+      help: "Strict one-time plaintext legacy adoption JSON input.",
+    )
+    ..addOption(
+      "output",
+      help: "Encrypted release key bundle output path.",
+    )
+    ..addOption(
+      "passphrase-env",
+      help: "Environment variable containing the bundle passphrase.",
+    )
+    ..addFlag("force", negatable: false);
 }
 
 Future<ReleaseKeyManager> _managerFromProfileCommand(

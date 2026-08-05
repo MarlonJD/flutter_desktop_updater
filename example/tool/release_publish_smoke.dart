@@ -37,6 +37,15 @@ Future<void> main(List<String> args) async {
   );
   final webRoot = Directory(_join(tempRoot.path, "web"));
   await webRoot.create(recursive: true);
+  final profileFile = File(_join(tempRoot.path, "desktop_updater.keys.json"));
+  final secretDataRoot = Directory(_join(tempRoot.path, "release-key-store"));
+  final smokeEnvironment = {
+    ...Platform.environment,
+    if (Platform.isWindows)
+      "LOCALAPPDATA": secretDataRoot.path
+    else
+      "XDG_DATA_HOME": secretDataRoot.path,
+  };
 
   final server = await _StaticServer.bind(webRoot);
   stdout.writeln("Release publish smoke server: ${server.baseUrl}");
@@ -51,18 +60,29 @@ Future<void> main(List<String> args) async {
       ),
     );
 
+    await _runChecked(
+      "dart",
+      [
+        "run",
+        "desktop_updater:release",
+        "keygen",
+        "--config",
+        configFile.path,
+        "--key-profile",
+        profileFile.path,
+      ],
+      workingDirectory: projectRoot.path,
+      environment: smokeEnvironment,
+    );
+
     final publishArgs = [
       "run",
       "desktop_updater:release",
       "publish",
       "--platform",
       platform,
-      "--public-key-id",
-      _smokePublicKeyId,
-      "--private-key-env",
-      _smokePrivateKeyEnv,
-      "--public-keys-env",
-      _smokePublicKeysEnv,
+      "--key-profile",
+      profileFile.path,
       "--initialize-feed",
       "--config",
       configFile.path,
@@ -76,11 +96,7 @@ Future<void> main(List<String> args) async {
       "dart",
       publishArgs,
       workingDirectory: projectRoot.path,
-      environment: {
-        ...Platform.environment,
-        _smokePrivateKeyEnv: _smokePrivateKeyBase64,
-        _smokePublicKeysEnv: '{"$_smokePublicKeyId":"$_smokePublicKeyBase64"}',
-      },
+      environment: smokeEnvironment,
     );
     final output = "${result.stdout}${result.stderr}";
     if (!output.contains("Hosted artifact SHA-256: OK") ||
@@ -182,14 +198,6 @@ Future<ProcessResult> _runChecked(
   }
   return result;
 }
-
-// These keys are deliberately synthetic and scoped to the local CI smoke.
-// Production publishing must use a secret-managed signing key instead.
-const _smokePublicKeyId = "stable-2026";
-const _smokePrivateKeyEnv = "DESKTOP_UPDATER_SMOKE_PRIVATE_KEY";
-const _smokePublicKeysEnv = "DESKTOP_UPDATER_SMOKE_PUBLIC_KEYS";
-const _smokePrivateKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
-const _smokePublicKeyBase64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
 class _StaticServer {
   const _StaticServer(this._server, this._root);

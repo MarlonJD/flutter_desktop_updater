@@ -1,6 +1,6 @@
 # Publishing Desktop Updates
 
-Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow with the 3.1 profile-based signing workflow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) before publishing.
+Examples that use `2.0.x` or `2.2.x` below are retained for historical bridge and migration scenarios. New releases use the 3.0 schema-v3 flow with the 3.1 profile-based signing workflow; see the [2.x to 3.0 migration guide](migration/2.x-to-3.0.md) and [3.0 to 3.1 release-key guide](migration/3.0-to-3.1.md) before publishing.
 
 This guide covers the app-owned release publishing flow for desktop_updater 3.1.
 The happy path is:
@@ -20,14 +20,12 @@ local storage and does not edit shell profiles or persistent environment
 variables. See [Release key management](release-key-management.md) for moving
 profiles between computers and rotating keys safely.
 
-For CI and established feeds, the complete direct contract remains supported:
-`--public-key-id`, one of `--private-key-env`/`--private-key-file`, and
-`--public-keys-env`. Those flags are advanced/CI guidance, not deprecated.
-Keep private values in an external secret store and set the public-key map as a
-non-secret environment value. Add `--initialize-feed` only after independently
-proving that the hosted archive is absent. Lower-level `package`,
-`app-archive`, and candidate-only validation tools do not publish production
-metadata.
+For CI and established feeds, import an encrypted release-key bundle into the
+runner's protected local key store and use the same profile-backed commands.
+Raw private-key environment variables and files are not supported. Add
+`--initialize-feed` only after independently proving that the hosted archive is
+absent. Lower-level `package`, `app-archive`, and candidate-only validation
+tools do not publish production metadata.
 
 The command builds one platform, packages the release, writes a consistent local
 layout, optionally uploads it, and validates the hosted update path.
@@ -37,9 +35,7 @@ Build-time Dart defines can be forwarded to Flutter with repeated
 
 ```sh
 dart run desktop_updater:release publish --platform windows \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --dart-define=MY_VAR=value \
   --dart-define=FEATURE_FLAG=true
 ```
@@ -58,9 +54,7 @@ For a native macOS application, select one explicit Xcode container and scheme:
 ```sh
 dart run desktop_updater release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --project-type xcode \
   --xcode-workspace Example.xcworkspace \
   --xcode-scheme Example
@@ -79,9 +73,7 @@ installed tree:
 ```sh
 dart run desktop_updater release publish \
   --platform linux \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --project-type cmake \
   --cmake-source . \
   --cmake-build-directory out/release \
@@ -186,7 +178,7 @@ artifact; Windows can also use an Inno Setup installer artifact.
   "install": {
     "strategy": "wholeBundleReplace"
   },
-  "minimumUpdaterVersion": "3.0.0",
+  "minimumUpdaterVersion": "3.1.0",
   "generatedAt": "2026-06-12T00:00:00Z"
 }
 ```
@@ -284,9 +276,7 @@ updates that must keep appearing until installed:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --mandatory
 ```
 
@@ -400,9 +390,7 @@ Mandatory only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --mandatory
 ```
 
@@ -413,9 +401,7 @@ Support deadline only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --minimum-supported-version 2.4.0 \
   --enforced-after 2026-07-15T00:00:00Z
 ```
@@ -428,9 +414,7 @@ Fresh install only:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --fresh-install-url https://example.com/download/latest \
   --fresh-install-message "This update must be installed from a fresh download."
 ```
@@ -443,9 +427,7 @@ Mandatory update with a fail-safe deadline and fresh download fallback:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --mandatory \
   --minimum-supported-version 2.4.0 \
   --enforced-after 2026-07-15T00:00:00Z \
@@ -631,7 +613,7 @@ Do this once in the app repository.
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.0.0
+  desktop_updater: ^3.1.0
 ```
 
 2. Point the app at the hosted archive:
@@ -667,9 +649,7 @@ Use `--config` only when your release config lives somewhere else:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --config tool/release/desktop_updater.yaml
 ```
 
@@ -735,9 +715,7 @@ By default, `release publish` reads `version` and build metadata from
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --version 2.0.1 \
   --build-number 201
 ```
@@ -747,9 +725,7 @@ dart run desktop_updater:release publish \
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 With only the minimum config, the command writes:
@@ -783,7 +759,7 @@ do not publish it as a production feed.
 ```sh
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 Use `--from-version` to simulate a specific installed version:
@@ -792,7 +768,7 @@ Use `--from-version` to simulate a specific installed version:
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
   --from-version 2.0.0+200 \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 Without `--from-version`, validation uses the previous hosted release for the
@@ -800,15 +776,13 @@ same platform and channel when available, or synthetic `0.0.0` for a first
 release.
 
 Production validation requires signed hosted `app-archive.json` and
-`release.json` metadata. Pin the public keys in an environment variable and
-pass it to validation:
+`release.json` metadata. The validator loads the public map from the same
+feed-bound profile used by signing:
 
 ```sh
-export DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS='{"stable-2026":"base64-raw-ed25519-public-key"}'
-
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 ## Recommended Setup
@@ -823,7 +797,7 @@ For production, start from the minimum setup and add:
 - S3-compatible storage, SFTP, or a custom upload command in CI.
 - Platform publisher-trust gates before packaging.
 - A release approval step before publishing `app-archive.json`.
-- `release validate --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS` after
+- `release validate --key-profile desktop_updater.keys.json` after
   every production upload.
 
 ### Signing release metadata
@@ -835,24 +809,15 @@ before uploading them:
 dart run desktop_updater:release sign \
   --release dist/desktop_updater/releases/2.2.0/linux/release.json \
   --app-archive dist/desktop_updater/app-archive.json \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
+  --key-profile desktop_updater.keys.json
 ```
 
-`DESKTOP_UPDATER_RELEASE_PRIVATE_KEY` must contain a base64-encoded raw
-32-byte Ed25519 private seed. You can also keep the key outside the repository
-and point to it explicitly:
-
-```sh
-dart run desktop_updater:release sign \
-  --release dist/desktop_updater/releases/2.2.0/linux/release.json \
-  --app-archive dist/desktop_updater/app-archive.json \
-  --public-key-id stable-2026 \
-  --private-key-file /secure/path/desktop-updater-release.key
-```
-
-Private signing keys are never read from `desktop_updater.yaml`. Keep them in
-CI secret storage, a dedicated key file, or another app-owned secret manager.
+The profile is the only release-signing key input. It contains public metadata;
+the private seed is loaded from the protected local key store. For an existing
+feed, use the one-time `keys adopt` migration and encrypted bundle import from
+the [release key management guide](release-key-management.md). Release
+commands do not read raw private keys or public-key maps from environment
+variables or files.
 
 The publisher can sign the final app archive itself after `postPackage` hooks
 using the same key material as the descriptor signing step:
@@ -860,9 +825,7 @@ using the same key material as the descriptor signing step:
 ```sh
 dart run desktop_updater:release publish \
   --platform linux \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 Ordered upload providers publish versioned descriptor and artifact files first,
@@ -960,9 +923,7 @@ Common CLI overrides:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --config tool/release/desktop_updater.yaml \
   --base-url https://updates.example.com \
   --output dist/desktop_updater \
@@ -1080,9 +1041,7 @@ Use the CLI flag:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS \
+  --key-profile desktop_updater.keys.json \
   --notarize
 ```
 
@@ -1128,9 +1087,7 @@ Command:
 ```sh
 dart run desktop_updater:release publish \
   --platform macos \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 What the command does:
@@ -1355,9 +1312,7 @@ Command:
 ```sh
 dart run desktop_updater:release publish \
   --platform windows \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 What the command does:
@@ -1460,9 +1415,7 @@ Command:
 ```sh
 dart run desktop_updater:release publish \
   --platform linux \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 What the command does:
@@ -1615,7 +1568,7 @@ Example:
 ```sh
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 Signed validation:
@@ -1623,7 +1576,7 @@ Signed validation:
 ```sh
 dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 ## Low-Level Commands
@@ -1664,7 +1617,7 @@ Verify one release descriptor and artifact:
 ```sh
 dart run desktop_updater:verify \
   --release dist/2.0.1/macos/release.json \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 ## CI
@@ -1679,8 +1632,7 @@ Typical flow:
 3. Restore signing credentials for the target platform.
 4. Build/sign/notarize/staple when required.
 5. Run the signed `dart run desktop_updater:release publish
-   --platform <platform>` command with `--public-key-id`,
-   `--private-key-env`, and `--public-keys-env`.
+   --platform <platform> --key-profile desktop_updater.keys.json` command.
 6. Fail the job if upload or hosted validation fails.
 
 The package's own provider e2e tests are Docker-gated:

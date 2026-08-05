@@ -111,7 +111,7 @@ For production releases, prefer:
 - long, immutable cache TTLs for versioned `release.json` files and artifacts;
 - signed descriptors with release private keys kept outside the repository;
 - CI gates for platform signing, package generation, hosted validation, and
-  post-upload `release validate --public-keys-env <ENV>`;
+  post-upload `release validate --key-profile desktop_updater.keys.json`;
 - uploading versioned files first and exposing `app-archive.json` last.
 
 Internal scan artifacts, temporary reports, credentials, signing keys, and

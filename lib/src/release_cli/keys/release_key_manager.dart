@@ -3,9 +3,122 @@ import "dart:io";
 import "dart:math";
 
 import "package:cryptography_plus/cryptography_plus.dart";
+import "package:desktop_updater/src/core/release_signature_verifier.dart";
+import "package:desktop_updater/src/json/strict_json.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_bundle.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
+
+const _legacyAdoptionSchemaVersion = 1;
+const _maxLegacyAdoptionBytes = 64 * 1024;
+final _legacyAdoptionKeyIdPattern =
+    RegExp(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
+
+/// One-time protected input for adopting a release key from a 3.0 feed.
+///
+/// This value is intentionally separate from [ReleaseKeyProfile]. It is
+/// accepted only by the migration command and is never a signing source.
+final class LegacyReleaseKeyAdoptionInput {
+  const LegacyReleaseKeyAdoptionInput({
+    required this.keyId,
+    required this.privateSeed,
+    required this.publicKeys,
+  });
+
+  final String keyId;
+  final List<int> privateSeed;
+  final Map<String, String> publicKeys;
+
+  factory LegacyReleaseKeyAdoptionInput.fromJson(Map<String, Object?> json) {
+    _expectExactKeys(
+      json,
+      const {"schemaVersion", "keyId", "privateSeed", "publicKeys"},
+      name: "legacy release key adoption input",
+    );
+    if (json["schemaVersion"] != _legacyAdoptionSchemaVersion) {
+      throw const FormatException(
+        "Legacy release key adoption input schemaVersion must be 1.",
+      );
+    }
+    final keyId = json["keyId"];
+    if (keyId is! String || !_legacyAdoptionKeyIdPattern.hasMatch(keyId)) {
+      throw const FormatException(
+        "Legacy release key adoption input keyId must be a safe key ID.",
+      );
+    }
+    final privateSeed = json["privateSeed"];
+    if (privateSeed is! String) {
+      throw const FormatException(
+        "Legacy release key adoption input privateSeed must be base64.",
+      );
+    }
+    final publicKeysValue = json["publicKeys"];
+    if (publicKeysValue is! Map<String, Object?> ||
+        publicKeysValue.isEmpty ||
+        publicKeysValue.length > 32) {
+      throw const FormatException(
+        "Legacy release key adoption input publicKeys must contain 1 to 32 keys.",
+      );
+    }
+    final rawPublicKeys = <String, String>{};
+    for (final entry in publicKeysValue.entries) {
+      if (!_legacyAdoptionKeyIdPattern.hasMatch(entry.key) ||
+          entry.value is! String) {
+        throw const FormatException(
+          "Legacy release key adoption input publicKeys contains invalid data.",
+        );
+      }
+      rawPublicKeys[entry.key] = entry.value! as String;
+    }
+    final normalizedPublicKeys = normalizeReleasePublicKeys(rawPublicKeys);
+    if (!normalizedPublicKeys.containsKey(keyId)) {
+      throw StateError(
+        "Legacy release key adoption input publicKeys must contain keyId.",
+      );
+    }
+    return LegacyReleaseKeyAdoptionInput(
+      keyId: keyId,
+      privateSeed: List<int>.unmodifiable(_decodeSeed(privateSeed)),
+      publicKeys: normalizedPublicKeys,
+    );
+  }
+}
+
+/// Reads a strict, bounded legacy adoption file without accepting a BOM or
+/// duplicate JSON keys.
+Future<LegacyReleaseKeyAdoptionInput> readLegacyReleaseKeyAdoptionInput(
+  File file,
+) async {
+  final bytes = await file.readAsBytes();
+  if (bytes.length > _maxLegacyAdoptionBytes) {
+    throw const FormatException(
+      "Legacy release key adoption input is larger than 64 KiB.",
+    );
+  }
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xef &&
+      bytes[1] == 0xbb &&
+      bytes[2] == 0xbf) {
+    throw const FormatException(
+      "Legacy release key adoption input must not contain a BOM.",
+    );
+  }
+  late final String source;
+  try {
+    source = utf8.decode(bytes);
+  } on FormatException {
+    throw const FormatException(
+      "Legacy release key adoption input must be strict UTF-8.",
+    );
+  }
+  final decoded = parseStrictJson(source);
+  if (decoded is! Map<String, Object?>) {
+    throw const FormatException(
+      "Legacy release key adoption input must be a JSON object.",
+    );
+  }
+  return LegacyReleaseKeyAdoptionInput.fromJson(decoded);
+}
 
 /// Coordinates profile lifecycle operations and private-key storage.
 final class ReleaseKeyManager {
@@ -41,7 +154,7 @@ final class ReleaseKeyManager {
       if (seed == null) {
         throw StateError(
           "The release key profile exists but its active secret is missing. "
-          "Import an encrypted backup or use the existing direct signing flow; "
+          "Import an encrypted backup or use the one-time keys adopt migration; "
           "keygen will not regenerate it.",
         );
       }
@@ -76,9 +189,7 @@ final class ReleaseKeyManager {
   }
 
   Future<ReleaseKeyProfile> adopt({
-    required String publicKeyId,
-    required String privateKeyBase64,
-    required Map<String, String> trustedPublicKeys,
+    required LegacyReleaseKeyAdoptionInput input,
     required StringSink output,
   }) async {
     if (await profileFile.exists()) {
@@ -86,35 +197,34 @@ final class ReleaseKeyManager {
         "A release key profile already exists; refusing to overwrite it.",
       );
     }
-    final seed = _decodeSeed(privateKeyBase64);
-    final normalizedId = publicKeyId.trim();
-    final normalizedKeys = Map<String, String>.unmodifiable(trustedPublicKeys);
-    await verifySeed(normalizedId, seed, normalizedKeys);
+    await verifySeed(input.keyId, input.privateSeed, input.publicKeys);
     final profile = ReleaseKeyProfile(
       profileId: _randomHex(16),
       feedUrl: feedUrl.toString(),
-      activeKeyId: normalizedId,
+      activeKeyId: input.keyId,
       pendingKeyId: null,
-      publicKeys: normalizedKeys,
+      publicKeys: input.publicKeys,
     );
     await store.write(
       profileId: profile.profileId,
-      keyId: normalizedId,
-      seed: seed,
+      keyId: input.keyId,
+      seed: input.privateSeed,
     );
     try {
       await writeReleaseKeyProfile(profileFile, profile, replace: false);
     } on Object {
-      await store.delete(profileId: profile.profileId, keyId: normalizedId);
+      await store.delete(profileId: profile.profileId, keyId: input.keyId);
       rethrow;
     }
     output
-      ..writeln("Adopted existing release signing key.")
+      ..writeln(
+          "Adopted existing release signing key into a migration profile.")
       ..writeln("Profile: ${profileFile.path}")
       ..writeln("Feed: ${profile.feedUrl}")
       ..writeln("Active key id: ${profile.activeKeyId}")
       ..writeln("Storage: ${store.description}")
-      ..writeln("The existing key ID was preserved; no key was generated.");
+      ..writeln("The existing key ID was preserved; no key was generated.")
+      ..writeln("This migration command does not sign releases directly.");
     return profile;
   }
 
@@ -403,7 +513,10 @@ bool _sameProfile(ReleaseKeyProfile left, ReleaseKeyProfile right) {
 
 List<int> _decodeSeed(String value) {
   try {
-    final seed = base64Decode(value.trim());
+    if (value.trim() != value || !_strictBase64.hasMatch(value)) {
+      throw const FormatException();
+    }
+    final seed = base64Decode(value);
     if (seed.length != 32) throw const FormatException();
     return seed;
   } on FormatException {
@@ -412,6 +525,21 @@ List<int> _decodeSeed(String value) {
     );
   }
 }
+
+void _expectExactKeys(
+  Map<String, Object?> value,
+  Set<String> allowed, {
+  required String name,
+}) {
+  if (value.length != allowed.length ||
+      value.keys.any((key) => !allowed.contains(key))) {
+    throw FormatException("$name contains unknown or missing fields.");
+  }
+}
+
+final _strictBase64 = RegExp(
+  r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+);
 
 List<int> _randomBytes(int length) {
   final random = Random.secure();

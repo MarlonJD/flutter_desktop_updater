@@ -16,7 +16,7 @@ artifact length and SHA-256 before installation.
 
 ## Quick Start
 
-Upgrading from 2.x? Read the [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md) before changing the dependency. Version 3.0 is a breaking release: legacy trust flags, caller-selected diagnostics, and compatibility scheduling APIs were removed rather than deprecated.
+Upgrading from 2.x or 3.0? Read the [2.x to 3.0 migration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/migration/2.x-to-3.0.md) and the [3.0 to 3.1 release-key guide](docs/migration/3.0-to-3.1.md) before changing the dependency. The 3.1 release removes direct release-key options; removed paths are not compatibility aliases.
 
 Add the package:
 
@@ -65,9 +65,10 @@ The generated `desktop_updater.keys.json` contains public metadata only. Its
 private seed stays outside the repository in the platform-appropriate local
 store. See the [release key management guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/release-key-management.md) for
 encrypted backup/import, existing 3.0 key adoption, and two-phase rotation.
-For CI or an established feed, the advanced direct-signing flags remain
-supported. Set the private-key environment variable from an external secret
-store and the public-key environment variable to the pinned JSON key map. Add
+For an existing 3.0 feed, use the one-time `release keys adopt --input ...
+--output ...` migration flow, export the encrypted bundle, and delete the
+plaintext input. CI and other machines import only that encrypted bundle; raw
+private-key environment variables and files are not supported. Add
 `--initialize-feed` only when the hosted archive has been independently proven
 absent; otherwise provide the verified existing history.
 

@@ -34,7 +34,8 @@ Schema version 1 is:
 `pendingKeyId` is optional. `profileId` is 16 random bytes encoded as lower-case
 hex. Generated IDs are `release-` plus the first 24 lower-case hexadecimal
 characters of SHA-256 over the raw 32-byte Ed25519 public key. Existing labels
-such as `stable-2026` remain valid for adoption and direct CI signing.
+such as `stable-2026` remain valid for one-time adoption and later
+profile-backed signing.
 
 Readers reject unknown or duplicate fields, unsupported schema versions, BOMs,
 invalid UTF-8, unsafe IDs, invalid public-key bytes, missing active/pending
@@ -52,8 +53,8 @@ profile operations use an exclusive lock. This is filesystem-permission
 protection, not Keychain or Secret Service protection.
 
 Windows uses DPAPI `CurrentUser` and stores only ciphertext. If DPAPI is
-unavailable, the CLI fails with direct-signing guidance; it never silently
-falls back to a plaintext Windows key file. No command modifies shell profiles,
+unavailable, the CLI fails with encrypted-bundle import guidance; it never
+silently falls back to a plaintext Windows key file. No command modifies shell profiles,
 `setx`, registry environment variables, or the parent process environment.
 
 ## Portable encrypted bundle
@@ -73,8 +74,11 @@ export never opens the private-key store.
 
 ## Adoption and rotation
 
-`keys adopt` imports an existing direct-signing key and complete public map,
-preserving IDs such as `stable-2026`; it never generates a replacement key.
+`keys adopt` reads one strict protected JSON input containing an existing key ID,
+private seed, and complete public map. It preserves IDs such as `stable-2026`,
+writes a profile, exports an encrypted bundle, and never generates a replacement
+key or signs a release directly. The plaintext input must be deleted after the
+bundle export; CI and other machines import only the encrypted bundle.
 
 Rotation is two-phase. `keys rotate` stores a new seed and adds its public key
 as `pendingKeyId` while leaving `activeKeyId` unchanged. Clients must embed both
@@ -84,8 +88,9 @@ are removed only through a separately managed client migration.
 
 ## Release boundary
 
-The feature is a backward-compatible CLI addition and targets 3.1.0. Direct
-environment/file signing remains supported for CI and advanced pipelines.
+The feature is a breaking CLI change in 3.1.0. Direct environment/file release
+signing was removed rather than deprecated; `publish`, `sign`, `validate`, and
+standalone `verify` use profile-backed inputs only.
 Version bump, commit/push, CI/merge, and pub.dev publication are separate
 release gates; a publish dry-run is not publication evidence. Host-specific
 Windows DPAPI evidence requires a Windows host or CI lane.

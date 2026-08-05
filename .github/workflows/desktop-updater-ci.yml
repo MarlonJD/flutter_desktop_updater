@@ -6,8 +6,139 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    name: Detect changed test areas
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.filter.outputs.full }}
+      dart: ${{ steps.filter.outputs.dart }}
+      cli: ${{ steps.filter.outputs.cli }}
+      runtime: ${{ steps.filter.outputs.runtime }}
+      windows: ${{ steps.filter.outputs.windows }}
+      macos: ${{ steps.filter.outputs.macos }}
+      linux: ${{ steps.filter.outputs.linux }}
+      docs: ${{ steps.filter.outputs.docs }}
+      test_files: ${{ steps.filter.outputs.test_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          GIT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$GIT_REF" == refs/tags/* || "$BEFORE_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            changed="__all__"
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if ! changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"; then
+              changed="__all__"
+            fi
+          else
+            if ! changed="$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")"; then
+              changed="__all__"
+            fi
+          fi
+
+          printf '%s\n' "Changed paths:"
+          printf '%s\n' "$changed"
+
+          full=false
+          dart=false
+          cli=false
+          runtime=false
+          windows=false
+          macos=false
+          linux=false
+          docs=false
+          test_files=""
+
+          if [[ "$changed" == "__all__" ]]; then
+            full=true
+            dart=true
+            cli=true
+            runtime=true
+            windows=true
+            macos=true
+            linux=true
+            docs=true
+          else
+            while IFS= read -r file; do
+              [[ -z "$file" ]] && continue
+              case "$file" in
+                .github/*|pubspec.yaml|pubspec.lock|analysis_options.yaml|tool/*)
+                  full=true
+                  ;;
+              esac
+              case "$file" in
+                lib/src/release_cli/*|lib/src/cli/*|bin/*|test/release_cli/*|example/tool/release_publish_smoke.dart)
+                  dart=true
+                  cli=true
+                  ;;
+                lib/src/core/*|lib/src/io/*|lib/desktop_updater.dart|lib/desktop_updater_method_channel.dart|lib/updater_controller.dart|lib/widget/*|test/desktop_updater*|test/updater_controller*|test/update_*)
+                  dart=true
+                  runtime=true
+                  ;;
+                lib/src/core/*|lib/src/io/*|lib/src/json/*|lib/src/package/*|lib/src/migrate/*|lib/*.dart)
+                  dart=true
+                  runtime=true
+                  ;;
+                test/*)
+                  dart=true
+                  test_files+="$file"$'\n'
+                  ;;
+                windows/*|example/windows/*|example/native/windows-cmake/*|test/windows*|test/*windows*|tool/windows*)
+                  windows=true
+                  ;;
+                macos/*|example/macos/*|example/native/macos*|test/macos*|test/*macos*|tool/macos*)
+                  macos=true
+                  ;;
+                linux/*|example/linux/*|example/native/linux-cmake/*|test/linux*|test/*linux*|tool/linux*)
+                  linux=true
+                  ;;
+                README.md|CHANGELOG.md|SECURITY.md|AGENTS.md|docs/*)
+                  docs=true
+                  ;;
+              esac
+            done <<< "$changed"
+
+            if [[ "$full" == false && "$dart" == false && "$windows" == false && "$macos" == false && "$linux" == false && "$docs" == false ]]; then
+              full=true
+              dart=true
+              cli=true
+              runtime=true
+              windows=true
+              macos=true
+              linux=true
+              docs=true
+            fi
+          fi
+
+          {
+            echo "full=$full"
+            echo "dart=$dart"
+            echo "cli=$cli"
+            echo "runtime=$runtime"
+            echo "windows=$windows"
+            echo "macos=$macos"
+            echo "linux=$linux"
+            echo "docs=$docs"
+            echo 'test_files<<EOF'
+            printf '%s' "$test_files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
   dart:
     name: Dart Package
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.dart == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,12 +148,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Check generated native contract fixtures
+        if: needs.changes.outputs.full == 'true'
         run: dart run tool/generate_native_contract_fixtures.dart --check
       - name: Check generated native install helper fixtures
+        if: needs.changes.outputs.full == 'true'
         run: dart run tool/generate_native_install_helper_fixtures.dart --check
       - name: Check generated native install helper policies
+        if: needs.changes.outputs.full == 'true'
         run: dart run tool/generate_native_install_helper_policy.dart --check-fixtures
       - name: Record portable native helper fixture counts
+        if: needs.changes.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -31,14 +166,38 @@ jobs:
           test "$fixture_count" -gt 0
           printf 'platform=portable\nsuite=native-install-helper-fixtures\ntestCount=%s\n' "$fixture_count" > reports/native-helper-common-test-counts.txt
       - name: Check synchronized native SDK versions
+        if: needs.changes.outputs.full == 'true'
         run: dart run tool/version_check.dart
       - name: Check formatting
         run: dart format --set-exit-if-changed .
       - name: Analyze
         run: flutter analyze --no-fatal-infos
-      - name: Test Dart surface
+      - name: Test complete Dart surface
+        if: needs.changes.outputs.full == 'true'
         run: flutter test --no-pub
+      - name: Test release CLI surface
+        if: needs.changes.outputs.full != 'true' && needs.changes.outputs.cli == 'true'
+        run: flutter test --no-pub test/release_cli
+      - name: Test runtime Dart surface
+        if: needs.changes.outputs.full != 'true' && needs.changes.outputs.runtime == 'true'
+        run: >-
+          flutter test --no-pub
+          test/desktop_updater_test.dart
+          test/desktop_updater_method_channel_test.dart
+          test/updater_controller_test.dart
+          test/update_state_test.dart
+          test/update_ready_ui_test.dart
+      - name: Test changed Dart files
+        if: needs.changes.outputs.full != 'true' && needs.changes.outputs.cli != 'true' && needs.changes.outputs.runtime != 'true' && needs.changes.outputs.test_files != ''
+        env:
+          TEST_FILES: ${{ needs.changes.outputs.test_files }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(printf '%s' "$TEST_FILES" | sed '/^$/d')
+          flutter test --no-pub "${files[@]}"
       - name: Check CLI entrypoints
+        if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
         run: |
           dart run desktop_updater --help
           dart run desktop_updater --version
@@ -51,6 +210,7 @@ jobs:
           dart run desktop_updater:app_archive --help
           dart run desktop_updater:release publish --help
       - name: Pub publish dry-run
+        if: needs.changes.outputs.full == 'true'
         run: dart pub publish --dry-run
       - name: Upload portable native helper test counts
         if: always()
@@ -60,8 +220,32 @@ jobs:
           path: reports/native-helper-common-test-counts.txt
           if-no-files-found: ignore
 
+  docs:
+    name: Documentation contracts
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Test documentation and release-key contracts
+        run: >-
+          flutter test --no-pub
+          test/harness_engineering_docs_test.dart
+          test/native_sdk_docs_test.dart
+          test/native_helper_diagnostics_docs_test.dart
+          test/native_runtime_merge_gate_docs_test.dart
+          test/macos_dmg_pkg_docs_test.dart
+          test/release_cli/release_key_management_test.dart
+
   cli-candidates:
     name: Standalone CLI candidate (${{ matrix.artifact }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -118,6 +302,8 @@ jobs:
 
   windows:
     name: Windows
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.windows == 'true' || needs.changes.outputs.runtime == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -1107,7 +1293,8 @@ jobs:
   windows-elevated-helper:
     name: Windows Authenticode/UAC Helper (not run unless enabled)
     runs-on: [self-hosted, Windows, X64, desktop-updater-uac]
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1'
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.windows == 'true')
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -1151,6 +1338,8 @@ jobs:
 
   macos-native:
     name: macOS Native Consumer
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.macos == 'true' || needs.changes.outputs.runtime == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -1382,6 +1571,8 @@ jobs:
 
   macos-flutter:
     name: macOS Flutter (${{ matrix.integration }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.macos == 'true' || needs.changes.outputs.runtime == 'true'
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -1444,7 +1635,8 @@ jobs:
   macos-notarized:
     name: macOS Notarized Publish
     runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1')
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1') && (needs.changes.outputs.full == 'true' || needs.changes.outputs.macos == 'true')
     # Signed production and native runtime lanes remain explicit
     # workflow_dispatch gates requiring Developer ID Application,
     # Developer ID Installer, and notary credentials:
@@ -1694,7 +1886,8 @@ jobs:
   macos-smappservice-helper:
     name: macOS SMAppService Privileged Helper (not run unless enabled)
     runs-on: [self-hosted, macOS, desktop-updater-smappservice]
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E == '1'
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SMAPPSERVICE_E2E == '1' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.macos == 'true')
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -1883,7 +2076,8 @@ jobs:
   linux-polkit-helper:
     name: Linux Installed Polkit Broker (not run unless enabled)
     runs-on: [self-hosted, Linux, X64, desktop-updater-polkit]
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1'
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_POLKIT_HELPER_E2E == '1' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.linux == 'true')
     steps:
       - uses: actions/checkout@v4
       - name: Build test-only caller and sealed fixed broker
@@ -1990,6 +2184,8 @@ jobs:
 
   linux:
     name: Linux
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.linux == 'true' || needs.changes.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -2518,3 +2714,90 @@ jobs:
           name: native-helper-test-counts-linux
           path: reports/linux-helper-test-counts.txt
           if-no-files-found: ignore
+
+  selective-gate:
+    name: Selective CI gate
+    if: always()
+    needs:
+      - changes
+      - dart
+      - docs
+      - cli-candidates
+      - windows
+      - windows-elevated-helper
+      - macos-native
+      - macos-flutter
+      - macos-notarized
+      - macos-smappservice-helper
+      - linux-polkit-helper
+      - linux
+    runs-on: ubuntu-latest
+    env:
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      DART_RESULT: ${{ needs.dart.result }}
+      DOCS_RESULT: ${{ needs.docs.result }}
+      CLI_RESULT: ${{ needs['cli-candidates'].result }}
+      WINDOWS_RESULT: ${{ needs.windows.result }}
+      WINDOWS_ELEVATED_RESULT: ${{ needs['windows-elevated-helper'].result }}
+      MACOS_NATIVE_RESULT: ${{ needs['macos-native'].result }}
+      MACOS_FLUTTER_RESULT: ${{ needs['macos-flutter'].result }}
+      MACOS_NOTARIZED_RESULT: ${{ needs['macos-notarized'].result }}
+      MACOS_SMAPPSERVICE_RESULT: ${{ needs['macos-smappservice-helper'].result }}
+      LINUX_POLKIT_RESULT: ${{ needs['linux-polkit-helper'].result }}
+      LINUX_RESULT: ${{ needs.linux.result }}
+      DART_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.dart == 'true' }}
+      DOCS_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.docs == 'true' }}
+      CLI_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true' }}
+      WINDOWS_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.windows == 'true' || needs.changes.outputs.runtime == 'true' }}
+      MACOS_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.macos == 'true' || needs.changes.outputs.runtime == 'true' }}
+      LINUX_SELECTED: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.linux == 'true' || needs.changes.outputs.runtime == 'true' }}
+    steps:
+      - name: Require selected jobs to pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=false
+
+          check_failure() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "$name finished with $result."
+              failed=true
+            fi
+          }
+
+          require_selected() {
+            local name="$1"
+            local selected="$2"
+            local result="$3"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              echo "$name was selected but finished with $result."
+              failed=true
+            fi
+          }
+
+          check_failure "changes" "$CHANGES_RESULT"
+          check_failure "dart" "$DART_RESULT"
+          check_failure "docs" "$DOCS_RESULT"
+          check_failure "cli-candidates" "$CLI_RESULT"
+          check_failure "windows" "$WINDOWS_RESULT"
+          check_failure "windows-elevated-helper" "$WINDOWS_ELEVATED_RESULT"
+          check_failure "macos-native" "$MACOS_NATIVE_RESULT"
+          check_failure "macos-flutter" "$MACOS_FLUTTER_RESULT"
+          check_failure "macos-notarized" "$MACOS_NOTARIZED_RESULT"
+          check_failure "macos-smappservice-helper" "$MACOS_SMAPPSERVICE_RESULT"
+          check_failure "linux-polkit-helper" "$LINUX_POLKIT_RESULT"
+          check_failure "linux" "$LINUX_RESULT"
+
+          require_selected "dart" "$DART_SELECTED" "$DART_RESULT"
+          require_selected "docs" "$DOCS_SELECTED" "$DOCS_RESULT"
+          require_selected "cli-candidates" "$CLI_SELECTED" "$CLI_RESULT"
+          require_selected "windows" "$WINDOWS_SELECTED" "$WINDOWS_RESULT"
+          require_selected "macos-native" "$MACOS_SELECTED" "$MACOS_NATIVE_RESULT"
+          require_selected "macos-flutter" "$MACOS_SELECTED" "$MACOS_FLUTTER_RESULT"
+          require_selected "linux" "$LINUX_SELECTED" "$LINUX_RESULT"
+
+          if [[ "$failed" == "true" ]]; then
+            exit 1
+          fi

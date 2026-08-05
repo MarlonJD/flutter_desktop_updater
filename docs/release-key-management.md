@@ -1,9 +1,8 @@
 # Release Key Management
 
-Desktop Updater 3.1 adds a profile-based release-signing workflow. It keeps
-the existing Ed25519 trust contract: the application still embeds the public
-key map in `trustedReleasePublicKeys`, and the updater never treats this
-mutable project profile as runtime trust.
+Desktop Updater 3.1 uses a profile-based release-signing workflow. The
+application still embeds the public key map in `trustedReleasePublicKeys`, and
+the updater never treats this mutable project profile as runtime trust.
 
 ## First local setup
 
@@ -92,16 +91,18 @@ key once instead:
 
 ```sh
 dart run desktop_updater:release keys adopt \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --input legacy-adoption.json \
+  --output release-key.dukey \
+  --passphrase-env DESKTOP_UPDATER_KEY_BUNDLE_PASSPHRASE
 ```
 
-`keys adopt` preserves the existing public-key map and selected key ID, verifies
-that the private seed matches it, and stores the secret locally. The existing
-direct environment/file commands remain supported for CI and advanced
-pipelines. They are not deprecated; profiles are simply the normal local
-workflow.
+`keys adopt` accepts one strict JSON input containing the existing key ID,
+private seed, and complete public map. It preserves the key ID, verifies the
+private seed against the map, writes the profile, and exports an encrypted
+bundle. It is migration-only and never signs a release directly. Delete the
+plaintext input after successful export. CI and other machines must use only
+encrypted bundle import; raw private-key environment variables and files are
+not supported.
 
 ## Rotation
 
@@ -136,8 +137,8 @@ dart run desktop_updater:release validate --key-profile desktop_updater.keys.jso
 
 Profile-backed `publish` and `sign` bind the profile to the exact configured
 `app-archive.json` URL. Profile-backed `validate` binds it to the feed URL in
-the publish manifest. Direct mode continues to require its complete explicit
-inputs and never mixes half of a profile with half of environment/file flags.
+the publish manifest. Standalone `verify` reads the same public profile and
+does not accept a direct public-key environment input.
 
 Metadata signing is separate from platform signing. This workflow does not
 replace Apple Developer ID/notarization, Windows Authenticode, or Linux

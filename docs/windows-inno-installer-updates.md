@@ -182,9 +182,7 @@ Run:
 ```sh
 dart run desktop_updater:release publish \
   --platform windows \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
 ```
 
 The generated `release.json` points at the installer `.exe` and uses:
@@ -282,11 +280,9 @@ Useful local checks:
 dart run desktop_updater:release doctor --platform windows
 dart run desktop_updater:release publish \
   --platform windows \
-  --public-key-id stable-2026 \
-  --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY \
-  --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
-dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 2.4.0+240 --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
-dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json --public-keys-env DESKTOP_UPDATER_RELEASE_PUBLIC_KEYS
+  --key-profile desktop_updater.keys.json
+dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json --from-version 2.4.0+240 --key-profile desktop_updater.keys.json
+dart run desktop_updater:verify --release dist/desktop_updater/releases/<version>/windows/release.json --key-profile desktop_updater.keys.json
 ```
 
 Run the full Inno smoke locally on a Windows machine with PowerShell 7 and

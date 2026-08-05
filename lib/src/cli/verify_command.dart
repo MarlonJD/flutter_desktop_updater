@@ -5,9 +5,9 @@ import "package:args/args.dart";
 import "package:desktop_updater/src/core/artifact_verifier.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
-import "package:desktop_updater/src/core/release_signature_verifier.dart";
 import "package:desktop_updater/src/core/safe_zip_extractor.dart";
 import "package:desktop_updater/src/io/composite_update_transport.dart";
+import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
 import "package:desktop_updater/src/release_cli/macos/apple_trust_commands.dart";
 import "package:path/path.dart" as path;
 
@@ -22,8 +22,9 @@ ArgParser buildVerifyParser() {
       help: "Verify an unsigned candidate without production trust checks.",
     )
     ..addOption(
-      "public-keys-env",
-      help: "Environment variable containing JSON public key map.",
+      "key-profile",
+      help:
+          "Feed-bound public key profile; defaults to desktop_updater.keys.json.",
     );
 }
 
@@ -31,7 +32,7 @@ ArgParser buildVerifyParser() {
 Future<int> runVerifyCommand(
   List<String> args, {
   StringSink? output,
-  Map<String, String>? environment,
+  Directory? projectRoot,
 }) async {
   final out = output ?? stdout;
   final parser = buildVerifyParser();
@@ -57,14 +58,14 @@ Future<int> runVerifyCommand(
   if (candidateOnly) {
     out.writeln(
       "candidate-only: unsigned verification; production verification "
-      "requires --public-keys-env.",
+      "requires a release key profile.",
     );
   }
   final publicKeys = candidateOnly
       ? null
-      : _verifyPublicKeys(
+      : await _verifyPublicKeys(
           results: results,
-          environment: environment ?? Platform.environment,
+          projectRoot: projectRoot ?? Directory.current,
         );
   final verifier = candidateOnly
       ? const ArtifactVerifier()
@@ -137,22 +138,26 @@ Future<int> runVerifyCommand(
   return 0;
 }
 
-Map<String, String> _verifyPublicKeys({
+Future<Map<String, String>> _verifyPublicKeys({
   required ArgResults results,
-  required Map<String, String> environment,
-}) {
-  final envName = results["public-keys-env"] as String?;
-  if (envName == null || envName.trim().isEmpty) {
-    throw const FormatException(
-      "Production verification requires --public-keys-env, or use "
-      "--candidate-only explicitly.",
+  required Directory projectRoot,
+}) async {
+  final profileValue = (results["key-profile"] as String?)?.trim();
+  final profileFile = profileValue == null || profileValue.isEmpty
+      ? defaultReleaseKeyProfileFile(projectRoot)
+      : File(
+          path.isAbsolute(profileValue)
+              ? profileValue
+              : path.join(projectRoot.path, profileValue),
+        );
+  if (!await profileFile.exists()) {
+    throw FormatException(
+      "Production verification requires a release key profile at "
+      "${profileFile.path}; run `release keygen` or use `--candidate-only`.",
     );
   }
-  final value = environment[envName];
-  if (value == null || value.trim().isEmpty) {
-    throw FormatException("Missing environment variable $envName.");
-  }
-  return decodeReleasePublicKeysJson(value);
+  final profile = await readReleaseKeyProfile(profileFile);
+  return profile.publicKeys;
 }
 
 Future<void> _verifyMacOSDmgArtifact({

@@ -45,7 +45,6 @@ Future<int> runReleaseCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
-          environment: environment,
           keyStore: keyStore,
         );
       case "keygen":
@@ -68,14 +67,12 @@ Future<int> runReleaseCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
-          environment: environment,
           keyStore: keyStore,
         );
       case "validate":
         return await runValidateCommand(
           command,
           output: out,
-          environment: environment,
           projectRoot: projectRoot ?? Directory.current,
         );
     }
@@ -98,7 +95,7 @@ Usage:
   dart run desktop_updater:release doctor --platform macos
   dart run desktop_updater:release keygen
   dart run desktop_updater:release publish --platform macos
-  dart run desktop_updater:release sign --release dist/desktop_updater/releases/2.2.0/macos/release.json --public-key-id stable-2026 --private-key-env DESKTOP_UPDATER_RELEASE_PRIVATE_KEY
+  dart run desktop_updater:release sign --release dist/desktop_updater/releases/3.1.0/macos/release.json
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json
 
 ${parser.usage}

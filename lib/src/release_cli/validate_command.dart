@@ -24,10 +24,6 @@ ArgParser buildValidateParser() {
       help: "Validate an unsigned candidate without production trust checks.",
     )
     ..addOption(
-      "public-keys-env",
-      help: "Environment variable containing JSON public key map.",
-    )
-    ..addOption(
       "key-profile",
       help:
           "Feed-bound public key profile; defaults to desktop_updater.keys.json.",
@@ -38,7 +34,6 @@ Future<int> runValidateCommand(
   ArgResults results, {
   required Directory projectRoot,
   required StringSink output,
-  Map<String, String>? environment,
 }) async {
   if (results["help"] as bool) {
     output.writeln(buildValidateParser().usage);
@@ -55,14 +50,13 @@ Future<int> runValidateCommand(
   if (candidateOnly) {
     output.writeln(
       "candidate-only: unsigned validation; production validation "
-      "requires --public-keys-env or --key-profile.",
+      "requires a release key profile.",
     );
   }
   final publicKeys = await resolveReleasePublicKeys(
     results: results,
     projectRoot: projectRoot,
     candidateOnly: candidateOnly,
-    environment: environment ?? Platform.environment,
     expectedFeedUrl: manifest.appArchive.url,
   );
   await ReleaseValidator(

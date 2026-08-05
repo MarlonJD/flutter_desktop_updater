@@ -1,52 +1,63 @@
-# Desktop Updater 3.1 Release Key Management
+# Desktop Updater 3.1 Release-Key Profile Migration
 
-Status: implementation complete; commit, push, CI, merge, and pub.dev release
-gates remain pending.
+Status: implementation in progress; version surfaces are synchronized, while
+validation and release gates remain pending.
 
 ## Objective
 
-Add a safe local release-signing workflow without changing the runtime trust
-contract. The normal flow is `release keygen` followed by profile-backed
-`release publish`. Existing explicit environment/file signing remains the
-advanced CI path.
+Ship the 3.1 breaking CLI contract that removes direct private/public key
+environment and file inputs from `release publish`, `release sign`,
+`release validate`, and standalone `verify`. All normal release operations use
+the feed-bound `desktop_updater.keys.json` profile or an explicit
+`--key-profile` path. Existing manually managed feeds have one migration-only adoption path
+that preserves their key ID, writes the profile, exports an encrypted bundle,
+and never signs a release directly.
 
 ## Decisions
 
-- One profile is bound to the exact normalized `app-archive.json` URL and is
-  shared by macOS, Windows, and Linux.
+- The default profile is `desktop_updater.keys.json`, bound to the exact
+  normalized `app-archive.json` URL and shared by macOS, Windows, and Linux.
+- The four removed direct options are not compatibility aliases or deprecated
+  fallbacks. Missing profiles point users to `release keygen` or the one-time
+  `keys adopt` migration.
+- Adoption accepts only bounded strict JSON with exactly `schemaVersion`,
+  `keyId`, `privateSeed`, and `publicKeys`. The input is migration-only and
+  must be deleted after encrypted bundle export; CI and other machines import
+  only the encrypted bundle.
 - Generated IDs are `release-` plus the first 24 lowercase hex characters of
-  the raw Ed25519 public-key SHA-256 fingerprint.
-- macOS/Linux use an explicit protected local-file store (`0700`/`0600`);
-  Windows uses DPAPI `CurrentUser` and never plaintext fallback. Keychain and
-  Secret Service are out of scope.
-- Encrypted bundles use the installed `cryptography_plus` Argon2id and
-  XChaCha20-Poly1305 APIs, bounded parameters, authenticated headers, and no
-  passphrase CLI argument.
-- Existing feeds use `keys adopt`; rotation prepares a pending key and
-  `keys activate` changes active state only after client adoption.
-- The public profile is not a runtime trust authority. Applications continue
-  to embed their pinned public-key map.
+  the raw Ed25519 public-key SHA-256 fingerprint. Adopted IDs are preserved.
+- macOS/Linux use the protected local-file store (`0700`/`0600`); Windows uses
+  DPAPI `CurrentUser` and never a plaintext fallback. Keychain and Secret
+  Service remain out of scope.
+- The public profile is not runtime trust authority. Applications continue to
+  embed their pinned public-key map.
 
 ## Work sequence
 
-- [x] Add strict duplicate-key JSON parsing.
-- [x] Add profile schema, fingerprint IDs, atomic profile writes, and stores.
-- [x] Add encrypted/public-only export and import.
-- [x] Add keygen, adoption, show, rotation, and activation commands.
-- [x] Integrate profile resolution with publish, sign, and validate.
-- [x] Add focused key-management tests.
-- [x] Update user, security, CI, migration, and release documentation.
-- [x] Bump and synchronize package version surfaces to 3.1.0.
-- [x] Run focused, documentation, structural-harness, analyzer, version, full
-      test, and package dry-run validation. The full suite's remaining failures
-      are host-signing fixtures and a temporary clone Swift package-name
-      mismatch; the affected Swift contract passes from the repository-name
-      checkout, and the native compatibility test passes in isolation.
-- [ ] Commit only on a safe target branch; do not push main or detached HEAD.
+- [x] Audit the 3.0 direct signing and verification surfaces.
+- [x] Remove direct signing/public-key parser options and resolver branches.
+- [x] Add strict adoption input, profile creation, encrypted bundle export,
+      and migration-only CLI messaging.
+- [x] Move publish, sign, validate, and verify fixtures to profile-backed
+      inputs; add parser rejection and adoption coverage.
+- [x] Update README, security, publishing, CI, migration, design, and release
+      documentation.
+- [x] Make ordinary CI path-selective while keeping workflow dispatch and
+      version-tag runs as full release gates.
+- [x] Bump `pubspec.yaml` and synchronize all generated native version
+      surfaces to 3.1.0 without changing lockfiles.
+- [ ] Run focused Flutter tests, formatting, analyzer, full tests, harness and
+      documentation checks, and `dart pub publish --dry-run`.
+- [ ] Commit the breaking change, push the current branch, open the PR, and
+      monitor required CI.
+- [ ] Merge only after the required checks are green, verify the merge on
+      `main`, and run real `dart pub publish`.
 
 ## Verification boundary
 
-Focused key-management tests run on macOS. Windows DPAPI target-host evidence,
-provider-backed publishing, CI, merge, and pub.dev publication are separate
-gates. A failed or unavailable target-host command must remain explicitly
-`not run` or `blocked`.
+Raw Dart formatting and analyzer checks can run from the bundled SDK. Flutter
+test/analyzer commands currently attempt to write the SDK telemetry/cache
+outside the allowed worktree and are blocked by the sandbox policy; record
+those gates literally until they run in an authorized environment. Windows
+DPAPI, provider-backed publishing, CI, merge, and pub.dev publication are
+separate gates and must not be described as locally verified without evidence.
