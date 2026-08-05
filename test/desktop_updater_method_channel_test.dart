@@ -14,6 +14,7 @@ import "package:desktop_updater/src/core/update_recovery.dart";
 import "package:desktop_updater/src/io/update_transport.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:desktop_updater/src/version_info.dart";
+import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
@@ -77,8 +78,13 @@ void main() {
     });
   });
 
-  test("installVerifiedUpdate sends the complete descriptor-bound payload",
+  test("installVerifiedUpdate sends platform-specific descriptor payloads",
       () async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     late MethodCall capturedCall;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
@@ -153,6 +159,17 @@ void main() {
       "updateBuildNumber": "200",
       "platform": "linux",
       "channel": "stable",
+      "expectedArtifactSha256": staged.descriptor.artifact.sha256,
+      "stageProvenanceSha256": staged.stageProvenanceSha256,
+      "transactionId": "123e4567-e89b-42d3-a456-426614174000",
+    });
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    await platform.installVerifiedUpdate(request);
+
+    expect(capturedCall.arguments, {
+      "stagingPath": staged.stagingPath,
+      "expectedPackageId": "com.example.app",
       "expectedArtifactSha256": staged.descriptor.artifact.sha256,
       "stageProvenanceSha256": staged.stageProvenanceSha256,
       "transactionId": "123e4567-e89b-42d3-a456-426614174000",

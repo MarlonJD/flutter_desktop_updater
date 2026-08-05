@@ -29,14 +29,18 @@ class MethodChannelDesktopUpdater extends DesktopUpdaterPlatform {
     final arguments = <String, Object?>{
       "stagingPath": request.stagingPath,
       "expectedPackageId": request.expectedPackageId,
-      "updateVersion": request.updateVersion,
-      "updateBuildNumber": request.updateBuildNumber?.toString(),
-      "platform": request.platform,
-      "channel": request.channel,
       "expectedArtifactSha256": request.expectedArtifactSha256,
       "stageProvenanceSha256": request.stageProvenanceSha256,
       "transactionId": request.transactionId,
     };
+    if (defaultTargetPlatform != TargetPlatform.macOS) {
+      arguments.addAll({
+        "updateVersion": request.updateVersion,
+        "updateBuildNumber": request.updateBuildNumber?.toString(),
+        "platform": request.platform,
+        "channel": request.channel,
+      });
+    }
     await methodChannel.invokeMethod<void>("installUpdate", arguments);
   }
 
