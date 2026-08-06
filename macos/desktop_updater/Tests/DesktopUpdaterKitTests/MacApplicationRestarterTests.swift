@@ -44,6 +44,7 @@ final class MacApplicationRestarterTests: XCTestCase {
             [
                 "executable=\(fixture.resolvingSymlinksInPath().path)",
                 "oldProcessExited=true",
+                "restarted=true",
                 "unrelatedDescriptorClosed=true"
             ]
         )
@@ -206,6 +207,40 @@ final class MacApplicationRestarterTests: XCTestCase {
         )
         XCTAssertNil(getenv("DESKTOP_UPDATER_RESTART_LIFETIME_FD"))
         XCTAssertNil(getenv("DESKTOP_UPDATER_RESTART_READY_FD"))
+    }
+
+    func testValidInheritedHandoffMarksTheRelaunchedProcess() throws {
+        unsetenv("DESKTOP_UPDATER_RESTARTED")
+
+        var lifetime = [Int32](repeating: -1, count: 2)
+        var readiness = [Int32](repeating: -1, count: 2)
+        XCTAssertEqual(Darwin.pipe(&lifetime), 0)
+        XCTAssertEqual(Darwin.pipe(&readiness), 0)
+        defer {
+            if readiness[0] >= 0 { close(readiness[0]) }
+            if readiness[1] >= 0 { close(readiness[1]) }
+            unsetenv("DESKTOP_UPDATER_RESTARTED")
+        }
+
+        let lifetimeRead = lifetime[0]
+        close(lifetime[1])
+        lifetime[1] = -1
+        setenv("DESKTOP_UPDATER_RESTART_LIFETIME_FD", "\(lifetimeRead)", 1)
+        setenv("DESKTOP_UPDATER_RESTART_READY_FD", "\(readiness[1])", 1)
+
+        XCTAssertTrue(
+            MacApplicationRestarter.awaitRestartParentExitIfRequested()
+        )
+        var readinessByte: UInt8 = 0
+        XCTAssertEqual(
+            Darwin.read(readiness[0], &readinessByte, 1),
+            1
+        )
+        XCTAssertEqual(readinessByte, 1)
+        XCTAssertEqual(
+            getenv("DESKTOP_UPDATER_RESTARTED").map { String(cString: $0) },
+            "1"
+        )
     }
 
     private func restartFixtureURL() throws -> URL {

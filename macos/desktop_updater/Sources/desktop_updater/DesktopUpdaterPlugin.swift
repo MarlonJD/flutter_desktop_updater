@@ -161,16 +161,23 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 request,
                 transactionID: transactionID
             )
-            let status = try helper.commitAfterExit(reservation)
-            guard status.state == .commitAccepted || status.state == .completed,
-                  status.resultCode == .accepted || status.resultCode == .succeeded,
-                  status.responseDigestSHA256 == reservation.responseDigestSHA256,
-                  status.helperEndpointIdentitySHA256 ==
-                    reservation.helperEndpointIdentitySHA256
-            else {
-                throw MacInstallClientError.invalidReservationResponse
+            let restart = try MacApplicationRestarter()
+                .prepareCurrentApplicationRestart()
+            do {
+                let status = try helper.commitAfterExit(reservation)
+                guard status.state == .commitAccepted || status.state == .completed,
+                      status.resultCode == .accepted || status.resultCode == .succeeded,
+                      status.responseDigestSHA256 == reservation.responseDigestSHA256,
+                      status.helperEndpointIdentitySHA256 ==
+                        reservation.helperEndpointIdentitySHA256
+                else {
+                    throw MacInstallClientError.invalidReservationResponse
+                }
+                restart.commit()
+            } catch {
+                restart.cancel()
+                throw error
             }
-
             result(nil)
             DispatchQueue.main.async {
                 NSApplication.shared.terminate(nil)
@@ -207,12 +214,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 return
             }
             result(
-                FlutterError(
-                    code: "InstallError",
-                    message: "Unable to prepare update installation.",
-                    details: nil
+                    FlutterError(
+                        code: "InstallError",
+                        message: "Unable to prepare update installation.",
+                        details: error.localizedDescription
+                    )
                 )
-            )
         }
     }
 

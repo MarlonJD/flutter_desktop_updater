@@ -431,6 +431,7 @@ macos:
         skipBuild: true,
         packager: zipPackager,
         dmgPackager: dmgPackager,
+        isMacOSHost: false,
       );
 
       final manifest = await publisher.publish(
@@ -479,6 +480,7 @@ macos:
         packager: zipPackager,
         pkgPackager: pkgPackager,
         runProcess: _fakeMacOSNotarizationProcess,
+        isMacOSHost: false,
       );
 
       final manifest = await publisher.publish(

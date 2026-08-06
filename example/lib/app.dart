@@ -45,6 +45,9 @@ class _HomePageState extends State<HomePage> {
   bool get _hostedSmokeEnabled =>
       Platform.environment["DESKTOP_UPDATER_HOSTED_SMOKE"] == "1";
 
+  bool get _wasRelaunched =>
+      Platform.environment["DESKTOP_UPDATER_RESTARTED"] == "1";
+
   @override
   void initState() {
     super.initState();
@@ -88,8 +91,12 @@ class _HomePageState extends State<HomePage> {
 
     unawaited(initPlatformState());
     unawaited(initAppVersionState());
-    unawaited(_runSmokeTestCommand());
-    unawaited(_runHostedSmokeTestCommand());
+    if (_wasRelaunched) {
+      unawaited(_writeSmokeRelaunchEvidence());
+    } else {
+      unawaited(_runSmokeTestCommand());
+      unawaited(_runHostedSmokeTestCommand());
+    }
   }
 
   Uri _configuredAppArchiveUrl() {
@@ -273,6 +280,25 @@ class _HomePageState extends State<HomePage> {
       await _writeSmokeMarker(markerPath, "failed: $error");
       await _writeSmokeDiagnostics(diagnosticsLogPath, "failed: $error");
       rethrow;
+    }
+  }
+
+  Future<void> _writeSmokeRelaunchEvidence() async {
+    final markerPath =
+        Platform.environment["DESKTOP_UPDATER_SMOKE_RELAUNCH_MARKER"];
+    if (markerPath != null && markerPath.trim().isNotEmpty) {
+      final marker = File(markerPath);
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString("relaunch", flush: true);
+    }
+    for (final name in <String>[
+      smokeDiagnosticsEnvironment,
+      "DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG",
+    ]) {
+      await _writeSmokeDiagnostics(
+        Platform.environment[name],
+        "relaunch",
+      );
     }
   }
 

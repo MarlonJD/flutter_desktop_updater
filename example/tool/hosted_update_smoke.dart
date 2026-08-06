@@ -54,6 +54,7 @@ Future<void> main(List<String> args) async {
     "desktop_updater_hosted_smoke_",
   );
   final markerPath = _join(tempRoot.path, "marker.txt");
+  final relaunchMarkerPath = _join(tempRoot.path, "relaunch-marker.txt");
 
   stdout
     ..writeln("Launching $executablePath")
@@ -67,6 +68,8 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_APP_ARCHIVE_URL": appArchiveUrl.trim(),
       "DESKTOP_UPDATER_HOSTED_SMOKE": "1",
       "DESKTOP_UPDATER_HOSTED_SMOKE_MARKER": markerPath,
+      if (Platform.isMacOS && relaunch)
+        "DESKTOP_UPDATER_SMOKE_RELAUNCH_MARKER": relaunchMarkerPath,
       if (Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"]
               ?.trim()
               .isNotEmpty ??
@@ -86,8 +89,14 @@ Future<void> main(List<String> args) async {
           false)
         "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY":
             Platform.environment["DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"]!.trim(),
-      if (diagnosticsLogPath != null)
+      if (diagnosticsLogPath != null) ...{
         "DESKTOP_UPDATER_HOSTED_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
+        // The relaunched app writes the generic diagnostics hook as well as
+        // the hosted-only hook. Keep both paths identical so the outer
+        // production smoke can observe the relaunch without enabling the
+        // controller-owned smoke flow.
+        "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnosticsLogPath,
+      },
       if (!productionGates) "DESKTOP_UPDATER_HOSTED_ALLOW_UNSIGNED_MACOS": "1",
       if (!relaunch) "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
     },
@@ -127,6 +136,21 @@ Future<void> main(List<String> args) async {
 
   if (productionGates && Platform.isMacOS) {
     await _runMacOSProductionGate(appPath, "updated app");
+  }
+
+  if (Platform.isMacOS && relaunch) {
+    await _waitForFileText(
+      relaunchMarkerPath,
+      "relaunch",
+      const Duration(seconds: 45),
+    );
+    if (diagnosticsLogPath != null) {
+      await File(diagnosticsLogPath).writeAsString(
+        "event=relaunch\n",
+        mode: FileMode.append,
+        flush: true,
+      );
+    }
   }
 
   stdout

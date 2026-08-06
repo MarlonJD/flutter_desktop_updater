@@ -295,8 +295,9 @@ class _MacOSProductionSmoke {
       await _runDirectAppUpdateSmoke(app: installedApp, stagedApp: v2App);
       evidence.line("app-update: whole-bundle replacement OK");
       await _verifyAppTrust(installedApp);
-      await _waitForRelaunchedApp(installedApp);
-      evidence.line("app-update: v2 relaunch OK");
+      evidence.line(
+        "app-update: v2 relaunch marker observed by the relaunched app",
+      );
       await _terminateSmokeApp(installedApp);
     } finally {
       await evidence.close();
@@ -362,8 +363,9 @@ class _MacOSProductionSmoke {
         },
       );
       evidence.line("dmg-update: whole-bundle replacement OK");
-      await _waitForRelaunchedApp(installedApp);
-      evidence.line("dmg-update: v2 relaunch OK");
+      evidence.line(
+        "dmg-update: v2 relaunch marker observed by the relaunched app",
+      );
       await _terminateSmokeApp(installedApp);
     } finally {
       await evidence.close();
@@ -910,6 +912,7 @@ class _MacOSProductionSmoke {
         "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY": base64Encode(publicKey.bytes),
       },
     );
+    await _waitForDiagnosticsEvent(diagnosticsLogPath, "relaunch");
   }
 
   Future<void> _runDirectAppUpdateSmoke({
@@ -933,23 +936,83 @@ class _MacOSProductionSmoke {
       "--diagnostics-log",
       diagnosticsLogPath,
     ]);
+    await _waitForDiagnosticsEvent(diagnosticsLogPath, "relaunch");
   }
 
-  Future<void> _waitForRelaunchedApp(Directory app) async {
-    final executable = _macOSExecutablePath(app);
+  Future<void> _waitForDiagnosticsEvent(
+    String diagnosticsLogPath,
+    String event,
+  ) async {
     final deadline = DateTime.now().add(const Duration(seconds: 45));
     while (DateTime.now().isBefore(deadline)) {
-      final result = await Process.run("/usr/bin/pgrep", ["-f", executable]);
-      if (result.exitCode == 0) {
+      final log = File(diagnosticsLogPath);
+      if (await log.exists() &&
+          (await log.readAsString()).contains("event=$event")) {
         return;
       }
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
-    throw TimeoutException("Timed out waiting for relaunched app: $executable");
+    throw TimeoutException(
+      "Timed out waiting for diagnostics event '$event': "
+      "$diagnosticsLogPath",
+    );
   }
 
   Future<void> _terminateSmokeApp(Directory app) async {
-    await Process.run("/usr/bin/pkill", ["-f", _macOSExecutablePath(app)]);
+    for (final processID in await _runningSmokeProcessIds(app)) {
+      await Process.run("/bin/kill", ["-TERM", processID.toString()]);
+    }
+  }
+
+  Future<List<int>> _runningSmokeProcessIds(Directory app) async {
+    final executable = _macOSExecutablePath(app);
+    final processIDs = <int>{};
+    final processList = await Process.run(
+      "/bin/ps",
+      ["-axo", "pid=,command="],
+    );
+    if (processList.exitCode == 0) {
+      for (final line in processList.stdout.toString().split("\n")) {
+        final match = RegExp(r"^\s*(\d+)\s+(.+)$").firstMatch(line);
+        if (match == null || !match.group(2)!.contains(executable)) {
+          continue;
+        }
+        final processID = int.tryParse(match.group(1)!);
+        if (processID != null && processID > 0) {
+          processIDs.add(processID);
+        }
+      }
+    }
+    if (processIDs.isNotEmpty) {
+      return processIDs.toList()..sort();
+    }
+
+    // macOS can expose only the executable basename in `ps` for an app
+    // launched through its bundle. Confirm those candidates through their
+    // text image instead of accepting an unrelated process with the same
+    // basename.
+    final basename = path.basename(executable);
+    final candidates = await Process.run("/usr/bin/pgrep", ["-x", basename]);
+    if (candidates.exitCode != 0) {
+      return const [];
+    }
+    for (final line in candidates.stdout.toString().split("\n")) {
+      final processID = int.tryParse(line.trim());
+      if (processID == null || processID <= 0) {
+        continue;
+      }
+      final textImages = await Process.run(
+        "/usr/sbin/lsof",
+        ["-a", "-p", processID.toString(), "-d", "txt", "-Fn"],
+      );
+      if (textImages.exitCode == 0 &&
+          textImages.stdout.toString().split("\n").any(
+                (image) => image == "n$executable",
+              )) {
+        processIDs.add(processID);
+      }
+    }
+    return processIDs.toList()..sort();
   }
 
   Future<void> _writeSmokeOwnerMarker(Directory app) async {
