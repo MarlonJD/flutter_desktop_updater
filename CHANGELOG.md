@@ -1,3 +1,16 @@
+## 3.1.3
+
+* Fixed Windows direct-ZIP updates for exact per-user app roots created by
+  legacy releases that do not have an installed identity marker. After signed
+  descriptor, sealed-policy, and stage-provenance authorization, the portable
+  helper can adopt the canonical marker uniquely bound into the verified ZIP.
+* Kept invalid, malformed, mismatched, reparse-point, and otherwise unsafe
+  installed markers fail-closed. Existing markers are never overwritten, and
+  the protected Program Files/uninstall-record authorization path is unchanged.
+* Added Windows native and source-order regression coverage for missing-marker
+  adoption, matching-marker preservation, mismatches, unsafe targets, and
+  provenance tampering.
+
 ## 3.1.2
 
 * Completed the macOS privileged helper and PKG recovery path, including
