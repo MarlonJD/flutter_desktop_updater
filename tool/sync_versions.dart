@@ -82,6 +82,12 @@ Future<(NativeSdkVersions, List<VersionFileChange>)> planVersionSync({
     "example/native/linux-cmake/CMakeLists.txt",
     versions,
   );
+  expected["example/native/linux-cmake-runtime/CMakeLists.txt"] =
+      await _cmakeConsumer(
+    root,
+    "example/native/linux-cmake-runtime/CMakeLists.txt",
+    versions,
+  );
   expected["windows/native/dotnet/DesktopUpdater.Native/"
       "DesktopUpdater.Native.csproj"] = await _nugetProject(root, versions);
   expected["linux/native/cmake/desktop_updater_native.pc.in"] =

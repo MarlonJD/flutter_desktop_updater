@@ -243,7 +243,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                     FlutterError(
                         code: "InstallError",
                         message: "Unable to prepare update installation.",
-                        details: error.localizedDescription
+                        details: nil
                     )
                 )
         }

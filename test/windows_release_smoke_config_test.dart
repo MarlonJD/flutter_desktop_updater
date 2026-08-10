@@ -16,6 +16,11 @@ void main() {
     expect(source, contains("DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG"));
     expect(source, contains(r'"event":"$event"'));
     expect(source, contains("--diagnostics-log <path>"));
+    expect(
+      source,
+      contains('? "2.7.1" : value.trim()'),
+    );
+    expect(source, contains('int.tryParse(raw ?? "271")'));
   });
 
   test("Windows updater smoke allows helper preparation before app exit", () {

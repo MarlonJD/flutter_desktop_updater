@@ -972,12 +972,12 @@ Future<Map<String, dynamic>> signedIndex({
 
 String _smokeReleaseVersion() {
   final value = Platform.environment["DESKTOP_UPDATER_TEST_VERSION_V2"];
-  return value == null || value.trim().isEmpty ? "1.1.0" : value.trim();
+  return value == null || value.trim().isEmpty ? "2.7.1" : value.trim();
 }
 
 int _smokeReleaseBuild() {
   final raw = Platform.environment["DESKTOP_UPDATER_TEST_BUILD_V2"];
-  final value = int.tryParse(raw ?? "110");
+  final value = int.tryParse(raw ?? "271");
   if (value == null || value < 0) {
     throw StateError(
       "DESKTOP_UPDATER_TEST_BUILD_V2 must be a non-negative integer.",

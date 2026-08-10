@@ -5,7 +5,8 @@ import XCTest
 final class MacInstallHelperTests: XCTestCase {
     func testSmokeTargetOverrideRequiresTheExactInstalledSmokeBundle() {
         let target = URL(
-            fileURLWithPath: "/Applications/Desktop Updater Smoke.app"
+            fileURLWithPath: "/Applications/Desktop Updater Smoke.app",
+            isDirectory: true
         )
         let environment = [
             "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",

@@ -26,4 +26,15 @@ void main() {
     expect(source, contains("CFBundleShortVersionString"));
     expect(source, contains("CFBundleVersion"));
   });
+
+  test("version sync includes both installed CMake consumers", () {
+    final source = File("tool/sync_versions.dart").readAsStringSync();
+
+    expect(source, contains("example/native/linux-cmake/CMakeLists.txt"));
+    expect(
+      source,
+      contains("example/native/linux-cmake-runtime/CMakeLists.txt"),
+    );
+    expect(source, contains("example/native/windows-cmake/CMakeLists.txt"));
+  });
 }

@@ -250,6 +250,15 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
       pluginSource,
       contains('message: "Unable to prepare update installation."'),
     );
+    expect(
+      pluginSource,
+      matches(
+        RegExp(
+          r'message: "Unable to prepare update installation\.",\s*'
+          r"details: nil",
+        ),
+      ),
+    );
     expect(pluginSource, isNot(contains("allowUnsignedMacOSUpdates")));
     expect(pluginSource, isNot(contains("diagnosticsLogPath")));
     expect(helperSource, isNot(contains("makeHelperScript")));
