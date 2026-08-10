@@ -562,9 +562,20 @@ bool HasMatchingUninstallRecord(const std::wstring& canonical_target,
       .has_value();
 }
 
-bool HasMatchingInstallIdentityMarker(
-    const fs::path& canonical_target,
-    const std::wstring& expected_package_id) {
+enum class InstalledIdentityMarkerState {
+  kMissing,
+  kMatching,
+  kInvalid,
+};
+
+struct InstalledIdentityMarkerInspection {
+  InstalledIdentityMarkerState state = InstalledIdentityMarkerState::kInvalid;
+  std::string canonical_json;
+};
+
+InstalledIdentityMarkerInspection
+InspectInstalledIdentityMarker(const fs::path &canonical_target,
+                               const std::wstring &expected_package_id) {
   const fs::path marker =
       canonical_target / L".desktop_updater_install_identity.json";
   HANDLE marker_handle = CreateFileW(
@@ -572,7 +583,11 @@ bool HasMatchingInstallIdentityMarker(
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
       nullptr);
   if (marker_handle == INVALID_HANDLE_VALUE) {
-    return false;
+    const DWORD error = GetLastError();
+    return {(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+                ? InstalledIdentityMarkerState::kMissing
+                : InstalledIdentityMarkerState::kInvalid,
+            {}};
   }
 
   BY_HANDLE_FILE_INFORMATION information = {};
@@ -584,17 +599,57 @@ bool HasMatchingInstallIdentityMarker(
       (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
   std::array<char, kMaximumInstalledIdentityMarkerBytes + 1> buffer = {};
   DWORD bytes_read = 0;
-  const bool read_ok =
-      safe_file &&
-      ReadFile(marker_handle, buffer.data(), static_cast<DWORD>(buffer.size()),
-               &bytes_read, nullptr) != FALSE;
+  const bool read_ok = safe_file && ReadFile(marker_handle, buffer.data(),
+                                             static_cast<DWORD>(buffer.size()),
+                                             &bytes_read, nullptr) != FALSE;
   const bool close_ok = CloseHandle(marker_handle) != FALSE;
-  if (!read_ok || !close_ok ||
+  if (!read_ok || !close_ok || information.nFileSizeHigh != 0 ||
       bytes_read > kMaximumInstalledIdentityMarkerBytes) {
-    return false;
+    return {InstalledIdentityMarkerState::kInvalid, {}};
   }
   const std::string contents(buffer.data(), bytes_read);
-  return InstalledIdentityMarkerMatchesJson(contents, expected_package_id);
+  try {
+    const runtime::internal::JsonValue parsed =
+        runtime::internal::ParseJson(contents);
+    if (runtime::internal::EncodeCanonicalJson(parsed) != contents ||
+        !InstalledIdentityMarkerMatchesJson(contents, expected_package_id)) {
+      return {InstalledIdentityMarkerState::kInvalid, {}};
+    }
+  } catch (const std::exception &) {
+    return {InstalledIdentityMarkerState::kInvalid, {}};
+  }
+  return {InstalledIdentityMarkerState::kMatching, contents};
+}
+
+std::string VerifiedStagedInstallIdentityMarker(
+    const fs::path &stage_path,
+    const runtime::internal::StageProvenanceMarker &provenance,
+    const std::wstring &expected_package_id) {
+  const std::string identity = CanonicalJsonFile(
+      stage_path / kInstalledIdentityMarkerName,
+      kMaximumInstalledIdentityMarkerBytes, "Staged install identity marker");
+  if (!InstalledIdentityMarkerMatchesJson(identity, expected_package_id)) {
+    throw std::runtime_error(
+        "Staged install identity marker does not match the package.");
+  }
+  const std::string identity_sha256 = Sha256Hex(identity);
+  std::size_t matching_entries = 0;
+  for (const auto &entry : provenance.entries) {
+    if (entry.path != ".desktop_updater_install_identity.json")
+      continue;
+    ++matching_entries;
+    if (entry.kind != "file" || !entry.target.empty() ||
+        entry.length != static_cast<std::int64_t>(identity.size()) ||
+        entry.sha256 != identity_sha256) {
+      throw std::runtime_error(
+          "Staged install identity marker is not provenance-bound.");
+    }
+  }
+  if (matching_entries != 1) {
+    throw std::runtime_error(
+        "Staged install identity marker is not uniquely provenance-bound.");
+  }
+  return identity;
 }
 
 bool IsCanonicalRelativeExecutable(const fs::path& path) {
@@ -717,19 +772,19 @@ InstallResult ProveInstallTarget(const InstallRequest& request,
       return {false, "Windows staging path must not overlap install target."};
     }
   }
-  const bool identity_matches =
-      protected_target
-          ? HasMatchingUninstallRecord(canonical_root.wstring(),
-                                       request.expected_package_id)
-          : HasMatchingInstallIdentityMarker(canonical_root,
-                                             request.expected_package_id);
-  if (!identity_matches) {
+  if (protected_target &&
+      !HasMatchingUninstallRecord(canonical_root.wstring(),
+                                  request.expected_package_id)) {
     return {false,
-            protected_target
-                ? "Windows Program Files target requires a matching uninstall "
-                  "record and package identity."
-                : "Windows ZIP target requires a matching installed identity "
-                  "marker; use a fresh installer."};
+            "Windows Program Files target requires a matching uninstall "
+            "record and package identity."};
+  }
+  if (!protected_target &&
+      InspectInstalledIdentityMarker(canonical_root,
+                                     request.expected_package_id)
+              .state == InstalledIdentityMarkerState::kInvalid) {
+    return {false, "Windows ZIP target has an invalid or mismatched installed "
+                   "identity marker."};
   }
   if (proof != nullptr) {
     *proof = {canonical_root.wstring(), relative.wstring(),
@@ -1055,16 +1110,31 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
     throw std::runtime_error("Windows helper execution mode changed.");
   }
 
+  const fs::path stage_path(request.staging_path);
+  const std::string expected_provenance_sha256 =
+      WideToUtf8(request.expected_provenance_sha256);
+  const runtime::internal::StageProvenanceMarker marker =
+      VerifyStageProvenance(stage_path, expected_provenance_sha256,
+                            runtime::internal::BCryptSha256);
+  const std::string release_manifest = CanonicalJsonFile(
+      stage_path / kStagedReleaseManifestName, kMaximumHelperMetadataBytes,
+      "Staged release manifest", true);
+
   const fs::path target_path(target_proof.canonical_root);
   std::string installed_identity;
   if (!target_proof.protected_target) {
-    installed_identity = CanonicalJsonFile(
-        target_path / kInstalledIdentityMarkerName,
-        kMaximumInstalledIdentityMarkerBytes, "Installed identity marker");
-    if (!InstalledIdentityMarkerMatchesJson(installed_identity,
-                                            request.expected_package_id)) {
+    const InstalledIdentityMarkerInspection installed =
+        InspectInstalledIdentityMarker(target_path,
+                                       request.expected_package_id);
+    if (installed.state == InstalledIdentityMarkerState::kMatching) {
+      installed_identity = installed.canonical_json;
+    } else if (installed.state == InstalledIdentityMarkerState::kMissing) {
+      installed_identity = VerifiedStagedInstallIdentityMarker(
+          stage_path, marker, request.expected_package_id);
+    } else {
       throw std::runtime_error(
-          "Installed identity marker does not match the package.");
+          "Installed identity marker is invalid or does not match the "
+          "package.");
     }
   } else {
     const auto registry_proof =
@@ -1078,16 +1148,6 @@ PreparedWindowsHelperRequest BuildWindowsHelperRequest(
     installed_identity = *registry_proof;
   }
   const std::string installed_identity_sha256 = Sha256Hex(installed_identity);
-
-  const fs::path stage_path(request.staging_path);
-  const std::string expected_provenance_sha256 =
-      WideToUtf8(request.expected_provenance_sha256);
-  const runtime::internal::StageProvenanceMarker marker =
-      VerifyStageProvenance(stage_path, expected_provenance_sha256,
-                            runtime::internal::BCryptSha256);
-  const std::string release_manifest = CanonicalJsonFile(
-      stage_path / kStagedReleaseManifestName, kMaximumHelperMetadataBytes,
-      "Staged release manifest", true);
 
   const helper::VerifiedWindowsExecutable caller_identity =
       helper::VerifyWindowsExecutable(running_executable);

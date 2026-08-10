@@ -104,6 +104,54 @@ void main() {
     expect(linux, contains("kInstalledIdentityMarkerName"));
   });
 
+  test(
+    "Windows portable marker adoption follows signed stage authorization",
+    () {
+      final client = File(productionSources[1]).readAsStringSync();
+      expect(client, contains("InstalledIdentityMarkerState::kMissing"));
+      expect(client, contains("VerifiedStagedInstallIdentityMarker"));
+      expect(
+        client,
+        matches(
+          RegExp(
+            r'"Windows ZIP target has an invalid or mismatched installed "\s*'
+            r'"identity marker\."',
+          ),
+        ),
+      );
+
+      final helper = File(
+        "windows/native/src/helper/windows_install_authorizer.cpp",
+      ).readAsStringSync();
+      final portableAuthorize = helper.indexOf(
+        "WindowsPortableInstallAuthorizer::Authorize",
+      );
+      final signedAuthorization = helper.indexOf(
+        "AuthorizeNativeInstallTransactionRequestV1(",
+        portableAuthorize,
+      );
+      final markerAdoption = helper.indexOf(
+        "AdoptAuthorizedPortableWindowsInstallIdentityMarker(",
+        signedAuthorization,
+      );
+      final restage = helper.indexOf(
+        "RestageVerifiedWindowsZip(",
+        markerAdoption,
+      );
+      expect(portableAuthorize, isNonNegative);
+      expect(signedAuthorization, greaterThan(portableAuthorize));
+      expect(markerAdoption, greaterThan(signedAuthorization));
+      expect(restage, greaterThan(markerAdoption));
+      expect(
+        helper,
+        contains(
+          "RenameHandleRelative(temporary.get(), target_directory.get(),\n"
+          "                         kInstalledIdentityMarkerName, false)",
+        ),
+      );
+    },
+  );
+
   test("installer strategies live in authenticated helper components", () {
     final mac = _readAll(const [
       "macos/install_helper/Sources/DesktopUpdaterInstallHelper/InstallStrategy.swift",

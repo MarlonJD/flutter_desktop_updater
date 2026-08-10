@@ -14,7 +14,7 @@ import "package:desktop_updater/src/core/release_index.dart";
 // ignore: implementation_imports
 import "package:desktop_updater/src/core/staged_update_provenance.dart";
 
-const _smokePackageId = "com.example.desktopUpdaterSmoke";
+const _smokePackageId = "com.example.desktop_updater_smoke";
 const _smokePublicKeyId = "native-runtime-smoke-stable";
 const _installedIdentityFileName = ".desktop_updater_install_identity.json";
 const _maximumSmokeArtifactBytes = 512 * 1024 * 1024;

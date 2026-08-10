@@ -1,6 +1,7 @@
 #include "windows_install_authorizer.h"
 
 #include <windows.h>
+#include <winternl.h>
 
 #include <aclapi.h>
 #include <bcrypt.h>
@@ -90,6 +91,11 @@ using desktop_updater::runtime::internal::StageProvenanceState;
 using desktop_updater::runtime::internal::VerifyStageProvenance;
 
 constexpr std::size_t kMaximumHelperMetadataBytes = 16 * 1024 * 1024;
+constexpr std::size_t kMaximumInstalledIdentityMarkerBytes = 64 * 1024;
+constexpr wchar_t kInstalledIdentityMarkerName[] =
+    L".desktop_updater_install_identity.json";
+constexpr char kInstalledIdentityMarkerPath[] =
+    ".desktop_updater_install_identity.json";
 
 class ScopedWindowsHelperFailureEvent final {
  public:
@@ -215,6 +221,20 @@ std::string ReadRegularFileNoReparse(const std::filesystem::path& path,
     offset += count;
   }
   return result;
+}
+
+void ValidateCanonicalInstallIdentityMarker(const std::string &marker,
+                                            const std::string &package_id) {
+  const JsonValue marker_value = ParseJson(marker);
+  const auto &marker_object = marker_value.object();
+  if (marker_object.size() != 2 ||
+      marker_object.find("packageId") == marker_object.end() ||
+      marker_object.find("schemaVersion") == marker_object.end() ||
+      marker_value.at("schemaVersion").integer() != 1 ||
+      marker_value.at("packageId").string() != package_id ||
+      EncodeCanonicalJson(marker_value) != marker) {
+    Fail("installed target identity marker mismatch");
+  }
 }
 
 std::wstring NormalizePath(std::filesystem::path path) {
@@ -450,12 +470,12 @@ void ValidatePortableWindowsTargetAuthority(
       parent_writable);
 }
 
-void ValidateTargetAuthority(const std::filesystem::path& target,
-                             const NativeInstallTransactionRequestV1& request,
-                             const WindowsHelperPolicy& policy,
-                             HANDLE caller_process,
-                             ScopedWindowsHelperFailureEvent* failure_stage =
-                                 nullptr) {
+void ValidateTargetLocationAndExecutableAuthority(
+    const std::filesystem::path& target,
+    const NativeInstallTransactionRequestV1& request,
+    const WindowsHelperPolicy& policy,
+    HANDLE caller_process,
+    ScopedWindowsHelperFailureEvent* failure_stage = nullptr) {
   if (!policy.is_portable()) {
     const bool allowed_root = std::any_of(
         policy.allowed_install_roots().begin(),
@@ -507,7 +527,13 @@ void ValidateTargetAuthority(const std::filesystem::path& target,
         target, RetainedProcessExecutablePath(caller_process),
         caller_process, failure_stage);
   }
+}
 
+void ValidateTargetIdentityProof(
+    const std::filesystem::path &target,
+    const NativeInstallTransactionRequestV1 &request,
+    const WindowsHelperPolicy &policy, HANDLE caller_process,
+    ScopedWindowsHelperFailureEvent *failure_stage = nullptr) {
   if (!policy.is_portable()) {
     const auto registry_proof = FindCanonicalWindowsUninstallRecordProof(
         target, request.package_id, caller_process);
@@ -519,20 +545,13 @@ void ValidateTargetAuthority(const std::filesystem::path& target,
   }
 
   if (failure_stage != nullptr) {
-    failure_stage->Advance(
-        WindowsHelperEvent::kPortableTargetMarkerFailure);
+    failure_stage->Advance(WindowsHelperEvent::kPortableTargetMarkerFailure);
   }
-  const std::string marker = ReadRegularFileNoReparse(
-      target / L".desktop_updater_install_identity.json", 64 * 1024);
-  const JsonValue marker_value = ParseJson(marker);
-  const auto& marker_object = marker_value.object();
-  if (marker_object.size() != 2 ||
-      marker_object.find("packageId") == marker_object.end() ||
-      marker_object.find("schemaVersion") == marker_object.end() ||
-      marker_value.at("schemaVersion").integer() != 1 ||
-      marker_value.at("packageId").string() != request.package_id ||
-      EncodeCanonicalJson(marker_value) != marker ||
-      BCryptSha256Hex(marker) != request.target.identity_proof_sha256) {
+  const std::string marker =
+      ReadRegularFileNoReparse(target / kInstalledIdentityMarkerName,
+                               kMaximumInstalledIdentityMarkerBytes);
+  ValidateCanonicalInstallIdentityMarker(marker, request.package_id);
+  if (BCryptSha256Hex(marker) != request.target.identity_proof_sha256) {
     Fail("installed target identity marker mismatch");
   }
 }
@@ -876,6 +895,113 @@ class WindowsDirectoryPreparedTransaction final
 
 }  // namespace
 
+void AdoptAuthorizedPortableWindowsInstallIdentityMarker(
+    const std::filesystem::path &target, const std::filesystem::path &stage,
+    const std::string &package_id, const std::string &expected_identity_sha256,
+    const std::string &transaction_id,
+    const StageProvenanceMarker &stage_provenance) {
+  const std::string staged_marker =
+      ReadRegularFileNoReparse(stage / kInstalledIdentityMarkerName,
+                               kMaximumInstalledIdentityMarkerBytes);
+  ValidateCanonicalInstallIdentityMarker(staged_marker, package_id);
+  const std::string marker_sha256 = BCryptSha256Hex(staged_marker);
+  if (marker_sha256 != expected_identity_sha256) {
+    Fail("staged install identity marker digest mismatch");
+  }
+
+  std::size_t matching_entries = 0;
+  for (const auto &entry : stage_provenance.entries) {
+    if (entry.path != kInstalledIdentityMarkerPath)
+      continue;
+    ++matching_entries;
+    if (entry.kind != "file" || !entry.target.empty() ||
+        entry.length != static_cast<std::int64_t>(staged_marker.size()) ||
+        entry.sha256 != marker_sha256) {
+      Fail("staged install identity marker is not provenance-bound");
+    }
+  }
+  if (matching_entries != 1) {
+    Fail("staged install identity marker is not uniquely provenance-bound");
+  }
+
+  UniqueWindowsHandle target_directory(CreateFileW(
+      target.c_str(),
+      GENERIC_READ | GENERIC_WRITE | FILE_TRAVERSE | SYNCHRONIZE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr));
+  if (!target_directory.valid()) {
+    Fail("portable install root is unavailable for identity adoption");
+  }
+  const WindowsFileIdentity target_identity =
+      ReadWindowsFileIdentity(target_directory.get());
+  if (!target_identity.directory) {
+    Fail("portable install root identity is not a directory");
+  }
+
+  const auto validate_installed_marker = [&]() {
+    const std::string installed = ReadUtf8FileRelative(
+        target_directory.get(), kInstalledIdentityMarkerName,
+        kMaximumInstalledIdentityMarkerBytes);
+    ValidateCanonicalInstallIdentityMarker(installed, package_id);
+    if (BCryptSha256Hex(installed) != expected_identity_sha256) {
+      Fail("installed target identity marker mismatch");
+    }
+  };
+  if (ExistsRelativeNoReparse(target_directory.get(),
+                              kInstalledIdentityMarkerName)) {
+    validate_installed_marker();
+    return;
+  }
+
+  const std::wstring temporary_name =
+      std::wstring(kInstalledIdentityMarkerName) + L"." +
+      Utf8ToWide(transaction_id, "transaction ID") + L".next";
+  UniqueWindowsHandle temporary = OpenRelativeNoReparse(
+      target_directory.get(), temporary_name,
+      GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE, 0, FILE_CREATE,
+      FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT |
+          FILE_WRITE_THROUGH,
+      FILE_ATTRIBUTE_HIDDEN);
+  DWORD written = 0;
+  if (!WriteFile(temporary.get(), staged_marker.data(),
+                 static_cast<DWORD>(staged_marker.size()), &written, nullptr) ||
+      written != staged_marker.size() || !FlushFileBuffers(temporary.get())) {
+    try {
+      DeleteHandleExact(temporary.get());
+    } catch (...) {
+    }
+    Fail("portable install identity marker write failed");
+  }
+
+  try {
+    RenameHandleRelative(temporary.get(), target_directory.get(),
+                         kInstalledIdentityMarkerName, false);
+    temporary.reset();
+    FlushWindowsDirectory(target_directory.get());
+  } catch (...) {
+    const std::exception_ptr rename_failure = std::current_exception();
+    bool installed_marker_exists = false;
+    try {
+      installed_marker_exists = ExistsRelativeNoReparse(
+          target_directory.get(), kInstalledIdentityMarkerName);
+    } catch (...) {
+    }
+    try {
+      DeleteHandleExact(temporary.get());
+      temporary.reset();
+      FlushWindowsDirectory(target_directory.get());
+    } catch (...) {
+    }
+    if (installed_marker_exists) {
+      validate_installed_marker();
+      return;
+    }
+    std::rethrow_exception(rename_failure);
+  }
+  validate_installed_marker();
+}
+
 void ValidatePortableWindowsTargetAuthorityFacts(
     const std::wstring& target,
     const std::wstring& caller_executable,
@@ -990,7 +1116,9 @@ WindowsNativeInstallAuthorizer::Authorize(
     Fail("stage and target paths overlap");
   }
   ValidateRetainedCaller(caller_process_, target, request, policy_);
-  ValidateTargetAuthority(target, request, policy_, caller_process_);
+  ValidateTargetLocationAndExecutableAuthority(target, request, policy_,
+                                               caller_process_);
+  ValidateTargetIdentityProof(target, request, policy_, caller_process_);
 
   const StageProvenanceMarker marker = VerifyStageProvenance(
       stage, request.stage.provenance_sha256, BCryptSha256Bytes);
@@ -1074,8 +1202,8 @@ WindowsPortableInstallAuthorizer::Authorize(
   {
     ScopedWindowsHelperFailureEvent target_authority_stage(
         WindowsHelperEvent::kPortableTargetRequestFailure);
-    ValidateTargetAuthority(target, request, policy_, caller_process_,
-                            &target_authority_stage);
+    ValidateTargetLocationAndExecutableAuthority(
+        target, request, policy_, caller_process_, &target_authority_stage);
   }
   authorization_stage.Advance(
       WindowsHelperEvent::kPortableStageAuthorizationFailure);
@@ -1104,12 +1232,25 @@ WindowsPortableInstallAuthorizer::Authorize(
   if (authorized.descriptor.artifact.kind != "zip") {
     Fail("portable directory replacement requires a signed Windows ZIP");
   }
+  authorization_stage.Advance(
+      WindowsHelperEvent::kPortableTargetAuthorityFailure);
+  {
+    ScopedWindowsHelperFailureEvent identity_detail(
+        WindowsHelperEvent::kPortableTargetMarkerFailure);
+    AdoptAuthorizedPortableWindowsInstallIdentityMarker(
+        target, stage, request.package_id, request.target.identity_proof_sha256,
+        request.transaction_id, marker);
+    ValidateTargetIdentityProof(target, request, policy_, caller_process_,
+                                &identity_detail);
+  }
+  authorization_stage.Advance(
+      WindowsHelperEvent::kPortableStageAuthorizationFailure);
   WindowsVerifiedArchiveRestage restage = [&]() {
     const ScopedWindowsHelperFailureEvent stage_detail(
         WindowsHelperEvent::kPortableStageRestageFailure);
     return RestageVerifiedWindowsZip(
-        stage, target.parent_path(), request.transaction_id,
-        request.package_id, request.signed_descriptor.canonical_sha256,
+        stage, target.parent_path(), request.transaction_id, request.package_id,
+        request.signed_descriptor.canonical_sha256,
         request.stage.artifact_sha256, request.stage.artifact_length,
         release_manifest, WindowsArchiveRestageAuthority::kPortableExactCaller,
         caller_process_);

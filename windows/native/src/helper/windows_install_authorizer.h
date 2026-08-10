@@ -1,8 +1,8 @@
 #ifndef DESKTOP_UPDATER_WINDOWS_HELPER_INSTALL_AUTHORIZER_H_
 #define DESKTOP_UPDATER_WINDOWS_HELPER_INSTALL_AUTHORIZER_H_
 
-#include <memory>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "helper_policy_windows.h"
@@ -17,37 +17,43 @@
 namespace desktop_updater::helper {
 
 desktop_updater::runtime::internal::NativeInstallAuthorizationPolicyV1
-BuildWindowsNativeInstallAuthorizationPolicy(
-    const WindowsHelperPolicy& policy);
+BuildWindowsNativeInstallAuthorizationPolicy(const WindowsHelperPolicy &policy);
 
 WindowsVerifiedPayloadIdentity BuildWindowsExpectedPayloadIdentity(
-    const desktop_updater::runtime::internal::
-        NativeInstallTransactionRequestV1& request,
-    const desktop_updater::runtime::internal::StageProvenanceMarker& marker,
-    const std::string& payload_seal_sha256,
-    const WindowsHelperPolicy& policy);
+    const desktop_updater::runtime::internal::NativeInstallTransactionRequestV1
+        &request,
+    const desktop_updater::runtime::internal::StageProvenanceMarker &marker,
+    const std::string &payload_seal_sha256, const WindowsHelperPolicy &policy);
+
+// Repairs a genuinely missing portable marker from an authenticated staged
+// payload. Callers must invoke this only after signed stage authorization has
+// succeeded. Existing invalid or mismatched markers are never overwritten.
+void AdoptAuthorizedPortableWindowsInstallIdentityMarker(
+    const std::filesystem::path &target, const std::filesystem::path &stage,
+    const std::string &package_id, const std::string &expected_identity_sha256,
+    const std::string &transaction_id,
+    const desktop_updater::runtime::internal::StageProvenanceMarker
+        &stage_provenance);
 
 void ValidatePortableWindowsTargetAuthorityFacts(
-    const std::wstring& target,
-    const std::wstring& caller_executable,
-    bool target_writable,
-    bool parent_writable);
+    const std::wstring &target, const std::wstring &caller_executable,
+    bool target_writable, bool parent_writable);
 
 class WindowsNativeInstallAuthorizer final
     : public desktop_updater::runtime::internal::
           NativeInstallRequestAuthorizerV1 {
- public:
+public:
   WindowsNativeInstallAuthorizer(WindowsHelperPolicy policy,
                                  ProtectedWindowsHelperEndpointV1 endpoint,
                                  HANDLE caller_process);
 
-  const std::string& helper_endpoint_identity_sha256() const override;
-  std::unique_ptr<desktop_updater::runtime::internal::
-                      NativeInstallPreparedTransactionV1>
+  const std::string &helper_endpoint_identity_sha256() const override;
+  std::unique_ptr<
+      desktop_updater::runtime::internal::NativeInstallPreparedTransactionV1>
   Authorize(const desktop_updater::runtime::internal::
-                NativeInstallTransactionRequestV1& request) override;
+                NativeInstallTransactionRequestV1 &request) override;
 
- private:
+private:
   WindowsHelperPolicy policy_;
   ProtectedWindowsHelperEndpointV1 endpoint_;
   HANDLE caller_process_;
@@ -56,23 +62,23 @@ class WindowsNativeInstallAuthorizer final
 class WindowsPortableInstallAuthorizer final
     : public desktop_updater::runtime::internal::
           NativeInstallRequestAuthorizerV1 {
- public:
-  WindowsPortableInstallAuthorizer(WindowsHelperPolicy policy,
-                                   PortableWindowsRecoveryHostEndpointV1 endpoint,
-                                   HANDLE caller_process);
+public:
+  WindowsPortableInstallAuthorizer(
+      WindowsHelperPolicy policy,
+      PortableWindowsRecoveryHostEndpointV1 endpoint, HANDLE caller_process);
 
-  const std::string& helper_endpoint_identity_sha256() const override;
-  std::unique_ptr<desktop_updater::runtime::internal::
-                      NativeInstallPreparedTransactionV1>
+  const std::string &helper_endpoint_identity_sha256() const override;
+  std::unique_ptr<
+      desktop_updater::runtime::internal::NativeInstallPreparedTransactionV1>
   Authorize(const desktop_updater::runtime::internal::
-                NativeInstallTransactionRequestV1& request) override;
+                NativeInstallTransactionRequestV1 &request) override;
 
- private:
+private:
   WindowsHelperPolicy policy_;
   PortableWindowsRecoveryHostEndpointV1 endpoint_;
   HANDLE caller_process_;
 };
 
-}  // namespace desktop_updater::helper
+} // namespace desktop_updater::helper
 
-#endif  // DESKTOP_UPDATER_WINDOWS_HELPER_INSTALL_AUTHORIZER_H_
+#endif // DESKTOP_UPDATER_WINDOWS_HELPER_INSTALL_AUTHORIZER_H_

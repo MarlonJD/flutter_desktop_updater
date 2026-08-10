@@ -125,6 +125,10 @@ is no generated PowerShell or command script fallback.
   digest. User cancellation leaves the reservation uncommitted.
 - Per-user writable installs remain in unprivileged mode. A portable or NuGet
   copy cannot opt itself into the protected-helper trust class.
+- A direct-ZIP update may repair a genuinely missing per-user install identity
+  marker only from the canonical marker uniquely bound into the verified stage,
+  and only after signed release and sealed-policy authorization. An existing
+  malformed or mismatched marker is never replaced and remains a hard failure.
 
 The repository's local packaging checks prove only that the expected Release
 artifacts and policy inputs are present. Authenticode, protected ACLs, UAC, and
