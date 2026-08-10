@@ -3,6 +3,50 @@ import XCTest
 @_spi(DesktopUpdaterSmoke) @testable import DesktopUpdaterKit
 
 final class MacInstallHelperTests: XCTestCase {
+    func testSmokeTargetOverrideRequiresTheExactInstalledSmokeBundle() {
+        let target = URL(
+            fileURLWithPath: "/Applications/Desktop Updater Smoke.app"
+        )
+        let environment = [
+            "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+            "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": target.path,
+        ]
+
+        XCTAssertEqual(
+            MacInstallHelper.validatedSmokeTargetURL(
+                environment: environment,
+                bundleIdentifier: "com.example.desktopUpdaterSmoke",
+                bundleURL: target
+            ),
+            target
+        )
+        XCTAssertNil(
+            MacInstallHelper.validatedSmokeTargetURL(
+                environment: environment,
+                bundleIdentifier: "com.example.production",
+                bundleURL: target
+            )
+        )
+        XCTAssertNil(
+            MacInstallHelper.validatedSmokeTargetURL(
+                environment: environment,
+                bundleIdentifier: "com.example.desktopUpdaterSmoke",
+                bundleURL: URL(fileURLWithPath: "/tmp/Smoke.app")
+            )
+        )
+        XCTAssertNil(
+            MacInstallHelper.validatedSmokeTargetURL(
+                environment: [
+                    "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+                    "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET":
+                        "/Applications/Another.app",
+                ],
+                bundleIdentifier: "com.example.desktopUpdaterSmoke",
+                bundleURL: target
+            )
+        )
+    }
+
     func testTopLevelStagingSymlinkIsRejectedBeforeScheduling() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DesktopUpdaterKitTests-\(UUID().uuidString)")

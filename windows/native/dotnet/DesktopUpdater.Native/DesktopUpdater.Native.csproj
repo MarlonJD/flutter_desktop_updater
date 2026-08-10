@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>DesktopUpdater.Native</PackageId>
-    <Version>3.1.1</Version>
+    <Version>3.1.2</Version>
     <Authors>desktop_updater contributors</Authors>
     <BuildInParallel>false</BuildInParallel>
     <Description>Versioned .NET wrapper and native Windows install helper for desktop_updater.</Description>

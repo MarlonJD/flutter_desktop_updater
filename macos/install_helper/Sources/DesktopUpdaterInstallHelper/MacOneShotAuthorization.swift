@@ -151,9 +151,13 @@ final class SystemMacCallerInstallEvidenceInspector:
             let requirementObject,
             SecStaticCodeCheckValidity(
                 code,
-                SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
+                // macOS may attach protected provenance metadata after the
+                // installed app launches. Caller authentication still checks
+                // the executable and designated requirement, but runtime
+                // metadata must not invalidate the sealed code identity.
+                SecCSFlags(rawValue: kSecCSDoNotValidateResources),
                 requirementObject
-        ) == errSecSuccess else {
+            ) == errSecSuccess else {
             throw MacOneShotAuthorizationError.callerAuthenticationFailed
         }
         var information: CFDictionary?
@@ -382,18 +386,22 @@ final class SealedMacOneShotInstallAuthorizer:
     private let policy: MacSealedInstallPolicyV1
     private let requestValidator: any MacOneShotInstallRequestValidating
     private let preserveTargetOwnership: Bool
+    private let diagnostics: any MacHelperDiagnosticsRecording
 
     init(
         policy: MacSealedInstallPolicyV1,
         helperEndpointIdentitySHA256: String,
         requestValidator: any MacOneShotInstallRequestValidating,
-        preserveTargetOwnership: Bool = false
+        preserveTargetOwnership: Bool = false,
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) {
         self.policy = policy
         self.helperEndpointIdentitySHA256 =
             helperEndpointIdentitySHA256
         self.requestValidator = requestValidator
         self.preserveTargetOwnership = preserveTargetOwnership
+        self.diagnostics = diagnostics
     }
 
     func authorize(
@@ -422,7 +430,8 @@ final class SealedMacOneShotInstallAuthorizer:
                     Int32(request.caller.processIdentifier),
                 expectedPayloadIdentity: identity,
                 verifier: verifier,
-                preserveTargetOwnership: preserveTargetOwnership
+                preserveTargetOwnership: preserveTargetOwnership,
+                diagnostics: diagnostics
             )
         case let .verifiedInstaller(expectation, handoff):
             return try MacVerifiedInstallerTransaction(
@@ -434,7 +443,8 @@ final class SealedMacOneShotInstallAuthorizer:
                 policyID: policy.policyID,
                 policySHA256: policy.canonicalSHA256,
                 expectation: expectation,
-                handoff: handoff
+                handoff: handoff,
+                diagnostics: diagnostics
             )
         }
     }

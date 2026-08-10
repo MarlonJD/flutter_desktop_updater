@@ -578,6 +578,7 @@ class _MacOSProductionSmoke {
     }
     await smokeApp.parent.create(recursive: true);
     await _runChecked("/usr/bin/ditto", [builtApp.path, smokeApp.path]);
+    await _clearMacOSProvenance(smokeApp);
     await _writeSmokeOwnerMarker(smokeApp);
     final updateSentinel = File(
       path.join(
@@ -596,6 +597,7 @@ class _MacOSProductionSmoke {
       );
     }
     await _runChecked("/usr/bin/codesign", [
+      "--deep",
       "--force",
       "--options",
       "runtime",
@@ -673,10 +675,22 @@ class _MacOSProductionSmoke {
       path.join(pkgRoot.path, path.basename(app.path)),
     ]);
     final component = File(path.join(workDir.path, "component.pkg"));
+    final componentPlist = File(
+      path.join(workDir.path, "components.plist"),
+    );
     final product = File(path.join(workDir.path, "$appName.pkg"));
+    await _runChecked("/usr/bin/pkgbuild", [
+      "--analyze",
+      "--root",
+      pkgRoot.path,
+      componentPlist.path,
+    ]);
+    await _configureNonRelocatablePkgComponent(componentPlist);
     await _runChecked("/usr/bin/pkgbuild", [
       "--root",
       pkgRoot.path,
+      "--component-plist",
+      componentPlist.path,
       "--install-location",
       "/Applications",
       "--identifier",
@@ -698,6 +712,24 @@ class _MacOSProductionSmoke {
     await _notarizeAndStaple(product.path, env);
     evidence.line("pkg: signed, notarized, and stapled PKG OK");
     return product;
+  }
+
+  Future<void> _configureNonRelocatablePkgComponent(File plist) async {
+    const values = <(String, String, String)>[
+      ("0.BundleIsVersionChecked", "-bool", "NO"),
+      ("0.BundleIsRelocatable", "-bool", "NO"),
+      ("0.BundleHasStrictIdentifier", "-bool", "YES"),
+      ("0.BundleOverwriteAction", "-string", "upgrade"),
+    ];
+    for (final (key, type, value) in values) {
+      await _runChecked("/usr/bin/plutil", [
+        "-replace",
+        key,
+        type,
+        value,
+        plist.path,
+      ]);
+    }
   }
 
   Future<Directory> _installSmokeAppToApplications({
@@ -725,8 +757,17 @@ class _MacOSProductionSmoke {
       }
     }
     await _runChecked("/usr/bin/ditto", [app.path, targetApp.path]);
+    await _clearMacOSProvenance(targetApp);
     await _verifyAppTrust(targetApp);
     return targetApp;
+  }
+
+  Future<void> _clearMacOSProvenance(Directory app) async {
+    await _runChecked("/usr/bin/xattr", [
+      "-dr",
+      "com.apple.provenance",
+      app.path,
+    ]);
   }
 
   Future<void> _withHostedRelease({
@@ -1086,6 +1127,23 @@ class _MacOSProductionSmoke {
     );
     try {
       await _notarizeAndStapleZip(notaryZip, app.path, env);
+      // On this host, stapler can update the bundle metadata in a way that
+      // leaves the embedded nested signatures unverifiable by codesign even
+      // though Gatekeeper and stapler accept the notarized ticket. Re-sign
+      // the unchanged bundle after stapling, then verify all three trust
+      // surfaces before the artifact is used by a smoke lane.
+      await _clearMacOSProvenance(app);
+      await _runChecked("/usr/bin/codesign", [
+        "--deep",
+        "--force",
+        "--options",
+        "runtime",
+        "--timestamp",
+        "--sign",
+        env["DESKTOP_UPDATER_DEV_ID_APP"]!,
+        app.path,
+      ]);
+      await _verifyAppTrust(app);
     } finally {
       if (await notaryZip.exists()) {
         await notaryZip.delete();

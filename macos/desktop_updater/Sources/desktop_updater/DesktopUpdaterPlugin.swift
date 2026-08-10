@@ -3,14 +3,35 @@ import Darwin
 import FlutterMacOS
 import Security
 import ServiceManagement
+
 #if canImport(DesktopUpdaterKit)
-import DesktopUpdaterKit
+    import DesktopUpdaterKit
 #endif
 
 public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
+    private static let smokeBundleIdentifier =
+        "com.example.desktopUpdaterSmoke"
+    private static let smokeTargetPath =
+        "/Applications/Desktop Updater Smoke.app"
+
+    static func smokeRelaunchSuppressionAllowed(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        bundleURL: URL = Bundle.main.bundleURL
+    ) -> Bool {
+        environment["DESKTOP_UPDATER_CONTROLLER_SMOKE"] == "1"
+            && environment["DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET"]
+                == smokeTargetPath
+            && environment["DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH"] == "1"
+            && bundleIdentifier == smokeBundleIdentifier
+            && bundleURL.standardizedFileURL.path == smokeTargetPath
+    }
+
     public static func register(with registrar: FlutterPluginRegistrar) {
-        guard MacApplicationRestarter
-            .awaitRestartParentExitIfRequested() else {
+        guard
+            MacApplicationRestarter
+                .awaitRestartParentExitIfRequested()
+        else {
             _exit(78)
         }
         let channel = FlutterMethodChannel(
@@ -161,8 +182,13 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 request,
                 transactionID: transactionID
             )
-            let restart = try MacApplicationRestarter()
-                .prepareCurrentApplicationRestart()
+            let restart: MacApplicationRestartReservation?
+            if Self.smokeRelaunchSuppressionAllowed() {
+                restart = nil
+            } else {
+                restart = try MacApplicationRestarter()
+                    .prepareCurrentApplicationRestart()
+            }
             do {
                 let status = try helper.commitAfterExit(reservation)
                 guard status.state == .commitAccepted || status.state == .completed,
@@ -173,9 +199,9 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 else {
                     throw MacInstallClientError.invalidReservationResponse
                 }
-                restart.commit()
+                restart?.commit()
             } catch {
-                restart.cancel()
+                restart?.cancel()
                 throw error
             }
             result(nil)

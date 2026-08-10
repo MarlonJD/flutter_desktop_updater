@@ -67,8 +67,7 @@ void main() {
     }
   });
 
-  test("bootstrap cleanup is provenance-bound and excluded from final install",
-      () {
+  test("bootstrap avoids same-version refresh and final-install cleanup", () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
     if (!smokeFile.existsSync()) return;
     final source = smokeFile.readAsStringSync();
@@ -76,27 +75,27 @@ void main() {
     expect(
       RegExp(r"await _removeVerifiedBootstrapRefreshStage\(\);")
           .allMatches(source),
-      hasLength(1),
+      isEmpty,
     );
     expect(source, contains("readStagedUpdateProvenance("));
     expect(source, contains("verifyStagedUpdateProvenance("));
     expect(source, contains("deleteOwnedStagingDirectory("));
     expect(source, contains("state.provenance.artifactSha256"));
-
-    final refreshIdentity = source.indexOf("fresh-v2-bootstrap-failed");
-    final bootstrapCleanup = source.indexOf(
-      "await _removeVerifiedBootstrapRefreshStage();",
+    expect(source, contains("_bundlesShareBundleIdentity("));
+    expect(
+      source,
+      contains("Stapling a product package may rewrite the nested app/helper"),
     );
-    final downgrade = source.indexOf("final downgrade = await _runRuntime(");
+
+    final bootstrap = source.indexOf("Future<void> bootstrapV1()");
     final finalInstall = source.indexOf("Future<void> install() async");
     final validateInputs = source.indexOf(
       "Future<void> _validateInputs",
       finalInstall,
     );
-    expect(refreshIdentity, isNonNegative);
-    expect(bootstrapCleanup, greaterThan(refreshIdentity));
-    expect(downgrade, greaterThan(bootstrapCleanup));
-    expect(finalInstall, greaterThan(downgrade));
+    expect(source, isNot(contains("fresh-v2-bootstrap-failed")));
+    expect(source, isNot(contains("final downgrade = await _runRuntime(")));
+    expect(finalInstall, greaterThan(bootstrap));
     expect(validateInputs, greaterThan(finalInstall));
     expect(
       source.substring(finalInstall, validateInputs),
@@ -127,7 +126,19 @@ void main() {
     expect(source, contains("readStagedUpdateProvenance("));
     expect(source, contains("verifyStagedUpdateProvenance("));
     expect(source, contains("deleteOwnedStagingDirectory("));
-    expect(source, contains("Process.start(host,"));
+    expect(source, contains("final process = await Process.start("));
+    expect(
+      source,
+      contains('"DESKTOP_UPDATER_CONTROLLER_SMOKE": "1"'),
+    );
+    expect(
+      source,
+      contains('"DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath'),
+    );
+    expect(
+      source,
+      contains('"DESKTOP_UPDATER_NATIVE_CONTROLLER_SMOKE": "1"'),
+    );
     expect(source, contains('output.contains(\'"event":"helperProbe"\')'));
     expect(
       source,
@@ -187,61 +198,57 @@ void main() {
     }
   });
 
-  test("bootstrap refresh releases the fixed recovery gate", () {
+  test("bootstrap requires a package-installed v1 without version forgery", () {
     final source = File(
       "tool/macos_privileged_pkg_smoke.dart",
     ).readAsStringSync();
     final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
     final verify = source.indexOf("Future<void> verifyV1() async");
-    final refresh = source.indexOf(
-      "final refresh = await _runRuntime(",
-      bootstrap,
-    );
-    final waitForManager = source.indexOf(
-      "final refreshManager = await _waitForFixedInstallerManager(",
-      refresh,
-    );
-    final release = source.indexOf(
-      "await _releaseRecoveryGate(refreshManager.processIdentifier);",
-      refresh,
-    );
-    final waitForBundle = source.indexOf(
-      "if (!await _waitForBundleIdentity(",
-      refresh,
-    );
-
     expect(bootstrap, isNonNegative);
-    expect(refresh, greaterThan(bootstrap));
-    expect(waitForManager, greaterThan(refresh));
-    expect(release, greaterThan(waitForManager));
-    expect(waitForBundle, greaterThan(release));
-    expect(waitForBundle, lessThan(verify));
+    expect(verify, greaterThan(bootstrap));
+    expect(
+      source.substring(bootstrap, verify),
+      contains('throw const _SmokeFailure("v1-package-baseline-required")'),
+    );
+    expect(source, isNot(contains("CONTROLLER_SMOKE_CURRENT_VERSION")));
+    expect(source, isNot(contains("CONTROLLER_SMOKE_CURRENT_BUILD")));
+    expect(
+        source.substring(bootstrap, verify), isNot(contains("_runRuntime(")));
   });
 
-  test("only bootstrap accepts the known v2 app and v1 receipt recovery pair",
-      () {
+  test("privileged runtime launches the authenticated smoke target", () {
+    final source = File(
+      "tool/macos_privileged_pkg_smoke.dart",
+    ).readAsStringSync();
+    final runtime = source.indexOf("Future<_RuntimeResult> _runRuntime");
+    final target = source.indexOf(
+      "final runtimeApp = Directory(_targetPath);",
+      runtime,
+    );
+
+    expect(runtime, isNonNegative);
+    expect(target, greaterThan(runtime));
+    expect(
+      source.substring(runtime, target),
+      isNot(contains("final runtimeApp = request.recoveryApp;")),
+    );
+  });
+
+  test("bootstrap accepts only the exact package-installed v1 baseline", () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
     if (!smokeFile.existsSync()) return;
     final source = smokeFile.readAsStringSync();
 
-    expect(
-      RegExp(r"allowedReceiptStates:").allMatches(source),
-      hasLength(1),
-    );
-    expect(
-      source,
-      contains("(_v2Version, _v1Version)"),
-    );
     final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
     final verify = source.indexOf("Future<void> verifyV1() async");
-    final receiptOverride = source.indexOf("allowedReceiptStates:");
     expect(bootstrap, isNonNegative);
-    expect(receiptOverride, greaterThan(bootstrap));
-    expect(receiptOverride, lessThan(verify));
+    final body = source.substring(bootstrap, verify);
+    expect(body, contains("allowedVersions: const {(_v1Version, _v1Build)}"));
+    expect(body, isNot(contains("allowedReceiptStates:")));
+    expect(body, isNot(contains("allowMissingReceipt:")));
   });
 
-  test("baseline package disables version checks only for the fixed v1 smoke",
-      () {
+  test("fixed baseline and recovery packages cannot relocate", () {
     final source = File(
       "example/native/macos-runtime/package_smoke_app.sh",
     ).readAsStringSync();
@@ -265,7 +272,12 @@ void main() {
     expect(source, contains("BundleIsRelocatable"));
     expect(source, contains("BundleHasStrictIdentifier"));
     expect(source, contains("BundleOverwriteAction"));
-    expect(source, contains("--component-plist"));
+    expect(
+      RegExp(
+        r'--component-plist "\$component_plist"',
+      ).allMatches(source),
+      hasLength(2),
+    );
     expect(source, contains("baseline-distribution.xml"));
     expect(source, contains("productbuild --synthesize"));
     expect(source, contains("baseline distribution bundle-version mismatch"));
@@ -283,7 +295,8 @@ void main() {
     );
   });
 
-  test("bootstrap recovery uses typed signed-app XPC without exposing identity",
+  test(
+      "transaction recovery uses typed signed-app XPC without exposing identity",
       () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
     if (!smokeFile.existsSync()) return;
@@ -294,16 +307,22 @@ void main() {
     expect(source, contains('"--recover-transaction"'));
     expect(source, contains(r"\.provider\.json$"));
     expect(source, contains('value["event"] == "recovery"'));
-    expect(source, contains('"manualActionRequired"'));
+    expect(source, isNot(contains('"manualActionRequired"')));
     expect(source, contains('"completed"'));
     expect(source, isNot(contains('"transactionID": transactionID')));
 
-    final bootstrap = source.indexOf("Future<void> bootstrapV1() async");
-    final verify = source.indexOf("Future<void> verifyV1() async");
+    expect(source, contains("await _recoverBlockingBootstrapTransaction("));
     final recovery = source.indexOf(
-      "await _recoverBlockingBootstrapTransaction(",
+      "Future<void> _recoverBlockingBootstrapTransaction(",
     );
-    expect(recovery, greaterThan(bootstrap));
-    expect(recovery, lessThan(verify));
+    final metadata = source.indexOf(
+      "Future<_BundleMetadata> _readBundleMetadata(",
+      recovery,
+    );
+    final body = source.substring(recovery, metadata);
+    expect(body, contains("final runtimeApp = Directory(_targetPath);"));
+    expect(body,
+        contains("final metadata = await _readBundleMetadata(runtimeApp);"));
+    expect(body, isNot(contains("_readBundleMetadata(request.recoveryApp)")));
   });
 }

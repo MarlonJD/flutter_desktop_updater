@@ -37,6 +37,8 @@ final class MacRecoveryService {
     private let expectedPayloadIdentity: MacVerifiedPayloadIdentity
     private let verifier: any MacInstallPayloadVerifying
     private let processLivenessChecker: any ProcessLivenessChecking
+    private let diagnostics: any MacHelperDiagnosticsRecording
+    private let emitRecoverySummaryDiagnostics: Bool
 
     init(
         targetURL: URL,
@@ -44,7 +46,10 @@ final class MacRecoveryService {
         expectedPayloadIdentity: MacVerifiedPayloadIdentity,
         verifier: any MacInstallPayloadVerifying,
         processLivenessChecker: any ProcessLivenessChecking =
-            DarwinProcessLivenessChecker()
+            DarwinProcessLivenessChecker(),
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder(),
+        emitRecoverySummaryDiagnostics: Bool = true
     ) {
         self.targetURL = targetURL.standardizedFileURL
         paths = try? MacTransactionPaths(
@@ -54,9 +59,55 @@ final class MacRecoveryService {
         self.expectedPayloadIdentity = expectedPayloadIdentity
         self.verifier = verifier
         self.processLivenessChecker = processLivenessChecker
+        self.diagnostics = diagnostics
+        self.emitRecoverySummaryDiagnostics = emitRecoverySummaryDiagnostics
     }
 
     func recover() throws -> MacRecoveryOutcome {
+        guard emitRecoverySummaryDiagnostics else {
+            return try recoverImpl()
+        }
+        diagnostics.record(
+            .recoveryStart,
+            transactionID: paths?.transactionID,
+            state: "recoveryRequired",
+            resultCode: "started",
+            detailCode: "directory"
+        )
+        do {
+            let outcome = try recoverImpl()
+            switch outcome {
+            case .recovered, .nothingToRecover:
+                diagnostics.record(
+                    .recoverySuccess,
+                    transactionID: paths?.transactionID,
+                    state: "completed",
+                    resultCode: "success",
+                    detailCode: "directory"
+                )
+            case .liveOwner:
+                diagnostics.record(
+                    .recoveryFailure,
+                    transactionID: paths?.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "pending",
+                    detailCode: "liveOwner"
+                )
+            }
+            return outcome
+        } catch {
+            diagnostics.record(
+                .recoveryFailure,
+                transactionID: paths?.transactionID,
+                state: "recoveryRequired",
+                resultCode: "failure",
+                detailCode: "directory"
+            )
+            throw error
+        }
+    }
+
+    private func recoverImpl() throws -> MacRecoveryOutcome {
         guard let paths else {
             throw MacRecoveryError.invalidJournal
         }
@@ -121,33 +172,90 @@ final class MacRecoveryService {
         }
 
         if journal.state == .preparing {
-            try rollbackPreparingIntent(
-                journal: journal,
-                directory: directory,
-                store: store,
-                commitAuthorizationStore: commitAuthorizationStore,
-                paths: paths,
-                lockOwner: currentLockOwner
+            diagnostics.record(
+                .rollbackStart,
+                transactionID: paths.transactionID,
+                state: "preparing",
+                resultCode: "started",
+                detailCode: "directory"
+            )
+            do {
+                try rollbackPreparingIntent(
+                    journal: journal,
+                    directory: directory,
+                    store: store,
+                    commitAuthorizationStore: commitAuthorizationStore,
+                    paths: paths,
+                    lockOwner: currentLockOwner
+                )
+            } catch {
+                diagnostics.record(
+                    .rollbackFailure,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "directory"
+                )
+                throw error
+            }
+            diagnostics.record(
+                .rollbackSuccess,
+                transactionID: paths.transactionID,
+                state: "rolledBack",
+                resultCode: "success",
+                detailCode: "directory"
+            )
+            return .recovered
+        }
+
+        let uncommittedPreparation: Bool
+        if journal.state == .prepared {
+            let hasCommitAuthorization = try commitAuthorizationStore
+                .validates(journalSHA256: store.sha256())
+            uncommittedPreparation = currentLockOwner == nil
+                || !hasCommitAuthorization
+        } else {
+            uncommittedPreparation = false
+        }
+        if uncommittedPreparation {
+            diagnostics.record(
+                .rollbackStart,
+                transactionID: paths.transactionID,
+                state: "prepared",
+                resultCode: "started",
+                detailCode: "directory"
+            )
+            do {
+                try rollbackUncommittedPreparation(
+                    journal: journal,
+                    directory: directory,
+                    store: store,
+                    commitAuthorizationStore: commitAuthorizationStore,
+                    paths: paths,
+                    lockOwner: currentLockOwner
+                )
+            } catch {
+                diagnostics.record(
+                    .rollbackFailure,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "directory"
+                )
+                throw error
+            }
+            diagnostics.record(
+                .rollbackSuccess,
+                transactionID: paths.transactionID,
+                state: "rolledBack",
+                resultCode: "success",
+                detailCode: "directory"
             )
             return .recovered
         }
 
         guard currentLockOwner == paths.transactionID else {
             throw MacRecoveryError.inconsistentState
-        }
-
-        if journal.state == .prepared,
-           try !commitAuthorizationStore.validates(
-               journalSHA256: store.sha256()
-           ) {
-            try rollbackUncommittedPreparation(
-                journal: journal,
-                directory: directory,
-                store: store,
-                commitAuthorizationStore: commitAuthorizationStore,
-                paths: paths
-            )
-            return .recovered
         }
 
         var mutableJournal = journal
@@ -228,31 +336,58 @@ final class MacRecoveryService {
         try verifyPayload(
             at: parentURL.appendingPathComponent(paths.targetName)
         )
-        if directory.exists(name: paths.backupName) {
-            mutableJournal.state = .targetActivated
-            try recoveryPersist(mutableJournal, store: store)
-            mutableJournal.state = .completed
-            try recoveryPersist(mutableJournal, store: store)
-            do {
-                try directory.removeTree(
-                    name: paths.backupName,
-                    expectedIdentity: journal.targetIdentity
-                )
-            } catch {
-                throw MacRecoveryError.backupIdentityMismatch
+        diagnostics.record(
+            .cleanupStart,
+            transactionID: paths.transactionID,
+            state: "targetActivated",
+            resultCode: "started",
+            detailCode: "directory"
+        )
+        do {
+            if directory.exists(name: paths.backupName) {
+                mutableJournal.state = .targetActivated
+                try recoveryPersist(mutableJournal, store: store)
+                mutableJournal.state = .completed
+                try recoveryPersist(mutableJournal, store: store)
+                do {
+                    try directory.removeTree(
+                        name: paths.backupName,
+                        expectedIdentity: journal.targetIdentity
+                    )
+                } catch {
+                    throw MacRecoveryError.backupIdentityMismatch
+                }
             }
-        }
-        do {
             try store.remove()
-        } catch {
-            throw MacRecoveryError.filesystemOperationFailed
-        }
-        do {
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "success",
+                detailCode: "journal"
+            )
             try commitAuthorizationStore.removeIfPresent()
+            try releaseLock(directory, paths: paths)
         } catch {
+            diagnostics.record(
+                .cleanupFailure,
+                transactionID: paths.transactionID,
+                state: "recoveryRequired",
+                resultCode: "failure",
+                detailCode: "directory"
+            )
+            if let error = error as? MacRecoveryError {
+                throw error
+            }
             throw MacRecoveryError.filesystemOperationFailed
         }
-        try releaseLock(directory, paths: paths)
+        diagnostics.record(
+            .cleanupSuccess,
+            transactionID: paths.transactionID,
+            state: "completed",
+            resultCode: "success",
+            detailCode: "directory"
+        )
         return .recovered
     }
 
@@ -261,7 +396,8 @@ final class MacRecoveryService {
         directory: MacTransactionDirectory,
         store: DurableTransactionJournalStore,
         commitAuthorizationStore: MacCommitAuthorizationStore,
-        paths: MacTransactionPaths
+        paths: MacTransactionPaths,
+        lockOwner: String?
     ) throws {
         guard directory.exists(name: paths.targetName),
               try recoveryIdentity(directory, name: paths.targetName)
@@ -286,10 +422,19 @@ final class MacRecoveryService {
         do {
             try commitAuthorizationStore.removeIfPresent()
             try store.remove()
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "rolledBack",
+                resultCode: "success",
+                detailCode: "directory"
+            )
         } catch {
             throw MacRecoveryError.filesystemOperationFailed
         }
-        try releaseLock(directory, paths: paths)
+        if lockOwner == paths.transactionID {
+            try releaseLock(directory, paths: paths)
+        }
     }
 
     private func rollbackPreparingIntent(
@@ -323,6 +468,13 @@ final class MacRecoveryService {
         do {
             try commitAuthorizationStore.removeIfPresent()
             try store.remove()
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "rolledBack",
+                resultCode: "success",
+                detailCode: "directory"
+            )
         } catch {
             throw MacRecoveryError.filesystemOperationFailed
         }

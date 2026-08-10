@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 project(desktop_updater_linux_consumer LANGUAGES CXX)
 
-find_package(desktop_updater_native 3.1.1 EXACT CONFIG REQUIRED)
+find_package(desktop_updater_native 3.1.2 EXACT CONFIG REQUIRED)
 if(NOT DEFINED desktop_updater_native_HELPER_EXECUTABLE OR
    NOT EXISTS "${desktop_updater_native_HELPER_EXECUTABLE}")
   message(FATAL_ERROR "The installed helper metadata is unavailable")

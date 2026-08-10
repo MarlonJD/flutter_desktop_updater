@@ -71,6 +71,8 @@ void main() {
     expect(host, contains("MacInstallHelper.smAppServiceSmokeHost()"));
     expect(host, isNot(contains("MacInstallHelper()")));
     expect(host, contains("targetParentWritable"));
+    expect(host, contains('"installAuthority": installAuthority'));
+    expect(host, contains('"targetPath": targetPath'));
     expect(helperClient, contains("@_spi(DesktopUpdaterSmoke)"));
     expect(helperClient, contains("privilegeRequired: { _ in true }"));
     expect(
@@ -91,6 +93,16 @@ void main() {
     expect(host, contains("commitAfterExit"));
     expect(host, contains("recoverPendingInstall"));
     expect(host, contains("queryTransaction"));
+    expect(host, contains("Unmanaged.passRetained(reservation)"));
+    expect(host, contains('"reservationPreservedForRecovery"'));
+    expect(
+      host,
+      isNot(
+        contains(
+          "Privileged prepareOnly reservation was not cancelled.",
+        ),
+      ),
+    );
     expect(host, contains("Darwin.exit"));
 
     expect(smoke, contains("DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP"));
@@ -125,7 +137,13 @@ void main() {
         "_endpointIdentity(completedQueryEvidence) != stagedEndpointIdentity",
       ),
     );
-    expect(smoke, contains('evidence["targetParentWritable"] != false'));
+    expect(smoke, contains('evidence["targetParentWritable"] is! bool'));
+    expect(
+      smoke,
+      contains('evidence["installAuthority"] != _installAuthority'),
+    );
+    expect(smoke, contains('evidence["targetPath"] != _targetPath'));
+    expect(smoke, contains('evidence["privilegedDaemonExecuted"] != true'));
     expect(smoke, contains("recoverableSwapExecuted"));
     expect(smoke, isNot(contains("_smokeSentinelName")));
     expect(smoke, contains("native-runtime-smoke-stable"));
@@ -161,5 +179,34 @@ void main() {
       workflow,
       contains("DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP"),
     );
+  });
+
+  test("smoke environment hooks cannot alter normal package behavior", () {
+    final currentVersion = File(
+      "lib/src/current_version.dart",
+    ).readAsStringSync();
+    final helper = File(
+      "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
+    ).readAsStringSync();
+    final plugin = File(
+      "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
+    ).readAsStringSync();
+    final publicInitializer = helper.substring(
+      helper.indexOf("    public init() {"),
+      helper.indexOf("    @_spi(DesktopUpdaterSmoke)",
+          helper.indexOf("    public init() {")),
+    );
+
+    expect(currentVersion, isNot(contains("DESKTOP_UPDATER_CONTROLLER_SMOKE")));
+    expect(
+      currentVersion,
+      isNot(contains("DESKTOP_UPDATER_CONTROLLER_SMOKE_CURRENT_VERSION")),
+    );
+    expect(publicInitializer, isNot(contains("validatedSmokeTargetURL")));
+    expect(publicInitializer, isNot(contains("smokeTargetPath")));
+    expect(plugin, contains("smokeRelaunchSuppressionAllowed"));
+    expect(plugin, contains("com.example.desktopUpdaterSmoke"));
+    expect(plugin, contains("/Applications/Desktop Updater Smoke.app"));
+    expect(plugin, contains("DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET"));
   });
 }

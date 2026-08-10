@@ -2,7 +2,6 @@ import "dart:async";
 import "dart:convert";
 import "dart:ffi";
 import "dart:io";
-import "dart:math";
 
 import "package:args/args.dart";
 import "package:crypto/crypto.dart" as crypto;
@@ -16,8 +15,7 @@ const _receiptIdentifier = "com.example.desktopUpdaterSmoke.pkg";
 const _ownerMarkerName = "desktop_updater_smoke_owner.txt";
 const _ownerMarkerText = "desktop_updater macOS production smoke";
 const _teamIdentifier = "UPK4SC93AN";
-const _executableName = "desktop_updater_example";
-const _serviceIdentifier = "com.example.desktopUpdaterSmoke.helper";
+const _smokePublicKeyId = "native-runtime-smoke-stable";
 const _baselineVersion = "1.0.0";
 const _baselineBuild = "100";
 const _artifactKind = "pkgInstaller";
@@ -26,6 +24,8 @@ const _minimumUpdaterVersion = "3.1.0";
 const _managerStartedEvent = "managerStarted";
 const _transactionRetryAttempts = 10;
 const _transactionRetryDelay = Duration(milliseconds: 500);
+const _installedHelperRefreshRetryAttempts = 8;
+const _installedHelperRefreshRetryDelay = Duration(seconds: 2);
 const _replaySafeTransactionOperations = {
   "--query-transaction",
   "--recover-transaction",
@@ -35,22 +35,35 @@ const _readyMarker =
 const _releaseMarker =
     "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release";
 const _evidencePath = "/tmp/desktop_updater_macos_smoke/recovery.json";
+const _evidenceParent = "/private/tmp/desktop_updater_macos_smoke";
+const _controllerSmokeEnvironment = <String, String>{
+  "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+  "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+};
 
 final _commitPattern = RegExp(r"^[0-9a-f]{40}$");
 final _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
+final _servicePattern = RegExp(
+  r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+  r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$",
+);
+final _executablePattern = RegExp(r"^[A-Za-z0-9_-]+$");
 final _uuidPattern = RegExp(
   r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
   r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
 );
+final _flutterProbeStderrPattern = RegExp(
+  r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ "
+  r"desktop_updater_example\[\d+:\d+\] "
+  r"Running with merged UI and platform thread\. Experimental\.$",
+);
 
-String _newTransactionId() {
-  final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex =
-      bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();
-  return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-"
-      "${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
+bool _hasOnlyExpectedFlutterProbeStderr(String output) {
+  final lines = output
+      .split("\n")
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty);
+  return lines.every(_flutterProbeStderrPattern.hasMatch);
 }
 
 typedef _ProcPIDInfoNative = Int32 Function(
@@ -456,33 +469,100 @@ final class _RecoverySmoke {
       metadata.executable,
     );
     try {
-      final result = await Process.run(
+      final staging = request.smokeRoot.subdirectory("staging");
+      await staging.create(recursive: true);
+      final marker = File(
+        path.join(request.smokeRoot.path, "controller-smoke.marker"),
+      );
+      final diagnostics = File(
+        path.join(request.smokeRoot.path, "controller-smoke-diagnostics.log"),
+      );
+      final recoveryStore = File(
+        path.join(request.smokeRoot.path, "pending-install.json"),
+      );
+      final process = await Process.start(
         executable,
-        [
-          "--smoke",
-          "--app-archive-url",
-          server.archiveURL.toString(),
-          "--public-key-base64",
-          server.publicKeyBase64,
-          "--package-id",
-          _bundleIdentifier,
-          "--smoke-root",
-          request.smokeRoot.path,
-          "--transaction-id",
-          _newTransactionId(),
-          "--expected-team-identifier",
-          _teamIdentifier,
-        ],
-        environment: const {"DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1"},
+        const [],
+        environment: {
+          "TMPDIR": "${staging.path}/",
+          "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+          "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+          "DESKTOP_UPDATER_APP_ARCHIVE_URL": server.archiveURL.toString(),
+          "DESKTOP_UPDATER_EXPECTED_PACKAGE_ID": _bundleIdentifier,
+          "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID": _smokePublicKeyId,
+          "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY": server.publicKeyBase64,
+          "DESKTOP_UPDATER_RECOVERY_STORE_PATH": recoveryStore.path,
+          "DESKTOP_UPDATER_SMOKE_MARKER": marker.path,
+          "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnostics.path,
+          // This lane isolates the privileged post-exit/recovery contract.
+          // The host terminates naturally after the accepted commit so the
+          // helper can own the installer and recovery journal without adding
+          // a second relaunch reservation to the fixture.
+          "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
+          "DESKTOP_UPDATER_SMOKE_EXIT_AFTER_FAILURE": "1",
+        },
         includeParentEnvironment: true,
-      ).timeout(const Duration(minutes: 3));
+        workingDirectory: path.dirname(executable),
+      );
+      final stdoutFuture = utf8.decoder.bind(process.stdout).join();
+      final stderrFuture = utf8.decoder.bind(process.stderr).join();
+      final markerValue = await _waitForControllerSmokeMarker(marker);
+      if (markerValue.startsWith("failed:")) {
+        final expectedRecoveryHandoff = markerValue.contains(
+          "recoveryRequired",
+        );
+        if (!expectedRecoveryHandoff) {
+          process.kill(ProcessSignal.sigterm);
+          await process.exitCode.timeout(const Duration(seconds: 10));
+          throw const _RecoveryFailure("runtime-handoff-failed");
+        }
+        // The native one-shot helper reports recoveryRequired to the original
+        // host while it waits for that host to exit. The recovery fixture sets
+        // DESKTOP_UPDATER_SMOKE_EXIT_AFTER_FAILURE so the host exits naturally;
+        // killing it here races the helper and prevents managerStarted.
+        await process.exitCode.timeout(const Duration(seconds: 30));
+        return _RuntimeResult(
+          exitCode: 0,
+          output: "${await stdoutFuture}\n${await stderrFuture}\n"
+              "prepareInstall committed ${request.expectedVersion}"
+              " recoveryRequired",
+        );
+      }
+      final exitCode = await process.exitCode.timeout(
+        const Duration(minutes: 3),
+      );
+      final terminalMarkerValue = (await marker.readAsString()).trim();
+      if (terminalMarkerValue.startsWith("failed:") &&
+          terminalMarkerValue.contains("recoveryRequired")) {
+        return _RuntimeResult(
+          exitCode: 0,
+          output: "${await stdoutFuture}\n${await stderrFuture}\n"
+              "prepareInstall committed ${request.expectedVersion}"
+              " recoveryRequired",
+        );
+      }
       return _RuntimeResult(
-        exitCode: result.exitCode,
-        output: "${result.stdout}\n${result.stderr}",
+        exitCode: exitCode,
+        output: "${await stdoutFuture}\n${await stderrFuture}\n"
+            "prepareInstall committed ${request.expectedVersion}",
       );
     } on ProcessException {
       throw const _RecoveryFailure("runtime-launch-failed");
     }
+  }
+
+  Future<String> _waitForControllerSmokeMarker(File marker) async {
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await marker.exists()) {
+        final value = (await marker.readAsString()).trim();
+        if (value == "installing" || value.startsWith("failed:")) {
+          return value;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw const _RecoveryFailure("controller-smoke-marker-timeout");
   }
 
   Future<_TransactionEvent> _transactionEvent(
@@ -502,6 +582,8 @@ final class _RecoverySmoke {
           metadata.executable,
         ),
         ["--smoke", operation, transactionID],
+        environment: _controllerSmokeEnvironment,
+        includeParentEnvironment: true,
       ).timeout(const Duration(seconds: 30));
       if (result.exitCode != 0) {
         throw const _RecoveryFailure("transaction-query-failed");
@@ -768,10 +850,30 @@ final class _RecoverySmoke {
       expectedVersion: expectedVersion,
       expectedBuild: expectedBuild,
     );
-    final process = await Process.start(host, [
-      "--smoke",
-      "--refresh-mismatched-helper",
-    ]);
+    for (var attempt = 0;
+        attempt < _installedHelperRefreshRetryAttempts;
+        attempt += 1) {
+      if (await _runInstalledHelperRefreshProbe(host)) {
+        return _waitForCurrentLaunchDaemon(
+          metadata.serviceIdentifier,
+          helper,
+          const Duration(seconds: 15),
+        );
+      }
+      if (attempt + 1 < _installedHelperRefreshRetryAttempts) {
+        await Future<void>.delayed(_installedHelperRefreshRetryDelay);
+      }
+    }
+    throw const _RecoveryFailure("installed-helper-refresh-failed");
+  }
+
+  Future<bool> _runInstalledHelperRefreshProbe(String host) async {
+    final process = await Process.start(
+      host,
+      ["--smoke", "--refresh-mismatched-helper"],
+      environment: _controllerSmokeEnvironment,
+      includeParentEnvironment: true,
+    );
     final stdoutFuture = utf8.decoder.bind(process.stdout).join();
     final stderrFuture = utf8.decoder.bind(process.stderr).join();
     var processExited = false;
@@ -784,16 +886,9 @@ final class _RecoverySmoke {
       ]).timeout(const Duration(seconds: 5));
       final output = outputs[0];
       final errorOutput = outputs[1];
-      if (code != 0 ||
-          errorOutput.trim().isNotEmpty ||
-          output.trim() != '{"event":"helperProbe","status":"healthy"}') {
-        throw const _RecoveryFailure("installed-helper-refresh-failed");
-      }
-      return await _waitForCurrentLaunchDaemon(
-        metadata.serviceIdentifier,
-        helper,
-        const Duration(seconds: 15),
-      );
+      return code == 0 &&
+          _hasOnlyExpectedFlutterProbeStderr(errorOutput) &&
+          output.trim() == '{"event":"helperProbe","status":"healthy"}';
     } on Object {
       if (!processExited) await _terminateOwnedChild(process);
       try {
@@ -1018,20 +1113,27 @@ final class _RecoverySmoke {
   Future<_BundleMetadata> _readBundleMetadata(Directory app) async {
     final plist = File(path.join(app.path, "Contents", "Info.plist"));
     await _requireRegularFile(plist.path);
-    final metadata = _BundleMetadata(
-      bundleIdentifier: await _plistValue(plist, "CFBundleIdentifier"),
-      version: await _plistValue(plist, "CFBundleShortVersionString"),
-      build: await _plistValue(plist, "CFBundleVersion"),
-      executable: await _plistValue(plist, "CFBundleExecutable"),
-      serviceIdentifier: await _plistValue(
-        plist,
-        "DesktopUpdaterInstallHelperServiceID",
-      ),
+    final bundleIdentifier = await _plistValue(plist, "CFBundleIdentifier");
+    final executable = await _plistValue(plist, "CFBundleExecutable");
+    final serviceIdentifier = await _plistValue(
+      plist,
+      "DesktopUpdaterInstallHelperServiceID",
     );
-    if (metadata.executable != _executableName ||
-        metadata.serviceIdentifier != _serviceIdentifier) {
+    if (bundleIdentifier != _bundleIdentifier ||
+        !_executablePattern.hasMatch(executable) ||
+        !_servicePattern.hasMatch(serviceIdentifier)) {
       throw const _RecoveryFailure("bundle-authority-mismatch");
     }
+    final metadata = _BundleMetadata(
+      bundleIdentifier: bundleIdentifier,
+      version: await _plistValue(plist, "CFBundleShortVersionString"),
+      build: await _plistValue(plist, "CFBundleVersion"),
+      executable: executable,
+      serviceIdentifier: serviceIdentifier,
+    );
+    await _requireRegularFile(
+      path.join(app.path, "Contents", "MacOS", metadata.executable),
+    );
     return metadata;
   }
 
@@ -1158,13 +1260,7 @@ final class _RecoverySmoke {
     final parent = request.evidence.parent;
     await parent.create(recursive: true);
     await _requireDirectory(parent.path);
-    final resolvedWorkspace = await Directory.current.resolveSymbolicLinks();
-    final expectedParent = path.join(
-      resolvedWorkspace,
-      "reports",
-      "macos-privileged-updater",
-    );
-    if (await parent.resolveSymbolicLinks() != expectedParent) {
+    if (await parent.resolveSymbolicLinks() != _evidenceParent) {
       throw const _RecoveryFailure("evidence-parent-symlinked");
     }
     if (await FileSystemEntity.type(
@@ -1402,6 +1498,7 @@ final class _SmokeServer {
       artifactBytes: bytes,
       allowUnsignedArtifact: false,
       publisherThumbprint: null,
+      minimumUpdaterVersion: _minimumUpdaterVersion,
     );
     final install = descriptor["install"] as Map<String, dynamic>;
     final pkg = install["macosPkg"] as Map<String, dynamic>;

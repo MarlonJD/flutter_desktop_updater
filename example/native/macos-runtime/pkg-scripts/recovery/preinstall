@@ -3,8 +3,8 @@
 set -eu
 umask 077
 
-ready=/private/var/tmp/net.monolib.updater.pkg-recovery.ready
-release=/private/var/tmp/net.monolib.updater.pkg-recovery.release
+ready=/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.ready
+release=/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release
 
 cleanup() {
   /bin/rm -f "$ready" "$release"

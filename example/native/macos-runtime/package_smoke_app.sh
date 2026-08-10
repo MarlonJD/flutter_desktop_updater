@@ -252,8 +252,9 @@ if [ -n "$pkg_output" ]; then
   /bin/rm -f "$component_pkg"
   /bin/mkdir -p "$pkg_root" "$(/usr/bin/dirname "$pkg_output")"
   /usr/bin/ditto "$app_bundle" "$pkg_root/$(/usr/bin/basename "$app_bundle")"
-  if [ "$pkg_baseline_smoke" = 1 ]; then
-    component_plist="$work/baseline-components.plist"
+  component_plist=
+  if [ "$pkg_baseline_smoke" = 1 ] || [ "$pkg_recovery_smoke" = 1 ]; then
+    component_plist="$work/fixed-components.plist"
     /bin/rm -f "$component_plist"
     /usr/bin/pkgbuild --analyze --root "$pkg_root" "$component_plist"
     /usr/bin/python3 - \
@@ -266,12 +267,12 @@ expected_bundle = sys.argv[2]
 with open(path, "rb") as source:
     components = plistlib.load(source)
 if not isinstance(components, list) or len(components) != 1:
-    raise SystemExit("baseline component discovery must find one bundle")
+    raise SystemExit("fixed component discovery must find one bundle")
 component = components[0]
 if not isinstance(component, dict):
-    raise SystemExit("baseline component entry must be a dictionary")
+    raise SystemExit("fixed component entry must be a dictionary")
 if component.get("RootRelativeBundlePath") != expected_bundle:
-    raise SystemExit("baseline component path does not match the fixed app")
+    raise SystemExit("component path does not match the fixed app")
 component["BundleIsVersionChecked"] = False
 component["BundleIsRelocatable"] = False
 component["BundleHasStrictIdentifier"] = True
@@ -279,6 +280,8 @@ component["BundleOverwriteAction"] = "upgrade"
 with open(path, "wb") as output:
     plistlib.dump(components, output, fmt=plistlib.FMT_XML, sort_keys=True)
 PY
+  fi
+  if [ "$pkg_baseline_smoke" = 1 ]; then
     /usr/bin/pkgbuild \
       --root "$pkg_root" \
       --component-plist "$component_plist" \
@@ -300,6 +303,7 @@ PY
       fail "fixed PKG recovery scripts directory contains unexpected entries"
     /usr/bin/pkgbuild \
       --root "$pkg_root" \
+      --component-plist "$component_plist" \
       --scripts "$recovery_scripts" \
       --install-location /Applications \
       --identifier "$pkg_receipt_id" \

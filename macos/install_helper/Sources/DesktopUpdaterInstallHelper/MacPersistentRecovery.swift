@@ -54,6 +54,12 @@ final class MacPersistentRecoveryService {
         let journalSHA256: String
     }
 
+    private struct LocatedOrphanTransaction {
+        let directory: MacTransactionDirectory
+        let paths: MacTransactionPaths
+        let journalSHA256: String
+    }
+
     private let policy: MacSealedInstallPolicyV1
     private let callerAuthenticator: any MacRecoveryCallerAuthenticating
     private let verifierFactory: any MacRecoveryPayloadVerifierCreating
@@ -62,6 +68,7 @@ final class MacPersistentRecoveryService {
     private let protectedInstallerStageBaseURL: URL
     private let managerWaitTimeoutNanoseconds: UInt64
     private let managerPollIntervalMicroseconds: UInt32
+    private let diagnostics: any MacHelperDiagnosticsRecording
 
     var policyID: String { policy.policyID }
 
@@ -74,7 +81,9 @@ final class MacPersistentRecoveryService {
         protectedInstallerStageBaseURL: URL =
             MacVerifiedInstallerProtectedStage.defaultBaseURL,
         managerWaitTimeout: TimeInterval = 10,
-        managerPollIntervalMicroseconds: UInt32 = 100_000
+        managerPollIntervalMicroseconds: UInt32 = 100_000,
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) {
         self.policy = policy
         self.callerAuthenticator = callerAuthenticator
@@ -90,6 +99,7 @@ final class MacPersistentRecoveryService {
             managerPollIntervalMicroseconds,
             1
         )
+        self.diagnostics = diagnostics
     }
 
     func query(transactionID: String) throws
@@ -123,6 +133,15 @@ final class MacPersistentRecoveryService {
             )
         }
         guard let located = file else {
+            if let orphan = try locateOrphan(transactionID: transactionID) {
+                return MacPersistentTransactionStatusV1(
+                    protocolVersion: 1,
+                    transactionID: transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "recoveryRequired",
+                    journalSHA256: orphan.journalSHA256
+                )
+            }
             return MacPersistentTransactionStatusV1(
                 protocolVersion: 1,
                 transactionID: transactionID,
@@ -145,7 +164,11 @@ final class MacPersistentRecoveryService {
         -> MacPersistentTransactionStatusV1
     {
         try authenticateAndValidate(transactionID)
-        guard persistentRecoverySmokeGateIsActive() else {
+        guard
+            persistentRecoverySmokeGateIsActive(
+                applicationPackageID: policy.applicationPackageID
+            )
+        else {
             throw MacPersistentRecoveryError.recoverySmokeGateInactive
         }
         let file = try locate(transactionID: transactionID)
@@ -174,6 +197,41 @@ final class MacPersistentRecoveryService {
     func recover(transactionID: String) throws
         -> MacPersistentRecoveryResultV1
     {
+        diagnostics.record(
+            .recoveryStart,
+            transactionID: transactionID,
+            state: "recoveryRequired",
+            resultCode: "started",
+            detailCode: "persistent"
+        )
+        do {
+            let result = try recoverImpl(transactionID: transactionID)
+            let success =
+                result.resultCode == "completed"
+                || result.resultCode == "rolledBack"
+            diagnostics.record(
+                success ? .recoverySuccess : .recoveryFailure,
+                transactionID: transactionID,
+                state: result.resultCode,
+                resultCode: result.resultCode,
+                detailCode: result.verifiedOutcome
+            )
+            return result
+        } catch {
+            diagnostics.record(
+                .recoveryFailure,
+                transactionID: transactionID,
+                state: "recoveryRequired",
+                resultCode: "failure",
+                detailCode: "persistent"
+            )
+            throw error
+        }
+    }
+
+    private func recoverImpl(transactionID: String)
+        throws -> MacPersistentRecoveryResultV1
+    {
         try authenticateAndValidate(transactionID)
         let file = try locate(transactionID: transactionID)
         let installer = try locateInstaller(transactionID: transactionID)
@@ -184,6 +242,16 @@ final class MacPersistentRecoveryService {
             return try recoverInstaller(installer)
         }
         guard let located = file else {
+            if let orphan = try locateOrphan(transactionID: transactionID) {
+                try cleanupOrphanTransaction(orphan)
+                return MacPersistentRecoveryResultV1(
+                    protocolVersion: 1,
+                    transactionID: transactionID,
+                    resultCode: "completed",
+                    verifiedOutcome: "orphanStateCleared",
+                    journalSHA256: orphan.journalSHA256
+                )
+            }
             return MacPersistentRecoveryResultV1(
                 protocolVersion: 1,
                 transactionID: transactionID,
@@ -200,7 +268,9 @@ final class MacPersistentRecoveryService {
             transactionID: transactionID,
             expectedPayloadIdentity:
                 located.journal.expectedPayloadIdentity,
-            verifier: verifier
+            verifier: verifier,
+            diagnostics: diagnostics,
+            emitRecoverySummaryDiagnostics: false
         ).recover()
         switch outcome {
         case .liveOwner:
@@ -318,6 +388,197 @@ final class MacPersistentRecoveryService {
         return matches.first
     }
 
+    private func locateOrphan(transactionID: String) throws
+        -> LocatedOrphanTransaction?
+    {
+        let commitSuffix = ".desktop-updater-\(transactionID).commit"
+        let lockSuffix = ".desktop-updater-lock"
+        var matches: [LocatedOrphanTransaction] = []
+        for root in policy.allowedInstallRoots {
+            let rootURL = URL(fileURLWithPath: root).standardizedFileURL
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(
+                atPath: rootURL.path,
+                isDirectory: &isDirectory
+            ), isDirectory.boolValue else {
+                continue
+            }
+            let names: [String]
+            let directory: MacTransactionDirectory
+            do {
+                names = try FileManager.default.contentsOfDirectory(
+                    atPath: rootURL.path
+                )
+                directory = try MacTransactionDirectory(url: rootURL)
+            } catch {
+                throw MacPersistentRecoveryError.journalCorrupt
+            }
+            var targetNames = Set<String>()
+            for name in names
+            where name.hasPrefix(".")
+                && name.hasSuffix(commitSuffix)
+            {
+                let end = name.index(
+                    name.endIndex,
+                    offsetBy: -commitSuffix.count
+                )
+                let targetName = String(
+                    name[name.index(after: name.startIndex)..<end]
+                )
+                guard persistentSimpleName(targetName) else {
+                    throw MacPersistentRecoveryError.journalCorrupt
+                }
+                targetNames.insert(targetName)
+            }
+            for name in names
+            where name.hasPrefix(".")
+                && name.hasSuffix(lockSuffix)
+            {
+                let end = name.index(
+                    name.endIndex,
+                    offsetBy: -lockSuffix.count
+                )
+                let targetName = String(
+                    name[name.index(after: name.startIndex)..<end]
+                )
+                guard persistentSimpleName(targetName),
+                    let paths = try? MacTransactionPaths(
+                        targetName: targetName,
+                        transactionID: transactionID
+                    ),
+                    name == paths.lockName
+                else {
+                    continue
+                }
+                if (try? MacTargetLock.validatedOrphanOwner(
+                    directory: directory,
+                    name: name
+                )) == transactionID {
+                    targetNames.insert(targetName)
+                }
+            }
+            for targetName in targetNames {
+                do {
+                    let paths = try MacTransactionPaths(
+                        targetName: targetName,
+                        transactionID: transactionID
+                    )
+                    let targetIdentity = try directory.identity(
+                        name: targetName,
+                        rejectSymbolicLink: true
+                    )
+                    guard
+                        targetIdentity.mode & UInt16(S_IFMT)
+                            == UInt16(S_IFDIR)
+                    else {
+                        throw MacPersistentRecoveryError.journalCorrupt
+                    }
+                    let transactionPrefix =
+                        ".\(targetName).desktop-updater-\(transactionID)."
+                    guard
+                        !names.contains(where: {
+                            $0.hasPrefix(transactionPrefix)
+                                && $0 != paths.commitAuthorizationName
+                        })
+                    else {
+                        throw MacPersistentRecoveryError.journalCorrupt
+                    }
+                    let hasCommit = names.contains(
+                        paths.commitAuthorizationName
+                    )
+                    let lockOwner =
+                        names.contains(paths.lockName)
+                        ? try MacTargetLock.validatedOrphanOwner(
+                            directory: directory,
+                            name: paths.lockName
+                        ) : nil
+                    guard hasCommit || lockOwner == transactionID,
+                        lockOwner == nil || lockOwner == transactionID
+                    else {
+                        throw MacPersistentRecoveryError.journalCorrupt
+                    }
+                    let journalSHA256 =
+                        hasCommit
+                        ? try MacCommitAuthorizationStore(
+                            directory: directory,
+                            paths: paths
+                        ).validatedOrphanJournalSHA256()
+                        : String(repeating: "0", count: 64)
+                    matches.append(
+                        LocatedOrphanTransaction(
+                            directory: directory,
+                            paths: paths,
+                            journalSHA256: journalSHA256
+                        )
+                    )
+                } catch let error as MacPersistentRecoveryError {
+                    throw error
+                } catch {
+                    throw MacPersistentRecoveryError.journalCorrupt
+                }
+            }
+        }
+        guard matches.count <= 1 else {
+            throw MacPersistentRecoveryError.ambiguousTransaction
+        }
+        return matches.first
+    }
+
+    private func cleanupOrphanTransaction(
+        _ located: LocatedOrphanTransaction
+    ) throws {
+        diagnostics.record(
+            .cleanupStart,
+            transactionID: located.paths.transactionID,
+            state: "recoveryRequired",
+            resultCode: "started",
+            detailCode: "orphan"
+        )
+        do {
+            if located.directory.exists(name: located.paths.lockName) {
+                try MacTargetLock.releaseValidatedOrphan(
+                    directory: located.directory,
+                    name: located.paths.lockName,
+                    transactionID: located.paths.transactionID
+                )
+            }
+            if located.directory.exists(
+                name: located.paths.commitAuthorizationName
+            ) {
+                try MacCommitAuthorizationStore(
+                    directory: located.directory,
+                    paths: located.paths
+                ).removeValidatedOrphan(
+                    expectedJournalSHA256: located.journalSHA256
+                )
+            }
+            try located.directory.sync()
+        } catch {
+            diagnostics.record(
+                .cleanupFailure,
+                transactionID: located.paths.transactionID,
+                state: "recoveryRequired",
+                resultCode: "failure",
+                detailCode: "orphan"
+            )
+            throw MacPersistentRecoveryError.journalCorrupt
+        }
+        diagnostics.record(
+            .recoveryMarkerCleared,
+            transactionID: located.paths.transactionID,
+            state: "completed",
+            resultCode: "success",
+            detailCode: "orphan"
+        )
+        diagnostics.record(
+            .cleanupSuccess,
+            transactionID: located.paths.transactionID,
+            state: "completed",
+            resultCode: "success",
+            detailCode: "orphan"
+        )
+    }
+
     private func locateInstaller(transactionID: String) throws
         -> LocatedInstallerTransaction?
     {
@@ -326,10 +587,12 @@ final class MacPersistentRecoveryService {
         for root in policy.allowedInstallRoots {
             let rootURL = URL(fileURLWithPath: root).standardizedFileURL
             var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(
-                atPath: rootURL.path,
-                isDirectory: &isDirectory
-            ), isDirectory.boolValue else {
+            guard
+                FileManager.default.fileExists(
+                    atPath: rootURL.path,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue
+            else {
                 continue
             }
             let names: [String]
@@ -530,10 +793,35 @@ final class MacPersistentRecoveryService {
                     throw MacPersistentRecoveryError.journalCorrupt
                 }
             }
-            var journal = located.journal
-            journal.state = .rolledBack
-            try located.store.persist(journal)
-            try cleanupInstallerTransaction(located, removeJournal: true)
+            diagnostics.record(
+                .rollbackStart,
+                transactionID: located.journal.transactionID,
+                state: located.journal.state.rawValue,
+                resultCode: "started",
+                detailCode: "pkg"
+            )
+            do {
+                var journal = located.journal
+                journal.state = .rolledBack
+                try located.store.persist(journal)
+                try cleanupInstallerTransaction(located, removeJournal: true)
+            } catch {
+                diagnostics.record(
+                    .rollbackFailure,
+                    transactionID: located.journal.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "pkg"
+                )
+                throw error
+            }
+            diagnostics.record(
+                .rollbackSuccess,
+                transactionID: located.journal.transactionID,
+                state: "rolledBack",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
             return MacPersistentRecoveryResultV1(
                 protocolVersion: 1,
                 transactionID: located.journal.transactionID,
@@ -691,28 +979,62 @@ final class MacPersistentRecoveryService {
         _ located: LocatedInstallerTransaction,
         removeJournal: Bool
     ) throws {
-        if removeJournal {
-            try removeInstallerStageIfPresent(located)
-            try removeSourceInstallerStageIfPresent(located)
-        }
-        if let owner = try MacTargetLock.owner(
-            directory: located.directory,
-            name: located.paths.lockName
-        ) {
-            guard owner == located.journal.transactionID else {
-                throw MacPersistentRecoveryError.journalCorrupt
+        diagnostics.record(
+            .cleanupStart,
+            transactionID: located.journal.transactionID,
+            state: removeJournal ? "cleanup" : "manualActionRequired",
+            resultCode: "started",
+            detailCode: "pkg"
+        )
+        do {
+            if removeJournal {
+                try removeInstallerStageIfPresent(located)
+                try removeSourceInstallerStageIfPresent(located)
             }
-            try MacTargetLock.releaseExisting(
+            if let owner = try MacTargetLock.owner(
                 directory: located.directory,
-                name: located.paths.lockName,
-                transactionID: located.journal.transactionID
+                name: located.paths.lockName
+            ) {
+                guard owner == located.journal.transactionID else {
+                    throw MacPersistentRecoveryError.journalCorrupt
+                }
+                try MacTargetLock.releaseExisting(
+                    directory: located.directory,
+                    name: located.paths.lockName,
+                    transactionID: located.journal.transactionID
+                )
+            }
+            try MacCommitAuthorizationStore(
+                directory: located.directory,
+                paths: located.paths
+            ).removeIfPresent()
+            if removeJournal {
+                try located.store.remove()
+                diagnostics.record(
+                    .recoveryMarkerCleared,
+                    transactionID: located.journal.transactionID,
+                    state: "completed",
+                    resultCode: "success",
+                    detailCode: "pkg"
+                )
+            }
+        } catch {
+            diagnostics.record(
+                .cleanupFailure,
+                transactionID: located.journal.transactionID,
+                state: "recoveryRequired",
+                resultCode: "failure",
+                detailCode: "pkg"
             )
+            throw error
         }
-        try MacCommitAuthorizationStore(
-            directory: located.directory,
-            paths: located.paths
-        ).removeIfPresent()
-        if removeJournal { try located.store.remove() }
+        diagnostics.record(
+            .cleanupSuccess,
+            transactionID: located.journal.transactionID,
+            state: "completed",
+            resultCode: "success",
+            detailCode: "pkg"
+        )
     }
 
     private func removeInstallerStageIfPresent(
@@ -1050,17 +1372,23 @@ private func persistentOwnerIsLive(
         == "macos:\(info.pbi_start_tvsec):\(info.pbi_start_tvusec)"
 }
 
-private func persistentRecoverySmokeGateIsActive() -> Bool {
-    let readyPath =
-        "/private/var/tmp/net.monolib.updater.pkg-recovery.ready"
-    let releasePath =
-        "/private/var/tmp/net.monolib.updater.pkg-recovery.release"
+private func persistentRecoverySmokeGateIsActive(
+    applicationPackageID: String
+) -> Bool {
+    guard persistentPackageIdentifier(applicationPackageID) else {
+        return false
+    }
+    let markerPrefix =
+        "/private/var/tmp/\(applicationPackageID).pkg-recovery."
+    let readyPath = "\(markerPrefix)ready"
+    let releasePath = "\(markerPrefix)release"
     var ready = stat()
     guard readyPath.withCString({ Darwin.lstat($0, &ready) }) == 0,
-          ready.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
-          ready.st_uid == 0,
-          ready.st_gid == 0,
-          ready.st_mode & 0o777 == 0o600 else {
+        ready.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+        ready.st_uid == 0,
+        ready.st_gid == 0,
+        ready.st_mode & 0o777 == 0o600
+    else {
         return false
     }
     var release = stat()

@@ -186,6 +186,7 @@ Future<Map<String, dynamic>> signedDescriptor({
   required List<int> artifactBytes,
   required bool allowUnsignedArtifact,
   required String? publisherThumbprint,
+  String? minimumUpdaterVersion,
 }) async {
   final json = <String, dynamic>{
     "schemaVersion": 3,
@@ -214,7 +215,8 @@ Future<Map<String, dynamic>> signedDescriptor({
       "publicKeyId": publicKeyId,
       "value": "",
     },
-    "minimumUpdaterVersion": artifactKind == "pkgInstaller" ? "2.7.0" : "2.0.0",
+    "minimumUpdaterVersion": minimumUpdaterVersion ??
+        (artifactKind == "pkgInstaller" ? "2.7.0" : "2.0.0"),
     "minimumOS": {platform: minimumOS(platform)},
     "generatedAt": DateTime.now().toUtc().toIso8601String(),
   };

@@ -266,6 +266,7 @@ final class MacPrivilegedTransactionHandler {
     private let recoveryHandler: any MacPrivilegedRecoveryRequestHandling
     private let terminateWhenIdle: () -> Void
     private let crashForRecoverySmoke: () -> Void
+    private let diagnostics: any MacHelperDiagnosticsRecording
     private let lock = NSLock()
     private var preparing: Set<String> = []
     private var pending: [String: PendingTransaction] = [:]
@@ -281,7 +282,9 @@ final class MacPrivilegedTransactionHandler {
         monitorFactory: any MacCallerExitMonitorCreating,
         recoveryHandler: any MacPrivilegedRecoveryRequestHandling,
         terminateWhenIdle: @escaping () -> Void = {},
-        crashForRecoverySmoke: @escaping () -> Void = {}
+        crashForRecoverySmoke: @escaping () -> Void = {},
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) {
         self.helperEndpointIdentitySHA256 =
             helperEndpointIdentitySHA256
@@ -290,19 +293,28 @@ final class MacPrivilegedTransactionHandler {
         self.recoveryHandler = recoveryHandler
         self.terminateWhenIdle = terminateWhenIdle
         self.crashForRecoverySmoke = crashForRecoverySmoke
+        self.diagnostics = diagnostics
     }
 
     convenience init(
         policy: MacSealedInstallPolicyV1,
         helperEndpointIdentitySHA256: String
     ) {
+        let diagnostics = MacHelperDiagnosticsRecorder()
+        diagnostics.record(
+            .helperScheduled,
+            state: "starting",
+            resultCode: "success",
+            detailCode: "privileged"
+        )
         let recovery = MacPersistentRecoveryService(
             policy: policy,
             callerAuthenticator:
                 AuthenticatedMacXPCRecoveryCallerAuthenticator(),
             verifierFactory: SystemMacRecoveryPayloadVerifierFactory(),
             installerVerifierFactory:
-                SystemMacVerifiedInstallerCheckerFactory()
+                SystemMacVerifiedInstallerCheckerFactory(),
+            diagnostics: diagnostics
         )
         self.init(
             helperEndpointIdentitySHA256:
@@ -322,7 +334,8 @@ final class MacPrivilegedTransactionHandler {
                     helperEndpointIdentitySHA256:
                         helperEndpointIdentitySHA256,
                     requestValidator: validator,
-                    preserveTargetOwnership: true
+                    preserveTargetOwnership: true,
+                    diagnostics: diagnostics
                 )
                 return MacOneShotInstallSession(
                     authorizer: authorizer,
@@ -340,7 +353,21 @@ final class MacPrivilegedTransactionHandler {
             terminateWhenIdle: { Darwin.exit(EXIT_SUCCESS) },
             crashForRecoverySmoke: {
                 _ = Darwin.kill(Darwin.getpid(), SIGKILL)
-            }
+            },
+            diagnostics: diagnostics
+        )
+    }
+
+    func recordRejectedOperation(operation: String, error: Error) {
+        let operationCode = macHelperSafeOperationCode(operation)
+        let errorCode = macHelperSafeErrorCode(error)
+        let detailCode = operationCode + "." + errorCode
+        diagnostics.record(
+            .requestRejected,
+            transactionID: nil,
+            state: "rejected",
+            resultCode: "failure",
+            detailCode: detailCode
         )
     }
 
@@ -413,6 +440,7 @@ final class MacPrivilegedTransactionHandler {
         peerProcessIdentifier: Int32
     ) throws -> MacPrivilegedTransactionResponse {
         let request = try NativeInstallTransactionRequestV1.parse(payload)
+        diagnostics.configure(destination: request.diagnosticsDestination)
         guard request.caller.processIdentifier
                 == Int64(peerProcessIdentifier) else {
             throw MacPrivilegedTransactionHandlerError.invalidPeer
@@ -494,10 +522,24 @@ final class MacPrivilegedTransactionHandler {
             completeAfterReply: { [weak self, weak transaction] in
                 guard let self, let transaction else { return }
                 do {
+                    self.diagnostics.record(
+                        .waitingForParentProcess,
+                        transactionID: transaction.reservation.transactionID,
+                        state: "commitAccepted",
+                        resultCode: "started",
+                        detailCode: "privileged"
+                    )
                     try transaction.monitor.waitForExit(
                         expiresAtUnixMilliseconds:
                             transaction.reservation
                             .expiresAtUnixMilliseconds
+                    )
+                    self.diagnostics.record(
+                        .parentProcessExited,
+                        transactionID: transaction.reservation.transactionID,
+                        state: "commitAccepted",
+                        resultCode: "success",
+                        detailCode: "privileged"
                     )
                     _ = try transaction.session.executeAfterCallerExit()
                     self.finish(
@@ -505,6 +547,13 @@ final class MacPrivilegedTransactionHandler {
                         installedReplacement: true
                     )
                 } catch {
+                    self.diagnostics.record(
+                        .parentProcessExited,
+                        transactionID: transaction.reservation.transactionID,
+                        state: "recoveryRequired",
+                        resultCode: "failure",
+                        detailCode: "wait"
+                    )
                     _ = try? transaction.session
                         .cancelCommitAwaitingCallerExit()
                     self.finish(
@@ -766,6 +815,11 @@ private final class MacPrivilegedXPCServer {
                     &payloadLength
                 ), (1 ... MacLengthPrefixedFileHandleChannel
                     .maximumFrameLength).contains(payloadLength) else {
+                    handler.recordRejectedOperation(
+                        operation: operationText,
+                        error: MacPrivilegedTransactionHandlerError
+                            .invalidOperation
+                    )
                     xpc_connection_cancel(connection)
                     return
                 }
@@ -809,6 +863,10 @@ private final class MacPrivilegedXPCServer {
                         }
                     }
                 } catch {
+                    handler.recordRejectedOperation(
+                        operation: operationText,
+                        error: error
+                    )
                     xpc_connection_cancel(connection)
                 }
             }
@@ -901,7 +959,12 @@ final class SecurityMacSignedExecutableIdentityChecker:
               let requirementObject,
               SecStaticCodeCheckValidity(
                   staticCode,
-                  [],
+                  // The OS may attach protected provenance metadata after the
+                  // signed app is launched. Identity authentication still
+                  // validates the executable and designated requirement, but
+                  // must not treat that runtime metadata as a resource seal
+                  // change.
+                  SecCSFlags(rawValue: kSecCSDoNotValidateResources),
                   requirementObject
               ) == errSecSuccess else {
             throw MacPrivilegeError.signedIdentityMismatch
@@ -947,7 +1010,11 @@ final class SecurityMacSignedExecutableIdentityChecker:
             &requirementObject
         ) == errSecSuccess,
             let requirementObject,
-            SecCodeCheckValidity(code, [], requirementObject)
+            SecCodeCheckValidity(
+                code,
+                [],
+                requirementObject
+            )
                 == errSecSuccess else {
             throw MacPrivilegeError.peerAuthenticationFailed
         }

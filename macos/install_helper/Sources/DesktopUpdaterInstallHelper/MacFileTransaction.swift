@@ -149,6 +149,7 @@ final class MacFileTransaction {
     private let initialStageIdentity: MacFileIdentity
     private let targetIdentity: MacFileIdentity
     private let targetLock: MacTargetLock
+    private let diagnostics: any MacHelperDiagnosticsRecording
     private let lifecycleLock = NSLock()
     private var lifecycle = Lifecycle.reserved
     private var preparedIdentity: MacFileIdentity?
@@ -162,7 +163,9 @@ final class MacFileTransaction {
         verifier: any MacInstallPayloadVerifying,
         preserveTargetOwnership: Bool = false,
         faultInjector: any MacTransactionFaultInjecting =
-            NoMacTransactionFaultInjector()
+            NoMacTransactionFaultInjector(),
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) throws {
         let target = targetURL.standardizedFileURL
         let stage = stageURL.standardizedFileURL
@@ -192,6 +195,7 @@ final class MacFileTransaction {
         self.expectedPayloadIdentity = expectedPayloadIdentity
         self.verifier = verifier
         self.faultInjector = faultInjector
+        self.diagnostics = diagnostics
         let journalStore = DurableTransactionJournalStore(
             directory: transactionDirectory,
             paths: transactionPaths,
@@ -271,6 +275,13 @@ final class MacFileTransaction {
 
     func prepare() throws -> String {
         try transition(from: .reserved, to: .preparing)
+        diagnostics.record(
+            .stagingPathValidation,
+            transactionID: paths.transactionID,
+            state: "preparing",
+            resultCode: "started",
+            detailCode: "none"
+        )
         do {
             try validateStageBeforeMutation()
             try copyStageToPreparedSibling()
@@ -288,9 +299,23 @@ final class MacFileTransaction {
             preparedIdentity = copiedIdentity
             try store.persist(initialJournal(stageIdentity: copiedIdentity))
             let digest = try store.sha256()
+            diagnostics.record(
+                .stagingPathValidation,
+                transactionID: paths.transactionID,
+                state: "prepared",
+                resultCode: "success",
+                detailCode: "none"
+            )
             setLifecycle(.prepared)
             return digest
         } catch {
+            diagnostics.record(
+                .stagingPathValidation,
+                transactionID: paths.transactionID,
+                state: "preparing",
+                resultCode: "failure",
+                detailCode: "validation"
+            )
             if directory.exists(name: paths.journalName) {
                 setLifecycle(.recoveryRequired)
             } else {
@@ -315,6 +340,13 @@ final class MacFileTransaction {
                 )
             }
             try store.remove()
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "cancelled",
+                resultCode: "success",
+                detailCode: "directory"
+            )
             try targetLock.release()
             setLifecycle(.cancelled)
         } catch {
@@ -333,28 +365,41 @@ final class MacFileTransaction {
         }
         try authorizeCommit()
         try transition(from: .prepared, to: .executing)
+        var activeEvent: MacHelperEvent?
         do {
             var journal = try loadPreparedJournal()
-            guard try directory.identity(
-                name: paths.preparedName,
-                rejectSymbolicLink: true
-            ) == journal.stageIdentity,
+            guard
+                try directory.identity(
+                    name: paths.preparedName,
+                    rejectSymbolicLink: true
+                ) == journal.stageIdentity,
                 try verifier.verifyPayload(
                     at: directory.url.appendingPathComponent(
                         paths.preparedName
                     )
                 )
-                    == expectedPayloadIdentity else {
+                    == expectedPayloadIdentity
+            else {
                 throw MacFileTransactionError.stagePayloadChanged
             }
 
             try directory.validatePathIdentity()
-            guard try directory.identity(
-                name: paths.targetName,
-                rejectSymbolicLink: true
-            ) == targetIdentity else {
+            guard
+                try directory.identity(
+                    name: paths.targetName,
+                    rejectSymbolicLink: true
+                ) == targetIdentity
+            else {
                 throw MacFileTransactionError.targetIdentityChanged
             }
+            activeEvent = .backupStart
+            diagnostics.record(
+                .backupStart,
+                transactionID: paths.transactionID,
+                state: "executing",
+                resultCode: "started",
+                detailCode: "none"
+            )
             try durableRename(
                 from: paths.targetName,
                 to: paths.backupName,
@@ -364,18 +409,36 @@ final class MacFileTransaction {
             )
             journal.state = .backupCreated
             try store.persist(journal)
+            diagnostics.record(
+                .backupSuccess,
+                transactionID: paths.transactionID,
+                state: "backupCreated",
+                resultCode: "success",
+                detailCode: "none"
+            )
+            activeEvent = nil
 
-            guard try directory.identity(
-                name: paths.preparedName,
-                rejectSymbolicLink: true
-            ) == journal.stageIdentity,
+            guard
+                try directory.identity(
+                    name: paths.preparedName,
+                    rejectSymbolicLink: true
+                ) == journal.stageIdentity,
                 try verifier.verifyPayload(
                     at: directory.url.appendingPathComponent(
                         paths.preparedName
                     )
-                ) == expectedPayloadIdentity else {
+                ) == expectedPayloadIdentity
+            else {
                 throw MacFileTransactionError.stagePayloadChanged
             }
+            activeEvent = .moveStart
+            diagnostics.record(
+                .moveStart,
+                transactionID: paths.transactionID,
+                state: "backupCreated",
+                resultCode: "started",
+                detailCode: "none"
+            )
             try durableRename(
                 from: paths.preparedName,
                 to: paths.targetName,
@@ -385,28 +448,91 @@ final class MacFileTransaction {
             )
             journal.state = .targetActivated
             try store.persist(journal)
+            diagnostics.record(
+                .moveSuccess,
+                transactionID: paths.transactionID,
+                state: "targetActivated",
+                resultCode: "success",
+                detailCode: "none"
+            )
+            activeEvent = nil
 
-            guard try verifier.verifyPayload(
-                at: directory.url.appendingPathComponent(paths.targetName)
-            ) == expectedPayloadIdentity else {
+            guard
+                try verifier.verifyPayload(
+                    at: directory.url.appendingPathComponent(paths.targetName)
+                ) == expectedPayloadIdentity
+            else {
                 throw MacFileTransactionError.stagePayloadChanged
             }
             journal.state = .completed
             try store.persist(journal)
+            activeEvent = .cleanupStart
+            diagnostics.record(
+                .cleanupStart,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "started",
+                detailCode: "none"
+            )
             try directory.removeTree(
                 name: paths.backupName,
                 expectedIdentity: targetIdentity
             )
             try store.remove()
             try commitAuthorizationStore.removeIfPresent()
-            try targetLock.release()
-            try? stageDirectory.removeTree(
-                name: stageName,
-                expectedIdentity: initialStageIdentity
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "success",
+                detailCode: "directory"
             )
+            try targetLock.release()
+            var stageCleanupSucceeded = true
+            if stageDirectory.exists(name: stageName) {
+                do {
+                    try stageDirectory.removeTree(
+                        name: stageName,
+                        expectedIdentity: initialStageIdentity
+                    )
+                } catch {
+                    stageCleanupSucceeded = false
+                }
+            }
+            diagnostics.record(
+                stageCleanupSucceeded ? .cleanupSuccess : .cleanupFailure,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: stageCleanupSucceeded ? "success" : "failure",
+                detailCode: "staging"
+            )
+            activeEvent = nil
             setLifecycle(.completed)
             return .completed
         } catch {
+            if let activeEvent {
+                let failureEvent: MacHelperEvent
+                switch activeEvent {
+                case .backupStart: failureEvent = .backupFailure
+                case .moveStart: failureEvent = .moveFailure
+                case .cleanupStart: failureEvent = .cleanupFailure
+                default: failureEvent = .recoveryFailure
+                }
+                diagnostics.record(
+                    failureEvent,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "transaction"
+                )
+            }
+            diagnostics.record(
+                .recoveryRequired,
+                transactionID: paths.transactionID,
+                state: "recoveryRequired",
+                resultCode: "required",
+                detailCode: "transaction"
+            )
             if !directory.exists(name: paths.journalName) {
                 try? targetLock.release()
             }
@@ -685,6 +811,34 @@ final class MacTargetLock {
         try directory.removeFile(name: name, expectedIdentity: identity)
     }
 
+    static func validatedOrphanOwner(
+        directory: MacTransactionDirectory,
+        name: String
+    ) throws -> String {
+        try readValidatedOrphan(
+            directory: directory,
+            name: name
+        ).owner
+    }
+
+    static func releaseValidatedOrphan(
+        directory: MacTransactionDirectory,
+        name: String,
+        transactionID: String
+    ) throws {
+        let value = try readValidatedOrphan(
+            directory: directory,
+            name: name
+        )
+        guard value.owner == transactionID else {
+            throw MacFileTransactionError.targetBusy
+        }
+        try directory.removeFile(
+            name: name,
+            expectedIdentity: value.identity
+        )
+    }
+
     deinit {
         if descriptor >= 0 {
             _ = Darwin.close(descriptor)
@@ -704,6 +858,37 @@ final class MacTargetLock {
             userIdentifier: value.st_uid,
             groupIdentifier: value.st_gid
         )
+    }
+
+    private static func readValidatedOrphan(
+        directory: MacTransactionDirectory,
+        name: String
+    ) throws -> (owner: String, identity: MacFileIdentity) {
+        let descriptor = name.withCString {
+            Darwin.openat(
+                directory.fileDescriptor,
+                $0,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard descriptor >= 0 else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        defer { _ = Darwin.close(descriptor) }
+        let identity = try identity(descriptor: descriptor)
+        guard identity.userIdentifier == Darwin.geteuid(),
+            identity.mode & 0o7777 == 0o600
+        else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        let data = try readAll(from: descriptor)
+        guard let value = String(data: data, encoding: .utf8),
+            value.hasSuffix("\n"),
+            !value.dropLast().contains("\n")
+        else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        return (String(value.dropLast()), identity)
     }
 
     private static func writeAll(_ data: Data, to descriptor: Int32) throws {

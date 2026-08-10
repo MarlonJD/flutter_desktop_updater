@@ -147,6 +147,10 @@ void main() {
     expect(source, contains("pkg-install-verify: installed v2 app OK"));
     expect(source, contains("administratorApprovedReplacement: true"));
     expect(source, contains("_removeSmokeOwnedAppWithAdministratorApproval"));
+    expect(source, contains("--analyze"));
+    expect(source, contains("--component-plist"));
+    expect(source, contains("0.BundleIsVersionChecked"));
+    expect(source, contains("0.BundleIsRelocatable"));
 
     final allBodyStart = source.indexOf("Future<void> all() async");
     final allBodyEnd =

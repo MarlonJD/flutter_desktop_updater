@@ -11,6 +11,7 @@ import ServiceManagement
 class AppDelegate: FlutterAppDelegate {
   override func applicationDidFinishLaunching(_ notification: Notification) {
     SMAppServiceSmokeHost.runIfRequested(arguments: CommandLine.arguments)
+    FlutterRecoverySmokeHost.runIfRequested(arguments: CommandLine.arguments)
     super.applicationDidFinishLaunching(notification)
   }
 
@@ -25,12 +26,18 @@ class AppDelegate: FlutterAppDelegate {
 
 private enum SMAppServiceSmokeHost {
   private static let command = "--desktop-updater-smappservice-smoke"
+  private static let targetPath =
+    "/Applications/Desktop Updater Smoke.app"
+  private static let bundleIdentifier =
+    "com.example.desktopUpdaterSmoke"
+  private static let installAuthority = "authenticatedRootDaemon"
 
   static func runIfRequested(arguments: [String]) {
     guard let commandIndex = arguments.firstIndex(of: command) else {
       return
     }
     do {
+      try validateInvocation()
       guard arguments.indices.contains(commandIndex + 1) else {
         throw SmokeError("Missing SMAppService smoke phase.")
       }
@@ -81,6 +88,7 @@ private enum SMAppServiceSmokeHost {
       "mode": "privileged",
       "phase": "register",
       "serviceStatus": serviceStatusName(service.status),
+      "targetPath": targetPath,
       "targetParentWritable": targetParentWritable(),
     ])
   }
@@ -106,7 +114,7 @@ private enum SMAppServiceSmokeHost {
       expectedPackageID: expectedPackageID
     )
     let transactionID = UUID().uuidString.lowercased()
-    let helper = MacInstallHelper.smAppServiceSmokeHost()
+    let helper = try MacInstallHelper.smAppServiceSmokeHost()
     let reservation = try helper.prepareInstall(
       MacInstallRequest(verifiedStage: verifiedStage),
       transactionID: transactionID
@@ -120,6 +128,8 @@ private enum SMAppServiceSmokeHost {
         reservation.helperEndpointIdentitySHA256,
       "privilegedDaemonExecuted": true,
       "authenticatedXPC": true,
+      "installAuthority": installAuthority,
+      "targetPath": targetPath,
       "targetParentWritable": targetParentWritable(),
     ]
     if commit {
@@ -133,6 +143,14 @@ private enum SMAppServiceSmokeHost {
         try emit(evidence)
         waitForGateAndExit(gatePath)
       }
+    } else {
+      // The recovery lane intentionally terminates the privileged daemon after
+      // this process exits, then asks the restarted daemon to recover the
+      // durable prepared transaction. Retain the reservation until process
+      // exit so its deinitializer cannot cancel that transaction first.
+      _ = Unmanaged.passRetained(reservation)
+      evidence["transactionState"] = "prepared"
+      evidence["reservationPreservedForRecovery"] = true
     }
     emitAndExit(evidence)
   }
@@ -142,8 +160,9 @@ private enum SMAppServiceSmokeHost {
     recover: Bool
   ) throws {
     let transactionID = try value("--transaction-id", in: arguments)
-    let helper = MacInstallHelper.smAppServiceSmokeHost()
-    let status = recover
+    let helper = try MacInstallHelper.smAppServiceSmokeHost()
+    let status =
+      recover
       ? try helper.recoverPendingInstall(transactionID)
       : try helper.queryTransaction(transactionID)
     emitAndExit([
@@ -156,16 +175,35 @@ private enum SMAppServiceSmokeHost {
       "verifiedOutcome": status.detail,
       "helperEndpointIdentitySha256":
         status.helperEndpointIdentitySHA256,
+      "privilegedDaemonExecuted": true,
       "authenticatedXPC": true,
+      "installAuthority": installAuthority,
+      "targetPath": targetPath,
       "recoveredSwap": recover && status.state == .rolledBack,
       "targetParentWritable": targetParentWritable(),
     ])
   }
 
   private static func targetParentWritable() -> Bool {
-    FileManager.default.isWritableFile(
-      atPath: Bundle.main.bundleURL.deletingLastPathComponent().path
-    )
+    // This is an observation, not an authorization gate. Admin-group ACLs can
+    // legitimately make /Applications writable to the caller. The smoke
+    // contract separately proves authenticated root-daemon execution.
+    let parent = URL(fileURLWithPath: targetPath)
+      .deletingLastPathComponent()
+      .standardizedFileURL
+    return parent.path.withCString { Darwin.access($0, W_OK) == 0 }
+  }
+
+  private static func validateInvocation() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["DESKTOP_UPDATER_CONTROLLER_SMOKE"] == "1",
+      environment["DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET"]
+        == targetPath,
+      Bundle.main.bundleIdentifier == bundleIdentifier,
+      Bundle.main.bundleURL.standardizedFileURL.path == targetPath
+    else {
+      throw SmokeError("SMAppService smoke authority is unavailable.")
+    }
   }
 
   private static func value(
@@ -277,6 +315,153 @@ private enum SMAppServiceSmokeHost {
       self.message = message
     }
 
+    var errorDescription: String? { message }
+  }
+}
+
+private enum FlutterRecoverySmokeHost {
+  static func runIfRequested(arguments: [String]) {
+    guard arguments.contains("--smoke") else { return }
+
+    do {
+      if arguments.contains("--probe-helper") || arguments.contains("--refresh-mismatched-helper") {
+        let helper = try MacInstallHelper.smAppServiceSmokeHost()
+        if arguments.contains("--refresh-mismatched-helper") {
+          try helper.refreshMismatchedPrivilegedEndpointForSmoke()
+        } else {
+          try helper.refreshPrivilegedEndpointForSmoke()
+        }
+        try emit(["event": "helperProbe", "status": "healthy"])
+        if arguments.contains("--hold-helper-active") {
+          Thread.sleep(forTimeInterval: 15)
+        }
+        Darwin.exit(0)
+      }
+
+      if let transactionID = value("--recover-transaction", in: arguments) {
+        try emitTransactionOutcome(
+          "recovery",
+          try MacInstallHelper.smAppServiceSmokeHost()
+            .recoverPendingInstallForSmoke(transactionID)
+        )
+        Darwin.exit(0)
+      }
+
+      if let transactionID = value("--query-transaction", in: arguments) {
+        try emitTransactionOutcome(
+          "query",
+          try MacInstallHelper.smAppServiceSmokeHost()
+            .queryTransactionForSmoke(transactionID)
+        )
+        Darwin.exit(0)
+      }
+
+      if let transactionID = value(
+        "--terminate-helper-for-recovery-smoke",
+        in: arguments
+      ) {
+        let status = try MacInstallHelper.smAppServiceSmokeHost()
+          .terminatePrivilegedHelperForRecoverySmoke(transactionID)
+        try emit([
+          "event": "helperCrashScheduled",
+          "state": stateName(status.state),
+          "resultCode": resultName(status.resultCode),
+        ])
+        Darwin.exit(0)
+      }
+    } catch {
+      FileHandle.standardError.write(
+        Data("Flutter recovery smoke failed.\n".utf8)
+      )
+      Darwin.exit(1)
+    }
+  }
+
+  private static func value(
+    _ option: String,
+    in arguments: [String]
+  ) -> String? {
+    guard let index = arguments.firstIndex(of: option),
+      arguments.indices.contains(index + 1),
+      !arguments[index + 1].isEmpty
+    else {
+      return nil
+    }
+    return arguments[index + 1]
+  }
+
+  private static func emitTransactionOutcome(
+    _ event: String,
+    _ outcome: MacInstallSmokeTransactionOutcome
+  ) throws {
+    switch outcome {
+    case .status(let status):
+      try emit([
+        "event": event,
+        "state": stateName(status.state),
+        "resultCode": resultName(status.resultCode),
+      ])
+    case .endpointUnavailable:
+      try emit([
+        "event": event,
+        "state": "unknown",
+        "resultCode": "endpointUnavailable",
+      ])
+    case .privilegedHelperApprovalRequired:
+      try emit([
+        "event": "installFailed",
+        "code": "PrivilegedHelperApprovalRequired",
+        "remediationActions": ["openMacOSBackgroundItemsSettings"],
+      ])
+    case .invalidResponse:
+      throw SmokeError("Invalid native smoke response.")
+    @unknown default:
+      throw SmokeError("Unknown native smoke response.")
+    }
+  }
+
+  private static func stateName(_ state: InstallTransactionState) -> String {
+    switch state {
+    case .unknown: return "unknown"
+    case .prepared: return "prepared"
+    case .commitAccepted: return "commitAccepted"
+    case .completed: return "completed"
+    case .cancelled: return "cancelled"
+    case .expired: return "expired"
+    case .rolledBack: return "rolledBack"
+    case .manualActionRequired: return "manualActionRequired"
+    @unknown default: return "unknown"
+    }
+  }
+
+  private static func resultName(
+    _ result: InstallTransactionResultCode
+  ) -> String {
+    switch result {
+    case .none: return "none"
+    case .accepted: return "accepted"
+    case .succeeded: return "succeeded"
+    case .rejected: return "rejected"
+    case .endpointUnavailable: return "endpointUnavailable"
+    case .authenticationFailed: return "authenticationFailed"
+    case .invalidResponse: return "invalidResponse"
+    case .recoveryRequired: return "recoveryRequired"
+    @unknown default: return "none"
+    }
+  }
+
+  private static func emit(_ value: [String: Any]) throws {
+    var data = try JSONSerialization.data(
+      withJSONObject: value,
+      options: [.sortedKeys, .withoutEscapingSlashes]
+    )
+    data.append(0x0a)
+    FileHandle.standardOutput.write(data)
+  }
+
+  private struct SmokeError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
   }
 }

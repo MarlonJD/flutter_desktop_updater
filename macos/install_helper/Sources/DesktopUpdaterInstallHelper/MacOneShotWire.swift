@@ -81,18 +81,23 @@ final class MacLengthPrefixedFileHandleChannel: MacOneShotWireChannel {
 final class MacOneShotServiceRuntime {
     private let session: MacOneShotInstallSession
     private let callerMonitorFactory: any MacCallerExitMonitorCreating
+    private let diagnostics: any MacHelperDiagnosticsRecording
 
     init(
         session: MacOneShotInstallSession,
-        callerMonitorFactory: any MacCallerExitMonitorCreating
+        callerMonitorFactory: any MacCallerExitMonitorCreating,
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) {
         self.session = session
         self.callerMonitorFactory = callerMonitorFactory
+        self.diagnostics = diagnostics
     }
 
     func run(channel: any MacOneShotWireChannel) throws {
         let requestData = try channel.readFrame()
         let request = try NativeInstallTransactionRequestV1.parse(requestData)
+        diagnostics.configure(destination: request.diagnosticsDestination)
         let monitor = try callerMonitorFactory.makeMonitor(
             processIdentifier: request.caller.processIdentifier,
             processStartIdentity: request.caller.processStartIdentity
@@ -117,11 +122,32 @@ final class MacOneShotServiceRuntime {
                     try channel.writeFrame(
                         try macEncodeReservation(reservation)
                     )
+                    diagnostics.record(
+                        .waitingForParentProcess,
+                        transactionID: reservation.transactionID,
+                        state: "commitAccepted",
+                        resultCode: "started",
+                        detailCode: "oneShot"
+                    )
                     try monitor.waitForExit(
                         expiresAtUnixMilliseconds:
                             reservation.expiresAtUnixMilliseconds
                     )
+                    diagnostics.record(
+                        .parentProcessExited,
+                        transactionID: reservation.transactionID,
+                        state: "commitAccepted",
+                        resultCode: "success",
+                        detailCode: "none"
+                    )
                 } catch {
+                    diagnostics.record(
+                        .parentProcessExited,
+                        transactionID: reservation.transactionID,
+                        state: "recoveryRequired",
+                        resultCode: "failure",
+                        detailCode: "wait"
+                    )
                     _ = try session.cancelCommitAwaitingCallerExit()
                     throw error
                 }

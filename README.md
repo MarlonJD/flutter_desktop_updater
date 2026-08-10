@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.1.1
+  desktop_updater: ^3.1.2
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -194,11 +194,13 @@ reparse rejection, a one-shot handoff, Windows Unicode paths and relative
 redirects, and Release NuGet packages with third-party notices. Target-host
 evidence is commit-bound: the audited baseline normal jobs passed, while each
 3.1 release candidate must rerun the named macOS, Windows, Linux, and Windows
-VM repetition gates for its exact commit. Windows junction/reparse and Linux
-mount/bind transaction mutation plus native transaction recovery journal work
-remain separately gated; signed DMG, PKG, and Inno smokes are `not run` until
-their credentialed lanes execute. The preview therefore remains
-`candidate-only` and is not production-ready.
+VM repetition gates for its exact commit. For 3.1.2, signed/notarized macOS app,
+DMG, standard PKG, privileged helper, and forced-recovery target-host lanes are
+`verified locally`. Windows junction/reparse, Linux mount/bind transaction
+mutation, installed Linux broker, and signed Windows Inno lanes remain
+separately gated. The cross-platform native runtime preview therefore remains
+`candidate-only`; the macOS production updater path has separate verified
+evidence.
 
 See [Native helper SDKs and standalone CLI](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md) for package
 integration and [Native Runtime Preview API](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-runtime-api.md) for
@@ -421,9 +423,13 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-The 3.1.1 release retains the explicit app-owned diagnostics and recovery wiring
-introduced in 3.0. The default stays quiet: no package-owned files, uploads,
-telemetry, or storage.
+The 3.1.2 release retains the explicit app-owned diagnostics and recovery
+wiring introduced in 3.0. The Dart controller remains quiet unless the app
+provides its own sink; it performs no package-owned upload or telemetry. The
+privileged macOS helper additionally writes security-scoped lifecycle evidence
+to its fixed root-owned JSONL log so backup, move, cleanup, rollback, recovery,
+and recovery-marker handling can be audited after an administrator-approved
+installation.
 
 Use in-memory problem reports for normal support, add an app-owned diagnostics
 sink for durable Dart lifecycle logs, and add an app-owned

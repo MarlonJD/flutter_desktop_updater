@@ -148,9 +148,11 @@ final class MacOneShotInstallServiceTests: XCTestCase {
             XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
             XCTAssertEqual(channel.outputs[1], channel.outputs[0])
         }
+        let diagnostics = RecordingMacHelperDiagnostics()
         let runtime = MacOneShotServiceRuntime(
             session: session,
-            callerMonitorFactory: monitorFactory
+            callerMonitorFactory: monitorFactory,
+            diagnostics: diagnostics
         )
 
         try runtime.run(channel: channel)
@@ -158,6 +160,11 @@ final class MacOneShotInstallServiceTests: XCTestCase {
         XCTAssertEqual(monitorFactory.processIdentifier, 4_243)
         XCTAssertEqual(monitorFactory.processStartIdentity, "pid-start-1")
         XCTAssertTrue(monitorFactory.didWait)
+        XCTAssertEqual(diagnostics.configuredDestination?.kind, "platformLog")
+        XCTAssertEqual(
+            diagnostics.events,
+            [.waitingForParentProcess, .parentProcessExited]
+        )
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "new")
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
     }

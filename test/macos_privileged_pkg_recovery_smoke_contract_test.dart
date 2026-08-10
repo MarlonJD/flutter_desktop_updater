@@ -131,11 +131,15 @@ void main() {
     expect(source, contains("set -eu"));
     expect(
       source,
-      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.ready"),
+      contains(
+        "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.ready",
+      ),
     );
     expect(
       source,
-      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.release"),
+      contains(
+        "/private/var/tmp/com.example.desktopUpdaterSmoke.pkg-recovery.release",
+      ),
     );
     expect(source, contains("'%s\\n' \"\$PPID\""));
     expect(source, contains("/bin/sleep 0.1"));
@@ -278,7 +282,9 @@ void main() {
       "tool/macos_privileged_pkg_recovery_smoke.dart",
     ).readAsStringSync();
 
-    expect(source, contains('"com.example.desktopUpdaterSmoke.helper"'));
+    expect(source, contains("DesktopUpdaterInstallHelperServiceID"));
+    expect(source, contains("_servicePattern"));
+    expect(source, contains("metadata.serviceIdentifier"));
     expect(
         source, isNot(contains('"com.example.desktopUpdaterSmoke.installer"')));
   });
@@ -307,7 +313,8 @@ void main() {
     expect(refresh, greaterThan(managerExit));
     expect(terminalRecovery, greaterThan(refresh));
     expect(source, contains('"--refresh-mismatched-helper"'));
-    expect(source, contains("Process.start(host,"));
+    expect(source, contains("Process.start("));
+    expect(source, contains("environment: _controllerSmokeEnvironment"));
     expect(source, contains("_waitForCurrentLaunchDaemon("));
     expect(source, contains("_terminateOwnedChild("));
     expect(source, contains("ProcessSignal.sigkill"));
@@ -330,6 +337,12 @@ void main() {
     expect(refreshBody, isNot(contains("_waitForIdentityExit(")));
     expect(refreshBody, isNot(contains('"--hold-helper-active"')));
     expect(refreshBody, contains("const Duration(seconds: 90)"));
+    expect(refreshBody, contains("_installedHelperRefreshRetryAttempts"));
+    expect(refreshBody, contains("_runInstalledHelperRefreshProbe(host)"));
+    expect(
+      refreshBody,
+      contains("Future<void>.delayed(_installedHelperRefreshRetryDelay)"),
+    );
   });
 
   test("recovery smoke self-crash is gate and manager identity bound", () {
@@ -342,14 +355,9 @@ void main() {
     ).readAsStringSync();
 
     expect(helper, contains("terminateForRecoverySmoke"));
-    expect(
-      helper,
-      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.ready"),
-    );
-    expect(
-      helper,
-      contains("/private/var/tmp/net.monolib.updater.pkg-recovery.release"),
-    );
+    expect(helper, contains("persistentRecoverySmokeGateIsActive"));
+    expect(helper, contains("applicationPackageID"));
+    expect(helper, contains("pkg-recovery."));
     expect(helper, contains("lstat("));
     expect(helper, contains(".managerStarted"));
     expect(helper, contains("persistentOwnerIsLive("));

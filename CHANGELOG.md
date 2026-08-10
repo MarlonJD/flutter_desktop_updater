@@ -1,3 +1,25 @@
+## 3.1.2
+
+* Completed the macOS privileged helper and PKG recovery path, including
+  durable prepare/commit state, forced-helper-termination recovery,
+  fail-closed target and staging validation, and terminal transaction cleanup.
+* Fixed macOS PackageKit installs so application bundles are non-relocatable,
+  strict-identifier upgrades and cannot be skipped or redirected because a
+  different bundle version is discoverable elsewhere on the host.
+* Added root-owned structured macOS helper diagnostics for verification,
+  backup, move, cleanup, rollback, recovery, and recovery-marker lifecycle
+  events without recording credentials or authorization secrets.
+* Hardened the production smoke harness around authenticated installed-host
+  execution, background-item approval rejection, SMAppService endpoint
+  refresh, receipt checks, helper provenance, and recovery cleanup.
+* Confirmed the canonical five-key macOS `installUpdate` handoff reported by
+  @Nicoeevee in PR #67 through a real Flutter macOS application update.
+* Validation: Developer ID signed non-notarized negative lanes and
+  `general-notary` signed/notarized/stapled app, DMG, standard PKG, privileged
+  PKG, background approval OFF/ON, forced recovery, and diagnostics lanes were
+  exercised locally with the consumer application updating from 1.0.0+100 to
+  1.1.0+110.
+
 ## 3.1.1
 
 * Fixed the macOS `installUpdate` MethodChannel handoff to send the canonical

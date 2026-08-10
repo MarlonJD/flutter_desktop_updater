@@ -1,6 +1,8 @@
 import "dart:async";
 
 const controllerSmokeEnvironment = "DESKTOP_UPDATER_CONTROLLER_SMOKE";
+const nativeControllerSmokeEnvironment =
+    "DESKTOP_UPDATER_NATIVE_CONTROLLER_SMOKE";
 const smokeMarkerEnvironment = "DESKTOP_UPDATER_SMOKE_MARKER";
 const smokeDiagnosticsEnvironment = "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG";
 const recoveryStoreEnvironment = "DESKTOP_UPDATER_RECOVERY_STORE_PATH";
@@ -19,7 +21,8 @@ final class SmokeUpdateConfiguration {
   factory SmokeUpdateConfiguration.fromEnvironment(
     Map<String, String> environment,
   ) {
-    final enabled = environment[controllerSmokeEnvironment] == "1";
+    final enabled = environment[controllerSmokeEnvironment] == "1" &&
+        environment[nativeControllerSmokeEnvironment] != "1";
     if (enabled) {
       for (final name in <String>[
         appArchiveEnvironment,

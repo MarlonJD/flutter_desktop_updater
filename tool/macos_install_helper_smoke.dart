@@ -19,6 +19,14 @@ const _hostPhases = <String>{
 const _appEnvironment = "DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_APP";
 const _stagedAppEnvironment = "DESKTOP_UPDATER_SMAPPSERVICE_SMOKE_STAGED_APP";
 const _protectedSmokeRoot = "/Applications";
+const _targetPath = "/Applications/Desktop Updater Smoke.app";
+const _installAuthority = "authenticatedRootDaemon";
+
+const _smokeHostEnvironment = <String, String>{
+  "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+  "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+  "DESKTOP_UPDATER_NATIVE_CONTROLLER_SMOKE": "1",
+};
 
 Future<void> main(List<String> arguments) async {
   try {
@@ -137,7 +145,8 @@ Future<void> _runPrivileged() async {
   if (registrationEvidence["schemaVersion"] != 1 ||
       registrationEvidence["mode"] != "privileged" ||
       registrationEvidence["phase"] != "register" ||
-      registrationEvidence["targetParentWritable"] != false) {
+      registrationEvidence["targetPath"] != _targetPath ||
+      registrationEvidence["targetParentWritable"] is! bool) {
     throw StateError(
       "SMAppService host returned invalid registration evidence",
     );
@@ -266,6 +275,9 @@ Future<void> _runPrivileged() async {
         "serviceIdentifier": serviceIdentifier,
         "privilegedDaemonExecuted": true,
         "authenticatedXPC": true,
+        "installAuthority": _installAuthority,
+        "targetPath": _targetPath,
+        "targetParentWritable": registrationEvidence["targetParentWritable"],
         "helperEndpointIdentitySha256": endpointIdentity,
         "updatedHelperEndpointIdentitySha256": stagedEndpointIdentity,
         "targetOwnership": targetOwnership,
@@ -378,16 +390,19 @@ Future<_GatedHostProcess> _startGatedCommit(
   if (await gate.exists()) {
     await gate.delete();
   }
-  final process = await Process.start(host.path, [
-    _hostCommand,
-    "commit",
-    "--stage-root",
-    stage.root.path,
-    "--staged-app",
-    stage.stagedApp.path,
-    "--exit-gate",
-    gate.path,
-  ]);
+  final process = await Process.start(
+      host.path,
+      [
+        _hostCommand,
+        "commit",
+        "--stage-root",
+        stage.root.path,
+        "--staged-app",
+        stage.stagedApp.path,
+        "--exit-gate",
+        gate.path,
+      ],
+      environment: _smokeHostEnvironment);
   final evidenceCompleter = Completer<Map<String, Object?>>();
   final stderrBuffer = StringBuffer();
   final stdoutSubscription = process.stdout
@@ -437,8 +452,11 @@ Future<Map<String, Object?>> _runHost(
   if (!_hostPhases.contains(phase)) {
     throw ArgumentError.value(phase, "phase", "unsupported host phase");
   }
-  final result =
-      await _runChecked(host.path, [_hostCommand, phase, ...arguments]);
+  final result = await _runChecked(
+    host.path,
+    [_hostCommand, phase, ...arguments],
+    environment: _smokeHostEnvironment,
+  );
   return _lastJsonObject(result.stdout as String);
 }
 
@@ -449,8 +467,11 @@ void _expectHostEvidence(
   if (evidence["schemaVersion"] != 1 ||
       evidence["mode"] != "privileged" ||
       evidence["phase"] != phase ||
+      evidence["installAuthority"] != _installAuthority ||
+      evidence["targetPath"] != _targetPath ||
+      evidence["privilegedDaemonExecuted"] != true ||
       evidence["authenticatedXPC"] != true ||
-      evidence["targetParentWritable"] != false ||
+      evidence["targetParentWritable"] is! bool ||
       !_transactionIDPattern
           .hasMatch(evidence["transactionId"] as String? ?? "") ||
       !_sha256Pattern.hasMatch(
@@ -774,11 +795,13 @@ Future<ProcessResult> _runChecked(
   String executable,
   List<String> arguments, {
   String? workingDirectory,
+  Map<String, String>? environment,
 }) async {
   final result = await Process.run(
     executable,
     arguments,
     workingDirectory: workingDirectory,
+    environment: environment,
   );
   if ((result.stdout as String).isNotEmpty) {
     stdout.write(result.stdout);

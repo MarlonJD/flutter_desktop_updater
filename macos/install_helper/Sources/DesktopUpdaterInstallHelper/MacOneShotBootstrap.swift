@@ -64,14 +64,22 @@ enum MacOneShotBootstrap {
             callerInspector: SystemMacCallerInstallEvidenceInspector(),
             stageInspector: SystemMacStageInstallEvidenceInspector()
         )
-        let authorizer = SealedMacOneShotInstallAuthorizer(
+        let diagnostics = MacHelperDiagnosticsRecorder()
+        diagnostics.record(
+            .helperScheduled,
+            state: "starting",
+            resultCode: "success",
+            detailCode: "oneShot"
+        )
+        let authorizerWithDiagnostics = SealedMacOneShotInstallAuthorizer(
             policy: helper.policy,
             helperEndpointIdentitySHA256:
                 helper.endpointIdentitySHA256,
-            requestValidator: validator
+            requestValidator: validator,
+            diagnostics: diagnostics
         )
         let session = MacOneShotInstallSession(
-            authorizer: authorizer,
+            authorizer: authorizerWithDiagnostics,
             readyTokenGenerator: secureReadyToken,
             nowUnixMilliseconds: unixMilliseconds,
             reservationLifetimeMilliseconds: 300_000
@@ -81,7 +89,8 @@ enum MacOneShotBootstrap {
                 helper.endpointIdentitySHA256,
             runtime: MacOneShotServiceRuntime(
                 session: session,
-                callerMonitorFactory: SystemMacCallerExitMonitorFactory()
+                callerMonitorFactory: SystemMacCallerExitMonitorFactory(),
+                diagnostics: diagnostics
             ),
             channel: MacLengthPrefixedFileHandleChannel(
                 input: .standardInput,
@@ -101,12 +110,20 @@ enum MacOneShotBootstrap {
             executableURL: executableURL,
             identityChecker: identityChecker
         )
+        let diagnostics = MacHelperDiagnosticsRecorder()
+        diagnostics.record(
+            .helperScheduled,
+            state: "starting",
+            resultCode: "success",
+            detailCode: "recovery"
+        )
         let service = MacPersistentRecoveryService(
             policy: helper.policy,
             callerAuthenticator: SystemMacRecoveryCallerAuthenticator(),
             verifierFactory: SystemMacRecoveryPayloadVerifierFactory(),
             installerVerifierFactory:
-                SystemMacVerifiedInstallerCheckerFactory()
+                SystemMacVerifiedInstallerCheckerFactory(),
+            diagnostics: diagnostics
         )
         return SystemMacPersistentRecoveryServiceRuntime(
             helperEndpointIdentitySHA256:

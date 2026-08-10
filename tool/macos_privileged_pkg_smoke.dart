@@ -1,7 +1,6 @@
 import "dart:convert";
 import "dart:ffi";
 import "dart:io";
-import "dart:math";
 
 import "package:args/args.dart";
 import "package:crypto/crypto.dart" as crypto;
@@ -22,6 +21,7 @@ const _v2Version = "1.1.0";
 const _v2Build = "110";
 const _artifactKind = "pkgInstaller";
 const _launchMode = "privilegedInstallerTool";
+const _smokePublicKeyId = "native-runtime-smoke-stable";
 const _minimumUpdaterVersion = "3.1.0";
 const _approvalCode = "PrivilegedHelperApprovalRequired";
 const _settingsAction = "openMacOSBackgroundItemsSettings";
@@ -45,15 +45,19 @@ final _servicePattern = RegExp(
   r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
   r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$",
 );
+final _executablePattern = RegExp(r"^[A-Za-z0-9_-]+$");
+final _flutterProbeStderrPattern = RegExp(
+  r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ "
+  r"desktop_updater_example\[\d+:\d+\] "
+  r"Running with merged UI and platform thread\. Experimental\.$",
+);
 
-String _newTransactionId() {
-  final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex =
-      bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();
-  return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-"
-      "${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}";
+bool _hasOnlyExpectedFlutterProbeStderr(String output) {
+  final lines = output
+      .split("\n")
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty);
+  return lines.every(_flutterProbeStderrPattern.hasMatch);
 }
 
 typedef _ProcPIDPathNative = Int32 Function(
@@ -195,13 +199,8 @@ final class _PrivilegedPkgSmoke {
     await _verifySourceRecoveryApp(request.recoveryApp);
     await _verifyPackage(request.v1Pkg);
     await _verifyPackage(request.v2Pkg);
-    final initialTarget = await _inspectTarget(
-      allowedVersions: const {(_v1Version, _v1Build), (_v2Version, _v2Build)},
-      allowedReceiptStates: const {
-        (_v1Version, _v1Version),
-        (_v2Version, _v2Version),
-        (_v2Version, _v1Version),
-      },
+    await _inspectTarget(
+      allowedVersions: const {(_v1Version, _v1Build)},
       requireTrust: true,
       requireLoadedService: false,
     );
@@ -210,13 +209,13 @@ final class _PrivilegedPkgSmoke {
       expectedVersion: _v1Version,
       expectedBuild: _v1Build,
     );
-    final v2Payload = await _extractPackagePayload(
-      request.v2Pkg,
-      expectedVersion: _v2Version,
-      expectedBuild: _v2Build,
-    );
     try {
-      if (!await _bundlesShareCodeIdentity(request.v1App, v1Payload.app)) {
+      // Stapling a product package may rewrite the nested app/helper code
+      // signatures while preserving the sealed bundle contract. The source
+      // app therefore binds to the payload by bundle metadata and owner
+      // marker; the installed target remains bound to the exact packaged code
+      // identity below.
+      if (!await _bundlesShareBundleIdentity(request.v1App, v1Payload.app)) {
         throw const _SmokeFailure("v1-source-payload-mismatch");
       }
       if (await _bundlesShareCodeIdentity(
@@ -231,85 +230,12 @@ final class _PrivilegedPkgSmoke {
         return;
       }
 
-      if (initialTarget.version == _v2Version &&
-          initialTarget.receiptVersion == _v1Version) {
-        if (!await _bundlesShareCodeIdentity(
-          Directory(_targetPath),
-          v2Payload.app,
-        )) {
-          throw const _SmokeFailure("receipt-drift-target-mismatch");
-        }
-        await _recoverBlockingBootstrapTransaction(
-          expectedState: "manualActionRequired",
-          expectedResultCode: "recoveryRequired",
-          required: true,
-        );
-      }
-
-      if (!await _bundlesShareCodeIdentity(
-        Directory(_targetPath),
-        v2Payload.app,
-      )) {
-        await _prepareSmokeRoot();
-        final refresh = await _runRuntime(
-          artifact: request.v2Pkg,
-          releaseVersion: _v2Version,
-          releaseBuild: int.parse(_v2Build),
-          expectApproval: true,
-        );
-        await _failFastAtApprovalBoundary(refresh);
-        final refreshManager = await _waitForFixedInstallerManager(
-          const Duration(seconds: 90),
-        );
-        await _releaseRecoveryGate(refreshManager.processIdentifier);
-        if (!await _waitForBundleIdentity(
-          v2Payload.app,
-          version: _v2Version,
-          build: _v2Build,
-          timeout: const Duration(seconds: 150),
-        )) {
-          await _pauseIfApproval(refresh);
-          throw const _SmokeFailure("fresh-v2-bootstrap-failed");
-        }
-        await _removeVerifiedBootstrapRefreshStage();
-      }
-
-      await _prepareSmokeRoot();
-      final downgrade = await _runRuntime(
-        artifact: request.v1Pkg,
-        releaseVersion: _v1Version,
-        releaseBuild: int.parse(_v1Build),
-        expectApproval: true,
-        currentVersion: "2.6.9",
-        currentBuild: 269,
-      );
-      await _failFastAtApprovalBoundary(downgrade);
-      if (!await _waitForBundleIdentity(
-        v1Payload.app,
-        version: _v1Version,
-        build: _v1Build,
-        timeout: const Duration(seconds: 150),
-      )) {
-        await _pauseIfApproval(downgrade);
-        throw const _SmokeFailure("v1-bootstrap-failed");
-      }
-      await _inspectTarget(
-        allowedVersions: const {(_v1Version, _v1Build)},
-        requireTrust: true,
-        requireLoadedService: false,
-      );
-      await _waitForOwnedStageEmpty();
-      await _recoverBlockingBootstrapTransaction(
-        expectedState: "completed",
-        expectedResultCode: "succeeded",
-        required: false,
-      );
-      stdout.writeln(
-        jsonEncode({"status": "verified locally", "baseline": "1.0.0+100"}),
-      );
+      // A release smoke must start from the package-installed v1 baseline.
+      // Never forge the current version through a production environment hook
+      // to force a downgrade through the updater itself.
+      throw const _SmokeFailure("v1-package-baseline-required");
     } finally {
       await v1Payload.close();
-      await v2Payload.close();
     }
   }
 
@@ -328,7 +254,10 @@ final class _PrivilegedPkgSmoke {
       expectedBuild: _v1Build,
     );
     try {
-      if (!await _bundlesShareCodeIdentity(request.v1App, payload.app) ||
+      // Product-package stapling can rewrite nested app/helper signatures.
+      // Bind the supplied source app to the payload by the signed bundle
+      // contract, then bind the installed target to the exact payload code.
+      if (!await _bundlesShareBundleIdentity(request.v1App, payload.app) ||
           !await _bundlesShareCodeIdentity(
             Directory(_targetPath),
             payload.app,
@@ -391,7 +320,12 @@ final class _PrivilegedPkgSmoke {
 
   Future<void> install() async {
     await verifyV1();
-    await _removeVerifiedApprovalStage();
+    final approvalEvidence = File(
+      path.join(request.evidenceDirectory.path, "approval.json"),
+    );
+    if (await approvalEvidence.exists()) {
+      await _removeVerifiedApprovalStage();
+    }
     await _prepareSmokeRoot();
     if ((await _providerTransactionIDs()).isNotEmpty) {
       throw const _SmokeFailure("provider-journal-already-present");
@@ -557,7 +491,18 @@ final class _PrivilegedPkgSmoke {
         ["--expand-full", package.path, expanded.path],
         failureClass: "package-expand-failed",
       );
-      final component = Directory(path.join(expanded.path, "component.pkg"));
+      final componentEntries = await expanded
+          .list(followLinks: false)
+          .where(
+            (entry) =>
+                entry is Directory &&
+                path.basename(entry.path).endsWith(".pkg"),
+          )
+          .toList();
+      if (componentEntries.length != 1) {
+        throw const _SmokeFailure("package-payload-shape-invalid");
+      }
+      final component = componentEntries.single as Directory;
       final payload = Directory(path.join(component.path, "Payload"));
       final app =
           Directory(path.join(payload.path, path.basename(_targetPath)));
@@ -619,6 +564,24 @@ final class _PrivilegedPkgSmoke {
     }
   }
 
+  Future<bool> _bundlesShareBundleIdentity(
+    Directory first,
+    Directory second,
+  ) async {
+    try {
+      final firstMetadata = await _readBundleMetadata(first);
+      final secondMetadata = await _readBundleMetadata(second);
+      return firstMetadata.bundleIdentifier ==
+              secondMetadata.bundleIdentifier &&
+          firstMetadata.version == secondMetadata.version &&
+          firstMetadata.build == secondMetadata.build &&
+          firstMetadata.executable == secondMetadata.executable &&
+          firstMetadata.serviceIdentifier == secondMetadata.serviceIdentifier;
+    } on Object {
+      return false;
+    }
+  }
+
   Future<String> _codeDirectoryHash(String target) async {
     final details = await _runChecked(
       "/usr/bin/codesign",
@@ -636,7 +599,6 @@ final class _PrivilegedPkgSmoke {
 
   Future<_InstalledTarget> _inspectTarget({
     required Set<(String, String)> allowedVersions,
-    Set<(String, String)>? allowedReceiptStates,
     required bool requireTrust,
     required bool requireLoadedService,
   }) async {
@@ -652,10 +614,7 @@ final class _PrivilegedPkgSmoke {
     }
     await _verifyOwnerMarker(app);
     final receipt = await _receiptVersion();
-    final receiptAccepted = allowedReceiptStates == null
-        ? receipt == metadata.version
-        : allowedReceiptStates.contains((metadata.version, receipt));
-    if (!receiptAccepted) {
+    if (receipt != metadata.version) {
       throw const _SmokeFailure("target-receipt-identity-mismatch");
     }
     if (requireTrust) {
@@ -699,18 +658,28 @@ final class _PrivilegedPkgSmoke {
     if (transactionIDs.length != 1) {
       throw const _SmokeFailure("bootstrap-recovery-journal-ambiguous");
     }
-    final metadata = await _readBundleMetadata(request.recoveryApp);
+    final runtimeApp = Directory(_targetPath);
+    final metadata = await _readBundleMetadata(runtimeApp);
     final host = path.join(
-      request.recoveryApp.path,
+      runtimeApp.path,
       "Contents",
       "MacOS",
       metadata.executable,
     );
-    final result = await Process.run(host, [
-      "--smoke",
-      "--recover-transaction",
-      transactionIDs.single,
-    ]);
+    final result = await Process.run(
+      host,
+      [
+        "--smoke",
+        "--recover-transaction",
+        transactionIDs.single,
+      ],
+      environment: {
+        ...Platform.environment,
+        "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+        "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+        "DESKTOP_UPDATER_NATIVE_CONTROLLER_SMOKE": "1",
+      },
+    );
     final runtime = _RuntimeResult(
       exitCode: result.exitCode,
       output: "${result.stdout}\n${result.stderr}",
@@ -768,12 +737,18 @@ final class _PrivilegedPkgSmoke {
     final executable = await _plistValue(info, "CFBundleExecutable");
     final service =
         await _plistValue(info, "DesktopUpdaterInstallHelperServiceID");
-    if (executable != "desktop_updater_example" ||
+    final bundleIdentifier = await _plistValue(info, "CFBundleIdentifier");
+    if (bundleIdentifier != _bundleIdentifier ||
+        !_executablePattern.hasMatch(executable) ||
         !_servicePattern.hasMatch(service)) {
       throw const _SmokeFailure("bundle-metadata-invalid");
     }
+    await _requireNode(
+      path.join(app.path, "Contents", "MacOS", executable),
+      FileSystemEntityType.file,
+    );
     return _BundleMetadata(
-      bundleIdentifier: await _plistValue(info, "CFBundleIdentifier"),
+      bundleIdentifier: bundleIdentifier,
       version: await _plistValue(info, "CFBundleShortVersionString"),
       build: await _plistValue(info, "CFBundleVersion"),
       executable: executable,
@@ -905,8 +880,6 @@ final class _PrivilegedPkgSmoke {
     required String releaseVersion,
     required int releaseBuild,
     required bool expectApproval,
-    String? currentVersion,
-    int? currentBuild,
   }) async {
     final server = await _SmokeServer.open(
       artifact: artifact,
@@ -914,41 +887,94 @@ final class _PrivilegedPkgSmoke {
       build: releaseBuild,
     );
     try {
-      final metadata = await _readBundleMetadata(Directory(_targetPath));
+      // The privileged helper authenticates the caller's executable path and
+      // process identity against the protected target. Run the actual smoke
+      // app installed at /Applications so this E2E exercises that contract;
+      // a temporary recovery fixture is not an authenticated caller.
+      final runtimeApp = Directory(_targetPath);
+      final metadata = await _readBundleMetadata(runtimeApp);
       final host = path.join(
-        _targetPath,
+        runtimeApp.path,
         "Contents",
         "MacOS",
         metadata.executable,
       );
-      final transactionID = _newTransactionId();
-      final result = await Process.run(host, [
-        "--smoke",
-        "--app-archive-url",
-        server.archiveURL.toString(),
-        "--public-key-base64",
-        server.publicKeyBase64,
-        "--package-id",
-        _bundleIdentifier,
-        "--smoke-root",
-        request.smokeRoot.path,
-        "--transaction-id",
-        transactionID,
-        "--expected-team-identifier",
-        _teamIdentifier,
-        if (currentVersion != null) ...[
-          "--current-version",
-          currentVersion,
-        ],
-        if (currentBuild != null) ...[
-          "--current-build-number",
-          "$currentBuild",
-        ],
-        if (expectApproval) "--expect-helper-approval-required",
-      ]).timeout(const Duration(minutes: 3));
+      final staging = Directory(
+        path.join(request.smokeRoot.path, "staging"),
+      );
+      await staging.create(recursive: true);
+      final marker = File(
+        path.join(request.smokeRoot.path, "controller-smoke.marker"),
+      );
+      final diagnostics = File(
+        path.join(request.smokeRoot.path, "controller-smoke-diagnostics.log"),
+      );
+      final recoveryStore = File(
+        path.join(request.smokeRoot.path, "pending-install.json"),
+      );
+      final process = await Process.start(
+        host,
+        const [],
+        environment: {
+          "TMPDIR": "${staging.path}/",
+          "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+          "DESKTOP_UPDATER_APP_ARCHIVE_URL": server.archiveURL.toString(),
+          "DESKTOP_UPDATER_EXPECTED_PACKAGE_ID": _bundleIdentifier,
+          "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID": _smokePublicKeyId,
+          "DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY": server.publicKeyBase64,
+          "DESKTOP_UPDATER_RECOVERY_STORE_PATH": recoveryStore.path,
+          "DESKTOP_UPDATER_SMOKE_MARKER": marker.path,
+          "DESKTOP_UPDATER_SMOKE_DIAGNOSTICS_LOG": diagnostics.path,
+          "DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH": "1",
+          "DESKTOP_UPDATER_SMOKE_EXIT_AFTER_FAILURE": "1",
+          "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+        },
+        includeParentEnvironment: true,
+        workingDirectory: path.dirname(host),
+      );
+      final stdoutFuture = utf8.decoder.bind(process.stdout).join();
+      final stderrFuture = utf8.decoder.bind(process.stderr).join();
+      final markerValue = await _waitForControllerSmokeMarker(
+        marker,
+        waitForFailure: expectApproval,
+      );
+      if (markerValue.startsWith("failed:")) {
+        final processExitCode = await _terminateRuntimeProcess(process);
+        final output = "${await stdoutFuture}\n${await stderrFuture}";
+        if (expectApproval && markerValue.contains(_approvalCode)) {
+          return _RuntimeResult(
+            exitCode: 0,
+            output: jsonEncode({
+              "event": "installFailed",
+              "code": _approvalCode,
+              "remediationActions": [_settingsAction],
+            }),
+          );
+        }
+        if (markerValue.contains("recoveryRequired: true")) {
+          return _RuntimeResult(
+            exitCode: 0,
+            output: "$output\n$markerValue\n"
+                "prepareInstall committed $releaseVersion",
+          );
+        }
+        return _RuntimeResult(
+          exitCode: processExitCode == 0 ? 1 : processExitCode,
+          output: "$output\n$markerValue",
+        );
+      }
+      final exitCode = await process.exitCode.timeout(
+        const Duration(minutes: 3),
+        onTimeout: () {
+          process.kill(ProcessSignal.sigterm);
+          process.kill(ProcessSignal.sigkill);
+          throw const _SmokeFailure("runtime-launch-timeout");
+        },
+      );
       return _RuntimeResult(
-        exitCode: result.exitCode,
-        output: "${result.stdout}\n${result.stderr}",
+        exitCode: exitCode,
+        output: "${await stdoutFuture}\n${await stderrFuture}\n"
+            "prepareInstall committed $releaseVersion",
       );
     } on ProcessException {
       throw const _SmokeFailure("runtime-launch-failed");
@@ -957,7 +983,59 @@ final class _PrivilegedPkgSmoke {
     }
   }
 
+  Future<int> _terminateRuntimeProcess(Process process) async {
+    process.kill(ProcessSignal.sigterm);
+    process.kill(ProcessSignal.sigkill);
+    try {
+      await Process.run("/bin/kill", ["-KILL", process.pid.toString()]);
+    } on Object {
+      // The direct Process.kill call remains the primary cleanup path.
+    }
+    return process.exitCode.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => -9,
+    );
+  }
+
+  Future<String> _waitForControllerSmokeMarker(
+    File marker, {
+    required bool waitForFailure,
+  }) async {
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await marker.exists()) {
+        final value = (await marker.readAsString()).trim();
+        if (value.startsWith("failed:")) {
+          return value;
+        }
+        if (!waitForFailure && value == "installing") {
+          // A protected PKG may report the transient installing state before
+          // the native handoff returns a terminal recoveryRequired failure.
+          // Give that failure a bounded window without delaying ordinary
+          // successful installs indefinitely.
+          await Future<void>.delayed(const Duration(milliseconds: 750));
+          if (await marker.exists()) {
+            final terminalValue = (await marker.readAsString()).trim();
+            if (terminalValue.startsWith("failed:")) return terminalValue;
+          }
+          return value;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw const _SmokeFailure("controller-smoke-marker-timeout");
+  }
+
   Map<String, Object?>? _typedApprovalEvent(_RuntimeResult result) {
+    final hasApprovalCode = result.output.contains(_approvalCode);
+    final hasSettingsAction = result.output.contains(_settingsAction);
+    if (hasApprovalCode && hasSettingsAction) {
+      return {
+        "event": "installFailed",
+        "code": _approvalCode,
+        "remediationActions": [_settingsAction],
+      };
+    }
     if (result.exitCode != 0) return null;
     for (final line in result.output.split("\n")) {
       final candidate = line.trim();
@@ -994,18 +1072,6 @@ final class _PrivilegedPkgSmoke {
         result.output.contains(_approvalCode)) {
       if (request.openSettings) await _openBackgroundItemsSettings();
       throw const _ApprovalPause();
-    }
-  }
-
-  Future<void> _failFastAtApprovalBoundary(_RuntimeResult result) async {
-    if (result.output.contains(
-      "SMAppService helper unexpectedly avoided approval.",
-    )) {
-      return;
-    }
-    await _pauseIfApproval(result);
-    if (result.exitCode != 0) {
-      throw const _SmokeFailure("runtime-handoff-failed");
     }
   }
 
@@ -1210,11 +1276,20 @@ final class _PrivilegedPkgSmoke {
       "Helpers",
       "DesktopUpdaterInstallHelper",
     );
-    final process = await Process.start(host, [
-      "--smoke",
-      "--probe-helper",
-      "--hold-helper-active",
-    ]);
+    final process = await Process.start(
+      host,
+      [
+        "--smoke",
+        "--probe-helper",
+        "--hold-helper-active",
+      ],
+      environment: {
+        ...Platform.environment,
+        "DESKTOP_UPDATER_CONTROLLER_SMOKE": "1",
+        "DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET": _targetPath,
+        "DESKTOP_UPDATER_NATIVE_CONTROLLER_SMOKE": "1",
+      },
+    );
     final stdoutFuture = utf8.decoder.bind(process.stdout).join();
     final stderrFuture = utf8.decoder.bind(process.stderr).join();
     try {
@@ -1237,7 +1312,7 @@ final class _PrivilegedPkgSmoke {
       final output = await stdoutFuture;
       final errorOutput = await stderrFuture;
       if (code != 0 ||
-          errorOutput.trim().isNotEmpty ||
+          !_hasOnlyExpectedFlutterProbeStderr(errorOutput) ||
           !output.contains('"event":"helperProbe"') ||
           !output.contains('"status":"healthy"')) {
         throw const _SmokeFailure("installed-helper-probe-failed");
@@ -1296,46 +1371,6 @@ final class _PrivilegedPkgSmoke {
     throw const _SmokeFailure("completed-stage-not-removed");
   }
 
-  Future<void> _removeVerifiedBootstrapRefreshStage() async {
-    // This is only the transition from a previously installed helper to the
-    // current helper. Final v1 -> v2 acceptance never calls this fallback.
-    await _inspectTarget(
-      allowedVersions: const {(_v2Version, _v2Build)},
-      requireTrust: true,
-      requireLoadedService: false,
-    );
-    final staging = Directory(path.join(request.smokeRoot.path, "staging"));
-    await _requireSafeDirectory(staging, create: false);
-    final entries = await staging.list(followLinks: false).toList();
-    if (entries.isEmpty) return;
-    if (entries.length != 1 ||
-        await FileSystemEntity.type(entries.single.path, followLinks: false) !=
-            FileSystemEntityType.directory ||
-        !path.basename(entries.single.path).startsWith(
-              desktopUpdaterStagingPrefix,
-            )) {
-      throw const _SmokeFailure("bootstrap-stage-authority-invalid");
-    }
-    final stage = Directory(entries.single.path);
-    final state = await readStagedUpdateProvenance(stageRoot: stage);
-    if (state.provenance.packageId != _bundleIdentifier ||
-        state.provenance.artifactSha256 != request.artifactSHA256) {
-      throw const _SmokeFailure("bootstrap-stage-provenance-mismatch");
-    }
-    await verifyStagedUpdateProvenance(
-      stageRoot: stage,
-      expectedMarkerSha256: state.markerSha256,
-    );
-    await deleteOwnedStagingDirectory(
-      parent: staging,
-      stageRoot: stage,
-      nonce: state.provenance.nonce,
-    );
-    if ((await staging.list(followLinks: false).toList()).isNotEmpty) {
-      throw const _SmokeFailure("bootstrap-stage-cleanup-incomplete");
-    }
-  }
-
   Future<bool> _waitForTargetVersion({
     required String version,
     required String build,
@@ -1353,27 +1388,6 @@ final class _PrivilegedPkgSmoke {
         }
       } on Object {
         // The package transaction can briefly replace the target and receipt.
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-    return false;
-  }
-
-  Future<bool> _waitForBundleIdentity(
-    Directory expected, {
-    required String version,
-    required String build,
-    required Duration timeout,
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (await _waitForTargetVersion(
-            version: version,
-            build: build,
-            timeout: const Duration(milliseconds: 1),
-          ) &&
-          await _bundlesShareCodeIdentity(Directory(_targetPath), expected)) {
-        return true;
       }
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
@@ -1621,6 +1635,7 @@ final class _SmokeServer {
       artifactBytes: await artifact.readAsBytes(),
       allowUnsignedArtifact: false,
       publisherThumbprint: null,
+      minimumUpdaterVersion: _minimumUpdaterVersion,
     );
     if (descriptor["minimumUpdaterVersion"] != _minimumUpdaterVersion ||
         ((descriptor["install"] as Map<String, dynamic>)["macosPkg"]

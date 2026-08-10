@@ -4,6 +4,96 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class MacPersistentRecoveryTests: XCTestCase {
+    func testJournalLessCommitAndLockAreDiscoveredAndCleaned() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+        try transaction.authorizeCommit()
+        try FileManager.default.removeItem(
+            at: fixture.rootURL.appendingPathComponent(
+                transaction.paths.preparedName
+            )
+        )
+        try FileManager.default.removeItem(
+            at: fixture.rootURL.appendingPathComponent(
+                transaction.paths.journalName
+            )
+        )
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: fixture.rootURL.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: fixture.verifier
+            )
+        )
+
+        let status = try service.query(transactionID: fixture.transactionID)
+        XCTAssertEqual(status.state, "recoveryRequired")
+        XCTAssertEqual(status.resultCode, "recoveryRequired")
+
+        let result = try service.recover(
+            transactionID: fixture.transactionID
+        )
+        XCTAssertEqual(result.resultCode, "completed")
+        XCTAssertEqual(result.verifiedOutcome, "orphanStateCleared")
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+        withExtendedLifetime(transaction) {}
+    }
+
+    func testJournalLessCleanupRejectsForeignLockOwner() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+        try transaction.authorizeCommit()
+        try FileManager.default.removeItem(
+            at: fixture.rootURL.appendingPathComponent(
+                transaction.paths.preparedName
+            )
+        )
+        try FileManager.default.removeItem(
+            at: fixture.rootURL.appendingPathComponent(
+                transaction.paths.journalName
+            )
+        )
+        let lockURL = fixture.rootURL.appendingPathComponent(
+            transaction.paths.lockName
+        )
+        try Data("00000000-0000-4000-8000-000000000007\n".utf8)
+            .write(to: lockURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: lockURL.path
+        )
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: fixture.rootURL.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: fixture.verifier
+            )
+        )
+
+        XCTAssertThrowsError(
+            try service.recover(transactionID: fixture.transactionID)
+        ) { error in
+            XCTAssertEqual(
+                error as? MacPersistentRecoveryError,
+                .journalCorrupt
+            )
+        }
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixture.rootURL.appendingPathComponent(
+                    transaction.paths.commitAuthorizationName
+                ).path
+            )
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lockURL.path))
+        withExtendedLifetime(transaction) {}
+    }
+
     func testPreparingTransactionIsDiscoverableAndRecoverable() throws {
         let fixture = try MacTransactionFixture()
         defer { fixture.remove() }
@@ -245,6 +335,33 @@ final class MacPersistentRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
         XCTAssertEqual(try fixture.transactionArtifacts(), [])
         XCTAssertEqual(caller.authenticationCount, 2)
+    }
+
+    func testPreparedJournalWithoutLockRollsBackUncommittedPreparation() throws {
+        let fixture = try MacTransactionFixture()
+        defer { fixture.remove() }
+        let transaction = try fixture.makeTransaction()
+        _ = try transaction.prepare()
+        try FileManager.default.removeItem(
+            at: fixture.rootURL.appendingPathComponent(
+                transaction.paths.lockName
+            )
+        )
+        let service = MacPersistentRecoveryService(
+            policy: persistentRecoveryPolicy(root: fixture.rootURL.path),
+            callerAuthenticator: RecordingRecoveryCallerAuthenticator(),
+            verifierFactory: FixtureRecoveryVerifierFactory(
+                verifier: fixture.verifier
+            )
+        )
+
+        let result = try service.recover(transactionID: fixture.transactionID)
+
+        XCTAssertEqual(result.resultCode, "rolledBack")
+        XCTAssertEqual(result.verifiedOutcome, "oldTarget")
+        XCTAssertEqual(try fixture.version(at: fixture.targetURL), "old")
+        XCTAssertEqual(try fixture.transactionArtifacts(), [])
+        withExtendedLifetime(transaction) {}
     }
 
     func testCommittedPreparationQueriesThenCompletesRecovery() throws {

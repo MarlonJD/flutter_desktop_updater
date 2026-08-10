@@ -232,19 +232,27 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    await runControllerOwnedSmokeUpdate(
-      configuration: configuration,
-      checkForUpdate: _desktopUpdaterController.checkVersion,
-      updateIsAvailable: () =>
-          _desktopUpdaterController.state is UpdateAvailable ||
-          _desktopUpdaterController.state is UpdateBlockedBySupportPolicy,
-      downloadAndStage: _desktopUpdaterController.downloadUpdate,
-      install: _desktopUpdaterController.restartApp,
-      writeMarker: (value) =>
-          _writeSmokeMarker(configuration.markerPath, value),
-      writeDiagnostics: (event) =>
-          _writeSmokeDiagnostics(configuration.diagnosticsLogPath, event),
-    );
+    try {
+      await runControllerOwnedSmokeUpdate(
+        configuration: configuration,
+        checkForUpdate: _desktopUpdaterController.checkVersion,
+        updateIsAvailable: () =>
+            _desktopUpdaterController.state is UpdateAvailable ||
+            _desktopUpdaterController.state is UpdateBlockedBySupportPolicy,
+        downloadAndStage: _desktopUpdaterController.downloadUpdate,
+        install: _desktopUpdaterController.restartApp,
+        writeMarker: (value) =>
+            _writeSmokeMarker(configuration.markerPath, value),
+        writeDiagnostics: (event) =>
+            _writeSmokeDiagnostics(configuration.diagnosticsLogPath, event),
+      );
+    } on Object {
+      if (Platform.environment["DESKTOP_UPDATER_SMOKE_EXIT_AFTER_FAILURE"] ==
+          "1") {
+        exit(1);
+      }
+      rethrow;
+    }
   }
 
   Future<void> _runHostedSmokeTestCommand() async {

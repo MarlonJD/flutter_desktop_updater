@@ -148,6 +148,34 @@ void main() {
       isTrue,
     );
     expect(
+      commands.any(
+        (command) => command.startsWith(
+          "/usr/bin/pkgbuild --analyze --root",
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      commands.any((command) => command.contains("--component-plist")),
+      isTrue,
+    );
+    for (final key in [
+      "0.BundleIsVersionChecked",
+      "0.BundleIsRelocatable",
+      "0.BundleHasStrictIdentifier",
+      "0.BundleOverwriteAction",
+    ]) {
+      expect(
+        commands.any(
+          (command) => command.startsWith(
+            "/usr/bin/plutil -replace $key ",
+          ),
+        ),
+        isTrue,
+        reason: key,
+      );
+    }
+    expect(
       commands.any((command) => command.startsWith("/usr/bin/productbuild")),
       isTrue,
     );

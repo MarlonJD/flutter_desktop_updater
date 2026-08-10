@@ -741,6 +741,11 @@ class DesktopUpdaterController extends ChangeNotifier {
       level: UpdateDiagnosticLevel.info,
       message: "Install handoff started for $stagingPath",
     );
+    _diagnosticsRecorder.record(
+      stage: UpdateDiagnosticStage.install,
+      level: UpdateDiagnosticLevel.info,
+      message: "Relaunch attempt scheduled.",
+    );
     emitUpdateTelemetry(
       telemetry,
       UpdateTelemetryEvent.installScheduled(
@@ -862,6 +867,11 @@ class DesktopUpdaterController extends ChangeNotifier {
         message: "Pending install marker found for "
             "${marker.updateVersion ?? "unknown update"}.",
       );
+    _diagnosticsRecorder.record(
+      stage: UpdateDiagnosticStage.install,
+      level: UpdateDiagnosticLevel.info,
+      message: "Recovery started for pending install.",
+    );
 
     final transactionId = marker.transactionId;
     if (transactionId != null && transactionId.isNotEmpty) {
@@ -1046,6 +1056,11 @@ class DesktopUpdaterController extends ChangeNotifier {
   Future<void> _clearPendingRecoveryMarker() async {
     try {
       await recoveryStore.clearPendingInstall(channel: channel);
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.install,
+        level: UpdateDiagnosticLevel.info,
+        message: "Recovery marker cleared.",
+      );
     } on Object catch (error) {
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
@@ -1093,6 +1108,11 @@ class DesktopUpdaterController extends ChangeNotifier {
           cleanupAttempted: true,
           cleanupSucceeded: true,
         ),
+      );
+      _diagnosticsRecorder.record(
+        stage: UpdateDiagnosticStage.cleanup,
+        level: UpdateDiagnosticLevel.info,
+        message: "Recovered install stage cleanup succeeded.",
       );
       return true;
     } on Object catch (error) {

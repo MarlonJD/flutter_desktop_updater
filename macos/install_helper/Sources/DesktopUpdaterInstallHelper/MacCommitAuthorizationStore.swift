@@ -69,6 +69,22 @@ final class MacCommitAuthorizationStore {
         )
     }
 
+    func validatedOrphanJournalSHA256() throws -> String {
+        let value = try readValidatedOrphan()
+        return value.journalSHA256
+    }
+
+    func removeValidatedOrphan(expectedJournalSHA256: String) throws {
+        let value = try readValidatedOrphan()
+        guard value.journalSHA256 == expectedJournalSHA256 else {
+            throw MacFileTransactionError.invalidState
+        }
+        try directory.removeFile(
+            name: paths.commitAuthorizationName,
+            expectedIdentity: value.identity
+        )
+    }
+
     private func encoded(journalSHA256: String) throws -> Data {
         guard journalSHA256.range(
             of: "^[0-9a-f]{64}$",
@@ -86,6 +102,41 @@ final class MacCommitAuthorizationStore {
     }
 
     private func read() throws -> Data {
+        try readWithIdentity().data
+    }
+
+    private func readValidatedOrphan() throws -> (
+        journalSHA256: String,
+        identity: MacFileIdentity
+    ) {
+        let value = try readWithIdentity()
+        let permissions = value.identity.mode & 0o7777
+        guard value.identity.mode & UInt16(S_IFMT) == UInt16(S_IFREG),
+            value.identity.userIdentifier == Darwin.geteuid(),
+            permissions == 0o600,
+            let object = try JSONSerialization.jsonObject(with: value.data)
+                as? [String: Any],
+            Set(object.keys) == ["journalSha256", "transactionId"],
+            let journalSHA256 = object["journalSha256"] as? String,
+            journalSHA256.range(
+                of: "^[0-9a-f]{64}$",
+                options: .regularExpression
+            ) != nil,
+            object["transactionId"] as? String == paths.transactionID,
+            try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            ) == value.data
+        else {
+            throw MacFileTransactionError.invalidState
+        }
+        return (journalSHA256, value.identity)
+    }
+
+    private func readWithIdentity() throws -> (
+        data: Data,
+        identity: MacFileIdentity
+    ) {
         let descriptor = paths.commitAuthorizationName.withCString {
             Darwin.openat(
                 directory.fileDescriptor,
@@ -97,11 +148,22 @@ final class MacCommitAuthorizationStore {
             throw MacFileTransactionError.filesystemOperationFailed
         }
         defer { _ = Darwin.close(descriptor) }
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0 else {
+            throw MacFileTransactionError.filesystemOperationFailed
+        }
+        let identity = MacFileIdentity(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            mode: UInt16(metadata.st_mode & mode_t(UInt16.max)),
+            userIdentifier: metadata.st_uid,
+            groupIdentifier: metadata.st_gid
+        )
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 256)
         while true {
             let count = Darwin.read(descriptor, &buffer, buffer.count)
-            if count == 0 { return result }
+            if count == 0 { return (result, identity) }
             guard count > 0 else {
                 throw MacFileTransactionError.filesystemOperationFailed
             }

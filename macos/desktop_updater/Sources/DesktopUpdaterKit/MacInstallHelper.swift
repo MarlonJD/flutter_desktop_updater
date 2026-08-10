@@ -349,10 +349,13 @@ final class SystemMacOneShotEndpointAuthenticator:
                     UInt32(storage.count)
                 )
             }
-            guard pathCount > 0,
-                URL(fileURLWithPath: String(cString: pathBuffer))
-                    .resolvingSymlinksInPath().path
-                    == executableURL.resolvingSymlinksInPath().path else {
+            guard pathCount > 0 else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            let runningPath = URL(fileURLWithPath: String(cString: pathBuffer))
+                .resolvingSymlinksInPath().path
+            let expectedPath = executableURL.resolvingSymlinksInPath().path
+            guard runningPath == expectedPath else {
                 throw MacInstallClientError.endpointUnavailable
             }
             let attributes = NSDictionary(
@@ -365,11 +368,18 @@ final class SystemMacOneShotEndpointAuthenticator:
                 attributes,
                 [],
                 &code
-            ) == errSecSuccess,
-                let code,
-                SecCodeCheckValidity(code, [], requirement) == errSecSuccess,
-                SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess
-            else {
+            ) == errSecSuccess, let code else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            guard SecCodeCheckValidity(
+                code,
+                [],
+                requirement
+            ) == errSecSuccess else {
+                throw MacInstallClientError.endpointUnavailable
+            }
+            guard SecCodeCopyStaticCode(code, [], &staticCode)
+                == errSecSuccess else {
                 throw MacInstallClientError.endpointUnavailable
             }
         } else {
@@ -379,8 +389,11 @@ final class SystemMacOneShotEndpointAuthenticator:
                 &staticCode
             ) == errSecSuccess,
                 let staticCode,
-                SecStaticCodeCheckValidity(staticCode, [], requirement)
-                    == errSecSuccess else {
+                SecStaticCodeCheckValidity(
+                    staticCode,
+                    SecCSFlags(rawValue: kSecCSDoNotValidateResources),
+                    requirement
+                ) == errSecSuccess else {
                 throw MacInstallClientError.endpointUnavailable
             }
         }
@@ -622,7 +635,8 @@ final class SystemMacPrivilegedHelperInstaller:
             throw MacInstallClientError.endpointUnavailable
         }
 
-        switch try registrar.status(plistName: plistName) {
+        let initialStatus = try registrar.status(plistName: plistName)
+        switch initialStatus {
         case .enabled:
             try registrar.unregister(plistName: plistName)
             registrationSettleDelay()
@@ -1175,7 +1189,8 @@ final class PackagedMacInstallHelperTransport:
         request: Data,
         transactionID: String
     ) throws -> InstallReservationResponseV1 {
-        if try privilegeRequired(request) {
+        let requiresPrivilege = try privilegeRequired(request)
+        if requiresPrivilege {
             return try preparePrivilegedInstall(
                 request: request,
                 transactionID: transactionID
@@ -2075,6 +2090,26 @@ public struct MacInstallHelper {
     private let evidenceBuilder: any MacInstallRequestEvidenceBuilding
     private let transport: MacInstallHelperTransport
 
+    private static let smokeTargetPath =
+        "/Applications/Desktop Updater Smoke.app"
+    private static let smokeBundleIdentifier =
+        "com.example.desktopUpdaterSmoke"
+
+    static func validatedSmokeTargetURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        bundleURL: URL = Bundle.main.bundleURL
+    ) -> URL? {
+        guard environment["DESKTOP_UPDATER_CONTROLLER_SMOKE"] == "1",
+            environment["DESKTOP_UPDATER_CONTROLLER_SMOKE_TARGET"] == smokeTargetPath,
+            bundleIdentifier == smokeBundleIdentifier,
+            bundleURL.standardizedFileURL.path == smokeTargetPath
+        else {
+            return nil
+        }
+        return URL(fileURLWithPath: smokeTargetPath, isDirectory: true)
+    }
+
     public init() {
         targetResolver = {
             MacInstallTarget(
@@ -2097,16 +2132,22 @@ public struct MacInstallHelper {
     }
 
     @_spi(DesktopUpdaterSmoke)
-    public static func smAppServiceSmokeHost() -> MacInstallHelper {
-        MacInstallHelper(
+    public static func smAppServiceSmokeHost() throws -> MacInstallHelper {
+        guard let targetURL = validatedSmokeTargetURL() else {
+            throw MacInstallClientError.invalidReservationResponse
+        }
+        return MacInstallHelper(
             targetResolver: {
                 MacInstallTarget(
                     processIdentifier:
                         ProcessInfo.processInfo.processIdentifier,
-                    bundleURL: Bundle.main.bundleURL
+                    bundleURL: targetURL
                 )
             },
             transport: PackagedMacInstallHelperTransport(
+                helperURL: targetURL.appendingPathComponent(
+                    "Contents/Helpers/DesktopUpdaterInstallHelper"
+                ),
                 privilegeRequired: { _ in true },
                 forcePrivilegedPersistentOperations: true
             )

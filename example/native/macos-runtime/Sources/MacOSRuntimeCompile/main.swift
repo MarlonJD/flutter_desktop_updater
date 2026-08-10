@@ -15,10 +15,8 @@ struct MacOSRuntimeSmoke {
 
     private static func run() async throws {
         let arguments = try Arguments(CommandLine.arguments)
-        if arguments.has("--probe-helper") ||
-            arguments.has("--refresh-mismatched-helper")
-        {
-            let helper = MacInstallHelper.smAppServiceSmokeHost()
+        if arguments.has("--probe-helper") || arguments.has("--refresh-mismatched-helper") {
+            let helper = try MacInstallHelper.smAppServiceSmokeHost()
             if arguments.has("--refresh-mismatched-helper") {
                 try helper.refreshMismatchedPrivilegedEndpointForSmoke()
             } else {
@@ -101,7 +99,7 @@ struct MacOSRuntimeSmoke {
             expectedPackageId: packageId,
             currentVersion: arguments.optionalValue("--current-version") ?? "2.7.0",
             currentBuildNumber: arguments.optionalInt("--current-build-number") ?? 270,
-            currentUpdaterVersion: "3.0.0",
+            currentUpdaterVersion: "3.1.2",
             platform: "macos",
             installationIdentity: "macos-native-runtime-smoke",
             pinnedPublicKeysById: [

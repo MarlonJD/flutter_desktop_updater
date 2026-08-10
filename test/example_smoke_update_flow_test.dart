@@ -89,6 +89,17 @@ void main() {
       throwsStateError,
     );
   });
+
+  test("native controller host does not start the Flutter smoke flow", () {
+    final configuration = SmokeUpdateConfiguration.fromEnvironment(
+      <String, String>{
+        ..._enabledSmokeEnvironment,
+        nativeControllerSmokeEnvironment: "1",
+      },
+    );
+
+    expect(configuration.enabled, isFalse);
+  });
 }
 
 const _enabledSmokeEnvironment = <String, String>{

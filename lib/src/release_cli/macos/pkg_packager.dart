@@ -53,9 +53,21 @@ class PkgPackager {
         path.join(pkgRoot.path, path.basename(request.input.path)),
       ]);
       final componentPkg = File(path.join(tempDir.path, "component.pkg"));
+      final componentPlist = File(
+        path.join(tempDir.path, "components.plist"),
+      );
+      await _runChecked("/usr/bin/pkgbuild", [
+        "--analyze",
+        "--root",
+        pkgRoot.path,
+        componentPlist.path,
+      ]);
+      await _configureNonRelocatableComponent(componentPlist);
       await _runChecked("/usr/bin/pkgbuild", [
         "--root",
         pkgRoot.path,
+        "--component-plist",
+        componentPlist.path,
         "--install-location",
         config.installLocation,
         "--identifier",
@@ -178,6 +190,24 @@ class PkgPackager {
       );
     }
     return result;
+  }
+
+  Future<void> _configureNonRelocatableComponent(File plist) async {
+    const values = <(String, String, String)>[
+      ("0.BundleIsVersionChecked", "-bool", "NO"),
+      ("0.BundleIsRelocatable", "-bool", "NO"),
+      ("0.BundleHasStrictIdentifier", "-bool", "YES"),
+      ("0.BundleOverwriteAction", "-string", "upgrade"),
+    ];
+    for (final (key, type, value) in values) {
+      await _runChecked("/usr/bin/plutil", [
+        "-replace",
+        key,
+        type,
+        value,
+        plist.path,
+      ]);
+    }
   }
 
   Future<void> _validateInputApplication(

@@ -397,6 +397,7 @@ final class MacVerifiedInstallerTransaction:
     private let commitStore: MacCommitAuthorizationStore
     private let targetLock: MacTargetLock
     private let faultInjector: any MacVerifiedInstallerFaultInjecting
+    private let diagnostics: any MacHelperDiagnosticsRecording
     private let lifecycleLock = NSLock()
     private var lifecycle = Lifecycle.reserved
 
@@ -411,7 +412,9 @@ final class MacVerifiedInstallerTransaction:
         protectedStageBaseURL: URL =
             MacVerifiedInstallerProtectedStage.defaultBaseURL,
         faultInjector: any MacVerifiedInstallerFaultInjecting =
-            NoMacVerifiedInstallerFaultInjector()
+            NoMacVerifiedInstallerFaultInjector(),
+        diagnostics: any MacHelperDiagnosticsRecording =
+            NoMacHelperDiagnosticsRecorder()
     ) throws {
         let target = expectation.targetURL.standardizedFileURL
         let installer = expectation.installerURL.standardizedFileURL
@@ -467,6 +470,7 @@ final class MacVerifiedInstallerTransaction:
         )
         self.handoff = handoff
         self.faultInjector = faultInjector
+        self.diagnostics = diagnostics
         self.ownerProcessIdentifier = ownerProcessIdentifier
         self.ownerProcessStartIdentity = ownerProcessStartIdentity
         self.policyID = policyID
@@ -547,6 +551,13 @@ final class MacVerifiedInstallerTransaction:
 
     func prepare() throws -> String {
         try transition(from: .reserved, to: .preparing)
+        diagnostics.record(
+            .stagingPathValidation,
+            transactionID: paths.transactionID,
+            state: "preparing",
+            resultCode: "started",
+            detailCode: "pkg"
+        )
         do {
             try validateSourceBeforeCopy()
             var journal = try requiredJournal(state: .preparing)
@@ -576,9 +587,23 @@ final class MacVerifiedInstallerTransaction:
             try store.persist(journal)
             try faultInjector.hit(.afterPreparedJournalFlush)
             let digest = try store.sha256()
+            diagnostics.record(
+                .stagingPathValidation,
+                transactionID: paths.transactionID,
+                state: "prepared",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
             setLifecycle(.prepared)
             return digest
         } catch {
+            diagnostics.record(
+                .stagingPathValidation,
+                transactionID: paths.transactionID,
+                state: "preparing",
+                resultCode: "failure",
+                detailCode: "pkg"
+            )
             setLifecycle(.recoveryRequired)
             throw error
         }
@@ -607,9 +632,26 @@ final class MacVerifiedInstallerTransaction:
             setLifecycle(.recoveryRequired)
             throw MacFileTransactionError.invalidState
         }
+        var activeEvent: MacHelperEvent?
         do {
             try validatePreLaunchEvidence()
+            activeEvent = .managerStarted
+            diagnostics.record(
+                .managerStarted,
+                transactionID: paths.transactionID,
+                state: "commitAccepted",
+                resultCode: "started",
+                detailCode: "pkg"
+            )
             let worker = try handoff.verifyAndSpawn(expectation)
+            diagnostics.record(
+                .managerStarted,
+                transactionID: paths.transactionID,
+                state: "managerStarted",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
+            activeEvent = .verificationPending
             try faultInjector.hit(.afterManagerWorkerSpawn)
             journal.providerTransactionIdentity =
                 worker.identity.providerTransactionIdentity
@@ -620,16 +662,37 @@ final class MacVerifiedInstallerTransaction:
             journal.state = .managerStarted
             try store.persist(journal)
             try faultInjector.hit(.afterManagerStartedJournalFlush)
-
             try worker.releaseAndWait()
             journal.state = .verificationPending
             try store.persist(journal)
             try faultInjector.hit(.afterVerificationPendingJournalFlush)
+            diagnostics.record(
+                .verificationPending,
+                transactionID: paths.transactionID,
+                state: "verificationPending",
+                resultCode: "started",
+                detailCode: "pkg"
+            )
 
             try handoff.verifyInstalled(expectation)
+            diagnostics.record(
+                .verificationSuccess,
+                transactionID: paths.transactionID,
+                state: "verificationPending",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
             journal.state = .completed
             try store.persist(journal)
             try faultInjector.hit(.afterCompletedJournalFlush)
+            activeEvent = .cleanupStart
+            diagnostics.record(
+                .cleanupStart,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "started",
+                detailCode: "pkg"
+            )
             try removeOwnedInstallerStageIfPresent()
             try removeSourceOwnedStageIfPresent()
             try faultInjector.hit(.afterOwnedStageRemoval)
@@ -639,9 +702,56 @@ final class MacVerifiedInstallerTransaction:
             try faultInjector.hit(.afterCommitAuthorizationRemoval)
             try store.remove()
             try faultInjector.hit(.afterProviderJournalRemoval)
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
+            diagnostics.record(
+                .cleanupSuccess,
+                transactionID: paths.transactionID,
+                state: "completed",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
+            activeEvent = nil
             setLifecycle(.completed)
             return .completed
         } catch {
+            if activeEvent == .managerStarted {
+                diagnostics.record(
+                    .managerStarted,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "pkg"
+                )
+            } else if activeEvent == .verificationPending {
+                diagnostics.record(
+                    .verificationFailure,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "pkg"
+                )
+            } else if activeEvent == .cleanupStart {
+                diagnostics.record(
+                    .cleanupFailure,
+                    transactionID: paths.transactionID,
+                    state: "recoveryRequired",
+                    resultCode: "failure",
+                    detailCode: "pkg"
+                )
+            }
+            diagnostics.record(
+                .recoveryRequired,
+                transactionID: paths.transactionID,
+                state: "recoveryRequired",
+                resultCode: "required",
+                detailCode: "pkg"
+            )
             setLifecycle(.recoveryRequired)
             throw error
         }
@@ -670,6 +780,13 @@ final class MacVerifiedInstallerTransaction:
             try faultInjector.hit(.afterCommitAuthorizationRemoval)
             try store.remove()
             try faultInjector.hit(.afterProviderJournalRemoval)
+            diagnostics.record(
+                .recoveryMarkerCleared,
+                transactionID: paths.transactionID,
+                state: "cancelled",
+                resultCode: "success",
+                detailCode: "pkg"
+            )
             setLifecycle(.cancelled)
         } catch {
             setLifecycle(.recoveryRequired)
