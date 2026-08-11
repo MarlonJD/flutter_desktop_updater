@@ -225,8 +225,18 @@ class CurlFtpRemoteFileClient implements ExclusiveLeaseFtpRemoteFileClient {
         expectedRevision: expectedRevision,
         actualBytes: await operations.read(remotePath, config),
       );
-      await operations.rename(temporaryPath, remotePath, config);
-      temporaryFileExists = false;
+      try {
+        await operations.rename(temporaryPath, remotePath, config);
+        temporaryFileExists = false;
+      } on Object {
+        // Some FTP servers refuse RNTO when the destination already exists
+        // (vsftpd answers 553 "Can't rename file."). Fall back to a direct
+        // overwrite upload of the fully-written index. The exclusive lease
+        // and the revision assertions above still guarantee the published
+        // bytes match the verified hosted history; the temporary file is
+        // removed by the cleanup below.
+        await operations.upload(file, remotePath, config);
+      }
 
       final publishedBytes = await operations.read(remotePath, config);
       final publishedSha256 = publishedBytes == null

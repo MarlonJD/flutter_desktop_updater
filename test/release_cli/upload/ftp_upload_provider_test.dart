@@ -210,7 +210,8 @@ void main() {
     }
   });
 
-  test("default FTP client does not fall back when rename fails", () async {
+  test("default FTP client falls back to direct upload when rename fails",
+      () async {
     final tempDir =
         await Directory.systemTemp.createTemp("ftp_rename_failure_");
     try {
@@ -219,28 +220,33 @@ void main() {
       final operations = RecordingFtpRemoteOperations()..failRename = true;
       final client = CurlFtpRemoteFileClient(operations: operations);
 
-      await expectLater(
-        client.writeIndexFileWithLease(
-          file: index,
-          remotePath: "/updates/app-archive.json",
-          config: const FtpUploadConfig(
-            host: "localhost",
-            remotePath: "/updates",
-            username: "deploy",
-            allowInsecure: true,
-          ),
-          expectedRevision: const RemoteIndexRevision.absent(),
+      final receipt = await client.writeIndexFileWithLease(
+        file: index,
+        remotePath: "/updates/app-archive.json",
+        config: const FtpUploadConfig(
+          host: "localhost",
+          remotePath: "/updates",
+          username: "deploy",
+          allowInsecure: true,
         ),
-        throwsA(isA<StateError>().having(
-          (error) => error.message,
-          "message",
-          contains("rename failed"),
-        )),
+        expectedRevision: const RemoteIndexRevision.absent(),
       );
 
-      expect(operations.files, isEmpty);
+      // The rename failed (simulating an FTP server that refuses RNTO onto an
+      // existing destination with 553), so the publisher must overwrite the
+      // final index with a direct upload and still verify the readback.
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "new index",
+      );
       expect(operations.directories, isEmpty);
+      expect(
+          operations.events.where((event) => event == "upload"), hasLength(2));
+      expect(operations.events, contains("rename"));
       expect(operations.events, contains("removeFile"));
+      expect(receipt.mechanism, IndexPublishMechanism.exclusiveLease);
+      expect(receipt.publishedSha256,
+          sha256.convert(index.readAsBytesSync()).toString());
     } finally {
       await tempDir.delete(recursive: true);
     }
