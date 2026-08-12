@@ -1,3 +1,16 @@
+## 3.1.4
+
+* Added exclusive lease publication for FTP-hosted `app-archive.json` indexes,
+  including hosted revision checks before and after the temporary upload and a
+  server-side rename before validating the published bytes.
+* Hardened FTP failure handling by resolving quote commands relative to the
+  authenticated FTP root, failing closed instead of directly overwriting the
+  live index when rename fails, and reporting stale lease cleanup failures with
+  the exact recovery path.
+* Added regression coverage and a required real Docker FTP end-to-end lane with
+  protocol-banner readiness and native container architecture selection. Thanks
+  to @Nicoeevee for the original contribution in PR #71.
+
 ## 3.1.3
 
 * Fixed Windows direct-ZIP updates for exact per-user app roots created by
