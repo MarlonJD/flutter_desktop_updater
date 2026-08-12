@@ -207,6 +207,7 @@ class CurlFtpRemoteFileClient implements ExclusiveLeaseFtpRemoteFileClient {
 
     await operations.makeDirectory(leasePath, config);
     var temporaryFileExists = false;
+    var publicationSucceeded = false;
     try {
       _assertExpectedRevision(
         remotePath: remotePath,
@@ -225,18 +226,8 @@ class CurlFtpRemoteFileClient implements ExclusiveLeaseFtpRemoteFileClient {
         expectedRevision: expectedRevision,
         actualBytes: await operations.read(remotePath, config),
       );
-      try {
-        await operations.rename(temporaryPath, remotePath, config);
-        temporaryFileExists = false;
-      } on Object {
-        // Some FTP servers refuse RNTO when the destination already exists
-        // (vsftpd answers 553 "Can't rename file."). Fall back to a direct
-        // overwrite upload of the fully-written index. The exclusive lease
-        // and the revision assertions above still guarantee the published
-        // bytes match the verified hosted history; the temporary file is
-        // removed by the cleanup below.
-        await operations.upload(file, remotePath, config);
-      }
+      await operations.rename(temporaryPath, remotePath, config);
+      temporaryFileExists = false;
 
       final publishedBytes = await operations.read(remotePath, config);
       final publishedSha256 = publishedBytes == null
@@ -249,18 +240,28 @@ class CurlFtpRemoteFileClient implements ExclusiveLeaseFtpRemoteFileClient {
         );
       }
 
-      return IndexPublishReceipt(
+      final receipt = IndexPublishReceipt(
         observedPriorRevision: expectedRevision,
         publishedSha256: localSha256,
         mechanism: IndexPublishMechanism.exclusiveLease,
         leaseEvidenceSha256:
             sha256.convert(utf8.encode("$leasePath|$leaseToken")).toString(),
       );
+      publicationSucceeded = true;
+      return receipt;
     } finally {
       if (temporaryFileExists) {
         await _bestEffort(() => operations.removeFile(temporaryPath, config));
       }
-      await _bestEffort(() => operations.removeDirectory(leasePath, config));
+      if (publicationSucceeded) {
+        await _releasePublishedLease(
+          operations: operations,
+          leasePath: leasePath,
+          config: config,
+        );
+      } else {
+        await _bestEffort(() => operations.removeDirectory(leasePath, config));
+      }
     }
   }
 }
@@ -321,7 +322,7 @@ class CurlFtpRemoteOperations implements FtpRemoteOperations {
     String remotePath,
     FtpUploadConfig config,
   ) async {
-    await _runFtpQuote(config, "MKD $remotePath");
+    await _runFtpQuote(config, "MKD ${_ftpQuotePath(remotePath)}");
   }
 
   @override
@@ -329,7 +330,7 @@ class CurlFtpRemoteOperations implements FtpRemoteOperations {
     String remotePath,
     FtpUploadConfig config,
   ) async {
-    await _runFtpQuote(config, "RMD $remotePath");
+    await _runFtpQuote(config, "RMD ${_ftpQuotePath(remotePath)}");
   }
 
   @override
@@ -337,7 +338,7 @@ class CurlFtpRemoteOperations implements FtpRemoteOperations {
     String remotePath,
     FtpUploadConfig config,
   ) async {
-    await _runFtpQuote(config, "DELE $remotePath");
+    await _runFtpQuote(config, "DELE ${_ftpQuotePath(remotePath)}");
   }
 
   @override
@@ -346,7 +347,10 @@ class CurlFtpRemoteOperations implements FtpRemoteOperations {
     String to,
     FtpUploadConfig config,
   ) async {
-    await _runFtpQuotes(config, ["RNFR $from", "RNTO $to"]);
+    await _runFtpQuotes(config, [
+      "RNFR ${_ftpQuotePath(from)}",
+      "RNTO ${_ftpQuotePath(to)}",
+    ]);
   }
 
   Future<ProcessResult> _runFtpQuote(
@@ -451,6 +455,26 @@ String _leasePath(String remotePath) {
   final directory = path.posix.dirname(remotePath);
   final fileName = path.posix.basename(remotePath);
   return path.posix.join(directory, ".$fileName.desktop_updater.lock");
+}
+
+String _ftpQuotePath(String remotePath) {
+  return remotePath.replaceFirst(RegExp(r"^/+"), "");
+}
+
+Future<void> _releasePublishedLease({
+  required FtpRemoteOperations operations,
+  required String leasePath,
+  required FtpUploadConfig config,
+}) async {
+  try {
+    await operations.removeDirectory(leasePath, config);
+  } on Object catch (error) {
+    throw StateError(
+      "FTP index was published, but the lease at $leasePath could not be "
+      "released. Remove the stale lease directory before publishing again. "
+      "Cleanup error: $error",
+    );
+  }
 }
 
 Future<void> _bestEffort(Future<void> Function() action) async {
