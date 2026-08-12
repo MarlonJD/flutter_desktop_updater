@@ -24,7 +24,7 @@ void main() {
     }
 
     await startDockerComposeServices(["ftp", "static"]);
-    await waitForPort(2121);
+    await waitForTcpPrefix(2121, "220");
     await waitForPort(8088);
     final fixture = await createReleasePublishE2eFixture(
       baseUrl: Uri.parse("http://127.0.0.1:8088/ftp/updates/"),
