@@ -13,7 +13,6 @@ services:
 
   ftp:
     image: delfer/alpine-ftp-server:latest
-    platform: linux/arm64
     environment:
       USERS: deploy|desktop-updater-test|/ftp/deploy
       ADDRESS: 127.0.0.1
