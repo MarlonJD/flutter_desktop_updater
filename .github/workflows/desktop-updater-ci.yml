@@ -196,6 +196,17 @@ jobs:
           set -euo pipefail
           mapfile -t files < <(printf '%s' "$TEST_FILES" | sed '/^$/d')
           flutter test --no-pub "${files[@]}"
+      - name: Test FTP release publish end to end
+        if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
+        env:
+          DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E: "1"
+          DESKTOP_UPDATER_FTP_PASSWORD: desktop-updater-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker compose -f test/e2e/docker/docker-compose.release-publish.yml down -v' EXIT
+          docker info >/dev/null
+          flutter test --no-pub test/e2e/release_publish_ftp_e2e_test.dart
       - name: Check CLI entrypoints
         if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
         run: |
