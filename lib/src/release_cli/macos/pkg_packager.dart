@@ -116,7 +116,7 @@ class PkgPackager {
           payloadApp.path,
         );
       }
-      await trust.verifyApp(payloadApp);
+      await trust.verifyApp(payloadApp, deep: true);
     } finally {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);

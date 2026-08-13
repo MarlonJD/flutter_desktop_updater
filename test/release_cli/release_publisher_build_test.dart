@@ -11,6 +11,7 @@ import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dar
 import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
+import "package:desktop_updater/src/release_cli/macos/macos_release_trust.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
@@ -481,6 +482,7 @@ macos:
         pkgPackager: pkgPackager,
         runProcess: _fakeMacOSNotarizationProcess,
         isMacOSHost: false,
+        macOSReleaseTrust: _StubMacOSReleaseTrust(),
       );
 
       final manifest = await publisher.publish(
@@ -1427,6 +1429,61 @@ class _FakeDmgPackager extends DmgPackager {
   }
 }
 
+class _StubMacOSReleaseTrust extends MacOSReleaseTrust {
+  @override
+  Future<MacOSReleaseInventory> preflight({
+    required Directory app,
+    String? expectedApplicationIdentifier,
+  }) async {
+    final identifier = expectedApplicationIdentifier ?? "com.example.app";
+    return MacOSReleaseInventory(
+      app: app,
+      applicationIdentifier: identifier,
+      targets: [
+        MacOSCodeTarget(
+          path: app.path,
+          kind: MacOSCodeTargetKind.application,
+          identifier: identifier,
+          bundleIdentifier: identifier,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> signAndVerify({
+    required MacOSReleaseInventory inventory,
+    required String identity,
+  }) async {}
+
+  @override
+  Future<MacOSNotarySubmission> submit({
+    required File archive,
+    required String profile,
+    required String keychain,
+  }) async {
+    return const MacOSNotarySubmission(
+      id: "stub-notary-test",
+      status: "Accepted",
+    );
+  }
+
+  @override
+  Future<void> stapleAndAssess({
+    required FileSystemEntity artifact,
+    required bool gatekeeperExecute,
+    required bool gatekeeperInstall,
+  }) async {}
+
+  @override
+  Future<void> auditFinalArtifact({
+    required File artifact,
+    required String kind,
+    required String appBundleName,
+    required String expectedApplicationIdentifier,
+  }) async {}
+}
+
 class _FakePkgPackager extends PkgPackager {
   _FakePkgPackager();
 
@@ -1488,6 +1545,9 @@ Future<ProcessResult> _fakeMacOSNotarizationProcess(
   String executable,
   List<String> arguments,
 ) async {
+  if (executable == "/usr/bin/ditto" && arguments.first == "-c") {
+    await File(arguments.last).writeAsBytes(<int>[1, 2, 3]);
+  }
   if (executable == "/usr/bin/xcrun" && arguments.contains("notarytool")) {
     return ProcessResult(
       0,

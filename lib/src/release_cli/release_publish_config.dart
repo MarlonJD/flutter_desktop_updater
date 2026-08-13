@@ -158,6 +158,11 @@ class ReleasePublishConfig {
     );
     final windows = _readWindowsConfig(document);
     final hooks = _readHooksConfig(document);
+    if (macos.notarize && hooks.hasPostPackageHookFor("macos")) {
+      throw const FormatException(
+        "macOS postPackage hooks are not allowed when built-in notarization is enabled.",
+      );
+    }
     final additionalFiles = _readAdditionalFilesConfig(document);
 
     return ReleasePublishConfig(
@@ -593,6 +598,16 @@ MacOSPublishConfig _readMacOSConfig(
     );
     _requireConfigValue(config.notaryProfile, "macos.notaryProfile");
     _requireConfigValue(config.keychain, "macos.keychain");
+    if (!config.staple) {
+      throw const FormatException(
+        "macos.staple must be true when macos.notarize is true.",
+      );
+    }
+    if (!config.gatekeeperAssess) {
+      throw const FormatException(
+        "macos.gatekeeperAssess must be true when macos.notarize is true.",
+      );
+    }
   }
 
   if (config.artifactKind == MacOSArtifactKind.pkg &&

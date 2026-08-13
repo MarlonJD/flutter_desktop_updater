@@ -1,6 +1,9 @@
 import "dart:io";
 
+import "package:archive/archive.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
+import "package:desktop_updater/src/macos_update.dart";
+import "package:desktop_updater/src/release_cli/macos/macos_release_trust.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
@@ -15,37 +18,56 @@ void main() {
     final commands = <String>[];
     final packager = _RecordingPackager(commands);
     try {
+      final runProcess = (String executable, List<String> arguments) async {
+        final extraCopied = await File(
+          path.join(
+            _macOSAppPath(root),
+            "Contents",
+            "Resources",
+            "Manuals",
+            "pilot-guide.pdf",
+          ),
+        ).exists();
+        commands.add(
+          [
+            if (executable == "/usr/bin/codesign") "extraCopied=$extraCopied",
+            executable,
+            ...arguments,
+          ].join(" "),
+        );
+        if (executable == "/usr/bin/xcrun" &&
+            arguments.length >= 2 &&
+            arguments[0] == "notarytool" &&
+            arguments[1] == "submit") {
+          return ProcessResult(
+            0,
+            0,
+            '{"id":"fake-submission","status":"Accepted"}',
+            "",
+          );
+        }
+        if (executable == "/usr/bin/ditto" && arguments.first == "-c") {
+          await File(arguments.last).writeAsBytes(<int>[1, 2, 3]);
+        }
+        if (executable == "/usr/bin/codesign" &&
+            arguments.length == 2 &&
+            arguments.first == "-dvvv") {
+          return ProcessResult(
+            0,
+            0,
+            _fakeCodeDetails(arguments.last),
+            "",
+          );
+        }
+        return ProcessResult(0, 0, "", "");
+      };
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: packager,
-        runProcess: (executable, arguments) async {
-          final extraCopied = await File(
-            path.join(
-              _macOSAppPath(root),
-              "Contents",
-              "Resources",
-              "Manuals",
-              "pilot-guide.pdf",
-            ),
-          ).exists();
-          commands.add(
-            [
-              if (executable == "/usr/bin/codesign") "extraCopied=$extraCopied",
-              executable,
-              ...arguments,
-            ].join(" "),
-          );
-          if (executable == "/usr/bin/xcrun" &&
-              arguments.length >= 2 &&
-              arguments[0] == "notarytool" &&
-              arguments[1] == "submit") {
-            return ProcessResult(
-              0,
-              0,
-              '{"id":"fake-submission","status":"Accepted"}',
-              "",
-            );
-          }
+        runProcess: runProcess,
+        macOSReleaseTrust: _SkipFinalAuditTrust(runProcess),
+        runHookCommand: (command, {required environment}) async {
+          commands.add("HOOK $command");
           return ProcessResult(0, 0, "", "");
         },
       );
@@ -58,19 +80,27 @@ void main() {
       );
 
       final appPath = _macOSAppPath(root);
-      expect(commands[0], contains("extraCopied=true"));
-      expect(commands[0], contains("/usr/bin/codesign --force"));
+      final firstSign = commands.indexWhere(
+        (command) => command.contains("/usr/bin/codesign --force"),
+      );
+      expect(commands, contains("HOOK ./tool/prepare_macos_release.sh"));
+      expect(commands.indexOf("HOOK ./tool/prepare_macos_release.sh"),
+          lessThan(firstSign));
+      final signCommands = commands
+          .where((command) => command.contains("/usr/bin/codesign --force"))
+          .toList();
+      expect(signCommands, hasLength(3));
+      expect(signCommands[0], contains("extraCopied=true"));
       expect(
-        commands[0],
+        signCommands[0],
         contains("Developer ID Application: Example Corp (TEAMID1234)"),
       );
       expect(
-        commands[0],
+        signCommands[0],
         contains(path.join(appPath, "Contents", "Frameworks", "App.framework")),
       );
-      expect(commands[1], contains("/usr/bin/codesign --force"));
       expect(
-        commands[1],
+        signCommands[1],
         contains(
           path.join(
             appPath,
@@ -80,24 +110,36 @@ void main() {
           ),
         ),
       );
-      expect(commands[2], contains("/usr/bin/codesign --force"));
-      expect(commands[2], contains(appPath));
-      expect(commands[3], contains("/usr/bin/codesign --verify"));
-      expect(commands[4], contains("/usr/bin/ditto -c -k --keepParent"));
-      expect(commands[5], contains("/usr/bin/xcrun notarytool submit"));
+      expect(signCommands[2], contains(appPath));
+      final notaryIndex = commands.indexWhere(
+        (command) => command.contains("/usr/bin/xcrun notarytool submit"),
+      );
+      expect(notaryIndex, greaterThan(firstSign));
       expect(
-        commands[5],
+        commands[notaryIndex],
         contains("--keychain-profile desktop-updater-notary"),
       );
       expect(
-        commands[5],
+        commands[notaryIndex],
         contains("--keychain /Users/me/Library/Keychains/login.keychain-db"),
       );
-      expect(commands[5], contains("--output-format json"));
-      expect(commands[6], contains("/usr/bin/xcrun stapler staple"));
-      expect(commands[7], contains("/usr/bin/xcrun stapler validate"));
-      expect(commands[8], contains("/usr/sbin/spctl --assess"));
-      expect(commands[9], startsWith("PACKAGE "));
+      expect(commands[notaryIndex], contains("--output-format json"));
+      expect(
+        commands.indexWhere(
+          (command) => command.contains("/usr/bin/xcrun stapler staple"),
+        ),
+        greaterThan(notaryIndex),
+      );
+      expect(
+        commands.indexWhere(
+          (command) => command.contains("/usr/sbin/spctl --assess"),
+        ),
+        greaterThan(notaryIndex),
+      );
+      expect(
+        commands.indexWhere((command) => command.startsWith("PACKAGE ")),
+        greaterThan(notaryIndex),
+      );
     } finally {
       await root.delete(recursive: true);
     }
@@ -122,6 +164,19 @@ void main() {
               0,
               0,
               '{"id":"fake-submission","status":"Invalid"}',
+              "",
+            );
+          }
+          if (executable == "/usr/bin/ditto" && arguments.first == "-c") {
+            await File(arguments.last).writeAsBytes(<int>[1, 2, 3]);
+          }
+          if (executable == "/usr/bin/codesign" &&
+              arguments.length == 2 &&
+              arguments.first == "-dvvv") {
+            return ProcessResult(
+              0,
+              0,
+              _fakeCodeDetails(arguments.last),
               "",
             );
           }
@@ -174,6 +229,11 @@ macos:
   developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
   notaryProfile: desktop-updater-notary
   keychain: /Users/me/Library/Keychains/login.keychain-db
+
+hooks:
+  prePackage:
+    - command: ./tool/prepare_macos_release.sh
+      platforms: [macos]
 """);
   final manuals = Directory(
     path.join(root.path, "release-assets", "manuals"),
@@ -209,7 +269,16 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.notarizeFixture
 
   final app = Directory(_macOSAppPath(root));
   await app.create(recursive: true);
-  await File(path.join(app.path, "app.txt")).writeAsString("hello");
+  await Directory(path.join(app.path, "Contents", "MacOS"))
+      .create(recursive: true);
+  await File(path.join(app.path, "Contents", "Info.plist")).writeAsString(
+    _plist(
+      bundleIdentifier: "com.example.notarizeFixture",
+      executable: "NotarizeFixture",
+    ),
+  );
+  await File(path.join(app.path, "Contents", "MacOS", "NotarizeFixture"))
+      .writeAsBytes(_machOBytes);
   for (final frameworkName in [
     "App.framework",
     "FlutterMacOS.framework",
@@ -218,9 +287,18 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.notarizeFixture
       path.join(app.path, "Contents", "Frameworks", frameworkName),
     );
     await framework.create(recursive: true);
-    await File(path.join(framework.path, "framework.txt")).writeAsString(
-      frameworkName,
+    await Directory(path.join(framework.path, "Resources"))
+        .create(recursive: true);
+    final stem =
+        frameworkName.substring(0, frameworkName.length - ".framework".length);
+    await File(path.join(framework.path, "Resources", "Info.plist"))
+        .writeAsString(
+      _plist(
+        bundleIdentifier: "com.example.$stem.framework",
+        executable: stem,
+      ),
     );
+    await File(path.join(framework.path, stem)).writeAsBytes(_machOBytes);
   }
 
   return root;
@@ -250,7 +328,19 @@ class _RecordingPackager implements ReleasePackager {
     final artifact = File(
       path.join(request.outputDirectory.path, "Notarize-2.0.1-macos.zip"),
     );
-    await artifact.writeAsString("zip");
+    final archive = Archive();
+    final input = request.input as Directory;
+    await for (final entity in input.list(recursive: true)) {
+      if (entity is File) {
+        archive.addFile(
+          ArchiveFile.bytes(
+            path.relative(entity.path, from: input.parent.path),
+            await entity.readAsBytes(),
+          ),
+        );
+      }
+    }
+    await artifact.writeAsBytes(ZipEncoder().encode(archive));
     final release =
         File(path.join(request.outputDirectory.path, "release.json"));
     final descriptor = ReleaseDescriptor(
@@ -278,4 +368,38 @@ class _RecordingPackager implements ReleasePackager {
       descriptor: descriptor,
     );
   }
+}
+
+const _machOBytes = [0xfe, 0xed, 0xfa, 0xcf, 0x00, 0x00, 0x00, 0x00];
+
+String _plist({required String bundleIdentifier, required String executable}) {
+  return """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>$bundleIdentifier</string>
+<key>CFBundleExecutable</key><string>$executable</string>
+</dict></plist>
+""";
+}
+
+String _fakeCodeDetails(String target) {
+  final identifier = target.endsWith("Notarize Fixture.app")
+      ? "com.example.notarizeFixture"
+      : target.contains("App.framework")
+          ? "com.example.App.framework"
+          : "com.example.FlutterMacOS.framework";
+  return "Identifier=$identifier\nTeamIdentifier=TEAMID1234\nflags=0x10000(runtime)";
+}
+
+final class _SkipFinalAuditTrust extends MacOSReleaseTrust {
+  _SkipFinalAuditTrust(ProcessRunner runProcess)
+      : super(runProcess: runProcess);
+
+  @override
+  Future<void> auditFinalArtifact({
+    required File artifact,
+    required String kind,
+    required String appBundleName,
+    required String expectedApplicationIdentifier,
+  }) async {}
 }

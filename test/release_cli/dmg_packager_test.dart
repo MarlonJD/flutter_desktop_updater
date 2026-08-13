@@ -30,6 +30,15 @@ void main() {
             path.join(output.path, "Example-2.6.0-macos.dmg"),
           ).writeAsBytes([1, 2, 3]);
         }
+        if (executable == "/usr/bin/xcrun" &&
+            arguments.contains("notarytool")) {
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode({"id": "dmg-notary-test", "status": "Accepted"}),
+            "",
+          );
+        }
         return ProcessResult(0, 0, "", "");
       },
     ).package(

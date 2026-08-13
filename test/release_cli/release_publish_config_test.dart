@@ -52,8 +52,9 @@ updates:
     }
   });
 
-  test("loads explicit macOS notarization config", () async {
-    final config = await ReleasePublishConfig.fromYaml("""
+  test("rejects disabled macOS trust gates during notarization", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com
 
@@ -64,20 +65,36 @@ macos:
   keychain: /Users/me/Library/Keychains/login.keychain-db
   staple: false
   gatekeeperAssess: false
-""");
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.staple must be true"),
+        ),
+      ),
+    );
 
-    expect(config.macos.notarize, isTrue);
-    expect(
-      config.macos.developerIdApplication,
-      "Developer ID Application: Example Corp (TEAMID1234)",
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  gatekeeperAssess: false
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.gatekeeperAssess must be true"),
+        ),
+      ),
     );
-    expect(config.macos.notaryProfile, "desktop-updater-notary");
-    expect(
-      config.macos.keychain,
-      "/Users/me/Library/Keychains/login.keychain-db",
-    );
-    expect(config.macos.staple, isFalse);
-    expect(config.macos.gatekeeperAssess, isFalse);
   });
 
   test("loads canonical macOS signing references from an injected environment",
@@ -109,6 +126,34 @@ macos:
       config.macos.keychain,
       "/Users/me/Library/Keychains/login.keychain-db",
     );
+  });
+
+  test("load forwards an injected environment to macOS references", () async {
+    final root = await Directory.systemTemp.createTemp("release_config_");
+    try {
+      await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+macos:
+  notarize: true
+""");
+
+      final config = await ReleasePublishConfig.load(
+        projectRoot: root,
+        cliOverrides: const ReleasePublishOverrides(),
+        environment: const {
+          "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "identity",
+          "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "profile",
+          "DESKTOP_UPDATER_MACOS_KEYCHAIN": "keychain",
+        },
+      );
+
+      expect(config.macos.developerIdApplication, "identity");
+      expect(config.macos.notaryProfile, "profile");
+      expect(config.macos.keychain, "keychain");
+    } finally {
+      await root.delete(recursive: true);
+    }
   });
 
   test("YAML macOS signing references take precedence over the environment",
@@ -558,6 +603,34 @@ hooks:
       "windows",
       "macos",
     ]);
+  });
+
+  test("rejects macOS post-package hooks when notarization is enabled",
+      () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: identity
+  notaryProfile: profile
+  keychain: keychain
+
+hooks:
+  postPackage:
+    - command: ./tool/mutate.sh
+      platforms: [macos]
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("postPackage hooks are not allowed"),
+        ),
+      ),
+    );
   });
 
   test("loads additional release files", () async {
