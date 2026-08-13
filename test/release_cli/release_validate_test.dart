@@ -5,12 +5,14 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/update_retry_policy.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_profile.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:desktop_updater/src/release_cli/validate_command.dart";
 import "package:desktop_updater/src/release_manifest.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:http/http.dart" as http;
 import "package:path/path.dart" as path;
 
 import "../fixtures/update_server.dart";
@@ -27,6 +29,94 @@ void main() {
         () => buildValidateParser().parse([option, "value"]),
         throwsA(isA<FormatException>()),
       );
+    }
+  });
+
+  test("artifact transport retries with injected no-sleep delay", () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+      platform: "windows",
+    );
+    try {
+      final manifest = await PublishManifest.readFrom(fixture.manifestFile);
+      final bytes = await File(
+        path.join(fixture.projectRoot.path, "web", manifest.artifact.path),
+      ).readAsBytes();
+      final client = _ArtifactSequenceClient(
+        fallback: http.Client(),
+        artifactBytes: bytes,
+        responses: [
+          http.ClientException("connection dropped"),
+          null,
+        ],
+      );
+      addTearDown(client.close);
+      final delays = <Duration>[];
+
+      await ReleaseValidator(
+        client: client,
+        isMacOSHost: false,
+        retryPolicy: const UpdateRetryPolicy(
+          maxAttempts: 3,
+          initialDelay: Duration(seconds: 9),
+        ),
+        delay: (duration) async => delays.add(duration),
+      ).validateReleaseFiles(manifest: manifest, output: StringBuffer());
+
+      expect(client.artifactAttempts, 2);
+      expect(delays, [const Duration(seconds: 5)]);
+    } finally {
+      await fixture.delete();
+    }
+  });
+
+  test("artifact HTTP status, length, and body failures do not retry",
+      () async {
+    final fixture = await createHostedPublishFixture(
+      targetVersion: "2.0.1",
+      targetBuildNumber: 201,
+      platform: "windows",
+    );
+    try {
+      final manifest = await PublishManifest.readFrom(fixture.manifestFile);
+      final bytes = await File(
+        path.join(fixture.projectRoot.path, "web", manifest.artifact.path),
+      ).readAsBytes();
+      for (final response in <_ArtifactResponseSpec>[
+        const _ArtifactResponseSpec(statusCode: 503),
+        _ArtifactResponseSpec(
+          body: <int>[1],
+          contentLength: 1,
+        ),
+        _ArtifactResponseSpec(
+          bodyExtra: <int>[9],
+        ),
+      ]) {
+        final client = _ArtifactSequenceClient(
+          fallback: http.Client(),
+          artifactBytes: bytes,
+          responses: [response],
+        );
+        addTearDown(client.close);
+        final delays = <Duration>[];
+        await expectLater(
+          ReleaseValidator(
+            client: client,
+            isMacOSHost: false,
+            retryPolicy: const UpdateRetryPolicy(maxAttempts: 3),
+            delay: (duration) async => delays.add(duration),
+          ).validateReleaseFiles(
+            manifest: manifest,
+            output: StringBuffer(),
+          ),
+          throwsA(isA<Object>()),
+        );
+        expect(client.artifactAttempts, 1);
+        expect(delays, isEmpty);
+      }
+    } finally {
+      await fixture.delete();
     }
   });
 
@@ -438,6 +528,65 @@ void main() {
       await fixture.delete();
     }
   });
+}
+
+final class _ArtifactResponseSpec {
+  const _ArtifactResponseSpec({
+    this.statusCode = 200,
+    this.body,
+    this.contentLength,
+    this.bodyExtra,
+  });
+
+  final int statusCode;
+  final List<int>? body;
+  final int? contentLength;
+  final List<int>? bodyExtra;
+}
+
+final class _ArtifactSequenceClient extends http.BaseClient {
+  _ArtifactSequenceClient({
+    required this.fallback,
+    required this.artifactBytes,
+    required this.responses,
+  });
+
+  final http.Client fallback;
+  final List<int> artifactBytes;
+  final List<Object?> responses;
+  var artifactAttempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (!request.url.path.endsWith(".zip")) {
+      return fallback.send(request);
+    }
+    artifactAttempts += 1;
+    final response = responses[artifactAttempts - 1];
+    if (response is http.ClientException) throw response;
+    final spec = response is _ArtifactResponseSpec
+        ? response
+        : const _ArtifactResponseSpec();
+    final body = spec.body ??
+        [
+          ...artifactBytes,
+          ...?spec.bodyExtra,
+        ];
+    return http.StreamedResponse(
+      Stream<List<int>>.value(body),
+      spec.statusCode,
+      headers: {
+        if (spec.contentLength != null)
+          "content-length": spec.contentLength.toString(),
+      },
+      request: request,
+    );
+  }
+
+  @override
+  void close() {
+    fallback.close();
+  }
 }
 
 class HostedPublishFixture {
