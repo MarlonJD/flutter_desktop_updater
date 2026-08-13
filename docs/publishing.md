@@ -1532,6 +1532,31 @@ Set:
 DESKTOP_UPDATER_FTP_PASSWORD=...
 ```
 
+The FTP provider requires more than basic `RNFR`/`RNTO` support. After a
+complete temporary index is uploaded under the exclusive lease directory, the
+server must atomically replace the existing `app-archive.json` when `RNTO`
+names that existing destination. The source and destination must be on the
+same filesystem boundary, and a failed rename must leave publication safe to
+retry after the hosted index is validated.
+
+Apache FtpServer's native filesystem is not compatible with this requirement
+by default. Its
+[`NativeFtpFile.move`](https://github.com/apache/mina-ftpserver/blob/4ff3bc9a7898f9a15dc13416d8defbd9ed97dcf6/core/src/main/java/org/apache/ftpserver/filesystem/nativefs/impl/NativeFtpFile.java#L276-L290)
+implementation deliberately rejects a rename when the destination exists, and
+its
+[`testRenameToFileExists`](https://github.com/apache/mina-ftpserver/blob/4ff3bc9a7898f9a15dc13416d8defbd9ed97dcf6/core/src/test/java/org/apache/ftpserver/clienttests/RenameTest.java#L150-L161)
+test protects that behavior. If you control that server, install an allowlisted
+server-side atomic replacement that accepts only the lease temporary file and
+the exact live index path, verifies both paths remain inside the configured
+update root and on the same filesystem, and fails when the host cannot provide
+an atomic replace. Otherwise use SFTP, S3-compatible storage, or a
+`customCommand` backed by server-side atomic publication.
+
+Never work around this limitation with direct `STOR`, `DELE` followed by
+`RNTO`, or a multi-command backup shuffle. Direct upload can expose partial
+JSON, while delete and backup sequences create a window in which readers see
+no live index. The built-in FTP provider fails closed instead.
+
 Prefer SFTP or S3-compatible upload for production.
 
 ### Custom Command
@@ -1678,5 +1703,10 @@ workflow skeleton.
 - `AWS CLI executable not found`: install `aws` or use another provider.
 - `ftp.allowInsecure: true is required`: use SFTP/S3, or explicitly opt in for
   a legacy FTP host.
+- `FTP could not atomically replace ... with RNFR/RNTO`: verify rename
+  permissions and overwrite-rename support. Apache FtpServer's native
+  filesystem rejects an existing destination; configure a server-side atomic
+  replacement or use SFTP, S3-compatible storage, or a `customCommand` backed
+  by server-side atomic publication. Validate the hosted index before retrying.
 - Long `Cache-Control` on `app-archive.json`: keep index caching short so
   clients see newly published releases promptly.

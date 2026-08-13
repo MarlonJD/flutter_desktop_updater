@@ -226,7 +226,22 @@ class CurlFtpRemoteFileClient implements ExclusiveLeaseFtpRemoteFileClient {
         expectedRevision: expectedRevision,
         actualBytes: await operations.read(remotePath, config),
       );
-      await operations.rename(temporaryPath, remotePath, config);
+      try {
+        await operations.rename(temporaryPath, remotePath, config);
+      } on Object catch (error) {
+        throw StateError(
+          "FTP could not atomically replace $remotePath with RNFR/RNTO. "
+          "Publication stopped and did not fall back to STOR on the live "
+          "index. Verify rename permissions and that the server allows RNTO "
+          "to replace an existing destination. Apache FtpServer's native "
+          "filesystem rejects that operation; configure an allowlisted "
+          "server-side atomic replacement or use SFTP, S3-compatible "
+          "storage, or a customCommand backed by server-side atomic "
+          "publication. Before retrying, validate the hosted index because a "
+          "lost server reply can leave its state uncertain. "
+          "Rename error: $error",
+        );
+      }
       temporaryFileExists = false;
 
       final publishedBytes = await operations.read(remotePath, config);
