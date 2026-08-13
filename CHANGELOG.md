@@ -1,3 +1,15 @@
+## 3.1.5
+
+* Kept FTP index publication fail-closed when a server cannot atomically
+  replace an existing destination with `RNTO`, while replacing the raw rename
+  failure with actionable diagnostics.
+* Added `release doctor` guidance and documented Apache FtpServer's native
+  overwrite limitation, the required server-side atomic replacement boundary,
+  and safe SFTP, S3-compatible, or server-backed custom command alternatives.
+* Explicitly rejected partial or unavailable live-index windows from direct
+  `STOR`, `DELE` plus `RNTO`, and multi-command backup shuffles. Thanks to
+  @Nicoeevee for reporting the production Apache FtpServer behavior in PR #71.
+
 ## 3.1.4
 
 * Added exclusive lease publication for FTP-hosted `app-archive.json` indexes,
