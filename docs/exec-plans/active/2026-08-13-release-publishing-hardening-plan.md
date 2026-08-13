@@ -97,20 +97,20 @@ mock, unsigned fixture, or local dry run. Evidence labels remain literal:
 - [x] Confirm clean source tree, fetch `origin/main`, record base SHA/version,
   and create the requested branch.
 - [x] Create and index this active plan.
-- [ ] Push the plan commit and open the draft PR with issue closure, sources,
-  credit, and explicit exclusions.
+- [x] Push the plan commit and open the draft PR with issue closure, sources,
+  credit, and explicit exclusions. Issue #73 and draft PR #74 are open.
 
 ### M2 — macOS configuration and trust pipeline
 
-- [ ] Add injectable environment resolution and strict YAML presence/type
+- [x] Add injectable environment resolution and strict YAML presence/type
   semantics.
-- [ ] Refactor publish sequencing so no `codesign` command can run before the
+- [x] Refactor publish sequencing so no `codesign` command can run before the
   complete read-only preflight.
-- [ ] Add target inventory, topology, symlink, identity, entitlement, sealed
+- [x] Add target inventory, topology, symlink, identity, entitlement, sealed
   helper-policy, requirement, and Team ID validation.
-- [ ] Add typed notary result parsing and exact app/container/final-artifact
+- [x] Add typed notary result parsing and exact app/container/final-artifact
   audit with cleanup guarantees.
-- [ ] Add mocked signing tests, secretless ad-hoc real-codesign fixtures,
+- [x] Add mocked signing tests, secretless ad-hoc real-codesign fixtures,
   versioned/nested/extensionless/login-item/system-extension/symlink/dedup
   fixtures, entitlement negatives, zero-mutation tests, and DMG/PKG regressions.
 
@@ -121,22 +121,22 @@ exact-head workflow runs.
 
 ### M3 — Windows DPAPI
 
-- [ ] Introduce the injectable process adapter and bounded concurrent stream
+- [x] Introduce the injectable process adapter and bounded concurrent stream
   implementation.
-- [ ] Add fake process tests for malformed/non-UTF8/oversized output, large
+- [x] Add fake process tests for malformed/non-UTF8/oversized output, large
   stderr, exit/start/stdin failure, hang/kill, redaction, and round trips.
-- [ ] Add and wire the Windows-only real `CurrentUser` test to the exact
-  `cli-candidates` lane.
+- [x] Add and wire the Windows-only real `CurrentUser` test to the exact
+  `cli-candidates` lane. Host execution remains `not run` locally.
 
 Focused fake evidence can be `verified locally`; Windows host evidence is
 `not run` or `blocked` until the named Windows job executes on the final head.
 
 ### M4 — Hosted artifact retry
 
-- [ ] Integrate `UpdateRetryPolicy` and injected no-sleep delay.
-- [ ] Implement streamed bounded artifact transfer, status/header/length
+- [x] Integrate `UpdateRetryPolicy` and injected no-sleep delay.
+- [x] Implement streamed bounded artifact transfer, status/header/length
   handling, retry classification, and ownership-safe cleanup.
-- [ ] Add transport, status, length, filesystem, retry ownership, cleanup,
+- [x] Add transport, status, length, filesystem, retry ownership, cleanup,
   metadata fail-fast, and trust-failure non-retry tests.
 
 Focused validator tests are `verified locally` only after the exact test
@@ -144,20 +144,20 @@ commands pass.
 
 ### M5 — Documentation, workflow, and drift contracts
 
-- [ ] Update `docs/publishing.md`, `docs/macos-dmg-pkg-installer-updates.md`,
+- [x] Update `docs/publishing.md`, `docs/macos-dmg-pkg-installer-updates.md`,
   `docs/github-actions-ci-cd.md`, and `SECURITY.md` for the new trust and
   credential boundaries.
-- [ ] Update release-key documentation only if DPAPI operator behavior changes.
-- [ ] Add workflow/publish-smoke contract tests and keep credentials in the
+- [x] Update release-key documentation only if DPAPI operator behavior changes.
+- [x] Add workflow/publish-smoke contract tests and keep credentials in the
   environment rather than generated YAML or logs.
-- [ ] Keep README unchanged unless the canonical environment fallback is part
+- [x] Keep README unchanged unless the canonical environment fallback is part
   of common public configuration.
 
 ### M6 — Final verification and external evidence
 
-- [ ] Run focused tests, formatting, analysis, full Flutter tests, publish dry
+- [x] Run focused tests, formatting, analysis, full Flutter tests, publish dry
   run, structural ExecPlan/harness checks, and lifecycle documentation checks.
-- [ ] Commit all implementation and documentation changes in green,
+- [x] Commit all implementation and documentation changes in green,
   bisectable Conventional Commits.
 - [ ] Freeze the final PR head SHA before external evidence.
 - [ ] Run normal CI and the exact Windows DPAPI host test.
@@ -221,15 +221,25 @@ their exact run URL and `headSha`; configured workflow text alone is
 | --- | --- | --- | --- |
 | 2026-08-13 | Repository and source discovery | `verified locally` | Instructions, architecture, publishing/security docs, harness/ExecPlan docs, and credited PRs read. |
 | 2026-08-13 | GitHub baseline | `verified locally` | Issue #73 created; `bug` label confirmed; clean tree; base `origin/main` SHA recorded. |
-| 2026-08-13 | Branch and plan | `verified locally` | Branch created from exact base; plan awaiting first commit/push. |
+| 2026-08-13 | Branch and plan | `verified locally` | Branch created from exact base; plan commit pushed; draft PR #74 opened. |
+| 2026-08-13 | macOS trust/configuration | `verified locally` | Focused config, trust, real ad-hoc codesign, notarization, DMG/PKG, publisher, smoke, and docs tests passed; credentialed Developer ID/notary/Gatekeeper evidence is `blocked` or `not run` pending external host credentials. |
+| 2026-08-13 | Windows DPAPI | `verified locally` | Fake process suite passed, including bounded output, stream draining, timeout/kill, redaction, and round trips; Windows `CurrentUser` host test is `not run` locally and is wired to `cli-candidates`. |
+| 2026-08-13 | Hosted artifact retry | `verified locally` | Streamed transport retry, length/content/status non-retry, and cleanup ownership tests passed with injected no-sleep delay. |
+| 2026-08-13 | Structural validation | `verified locally` | `dart format`, `git diff --check`, focused test suite (106 tests), and `dart run tool/harness_gate.dart --structural` passed. |
 
 ## Outcomes and retrospective
 
-This section is completed after implementation and verification. It must list
-the final commits, changed areas, exact local commands, external run IDs/URLs,
-remaining `blocked`/`not run`/`candidate-only`/`release pending` gates, and the
-reason the PR remains draft or is eligible for independent review. Merge,
-publication, tagging, and release are explicitly not part of this task.
+Implementation is complete in bisectable Conventional Commits covering macOS
+configuration and trust sequencing, Windows DPAPI process safety, hosted
+artifact transport retry, final-artifact evidence, workflow contracts, and
+publishing/security documentation. Local focused and structural checks are
+`verified locally`; the full validation ladder and final commit SHAs are
+recorded in the handoff. Credentialed Developer ID/notary/staple/Gatekeeper
+evidence, the Windows host lane, and independent maintainer approval remain
+`blocked` or `not run` until the corresponding external gates execute on the
+frozen final head. Workflow configuration is `candidate-only` until then.
+The PR remains draft; merge, publication, tagging, version bump, and release
+were not performed.
 
 ## Revision history
 
