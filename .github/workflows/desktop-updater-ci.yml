@@ -1645,6 +1645,8 @@ jobs:
       - name: Assert forged raw MethodChannel payload fails macOS plugin boundary
         working-directory: example
         run: flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
+      - name: Install repository dependencies for release trust fixture
+        run: flutter pub get
       - name: Run secretless ad hoc macOS release trust fixture
         run: flutter test --no-pub test/release_cli/macos_release_trust_real_test.dart
 

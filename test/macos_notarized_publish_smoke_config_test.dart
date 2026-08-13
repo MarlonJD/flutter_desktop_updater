@@ -17,6 +17,10 @@ void main() {
     );
     expect(workflow, contains("DESKTOP_UPDATER_RELEASE_PUBLISH_EVIDENCE_ROOT"));
     expect(workflow, contains("macos_release_publish_evidence.dart"));
+    expect(
+      workflow,
+      contains("Install repository dependencies for release trust fixture"),
+    );
     expect(workflow, contains("git rev-parse HEAD"));
     expect(workflow, contains("actions/upload-artifact@v4"));
   });
