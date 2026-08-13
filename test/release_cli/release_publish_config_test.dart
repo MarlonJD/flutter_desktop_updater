@@ -80,6 +80,109 @@ macos:
     expect(config.macos.gatekeeperAssess, isFalse);
   });
 
+  test("loads canonical macOS signing references from an injected environment",
+      () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+""",
+      environment: const {
+        "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION":
+            "  Developer ID Application: Example Corp (TEAMID1234)  ",
+        "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "  desktop-updater-notary  ",
+        "DESKTOP_UPDATER_MACOS_KEYCHAIN":
+            "  /Users/me/Library/Keychains/login.keychain-db  ",
+      },
+    );
+
+    expect(config.macos.notarize, isTrue);
+    expect(
+      config.macos.developerIdApplication,
+      "Developer ID Application: Example Corp (TEAMID1234)",
+    );
+    expect(config.macos.notaryProfile, "desktop-updater-notary");
+    expect(
+      config.macos.keychain,
+      "/Users/me/Library/Keychains/login.keychain-db",
+    );
+  });
+
+  test("YAML macOS signing references take precedence over the environment",
+      () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: yaml-identity
+  notaryProfile: yaml-profile
+  keychain: yaml-keychain
+""",
+      environment: const {
+        "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "env-identity",
+        "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "env-profile",
+        "DESKTOP_UPDATER_MACOS_KEYCHAIN": "env-keychain",
+      },
+    );
+
+    expect(config.macos.developerIdApplication, "yaml-identity");
+    expect(config.macos.notaryProfile, "yaml-profile");
+    expect(config.macos.keychain, "yaml-keychain");
+  });
+
+  test("explicit blank or non-string macOS references do not fall back",
+      () async {
+    for (final value in <String>["\"\"", "\"   \"", "123"]) {
+      await expectLater(
+        ReleasePublishConfig.fromYaml(
+          """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: $value
+""",
+          environment: const {
+            "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "env-identity",
+          },
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("macos.developerIdApplication must be a nonblank string"),
+          ),
+        ),
+        reason: value,
+      );
+    }
+  });
+
+  test("legacy and notarization environment flags are ignored", () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+""",
+      environment: const {
+        "DESKTOP_UPDATER_NOTARIZE": "1",
+        "DESKTOP_UPDATER_DEVELOPER_ID_APPLICATION": "legacy-identity",
+        "DESKTOP_UPDATER_NOTARY_PROFILE": "legacy-profile",
+        "DESKTOP_UPDATER_KEYCHAIN": "legacy-keychain",
+      },
+    );
+
+    expect(config.macos.notarize, isFalse);
+    expect(config.macos.developerIdApplication, isNull);
+    expect(config.macos.notaryProfile, isNull);
+    expect(config.macos.keychain, isNull);
+  });
+
   test("loads macOS DMG artifact publish config", () async {
     final config = await ReleasePublishConfig.fromYaml("""
 updates:

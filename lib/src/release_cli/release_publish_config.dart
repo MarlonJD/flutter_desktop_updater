@@ -114,6 +114,7 @@ class ReleasePublishConfig {
   static Future<ReleasePublishConfig> load({
     required Directory projectRoot,
     required ReleasePublishOverrides cliOverrides,
+    Map<String, String>? environment,
   }) async {
     final configPath = cliOverrides.configPath ??
         path.join(projectRoot.path, "desktop_updater.yaml");
@@ -124,6 +125,7 @@ class ReleasePublishConfig {
       yaml,
       projectRoot: projectRoot,
       cliOverrides: cliOverrides,
+      environment: environment,
     );
   }
 
@@ -131,6 +133,7 @@ class ReleasePublishConfig {
     String yaml, {
     Directory? projectRoot,
     ReleasePublishOverrides cliOverrides = const ReleasePublishOverrides(),
+    Map<String, String>? environment,
   }) async {
     final root = projectRoot ?? Directory.current;
     final document = yaml.trim().isEmpty
@@ -148,7 +151,11 @@ class ReleasePublishConfig {
     final channelValue =
         cliOverrides.channel ?? _stringValue(updates, "channel") ?? "stable";
     final provider = _readUploadProvider(document);
-    final macos = _readMacOSConfig(document, cliOverrides);
+    final macos = _readMacOSConfig(
+      document,
+      cliOverrides,
+      environment: environment ?? Platform.environment,
+    );
     final windows = _readWindowsConfig(document);
     final hooks = _readHooksConfig(document);
     final additionalFiles = _readAdditionalFilesConfig(document);
@@ -531,8 +538,9 @@ UploadConfig _readUploadProvider(Map<String, dynamic> document) {
 
 MacOSPublishConfig _readMacOSConfig(
   Map<String, dynamic> document,
-  ReleasePublishOverrides cliOverrides,
-) {
+  ReleasePublishOverrides cliOverrides, {
+  required Map<String, String> environment,
+}) {
   final macos = _mapValue(document, "macos");
   final artifact = _mapValue(macos, "artifact");
   final artifactKind = _readMacOSArtifactKind(
@@ -548,9 +556,27 @@ MacOSPublishConfig _readMacOSConfig(
     artifactKind: artifactKind,
     dmg: dmg,
     pkg: pkg,
-    developerIdApplication: _stringValue(macos, "developerIdApplication"),
-    notaryProfile: _stringValue(macos, "notaryProfile"),
-    keychain: _stringValue(macos, "keychain"),
+    developerIdApplication: _macOSReferenceValue(
+      macos,
+      "developerIdApplication",
+      "macos.developerIdApplication",
+      environment,
+      "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION",
+    ),
+    notaryProfile: _macOSReferenceValue(
+      macos,
+      "notaryProfile",
+      "macos.notaryProfile",
+      environment,
+      "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE",
+    ),
+    keychain: _macOSReferenceValue(
+      macos,
+      "keychain",
+      "macos.keychain",
+      environment,
+      "DESKTOP_UPDATER_MACOS_KEYCHAIN",
+    ),
     staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
     gatekeeperAssess: _boolValue(
           macos,
@@ -766,6 +792,24 @@ Map<String, dynamic> _mapValue(Map<String, dynamic> map, String key) {
 String? _stringValue(Map<String, dynamic> map, String key) {
   final value = map[key];
   return value?.toString();
+}
+
+String? _macOSReferenceValue(
+  Map<String, dynamic> map,
+  String key,
+  String displayName,
+  Map<String, String> environment,
+  String environmentKey,
+) {
+  if (map.containsKey(key)) {
+    final value = map[key];
+    if (value is! String || value.trim().isEmpty) {
+      throw FormatException("$displayName must be a nonblank string.");
+    }
+    return value;
+  }
+  final value = environment[environmentKey]?.trim();
+  return value == null || value.isEmpty ? null : value;
 }
 
 List<String>? _stringListValue(Map<String, dynamic> map, String key) {
