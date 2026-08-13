@@ -137,6 +137,15 @@ Future<void> _writeConfigDiagnostics(
     output
         .writeln("OK: upload provider = ${config.uploadProvider.providerName}");
   }
+  if (config.uploadProvider is FtpUploadConfig) {
+    output.writeln(
+      "WARNING: Confirm the FTP server allows RNTO to atomically replace an "
+      "existing destination. Apache FtpServer's native filesystem does not "
+      "support this by default; configure an allowlisted server-side atomic "
+      "replacement or use SFTP, S3-compatible storage, or a customCommand "
+      "backed by server-side atomic publication.",
+    );
+  }
 
   switch (platform) {
     case "windows":

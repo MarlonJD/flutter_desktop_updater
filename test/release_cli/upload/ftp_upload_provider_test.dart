@@ -210,7 +210,7 @@ void main() {
     }
   });
 
-  test("default FTP client fails closed when rename fails", () async {
+  test("default FTP client explains unsupported atomic replacement", () async {
     final tempDir =
         await Directory.systemTemp.createTemp("ftp_rename_failure_");
     try {
@@ -238,11 +238,32 @@ void main() {
           ),
         ),
         throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            "message",
-            contains("rename failed"),
-          ),
+          isA<StateError>()
+              .having(
+                (error) => error.message,
+                "message",
+                contains("RNFR/RNTO"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("Apache FtpServer"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("did not fall back to STOR"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("SFTP"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("rename failed"),
+              ),
         ),
       );
 
@@ -364,6 +385,16 @@ ftp:
         ),
       ),
     );
+  });
+
+  test("publishing guide documents FTP atomic replacement requirements", () {
+    final publishingGuide = File("docs/publishing.md").readAsStringSync();
+
+    expect(publishingGuide, contains("Apache FtpServer's native filesystem"));
+    expect(publishingGuide, contains("server-side atomic replacement"));
+    expect(publishingGuide, contains("Never work around this limitation"));
+    expect(publishingGuide, contains("direct `STOR`"));
+    expect(publishingGuide, contains("SFTP, S3-compatible storage"));
   });
 
   test("ftp uploader rejects app archive publish without lease", () async {
