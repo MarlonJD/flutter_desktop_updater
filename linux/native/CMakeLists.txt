@@ -4,7 +4,7 @@ if(POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(desktop_updater_native VERSION 3.1.5 LANGUAGES C CXX)
+project(desktop_updater_native VERSION 3.1.6 LANGUAGES C CXX)
 
 option(DESKTOP_UPDATER_NATIVE_BUILD_TESTS
   "Build desktop_updater native tests" OFF)

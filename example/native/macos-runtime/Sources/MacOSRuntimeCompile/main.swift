@@ -99,7 +99,7 @@ struct MacOSRuntimeSmoke {
             expectedPackageId: packageId,
             currentVersion: arguments.optionalValue("--current-version") ?? "2.7.0",
             currentBuildNumber: arguments.optionalInt("--current-build-number") ?? 270,
-            currentUpdaterVersion: "3.1.5",
+            currentUpdaterVersion: "3.1.6",
             platform: "macos",
             installationIdentity: "macos-native-runtime-smoke",
             pinnedPublicKeysById: [

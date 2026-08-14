@@ -1,3 +1,14 @@
+## 3.1.6
+
+* Hardened cross-platform release publishing with strict hosted-artifact
+  validation, bounded transport behavior, and release-surface contract tests.
+* Added credentialed macOS publish evidence for Developer ID signing,
+  notarization, stapling, hardened runtime, nested target entitlements, strict
+  signatures, Gatekeeper assessment, and final hosted artifact auditing.
+* Made the macOS notarization keychain optional when the configured
+  `general-notary` profile is available in the user's global keychain search
+  list, while preserving explicit keychain support.
+
 ## 3.1.5
 
 * Kept FTP index publication fail-closed when a server cannot atomically
