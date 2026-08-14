@@ -162,6 +162,18 @@ artifact smokes still need their explicit Windows signing credentials. When a
 variable, credential, or required host is unavailable, the lane is `not run`;
 no ordinary job substitutes for publisher-trust or production-ready evidence.
 
+The credentialed `macos-notarized` job also has a separate release-publishing
+evidence step. The publish smoke keeps the signing references in the process
+environment, downloads the artifact back from its hosted URL, and writes a
+bounded metadata record. `tool/macos_release_publish_evidence.dart` audits
+that downloaded ZIP on the macOS runner and records the exact workflow head,
+final artifact SHA-256/length, pre-staple digest, typed notary ID, inventory,
+identifiers and designated requirements, equal Team IDs, runtime flags,
+per-target entitlement hashes, no `get-task-allow`, strict signatures,
+stapler validation, and Gatekeeper acceptance. The evidence is `candidate-only`
+until the workflow run is bound to the final PR head and the required
+maintainer approval exists.
+
 ## App Repository CD
 
 Use an app-owned workflow when you want CI/CD to publish real desktop updates.

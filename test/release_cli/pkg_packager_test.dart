@@ -80,6 +80,15 @@ void main() {
             ),
           ).create(recursive: true);
         }
+        if (executable == "/usr/bin/xcrun" &&
+            arguments.contains("notarytool")) {
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode({"id": "pkg-notary-test", "status": "Accepted"}),
+            "",
+          );
+        }
         return ProcessResult(0, 0, "", "");
       },
     ).package(
@@ -204,22 +213,30 @@ void main() {
       commands.any((command) => command.startsWith("/usr/bin/xcrun stapler")),
       isTrue,
     );
-    final verifies = commands
+    final strictVerifies = commands
+        .where(
+          (command) => command.startsWith(
+            "/usr/bin/codesign --verify --strict --verbose=2",
+          ),
+        )
+        .toList();
+    expect(strictVerifies, hasLength(1));
+    expect(strictVerifies.first, contains("Example.app"));
+    final deepVerifies = commands
         .where(
           (command) => command.startsWith(
             "/usr/bin/codesign --verify --deep --strict --verbose=2",
           ),
         )
         .toList();
-    expect(verifies, hasLength(2));
-    expect(verifies.first, contains("Example.app"));
+    expect(deepVerifies, hasLength(1));
     expect(commands, contains(contains("/usr/sbin/pkgutil --expand-full")));
     expect(
-      verifies.last,
+      deepVerifies.single,
       contains("expanded/component.pkg/Payload/Example.app"),
     );
     expect(
-      commands.indexOf(verifies.last),
+      commands.indexOf(deepVerifies.single),
       lessThan(commands
           .indexWhere((command) => command.contains("notarytool submit"))),
     );

@@ -1,3 +1,4 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/release_cli/macos/apple_trust_commands.dart";
@@ -9,6 +10,15 @@ void main() {
     final trust = AppleTrustCommands(
       runProcess: (executable, arguments) async {
         commands.add([executable, ...arguments]);
+        if (executable == "/usr/bin/xcrun" &&
+            arguments.contains("notarytool")) {
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode({"id": "submission-1", "status": "Accepted"}),
+            "",
+          );
+        }
         return ProcessResult(0, 0, "", "");
       },
     );
@@ -56,7 +66,6 @@ void main() {
       [
         "/usr/bin/codesign",
         "--verify",
-        "--deep",
         "--strict",
         "--verbose=2",
         "/tmp/Example.app",
@@ -101,6 +110,8 @@ void main() {
         "--keychain",
         "/Users/me/Library/Keychains/login.keychain-db",
         "--wait",
+        "--output-format",
+        "json",
       ],
     ]);
   });

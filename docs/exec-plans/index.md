@@ -13,6 +13,7 @@ branch, release, or external-write authority.
 
 ## Active
 
+- [2026-08-13 - Release publishing hardening](active/2026-08-13-release-publishing-hardening-plan.md)
 - [2026-08-05 - Desktop Updater 3.1 release-key profile migration](active/2026-08-05-release-key-management-plan.md)
 - [2026-08-03 - Desktop Updater 3.0 breaking contract](active/2026-08-03-desktop-updater-3-0-breaking-contract-plan.md)
 - [2026-07-21 - Windows and Linux privileged updater production readiness](active/2026-07-21-windows-linux-production-readiness.md)

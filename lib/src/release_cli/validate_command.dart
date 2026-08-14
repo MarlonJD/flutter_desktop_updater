@@ -7,6 +7,7 @@ import "package:desktop_updater/src/core/macos_distribution_artifacts.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/release_index_signature_verifier.dart";
+import "package:desktop_updater/src/core/update_retry_policy.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
 import "package:desktop_updater/src/version_info.dart";
@@ -87,9 +88,12 @@ class ReleaseValidator {
     this.indexSignatureVerifier,
     MacOSDistributionVerifier? macosVerifier,
     bool? isMacOSHost,
+    this.retryPolicy = const UpdateRetryPolicy(),
+    Future<void> Function(Duration)? delay,
   })  : client = client ?? http.Client(),
         macosVerifier = macosVerifier ?? const MacOSDistributionVerifier(),
-        isMacOSHost = isMacOSHost ?? Platform.isMacOS;
+        isMacOSHost = isMacOSHost ?? Platform.isMacOS,
+        delay = delay ?? _defaultRetryDelay;
 
   final http.Client client;
   final ArtifactVerifier artifactVerifier;
@@ -97,6 +101,8 @@ class ReleaseValidator {
   final Ed25519ReleaseIndexSignatureVerifier? indexSignatureVerifier;
   final MacOSDistributionVerifier macosVerifier;
   final bool isMacOSHost;
+  final UpdateRetryPolicy retryPolicy;
+  final Future<void> Function(Duration) delay;
 
   Future<void> validate({
     required File manifestFile,
@@ -155,7 +161,7 @@ class ReleaseValidator {
     final descriptor = await _fetchReleaseDescriptor(manifest);
     output.writeln("Hosted release descriptor: OK");
     output.writeln("Artifact kind: ${descriptor.artifact.kind}");
-    final artifactFile = await _downloadArtifact(descriptor.artifact.url);
+    final artifactFile = await _downloadArtifact(descriptor.artifact);
     try {
       await artifactVerifier.verifyArtifactFile(
         artifact: descriptor.artifact,
@@ -262,14 +268,116 @@ class ReleaseValidator {
     return response;
   }
 
-  Future<File> _downloadArtifact(Uri url) async {
-    final response = await _get(url);
-    final tempDir = await Directory.systemTemp.createTemp("release_validate_");
-    final file = File(
-      path.join(tempDir.path, "artifact${_artifactExtensionForUrl(url)}"),
+  Future<File> _downloadArtifact(ReleaseArtifact artifact) async {
+    if (artifact.length < 0) {
+      throw const FormatException(
+          "Signed artifact length must not be negative.");
+    }
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (var attempt = 1; attempt <= retryPolicy.maxAttempts; attempt += 1) {
+      Directory? tempDir;
+      try {
+        final response = await client.send(http.Request("GET", artifact.url));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw HttpException(
+            "GET ${artifact.url} failed with HTTP ${response.statusCode}.",
+            uri: artifact.url,
+          );
+        }
+        _validateArtifactContentLength(response, artifact.length);
+
+        tempDir = await Directory.systemTemp.createTemp("release_validate_");
+        final file = File(
+          path.join(
+            tempDir.path,
+            "artifact${_artifactExtensionForUrl(artifact.url)}",
+          ),
+        );
+        IOSink? sink;
+        var bytesReceived = 0;
+        Object? transferError;
+        StackTrace? transferStackTrace;
+        try {
+          sink = file.openWrite();
+          await for (final chunk in response.stream) {
+            bytesReceived += chunk.length;
+            if (bytesReceived > artifact.length) {
+              throw StateError(
+                "Hosted artifact exceeded its signed length of ${artifact.length} bytes.",
+              );
+            }
+            sink.add(chunk);
+          }
+          if (bytesReceived != artifact.length) {
+            throw StateError(
+              "Hosted artifact was truncated: expected ${artifact.length} bytes, "
+              "received $bytesReceived.",
+            );
+          }
+        } on Object catch (error, stackTrace) {
+          transferError = error;
+          transferStackTrace = stackTrace;
+        }
+        try {
+          await sink?.close();
+        } on Object catch (error, stackTrace) {
+          if (transferError == null) {
+            transferError = error;
+            transferStackTrace = stackTrace;
+          }
+        }
+        if (transferError != null) {
+          Error.throwWithStackTrace(transferError, transferStackTrace!);
+        }
+        return file;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (tempDir != null) {
+          try {
+            if (await tempDir.exists()) {
+              await tempDir.delete(recursive: true);
+            }
+          } on Object {
+            // Preserve the primary download or validation failure.
+          }
+        }
+        if (!_isRetryableArtifactTransportError(error) ||
+            attempt >= retryPolicy.maxAttempts) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+        await delay(retryPolicy.delayForAttempt(attempt));
+      }
+    }
+    Error.throwWithStackTrace(
+      lastError ?? StateError("Hosted artifact download failed."),
+      lastStackTrace ?? StackTrace.current,
     );
-    await file.writeAsBytes(response.bodyBytes);
-    return file;
+  }
+
+  void _validateArtifactContentLength(
+    http.StreamedResponse response,
+    int expectedLength,
+  ) {
+    String? contentLength;
+    for (final entry in response.headers.entries) {
+      if (entry.key.toLowerCase() == "content-length") {
+        contentLength = entry.value;
+        break;
+      }
+    }
+    if (contentLength == null) return;
+    final declared = int.tryParse(contentLength.trim());
+    if (declared == null || declared < 0 || declared != expectedLength) {
+      throw StateError(
+        "Hosted artifact Content-Length does not match its signed length.",
+      );
+    }
+  }
+
+  bool _isRetryableArtifactTransportError(Object error) {
+    return error is http.ClientException || error is SocketException;
   }
 
   Future<void> _validateMacOSArtifactTrust({
@@ -310,6 +418,10 @@ class ReleaseValidator {
           ..writeln("macOS PKG stapler validation: OK");
     }
   }
+}
+
+Future<void> _defaultRetryDelay(Duration duration) {
+  return Future<void>.delayed(duration);
 }
 
 String _artifactExtensionForUrl(Uri url) {
