@@ -1269,10 +1269,23 @@ xcrun notarytool store-credentials desktop-updater-notary \
   --validate
 ```
 
-Use the same `--keychain-profile` and `--keychain` pair for every later
-`notarytool` command. If `notarytool` later says
-`No Keychain password item found`, it is usually reading a different keychain
-from the one where the profile was stored.
+For an already-provisioned profile, first verify default/global resolution
+without forcing a keychain path:
+
+```sh
+xcrun notarytool history \
+  --keychain-profile general-notary \
+  --output-format json >/dev/null
+```
+
+This is the profile-availability check and uses macOS's keychain search list.
+Use the same `--keychain-profile` and `--keychain` pair for later commands when
+the profile was explicitly stored in a named keychain. If the default check
+succeeds but an explicit `--keychain` lookup returns `No Keychain password item
+found`, classify that as an explicit-keychain path mismatch, not as a missing
+profile. Use the profile's actual stored keychain or the repository flow's
+default-resolution mode; never guess a keychain path or print credential
+contents.
 
 CI should create an ephemeral keychain, import the Developer ID `.p12`, and
 store the notary profile into that same keychain:

@@ -116,11 +116,13 @@ class ReleasePublishConfig {
     required ReleasePublishOverrides cliOverrides,
     Map<String, String>? environment,
   }) async {
-    final configPath = cliOverrides.configPath ??
+    final configPath =
+        cliOverrides.configPath ??
         path.join(projectRoot.path, "desktop_updater.yaml");
     final configFile = File(configPath);
-    final yaml =
-        await configFile.exists() ? await configFile.readAsString() : "";
+    final yaml = await configFile.exists()
+        ? await configFile.readAsString()
+        : "";
     return fromYaml(
       yaml,
       projectRoot: projectRoot,
@@ -171,8 +173,8 @@ class ReleasePublishConfig {
         outputValue == null || outputValue.trim().isEmpty
             ? path.join(root.path, "dist", "desktop_updater")
             : path.isAbsolute(outputValue)
-                ? outputValue
-                : path.join(root.path, outputValue),
+            ? outputValue
+            : path.join(root.path, outputValue),
       ),
       channel: channelValue,
       uploadProvider: provider,
@@ -251,10 +253,7 @@ class ReleaseHooksConfig {
 }
 
 class ReleaseHookConfig {
-  const ReleaseHookConfig({
-    required this.command,
-    this.platforms = const [],
-  });
+  const ReleaseHookConfig({required this.command, this.platforms = const []});
 
   final String command;
   final List<String> platforms;
@@ -356,10 +355,7 @@ ReleaseHooksConfig _readHooksConfig(Map<String, dynamic> document) {
   );
 }
 
-List<ReleaseHookConfig> _readHookList(
-  Map<String, dynamic> hooks,
-  String key,
-) {
+List<ReleaseHookConfig> _readHookList(Map<String, dynamic> hooks, String key) {
   final value = hooks[key];
   if (value == null) {
     return const [];
@@ -369,10 +365,7 @@ List<ReleaseHookConfig> _readHookList(
   }
   return [
     for (var i = 0; i < value.length; i += 1)
-      _readHookConfig(
-        _hookMap(value[i], "hooks.$key[$i]"),
-        "hooks.$key[$i]",
-      ),
+      _readHookConfig(_hookMap(value[i], "hooks.$key[$i]"), "hooks.$key[$i]"),
   ];
 }
 
@@ -394,10 +387,7 @@ Map<String, dynamic> _hookMap(Object? value, String displayName) {
   throw FormatException("$displayName must be a map.");
 }
 
-List<String> _readHookPlatforms(
-  Map<String, dynamic> hook,
-  String displayName,
-) {
+List<String> _readHookPlatforms(Map<String, dynamic> hook, String displayName) {
   return _readPlatformList(hook, displayName);
 }
 
@@ -442,10 +432,7 @@ Map<String, dynamic> _additionalFileMap(Object? value, String displayName) {
   throw FormatException("$displayName must be a map.");
 }
 
-List<String> _readPlatformList(
-  Map<String, dynamic> map,
-  String displayName,
-) {
+List<String> _readPlatformList(Map<String, dynamic> map, String displayName) {
   final value = map["platforms"];
   if (value == null) {
     return const [];
@@ -465,10 +452,7 @@ List<String> _readPlatformList(
   ];
 }
 
-void _rejectSecretHookKeys(
-  Map<String, dynamic> hook,
-  String displayName,
-) {
+void _rejectSecretHookKeys(Map<String, dynamic> hook, String displayName) {
   const forbiddenKeys = {
     "env",
     "environment",
@@ -486,9 +470,12 @@ void _rejectSecretHookKeys(
 }
 
 UploadConfig _readUploadProvider(Map<String, dynamic> document) {
-  final providerBlocks = ["s3", "sftp", "ftp", "customCommand"]
-      .where((name) => document[name] != null)
-      .toList(growable: false);
+  final providerBlocks = [
+    "s3",
+    "sftp",
+    "ftp",
+    "customCommand",
+  ].where((name) => document[name] != null).toList(growable: false);
   if (providerBlocks.length > 1) {
     throw FormatException(
       "Only one upload provider can be configured. Found: ${providerBlocks.join(", ")}.",
@@ -531,11 +518,7 @@ UploadConfig _readUploadProvider(Map<String, dynamic> document) {
       );
     case "customCommand":
       return CustomCommandUploadConfig(
-        command: _requiredString(
-          provider,
-          "command",
-          "customCommand.command",
-        ),
+        command: _requiredString(provider, "command", "customCommand.command"),
       );
   }
   return const ManualUploadConfig();
@@ -554,7 +537,8 @@ MacOSPublishConfig _readMacOSConfig(
   final appName = cliOverrides.appName ?? "App";
   final dmg = _readMacOSDmgConfig(macos, appName);
   final pkg = _readMacOSPkgConfig(macos);
-  final notarize = cliOverrides.notarize ||
+  final notarize =
+      cliOverrides.notarize ||
       (_boolValue(macos, "notarize", displayName: "macos.notarize") ?? false);
   final config = MacOSPublishConfig(
     notarize: notarize,
@@ -583,7 +567,8 @@ MacOSPublishConfig _readMacOSConfig(
       "DESKTOP_UPDATER_MACOS_KEYCHAIN",
     ),
     staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
-    gatekeeperAssess: _boolValue(
+    gatekeeperAssess:
+        _boolValue(
           macos,
           "gatekeeperAssess",
           displayName: "macos.gatekeeperAssess",
@@ -597,7 +582,6 @@ MacOSPublishConfig _readMacOSConfig(
       "macos.developerIdApplication",
     );
     _requireConfigValue(config.notaryProfile, "macos.notaryProfile");
-    _requireConfigValue(config.keychain, "macos.keychain");
     if (!config.staple) {
       throw const FormatException(
         "macos.staple must be true when macos.notarize is true.",
@@ -661,7 +645,8 @@ MacOSDmgPublishConfig _readMacOSDmgConfig(
   return MacOSDmgPublishConfig(
     volumeName: explicitVolumeName ?? _macOSAppNameStem(appBundleName),
     appBundleName: appBundleName,
-    applicationsAlias: _boolValue(
+    applicationsAlias:
+        _boolValue(
           dmg,
           "applicationsAlias",
           displayName: "macos.dmg.applicationsAlias",
@@ -712,15 +697,18 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
     updatesUrl: _stringValue(installer, "updatesUrl"),
     privilegesRequired:
         _stringValue(installer, "privilegesRequired") ?? "lowest",
-    protectedHelperInstallDir:
-        _stringValue(installer, "protectedHelperInstallDir"),
+    protectedHelperInstallDir: _stringValue(
+      installer,
+      "protectedHelperInstallDir",
+    ),
     architecturesAllowed:
         _stringValue(installer, "architecturesAllowed") ?? "x64",
     architecturesInstallIn64BitMode:
         _stringValue(installer, "architecturesInstallIn64BitMode") ?? "x64",
     setupIcon: _stringValue(installer, "setupIcon"),
     licenseFile: _stringValue(installer, "licenseFile"),
-    silentArgs: _stringListValue(installer, "silentArgs") ??
+    silentArgs:
+        _stringListValue(installer, "silentArgs") ??
         const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
     requiresElevation: _stringValue(installer, "requiresElevation") ?? "auto",
     authenticodeThumbprints:
@@ -850,11 +838,7 @@ String _requiredString(
   return value;
 }
 
-bool? _boolValue(
-  Map<String, dynamic> map,
-  String key, {
-  String? displayName,
-}) {
+bool? _boolValue(Map<String, dynamic> map, String key, {String? displayName}) {
   final value = map[key];
   if (value == null) {
     return null;

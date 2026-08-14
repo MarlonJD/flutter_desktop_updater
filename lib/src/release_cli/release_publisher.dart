@@ -60,8 +60,9 @@ class ReleaseSigningOptions {
     required this.publicKeyId,
     required this.privateKeyBase64,
     required Map<String, String> trustedReleasePublicKeys,
-  }) : trustedReleasePublicKeys =
-            normalizeReleasePublicKeys(trustedReleasePublicKeys);
+  }) : trustedReleasePublicKeys = normalizeReleasePublicKeys(
+         trustedReleasePublicKeys,
+       );
 
   /// Pinned key identifier written to the signature envelope.
   final String publicKeyId;
@@ -114,7 +115,8 @@ class ReleasePublisher {
     ReleasePublishConfig? loadedConfig,
     required StringSink output,
   }) async {
-    final config = loadedConfig ??
+    final config =
+        loadedConfig ??
         await ReleasePublishConfig.load(
           projectRoot: projectRoot,
           cliOverrides: overrides,
@@ -161,36 +163,41 @@ class ReleasePublisher {
       skipBuild: skipBuild,
       runProcess: runProcess,
     );
-    final adapter = DefaultProjectAdapterSelector(
-      adapters: [
-        flutterAdapter,
-        if (!projectAdapters.any((adapter) => adapter.type == "xcode"))
-          xcodeAdapter,
-        if (!projectAdapters.any((adapter) => adapter.type == "cmake"))
-          cmakeAdapter,
-        ...projectAdapters,
-      ],
-    ).select(
-      ProjectAdapterSelectionRequest(
-        projectRoot: projectRoot,
-        explicitType: overrides.projectType,
-        manualArtifactRoot: _resolveManualArtifactRoot(
-          projectRoot,
-          overrides.artifactRoot,
-        ),
-        manualAppName:
-            overrides.artifactRoot == null ? null : overrides.appName,
-        manualPackageId:
-            overrides.artifactRoot == null ? null : overrides.packageId,
-        manualVersion:
-            overrides.artifactRoot == null ? null : overrides.version,
-        manualBuildNumber:
-            overrides.artifactRoot == null ? null : overrides.buildNumber,
-        manualExecutableRelativePath: overrides.artifactRoot == null
-            ? null
-            : overrides.executableRelativePath,
-      ),
-    );
+    final adapter =
+        DefaultProjectAdapterSelector(
+          adapters: [
+            flutterAdapter,
+            if (!projectAdapters.any((adapter) => adapter.type == "xcode"))
+              xcodeAdapter,
+            if (!projectAdapters.any((adapter) => adapter.type == "cmake"))
+              cmakeAdapter,
+            ...projectAdapters,
+          ],
+        ).select(
+          ProjectAdapterSelectionRequest(
+            projectRoot: projectRoot,
+            explicitType: overrides.projectType,
+            manualArtifactRoot: _resolveManualArtifactRoot(
+              projectRoot,
+              overrides.artifactRoot,
+            ),
+            manualAppName: overrides.artifactRoot == null
+                ? null
+                : overrides.appName,
+            manualPackageId: overrides.artifactRoot == null
+                ? null
+                : overrides.packageId,
+            manualVersion: overrides.artifactRoot == null
+                ? null
+                : overrides.version,
+            manualBuildNumber: overrides.artifactRoot == null
+                ? null
+                : overrides.buildNumber,
+            manualExecutableRelativePath: overrides.artifactRoot == null
+                ? null
+                : overrides.executableRelativePath,
+          ),
+        );
     final buildResult = await adapter.build(
       ProjectBuildRequest(
         projectRoot: projectRoot,
@@ -217,8 +224,9 @@ class ReleasePublisher {
             platform: platform,
           )
         : null;
-    final macosArtifact =
-        platform == "macos" ? config.macos.artifactKind : null;
+    final macosArtifact = platform == "macos"
+        ? config.macos.artifactKind
+        : null;
     final artifactExtension = switch (macosArtifact) {
       MacOSArtifactKind.dmg => ".dmg",
       MacOSArtifactKind.pkg => ".pkg",
@@ -399,16 +407,16 @@ class ReleasePublisher {
     if (platform == "macos" && config.macos.notarize) {
       final appBundleName =
           packageResult.descriptor.install.macosDmg?.appBundleName ??
-              (metadata.appName.endsWith(".app")
-                  ? metadata.appName
-                  : "${metadata.appName}.app");
+          (metadata.appName.endsWith(".app")
+              ? metadata.appName
+              : "${metadata.appName}.app");
       await (macOSReleaseTrust ?? MacOSReleaseTrust(runProcess: runProcess))
           .auditFinalArtifact(
-        artifact: packageResult.artifact,
-        kind: packageResult.descriptor.artifact.kind,
-        appBundleName: appBundleName,
-        expectedApplicationIdentifier: metadata.packageId,
-      );
+            artifact: packageResult.artifact,
+            kind: packageResult.descriptor.artifact.kind,
+            appBundleName: appBundleName,
+            expectedApplicationIdentifier: metadata.packageId,
+          );
       output.writeln("Final macOS distributable trust audit: verified locally");
     }
 
@@ -496,15 +504,11 @@ class ReleasePublisher {
       );
       try {
         if (descriptor.signature?.publicKeyId != publicKeyId) {
-          throw StateError(
-            "Final release.json signature verification failed.",
-          );
+          throw StateError("Final release.json signature verification failed.");
         }
         await strictArtifactVerifier.verifyDescriptor(descriptor);
       } on Object {
-        throw StateError(
-          "Final release.json signature verification failed.",
-        );
+        throw StateError("Final release.json signature verification failed.");
       }
 
       await ReleaseIndexSigner().sign(
@@ -584,10 +588,7 @@ Future<void> _copyAdditionalFiles({
       output.writeln(
         "Adding release file: ${source.path} -> ${destination.path}",
       );
-      await _copyAdditionalFileSource(
-        source: source,
-        destination: destination,
-      );
+      await _copyAdditionalFileSource(source: source, destination: destination);
     }
   }
 }
@@ -687,10 +688,7 @@ Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
   );
   final local = existingFile == null
       ? null
-      : await _readSignedAppArchiveFile(
-          existingFile,
-          verifier: verifier,
-        );
+      : await _readSignedAppArchiveFile(existingFile, verifier: verifier);
 
   if (hosted == null) {
     if (!overrides.initializeFeed) {
@@ -752,18 +750,14 @@ Future<void> _writeFrozenHistoryToAppArchive({
   required _SignedPublicationHistory history,
 }) async {
   await archiveFile.parent.create(recursive: true);
-  final index = history.index ??
-      ReleaseIndex(
-        schemaVersion: 3,
-        appName: archiveAppName,
-        items: const [],
-      );
+  final index =
+      history.index ??
+      ReleaseIndex(schemaVersion: 3, appName: archiveAppName, items: const []);
   await _writeJsonFile(
-      archiveFile,
-      {
-        ...index.toJson(),
-        "signature": null,
-      }..removeWhere((key, value) => value == null));
+    archiveFile,
+    {...index.toJson(), "signature": null}
+      ..removeWhere((key, value) => value == null),
+  );
 }
 
 Future<_HostedSignedAppArchive?> _fetchHostedAppArchive({
@@ -853,29 +847,20 @@ final class _SignedPublicationHistory {
 }
 
 final class _HostedSignedAppArchive {
-  const _HostedSignedAppArchive({
-    required this.index,
-    required this.revision,
-  });
+  const _HostedSignedAppArchive({required this.index, required this.revision});
 
   final ReleaseIndex index;
   final RemoteIndexRevision revision;
 }
 
 final class _LocalSignedAppArchive {
-  const _LocalSignedAppArchive({
-    required this.index,
-    required this.sha256,
-  });
+  const _LocalSignedAppArchive({required this.index, required this.sha256});
 
   final ReleaseIndex index;
   final String sha256;
 }
 
-String _relativePublishPath({
-  required Directory root,
-  required File file,
-}) {
+String _relativePublishPath({required Directory root, required File file}) {
   final rootPath = path.normalize(root.absolute.path);
   final filePath = path.normalize(file.absolute.path);
   if (!path.isWithin(rootPath, filePath)) {
@@ -947,10 +932,9 @@ Future<List<FileSystemEntity>> _additionalFileSources({
 
   final matcher = _globRegExp(absolutePattern);
   final matches = <FileSystemEntity>[];
-  await for (final entity in Directory(searchRoot).list(
-    recursive: _globNeedsRecursive(absolutePattern),
-    followLinks: false,
-  )) {
+  await for (final entity in Directory(
+    searchRoot,
+  ).list(recursive: _globNeedsRecursive(absolutePattern), followLinks: false)) {
     if (matcher.hasMatch(path.normalize(entity.path))) {
       matches.add(entity);
     }
@@ -990,8 +974,9 @@ Future<void> _copyAdditionalFileSource({
     );
   }
   if (type == FileSystemEntityType.file) {
-    final target =
-        File(path.join(destination.path, path.basename(source.path)));
+    final target = File(
+      path.join(destination.path, path.basename(source.path)),
+    );
     await _copyFile(File(source.path), target);
     return;
   }
@@ -1062,10 +1047,10 @@ Future<void> _preserveMode(
     return;
   }
   final mode = (await source.stat()).mode & 0x1ff;
-  final result = await Process.run(
-    "/bin/chmod",
-    [mode.toRadixString(8), target.path],
-  );
+  final result = await Process.run("/bin/chmod", [
+    mode.toRadixString(8),
+    target.path,
+  ]);
   if (result.exitCode != 0) {
     throw ProcessException(
       "/bin/chmod",
@@ -1187,8 +1172,9 @@ Map<String, String> _releaseHookEnvironment({
     "DESKTOP_UPDATER_APP_ARCHIVE_FILE": layout.appArchiveFile.path,
     "DESKTOP_UPDATER_RELEASE_FILE": layout.releaseFile.path,
     "DESKTOP_UPDATER_ARTIFACT_FILE": layout.artifactFile.path,
-    "DESKTOP_UPDATER_ARTIFACT_KIND":
-        _artifactKindForPath(layout.artifactFile.path),
+    "DESKTOP_UPDATER_ARTIFACT_KIND": _artifactKindForPath(
+      layout.artifactFile.path,
+    ),
     "DESKTOP_UPDATER_APP_ARCHIVE_URL": layout.appArchiveUrl.toString(),
     "DESKTOP_UPDATER_RELEASE_URL": layout.releaseUrl.toString(),
     "DESKTOP_UPDATER_ARTIFACT_URL": layout.artifactUrl.toString(),
@@ -1217,8 +1203,9 @@ Future<void> _notarizeMacOS({
     identity: config.developerIdApplication!,
   );
 
-  final tempDir =
-      await Directory.systemTemp.createTemp("desktop_updater_notary_");
+  final tempDir = await Directory.systemTemp.createTemp(
+    "desktop_updater_notary_",
+  );
   try {
     final notaryZip = path.join(tempDir.path, "notary.zip");
     output.writeln("Creating macOS notarization archive...");
@@ -1238,7 +1225,7 @@ Future<void> _notarizeMacOS({
     final submission = await effectiveTrust.submit(
       archive: File(notaryZip),
       profile: config.notaryProfile!,
-      keychain: config.keychain!,
+      keychain: config.keychain,
     );
     output.writeln("macOS app notarization: Accepted (${submission.id})");
   } finally {
@@ -1279,27 +1266,26 @@ Future<ProcessResult> defaultReleaseHookCommandRunner(
   if (Platform.isWindows) {
     return _runWindowsReleaseHook(command, environment);
   }
-  return Process.run(
-    "/bin/sh",
-    ["-c", command],
-    environment: environment,
-  );
+  return Process.run("/bin/sh", ["-c", command], environment: environment);
 }
 
 Future<ProcessResult> _runWindowsReleaseHook(
   String command,
   Map<String, String> environment,
 ) async {
-  final tempDir =
-      await Directory.systemTemp.createTemp("desktop_updater_hook_");
+  final tempDir = await Directory.systemTemp.createTemp(
+    "desktop_updater_hook_",
+  );
   try {
     final script = File(path.join(tempDir.path, "hook.cmd"));
     await script.writeAsString("@echo off\r\n$command\r\n");
-    return await Process.run(
-      "cmd",
-      ["/d", "/e:on", "/v:off", "/c", script.path],
-      environment: environment,
-    );
+    return await Process.run("cmd", [
+      "/d",
+      "/e:on",
+      "/v:off",
+      "/c",
+      script.path,
+    ], environment: environment);
   } finally {
     await tempDir.delete(recursive: true);
   }
@@ -1348,14 +1334,14 @@ Future<void> _uploadAndValidate({
         validator.requireIndexSignature
             ? "Signed manual publication package: ready for upload."
             : "Candidate-only manual publication package: signatures are not "
-                "required.",
+                  "required.",
       )
       ..writeln("Frozen hosted app-archive revision: $expectedRevision")
       ..writeln(
         trustedReleasePublicKeys == null
             ? "Trusted release public-key map: not configured (candidate-only)."
             : "Trusted release public-key map: "
-                "${jsonEncode(trustedReleasePublicKeys)}",
+                  "${jsonEncode(trustedReleasePublicKeys)}",
       )
       ..writeln(
         "Upload release.json and artifacts first; publish app-archive.json "
@@ -1410,8 +1396,9 @@ Future<void> _uploadAndValidate({
 
   output.writeln("Validating hosted update selection...");
   await validator.validate(
-    manifestFile:
-        File(path.join(localRoot.path, ".desktop_updater_publish.json")),
+    manifestFile: File(
+      path.join(localRoot.path, ".desktop_updater_publish.json"),
+    ),
     fromVersion: null,
     output: output,
   );

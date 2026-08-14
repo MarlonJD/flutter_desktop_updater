@@ -14,15 +14,16 @@ void main() {
     final app = await _createTopologyFixture(root);
     final commands = <List<String>>[];
 
-    final inventory = await MacOSReleaseTrust(
-      runProcess: (executable, arguments) async {
-        commands.add([executable, ...arguments]);
-        return ProcessResult(0, 0, "", "");
-      },
-    ).preflight(
-      app: app,
-      expectedApplicationIdentifier: "com.example.topology",
-    );
+    final inventory =
+        await MacOSReleaseTrust(
+          runProcess: (executable, arguments) async {
+            commands.add([executable, ...arguments]);
+            return ProcessResult(0, 0, "", "");
+          },
+        ).preflight(
+          app: app,
+          expectedApplicationIdentifier: "com.example.topology",
+        );
 
     expect(
       inventory.targets.map((target) => target.kind),
@@ -43,8 +44,10 @@ void main() {
       ),
       isTrue,
     );
-    expect(commands.where((command) => command.first == "/usr/bin/codesign"),
-        isEmpty);
+    expect(
+      commands.where((command) => command.first == "/usr/bin/codesign"),
+      isEmpty,
+    );
   });
 
   test("preflight rejects malformed applications before mutation", () async {
@@ -66,8 +69,10 @@ void main() {
       ).preflight(app: app),
       throwsA(isA<Object>()),
     );
-    expect(commands.where((command) => command.first == "/usr/bin/codesign"),
-        isEmpty);
+    expect(
+      commands.where((command) => command.first == "/usr/bin/codesign"),
+      isEmpty,
+    );
   });
 
   test("preflight rejects symlink escapes", () async {
@@ -103,15 +108,13 @@ void main() {
     final inventory = await MacOSReleaseTrust(
       readFileIdentity: (value) async =>
           value.endsWith("first-helper") || value.endsWith("second-helper")
-              ? "1:42"
-              : null,
+          ? "1:42"
+          : null,
       runProcess: (executable, arguments) async => ProcessResult(0, 0, "", ""),
     ).preflight(app: app);
 
     expect(
-      inventory.targets.where(
-        (target) => target.path.endsWith("helper"),
-      ),
+      inventory.targets.where((target) => target.path.endsWith("helper")),
       hasLength(1),
     );
   });
@@ -134,10 +137,7 @@ void main() {
     final inventory = await trust.preflight(app: app);
 
     await expectLater(
-      trust.signAndVerify(
-        inventory: inventory,
-        identity: "-",
-      ),
+      trust.signAndVerify(inventory: inventory, identity: "-"),
       throwsA(
         predicate<Object>(
           (error) => error.toString().contains("get-task-allow"),
@@ -153,24 +153,24 @@ void main() {
     );
   });
 
-  test("sealed helper policy binds helper and application requirements",
-      () async {
+  test("sealed helper policy binds helper and application requirements", () async {
     final root = await Directory.systemTemp.createTemp("macos_trust_");
     addTearDown(() => root.delete(recursive: true));
     final app = await _createSimpleApp(
       root,
       name: "Policy.app",
-      identifier: "com.example.app",
+      identifier: "com.example.desktopUpdaterSmoke",
     );
     final policy = <String, Object?>{
       "allowedApplicationSigner": {
         "kind": "appleDesignatedRequirement",
-        "value": "identifier com.example.app and anchor apple generic",
+        "value":
+            "identifier com.example.desktopUpdaterSmoke and anchor apple generic",
       },
       "allowedHelperSigner": {
         "kind": "appleDesignatedRequirement",
         "value":
-            "identifier com.example.desktop-updater.helper and anchor apple generic",
+            "identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic",
       },
       "allowedInstallRoots": ["/Applications"],
       "allowedStrategies": [
@@ -178,10 +178,10 @@ void main() {
         {"provider": "macosInstaller", "strategy": "verifiedInstallerHandoff"},
       ],
       "allowedTargetClasses": ["applicationBundle", "protectedApplication"],
-      "applicationPackageId": "com.example.app",
-      "helperServiceId": "com.example.desktop-updater.helper",
+      "applicationPackageId": "com.example.desktopUpdaterSmoke",
+      "helperServiceId": "com.example.desktopUpdaterSmoke.helper",
       "minimumHelperProtocolVersion": 1,
-      "policyId": "com.example.desktop-updater.privileged",
+      "policyId": "com.example.desktopUpdaterSmoke.privileged",
       "policyVersion": 3,
       "releaseRootPublicKeys": [
         {
@@ -195,12 +195,12 @@ void main() {
     final policyDigest = crypto.sha256.convert(policyBytes).toString();
     await File(path.join(app.path, "Contents", "Info.plist")).writeAsString(
       _plistWithEntries([
-        "<key>CFBundleIdentifier</key><string>com.example.app</string>",
+        "<key>CFBundleIdentifier</key><string>com.example.desktopUpdaterSmoke</string>",
         "<key>CFBundleExecutable</key><string>Policy</string>",
-        "<key>DesktopUpdaterInstallPolicyID</key><string>com.example.desktop-updater.privileged</string>",
-        "<key>DesktopUpdaterInstallHelperServiceID</key><string>com.example.desktop-updater.helper</string>",
-        "<key>DesktopUpdaterInstallHelperRequirement</key><string>identifier com.example.desktop-updater.helper and anchor apple generic</string>",
-        "<key>DesktopUpdaterInstallHelperLaunchDaemonPlistName</key><string>com.example.desktop-updater.helper.plist</string>",
+        "<key>DesktopUpdaterInstallPolicyID</key><string>com.example.desktopUpdaterSmoke.privileged</string>",
+        "<key>DesktopUpdaterInstallHelperServiceID</key><string>com.example.desktopUpdaterSmoke.helper</string>",
+        "<key>DesktopUpdaterInstallHelperRequirement</key><string>identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic</string>",
+        "<key>DesktopUpdaterInstallHelperLaunchDaemonPlistName</key><string>com.example.desktopUpdaterSmoke.helper.plist</string>",
       ]),
     );
     final helper = File(
@@ -209,7 +209,7 @@ void main() {
     await helper.parent.create(recursive: true);
     await helper.writeAsBytes(_machO);
     final helperInfo = _plistWithEntries([
-      "<key>CFBundleIdentifier</key><string>com.example.desktop-updater.helper</string>",
+      "<key>CFBundleIdentifier</key><string>com.example.desktopUpdaterSmoke.helper</string>",
       "<key>DesktopUpdaterSealedPolicy</key><data>${base64Encode(policyBytes)}</data>",
       "<key>DesktopUpdaterSealedPolicySHA256</key><string>$policyDigest</string>",
     ]);
@@ -219,15 +219,17 @@ void main() {
         "Contents",
         "Library",
         "LaunchDaemons",
-        "com.example.desktop-updater.helper.plist",
+        "com.example.desktopUpdaterSmoke.helper.plist",
       ),
     );
     await daemon.parent.create(recursive: true);
-    await daemon.writeAsString(_plistWithEntries([
-      "<key>Label</key><string>com.example.desktop-updater.helper</string>",
-      "<key>MachServices</key><dict><key>com.example.desktop-updater.helper</key><true/></dict>",
-      "<key>BundleProgram</key><string>Contents/Helpers/DesktopUpdaterInstallHelper</string>",
-    ]));
+    await daemon.writeAsString(
+      _plistWithEntries([
+        "<key>Label</key><string>com.example.desktopUpdaterSmoke.helper</string>",
+        "<key>MachServices</key><dict><key>com.example.desktopUpdaterSmoke.helper</key><true/></dict>",
+        "<key>BundleProgram</key><string>Contents/Helpers/DesktopUpdaterInstallHelper</string>",
+      ]),
+    );
 
     final inventory = await MacOSReleaseTrust(
       runProcess: (executable, arguments) async {
@@ -239,12 +241,19 @@ void main() {
         }
         return ProcessResult(0, 0, "", "");
       },
-    ).preflight(app: app, expectedApplicationIdentifier: "com.example.app");
+    ).preflight(
+      app: app,
+      expectedApplicationIdentifier: "com.example.desktopUpdaterSmoke",
+    );
 
-    expect(inventory.sealedPolicy?.policyId,
-        "com.example.desktop-updater.privileged");
-    expect(inventory.sealedPolicy?.helperRequirement,
-        "identifier com.example.desktop-updater.helper and anchor apple generic");
+    expect(
+      inventory.sealedPolicy?.policyId,
+      "com.example.desktopUpdaterSmoke.privileged",
+    );
+    expect(
+      inventory.sealedPolicy?.helperRequirement,
+      "identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic",
+    );
     expect(inventory.targets, contains(isA<MacOSCodeTarget>()));
   });
 
@@ -268,72 +277,118 @@ void main() {
     }
   });
 
-  test("final ZIP audit verifies the downloaded app after safe extraction",
-      () async {
-    final root = await Directory.systemTemp.createTemp("macos_trust_");
-    addTearDown(() => root.delete(recursive: true));
-    final app = await _createSimpleApp(root, name: "Audited.app");
-    final archive = Archive();
-    await for (final entity in app.list(recursive: true)) {
-      if (entity is File) {
-        archive.addFile(
-          ArchiveFile.bytes(
-            path.relative(entity.path, from: app.parent.path),
-            await entity.readAsBytes(),
-          ),
-        );
+  test(
+    "omits explicit keychain for default notary profile resolution",
+    () async {
+      final commands = <List<String>>[];
+      final trust = MacOSReleaseTrust(
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments]);
+          return ProcessResult(
+            0,
+            0,
+            '{"id":"submission-1","status":"Accepted"}',
+            "",
+          );
+        },
+      );
+
+      final submission = await trust.submit(
+        archive: File("/tmp/Example-notary.zip"),
+        profile: "general-notary",
+      );
+
+      expect(submission.status, "Accepted");
+      expect(commands.single, [
+        "/usr/bin/xcrun",
+        "notarytool",
+        "submit",
+        "/tmp/Example-notary.zip",
+        "--keychain-profile",
+        "general-notary",
+        "--wait",
+        "--output-format",
+        "json",
+      ]);
+    },
+  );
+
+  test(
+    "final ZIP audit verifies the downloaded app after safe extraction",
+    () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Audited.app");
+      final archive = Archive();
+      await for (final entity in app.list(recursive: true)) {
+        if (entity is File) {
+          archive.addFile(
+            ArchiveFile.bytes(
+              path.relative(entity.path, from: app.parent.path),
+              await entity.readAsBytes(),
+            ),
+          );
+        }
       }
-    }
-    final zip = File(path.join(root.path, "Audited.zip"));
-    await zip.writeAsBytes(ZipEncoder().encode(archive));
-    final commands = <List<String>>[];
-    final trust = MacOSReleaseTrust(
-      runProcess: (executable, arguments) async {
-        commands.add([executable, ...arguments]);
-        if (executable == "/usr/bin/ditto" && arguments.first == "-x") {
-          final destination = Directory(arguments.last);
-          await _copyDirectory(
+      final zip = File(path.join(root.path, "Audited.zip"));
+      await zip.writeAsBytes(ZipEncoder().encode(archive));
+      final commands = <List<String>>[];
+      final trust = MacOSReleaseTrust(
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments]);
+          if (executable == "/usr/bin/ditto" && arguments.first == "-x") {
+            final destination = Directory(arguments.last);
+            await _copyDirectory(
               app,
-              Directory(path.join(
-                  destination.path, app.path.split(path.separator).last)));
-        }
-        if (executable == "/usr/bin/codesign" && arguments.first == "-dvvv") {
-          return ProcessResult(0, 0, "", _codeDetails);
-        }
-        return ProcessResult(0, 0, "", "");
-      },
-    );
+              Directory(
+                path.join(
+                  destination.path,
+                  app.path.split(path.separator).last,
+                ),
+              ),
+            );
+          }
+          if (executable == "/usr/bin/codesign" && arguments.first == "-dvvv") {
+            return ProcessResult(0, 0, "", _codeDetails);
+          }
+          return ProcessResult(0, 0, "", "");
+        },
+      );
 
-    await trust.auditFinalArtifact(
-      artifact: zip,
-      kind: "zip",
-      appBundleName: "Audited.app",
-      expectedApplicationIdentifier: "com.example.audited",
-    );
+      await trust.auditFinalArtifact(
+        artifact: zip,
+        kind: "zip",
+        appBundleName: "Audited.app",
+        expectedApplicationIdentifier: "com.example.audited",
+      );
 
-    expect(
-      commands.indexWhere(
-        (command) =>
-            command.first == "/usr/bin/codesign" &&
-            command.contains("--entitlements"),
-      ),
-      greaterThan(
-          commands.indexWhere((command) => command.first == "/usr/bin/ditto")),
-    );
-    expect(
-      commands.any(
-        (command) =>
-            command.first == "/usr/bin/codesign" && command.contains("--deep"),
-      ),
-      isTrue,
-    );
-  });
+      expect(
+        commands.indexWhere(
+          (command) =>
+              command.first == "/usr/bin/codesign" &&
+              command.contains("--entitlements"),
+        ),
+        greaterThan(
+          commands.indexWhere((command) => command.first == "/usr/bin/ditto"),
+        ),
+      );
+      expect(
+        commands.any(
+          (command) =>
+              command.first == "/usr/bin/codesign" &&
+              command.contains("--deep"),
+        ),
+        isTrue,
+      );
+    },
+  );
 }
 
 const _machO = <int>[0xfe, 0xed, 0xfa, 0xce, 0, 0, 0, 0];
-const _codeDetails = "Identifier=com.example.audited\n"
+const _codeDetails =
+    "Identifier=com.example.audited\n"
     "TeamIdentifier=TEAMID1234\n"
-    "flags=0x10000(runtime)\n";
+    "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1\n";
 const _forbiddenEntitlements = '''
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
@@ -372,10 +427,10 @@ Future<Directory> _createTopologyFixture(Directory root) async {
       kind: relative.endsWith(".appex")
           ? MacOSCodeTargetKind.appExtension
           : relative.endsWith(".xpc")
-              ? MacOSCodeTargetKind.xpc
-              : relative.endsWith(".systemextension")
-                  ? MacOSCodeTargetKind.systemExtension
-                  : MacOSCodeTargetKind.application,
+          ? MacOSCodeTargetKind.xpc
+          : relative.endsWith(".systemextension")
+          ? MacOSCodeTargetKind.systemExtension
+          : MacOSCodeTargetKind.application,
       identifier: "com.example.${path.basename(relative).split(".").first}",
       executable: "Nested",
     );
@@ -416,7 +471,8 @@ Future<void> _createBundle(
 }) async {
   final bundle = Directory(path.join(app.path, relative));
   final name = executable ?? "Resource";
-  final info = kind == MacOSCodeTargetKind.framework ||
+  final info =
+      kind == MacOSCodeTargetKind.framework ||
           kind == MacOSCodeTargetKind.bundle
       ? File(path.join(bundle.path, "Resources", "Info.plist"))
       : File(path.join(bundle.path, "Contents", "Info.plist"));

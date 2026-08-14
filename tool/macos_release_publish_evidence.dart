@@ -82,6 +82,7 @@ Future<void> main(List<String> arguments) async {
         app: app,
         expectedApplicationIdentifier: expectedApplicationId,
       );
+      final appRoot = path.normalize(await app.resolveSymbolicLinks());
       await trust.verifyApp(inventory: inventory);
 
       final targetEvidence = <Map<String, Object?>>[];
@@ -99,7 +100,7 @@ Future<void> main(List<String> arguments) async {
         final flags = _requiredLine(detailText, "flags");
         final requirement = await _readRequirement(target.path);
         final entitlements = await _readEntitlements(target.path);
-        final relative = path.relative(target.path, from: app.path);
+        final relative = path.relative(target.path, from: appRoot);
         final targetName = relative == "." ? appBundleName : relative;
         teamIds.add(teamId);
         final hasGetTaskAllow = entitlements.contains(
@@ -193,9 +194,10 @@ Future<ProcessResult> _runChecked(
 }
 
 String _requiredLine(String output, String key) {
-  final value = RegExp(
-    "(?:^|\\n)${RegExp.escape(key)}=([^\\r\\n]+)",
-  ).firstMatch(output)?.group(1)?.trim();
+  final pattern = key == "flags"
+      ? RegExp(r"\bflags=([^\r\n]+)")
+      : RegExp("(?:^|\\n)${RegExp.escape(key)}=([^\\r\\n]+)");
+  final value = pattern.firstMatch(output)?.group(1)?.trim();
   if (value == null || value.isEmpty) throw StateError("missing trust field");
   return value;
 }

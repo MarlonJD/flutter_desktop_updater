@@ -87,8 +87,8 @@ class MacOSReleaseInventory {
   final MacOSSealedHelperPolicy? sealedPolicy;
 
   MacOSCodeTarget get applicationTarget => targets.firstWhere(
-        (target) => target.kind == MacOSCodeTargetKind.application,
-      );
+    (target) => target.kind == MacOSCodeTargetKind.application,
+  );
 }
 
 /// Typed result of a `notarytool --output-format json` submission.
@@ -164,14 +164,14 @@ class MacOSReleaseTrust {
       principalExecutable: mainExecutable.path,
     );
     var entries = 0;
-    await for (final entity in Directory(appPath).list(
-      recursive: true,
-      followLinks: false,
-    )) {
+    await for (final entity in Directory(
+      appPath,
+    ).list(recursive: true, followLinks: false)) {
       entries += 1;
       if (entries > _maxInventoryEntries) {
         throw StateError(
-            "macOS application contains too many filesystem entries.");
+          "macOS application contains too many filesystem entries.",
+        );
       }
       final type = await FileSystemEntity.type(entity.path, followLinks: false);
       if (type == FileSystemEntityType.link) {
@@ -242,7 +242,8 @@ class MacOSReleaseTrust {
         if (previous.kind != target.kind ||
             previous.identifier != target.identifier) {
           throw StateError(
-              "macOS inventory contains a duplicate target: $normalized");
+            "macOS inventory contains a duplicate target: $normalized",
+          );
         }
         return;
       }
@@ -286,10 +287,9 @@ class MacOSReleaseTrust {
       );
     }
 
-    await for (final entity in Directory(appPath).list(
-      recursive: true,
-      followLinks: false,
-    )) {
+    await for (final entity in Directory(
+      appPath,
+    ).list(recursive: true, followLinks: false)) {
       final type = await FileSystemEntity.type(entity.path, followLinks: false);
       if (type != FileSystemEntityType.file) continue;
       final file = File(entity.path);
@@ -297,7 +297,9 @@ class MacOSReleaseTrust {
       final isMachO = await _isMachO(file);
       if (!isMachO) {
         if (_isAllowedCodeLocation(
-                path.normalize(path.absolute(file.path)), appPath) &&
+              path.normalize(path.absolute(file.path)),
+              appPath,
+            ) &&
             await _isExecutable(file)) {
           throw FileSystemException(
             "macOS application contains executable bytes that are not Mach-O.",
@@ -363,8 +365,10 @@ class MacOSReleaseTrust {
     }
     final ordered = targets.values.toList()
       ..sort((a, b) {
-        final depth =
-            path.split(b.path).length.compareTo(path.split(a.path).length);
+        final depth = path
+            .split(b.path)
+            .length
+            .compareTo(path.split(a.path).length);
         if (depth != 0) return depth;
         if (a.kind == MacOSCodeTargetKind.application &&
             b.kind != MacOSCodeTargetKind.application) {
@@ -492,7 +496,7 @@ class MacOSReleaseTrust {
   Future<MacOSNotarySubmission> submit({
     required File archive,
     required String profile,
-    required String keychain,
+    String? keychain,
   }) async {
     final result = await _runChecked("/usr/bin/xcrun", [
       "notarytool",
@@ -500,8 +504,10 @@ class MacOSReleaseTrust {
       archive.path,
       "--keychain-profile",
       profile,
-      "--keychain",
-      keychain,
+      if (keychain != null && keychain.trim().isNotEmpty) ...[
+        "--keychain",
+        keychain,
+      ],
       "--wait",
       "--output-format",
       "json",
@@ -530,7 +536,8 @@ class MacOSReleaseTrust {
     }
     if (status != "Accepted") {
       throw StateError(
-          "macOS notarization failed: $status for submission $id.");
+        "macOS notarization failed: $status for submission $id.",
+      );
     }
     return MacOSNotarySubmission(id: id.trim(), status: status);
   }
@@ -637,10 +644,7 @@ class MacOSReleaseTrust {
         extractedApp = await _findExpandedPayloadApp(expanded, appBundleName);
       }
       if (extractedApp == null ||
-          await FileSystemEntity.type(
-                extractedApp.path,
-                followLinks: false,
-              ) !=
+          await FileSystemEntity.type(extractedApp.path, followLinks: false) !=
               FileSystemEntityType.directory) {
         throw StateError("Final macOS distributable does not contain its app.");
       }
@@ -665,10 +669,10 @@ class MacOSReleaseTrust {
     } finally {
       if (mountPoint != null) {
         try {
-          await _runChecked(
-            "/usr/bin/hdiutil",
-            ["detach", detachTarget ?? mountPoint],
-          );
+          await _runChecked("/usr/bin/hdiutil", [
+            "detach",
+            detachTarget ?? mountPoint,
+          ]);
         } on Object {
           if (auditSucceeded) rethrow;
         }
@@ -700,10 +704,7 @@ class MacOSReleaseTrust {
 
   Future<void> _bestEffortDetachDmg(File artifact) async {
     try {
-      final result = await _runChecked(
-        "/usr/bin/hdiutil",
-        ["info", "-plist"],
-      );
+      final result = await _runChecked("/usr/bin/hdiutil", ["info", "-plist"]);
       final value = _PlistXmlParser(result.stdout.toString()).parse();
       if (value is! Map) return;
       final images = value["images"];
@@ -717,10 +718,7 @@ class MacOSReleaseTrust {
         if (imagePath != expected) continue;
         final record = _findMountRecord(image);
         if (record == null) return;
-        await _runChecked(
-          "/usr/bin/hdiutil",
-          ["detach", record.detachTarget],
-        );
+        await _runChecked("/usr/bin/hdiutil", ["detach", record.detachTarget]);
         return;
       }
     } on Object {
@@ -782,13 +780,15 @@ class MacOSReleaseTrust {
   }
 
   Future<void> _assertEqualTeamIDs() async {
-    final teams =
-        _teamIDs.values.where((team) => team.trim().isNotEmpty).toSet();
+    final teams = _teamIDs.values
+        .where((team) => team.trim().isNotEmpty)
+        .toSet();
     if (_teamIDs.isEmpty ||
         teams.length != 1 ||
         _teamIDs.values.any((team) => team.trim().isEmpty)) {
       throw StateError(
-          "macOS signed targets must have one equal nonempty Team ID.");
+        "macOS signed targets must have one equal nonempty Team ID.",
+      );
     }
   }
 
@@ -823,9 +823,10 @@ class MacOSReleaseTrust {
     if (team == null || team.isEmpty) {
       throw StateError("macOS target has no nonempty Team ID: ${target.path}");
     }
-    if (!RegExp(r"(?:^|\n)flags=.*\bruntime\b").hasMatch(detailText)) {
+    if (!RegExp(r"\bflags=.*\bruntime\b").hasMatch(detailText)) {
       throw StateError(
-          "macOS target is not signed with the hardened runtime: ${target.path}");
+        "macOS target is not signed with the hardened runtime: ${target.path}",
+      );
     }
     _teamIDs[target.path] = team;
     final identifier = RegExp(r"(?:^|\n)Identifier=([^\r\n]+)")
@@ -844,15 +845,15 @@ class MacOSReleaseTrust {
         "-r-",
         target.path,
       ]);
-      final designated = RegExp(
-        r"(?:^|\n)designated => ([^\r\n]+)",
-      )
+      final designated = RegExp(r"(?:^|\n)designated => ([^\r\n]+)")
           .firstMatch(
             "${requirementResult.stdout}\n${requirementResult.stderr}",
           )
           ?.group(1)
           ?.trim();
-      if (designated != requirement) {
+      if (designated == null ||
+          _normalizeDesignatedRequirement(designated) !=
+              _normalizeDesignatedRequirement(requirement)) {
         throw StateError(
           "macOS target designated requirement does not match sealed policy: ${target.path}",
         );
@@ -863,10 +864,12 @@ class MacOSReleaseTrust {
   final Map<String, String> _teamIDs = <String, String>{};
 
   Future<_EntitlementSnapshot> _readEntitlements(MacOSCodeTarget target) async {
-    final result = await runProcess(
-      "/usr/bin/codesign",
-      ["-d", "--entitlements", ":-", target.path],
-    );
+    final result = await runProcess("/usr/bin/codesign", [
+      "-d",
+      "--entitlements",
+      ":-",
+      target.path,
+    ]);
     if (result.exitCode != 0) {
       throw StateError("Unable to extract macOS entitlements: ${target.path}");
     }
@@ -884,10 +887,7 @@ class MacOSReleaseTrust {
     if (plistEnd < 0) {
       throw StateError("Unable to parse macOS entitlements: ${target.path}");
     }
-    final xml = output.substring(
-      plistStart,
-      plistEnd + "</plist>".length,
-    );
+    final xml = output.substring(plistStart, plistEnd + "</plist>".length);
     final value = await _parsePlistBytes(
       Uint8List.fromList(utf8.encode(xml)),
       runProcess,
@@ -895,7 +895,8 @@ class MacOSReleaseTrust {
     );
     if (value is! Map<String, Object?>) {
       throw StateError(
-          "macOS entitlements are not a dictionary: ${target.path}");
+        "macOS entitlements are not a dictionary: ${target.path}",
+      );
     }
     return _EntitlementSnapshot(
       value: value,
@@ -937,10 +938,13 @@ class MacOSReleaseTrust {
       );
     }
     for (final metadata in embedded.skip(1)) {
-      if (!const ListEquality<int>()
-          .equals(metadata.plistBytes, embedded.first.plistBytes)) {
+      if (!const ListEquality<int>().equals(
+        metadata.plistBytes,
+        embedded.first.plistBytes,
+      )) {
         throw StateError(
-            "Packaged helper architectures have different metadata.");
+          "Packaged helper architectures have different metadata.",
+        );
       }
     }
     final helperInfo = await _parsePlistBytes(
@@ -1006,8 +1010,11 @@ class MacOSReleaseTrust {
             "externalManaged",
           },
         ) ||
-        !_validPolicyStringList(decoded["allowedInstallRoots"],
-            absolutePaths: true, maximumLength: 4096) ||
+        !_validPolicyStringList(
+          decoded["allowedInstallRoots"],
+          absolutePaths: true,
+          maximumLength: 4096,
+        ) ||
         !_validPolicyStrategies(decoded["allowedStrategies"]) ||
         !_validPolicyReleaseKeys(decoded["releaseRootPublicKeys"])) {
       throw StateError("Packaged helper sealed policy fields are invalid.");
@@ -1018,8 +1025,9 @@ class MacOSReleaseTrust {
     }
     final applicationSigner = _signerValue(decoded["allowedApplicationSigner"]);
     final helperSigner = _signerValue(decoded["allowedHelperSigner"]);
-    final applicationPackageId =
-        _safeIdentifier(decoded["applicationPackageId"]);
+    final applicationPackageId = _safeIdentifier(
+      decoded["applicationPackageId"],
+    );
     final helperServiceId = _safeIdentifier(decoded["helperServiceId"]);
     final policyId = _safeIdentifier(decoded["policyId"]);
     if (applicationSigner == null || helperSigner == null) {
@@ -1030,7 +1038,8 @@ class MacOSReleaseTrust {
     if (applicationSigner.kind != "appleDesignatedRequirement" ||
         helperSigner.kind != "appleDesignatedRequirement") {
       throw StateError(
-          "Packaged helper policy requires Apple designated requirements.");
+        "Packaged helper policy requires Apple designated requirements.",
+      );
     }
     if (helperInfo["CFBundleIdentifier"] != helperServiceId ||
         appInfo["CFBundleIdentifier"] != applicationPackageId ||
@@ -1041,11 +1050,17 @@ class MacOSReleaseTrust {
         appInfo["DesktopUpdaterInstallHelperLaunchDaemonPlistName"] !=
             "$helperServiceId.plist") {
       throw StateError(
-          "Packaged helper policy does not match bundle metadata.");
+        "Packaged helper policy does not match bundle metadata.",
+      );
     }
     final daemon = File(
-      path.join(appPath, "Contents", "Library", "LaunchDaemons",
-          "$helperServiceId.plist"),
+      path.join(
+        appPath,
+        "Contents",
+        "Library",
+        "LaunchDaemons",
+        "$helperServiceId.plist",
+      ),
     );
     final daemonInfo = await _readRequiredPlist(daemon, runProcess);
     final services = daemonInfo["MachServices"];
@@ -1128,8 +1143,9 @@ _MountedDmg? _findMountRecord(Object? value) {
       final device = value["dev-entry"];
       return _MountedDmg(
         mountPoint: mountPoint,
-        detachTarget:
-            device is String && device.isNotEmpty ? device : mountPoint,
+        detachTarget: device is String && device.isNotEmpty
+            ? device
+            : mountPoint,
       );
     }
     for (final child in value.values) {
@@ -1172,35 +1188,33 @@ _EmbeddedPlist _extractEmbeddedPlist(String output, String source) {
   }
   if (bytes.isEmpty) {
     throw StateError(
-        "Packaged helper architecture lacks embedded Info.plist: $source");
+      "Packaged helper architecture lacks embedded Info.plist: $source",
+    );
   }
   try {
     final text = utf8.decode(bytes);
     return _embeddedPlistFromText(text, source);
   } on FormatException {
     throw StateError(
-        "Packaged helper embedded Info.plist is not valid UTF-8: $source");
+      "Packaged helper embedded Info.plist is not valid UTF-8: $source",
+    );
   }
 }
 
-_EmbeddedPlist _embeddedPlistFromText(
-  String text,
-  String source,
-) {
+_EmbeddedPlist _embeddedPlistFromText(String text, String source) {
   final start = _plistStart(text);
   final end = text.indexOf("</plist>", start < 0 ? 0 : start);
   if (start < 0 || end < 0) {
     throw StateError(
-        "Packaged helper architecture lacks embedded Info.plist: $source");
+      "Packaged helper architecture lacks embedded Info.plist: $source",
+    );
   }
   final plistText = text.substring(start, end + "</plist>".length);
   final plistBytes = utf8.encode(plistText);
   if (plistBytes.length > _maxEmbeddedPlistBytes) {
     throw StateError("Packaged helper embedded metadata is too large.");
   }
-  return _EmbeddedPlist(
-    plistBytes: List.unmodifiable(plistBytes),
-  );
+  return _EmbeddedPlist(plistBytes: List.unmodifiable(plistBytes));
 }
 
 int _plistStart(String value) {
@@ -1212,11 +1226,7 @@ int _plistStart(String value) {
 }
 
 class _EntitlementSnapshot {
-  const _EntitlementSnapshot({
-    required this.value,
-    this.xmlBytes,
-    this.file,
-  });
+  const _EntitlementSnapshot({required this.value, this.xmlBytes, this.file});
 
   final Map<String, Object?> value;
   final List<int>? xmlBytes;
@@ -1225,11 +1235,8 @@ class _EntitlementSnapshot {
   bool get hasGetTaskAllow =>
       value.containsKey("com.apple.security.get-task-allow");
 
-  _EntitlementSnapshot copyWith({File? file}) => _EntitlementSnapshot(
-        value: value,
-        xmlBytes: xmlBytes,
-        file: file,
-      );
+  _EntitlementSnapshot copyWith({File? file}) =>
+      _EntitlementSnapshot(value: value, xmlBytes: xmlBytes, file: file);
 }
 
 class _Signer {
@@ -1270,9 +1277,11 @@ bool _validPolicyReleaseKeys(Object? value) {
   for (final item in value) {
     if (item is! Map<String, Object?> ||
         item.keys.toSet().length != 3 ||
-        item.keys
-            .toSet()
-            .difference({"keyId", "algorithm", "publicKeyBase64"}).isNotEmpty ||
+        item.keys.toSet().difference({
+          "keyId",
+          "algorithm",
+          "publicKeyBase64",
+        }).isNotEmpty ||
         item["keyId"] is! String ||
         !RegExp(r"^[A-Za-z0-9._-]{1,128}$")
             .hasMatch(item["keyId"]! as String) ||
@@ -1337,14 +1346,31 @@ _Signer? _signerValue(Object? value) {
 
 String _safeIdentifier(Object? value) {
   if (value is! String ||
-      !RegExp(r"^[a-z0-9](?:[a-z0-9._-]{1,126}[a-z0-9])?$").hasMatch(value)) {
+      !RegExp(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,126}[A-Za-z0-9])?$")
+          .hasMatch(value)) {
     throw StateError("Invalid sealed helper identifier.");
   }
   return value;
 }
 
+String _normalizeDesignatedRequirement(String value) {
+  var normalized = value;
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'identifier "([A-Za-z0-9][A-Za-z0-9._-]{0,126})"'),
+    (match) => "identifier ${match.group(1)}",
+  );
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'(certificate leaf\[subject\.OU\] = )"([A-Z0-9]{1,64})"'),
+    (match) => "${match.group(1)}${match.group(2)}",
+  );
+  return normalized;
+}
+
 String _requiredSafeString(
-    Map<String, Object?> map, String key, String source) {
+  Map<String, Object?> map,
+  String key,
+  String source,
+) {
   final value = _optionalSafeString(map, key);
   if (value == null || value.isEmpty) {
     throw FormatException("$source is missing a nonblank $key.");
@@ -1414,13 +1440,7 @@ Future<_BundleInfoResult?> _readBundleInfo(
       File(path.join(bundlePath, "Contents", "Info.plist")),
     if (kind == MacOSCodeTargetKind.framework)
       File(
-        path.join(
-          bundlePath,
-          "Versions",
-          "Current",
-          "Resources",
-          "Info.plist",
-        ),
+        path.join(bundlePath, "Versions", "Current", "Resources", "Info.plist"),
       ),
     _bundleInfoFile(bundlePath, kind),
     if (kind == MacOSCodeTargetKind.framework ||
@@ -1459,8 +1479,9 @@ Future<String?> _principalExecutable(
   final candidates = <String>[];
   if (kind == MacOSCodeTargetKind.framework) {
     candidates.add(path.join(bundlePath, executableName));
-    candidates
-        .add(path.join(bundlePath, "Versions", "Current", executableName));
+    candidates.add(
+      path.join(bundlePath, "Versions", "Current", executableName),
+    );
   } else {
     candidates.add(path.join(bundlePath, "Contents", "MacOS", executableName));
   }
@@ -1484,8 +1505,9 @@ Future<String?> _resolveContainedPath(String value, String root) async {
     return null;
   }
   final canonical = path.normalize(path.absolute(resolved));
-  final canonicalRoot =
-      path.normalize(await Directory(root).resolveSymbolicLinks());
+  final canonicalRoot = path.normalize(
+    await Directory(root).resolveSymbolicLinks(),
+  );
   if (canonical != canonicalRoot && !path.isWithin(canonicalRoot, canonical)) {
     throw FileSystemException(
       "Bundle metadata or executable symlink escapes its bundle.",
@@ -1499,7 +1521,9 @@ Future<void> _requireRealDirectory(Directory directory, String label) async {
   final type = await FileSystemEntity.type(directory.path, followLinks: false);
   if (type != FileSystemEntityType.directory) {
     throw FileSystemException(
-        "$label must be a real directory.", directory.path);
+      "$label must be a real directory.",
+      directory.path,
+    );
   }
 }
 
@@ -1507,7 +1531,9 @@ Future<void> _requireRegularFile(File file, String label) async {
   if (await FileSystemEntity.type(file.path, followLinks: false) !=
       FileSystemEntityType.file) {
     throw FileSystemException(
-        "$label is missing or is not a regular file.", file.path);
+      "$label is missing or is not a regular file.",
+      file.path,
+    );
   }
 }
 
@@ -1519,16 +1545,20 @@ Future<void> _rejectSymlinkAncestors(
   final parts = path.split(normalized);
   final limit = includeSelf ? parts.length : parts.length - 1;
   var current = parts.first == path.separator ? path.separator : parts.first;
-  for (var index = parts.first == path.separator ? 1 : 1;
-      index < limit;
-      index++) {
+  for (
+    var index = parts.first == path.separator ? 1 : 1;
+    index < limit;
+    index++
+  ) {
     current = current == path.separator
         ? path.join(current, parts[index])
         : path.join(current, parts[index]);
     if (await FileSystemEntity.type(current, followLinks: false) ==
         FileSystemEntityType.link) {
       throw FileSystemException(
-          "Signing target has a symbolic-link ancestor.", value);
+        "Signing target has a symbolic-link ancestor.",
+        value,
+      );
     }
   }
 }
@@ -1539,13 +1569,18 @@ Future<void> _validateContainedSymlink(Link link, String root) async {
     resolved = path.normalize(await link.resolveSymbolicLinks());
   } on FileSystemException {
     throw FileSystemException(
-        "macOS application contains a dangling symlink.", link.path);
+      "macOS application contains a dangling symlink.",
+      link.path,
+    );
   }
-  final canonicalRoot =
-      path.normalize(await Directory(root).resolveSymbolicLinks());
+  final canonicalRoot = path.normalize(
+    await Directory(root).resolveSymbolicLinks(),
+  );
   if (resolved != canonicalRoot && !path.isWithin(canonicalRoot, resolved)) {
     throw FileSystemException(
-        "macOS application symlink escapes its bundle.", link.path);
+      "macOS application symlink escapes its bundle.",
+      link.path,
+    );
   }
 }
 
@@ -1564,7 +1599,8 @@ bool _isAllowedCodeLocation(String filePath, String appPath) {
   for (var index = 0; index < parts.length; index++) {
     if (parts[index] == "Contents" &&
         index + 1 < parts.length &&
-        codeRoots.contains(parts[index + 1])) return true;
+        codeRoots.contains(parts[index + 1]))
+      return true;
     if (parts[index] == "Contents" &&
         index + 2 < parts.length &&
         parts[index + 1] == "Library" &&
@@ -1606,7 +1642,9 @@ Future<Map<String, Object?>> _readRequiredPlist(
   final value = await _readOptionalPlist(file, runProcess);
   if (value == null) {
     throw FileSystemException(
-        "Required macOS Info.plist is missing or invalid.", file.path);
+      "Required macOS Info.plist is missing or invalid.",
+      file.path,
+    );
   }
   return value;
 }
@@ -1618,15 +1656,16 @@ Future<Map<String, Object?>?> _readOptionalPlist(
 }) async {
   final source = symlinkRoot == null
       ? file
-      : File(
-          await _resolveContainedPath(file.path, symlinkRoot) ?? file.path,
-        );
+      : File(await _resolveContainedPath(file.path, symlinkRoot) ?? file.path);
   if (await FileSystemEntity.type(source.path, followLinks: false) !=
-      FileSystemEntityType.file) return null;
+      FileSystemEntityType.file)
+    return null;
   final bytes = await source.readAsBytes();
   if (bytes.length > _maxPlistBytes) {
     throw FileSystemException(
-        "macOS plist exceeds the bounded size limit.", source.path);
+      "macOS plist exceeds the bounded size limit.",
+      source.path,
+    );
   }
   final value = await _parsePlistBytes(bytes, runProcess, source: source.path);
   return value is Map<String, Object?> ? value : null;
@@ -1644,10 +1683,13 @@ Future<Object?> _parsePlistBytes(
   if (text != null && text.contains("<plist")) {
     return _PlistXmlParser(text).parse();
   }
-  final converted = await runProcess(
-    "/usr/bin/plutil",
-    ["-convert", "json", "-o", "-", source],
-  );
+  final converted = await runProcess("/usr/bin/plutil", [
+    "-convert",
+    "json",
+    "-o",
+    "-",
+    source,
+  ]);
   if (converted.exitCode != 0) {
     throw StateError("Unable to parse macOS plist: $source");
   }
@@ -1686,11 +1728,7 @@ void _validateBoundedPlistValue(
     }
   } else if (value is List) {
     for (final item in value) {
-      _validateBoundedPlistValue(
-        item,
-        depth: depth + 1,
-        budget: activeBudget,
-      );
+      _validateBoundedPlistValue(item, depth: depth + 1, budget: activeBudget);
     }
   }
 }
@@ -1743,8 +1781,10 @@ Future<Directory> _findExpandedPayloadApp(
   Directory expanded,
   String appBundleName,
 ) async {
-  await for (final entity
-      in expanded.list(recursive: true, followLinks: false)) {
+  await for (final entity in expanded.list(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory && path.basename(entity.path) == appBundleName) {
       return entity;
     }
@@ -1757,8 +1797,9 @@ Future<void> _validateExtractedTree(Directory root) async {
       FileSystemEntityType.directory) {
     throw FileSystemException("Expanded macOS artifact is not a directory.");
   }
-  final canonicalRoot =
-      path.normalize(await Directory(root.path).resolveSymbolicLinks());
+  final canonicalRoot = path.normalize(
+    await Directory(root.path).resolveSymbolicLinks(),
+  );
   await for (final entity in root.list(recursive: true, followLinks: false)) {
     final type = await FileSystemEntity.type(entity.path, followLinks: false);
     if (type == FileSystemEntityType.link) {
@@ -1901,8 +1942,11 @@ class _PlistXmlParser {
 }
 
 class _PlistTag {
-  const _PlistTag(
-      {required this.name, required this.closing, required this.selfClosing});
+  const _PlistTag({
+    required this.name,
+    required this.closing,
+    required this.selfClosing,
+  });
 
   final String name;
   final bool closing;

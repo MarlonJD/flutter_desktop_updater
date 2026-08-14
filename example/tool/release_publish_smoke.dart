@@ -177,8 +177,9 @@ Future<void> _writeEvidenceSnapshot({
     r"(?:^|\n)Artifact:\s*(\S+)",
     multiLine: true,
   ).firstMatch(output);
-  final artifactUrl =
-      artifactMatch == null ? null : Uri.tryParse(artifactMatch.group(1)!);
+  final artifactUrl = artifactMatch == null
+      ? null
+      : Uri.tryParse(artifactMatch.group(1)!);
   if (artifactUrl == null || artifactUrl.pathSegments.isEmpty) {
     throw StateError("publish smoke did not expose an artifact URL");
   }
@@ -186,8 +187,9 @@ Future<void> _writeEvidenceSnapshot({
     r"(?:^|\n)Release:\s*(\S+)",
     multiLine: true,
   ).firstMatch(output);
-  final releaseUrl =
-      releaseMatch == null ? null : Uri.tryParse(releaseMatch.group(1)!);
+  final releaseUrl = releaseMatch == null
+      ? null
+      : Uri.tryParse(releaseMatch.group(1)!);
   if (releaseUrl == null) {
     throw StateError("publish smoke did not expose a release URL");
   }
@@ -208,30 +210,20 @@ Future<void> _writeEvidenceSnapshot({
     final resolvedAppBundleName = releaseAppName.trim().isEmpty
         ? appBundleName
         : releaseAppName.endsWith(".app")
-            ? releaseAppName
-            : "$releaseAppName.app";
+        ? releaseAppName
+        : "$releaseAppName.app";
     await evidenceRoot.create(recursive: true);
     final artifact = File(pathJoin(evidenceRoot.path, "hosted-artifact.zip"));
     await artifact.writeAsBytes(bytes, flush: true);
     final preStapleMatch = RegExp(
       r"pre-staple notarization archive SHA-256:\s*([0-9a-f]{64})\s*\(length=(\d+)\)",
     ).firstMatch(output);
-    final notaryIds = RegExp(
-      r"macOS app notarization: Accepted \(([^)]+)\)",
-    ).allMatches(output).map((match) => match.group(1)!).toList();
+    final notaryIds = RegExp(r"macOS app notarization: Accepted \(([^)]+)\)")
+        .allMatches(output)
+        .map((match) => match.group(1)!)
+        .toList();
     await File(pathJoin(evidenceRoot.path, "publish-smoke.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({
-            "artifactPath": artifact.path,
-            "artifactUrl": artifactUrl.toString(),
-            "appBundleName": resolvedAppBundleName,
-            "applicationIdentifier": releasePackageId,
-            "gitCommit": Platform.environment["GITHUB_SHA"],
-            "notarizationSubmissionIds": notaryIds,
-            "preStapleSha256": preStapleMatch?.group(1),
-            "preStapleLength": preStapleMatch == null
-                ? null
-                : int.parse(preStapleMatch.group(2)!),
-          })}\n",
+      "${const JsonEncoder.withIndent("  ").convert({"artifactPath": artifact.path, "artifactUrl": artifactUrl.toString(), "appBundleName": resolvedAppBundleName, "applicationIdentifier": releasePackageId, "gitCommit": Platform.environment["GITHUB_SHA"], "notarizationSubmissionIds": notaryIds, "preStapleSha256": preStapleMatch?.group(1), "preStapleLength": preStapleMatch == null ? null : int.parse(preStapleMatch.group(2)!)})}\n",
     );
   } finally {
     client.close(force: true);
@@ -368,8 +360,10 @@ void _usage() {
     "\n"
     "For --notarize, set DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E=1, "
     "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION, "
-    "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE, and "
-    "DESKTOP_UPDATER_MACOS_KEYCHAIN. Use --app-bundle-name and "
+    "and DESKTOP_UPDATER_MACOS_NOTARY_PROFILE. An optional "
+    "DESKTOP_UPDATER_MACOS_KEYCHAIN enables explicit keychain binding; when "
+    "omitted, notarytool uses the default keychain search list. Use "
+    "--app-bundle-name and "
     "DESKTOP_UPDATER_RELEASE_PUBLISH_EVIDENCE_ROOT for bound evidence.",
   );
 }
