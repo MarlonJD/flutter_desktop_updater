@@ -87,8 +87,8 @@ class MacOSReleaseInventory {
   final MacOSSealedHelperPolicy? sealedPolicy;
 
   MacOSCodeTarget get applicationTarget => targets.firstWhere(
-    (target) => target.kind == MacOSCodeTargetKind.application,
-  );
+        (target) => target.kind == MacOSCodeTargetKind.application,
+      );
 }
 
 /// Typed result of a `notarytool --output-format json` submission.
@@ -365,10 +365,8 @@ class MacOSReleaseTrust {
     }
     final ordered = targets.values.toList()
       ..sort((a, b) {
-        final depth = path
-            .split(b.path)
-            .length
-            .compareTo(path.split(a.path).length);
+        final depth =
+            path.split(b.path).length.compareTo(path.split(a.path).length);
         if (depth != 0) return depth;
         if (a.kind == MacOSCodeTargetKind.application &&
             b.kind != MacOSCodeTargetKind.application) {
@@ -780,9 +778,8 @@ class MacOSReleaseTrust {
   }
 
   Future<void> _assertEqualTeamIDs() async {
-    final teams = _teamIDs.values
-        .where((team) => team.trim().isNotEmpty)
-        .toSet();
+    final teams =
+        _teamIDs.values.where((team) => team.trim().isNotEmpty).toSet();
     if (_teamIDs.isEmpty ||
         teams.length != 1 ||
         _teamIDs.values.any((team) => team.trim().isEmpty)) {
@@ -1143,9 +1140,8 @@ _MountedDmg? _findMountRecord(Object? value) {
       final device = value["dev-entry"];
       return _MountedDmg(
         mountPoint: mountPoint,
-        detachTarget: device is String && device.isNotEmpty
-            ? device
-            : mountPoint,
+        detachTarget:
+            device is String && device.isNotEmpty ? device : mountPoint,
       );
     }
     for (final child in value.values) {
@@ -1545,11 +1541,9 @@ Future<void> _rejectSymlinkAncestors(
   final parts = path.split(normalized);
   final limit = includeSelf ? parts.length : parts.length - 1;
   var current = parts.first == path.separator ? path.separator : parts.first;
-  for (
-    var index = parts.first == path.separator ? 1 : 1;
-    index < limit;
-    index++
-  ) {
+  for (var index = parts.first == path.separator ? 1 : 1;
+      index < limit;
+      index++) {
     current = current == path.separator
         ? path.join(current, parts[index])
         : path.join(current, parts[index]);
@@ -1599,8 +1593,7 @@ bool _isAllowedCodeLocation(String filePath, String appPath) {
   for (var index = 0; index < parts.length; index++) {
     if (parts[index] == "Contents" &&
         index + 1 < parts.length &&
-        codeRoots.contains(parts[index + 1]))
-      return true;
+        codeRoots.contains(parts[index + 1])) return true;
     if (parts[index] == "Contents" &&
         index + 2 < parts.length &&
         parts[index + 1] == "Library" &&
@@ -1658,8 +1651,7 @@ Future<Map<String, Object?>?> _readOptionalPlist(
       ? file
       : File(await _resolveContainedPath(file.path, symlinkRoot) ?? file.path);
   if (await FileSystemEntity.type(source.path, followLinks: false) !=
-      FileSystemEntityType.file)
-    return null;
+      FileSystemEntityType.file) return null;
   final bytes = await source.readAsBytes();
   if (bytes.length > _maxPlistBytes) {
     throw FileSystemException(

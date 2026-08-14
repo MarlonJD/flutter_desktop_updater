@@ -116,13 +116,11 @@ class ReleasePublishConfig {
     required ReleasePublishOverrides cliOverrides,
     Map<String, String>? environment,
   }) async {
-    final configPath =
-        cliOverrides.configPath ??
+    final configPath = cliOverrides.configPath ??
         path.join(projectRoot.path, "desktop_updater.yaml");
     final configFile = File(configPath);
-    final yaml = await configFile.exists()
-        ? await configFile.readAsString()
-        : "";
+    final yaml =
+        await configFile.exists() ? await configFile.readAsString() : "";
     return fromYaml(
       yaml,
       projectRoot: projectRoot,
@@ -173,8 +171,8 @@ class ReleasePublishConfig {
         outputValue == null || outputValue.trim().isEmpty
             ? path.join(root.path, "dist", "desktop_updater")
             : path.isAbsolute(outputValue)
-            ? outputValue
-            : path.join(root.path, outputValue),
+                ? outputValue
+                : path.join(root.path, outputValue),
       ),
       channel: channelValue,
       uploadProvider: provider,
@@ -537,8 +535,7 @@ MacOSPublishConfig _readMacOSConfig(
   final appName = cliOverrides.appName ?? "App";
   final dmg = _readMacOSDmgConfig(macos, appName);
   final pkg = _readMacOSPkgConfig(macos);
-  final notarize =
-      cliOverrides.notarize ||
+  final notarize = cliOverrides.notarize ||
       (_boolValue(macos, "notarize", displayName: "macos.notarize") ?? false);
   final config = MacOSPublishConfig(
     notarize: notarize,
@@ -567,8 +564,7 @@ MacOSPublishConfig _readMacOSConfig(
       "DESKTOP_UPDATER_MACOS_KEYCHAIN",
     ),
     staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
-    gatekeeperAssess:
-        _boolValue(
+    gatekeeperAssess: _boolValue(
           macos,
           "gatekeeperAssess",
           displayName: "macos.gatekeeperAssess",
@@ -645,8 +641,7 @@ MacOSDmgPublishConfig _readMacOSDmgConfig(
   return MacOSDmgPublishConfig(
     volumeName: explicitVolumeName ?? _macOSAppNameStem(appBundleName),
     appBundleName: appBundleName,
-    applicationsAlias:
-        _boolValue(
+    applicationsAlias: _boolValue(
           dmg,
           "applicationsAlias",
           displayName: "macos.dmg.applicationsAlias",
@@ -707,8 +702,7 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
         _stringValue(installer, "architecturesInstallIn64BitMode") ?? "x64",
     setupIcon: _stringValue(installer, "setupIcon"),
     licenseFile: _stringValue(installer, "licenseFile"),
-    silentArgs:
-        _stringListValue(installer, "silentArgs") ??
+    silentArgs: _stringListValue(installer, "silentArgs") ??
         const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
     requiresElevation: _stringValue(installer, "requiresElevation") ?? "auto",
     authenticodeThumbprints:

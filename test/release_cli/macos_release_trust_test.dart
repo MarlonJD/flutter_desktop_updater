@@ -14,16 +14,15 @@ void main() {
     final app = await _createTopologyFixture(root);
     final commands = <List<String>>[];
 
-    final inventory =
-        await MacOSReleaseTrust(
-          runProcess: (executable, arguments) async {
-            commands.add([executable, ...arguments]);
-            return ProcessResult(0, 0, "", "");
-          },
-        ).preflight(
-          app: app,
-          expectedApplicationIdentifier: "com.example.topology",
-        );
+    final inventory = await MacOSReleaseTrust(
+      runProcess: (executable, arguments) async {
+        commands.add([executable, ...arguments]);
+        return ProcessResult(0, 0, "", "");
+      },
+    ).preflight(
+      app: app,
+      expectedApplicationIdentifier: "com.example.topology",
+    );
 
     expect(
       inventory.targets.map((target) => target.kind),
@@ -108,8 +107,8 @@ void main() {
     final inventory = await MacOSReleaseTrust(
       readFileIdentity: (value) async =>
           value.endsWith("first-helper") || value.endsWith("second-helper")
-          ? "1:42"
-          : null,
+              ? "1:42"
+              : null,
       runProcess: (executable, arguments) async => ProcessResult(0, 0, "", ""),
     ).preflight(app: app);
 
@@ -153,7 +152,8 @@ void main() {
     );
   });
 
-  test("sealed helper policy binds helper and application requirements", () async {
+  test("sealed helper policy binds helper and application requirements",
+      () async {
     final root = await Directory.systemTemp.createTemp("macos_trust_");
     addTearDown(() => root.delete(recursive: true));
     final app = await _createSimpleApp(
@@ -385,8 +385,7 @@ void main() {
 }
 
 const _machO = <int>[0xfe, 0xed, 0xfa, 0xce, 0, 0, 0, 0];
-const _codeDetails =
-    "Identifier=com.example.audited\n"
+const _codeDetails = "Identifier=com.example.audited\n"
     "TeamIdentifier=TEAMID1234\n"
     "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1\n";
 const _forbiddenEntitlements = '''
@@ -427,10 +426,10 @@ Future<Directory> _createTopologyFixture(Directory root) async {
       kind: relative.endsWith(".appex")
           ? MacOSCodeTargetKind.appExtension
           : relative.endsWith(".xpc")
-          ? MacOSCodeTargetKind.xpc
-          : relative.endsWith(".systemextension")
-          ? MacOSCodeTargetKind.systemExtension
-          : MacOSCodeTargetKind.application,
+              ? MacOSCodeTargetKind.xpc
+              : relative.endsWith(".systemextension")
+                  ? MacOSCodeTargetKind.systemExtension
+                  : MacOSCodeTargetKind.application,
       identifier: "com.example.${path.basename(relative).split(".").first}",
       executable: "Nested",
     );
@@ -471,8 +470,7 @@ Future<void> _createBundle(
 }) async {
   final bundle = Directory(path.join(app.path, relative));
   final name = executable ?? "Resource";
-  final info =
-      kind == MacOSCodeTargetKind.framework ||
+  final info = kind == MacOSCodeTargetKind.framework ||
           kind == MacOSCodeTargetKind.bundle
       ? File(path.join(bundle.path, "Resources", "Info.plist"))
       : File(path.join(bundle.path, "Contents", "Info.plist"));

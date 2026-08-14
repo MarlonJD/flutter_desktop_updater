@@ -32,26 +32,25 @@ void main() {
     try {
       final publisher = ReleasePublisher(
         packager: packager,
-        startBuildProcess:
-            (
-              executable,
-              arguments, {
-              workingDirectory,
-              runInShell = false,
-            }) async {
-              buildCalls.add(
-                _BuildProcessCall(
-                  executable: executable,
-                  arguments: arguments,
-                  workingDirectory: workingDirectory,
-                  runInShell: runInShell,
-                ),
-              );
-              return const _FakeBuildProcess(
-                stdoutText: "build stdout\n",
-                stderrText: "build stderr\n",
-              );
-            },
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls.add(
+            _BuildProcessCall(
+              executable: executable,
+              arguments: arguments,
+              workingDirectory: workingDirectory,
+              runInShell: runInShell,
+            ),
+          );
+          return const _FakeBuildProcess(
+            stdoutText: "build stdout\n",
+            stderrText: "build stderr\n",
+          );
+        },
       );
 
       await publisher.publish(
@@ -83,23 +82,22 @@ void main() {
     try {
       final publisher = ReleasePublisher(
         packager: packager,
-        startBuildProcess:
-            (
-              executable,
-              arguments, {
-              workingDirectory,
-              runInShell = false,
-            }) async {
-              buildCalls.add(
-                _BuildProcessCall(
-                  executable: executable,
-                  arguments: arguments,
-                  workingDirectory: workingDirectory,
-                  runInShell: runInShell,
-                ),
-              );
-              return const _FakeBuildProcess();
-            },
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls.add(
+            _BuildProcessCall(
+              executable: executable,
+              arguments: arguments,
+              workingDirectory: workingDirectory,
+              runInShell: runInShell,
+            ),
+          );
+          return const _FakeBuildProcess();
+        },
       );
 
       await publisher.publish(
@@ -131,23 +129,22 @@ void main() {
     try {
       final publisher = ReleasePublisher(
         packager: _RecordingPackager(<String>[]),
-        startBuildProcess:
-            (
-              executable,
-              arguments, {
-              workingDirectory,
-              runInShell = false,
-            }) async {
-              buildCalls.add(
-                _BuildProcessCall(
-                  executable: executable,
-                  arguments: arguments,
-                  workingDirectory: workingDirectory,
-                  runInShell: runInShell,
-                ),
-              );
-              return const _FakeBuildProcess();
-            },
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls.add(
+            _BuildProcessCall(
+              executable: executable,
+              arguments: arguments,
+              workingDirectory: workingDirectory,
+              runInShell: runInShell,
+            ),
+          );
+          return const _FakeBuildProcess();
+        },
       );
 
       await publisher.publish(
@@ -190,10 +187,10 @@ updates:
       try {
         final publisher = ReleasePublisher(
           packager: packager,
-          startBuildProcess:
-              (executable, arguments, {workingDirectory, runInShell = false}) {
-                fail("Manual publishing must not start Flutter.");
-              },
+          startBuildProcess: (executable, arguments,
+              {workingDirectory, runInShell = false}) {
+            fail("Manual publishing must not start Flutter.");
+          },
         );
 
         await publisher.publish(
@@ -244,10 +241,10 @@ updates:
           runProcess: (executable, arguments) {
             fail("A preinstalled CMake tree must not start a process.");
           },
-          startBuildProcess:
-              (executable, arguments, {workingDirectory, runInShell = false}) {
-                fail("CMake publishing must not start Flutter.");
-              },
+          startBuildProcess: (executable, arguments,
+              {workingDirectory, runInShell = false}) {
+            fail("CMake publishing must not start Flutter.");
+          },
         );
 
         await publisher.publish(
@@ -281,23 +278,22 @@ updates:
       try {
         final publisher = ReleasePublisher(
           packager: packager,
-          startBuildProcess:
-              (
-                executable,
-                arguments, {
-                workingDirectory,
-                runInShell = false,
-              }) async {
-                buildCalls.add(
-                  _BuildProcessCall(
-                    executable: executable,
-                    arguments: arguments,
-                    workingDirectory: workingDirectory,
-                    runInShell: runInShell,
-                  ),
-                );
-                return const _FakeBuildProcess();
-              },
+          startBuildProcess: (
+            executable,
+            arguments, {
+            workingDirectory,
+            runInShell = false,
+          }) async {
+            buildCalls.add(
+              _BuildProcessCall(
+                executable: executable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                runInShell: runInShell,
+              ),
+            );
+            return const _FakeBuildProcess();
+          },
         );
 
         await publisher.publish(
@@ -969,9 +965,8 @@ macos:
           httpClient: MockClient((request) async {
             if (request.url.path == "/app-archive.json") {
               appArchiveRequests += 1;
-              final source = appArchiveRequests == 1
-                  ? hostedArchive
-                  : changedArchive;
+              final source =
+                  appArchiveRequests == 1 ? hostedArchive : changedArchive;
               return http.Response.bytes(
                 await source.readAsBytes(),
                 200,

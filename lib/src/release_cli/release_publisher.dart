@@ -61,8 +61,8 @@ class ReleaseSigningOptions {
     required this.privateKeyBase64,
     required Map<String, String> trustedReleasePublicKeys,
   }) : trustedReleasePublicKeys = normalizeReleasePublicKeys(
-         trustedReleasePublicKeys,
-       );
+          trustedReleasePublicKeys,
+        );
 
   /// Pinned key identifier written to the signature envelope.
   final String publicKeyId;
@@ -115,8 +115,7 @@ class ReleasePublisher {
     ReleasePublishConfig? loadedConfig,
     required StringSink output,
   }) async {
-    final config =
-        loadedConfig ??
+    final config = loadedConfig ??
         await ReleasePublishConfig.load(
           projectRoot: projectRoot,
           cliOverrides: overrides,
@@ -163,41 +162,36 @@ class ReleasePublisher {
       skipBuild: skipBuild,
       runProcess: runProcess,
     );
-    final adapter =
-        DefaultProjectAdapterSelector(
-          adapters: [
-            flutterAdapter,
-            if (!projectAdapters.any((adapter) => adapter.type == "xcode"))
-              xcodeAdapter,
-            if (!projectAdapters.any((adapter) => adapter.type == "cmake"))
-              cmakeAdapter,
-            ...projectAdapters,
-          ],
-        ).select(
-          ProjectAdapterSelectionRequest(
-            projectRoot: projectRoot,
-            explicitType: overrides.projectType,
-            manualArtifactRoot: _resolveManualArtifactRoot(
-              projectRoot,
-              overrides.artifactRoot,
-            ),
-            manualAppName: overrides.artifactRoot == null
-                ? null
-                : overrides.appName,
-            manualPackageId: overrides.artifactRoot == null
-                ? null
-                : overrides.packageId,
-            manualVersion: overrides.artifactRoot == null
-                ? null
-                : overrides.version,
-            manualBuildNumber: overrides.artifactRoot == null
-                ? null
-                : overrides.buildNumber,
-            manualExecutableRelativePath: overrides.artifactRoot == null
-                ? null
-                : overrides.executableRelativePath,
-          ),
-        );
+    final adapter = DefaultProjectAdapterSelector(
+      adapters: [
+        flutterAdapter,
+        if (!projectAdapters.any((adapter) => adapter.type == "xcode"))
+          xcodeAdapter,
+        if (!projectAdapters.any((adapter) => adapter.type == "cmake"))
+          cmakeAdapter,
+        ...projectAdapters,
+      ],
+    ).select(
+      ProjectAdapterSelectionRequest(
+        projectRoot: projectRoot,
+        explicitType: overrides.projectType,
+        manualArtifactRoot: _resolveManualArtifactRoot(
+          projectRoot,
+          overrides.artifactRoot,
+        ),
+        manualAppName:
+            overrides.artifactRoot == null ? null : overrides.appName,
+        manualPackageId:
+            overrides.artifactRoot == null ? null : overrides.packageId,
+        manualVersion:
+            overrides.artifactRoot == null ? null : overrides.version,
+        manualBuildNumber:
+            overrides.artifactRoot == null ? null : overrides.buildNumber,
+        manualExecutableRelativePath: overrides.artifactRoot == null
+            ? null
+            : overrides.executableRelativePath,
+      ),
+    );
     final buildResult = await adapter.build(
       ProjectBuildRequest(
         projectRoot: projectRoot,
@@ -224,9 +218,8 @@ class ReleasePublisher {
             platform: platform,
           )
         : null;
-    final macosArtifact = platform == "macos"
-        ? config.macos.artifactKind
-        : null;
+    final macosArtifact =
+        platform == "macos" ? config.macos.artifactKind : null;
     final artifactExtension = switch (macosArtifact) {
       MacOSArtifactKind.dmg => ".dmg",
       MacOSArtifactKind.pkg => ".pkg",
@@ -407,16 +400,16 @@ class ReleasePublisher {
     if (platform == "macos" && config.macos.notarize) {
       final appBundleName =
           packageResult.descriptor.install.macosDmg?.appBundleName ??
-          (metadata.appName.endsWith(".app")
-              ? metadata.appName
-              : "${metadata.appName}.app");
+              (metadata.appName.endsWith(".app")
+                  ? metadata.appName
+                  : "${metadata.appName}.app");
       await (macOSReleaseTrust ?? MacOSReleaseTrust(runProcess: runProcess))
           .auditFinalArtifact(
-            artifact: packageResult.artifact,
-            kind: packageResult.descriptor.artifact.kind,
-            appBundleName: appBundleName,
-            expectedApplicationIdentifier: metadata.packageId,
-          );
+        artifact: packageResult.artifact,
+        kind: packageResult.descriptor.artifact.kind,
+        appBundleName: appBundleName,
+        expectedApplicationIdentifier: metadata.packageId,
+      );
       output.writeln("Final macOS distributable trust audit: verified locally");
     }
 
@@ -750,8 +743,7 @@ Future<void> _writeFrozenHistoryToAppArchive({
   required _SignedPublicationHistory history,
 }) async {
   await archiveFile.parent.create(recursive: true);
-  final index =
-      history.index ??
+  final index = history.index ??
       ReleaseIndex(schemaVersion: 3, appName: archiveAppName, items: const []);
   await _writeJsonFile(
     archiveFile,
@@ -1279,13 +1271,16 @@ Future<ProcessResult> _runWindowsReleaseHook(
   try {
     final script = File(path.join(tempDir.path, "hook.cmd"));
     await script.writeAsString("@echo off\r\n$command\r\n");
-    return await Process.run("cmd", [
-      "/d",
-      "/e:on",
-      "/v:off",
-      "/c",
-      script.path,
-    ], environment: environment);
+    return await Process.run(
+        "cmd",
+        [
+          "/d",
+          "/e:on",
+          "/v:off",
+          "/c",
+          script.path,
+        ],
+        environment: environment);
   } finally {
     await tempDir.delete(recursive: true);
   }
@@ -1334,14 +1329,14 @@ Future<void> _uploadAndValidate({
         validator.requireIndexSignature
             ? "Signed manual publication package: ready for upload."
             : "Candidate-only manual publication package: signatures are not "
-                  "required.",
+                "required.",
       )
       ..writeln("Frozen hosted app-archive revision: $expectedRevision")
       ..writeln(
         trustedReleasePublicKeys == null
             ? "Trusted release public-key map: not configured (candidate-only)."
             : "Trusted release public-key map: "
-                  "${jsonEncode(trustedReleasePublicKeys)}",
+                "${jsonEncode(trustedReleasePublicKeys)}",
       )
       ..writeln(
         "Upload release.json and artifacts first; publish app-archive.json "

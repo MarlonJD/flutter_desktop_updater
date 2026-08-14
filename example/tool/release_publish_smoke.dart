@@ -177,9 +177,8 @@ Future<void> _writeEvidenceSnapshot({
     r"(?:^|\n)Artifact:\s*(\S+)",
     multiLine: true,
   ).firstMatch(output);
-  final artifactUrl = artifactMatch == null
-      ? null
-      : Uri.tryParse(artifactMatch.group(1)!);
+  final artifactUrl =
+      artifactMatch == null ? null : Uri.tryParse(artifactMatch.group(1)!);
   if (artifactUrl == null || artifactUrl.pathSegments.isEmpty) {
     throw StateError("publish smoke did not expose an artifact URL");
   }
@@ -187,9 +186,8 @@ Future<void> _writeEvidenceSnapshot({
     r"(?:^|\n)Release:\s*(\S+)",
     multiLine: true,
   ).firstMatch(output);
-  final releaseUrl = releaseMatch == null
-      ? null
-      : Uri.tryParse(releaseMatch.group(1)!);
+  final releaseUrl =
+      releaseMatch == null ? null : Uri.tryParse(releaseMatch.group(1)!);
   if (releaseUrl == null) {
     throw StateError("publish smoke did not expose a release URL");
   }
@@ -210,8 +208,8 @@ Future<void> _writeEvidenceSnapshot({
     final resolvedAppBundleName = releaseAppName.trim().isEmpty
         ? appBundleName
         : releaseAppName.endsWith(".app")
-        ? releaseAppName
-        : "$releaseAppName.app";
+            ? releaseAppName
+            : "$releaseAppName.app";
     await evidenceRoot.create(recursive: true);
     final artifact = File(pathJoin(evidenceRoot.path, "hosted-artifact.zip"));
     await artifact.writeAsBytes(bytes, flush: true);
@@ -223,7 +221,18 @@ Future<void> _writeEvidenceSnapshot({
         .map((match) => match.group(1)!)
         .toList();
     await File(pathJoin(evidenceRoot.path, "publish-smoke.json")).writeAsString(
-      "${const JsonEncoder.withIndent("  ").convert({"artifactPath": artifact.path, "artifactUrl": artifactUrl.toString(), "appBundleName": resolvedAppBundleName, "applicationIdentifier": releasePackageId, "gitCommit": Platform.environment["GITHUB_SHA"], "notarizationSubmissionIds": notaryIds, "preStapleSha256": preStapleMatch?.group(1), "preStapleLength": preStapleMatch == null ? null : int.parse(preStapleMatch.group(2)!)})}\n",
+      "${const JsonEncoder.withIndent("  ").convert({
+            "artifactPath": artifact.path,
+            "artifactUrl": artifactUrl.toString(),
+            "appBundleName": resolvedAppBundleName,
+            "applicationIdentifier": releasePackageId,
+            "gitCommit": Platform.environment["GITHUB_SHA"],
+            "notarizationSubmissionIds": notaryIds,
+            "preStapleSha256": preStapleMatch?.group(1),
+            "preStapleLength": preStapleMatch == null
+                ? null
+                : int.parse(preStapleMatch.group(2)!)
+          })}\n",
     );
   } finally {
     client.close(force: true);
