@@ -1,0 +1,183 @@
+desktop_updater Linux WSL2 polkit E2E evidence
+Date: 2026-08-15
+Result: FAIL at the real polkit authorization boundary; the privileged helper was not started.
+
+Scope and provenance
+--------------------
+Distribution: Ubuntu 26.04 LTS (Ubuntu-26.04, WSL2)
+User: marlonjd, UID 1000
+Source snapshot: /home/marlonjd/desktop-updater-polkit-e2e-20260815-1
+Source commit metadata: 4984fbd85c0fe453e2febd9434a833721bf1316f
+The WSL snapshot is an extracted directory and is not itself a Git worktree
+(rev-parse reported: fatal: not a git repository). The Windows repository HEAD
+was independently verified as 4984fbd85c0fe453e2febd9434a833721bf1316f.
+Kernel: Linux DESKTOP-FTNRSJT 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 GNU/Linux
+polkitd/pkexec: 127-2ubuntu1 / 127
+dbus: 1.16.2-2ubuntu4
+systemd: 259.5-0ubuntu3
+Helper SHA-256: 64d42d7c3382f1b5cecaf852a6147ad90882dfa44be82fddb08aaca7a8b4f4e5
+Caller SHA-256: 366e12d041c2b2d5471ebf1e63ba2fc225902204329baa144d1fda4286f7357b
+Canonical policy SHA-256: bbc915f97e65233c78b7ced51130fe9620e76d0017b371a0a4df3ba0589ce32e
+Allowed test root: /opt/desktop-updater-polkit-e2e-local-20260815-1
+
+Preflight evidence
+------------------
+uid=1000(marlonjd) gid=1000(marlonjd) groups=1000(marlonjd),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),100(users)
+PRETTY_NAME="Ubuntu 26.04 LTS"
+VERSION_ID="26.04"
+Linux DESKTOP-FTNRSJT 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 GNU/Linux
+      1 systemd         /sbin/init
+systemd=running
+dbus=active
+XDG_RUNTIME_DIR=/run/user/1000
+marlonjd:marlonjd 1000:1000 mode=700 /run/user/1000
+pkexec=/usr/bin/pkexec
+pkexec version 127
+pkttyagent=/usr/bin/pkttyagent
+
+Install and static audit
+-------------------------
+Install command:
+wsl.exe -d Ubuntu-26.04 -u root -- bash /mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater/reports/linux-wsl-polkit-e2e/2026-08-15-harness.sh install
+
+Install stdout (complete):
+active
+
+Static audit command:
+wsl.exe -d Ubuntu-26.04 -u root -- bash /mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater/reports/linux-wsl-polkit-e2e/2026-08-15-harness.sh audit
+
+Static audit stdout (complete):
+platform=linux
+suite=installed-polkit-root-broker-static-audit
+installedBroker=true
+sealedPolicy=true
+polkitMetadata=true
+realElevation=false
+
+Installed sealed-file evidence before cleanup:
+root:root 0:0 mode=755 links=1 path=/usr/libexec/desktop-updater-helper
+root:root 0:0 mode=755 links=1 path=/usr/libexec/desktop-updater-polkit-e2e-fixture
+root:root 0:0 mode=644 links=1 path=/usr/share/polkit-1/actions/com.desktopupdater.install.policy
+root:root 0:0 mode=644 links=1 path=/etc/desktop-updater/policies/com.example.desktop-updater.polkit-e2e.json
+64d42d7c3382f1b5cecaf852a6147ad90882dfa44be82fddb08aaca7a8b4f4e5  /usr/libexec/desktop-updater-helper
+366e12d041c2b2d5471ebf1e63ba2fc225902204329baa144d1fda4286f7357b  /usr/libexec/desktop-updater-polkit-e2e-fixture
+
+Real TTY run
+------------
+The requested run was executed from a user-owned TTY. The TTY capture was:
+Command: bash /mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater/reports/linux-wsl-polkit-e2e/2026-08-15-harness.sh run
+TTY: /dev/pts/3 for the captured run
+
+Captured harness output (complete; password input is not recorded):
+Script started on 2026-08-15 14:11:43+03:00 [COMMAND="bash /mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater/reports/linux-wsl-polkit-e2e/2026-08-15-harness.sh run" TERM="xterm-256color" TTY="/dev/pts/0" COLUMNS="120" LINES="30"]
+[sudo: authenticate] Password: ******\b \b\b \b\b \b\b \b\b \b\b \b\b \b
+Error executing command as another user: Not authorized
+
+This incident has been reported.
+
+Script done on 2026-08-15 14:11:48+03:00 [COMMAND_EXIT_CODE="2"]
+
+The journal records the same failure for the captured TTY:
+Aug 15 14:11:48.235873 DESKTOP-FTNRSJT pkexec[799]: marlonjd: Error executing command as another user: Not authorized [USER=root] [TTY=/dev/pts/3] [CWD=/mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater] [COMMAND=/usr/libexec/desktop-updater-helper --socket /run/user/1000/desktop-updater-Yr_e6LIcBEgBGfOK4RvuytBx1ZYuIsbGDTgLUubhNks.sock --nonce Yr_e6LIcBEgBGfOK4RvuytBx1ZYuIsbGDTgLUubhNks]
+
+Earlier retries from TTY /dev/pts/0 produced the same result:
+Aug 15 14:09:18.739820 DESKTOP-FTNRSJT pkexec[696]: marlonjd: Error executing command as another user: Not authorized [USER=root] [TTY=/dev/pts/0] [CWD=/mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater] [COMMAND=/usr/libexec/desktop-updater-helper --socket /run/user/1000/desktop-updater-7aw7vwOS92RYgndyDUb1ZpYACe_-B6t5CpHYua_B2Bs.sock --nonce 7aw7vwOS92RYgndyDUb1ZpYACe_-B6t5CpHYua_B2Bs]
+Aug 15 14:09:42.743515 DESKTOP-FTNRSJT pkexec[490]: marlonjd: Error executing command as another user: Not authorized [USER=root] [TTY=/dev/pts/0] [CWD=/mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater] [COMMAND=/usr/libexec/desktop-updater-helper --socket /run/user/1000/desktop-updater-pvW1Cgke7RpUHMiexWxGxSWNeMC_BZ2p6vMvPAANnOs.sock --nonce pvW1Cgke7RpUHMiexWxGxSWNeMC_BZ2p6vMvPAANnOs]
+
+The sudo portions before pkexec did run, proving the user supplied a valid
+sudo authentication in the TTY. The polkit action itself did not display a
+password prompt and was denied before the helper process could start.
+
+Policy and action decision evidence
+------------------------------------
+pkaction --action-id com.desktopupdater.install --verbose reported:
+com.desktopupdater.install:
+  description:       Install a verified desktop application update
+  message:           Authentication is required to install this verified update
+  vendor:            Desktop Updater
+  vendor_url:        https://pub.dev/packages/desktop_updater
+  icon:
+  implicit any:      no
+  implicit inactive: no
+  implicit active:   auth_admin_keep
+  annotation:        org.freedesktop.policykit.exec.path -> /usr/libexec/desktop-updater-helper
+
+Installed action defaults are allow_any=no, allow_inactive=no,
+allow_active=auth_admin_keep. Installed policy/action files were root-owned and
+sealed with the expected modes and hashes above. The helper and caller source
+hashes matched the expected values in the environment file.
+
+Agent/session probes
+--------------------
+The exact harness starts pkttyagent --process "$$" before invoking the smoke
+script. A dedicated probe with the same agent arrangement returned:
+probe_parent_pid=426
+child_process_check_begin
+Not authorized.
+child_process_check_rc=1
+parent_process_check_begin
+Not authorized.
+parent_process_check_rc=1
+
+A second probe using pkcheck --enable-internal-agent also returned:
+internal_probe_pid=428
+Not authorized.
+internal_probe_rc=1
+
+During a live user shell, logind reported:
+c1 1000 marlonjd - 325 user          pts/1 no -
+c2 1000 marlonjd - 356 manager       -     no -
+UID=1000
+Name=marlonjd
+RuntimePath=/run/user/1000
+Display=c1
+State=active
+Sessions=c2 c1
+Id=c1
+User=1000
+Name=marlonjd
+TTY=pts/1
+Remote=no
+Service=login
+Scope=session-c1.scope
+Type=tty
+Class=user
+Active=yes
+State=active
+Seat= (empty)
+
+The direct failure is proven: polkit returned Not authorized before the broker
+ran. The deeper environmental cause is bounded as an inference, not hidden as
+a fact: the policy only permits authentication for an active subject, while
+the WSL logind session is a seat-less pseudo-TTY; both external-agent and
+internal-agent checks were denied without a polkit password prompt. This points
+to WSL2/logind/polkit subject classification or agent authorization behavior,
+not to a helper hash or policy-file tamper. The exact harness therefore cannot
+cross the polkit authorization boundary on this host.
+
+Post-failure state before cleanup
+---------------------------------
+target_root=ABSENT
+crash_marker=ABSENT
+transactions_dir=ABSENT
+The fixture created a target parent for its preflight, but the harness EXIT
+cleanup removed it after the first pkexec rejection. No helper transaction ID
+was generated; the only identifiers recorded by the journal were the socket
+names and nonces above. No durable query, crash journal, backup, prepared,
+control, or recovery transaction was reached.
+
+Required evidence fields
+------------------------
+publicNativeApi: NOT RUN (the public native API suite was not part of this root-broker run)
+pkexecFixedBroker: FAIL (pkexec reached the fixed broker path but authorization was denied)
+authenticatedSocket: NOT RUN (helper did not start)
+callerRunsAsRoot: NOT RUN (no privileged caller/helper process reached the broker)
+targetRootOwned: NOT RUN (target was removed after early failure)
+realMutation: NOT RUN (only preflight fixture setup occurred; privileged update did not run)
+durableQuery: NOT RUN
+crashPoint: NOT RUN (no afterBackupRename crash)
+freshBrokerRecovery: NOT RUN
+recoveryConverged: NOT RUN
+transaction IDs: NONE GENERATED
+
+This file records a failed real polkit E2E, not a production-ready claim.

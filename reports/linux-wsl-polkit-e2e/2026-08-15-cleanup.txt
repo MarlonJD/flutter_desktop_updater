@@ -1,0 +1,27 @@
+desktop_updater Linux WSL2 polkit E2E — cleanup evidence
+Date: 2026-08-15
+
+Cleanup command:
+wsl.exe -d Ubuntu-26.04 -u root -- bash /mnt/c/Users/marlonjd/Developer/library/flutter_desktop_updater/reports/linux-wsl-polkit-e2e/2026-08-15-harness.sh cleanup
+
+Cleanup command stdout: empty
+
+Exact post-cleanup verification stdout:
+=== exact cleanup verification ===
+ABSENT /usr/libexec/desktop-updater-helper
+ABSENT /usr/libexec/desktop-updater-polkit-e2e-fixture
+ABSENT /usr/share/polkit-1/actions/com.desktopupdater.install.policy
+ABSENT /etc/desktop-updater/policies/com.example.desktop-updater.polkit-e2e.json
+ABSENT /var/lib/desktop-updater/desktop-updater-polkit-e2e-crash-after-backup
+ABSENT /opt/desktop-updater-polkit-e2e-local-20260815-1
+=== dedicated-root scan ===
+=== transaction scan ===
+transactions_dir=ABSENT
+=== temp evidence files ===
+ABSENT /tmp/desktop-updater-polkit-tty-20260815.log
+ABSENT /tmp/desktop-updater-pkttyagent-probe-20260815.log
+ABSENT /tmp/desktop-updater-internal-agent-probe-20260815.log
+
+Result: PASS — the harness-owned broker, fixture, action, policy, crash
+marker, dedicated /opt root, transaction directory, and temporary capture logs
+were absent after cleanup. No unrelated system path was targeted.
