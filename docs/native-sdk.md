@@ -247,6 +247,10 @@ distinct terminal result.
 `DesktopUpdater.Native` packages the `net8.0` and `netstandard2.0` managed
 wrappers, `buildTransitive` copy target, both native runtime DLLs,
 `desktop_updater_install_helper.exe`, and the consumer-specific sealed policy.
+Packing accepts `NativeRuntimeIdentifier=win-x64` (the default) or
+`NativeRuntimeIdentifier=win-arm64` and places every native asset under the
+matching NuGet RID. Consumers may set `RuntimeIdentifier` explicitly; otherwise
+the target uses the .NET SDK host RID when available.
 The helper and policy are discovery assets; the installer remains the
 protected authority. Repository CI packs the package to a local feed and runs
 external consumers against the real DLLs. It is not a public NuGet release

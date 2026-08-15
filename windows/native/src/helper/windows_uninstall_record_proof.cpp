@@ -282,7 +282,9 @@ std::optional<std::string> FindCanonicalWindowsUninstallRecordProofInternal(
     const std::filesystem::path& canonical_target,
     const std::string& package_id,
     HANDLE caller_process,
-    bool trusted_host) {
+    bool trusted_host,
+    const std::string& expected_version = "",
+    const std::optional<std::int64_t>& expected_build_number = std::nullopt) {
   if (!canonical_target.is_absolute() || package_id.empty() ||
       (!trusted_host && caller_process == nullptr)) {
     return std::nullopt;
@@ -334,9 +336,20 @@ std::optional<std::string> FindCanonicalWindowsUninstallRecordProofInternal(
           ReadRegistryString(record.get(), L"InstallLocation");
       const auto record_package =
           ReadRegistryString(record.get(), L"DesktopUpdaterPackageId");
+      const auto display_version =
+          ReadRegistryString(record.get(), L"DisplayVersion");
+      const auto build_number =
+          ReadRegistryString(record.get(), L"DesktopUpdaterBuildNumber");
       if (!install_location.has_value() || !record_package.has_value() ||
           NormalizePath(*install_location) != normalized_target ||
-          _wcsicmp(record_package->c_str(), wide_package.c_str()) != 0) {
+          _wcsicmp(record_package->c_str(), wide_package.c_str()) != 0 ||
+          (!expected_version.empty() &&
+           (!display_version.has_value() ||
+            WideToUtf8(*display_version) != expected_version)) ||
+          (expected_build_number.has_value() &&
+           (!build_number.has_value() ||
+            WideToUtf8(*build_number) !=
+                std::to_string(*expected_build_number)))) {
         continue;
       }
       const std::string utf8_key = WideToUtf8(key_name);
@@ -347,6 +360,10 @@ std::optional<std::string> FindCanonicalWindowsUninstallRecordProofInternal(
       AppendField(utf8_key, &canonical);
       AppendField(utf8_target, &canonical);
       AppendField(package_id, &canonical);
+      if (!expected_version.empty()) AppendField(expected_version, &canonical);
+      if (expected_build_number.has_value()) {
+        AppendField(std::to_string(*expected_build_number), &canonical);
+      }
       matches.push_back(std::move(canonical));
     }
   }
@@ -368,6 +385,30 @@ FindCanonicalWindowsUninstallRecordProofForTrustedHost(
     const std::string& package_id) {
   return FindCanonicalWindowsUninstallRecordProofInternal(
       canonical_target, package_id, nullptr, true);
+}
+
+std::optional<std::string>
+FindCanonicalWindowsUninstallRecordVersionProofForTrustedHost(
+    const std::filesystem::path& canonical_target,
+    const std::string& package_id,
+    const std::string& expected_version) {
+  if (expected_version.empty()) return std::nullopt;
+  return FindCanonicalWindowsUninstallRecordProofInternal(
+      canonical_target, package_id, nullptr, true, expected_version);
+}
+
+std::optional<std::string>
+FindCanonicalWindowsUninstallRecordVersionBuildProofForTrustedHost(
+    const std::filesystem::path& canonical_target,
+    const std::string& package_id,
+    const std::string& expected_version,
+    std::int64_t expected_build_number) {
+  if (expected_version.empty() || expected_build_number < 0) {
+    return std::nullopt;
+  }
+  return FindCanonicalWindowsUninstallRecordProofInternal(
+      canonical_target, package_id, nullptr, true, expected_version,
+      expected_build_number);
 }
 
 }  // namespace desktop_updater::helper

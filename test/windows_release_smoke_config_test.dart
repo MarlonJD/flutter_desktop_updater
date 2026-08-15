@@ -173,7 +173,8 @@ void main() {
     expect(runner, contains(r"[IO.FileShare]::Delete"));
     expect(runner, isNot(contains("Get-FileHash")));
     expect(runner, isNot(contains("ZipArchive")));
-    expect(runner, isNot(contains("Start-Sleep")));
+    expect(runner, contains("Remove-WindowsSmokeRootWithRetry"));
+    expect(runner, contains("Start-Sleep -Milliseconds 250"));
     expect(runner, isNot(contains(r"$_.CommandLine")));
     expect(runner, isNot(contains(".ToXml()")));
     expect(runner, contains("Get-Acl"));
@@ -196,7 +197,11 @@ void main() {
     expect(runner, contains(r"$smokeRunId"));
     expect(
       runner.lastIndexOf(r"Save-WindowsFlutterSmokeEvidence"),
-      lessThan(runner.lastIndexOf(r"Remove-Item -LiteralPath $smokeRoot")),
+      lessThan(
+        runner.lastIndexOf(
+          r"Remove-WindowsSmokeRootWithRetry -Root $smokeRoot",
+        ),
+      ),
     );
     expect(runner, isNot(contains("DiagnosticsPath")));
     expect(runner, contains(r"Save-WindowsFlutterSmokeEvidence"));
@@ -266,6 +271,396 @@ void main() {
     );
   });
 
+  test("local Windows Inno smoke uses one bounded release key profile", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(
+      source,
+      contains(
+        r"$keyProfilePath = Join-Path $tempRoot 'desktop_updater.keys.json'",
+      ),
+    );
+    expect(
+      source,
+      contains(
+        r"if (-not (Test-Path -LiteralPath $KeyProfilePath -PathType Leaf))",
+      ),
+    );
+    expect(source, contains("'keygen'"));
+    expect(RegExp("'--key-profile'").allMatches(source).length, 2);
+    expect(RegExp("'--initialize-feed'").allMatches(source).length, 1);
+    expect(source, isNot(contains("https://updates.invalid/")));
+    expect(source, contains("tool/native_transport_fixture_server.dart"));
+    expect(source, contains("'--root'"));
+    expect(source, contains(r"$webRoot"));
+    expect(
+      source,
+      contains("test/e2e/fixtures/upload_commands/copy_updates.dart"),
+    );
+    expect(source, contains("'--port'"));
+    expect(source, contains("(Get-Command 'dart' -ErrorAction Stop).Source"));
+    expect(source, contains("'cache/dart-sdk/bin/dart.exe'"));
+    expect(source, contains("[Net.Sockets.TcpListener]::new("));
+    expect(source, contains(r"$feedReady = $false"));
+    expect(
+      source,
+      contains(r"for ($attempt = 0; $attempt -lt 120; $attempt++)"),
+    );
+    expect(
+      source,
+      contains(
+        r'Invoke-WebRequest -UseBasicParsing "${feedBaseUrl}health"',
+      ),
+    );
+    expect(source, contains("Stop-Process -Id \$feedServer.Id -Force"));
+    expect(
+      source,
+      matches(
+        RegExp(
+          r"function Publish-SmokeVersion\([\s\S]*?"
+          r"\[string\] \$KeyProfilePath,",
+        ),
+      ),
+    );
+    expect(source, contains("Version = '3.1.2'"));
+    expect(source, contains("Version = '3.1.3'"));
+    expect(source, isNot(contains("DESKTOP_UPDATER_SMOKE_STAGING")));
+    expect(source, contains("DESKTOP_UPDATER_CONTROLLER_SMOKE"));
+    expect(source, contains("DESKTOP_UPDATER_APP_ARCHIVE_URL"));
+    expect(source, contains("DESKTOP_UPDATER_EXPECTED_PACKAGE_ID"));
+    expect(source, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY_ID"));
+    expect(source, contains("DESKTOP_UPDATER_TRUSTED_PUBLIC_KEY"));
+    expect(source, contains("DESKTOP_UPDATER_RECOVERY_STORE_PATH"));
+    expect(source, contains(r"$keyProfile.activeKeyId"));
+    expect(source, contains(r"$version2.PackageId"));
+    expect(source, contains("'--executable-relative-path'"));
+    expect(source, contains("'desktop_updater_example.exe'"));
+  });
+
+  test("local Windows Inno smoke replays only verified bounded artifacts", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains(r"[string] $ReplayRunToken"));
+    expect(source, contains("Import-PreparedSmokeVersion"));
+    expect(
+      source,
+      contains(r'$artifactRoot = Join-Path $workParent "inno-$runToken"'),
+    );
+    expect(source, contains(r'$replayAttemptToken'));
+    expect(
+      source,
+      contains(r'$tempLeaf = "ir-$($replayAttemptToken.Substring(0, 8))"'),
+    );
+    expect(source, contains("Refusing to replay an unexpected Inno work root"));
+    expect(source, contains(r"if ($replayMode)"));
+    expect(source, contains(r"replaySource = $artifactRoot"));
+  });
+
+  test("local Windows Inno replay preserves its signed loopback feed port", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains("Get-PreparedReplayFeedPort"));
+    expect(source, contains("Prepared replay app archive"));
+    expect(source, contains(r"[Uri]::TryCreate("));
+    expect(source, contains(r"$releaseUri.Scheme -cne 'http'"));
+    expect(source, contains(r"$releaseUri.Host -cne '127.0.0.1'"));
+    expect(source, contains(r"$releaseUri.UserInfo"));
+    expect(source, contains(r"$releaseUri.Query"));
+    expect(source, contains(r"$releaseUri.Fragment"));
+    expect(source, contains(r"$releaseUri.Port -lt 1"));
+    expect(source, contains(r"$releaseUri.Port -gt 65535"));
+    expect(
+      source,
+      contains(r'$feedPort = Get-PreparedReplayFeedPort $webRoot'),
+    );
+  });
+
+  test("protected Windows Inno restage retains exact installer handles", () {
+    final source = File(
+      "windows/native/src/helper/windows_inno_restage.cpp",
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains(
+        "VerifyRetainedWindowsExecutable(source.get(), source_installer)",
+      ),
+    );
+    expect(
+      source,
+      contains(
+        "VerifyRetainedWindowsExecutable(result->installer.get(), "
+        "result->path)",
+      ),
+    );
+    expect(
+      source,
+      contains(
+        "VerifyRetainedWindowsExecutable(installer.get(), installer_path)",
+      ),
+    );
+    expect(
+      RegExp("VerifyRetainedWindowsExecutableStillMatches").allMatches(source),
+      hasLength(3),
+    );
+    expect(source, isNot(contains("VerifyWindowsExecutable(")));
+    expect(source, isNot(contains("VerifyWindowsExecutableStillMatches(")));
+  });
+
+  test("local Windows Inno cleanup tolerates an exact process exit race", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+    final cleanup = RegExp(
+      r"function Stop-ExactExecutableProcesses[\s\S]*?\n}",
+    ).firstMatch(source)!.group(0)!;
+
+    expect(cleanup, contains(r"$processId = [int] $process.ProcessId"));
+    expect(cleanup, contains("catch"));
+    expect(cleanup, contains(r"$stillExact"));
+    expect(cleanup, contains("Get-ExactExecutableProcesses"));
+    expect(source, contains("Remove-BoundedSmokeRootWithRetry"));
+    expect(
+        source, contains(r"for ($attempt = 0; $attempt -lt 60; $attempt++)"));
+    expect(source, contains("Start-Sleep -Milliseconds 250"));
+  });
+
+  test("local Windows Inno queries its classic Event Log source safely", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains(r"Where-Object ProviderName -eq"));
+    expect(
+      source,
+      isNot(
+        contains(
+          "ProviderName = 'DesktopUpdater.InstallHelper.ProtocolV1'",
+        ),
+      ),
+    );
+  });
+
+  test("local Windows Inno smoke returns explicit process exit codes", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains(r"[Console]::Error.WriteLine("));
+    expect(RegExp(r"exit 1").allMatches(source), hasLength(2));
+    expect(source.trimRight(), endsWith("exit 0"));
+  });
+
+  test("bounded Inno diagnostic launcher quotes spaced publisher arguments",
+      () {
+    final launcher = File(
+      "reports/windows-arm64-production-readiness/"
+      "start-protected-inno-diagnostic-pwsh.ps1",
+    ).readAsStringSync();
+
+    expect(
+      launcher,
+      contains(r"""('"' + $signingPublisher + '"')"""),
+    );
+    expect(launcher, contains(r"[string] $ReplayRunToken"));
+    expect(launcher, contains(r"$process.Refresh()"));
+    expect(launcher, contains("'-ReplayRunToken'"));
+    expect(launcher, contains("-Wait -PassThru"));
+  });
+
+  test("local Windows Inno smoke tolerates an empty marker write", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains(r"$markerValue = if ("));
+    expect(
+      source,
+      contains(r"Test-Path -LiteralPath $MarkerPath -PathType Leaf"),
+    );
+    expect(source, contains(r"$null -ne $markerValue"));
+    expect(source, contains(r"$markerValue.Trim()"));
+  });
+
+  test("local Windows Inno smoke launches the installed app unelevated", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains("Ensure-UnelevatedProcessLauncherType"));
+    expect(source, contains("OpenProcessToken"));
+    expect(source, contains("DuplicateTokenEx"));
+    expect(source, contains("TokenAdjustDefault"));
+    expect(source, contains("TokenAdjustSessionId"));
+    expect(source, contains("GetTokenInformation"));
+    expect(source, contains("CreateProcessWithTokenW"));
+    expect(
+      source,
+      contains(
+          r'private const string InteractiveDesktop = @"winsta0\default";'),
+    );
+    expect(
+      source,
+      contains(
+        "startup.desktop = "
+        "Marshal.StringToHGlobalUni(InteractiveDesktop);",
+      ),
+    );
+    expect(source, contains("Marshal.FreeHGlobal(startup.desktop);"));
+    expect(source, contains("DesktopUpdater.UnelevatedProcess"));
+    expect(source, isNot(contains("ErrorInsufficientBuffer")));
+    expect(
+      source,
+      isNot(contains("Marshal.GetLastWin32Error() != ErrorInsufficientBuffer")),
+    );
+    expect(
+      source,
+      contains("System32\\WindowsPowerShell\\v1.0\\powershell.exe"),
+    );
+    expect(
+      source,
+      contains("desktop_updater_unelevated_launcher.ps1"),
+    );
+    expect(
+      source,
+      contains("desktop_updater_unelevated_launcher.exit-code"),
+    );
+    expect(
+      source,
+      contains("desktop_updater_unelevated_launcher.process-id"),
+    );
+    expect(
+      source,
+      contains("desktop_updater_unelevated_launcher.token-proof"),
+    );
+    expect(
+      source,
+      contains(r"[Diagnostics.Process]::Start($startInfo)"),
+    );
+    expect(
+      source,
+      contains(r"$launcherLines -join [Environment]::NewLine"),
+    );
+  });
+
+  test("local Windows Inno smoke normalizes protected endpoint paths", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains("ConvertTo-WindowsInnoComparablePath"));
+    expect(source, contains(r"$candidate.StartsWith('\\?\UNC\'"));
+    expect(source, contains(r"$candidate.StartsWith('\\?\'"));
+    expect(source, contains("(ConvertTo-WindowsInnoComparablePath"));
+    expect(
+      source,
+      contains(r"([string] $initialEndpoints[0].helperPath)"),
+    );
+    expect(
+      source,
+      isNot(
+        contains(
+          r"[IO.Path]::GetFullPath([string] $initialEndpoints[0].helperPath)",
+        ),
+      ),
+    );
+  });
+
+  test("local Windows Inno cleanup tolerates unrelated uninstall records", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains("Get-OptionalRegistryPropertyValue"));
+    expect(source, contains(r"if ($null -eq $Record)"));
+    expect(source, contains(r"PSObject.Properties[$Name]"));
+    expect(source, contains(r"$recordPackageId -eq $PackageId"));
+    expect(source, contains(r"$recordInstallLocation"));
+  });
+
+  test("local Windows Inno smoke exercises the protected signed 3.1.3 path",
+      () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+    final hook = File(
+      "tool/windows_inno_smoke_signing_hook.ps1",
+    ).readAsStringSync();
+
+    expect(source, contains("'3.1.2'"));
+    expect(source, contains("'3.1.3'"));
+    expect(source, isNot(contains("'9.9.8'")));
+    expect(source, isNot(contains("'9.9.9'")));
+    expect(source, contains("privilegesRequired: admin"));
+    expect(source, contains("requiresElevation: always"));
+    expect(source, contains("authenticodeThumbprints:"));
+    expect(source, contains("protectedHelperInstallDir:"));
+    expect(source, contains("postPackage:"));
+    expect(hook, contains("DESKTOP_UPDATER_ARTIFACT_FILE"));
+    expect(hook, contains("desktop_updater_install_helper.exe"));
+    expect(hook, contains("desktop_updater_helper_policy.json"));
+    expect(hook, contains("Get-AuthenticodeSignature"));
+    expect(hook, contains("verifiedInstallerHandoff"));
+    expect(hook, contains("windowsInno"));
+    expect(
+      hook,
+      contains(
+        r"allowedInstallRoots = @($installRoot, $protectedHelperInstallDir)",
+      ),
+    );
+    expect(hook, contains("/sha1"));
+    expect(source, contains("[Environment+SpecialFolder]::ProgramFiles"));
+    expect(source, contains("IsInRole("));
+    expect(source, contains("WindowsBuiltInRole]::Administrator"));
+  });
+
+  test("native protected policy reader strips the canonical final LF", () {
+    final bootstrap = File(
+      "windows/native/src/helper/windows_helper_bootstrap.cpp",
+    ).readAsStringSync();
+
+    expect(bootstrap, contains("result.back() == '\\n'"));
+    expect(bootstrap, contains("result.pop_back();"));
+  });
+
+  test("native app policy readers normalize the canonical final LF", () {
+    final native = File(
+      "windows/native/src/desktop_updater_native.cpp",
+    ).readAsStringSync();
+
+    expect(native, contains("std::string CanonicalPolicyFile("));
+    expect(native, contains("contents.substr(0, contents.size() - 1)"));
+    expect(
+      RegExp(r"CanonicalPolicyFile\(").allMatches(native).length,
+      5,
+    );
+    expect(
+      native,
+      contains(
+        'CanonicalJsonFile(\n      path, kMaximumHelperPolicyBytes, description, true)',
+      ),
+    );
+  });
+
+  test("local Windows Inno smoke restores Dart package metadata", () {
+    final source = File("tool/windows_inno_smoke.ps1").readAsStringSync();
+
+    expect(source, contains("Save-ExampleDartPackageMetadata"));
+    expect(source, contains("Restore-ExampleDartPackageMetadata"));
+    expect(source, contains(r"package_config.json"));
+    expect(source, contains(r"package_graph.json"));
+    expect(source, contains(r"$exampleDartPackageMetadataState"));
+    expect(source, contains("Dart package metadata restore:"));
+  });
+
+  test("local Windows Inno smoke hashes canonical policy bytes", () {
+    final hook = File(
+      "tool/windows_inno_smoke_signing_hook.ps1",
+    ).readAsStringSync();
+
+    expect(hook, contains(r"[IO.File]::ReadAllBytes($policyOutput)"));
+    expect(
+      hook,
+      contains(r"$policyBytes[$policyBytes.Length - 1] -ne 0x0A"),
+    );
+    expect(hook, contains(r"[byte[]]::new($policyBytes.Length - 1)"));
+    expect(hook, contains("[Buffer]::BlockCopy("));
+    expect(
+      hook,
+      contains(
+        r"[Security.Cryptography.SHA256]::HashData($canonicalPolicyBytes)",
+      ),
+    );
+    expect(
+      hook,
+      isNot(contains("Get-FileHash -LiteralPath \$policyOutput")),
+    );
+  });
+
   test(
       "Windows CI runs Release build, native tests, integration, publish, and smoke",
       () {
@@ -318,7 +713,18 @@ void main() {
         "DesktopUpdater.Native.Tests.csproj",
       ),
     );
-    expect(workflow, isNot(contains("windows_inno_smoke.ps1")));
+    final elevatedJob = workflow.indexOf("  windows-elevated-helper:");
+    final macosJob = workflow.indexOf("  macos-native:", elevatedJob);
+    expect(elevatedJob, greaterThanOrEqualTo(0));
+    expect(macosJob, greaterThan(elevatedJob));
+    expect(
+      workflow.substring(0, elevatedJob),
+      isNot(contains("windows_inno_smoke.ps1")),
+    );
+    expect(
+      workflow.substring(elevatedJob, macosJob),
+      contains("tool/windows_inno_smoke.ps1"),
+    );
     expect(
       workflow,
       contains(

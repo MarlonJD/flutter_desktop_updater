@@ -89,7 +89,7 @@
   },
   "normalizationCases": [
     {
-      "name": "canonicalization applies omitted install defaults",
+      "name": "canonicalization applies omitted optional install defaults",
       "inputDescriptor": {
         "schemaVersion": 3,
         "packageId": "com.example.native-contract",
@@ -111,7 +111,16 @@
               "/VERYSILENT",
               "/SUPPRESSMSGBOXES",
               "/NORESTART"
-            ]
+            ],
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "requiresElevation": "always",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
+            }
           }
         },
         "minimumUpdaterVersion": "2.5.0",
@@ -143,11 +152,16 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
-              "required": false
+              "required": true,
+              "sha256Thumbprints": [
+                "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+              ]
             }
           }
         },
@@ -157,7 +171,7 @@
         },
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
-      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZSIsImFydGlmYWN0Ijp7ImtpbmQiOiJpbm5vSW5zdGFsbGVyIiwibGVuZ3RoIjo1NCwic2hhMjU2IjoiZDg3NDRjZjkxMTRiMGZlZDQ3MGEzNDViZDQzMTUxYWU3YjI3OTQ1MDA4NTQ5ZmI3YjdjNzVjMGM4ZTM0OWIwMSIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC93aW5kb3dzLWlubm8taW5zdGFsbGVyL2FydGlmYWN0LmV4ZSJ9LCJidWlsZE51bWJlciI6Mjc0LCJjaGFubmVsIjoic3RhYmxlIiwiZ2VuZXJhdGVkQXQiOiIyMDI2LTA3LTEwVDAwOjAwOjAwLjAwMFoiLCJpbnN0YWxsIjp7Imlubm8iOnsiYXV0aGVudGljb2RlIjp7InJlcXVpcmVkIjpmYWxzZX0sImluaGVyaXRJbnN0YWxsRGlyZWN0b3J5Ijp0cnVlLCJsb2dGaWxlTmFtZSI6ImRlc2t0b3BfdXBkYXRlcl9pbm5vX2luc3RhbGwubG9nIiwicmVsYXVuY2hBZnRlckluc3RhbGwiOnRydWUsInJlcXVpcmVzRWxldmF0aW9uIjoiYXV0byIsInNpbGVudEFyZ3MiOlsiL1ZFUllTSUxFTlQiLCIvU1VQUFJFU1NNU0dCT1hFUyIsIi9OT1JFU1RBUlQiXX0sInN0cmF0ZWd5IjoiaW5ub0luc3RhbGxlciJ9LCJtaW5pbXVtT1MiOnsid2luZG93cyI6IjEwLjAuMTkwNDUifSwibWluaW11bVVwZGF0ZXJWZXJzaW9uIjoiMi41LjAiLCJwYWNrYWdlSWQiOiJjb20uZXhhbXBsZS5uYXRpdmUtY29udHJhY3QiLCJwbGF0Zm9ybSI6IndpbmRvd3MiLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoiMi43LjAifQ=="
+      "canonicalUtf8Base64": "eyJhcHBOYW1lIjoiRXhhbXBsZSIsImFydGlmYWN0Ijp7ImtpbmQiOiJpbm5vSW5zdGFsbGVyIiwibGVuZ3RoIjo1NCwic2hhMjU2IjoiZDg3NDRjZjkxMTRiMGZlZDQ3MGEzNDViZDQzMTUxYWU3YjI3OTQ1MDA4NTQ5ZmI3YjdjNzVjMGM4ZTM0OWIwMSIsInVybCI6Imh0dHBzOi8vdXBkYXRlcy5leGFtcGxlLnRlc3QvcmVsZWFzZS1jb250cmFjdC93aW5kb3dzLWlubm8taW5zdGFsbGVyL2FydGlmYWN0LmV4ZSJ9LCJidWlsZE51bWJlciI6Mjc0LCJjaGFubmVsIjoic3RhYmxlIiwiZ2VuZXJhdGVkQXQiOiIyMDI2LTA3LTEwVDAwOjAwOjAwLjAwMFoiLCJpbnN0YWxsIjp7Imlubm8iOnsiYXV0aGVudGljb2RlIjp7InJlcXVpcmVkIjp0cnVlLCJzaGEyNTZUaHVtYnByaW50cyI6WyJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCIl19LCJpbmhlcml0SW5zdGFsbERpcmVjdG9yeSI6dHJ1ZSwiaW5zdGFsbGVkRXhlY3V0YWJsZVJlbGF0aXZlUGF0aCI6IkV4YW1wbGUuZXhlIiwiaW5zdGFsbGVkRXhlY3V0YWJsZVNoYTI1NiI6ImNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2RjZGNkY2QiLCJsb2dGaWxlTmFtZSI6ImRlc2t0b3BfdXBkYXRlcl9pbm5vX2luc3RhbGwubG9nIiwicmVsYXVuY2hBZnRlckluc3RhbGwiOnRydWUsInJlcXVpcmVzRWxldmF0aW9uIjoiYWx3YXlzIiwic2lsZW50QXJncyI6WyIvVkVSWVNJTEVOVCIsIi9TVVBQUkVTU01TR0JPWEVTIiwiL05PUkVTVEFSVCJdfSwic3RyYXRlZ3kiOiJpbm5vSW5zdGFsbGVyIn0sIm1pbmltdW1PUyI6eyJ3aW5kb3dzIjoiMTAuMC4xOTA0NSJ9LCJtaW5pbXVtVXBkYXRlclZlcnNpb24iOiIyLjUuMCIsInBhY2thZ2VJZCI6ImNvbS5leGFtcGxlLm5hdGl2ZS1jb250cmFjdCIsInBsYXRmb3JtIjoid2luZG93cyIsInNjaGVtYVZlcnNpb24iOjMsInZlcnNpb24iOiIyLjcuMCJ9"
     },
     {
       "name": "canonicalization ignores unknown descriptor keys",

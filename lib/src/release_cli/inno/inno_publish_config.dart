@@ -75,6 +75,52 @@ class InnoPublishConfig {
   bool get enabled => kind == "inno";
 }
 
+void validateInnoPublishConfig(InnoPublishConfig config) {
+  if (!config.enabled) {
+    return;
+  }
+  if (!const ["generated", "script"].contains(config.mode)) {
+    throw const FormatException(
+      "windows.installer.mode must be generated or script.",
+    );
+  }
+  if (config.mode == "script" &&
+      (config.script == null || config.script!.trim().isEmpty)) {
+    throw const FormatException(
+      "windows.installer.script is required when mode is script.",
+    );
+  }
+  if (config.privilegesRequired != "admin") {
+    throw const FormatException(
+      "windows.installer.privilegesRequired must be admin for the protected "
+      "Inno handoff.",
+    );
+  }
+  if (config.requiresElevation != "always") {
+    throw const FormatException(
+      "windows.installer.requiresElevation must be always for the protected "
+      "Inno handoff.",
+    );
+  }
+  if (config.authenticodeThumbprints.isEmpty) {
+    throw const FormatException(
+      "windows.installer.authenticodeThumbprints must contain at least one "
+      "certificate SHA-256 for the protected Inno handoff.",
+    );
+  }
+  final uniqueThumbprints = <String>{};
+  for (final thumbprint in config.authenticodeThumbprints) {
+    if (!RegExp(r"^[0-9A-Fa-f]{64}$").hasMatch(thumbprint) ||
+        !uniqueThumbprints.add(thumbprint.toLowerCase())) {
+      throw const FormatException(
+        "windows.installer.authenticodeThumbprints must contain unique "
+        "64-character certificate SHA-256 values.",
+      );
+    }
+  }
+  resolveGeneratedProtectedHelperInstallDir(config);
+}
+
 String? resolveGeneratedProtectedHelperInstallDir(InnoPublishConfig config) {
   final value = config.protectedHelperInstallDir?.trim();
   if (config.mode != "generated" || config.privilegesRequired != "admin") {

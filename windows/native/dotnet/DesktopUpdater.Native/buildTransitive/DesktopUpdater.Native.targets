@@ -1,19 +1,30 @@
 <Project>
+  <PropertyGroup>
+    <_DesktopUpdaterNativeRuntimeIdentifier
+      Condition="'$(DesktopUpdaterNativeRuntimeIdentifier)' != ''">$(DesktopUpdaterNativeRuntimeIdentifier)</_DesktopUpdaterNativeRuntimeIdentifier>
+    <_DesktopUpdaterNativeRuntimeIdentifier
+      Condition="'$(_DesktopUpdaterNativeRuntimeIdentifier)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_DesktopUpdaterNativeRuntimeIdentifier>
+    <_DesktopUpdaterNativeRuntimeIdentifier
+      Condition="'$(_DesktopUpdaterNativeRuntimeIdentifier)' == '' and '$(NETCoreSdkRuntimeIdentifier)' != ''">$(NETCoreSdkRuntimeIdentifier)</_DesktopUpdaterNativeRuntimeIdentifier>
+    <_DesktopUpdaterNativeRuntimeIdentifier
+      Condition="'$(_DesktopUpdaterNativeRuntimeIdentifier)' == ''">win-x64</_DesktopUpdaterNativeRuntimeIdentifier>
+  </PropertyGroup>
+
   <ItemGroup>
     <DesktopUpdaterNativeRuntime
-      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_native.dll" />
+      Include="$(MSBuildThisFileDirectory)..\runtimes\$(_DesktopUpdaterNativeRuntimeIdentifier)\native\desktop_updater_native.dll" />
     <DesktopUpdaterNativeRuntime
-      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_runtime.dll" />
+      Include="$(MSBuildThisFileDirectory)..\runtimes\$(_DesktopUpdaterNativeRuntimeIdentifier)\native\desktop_updater_runtime.dll" />
     <DesktopUpdaterNativeRuntime
-      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_install_helper.exe" />
+      Include="$(MSBuildThisFileDirectory)..\runtimes\$(_DesktopUpdaterNativeRuntimeIdentifier)\native\desktop_updater_install_helper.exe" />
     <DesktopUpdaterNativeRuntime
-      Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\desktop_updater_helper_policy.json" />
+      Include="$(MSBuildThisFileDirectory)..\runtimes\$(_DesktopUpdaterNativeRuntimeIdentifier)\native\desktop_updater_helper_policy.json" />
   </ItemGroup>
 
   <Target Name="CopyDesktopUpdaterNativeRuntime" AfterTargets="Build">
     <Error
-      Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64'"
-      Text="DesktopUpdater.Native supports only RuntimeIdentifier 'win-x64'; received '$(RuntimeIdentifier)'." />
+      Condition="'$(_DesktopUpdaterNativeRuntimeIdentifier)' != 'win-x64' and '$(_DesktopUpdaterNativeRuntimeIdentifier)' != 'win-arm64'"
+      Text="DesktopUpdater.Native supports RuntimeIdentifier 'win-x64' or 'win-arm64'; received '$(_DesktopUpdaterNativeRuntimeIdentifier)'." />
     <Error
       Condition="!Exists('%(DesktopUpdaterNativeRuntime.Identity)')"
       Text="DesktopUpdater.Native package is missing %(DesktopUpdaterNativeRuntime.Identity)." />

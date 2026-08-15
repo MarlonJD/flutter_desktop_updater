@@ -1406,10 +1406,12 @@ windows:
     appId: com.example.app
     publisher: Example Inc.
     privilegesRequired: admin
+    protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0
     silentArgs:
       - /VERYSILENT
       - /SUPPRESSMSGBOXES
       - /NORESTART
+    requiresElevation: always
     authenticodeThumbprints:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 ```

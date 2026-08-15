@@ -42,9 +42,12 @@ void main() {
           "inno": {
             "silentArgs": ["/VERYSILENT", "/NORESTART"],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256":
+                "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [

@@ -42,6 +42,10 @@ void main() {
       nativeCmake,
       contains("DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR"),
     );
+    expect(
+      nativeCmake,
+      contains(r"$ENV{DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}"),
+    );
     expect(nativeCmake, contains("IS_ABSOLUTE"));
     expect(
       nativeCmake,
@@ -62,6 +66,33 @@ void main() {
     expect(targets, contains("desktop_updater_install_helper.exe"));
     expect(targets, contains("desktop_updater_helper_policy.json"));
     expect(targets, contains("CopyDesktopUpdaterNativeRuntime"));
+  });
+
+  test("Windows MSVC helper support serializes shared PDB writes", () {
+    final nativeCmake = readRequiredFile("windows/native/CMakeLists.txt");
+
+    expect(
+      nativeCmake,
+      contains(
+        "target_compile_options(desktop_updater_install_helper_support "
+        "PRIVATE /utf-8 /FS)",
+      ),
+    );
+  });
+
+  test("Windows plugin test discovery does not gate production builds", () {
+    final pluginCmake = readRequiredFile("windows/CMakeLists.txt");
+
+    expect(
+      pluginCmake,
+      contains(
+        r"gtest_discover_tests(${TEST_RUNNER} DISCOVERY_MODE PRE_TEST)",
+      ),
+    );
+    expect(
+      pluginCmake,
+      isNot(contains(r"gtest_discover_tests(${TEST_RUNNER})")),
+    );
   });
 
   test("Windows protected endpoints are immutable and version-addressed", () {
@@ -240,6 +271,7 @@ void main() {
     expect(tests, contains("NativeMethodsUseOnlyAbi2EntryPoints"));
     expect(tests, contains("desktop_updater_native.dll"));
     expect(tests, contains("CopyNativeDll"));
+    expect(tests, contains("Condition=\"'\$(NativeDllPath)' == ''\""));
   });
 
   test("Windows CI runs standalone native and .NET consumers", () {
@@ -327,6 +359,18 @@ void main() {
     expect(pipe, contains("canonical_request"));
     expect(pipe, contains('L"runas"'));
     expect(pipe, contains("ShellExecuteExW"));
+    final protectedLaunch = _functionBody(
+      pipe,
+      "LaunchAuthenticatedElevatedHelper",
+    );
+    final protectedExchange = _functionBody(
+      pipe,
+      "LaunchAuthenticatedElevatedHelperExchange",
+    );
+    expect(protectedLaunch, contains("launch.nShow = SW_SHOWNORMAL"));
+    expect(protectedLaunch, isNot(contains("SW_HIDE")));
+    expect(protectedExchange, contains("launch.nShow = SW_SHOWNORMAL"));
+    expect(protectedExchange, isNot(contains("SW_HIDE")));
     expect(requestParser, contains("ParseNativeInstallTransactionRequestV1"));
     expect(requestParser, contains("strategyProviderMismatch"));
     expect(requestParser, contains("callerPackageIdMismatch"));
@@ -462,6 +506,76 @@ void main() {
     expect(source, contains("NativeInstallOneShotServiceRuntimeV1"));
     expect(tests, contains("RejectsCallerIdentityDrift"));
     expect(tests, contains("RejectsInvalidFrameBounds"));
+  });
+
+  test("Windows portable helper has a bounded slow-host startup budget", () {
+    final hostHeader = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.h",
+    );
+    final client = readRequiredFile(
+      "windows/native/src/desktop_updater_native.cpp",
+    );
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final authorizer = readRequiredFile(
+      "windows/native/src/helper/windows_install_authorizer.cpp",
+    );
+    final portableHost = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.cpp",
+    );
+
+    expect(
+      hostHeader,
+      contains("kPortableWindowsHelperStartupTimeoutMilliseconds"),
+    );
+    expect(hostHeader, contains("90 * 1000"));
+    expect(
+      hostHeader,
+      contains("separate it from the 30-second protected/elevated handshake"),
+    );
+    expect(
+      client,
+      contains("helper::kPortableWindowsHelperStartupTimeoutMilliseconds"),
+    );
+    expect(main, contains("kWindowsPortableHelperStartupTimeoutMilliseconds"));
+    expect(
+      main,
+      contains("kWindowsProtectedHelperStartupTimeoutMilliseconds"),
+    );
+    expect(
+      authorizer,
+      contains(
+        "recovery_host_definition_,\n              kPortableWindowsHelperStartupTimeoutMilliseconds",
+      ),
+    );
+    final armAndStart = portableHost.substring(
+      portableHost.indexOf(
+        "void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart",
+      ),
+      portableHost.indexOf(
+        "void TaskSchedulerPortableWindowsRecoveryHostController::Disarm",
+      ),
+    );
+    expect(armAndStart, contains("LaunchPortableWindowsRecoveryHostDirect"));
+    expect(armAndStart, isNot(contains("registered.get()->RunEx(")));
+  });
+
+  test("Windows transaction rename retains a bounded sharing retry budget", () {
+    final journal = readRequiredFile(
+      "windows/native/src/helper/windows_transaction_journal.cpp",
+    );
+    final transactionTest = readRequiredFile(
+      "windows/native/test/helper/windows_transaction_test.cpp",
+    );
+    expect(journal, contains("kRelativeRenameRetryCount = 32"));
+    expect(journal, contains("ERROR_SHARING_VIOLATION"));
+    expect(journal, contains("ERROR_LOCK_VIOLATION"));
+    expect(
+      transactionTest,
+      contains(
+        "RetriesTransientTargetSharingUntilTheBoundedRenameBudgetExpires",
+      ),
+    );
+    expect(transactionTest, contains("Sleep(6500)"));
   });
 
   test("Windows helper authorizes signed staged directory transactions", () {
@@ -799,6 +913,128 @@ void main() {
       contains("FOLDERID_LocalAppData, KF_FLAG_CREATE"),
     );
     expect(portableStorage, isNot(contains("KF_FLAG_DEFAULT")));
+  });
+
+  test("Windows portable recovery consumes retained source handles", () {
+    final main = readRequiredFile("windows/native/src/helper/main.cpp");
+    final bootstrapHeader = readRequiredFile(
+      "windows/native/src/helper/windows_helper_bootstrap.h",
+    );
+    final bootstrapSource = readRequiredFile(
+      "windows/native/src/helper/windows_helper_bootstrap.cpp",
+    );
+    final recoveryHeader = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.h",
+    );
+    final recoverySource = readRequiredFile(
+      "windows/native/src/helper/windows_portable_recovery_host.cpp",
+    );
+    final portableBootstrap = _functionBody(
+      bootstrapSource,
+      "LoadPortableWindowsHelperBootstrap",
+    );
+    final provision = _functionBody(
+      recoverySource,
+      "ProvisionPortableWindowsRecoveryHost",
+    );
+    final copySource = _functionBody(recoverySource, "CopySourceHelper");
+
+    expect(bootstrapHeader, contains("HANDLE helper_file() const"));
+    expect(bootstrapHeader, contains("HANDLE policy_file() const"));
+    expect(
+        portableBootstrap, contains("OpenPortableObject(\n      helper_path"));
+    expect(
+      portableBootstrap,
+      isNot(
+        contains("OpenPortableObject(\n      helper_identity.final_path"),
+      ),
+    );
+    expect(portableBootstrap, contains("helper_path.parent_path()"));
+    expect(main, contains("bootstrap.helper_file()"));
+    expect(main, contains("bootstrap.policy_file()"));
+    expect(recoveryHeader, contains("HANDLE source_helper_file"));
+    expect(recoveryHeader, contains("HANDLE source_policy_file"));
+    expect(
+      provision,
+      contains("ValidatePortableWindowsRetainedHelperFacts("),
+    );
+    expect(
+      provision,
+      contains("ReadCanonicalPolicyHandle(source_policy_file"),
+    );
+    expect(
+      provision,
+      isNot(
+        contains(
+          "VerifyWindowsExecutableStillMatches(\n"
+          "          source_helper_identity.final_path",
+        ),
+      ),
+    );
+    expect(
+      recoverySource,
+      contains(
+        "void CopySourceHelper(HANDLE destination,\n"
+        "                      HANDLE source,",
+      ),
+    );
+    expect(copySource, isNot(contains("CreateFileW(")));
+  });
+
+  test("Windows payload Authenticode stays bound to its retained handle", () {
+    final authenticodeHeader = readRequiredFile(
+      "windows/native/src/helper/helper_authenticode.h",
+    );
+    final authenticodeSource = readRequiredFile(
+      "windows/native/src/helper/helper_authenticode.cpp",
+    );
+    final relaunchSource = readRequiredFile(
+      "windows/native/src/helper/windows_relaunch_service.cpp",
+    );
+    final payloadVerifier = _functionBody(
+      relaunchSource,
+      "AuthenticodeWindowsPayloadVerifier::Verify",
+    );
+
+    expect(
+      authenticodeHeader,
+      contains("VerifyRetainedWindowsExecutable("),
+    );
+    expect(
+      authenticodeHeader,
+      contains("VerifyRetainedWindowsExecutableStillMatches("),
+    );
+    expect(authenticodeSource, contains("file_info.hFile = file"));
+    expect(
+      authenticodeSource,
+      contains("WTHelperProvDataFromStateData"),
+    );
+    expect(
+      authenticodeSource,
+      contains("WTHelperGetProvSignerFromChain"),
+    );
+    expect(
+      payloadVerifier,
+      contains("VerifyRetainedWindowsExecutable(executable.get()"),
+    );
+    expect(
+      payloadVerifier,
+      contains(
+        "VerifyRetainedWindowsExecutableStillMatches(executable.get()",
+      ),
+    );
+    expect(
+      payloadVerifier,
+      isNot(contains("VerifyWindowsExecutable(executable_path)")),
+    );
+    expect(
+      payloadVerifier,
+      isNot(
+        contains(
+          "VerifyWindowsExecutableStillMatches(executable_path",
+        ),
+      ),
+    );
   });
 
   test("Windows client validates canonical reservation and commit ACK", () {

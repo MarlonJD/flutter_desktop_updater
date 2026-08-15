@@ -57,9 +57,10 @@ constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformation =
 constexpr FILE_INFORMATION_CLASS kNativeFileRenameInformationEx =
     static_cast<FILE_INFORMATION_CLASS>(65);
 // Hosted Windows security filters can briefly hold a freshly extracted file
-// while the containing directory is being moved. Keep this bounded so a real
-// authority failure still fails closed without making the handoff fragile.
-constexpr DWORD kRelativeRenameRetryCount = 8;
+// while the containing directory is being moved. Keep this bounded at roughly
+// thirty seconds so a real authority failure still fails closed without
+// making the handoff fragile.
+constexpr DWORD kRelativeRenameRetryCount = 32;
 constexpr DWORD kRelativeRenameInitialDelayMilliseconds = 100;
 
 NtCreateFileFunction ResolveNtCreateFile() {

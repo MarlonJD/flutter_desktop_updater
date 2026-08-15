@@ -9,7 +9,7 @@ namespace desktop_updater::helper {
 namespace {
 
 TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
-  constexpr std::array<const char*, 47> expected = {
+  constexpr std::array<const char*, 60> expected = {
       "helper scheduled",
       "waiting for parent process",
       "parent process exited",
@@ -57,6 +57,19 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       "portable stage request binding failure",
       "portable stage restage failure",
       "portable stage payload identity failure",
+      "protected authorization failure",
+      "protected request validation failure",
+      "protected target authority failure",
+      "protected stage authorization failure",
+      "protected payload preparation failure",
+      "protected transaction construction failure",
+      "protected preparation failure",
+      "protected journal validation failure",
+      "protected artifact verification failure",
+      "protected endpoint binding failure",
+      "protected recovery storage failure",
+      "protected recovery host failure",
+      "protected activation failure",
   };
   static_assert(expected.size() ==
                 static_cast<std::size_t>(WindowsHelperEvent::kCount));
@@ -197,6 +210,15 @@ TEST(WindowsHelperDiagnostics, ProtocolV1IdsAndMessagesAreStableAndRedacted) {
       DescribeWindowsHelperEvent(
           WindowsHelperEvent::kPortableDirectoryAccessDenied)
           .event_type);
+  EXPECT_EQ(
+      EVENTLOG_ERROR_TYPE,
+      DescribeWindowsHelperEvent(
+          WindowsHelperEvent::kProtectedAuthorizationFailure)
+          .event_type);
+  EXPECT_EQ(EVENTLOG_ERROR_TYPE,
+            DescribeWindowsHelperEvent(
+                WindowsHelperEvent::kProtectedActivationFailure)
+                .event_type);
   EXPECT_THROW(
       DescribeWindowsHelperEvent(WindowsHelperEvent::kCount),
       std::out_of_range);

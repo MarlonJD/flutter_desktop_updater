@@ -117,6 +117,30 @@ version: 1.0.0
       expect(selected, same(flutter));
     });
 
+    test("Flutter adapter propagates the executable path override", () async {
+      await File(path.join(root.path, "pubspec.yaml")).writeAsString("""
+name: example
+version: 1.0.0
+""");
+      final adapter = FlutterProjectAdapter(
+        overrides: const ReleasePublishOverrides(
+          executableRelativePath: "desktop_updater_example.exe",
+        ),
+        output: StringBuffer(),
+        skipBuild: true,
+      );
+
+      final result = await adapter.build(
+        ProjectBuildRequest(
+          projectRoot: root,
+          platform: "windows",
+          releaseMode: true,
+        ),
+      );
+
+      expect(result.executableRelativePath, "desktop_updater_example.exe");
+    });
+
     test("exactly one native marker selects its adapter", () async {
       await File(path.join(root.path, "CMakeLists.txt")).writeAsString("");
       const cmake = _MarkerAdapter("cmake", "CMakeLists.txt");

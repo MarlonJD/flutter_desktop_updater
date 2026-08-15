@@ -5,6 +5,8 @@ import "package:crypto/crypto.dart" as crypto;
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
+import "support/dart_cli.dart";
+
 void main() {
   const schemaPath = "schemas/native-install-helper-policy-v1.schema.json";
   const fixturePath =
@@ -105,47 +107,51 @@ void main() {
     );
   });
 
-  test("Dart policy validator matches every generated case", () async {
-    final fixture = await _readJson(fixturePath);
-    for (final entry in _mapList(fixture, "cases")) {
-      final root = await Directory.systemTemp.createTemp("policy_case_");
-      try {
-        final input = File(path.join(root.path, "policy.json"));
-        await input.writeAsString(jsonEncode(entry["policy"]));
-        final result = await _runGeneratorResult(generatorPath, <String>[
-          "--validate",
-          input.path,
-          "--expected-package-id",
-          entry["expectedPackageId"] as String,
-          "--minimum-policy-version",
-          (entry["minimumAcceptedPolicyVersion"] as int).toString(),
-        ]);
-        if (entry["expectedValid"] as bool) {
-          expect(
-            result.exitCode,
-            0,
-            reason: _processReason(entry["name"] as String, result),
-          );
-          expect((result.stdout as String).trim(), entry["canonicalSha256"]);
-          expect(result.stderr, isEmpty);
-        } else {
-          expect(
-            result.exitCode,
-            1,
-            reason: _processReason(entry["name"] as String, result),
-          );
-          expect(result.stdout, isEmpty);
-          expect(
-            (result.stderr as String).trim(),
-            entry["expectedFailure"],
-            reason: entry["name"] as String,
-          );
+  test(
+    "Dart policy validator matches every generated case",
+    () async {
+      final fixture = await _readJson(fixturePath);
+      for (final entry in _mapList(fixture, "cases")) {
+        final root = await Directory.systemTemp.createTemp("policy_case_");
+        try {
+          final input = File(path.join(root.path, "policy.json"));
+          await input.writeAsString(jsonEncode(entry["policy"]));
+          final result = await _runGeneratorResult(generatorPath, <String>[
+            "--validate",
+            input.path,
+            "--expected-package-id",
+            entry["expectedPackageId"] as String,
+            "--minimum-policy-version",
+            (entry["minimumAcceptedPolicyVersion"] as int).toString(),
+          ]);
+          if (entry["expectedValid"] as bool) {
+            expect(
+              result.exitCode,
+              0,
+              reason: _processReason(entry["name"] as String, result),
+            );
+            expect((result.stdout as String).trim(), entry["canonicalSha256"]);
+            expect(result.stderr, isEmpty);
+          } else {
+            expect(
+              result.exitCode,
+              1,
+              reason: _processReason(entry["name"] as String, result),
+            );
+            expect(result.stdout, isEmpty);
+            expect(
+              (result.stderr as String).trim(),
+              entry["expectedFailure"],
+              reason: entry["name"] as String,
+            );
+          }
+        } finally {
+          await root.delete(recursive: true);
         }
-      } finally {
-        await root.delete(recursive: true);
       }
-    }
-  });
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 
   test("build-time generation writes only canonical policy and digest",
       () async {
@@ -218,39 +224,8 @@ Future<ProcessResult> _runGeneratorResult(
   String generatorPath,
   List<String> arguments,
 ) {
-  final executableName = Platform.isWindows ? "dart.exe" : "dart";
-  final flutterRoot = Platform.environment["FLUTTER_ROOT"];
-  var executable = executableName;
-  if (flutterRoot != null) {
-    executable = path.join(
-      flutterRoot,
-      "bin",
-      "cache",
-      "dart-sdk",
-      "bin",
-      executableName,
-    );
-  } else {
-    for (final directory in (Platform.environment["PATH"] ?? "")
-        .split(Platform.isWindows ? ";" : ":")) {
-      final wrapper = File(path.join(directory, executableName));
-      if (!wrapper.existsSync()) {
-        continue;
-      }
-      final candidate = path.join(
-        Directory(directory).parent.path,
-        "bin",
-        "cache",
-        "dart-sdk",
-        "bin",
-        executableName,
-      );
-      executable = File(candidate).existsSync() ? candidate : wrapper.path;
-      break;
-    }
-  }
   return Process.run(
-    executable,
+    resolveDartExecutable(),
     <String>[generatorPath, ...arguments],
     environment: <String, String>{
       ...Platform.environment,

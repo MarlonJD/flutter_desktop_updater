@@ -154,11 +154,6 @@ Future<void> _writeWindowsDiagnostics(
 ) async {
   final installer = config.windows.installer;
   if (installer.enabled) {
-    if (installer.authenticodeThumbprints.isEmpty) {
-      output.writeln(
-        "WARNING: Windows Inno installer updates should configure Authenticode thumbprints.",
-      );
-    }
     if ((installer.isccPath == null || installer.isccPath!.trim().isEmpty) &&
         !await _executableOnPath("iscc")) {
       output.writeln(

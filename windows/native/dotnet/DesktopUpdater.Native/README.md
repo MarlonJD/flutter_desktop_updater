@@ -5,6 +5,10 @@ its versioned C ABI wrapper for .NET consumers. It also contains the opt-in
 native runtime preview and both `desktop_updater_native.dll` and
 `desktop_updater_runtime.dll`.
 
+Set `NativeRuntimeIdentifier` to `win-x64` (the default) or `win-arm64` when
+packing native assets. Consumers can set the matching `RuntimeIdentifier`; when
+it is omitted, the build target uses the .NET SDK host RID when available.
+
 `DesktopUpdaterNative` exposes explicit-ID `PrepareInstall`,
 `CommitAfterExit`, `CancelReservation`, read-only `QueryTransaction`, and the
 atomic `ResolvePendingInstallAfterExit` operation. The old `InstallAndRelaunch`,

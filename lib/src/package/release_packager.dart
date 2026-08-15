@@ -17,6 +17,7 @@ class ReleasePackageRequest {
     required this.channel,
     required this.artifactUrl,
     required this.installStrategy,
+    this.executableRelativePath,
     this.buildNumber,
     this.minimumUpdaterVersion = "2.0.0",
   });
@@ -31,6 +32,7 @@ class ReleasePackageRequest {
   final String channel;
   final Uri artifactUrl;
   final String installStrategy;
+  final String? executableRelativePath;
   final String minimumUpdaterVersion;
 }
 

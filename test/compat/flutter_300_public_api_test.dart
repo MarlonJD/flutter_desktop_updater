@@ -2,6 +2,8 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+import "../support/dart_cli.dart";
+
 void main() {
   test("3.0 preserves the controller, state, and widget surface", () async {
     final result = await _analyze("positive_controller_surface.dart");
@@ -66,7 +68,7 @@ void main() {
 
 Future<ProcessResult> _analyze(String fixture) {
   return Process.run(
-    "dart",
+    resolveDartExecutable(),
     <String>[
       "analyze",
       "--format",

@@ -50,6 +50,13 @@ class WindowsHelperPolicy {
       std::string helper_sha256,
       std::vector<std::wstring> allowed_install_roots);
 
+  static WindowsHelperPolicy ForProtectedInnoTesting(
+      std::string application_package_id,
+      std::string application_publisher,
+      std::string helper_publisher,
+      std::string helper_sha256,
+      std::vector<std::wstring> allowed_install_roots);
+
   static WindowsHelperPolicy ForPortableTesting(
       std::string application_package_id,
       std::string application_sha256,

@@ -117,7 +117,9 @@ add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD
   "${FLUTTER_LIBRARY}" $<TARGET_FILE_DIR:${TEST_RUNNER}>
 )
 
-# Enable automatic test discovery.
+# Enable automatic test discovery when CTest runs. Keeping discovery out of
+# POST_BUILD prevents production Flutter builds from depending on starting the
+# test executable within CMake's short discovery timeout.
 include(GoogleTest)
-gtest_discover_tests(${TEST_RUNNER})
+gtest_discover_tests(${TEST_RUNNER} DISCOVERY_MODE PRE_TEST)
 endif()

@@ -75,6 +75,7 @@ WindowsPersistentTransactionRecord Record(
   const std::string canonical = journal.EncodeCanonical();
   return {WindowsPersistentTransactionRecord::kSchemaVersion,
           transaction_id,
+          "directoryReplace",
           policy.policy_id(),
           policy.application_package_id(),
           policy.helper_sha256(),
@@ -407,7 +408,7 @@ TEST(WindowsPortableTransactionIndex,
       L"C:\\Users\\alice\\Example.app\\bin\\example.exe";
   VerifiedWindowsExecutable successor{
       true, L"Example Software LLC", after.application_signer_identity(),
-      expected_executable, false, 7, {}};
+      after.application_signer_identity(), expected_executable, false, 7, {}};
 
   ASSERT_NE(WindowsPortableIndexBindingKey(before),
             WindowsPortableIndexBindingKey(after));
@@ -449,7 +450,8 @@ TEST(WindowsPortableTransactionIndex,
       Record(frozen, transaction_id, "completed", "newTarget", "launched")
           .EncodeCanonical();
   VerifiedWindowsExecutable successor{
-      true, L"Example Software LLC", std::string(64, 'd'),
+      true, L"Example Software LLC", std::string(64, 'f'),
+      std::string(64, 'd'),
       L"C:\\Users\\alice\\Example.app\\bin\\example.exe", false, 7, {}};
 
   EXPECT_EQ(locator, WindowsPortableTransactionLocatorV1::DecodeStrict(

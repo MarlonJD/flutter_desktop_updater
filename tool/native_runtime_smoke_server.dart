@@ -25,6 +25,8 @@ Future<void> main(List<String> arguments) async {
     ..addOption("port", defaultsTo: "43892")
     ..addOption("ready-file")
     ..addOption("publisher-thumbprint")
+    ..addOption("installed-executable")
+    ..addOption("installed-executable-relative-path")
     ..addFlag("allow-unsigned-artifact", negatable: false);
   final options = parser.parse(arguments);
   final artifact = File(options.option("artifact")!);
@@ -48,6 +50,31 @@ Future<void> main(List<String> arguments) async {
   final packageId = options.option("package-id")!;
   final appName = options.option("app-name")!;
   final version = options.option("version")!;
+  final installedExecutablePath = options.option("installed-executable");
+  final installedExecutableRelativePath =
+      options.option("installed-executable-relative-path");
+  String? installedExecutableSha256;
+  if (artifactKind == "innoInstaller") {
+    if (installedExecutablePath == null ||
+        installedExecutableRelativePath == null ||
+        installedExecutableRelativePath.trim().isEmpty) {
+      throw const FormatException(
+        "Inno smoke requires --installed-executable and "
+        "--installed-executable-relative-path.",
+      );
+    }
+    final installedExecutable = File(installedExecutablePath);
+    if (!await installedExecutable.exists() ||
+        await installedExecutable.length() == 0) {
+      throw FileSystemException(
+        "Inno smoke installed executable is unavailable.",
+        installedExecutable.path,
+      );
+    }
+    installedExecutableSha256 = crypto.sha256
+        .convert(await installedExecutable.readAsBytes())
+        .toString();
+  }
   final extension = path.extension(artifact.path);
   final artifactName = "artifact${extension.isEmpty ? ".bin" : extension}";
   final root = await Directory.systemTemp.createTemp("native_runtime_smoke_");
@@ -74,6 +101,8 @@ Future<void> main(List<String> arguments) async {
       artifactBytes: artifactBytes,
       allowUnsignedArtifact: options.flag("allow-unsigned-artifact"),
       publisherThumbprint: options.option("publisher-thumbprint"),
+      installedExecutableRelativePath: installedExecutableRelativePath,
+      installedExecutableSha256: installedExecutableSha256,
     );
     final descriptorFile = File(path.join(root.path, "release.json"));
     await descriptorFile.writeAsString(jsonEncode(descriptorJson));
@@ -186,6 +215,8 @@ Future<Map<String, dynamic>> signedDescriptor({
   required List<int> artifactBytes,
   required bool allowUnsignedArtifact,
   required String? publisherThumbprint,
+  required String? installedExecutableRelativePath,
+  required String? installedExecutableSha256,
   String? minimumUpdaterVersion,
 }) async {
   final json = <String, dynamic>{
@@ -209,6 +240,8 @@ Future<Map<String, dynamic>> signedDescriptor({
       appName: appName,
       allowUnsignedArtifact: allowUnsignedArtifact,
       publisherThumbprint: publisherThumbprint,
+      installedExecutableRelativePath: installedExecutableRelativePath,
+      installedExecutableSha256: installedExecutableSha256,
     ),
     "signature": {
       "algorithm": "ed25519",
@@ -237,6 +270,8 @@ Map<String, dynamic> installMetadata({
   required String appName,
   required bool allowUnsignedArtifact,
   required String? publisherThumbprint,
+  required String? installedExecutableRelativePath,
+  required String? installedExecutableSha256,
 }) {
   switch (artifactKind) {
     case "zip":
@@ -265,7 +300,10 @@ Map<String, dynamic> installMetadata({
         },
       };
     case "innoInstaller":
-      if (platform != "windows" || publisherThumbprint == null) {
+      if (platform != "windows" ||
+          publisherThumbprint == null ||
+          installedExecutableRelativePath == null ||
+          installedExecutableSha256 == null) {
         throw StateError("Signed Inno smoke requires a publisher thumbprint.");
       }
       return {
@@ -273,9 +311,11 @@ Map<String, dynamic> installMetadata({
         "inno": {
           "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
           "inheritInstallDirectory": true,
+          "installedExecutableRelativePath": installedExecutableRelativePath,
+          "installedExecutableSha256": installedExecutableSha256,
           "logFileName": "native_runtime_inno_smoke.log",
           "relaunchAfterInstall": true,
-          "requiresElevation": "auto",
+          "requiresElevation": "always",
           "authenticode": {
             "required": true,
             "sha256Thumbprints": [publisherThumbprint],

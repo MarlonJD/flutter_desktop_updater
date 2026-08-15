@@ -214,6 +214,23 @@ WindowsHelperPolicy WindowsHelperPolicy::ForTesting(
       {{"directoryReplace", "platformDirectory"}}, 1);
 }
 
+WindowsHelperPolicy WindowsHelperPolicy::ForProtectedInnoTesting(
+    std::string application_package_id,
+    std::string application_publisher,
+    std::string helper_publisher,
+    std::string helper_sha256,
+    std::vector<std::wstring> allowed_install_roots) {
+  return WindowsHelperPolicy(
+      "com.example.desktop-updater.inno", std::move(application_package_id),
+      "com.example.desktop-updater.helper", authenticodePublisher,
+      std::move(application_publisher), authenticodePublisher,
+      std::move(helper_publisher), std::move(helper_sha256),
+      std::move(allowed_install_roots), {"applicationDirectory"},
+      {{"test-release-root", "ed25519",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}},
+      {{"verifiedInstallerHandoff", "windowsInno"}}, 1);
+}
+
 WindowsHelperPolicy WindowsHelperPolicy::ForPortableTesting(
     std::string application_package_id,
     std::string application_sha256,

@@ -1498,6 +1498,8 @@ final class _SmokeServer {
       artifactBytes: bytes,
       allowUnsignedArtifact: false,
       publisherThumbprint: null,
+      installedExecutableRelativePath: null,
+      installedExecutableSha256: null,
       minimumUpdaterVersion: _minimumUpdaterVersion,
     );
     final install = descriptor["install"] as Map<String, dynamic>;

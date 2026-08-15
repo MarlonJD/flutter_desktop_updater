@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -24,6 +25,23 @@ std::optional<std::string>
 FindCanonicalWindowsUninstallRecordProofForTrustedHost(
     const std::filesystem::path& canonical_target,
     const std::string& package_id);
+
+// Adds the exact installer-owned DisplayVersion to the protected record proof.
+std::optional<std::string>
+FindCanonicalWindowsUninstallRecordVersionProofForTrustedHost(
+    const std::filesystem::path& canonical_target,
+    const std::string& package_id,
+    const std::string& expected_version);
+
+// Adds the exact installer-owned DisplayVersion and build number to the
+// protected record proof. This is the authoritative Inno post-install and
+// crash-recovery identity.
+std::optional<std::string>
+FindCanonicalWindowsUninstallRecordVersionBuildProofForTrustedHost(
+    const std::filesystem::path& canonical_target,
+    const std::string& package_id,
+    const std::string& expected_version,
+    std::int64_t expected_build_number);
 
 }  // namespace desktop_updater::helper
 

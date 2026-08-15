@@ -66,7 +66,7 @@ void main() {
     expect(
       _caseNames(signatures, "normalizationCases"),
       containsAll(<String>{
-        "canonicalization applies omitted install defaults",
+        "canonicalization applies omitted optional install defaults",
         "canonicalization ignores unknown descriptor keys",
         "canonicalization normalizes offset timestamp",
         "canonicalization preserves six-digit microseconds",

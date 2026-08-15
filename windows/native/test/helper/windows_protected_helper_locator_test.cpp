@@ -35,6 +35,19 @@ constexpr wchar_t kRecordValueName[] = L"Record";
 constexpr wchar_t kFreshReaderEnvironment[] =
     L"DESKTOP_UPDATER_FRESH_PROTECTED_LOCATOR_REGISTRY_ROOT";
 
+bool IsProcessElevatedForProtectedAclTest() {
+  HANDLE raw_token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
+    return false;
+  }
+  TOKEN_ELEVATION elevation{};
+  DWORD received = 0;
+  const BOOL queried = GetTokenInformation(
+      raw_token, TokenElevation, &elevation, sizeof(elevation), &received);
+  CloseHandle(raw_token);
+  return queried && received == sizeof(elevation) && elevation.TokenIsElevated;
+}
+
 std::string ReadFile(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) throw std::runtime_error("could not read frozen fixture");
@@ -302,6 +315,10 @@ TEST(WindowsProtectedHelperLocator, FreshProcessReadsFrozenEndpoint) {
 
 TEST(WindowsProtectedHelperLocator,
      FrozenEndpointAuthenticatesAndLoadsInFreshProcessWithoutRewrite) {
+  if (!IsProcessElevatedForProtectedAclTest()) {
+    GTEST_SKIP() << "production Administrators-owned registry ACL requires "
+                    "an elevated token";
+  }
   RegistrySandbox sandbox;
   ScopedLocalMachineOverride override(sandbox.path());
   const std::string frozen = FrozenEndpointBytes();

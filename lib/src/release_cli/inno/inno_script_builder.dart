@@ -11,11 +11,12 @@ class InnoScriptBuilder {
     required String outputDirectoryPath,
     required String outputBaseName,
     required String installedIdentitySourcePath,
+    required String executableRelativePath,
     String? protectedHelperSha256,
     String? protectedPolicySha256,
   }) {
     final appName = metadata.appName;
-    final executableName = appName.endsWith(".exe") ? appName : "$appName.exe";
+    final executableName = path.windows.normalize(executableRelativePath);
     final appId = config.appId ?? metadata.packageId;
     final publisher = config.publisher ?? appName;
     final escapedInput = _escapeInnoString(metadata.input.path);
@@ -157,6 +158,12 @@ class InnoScriptBuilder {
       ..writeln(
         'Root: HKA; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{#SetupSetting(\'AppId\')}_is1"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Flags: uninsdeletevalue',
       )
+      ..writeln(
+        'Root: HKA; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{#SetupSetting(\'AppId\')}_is1"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "${_escapeInnoString(metadata.version)}"; Flags: uninsdeletevalue',
+      )
+      ..writeln(
+        'Root: HKA; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{#SetupSetting(\'AppId\')}_is1"; ValueType: string; ValueName: "DesktopUpdaterBuildNumber"; ValueData: "${metadata.buildNumber ?? 0}"; Flags: uninsdeletevalue',
+      )
       ..writeln()
       ..writeln("[Icons]")
       ..writeln(
@@ -182,6 +189,11 @@ class InnoScriptBuilder {
         )
         ..writeln("end;")
         ..writeln()
+        ..writeln(
+          "function DesktopUpdaterGetFileAttributes(const FileName: String): "
+          "Integer; external 'GetFileAttributesW@kernel32.dll stdcall';",
+        )
+        ..writeln()
         ..writeln("const")
         ..writeln("  DESKTOP_UPDATER_FILE_ATTRIBUTE_REPARSE_POINT = \$400;")
         ..writeln()
@@ -202,7 +214,9 @@ class InnoScriptBuilder {
         ..writeln("  Current := ExpandFileName(Candidate);")
         ..writeln("  while Current <> '' do")
         ..writeln("  begin")
-        ..writeln("    Attributes := GetFileAttributes(Current);")
+        ..writeln(
+          "    Attributes := DesktopUpdaterGetFileAttributes(Current);",
+        )
         ..writeln(
           "    if (Attributes <> -1) and "
           "((Attributes and DESKTOP_UPDATER_FILE_ATTRIBUTE_REPARSE_POINT) "

@@ -452,7 +452,7 @@ WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
   const std::string executable_sha256 = Sha256Handle(executable.get());
   const std::filesystem::path executable_path = FinalPath(executable.get());
   const VerifiedWindowsExecutable signed_executable =
-      VerifyWindowsExecutable(executable_path);
+      VerifyRetainedWindowsExecutable(executable.get(), executable_path);
   if (!signed_executable.signature_valid ||
       signed_executable.publisher !=
           Utf8ToWide(expectation_.authenticode_publisher) ||
@@ -460,8 +460,8 @@ WindowsVerifiedPayloadIdentity AuthenticodeWindowsPayloadVerifier::Verify(
       inventory_executable->sha256 != executable_sha256 ||
       signed_executable.volume_serial != retained_identity.volume_serial ||
       signed_executable.file_id != retained_identity.file_id ||
-      !VerifyWindowsExecutableStillMatches(executable_path,
-                                           signed_executable)) {
+      !VerifyRetainedWindowsExecutableStillMatches(executable.get(),
+                                                    signed_executable)) {
     throw WindowsRelaunchError("payload Authenticode identity mismatch");
   }
 

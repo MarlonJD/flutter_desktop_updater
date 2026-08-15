@@ -1,12 +1,16 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart" as crypto;
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
+
+const _testCertificateSha256 =
+    "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
 
 void main() {
   test("packages an Inno installer descriptor", () async {
@@ -49,6 +53,7 @@ void main() {
         channel: "stable",
         artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
         installStrategy: "innoInstaller",
+        executableRelativePath: "Example.exe",
         minimumUpdaterVersion: "2.5.0",
       ),
       config: const InnoPublishConfig(
@@ -56,6 +61,8 @@ void main() {
         mode: "generated",
         appId: "com.example.app",
         privilegesRequired: "admin",
+        requiresElevation: "always",
+        authenticodeThumbprints: [_testCertificateSha256],
         protectedHelperInstallDir:
             r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
       ),
@@ -68,12 +75,24 @@ void main() {
     expect(descriptor.artifact.kind, "innoInstaller");
     expect(descriptor.install.strategy, "innoInstaller");
     expect(descriptor.install.inno!.silentArgs, contains("/VERYSILENT"));
+    expect(
+      descriptor.install.inno!.installedExecutableRelativePath,
+      "Example.exe",
+    );
+    expect(
+      descriptor.install.inno!.installedExecutableSha256,
+      crypto.sha256.convert(utf8.encode("exe")).toString(),
+    );
     final script = await File(
       path.join(output.path, "Example-2.5.0-windows-setup.iss"),
     ).readAsString();
     expect(script, contains("DesktopUpdaterExpectedHelperSha256"));
     expect(script, contains("DesktopUpdaterExpectedPolicySha256"));
     expect(script, contains(".desktop_updater_install_identity.json"));
+    expect(script, contains('ValueName: "DisplayVersion"'));
+    expect(script, contains('ValueData: "2.5.0"'));
+    expect(script, contains('ValueName: "DesktopUpdaterBuildNumber"'));
+    expect(script, contains('ValueData: "250"'));
     expect(
       identityDuringCompile,
       '{"packageId":"com.example.app","schemaVersion":1}',
@@ -121,6 +140,7 @@ void main() {
         channel: "stable",
         artifactUrl: Uri.parse("https://cdn.example.com/CustomSetup.exe"),
         installStrategy: "innoInstaller",
+        executableRelativePath: "Example.exe",
         minimumUpdaterVersion: "2.5.0",
       ),
       config: const InnoPublishConfig(
@@ -128,6 +148,8 @@ void main() {
         mode: "generated",
         appId: "com.example.app",
         privilegesRequired: "admin",
+        requiresElevation: "always",
+        authenticodeThumbprints: [_testCertificateSha256],
         protectedHelperInstallDir:
             r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
       ),
@@ -177,6 +199,7 @@ void main() {
           channel: "stable",
           artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
           installStrategy: "innoInstaller",
+          executableRelativePath: "Example.exe",
           minimumUpdaterVersion: "2.5.0",
         ),
         config: const InnoPublishConfig(
@@ -184,6 +207,8 @@ void main() {
           mode: "generated",
           appId: "com.example.app",
           privilegesRequired: "admin",
+          requiresElevation: "always",
+          authenticodeThumbprints: [_testCertificateSha256],
           protectedHelperInstallDir:
               r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
         ),
@@ -236,12 +261,15 @@ void main() {
           channel: "stable",
           artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
           installStrategy: "innoInstaller",
+          executableRelativePath: "Example.exe",
           minimumUpdaterVersion: "2.5.0",
         ),
         config: const InnoPublishConfig(
           kind: "inno",
           mode: "generated",
           privilegesRequired: "admin",
+          requiresElevation: "always",
+          authenticodeThumbprints: [_testCertificateSha256],
           protectedHelperInstallDir:
               r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
         ),
@@ -291,12 +319,15 @@ void main() {
           channel: "stable",
           artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
           installStrategy: "innoInstaller",
+          executableRelativePath: "Example.exe",
           minimumUpdaterVersion: "2.5.0",
         ),
         config: const InnoPublishConfig(
           kind: "inno",
           mode: "generated",
           privilegesRequired: "admin",
+          requiresElevation: "always",
+          authenticodeThumbprints: [_testCertificateSha256],
           protectedHelperInstallDir:
               r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
         ),
@@ -347,12 +378,15 @@ void main() {
           channel: "stable",
           artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
           installStrategy: "innoInstaller",
+          executableRelativePath: "Example.exe",
           minimumUpdaterVersion: "2.5.0",
         ),
         config: const InnoPublishConfig(
           kind: "inno",
           mode: "generated",
           privilegesRequired: "admin",
+          requiresElevation: "always",
+          authenticodeThumbprints: [_testCertificateSha256],
           protectedHelperInstallDir:
               r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
         ),

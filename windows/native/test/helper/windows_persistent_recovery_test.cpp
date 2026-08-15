@@ -2,17 +2,31 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "helper_authenticode.h"
 #include "windows_helper_bootstrap.h"
+#include "windows_inno_transaction_journal.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_recovery_transport.h"
 
 namespace desktop_updater::helper {
 namespace {
+
+std::string FrozenPersistentRecordBytes() {
+  const std::filesystem::path path =
+      std::filesystem::path(DESKTOP_UPDATER_DURABLE_STATE_FIXTURE_DIRECTORY) /
+      "persistent-record-schema3.json";
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    throw std::runtime_error("could not read frozen persistent record");
+  }
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
 
 WindowsPersistentRecoveryRequestV1 Request() {
   return {
@@ -25,10 +39,9 @@ WindowsPersistentRecoveryRequestV1 Request() {
   };
 }
 
-WindowsPersistentTransactionRecord Record(const std::string& state,
-                                          const std::string& outcome,
-                                          const std::string& relaunch_state =
-                                              "notRequested") {
+WindowsPersistentTransactionRecord
+Record(const std::string &state, const std::string &outcome,
+       const std::string &relaunch_state = "notRequested") {
   const std::string transaction_id = "00000000-0000-4000-8000-000000000025";
   const WindowsTransactionPaths paths =
       WindowsTransactionPaths::Create(L"Example.app", transaction_id);
@@ -67,6 +80,7 @@ WindowsPersistentTransactionRecord Record(const std::string& state,
   const std::string canonical = journal.EncodeCanonical();
   return {WindowsPersistentTransactionRecord::kSchemaVersion,
           transaction_id,
+          "directoryReplace",
           "com.example.desktop-updater.privileged",
           "com.example.app",
           std::string(64, 'e'),
@@ -83,9 +97,58 @@ WindowsPersistentTransactionRecord Record(const std::string& state,
           WindowsHelperSha256Hex(canonical)};
 }
 
-WindowsPersistentResolverClaim ResolverClaim(
-    std::int64_t resolver_process_id, const std::string& claim_nonce,
-    const std::string& state = "claimed") {
+WindowsPersistentTransactionRecord
+InnoRecord(bool relaunch_after_install, const std::string &state = "prepared",
+           const std::string &outcome = "none",
+           const std::string &relaunch_state = "notRequested") {
+  const std::string transaction_id = "00000000-0000-4000-8000-000000000025";
+  ProtectedWindowsInnoJournal journal;
+  journal.transaction_id = transaction_id;
+  journal.package_id = "com.example.app";
+  journal.target_path = L"C:\\Program Files\\Example.app";
+  journal.installer_leaf =
+      L".desktop-updater-inno-00000000-0000-4000-8000-000000000025.exe";
+  journal.installer_sha256 = std::string(64, 'a');
+  journal.installer_length = 42;
+  journal.descriptor_sha256 = std::string(64, 'b');
+  journal.provenance_sha256 = std::string(64, 'c');
+  journal.current_version = "3.1.2";
+  journal.current_build_number = 312;
+  journal.current_executable_sha256 = std::string(64, 'd');
+  journal.desired_version = "3.1.3";
+  journal.desired_build_number = 313;
+  journal.execution.silent_arguments = {L"/VERYSILENT", L"/NORESTART"};
+  journal.execution.inherit_install_directory = true;
+  journal.execution.relaunch_after_install = relaunch_after_install;
+  journal.execution.installed_executable_relative_path = L"bin\\example.exe";
+  journal.execution.installed_executable_sha256 = std::string(64, 'e');
+  journal.execution.log_file_name = L"desktop-updater-inno.log";
+  journal.execution.signer_certificate_sha256 = {std::string(64, 'f')};
+  journal.owner_process_id = 42;
+  journal.owner_process_start_identity = 43;
+  const std::string canonical = journal.EncodeCanonical();
+  return {WindowsPersistentTransactionRecord::kSchemaVersion,
+          transaction_id,
+          "windowsInno",
+          "com.example.desktop-updater.privileged",
+          "com.example.app",
+          std::string(64, 'e'),
+          42,
+          43,
+          44,
+          45,
+          std::string(43, 'A'),
+          std::filesystem::path(L"C:\\Program Files\\Example.app"),
+          state,
+          outcome,
+          relaunch_state,
+          canonical,
+          WindowsHelperSha256Hex(canonical)};
+}
+
+WindowsPersistentResolverClaim
+ResolverClaim(std::int64_t resolver_process_id, const std::string &claim_nonce,
+              const std::string &state = "claimed") {
   return {WindowsPersistentResolverClaim::kSchemaVersion,
           "00000000-0000-4000-8000-000000000025",
           resolver_process_id,
@@ -97,8 +160,8 @@ WindowsPersistentResolverClaim ResolverClaim(
 }
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
-RecoveryResult(const std::string& result_code,
-               const std::string& verified_outcome) {
+RecoveryResult(const std::string &result_code,
+               const std::string &verified_outcome) {
   return {1, "00000000-0000-4000-8000-000000000025", result_code,
           verified_outcome, std::string(64, 'f')};
 }
@@ -134,24 +197,20 @@ TEST(windows_persistent_recovery,
 TEST(windows_persistent_recovery,
      AutonomousRecoveryAuthoritySeparatesPortableAndProtectedHosts) {
   EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kPortableStableUser,
-            DecideWindowsAutonomousRecoveryAuthority(
-                true, false, false, true));
+            DecideWindowsAutonomousRecoveryAuthority(true, false, false, true));
   EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kProtectedSystem,
-            DecideWindowsAutonomousRecoveryAuthority(
-                false, true, true, false));
+            DecideWindowsAutonomousRecoveryAuthority(false, true, true, false));
 
   EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kReject,
-            DecideWindowsAutonomousRecoveryAuthority(
-                true, true, false, true));
+            DecideWindowsAutonomousRecoveryAuthority(true, true, false, true));
   EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kReject,
-            DecideWindowsAutonomousRecoveryAuthority(
-                true, false, true, true));
-  EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kReject,
-            DecideWindowsAutonomousRecoveryAuthority(
-                true, false, false, false));
-  EXPECT_EQ(WindowsAutonomousRecoveryAuthorityDecision::kReject,
-            DecideWindowsAutonomousRecoveryAuthority(
-                false, false, false, true));
+            DecideWindowsAutonomousRecoveryAuthority(true, false, true, true));
+  EXPECT_EQ(
+      WindowsAutonomousRecoveryAuthorityDecision::kReject,
+      DecideWindowsAutonomousRecoveryAuthority(true, false, false, false));
+  EXPECT_EQ(
+      WindowsAutonomousRecoveryAuthorityDecision::kReject,
+      DecideWindowsAutonomousRecoveryAuthority(false, false, false, true));
 }
 
 TEST(windows_persistent_recovery,
@@ -196,11 +255,10 @@ TEST(windows_persistent_recovery,
             DecideWindowsPortableDurableFileRecovery(
                 WindowsPortableDurableFileProbe::kMissing,
                 WindowsPortableDurableFileProbe::kMissing));
-  EXPECT_EQ(
-      WindowsPortableDurableFileDecision::kDiscardNextAndUnavailable,
-      DecideWindowsPortableDurableFileRecovery(
-          WindowsPortableDurableFileProbe::kMissing,
-          WindowsPortableDurableFileProbe::kExactEmpty));
+  EXPECT_EQ(WindowsPortableDurableFileDecision::kDiscardNextAndUnavailable,
+            DecideWindowsPortableDurableFileRecovery(
+                WindowsPortableDurableFileProbe::kMissing,
+                WindowsPortableDurableFileProbe::kExactEmpty));
   EXPECT_EQ(WindowsPortableDurableFileDecision::kReject,
             DecideWindowsPortableDurableFileRecovery(
                 WindowsPortableDurableFileProbe::kUnsafe,
@@ -235,13 +293,14 @@ TEST(windows_persistent_recovery, RejectsUnboundOperationAndNonce) {
 
 TEST(windows_persistent_recovery,
      PersistentRecordRoundTripsWithFrozenJournalAuthority) {
-  const WindowsPersistentTransactionRecord record = Record(
-      "commitAccepted", "none", "launchPending");
+  const WindowsPersistentTransactionRecord record =
+      Record("commitAccepted", "none", "launchPending");
   const std::string encoded = record.EncodeCanonical();
 
   const WindowsPersistentTransactionRecord decoded =
       WindowsPersistentTransactionRecord::DecodeStrict(encoded);
   EXPECT_EQ(record.transaction_id, decoded.transaction_id);
+  EXPECT_EQ("directoryReplace", decoded.transaction_kind);
   EXPECT_EQ(record.helper_endpoint_identity_sha256,
             decoded.helper_endpoint_identity_sha256);
   EXPECT_EQ(record.executor_process_id, decoded.executor_process_id);
@@ -254,6 +313,70 @@ TEST(windows_persistent_recovery,
   EXPECT_EQ(record.relaunch_state, decoded.relaunch_state);
   EXPECT_EQ(record.journal_sha256, decoded.journal_sha256);
   EXPECT_EQ(record.journal_canonical, decoded.journal_canonical);
+}
+
+TEST(windows_persistent_recovery,
+     SchemaThreeDirectoryRecordDecodesByteExactlyAndUpgradesToFour) {
+  const std::string frozen = FrozenPersistentRecordBytes();
+  WindowsPersistentTransactionRecord decoded =
+      WindowsPersistentTransactionRecord::DecodeStrict(frozen);
+
+  EXPECT_EQ(3, decoded.schema_version);
+  EXPECT_EQ("directoryReplace", decoded.transaction_kind);
+  EXPECT_EQ(frozen, decoded.EncodeCanonical());
+
+  decoded.schema_version = WindowsPersistentTransactionRecord::kSchemaVersion;
+  const std::string upgraded = decoded.EncodeCanonical();
+  EXPECT_NE(frozen, upgraded);
+  EXPECT_NE(std::string::npos,
+            upgraded.find("\"transactionKind\":\"directoryReplace\""));
+
+  WindowsPersistentTransactionRecord legacy_inno = InnoRecord(false);
+  legacy_inno.schema_version = 3;
+  EXPECT_THROW(legacy_inno.EncodeCanonical(), WindowsPersistentRecoveryError);
+}
+
+TEST(windows_persistent_recovery,
+     SchemaFourDispatchesStrictProtectedInnoJournalAuthority) {
+  const WindowsPersistentTransactionRecord relaunch =
+      InnoRecord(true, "commitAccepted", "none", "launchPending");
+  const auto decoded = WindowsPersistentTransactionRecord::DecodeStrict(
+      relaunch.EncodeCanonical());
+  EXPECT_EQ(4, decoded.schema_version);
+  EXPECT_EQ("windowsInno", decoded.transaction_kind);
+
+  EXPECT_NO_THROW(InnoRecord(false, "commitAccepted").EncodeCanonical());
+  EXPECT_THROW(InnoRecord(false, "commitAccepted", "none", "launchPending")
+                   .EncodeCanonical(),
+               WindowsPersistentRecoveryError);
+  auto mismatched = relaunch;
+  mismatched.transaction_kind = "directoryReplace";
+  EXPECT_THROW(mismatched.EncodeCanonical(), WindowsPersistentRecoveryError);
+}
+
+TEST(windows_persistent_recovery,
+     ProtectedInnoRecoveryRequiresCommitForDesiredAndRollsBackOld) {
+  EXPECT_EQ(
+      WindowsPersistentInnoRecoveryAction::kRecoveryRequired,
+      DecideWindowsPersistentInnoRecovery("commitAccepted", true, false, true));
+  EXPECT_EQ(WindowsPersistentInnoRecoveryAction::kComplete,
+            DecideWindowsPersistentInnoRecovery("commitAccepted", false, true,
+                                                false));
+  EXPECT_EQ(
+      WindowsPersistentInnoRecoveryAction::kManualActionRequired,
+      DecideWindowsPersistentInnoRecovery("prepared", false, true, false));
+  EXPECT_EQ(
+      WindowsPersistentInnoRecoveryAction::kRollBack,
+      DecideWindowsPersistentInnoRecovery("prepared", false, false, true));
+  EXPECT_EQ(WindowsPersistentInnoRecoveryAction::kRollBack,
+            DecideWindowsPersistentInnoRecovery("commitAccepted", false, false,
+                                                true));
+  EXPECT_EQ(
+      WindowsPersistentInnoRecoveryAction::kManualActionRequired,
+      DecideWindowsPersistentInnoRecovery("commitAccepted", false, true, true));
+  EXPECT_EQ(WindowsPersistentInnoRecoveryAction::kManualActionRequired,
+            DecideWindowsPersistentInnoRecovery("commitAccepted", false, false,
+                                                false));
 }
 
 TEST(windows_persistent_recovery,
@@ -289,14 +412,12 @@ TEST(windows_persistent_recovery,
             StatusFromWindowsPersistentTerminalRecord(
                 Record("completed", "newTarget", "launchFailed"))
                 .result_code);
-  EXPECT_EQ("completed",
-            StatusFromWindowsPersistentTerminalRecord(
-                Record("completed", "newTarget", "launched"))
-                .result_code);
-  EXPECT_EQ("rolledBack",
-            StatusFromWindowsPersistentTerminalRecord(
-                Record("rolledBack", "oldTarget", "notRequested"))
-                .result_code);
+  EXPECT_EQ("completed", StatusFromWindowsPersistentTerminalRecord(
+                             Record("completed", "newTarget", "launched"))
+                             .result_code);
+  EXPECT_EQ("rolledBack", StatusFromWindowsPersistentTerminalRecord(
+                              Record("rolledBack", "oldTarget", "notRequested"))
+                              .result_code);
 }
 
 TEST(windows_persistent_recovery,
@@ -318,17 +439,16 @@ TEST(windows_persistent_recovery,
 TEST(windows_persistent_recovery,
      AtMostOnceRelaunchPersistsAttemptBeforeCallingLauncher) {
   std::vector<std::string> events;
-  const WindowsAtMostOnceRelaunchOutcome outcome =
-      RunWindowsAtMostOnceRelaunch(
-          [&]() {
-            events.push_back("claimConsumed");
-            return true;
-          },
-          [&]() { events.push_back("launchAttempting"); },
-          [&]() { events.push_back("launcherCalled"); },
-          [&](bool launched) {
-            events.push_back(launched ? "launched" : "launchFailed");
-          });
+  const WindowsAtMostOnceRelaunchOutcome outcome = RunWindowsAtMostOnceRelaunch(
+      [&]() {
+        events.push_back("claimConsumed");
+        return true;
+      },
+      [&]() { events.push_back("launchAttempting"); },
+      [&]() { events.push_back("launcherCalled"); },
+      [&](bool launched) {
+        events.push_back(launched ? "launched" : "launchFailed");
+      });
 
   EXPECT_EQ(WindowsAtMostOnceRelaunchOutcome::kLaunched, outcome);
   EXPECT_EQ((std::vector<std::string>{"claimConsumed", "launchAttempting",
@@ -364,9 +484,8 @@ TEST(windows_persistent_recovery,
   EXPECT_EQ(1, launches);
 
   EXPECT_EQ(WindowsAtMostOnceRelaunchOutcome::kNotOwned,
-            RunWindowsAtMostOnceRelaunch(
-                []() { return false; }, []() {}, [&]() { ++launches; },
-                [](bool) {}));
+            RunWindowsAtMostOnceRelaunch([]() { return false; }, []() {},
+                                         [&]() { ++launches; }, [](bool) {}));
   EXPECT_EQ(1, launches);
 }
 
@@ -386,9 +505,9 @@ TEST(windows_persistent_recovery,
   EXPECT_NO_THROW(
       Record("completed", "newTarget", "launchPending").EncodeCanonical());
   EXPECT_NO_THROW(Record("rolledBack", "oldTarget").EncodeCanonical());
-  EXPECT_NO_THROW(Record("completedCleanupPending", "newTarget",
-                         "launchPending")
-                      .EncodeCanonical());
+  EXPECT_NO_THROW(
+      Record("completedCleanupPending", "newTarget", "launchPending")
+          .EncodeCanonical());
   EXPECT_NO_THROW(
       Record("rolledBackCleanupPending", "oldTarget").EncodeCanonical());
 }
@@ -484,7 +603,8 @@ TEST(windows_persistent_recovery,
   bool relaunch_claim_consumed = false;
   int recovery_winners = 0;
   const auto consume_once = [&]() {
-    if (relaunch_claim_consumed) return false;
+    if (relaunch_claim_consumed)
+      return false;
     relaunch_claim_consumed = true;
     return true;
   };
@@ -502,9 +622,9 @@ TEST(windows_persistent_recovery,
           [&]() {
             ++loser_attempts;
             return WindowsPersistentRecoveryAttempt{
-                RecoveryResult(
-                    loser_attempts == 1 ? "recoveryRequired" : "completed",
-                    loser_attempts == 1 ? "none" : "newTarget"),
+                RecoveryResult(loser_attempts == 1 ? "recoveryRequired"
+                                                   : "completed",
+                               loser_attempts == 1 ? "none" : "newTarget"),
                 loser_attempts == 1};
           },
           []() { return true; }, consume_once);
@@ -517,5 +637,5 @@ TEST(windows_persistent_recovery,
                    static_cast<int>(loser.should_relaunch));
 }
 
-}  // namespace
-}  // namespace desktop_updater::helper
+} // namespace
+} // namespace desktop_updater::helper

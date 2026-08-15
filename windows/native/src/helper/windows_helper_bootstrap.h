@@ -49,6 +49,8 @@ class PortableWindowsHelperBootstrap {
   const VerifiedWindowsExecutable& helper_identity() const {
     return helper_identity_;
   }
+  HANDLE helper_file() const { return helper_file_.get(); }
+  HANDLE policy_file() const { return policy_file_.get(); }
 
   // The helper executable and policy are retained while the authenticated
   // session runs. Release those read handles before the portable target is

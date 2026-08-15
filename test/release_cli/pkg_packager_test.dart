@@ -223,7 +223,7 @@ void main() {
       lessThan(commands
           .indexWhere((command) => command.contains("notarytool submit"))),
     );
-  });
+  }, skip: Platform.isWindows ? "Requires POSIX file modes." : false);
 
   test("does not notarize a PKG whose expanded payload fails verification",
       () async {
@@ -348,7 +348,7 @@ void main() {
       commands.any((command) => command.contains("notarytool submit")),
       isFalse,
     );
-  });
+  }, skip: Platform.isWindows ? "Requires POSIX file modes." : false);
 
   test("rejects a top-level source application symlink", () async {
     final root = await Directory.systemTemp.createTemp("pkg_source_link_");
@@ -414,7 +414,7 @@ void main() {
       ),
     );
     expect(commands, isEmpty);
-  });
+  }, skip: Platform.isWindows ? "Requires POSIX symlinks." : false);
 
   test("rejects a top-level expanded payload application symlink", () async {
     final root = await Directory.systemTemp.createTemp("pkg_payload_link_");
@@ -482,7 +482,7 @@ void main() {
       ),
       isFalse,
     );
-  });
+  }, skip: Platform.isWindows ? "Requires POSIX symlinks." : false);
 
   test("rejects PKG publication without a numeric build number", () async {
     final root = await Directory.systemTemp.createTemp("pkg_build_number_");
@@ -647,7 +647,7 @@ void main() {
       );
       expect(commands, isEmpty, reason: invalid.$1);
     }
-  });
+  }, skip: Platform.isWindows ? "Requires POSIX file modes." : false);
 }
 
 const _pkgConfig = MacOSPkgPublishConfig(

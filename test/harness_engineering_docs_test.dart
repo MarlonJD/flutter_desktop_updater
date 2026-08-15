@@ -4,6 +4,8 @@ import "dart:io";
 import "package:crypto/crypto.dart";
 import "package:flutter_test/flutter_test.dart";
 
+import "support/dart_cli.dart";
+
 const harnessPlanPath =
     "docs/exec-plans/completed/2026-07-01-agent-harness-engineering-plan.md";
 const harnessPlanLink =
@@ -256,7 +258,7 @@ void main() {
 
   test("project-native structural harness gate passes", () async {
     final result = await Process.run(
-      "dart",
+      resolveDartExecutable(),
       ["run", "tool/harness_gate.dart", "--structural"],
       runInShell: false,
     );

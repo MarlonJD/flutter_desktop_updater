@@ -622,10 +622,17 @@ Map<String, Object?> _installDescriptorForArtifactKind(
             "/NORESTART",
           ],
           "inheritInstallDirectory": true,
+          "installedExecutableRelativePath": "Example.exe",
+          "installedExecutableSha256": "cd" * 32,
           "logFileName": "desktop_updater_inno_install.log",
           "relaunchAfterInstall": true,
-          "requiresElevation": "auto",
-          "authenticode": {"required": false},
+          "requiresElevation": "always",
+          "authenticode": {
+            "required": true,
+            "sha256Thumbprints": [
+              "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+            ],
+          },
         },
       };
     case "dmg":

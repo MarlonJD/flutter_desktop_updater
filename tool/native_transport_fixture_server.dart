@@ -2,15 +2,35 @@ import "dart:async";
 import "dart:convert";
 import "dart:io";
 
+import "package:path/path.dart" as path;
+
 const _artifact = "native transport artifact\n";
 
 Future<void> main(List<String> arguments) async {
   var port = 43891;
+  Directory? staticRoot;
   for (var index = 0; index < arguments.length; index += 1) {
-    if (arguments[index] != "--port" || index + 1 >= arguments.length) {
-      throw const FormatException("Usage: --port <port>");
+    if (index + 1 >= arguments.length) {
+      throw const FormatException(
+        "Usage: --port <port> [--root <directory>]",
+      );
     }
-    port = int.parse(arguments[++index]);
+    switch (arguments[index]) {
+      case "--port":
+        port = int.parse(arguments[++index]);
+      case "--root":
+        staticRoot = Directory(arguments[++index]).absolute;
+      default:
+        throw const FormatException(
+          "Usage: --port <port> [--root <directory>]",
+        );
+    }
+  }
+  if (staticRoot != null && !await staticRoot.exists()) {
+    throw FileSystemException(
+      "Static fixture root does not exist.",
+      staticRoot.path,
+    );
   }
 
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
@@ -150,10 +170,48 @@ Future<void> main(List<String> arguments) async {
           request.response.add(bytes);
         }
       default:
-        request.response.statusCode = HttpStatus.notFound;
+        if (staticRoot == null) {
+          request.response.statusCode = HttpStatus.notFound;
+        } else {
+          await _serveStaticFile(request, staticRoot);
+        }
     }
     await request.response.close();
   }
+}
+
+Future<void> _serveStaticFile(HttpRequest request, Directory root) async {
+  final segments = request.uri.pathSegments;
+  if (segments.isEmpty ||
+      segments.any(
+        (segment) =>
+            segment.isEmpty ||
+            segment == "." ||
+            segment == ".." ||
+            segment.contains("/") ||
+            segment.contains("\\"),
+      )) {
+    request.response.statusCode = HttpStatus.badRequest;
+    return;
+  }
+
+  final rootPath = path.normalize(path.absolute(root.path));
+  final candidatePath = path.normalize(
+    path.absolute(path.joinAll(<String>[rootPath, ...segments])),
+  );
+  if (!path.isWithin(rootPath, candidatePath)) {
+    request.response.statusCode = HttpStatus.badRequest;
+    return;
+  }
+  final type = await FileSystemEntity.type(candidatePath, followLinks: false);
+  if (type != FileSystemEntityType.file) {
+    request.response.statusCode = HttpStatus.notFound;
+    return;
+  }
+
+  final file = File(candidatePath);
+  request.response.headers.contentLength = await file.length();
+  await request.response.addStream(file.openRead());
 }
 
 void redirect(HttpRequest request, String location) {

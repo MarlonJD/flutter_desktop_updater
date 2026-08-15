@@ -275,6 +275,7 @@ class ReleasePublisher {
           channel: config.channel,
           artifactUrl: layout.artifactUrl,
           installStrategy: "innoInstaller",
+          executableRelativePath: buildResult.executableRelativePath,
           minimumUpdaterVersion: "2.5.0",
         ),
         config: config.windows.installer,

@@ -131,7 +131,52 @@ std::string Sha256(HANDLE file) {
   return encoded.str();
 }
 
-bool VerifyAuthenticode(HANDLE file, const std::wstring& final_path) {
+struct AuthenticodeSignerIdentity {
+  std::wstring publisher;
+  std::string certificate_sha256;
+};
+
+struct AuthenticodeTrustResult {
+  bool signature_valid = false;
+  AuthenticodeSignerIdentity signer;
+};
+
+std::string BytesToLowerHex(const unsigned char* bytes, DWORD length) {
+  std::ostringstream encoded;
+  encoded << std::hex << std::setfill('0');
+  for (DWORD index = 0; index < length; ++index) {
+    encoded << std::setw(2) << static_cast<unsigned int>(bytes[index]);
+  }
+  return encoded.str();
+}
+
+AuthenticodeSignerIdentity ReadSignerIdentity(PCCERT_CONTEXT certificate) {
+  AuthenticodeSignerIdentity result;
+  if (certificate != nullptr) {
+    const DWORD name_length = CertGetNameStringW(
+        certificate, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, nullptr, 0);
+    if (name_length > 1) {
+      result.publisher.resize(name_length);
+      CertGetNameStringW(certificate, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0,
+                         nullptr, result.publisher.data(), name_length);
+      result.publisher.resize(name_length - 1);
+    }
+    std::array<unsigned char, 32> digest{};
+    DWORD digest_length = static_cast<DWORD>(digest.size());
+    if (CryptHashCertificate2(BCRYPT_SHA256_ALGORITHM, 0, nullptr,
+                              certificate->pbCertEncoded,
+                              certificate->cbCertEncoded, digest.data(),
+                              &digest_length) &&
+        digest_length == digest.size()) {
+      result.certificate_sha256 =
+          BytesToLowerHex(digest.data(), digest_length);
+    }
+  }
+  return result;
+}
+
+AuthenticodeTrustResult VerifyAuthenticode(HANDLE file,
+                                            const std::wstring& final_path) {
   WINTRUST_FILE_INFO file_info{};
   file_info.cbStruct = sizeof(file_info);
   file_info.pcwszFilePath = final_path.c_str();
@@ -148,60 +193,32 @@ bool VerifyAuthenticode(HANDLE file, const std::wstring& final_path) {
 
   GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
   const LONG status = WinVerifyTrust(nullptr, &action, &trust);
+  AuthenticodeTrustResult result;
+  result.signature_valid = status == ERROR_SUCCESS;
+  try {
+    if (result.signature_valid) {
+      CRYPT_PROVIDER_DATA* provider_data =
+          WTHelperProvDataFromStateData(trust.hWVTStateData);
+      CRYPT_PROVIDER_SGNR* signer =
+          provider_data == nullptr
+              ? nullptr
+              : WTHelperGetProvSignerFromChain(provider_data, 0, FALSE, 0);
+      if (signer != nullptr && signer->csCertChain != 0 &&
+          signer->pasCertChain != nullptr) {
+        result.signer = ReadSignerIdentity(signer->pasCertChain[0].pCert);
+      }
+      if (result.signer.publisher.empty() ||
+          result.signer.certificate_sha256.empty()) {
+        result.signature_valid = false;
+      }
+    }
+  } catch (...) {
+    trust.dwStateAction = WTD_STATEACTION_CLOSE;
+    WinVerifyTrust(nullptr, &action, &trust);
+    throw;
+  }
   trust.dwStateAction = WTD_STATEACTION_CLOSE;
   WinVerifyTrust(nullptr, &action, &trust);
-  return status == ERROR_SUCCESS;
-}
-
-std::wstring AuthenticodePublisher(const std::wstring& path) {
-  HCERTSTORE store = nullptr;
-  HCRYPTMSG message = nullptr;
-  DWORD encoding = 0;
-  DWORD content = 0;
-  DWORD format = 0;
-  if (!CryptQueryObject(CERT_QUERY_OBJECT_FILE, path.c_str(),
-                        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-                        CERT_QUERY_FORMAT_FLAG_BINARY, 0, &encoding, &content,
-                        &format, &store, &message, nullptr)) {
-    return {};
-  }
-
-  DWORD signer_size = 0;
-  if (!CryptMsgGetParam(message, CMSG_SIGNER_INFO_PARAM, 0, nullptr,
-                        &signer_size)) {
-    CryptMsgClose(message);
-    CertCloseStore(store, 0);
-    return {};
-  }
-  std::vector<unsigned char> signer_bytes(signer_size);
-  if (!CryptMsgGetParam(message, CMSG_SIGNER_INFO_PARAM, 0,
-                        signer_bytes.data(), &signer_size)) {
-    CryptMsgClose(message);
-    CertCloseStore(store, 0);
-    return {};
-  }
-  const auto* signer =
-      reinterpret_cast<const CMSG_SIGNER_INFO*>(signer_bytes.data());
-  CERT_INFO certificate_info{};
-  certificate_info.Issuer = signer->Issuer;
-  certificate_info.SerialNumber = signer->SerialNumber;
-  PCCERT_CONTEXT certificate = CertFindCertificateInStore(
-      store, encoding, 0, CERT_FIND_SUBJECT_CERT, &certificate_info, nullptr);
-
-  std::wstring result;
-  if (certificate != nullptr) {
-    const DWORD name_length = CertGetNameStringW(
-        certificate, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, nullptr, 0);
-    if (name_length > 1) {
-      result.resize(name_length);
-      CertGetNameStringW(certificate, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0,
-                         nullptr, result.data(), name_length);
-      result.resize(name_length - 1);
-    }
-    CertFreeCertificateContext(certificate);
-  }
-  CryptMsgClose(message);
-  CertCloseStore(store, 0);
   return result;
 }
 
@@ -298,16 +315,37 @@ VerifiedWindowsExecutable VerifyWindowsExecutable(
     throw WindowsHelperTrustError("cannot open fixed helper executable");
   }
 
+  VerifiedWindowsExecutable result =
+      VerifyRetainedWindowsExecutable(file.get(), path);
+  if (!VerifyWindowsExecutableStillMatches(path, result)) {
+    throw WindowsHelperTrustError("helper replaced during verification");
+  }
+  return result;
+}
+
+VerifiedWindowsExecutable VerifyRetainedWindowsExecutable(
+    HANDLE retained_file,
+    const std::filesystem::path& path_hint) {
+  if (retained_file == nullptr || retained_file == INVALID_HANDLE_VALUE) {
+    throw WindowsHelperTrustError("retained helper handle is invalid");
+  }
+
   VerifiedWindowsExecutable result{};
-  result.final_path = FinalPath(file.get());
-  ReadFileIdentity(file.get(), &result.volume_serial, &result.file_id);
-  result.sha256 = Sha256(file.get());
-  result.signature_valid = VerifyAuthenticode(file.get(),
-                                               result.final_path.wstring());
-  result.publisher = AuthenticodePublisher(result.final_path.wstring());
+  result.final_path = FinalPath(retained_file);
+  if (NormalizeForComparison(path_hint.wstring()) !=
+      NormalizeForComparison(result.final_path.wstring())) {
+    throw WindowsHelperTrustError("retained helper path mismatch");
+  }
+  ReadFileIdentity(retained_file, &result.volume_serial, &result.file_id);
+  result.sha256 = Sha256(retained_file);
+  const AuthenticodeTrustResult trust =
+      VerifyAuthenticode(retained_file, result.final_path.wstring());
+  result.signature_valid = trust.signature_valid;
+  result.publisher = trust.signer.publisher;
+  result.signer_certificate_sha256 = trust.signer.certificate_sha256;
   result.installer_protected_location =
       IsInstallerProtectedLocation(result.final_path);
-  if (!VerifyWindowsExecutableStillMatches(path, result)) {
+  if (!VerifyRetainedWindowsExecutableStillMatches(retained_file, result)) {
     throw WindowsHelperTrustError("helper replaced during verification");
   }
   return result;
@@ -358,15 +396,26 @@ bool VerifyWindowsExecutableStillMatches(
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
       nullptr));
   if (file.get() == INVALID_HANDLE_VALUE) return false;
+  return VerifyRetainedWindowsExecutableStillMatches(file.get(), identity);
+}
+
+bool VerifyRetainedWindowsExecutableStillMatches(
+    HANDLE retained_file,
+    const VerifiedWindowsExecutable& identity) {
+  if (retained_file == nullptr || retained_file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
   try {
     std::uint64_t volume_serial = 0;
     std::array<unsigned char, 16> file_id{};
-    ReadFileIdentity(file.get(), &volume_serial, &file_id);
-    return volume_serial == identity.volume_serial &&
-           file_id == identity.file_id &&
-           Sha256(file.get()) == identity.sha256 &&
-           NormalizeForComparison(FinalPath(file.get())) ==
-               NormalizeForComparison(identity.final_path.wstring());
+    ReadFileIdentity(retained_file, &volume_serial, &file_id);
+    const bool volume_matches = volume_serial == identity.volume_serial;
+    const bool file_id_matches = file_id == identity.file_id;
+    const bool hash_matches = Sha256(retained_file) == identity.sha256;
+    const bool path_matches =
+        NormalizeForComparison(FinalPath(retained_file)) ==
+        NormalizeForComparison(identity.final_path.wstring());
+    return volume_matches && file_id_matches && hash_matches && path_matches;
   } catch (const WindowsHelperTrustError&) {
     return false;
   }

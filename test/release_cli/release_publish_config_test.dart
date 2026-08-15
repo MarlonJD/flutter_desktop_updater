@@ -286,7 +286,7 @@ windows:
       - /VERYSILENT
       - /SUPPRESSMSGBOXES
       - /NORESTART
-    requiresElevation: auto
+    requiresElevation: always
     authenticodeThumbprints:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 """,
@@ -324,6 +324,9 @@ windows:
     kind: inno
     mode: generated
     privilegesRequired: $privileges
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 $invalidConfig
 """),
         throwsA(isA<FormatException>()),
@@ -350,6 +353,9 @@ windows:
     kind: inno
     mode: generated
     privilegesRequired: admin
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
     protectedHelperInstallDir: ${installDir}
 """),
         throwsA(isA<FormatException>()),
@@ -377,11 +383,14 @@ windows:
     kind: inno
     mode: script
     script: ${script.path}
-    privilegesRequired: lowest
+    privilegesRequired: admin
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 """);
 
     expect(config.windows.installer.protectedHelperInstallDir, isNull);
-    expect(config.windows.installer.privilegesRequired, "lowest");
+    expect(config.windows.installer.privilegesRequired, "admin");
   });
 
   test("cli notarize flag enables configured macOS notarization", () async {

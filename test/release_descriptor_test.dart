@@ -52,34 +52,7 @@ void main() {
   });
 
   test("parses a Windows Inno installer descriptor", () {
-    final descriptor = ReleaseDescriptor.fromJson({
-      ..._descriptorJson(),
-      "appName": "Example",
-      "platform": "windows",
-      "artifact": {
-        "kind": "innoInstaller",
-        "url": "https://cdn.example.com/Example-2.5.0-setup.exe",
-        "sha256": "b" * 64,
-        "length": 42,
-      },
-      "install": {
-        "strategy": "innoInstaller",
-        "inno": {
-          "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-          "inheritInstallDirectory": true,
-          "logFileName": "desktop_updater_inno_install.log",
-          "relaunchAfterInstall": true,
-          "requiresElevation": "auto",
-          "authenticode": {
-            "required": true,
-            "sha256Thumbprints": [
-              "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
-            ],
-          },
-        },
-      },
-      "minimumUpdaterVersion": "2.5.0",
-    });
+    final descriptor = ReleaseDescriptor.fromJson(_innoDescriptorJson());
 
     expect(descriptor.artifact.kind, "innoInstaller");
     expect(descriptor.install.strategy, "innoInstaller");
@@ -90,16 +63,23 @@ void main() {
       "/NORESTART",
     ]);
     expect(descriptor.install.inno!.inheritInstallDirectory, isTrue);
-    expect(descriptor.install.inno!.requiresElevation, "auto");
+    expect(
+      descriptor.install.inno!.installedExecutableRelativePath,
+      "Example.exe",
+    );
+    expect(descriptor.install.inno!.installedExecutableSha256, "c" * 64);
+    expect(descriptor.install.inno!.requiresElevation, "always");
     expect(descriptor.install.inno!.authenticode.required, isTrue);
     expect(descriptor.toJson()["install"], {
       "strategy": "innoInstaller",
       "inno": {
         "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
         "inheritInstallDirectory": true,
+        "installedExecutableRelativePath": "Example.exe",
+        "installedExecutableSha256": "c" * 64,
         "logFileName": "desktop_updater_inno_install.log",
         "relaunchAfterInstall": true,
-        "requiresElevation": "auto",
+        "requiresElevation": "always",
         "authenticode": {
           "required": true,
           "sha256Thumbprints": [
@@ -108,6 +88,80 @@ void main() {
         },
       },
     });
+  });
+
+  test("rejects Inno descriptors without protected elevation", () {
+    final json = _innoDescriptorJson();
+    final install = json["install"]! as Map<String, dynamic>;
+    final inno = install["inno"]! as Map<String, dynamic>;
+    inno["requiresElevation"] = "auto";
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("requires protected elevation"),
+        ),
+      ),
+    );
+  });
+
+  test("rejects Inno descriptors without required Authenticode", () {
+    final json = _innoDescriptorJson();
+    final install = json["install"]! as Map<String, dynamic>;
+    final inno = install["inno"]! as Map<String, dynamic>;
+    final authenticode = inno["authenticode"]! as Map<String, dynamic>;
+    authenticode["required"] = false;
+
+    expect(
+      () => ReleaseDescriptor.fromJson(json),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("requires Authenticode"),
+        ),
+      ),
+    );
+  });
+
+  test("rejects Inno metadata without an exact installed executable", () {
+    expect(
+      () => ReleaseDescriptor.fromJson({
+        ..._descriptorJson(),
+        "platform": "windows",
+        "artifact": {
+          "kind": "innoInstaller",
+          "url": "https://cdn.example.com/Example-2.5.0-setup.exe",
+          "sha256": "b" * 64,
+          "length": 42,
+        },
+        "install": {
+          "strategy": "innoInstaller",
+          "inno": {
+            "silentArgs": ["/VERYSILENT", "/NORESTART"],
+            "inheritInstallDirectory": true,
+            "logFileName": "desktop_updater_inno_install.log",
+            "relaunchAfterInstall": true,
+            "requiresElevation": "always",
+            "authenticode": {
+              "required": true,
+              "sha256Thumbprints": ["a" * 64],
+            },
+          },
+        },
+        "minimumUpdaterVersion": "2.5.0",
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("installedExecutable"),
+        ),
+      ),
+    );
   });
 
   test("parses a macOS DMG update descriptor", () {
@@ -501,5 +555,38 @@ Map<String, dynamic> _descriptorJson() {
     "install": {"strategy": "wholeBundleReplace"},
     "minimumUpdaterVersion": "2.0.0",
     "generatedAt": "2026-06-11T00:00:00Z",
+  };
+}
+
+Map<String, dynamic> _innoDescriptorJson() {
+  return {
+    ..._descriptorJson(),
+    "appName": "Example",
+    "platform": "windows",
+    "artifact": {
+      "kind": "innoInstaller",
+      "url": "https://cdn.example.com/Example-2.5.0-setup.exe",
+      "sha256": "b" * 64,
+      "length": 42,
+    },
+    "install": {
+      "strategy": "innoInstaller",
+      "inno": {
+        "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        "inheritInstallDirectory": true,
+        "installedExecutableRelativePath": "Example.exe",
+        "installedExecutableSha256": "c" * 64,
+        "logFileName": "desktop_updater_inno_install.log",
+        "relaunchAfterInstall": true,
+        "requiresElevation": "always",
+        "authenticode": {
+          "required": true,
+          "sha256Thumbprints": [
+            "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+          ],
+        },
+      },
+    },
+    "minimumUpdaterVersion": "2.5.0",
   };
 }

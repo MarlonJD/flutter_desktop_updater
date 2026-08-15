@@ -25,10 +25,19 @@ desktop_updater::runtime::internal::NativeInstallCallerV1 Caller() {
 }
 
 ObservedWindowsCallerIdentity Observed() {
-  return {4242,
-          123,
-          {true, L"Example Software LLC", std::string(64, 'b'),
-           L"C:\\Program Files\\Example\\Example.exe", true, 7, {1, 2}}};
+  ObservedWindowsCallerIdentity observed{};
+  observed.process_id = 4242;
+  observed.process_start_identity = 123;
+  observed.executable.signature_valid = true;
+  observed.executable.publisher = L"Example Software LLC";
+  observed.executable.signer_certificate_sha256 = std::string(64, 'c');
+  observed.executable.sha256 = std::string(64, 'b');
+  observed.executable.final_path =
+      L"C:\\Program Files\\Example\\Example.exe";
+  observed.executable.installer_protected_location = true;
+  observed.executable.volume_serial = 7;
+  observed.executable.file_id = {1, 2};
+  return observed;
 }
 
 TEST(WindowsOneShotTransport, RejectsCallerIdentityDrift) {

@@ -23,6 +23,13 @@ set(DESKTOP_UPDATER_PORTABLE_HELPER_POLICY_PATH "" CACHE FILEPATH
   "Absolute path to the consumer-specific portable helper policy")
 set(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR "" CACHE PATH
   "Absolute helper discovery directory supplied by the installer")
+if(NOT DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR AND
+   DEFINED ENV{DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR} AND
+   NOT "$ENV{DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}" STREQUAL "")
+  set(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR
+    "$ENV{DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR}" CACHE PATH
+    "Absolute helper discovery directory supplied by the installer" FORCE)
+endif()
 if(DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR)
   string(REPLACE "\\" "/"
     DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR_NORMALIZED
@@ -170,6 +177,9 @@ set(DESKTOP_UPDATER_INSTALL_HELPER_SOURCES
   src/helper/windows_helper_bootstrap.cpp
   src/helper/windows_archive_restage.cpp
   src/helper/windows_install_authorizer.cpp
+  src/helper/windows_inno_policy.cpp
+  src/helper/windows_inno_restage.cpp
+  src/helper/windows_inno_transaction_journal.cpp
   src/helper/windows_one_shot_transport.cpp
   src/helper/windows_reservation.cpp
   src/helper/windows_transaction_journal.cpp
@@ -202,7 +212,7 @@ target_compile_definitions(desktop_updater_install_helper_support
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
     _WIN32_WINNT=0x0A00 MINIZ_NO_ZLIB_APIS)
 if(MSVC)
-  target_compile_options(desktop_updater_install_helper_support PRIVATE /utf-8)
+  target_compile_options(desktop_updater_install_helper_support PRIVATE /utf-8 /FS)
 endif()
 target_include_directories(desktop_updater_install_helper_support
   PUBLIC
@@ -448,7 +458,8 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_compile_definitions(windows_persistent_recovery
     PRIVATE
       UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
-      _WIN32_WINNT=0x0A00)
+      _WIN32_WINNT=0x0A00
+      DESKTOP_UPDATER_DURABLE_STATE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/../../test/fixtures/compat/native-durable-state/2.7.0/windows")
   if(MSVC)
     target_compile_options(windows_persistent_recovery PRIVATE /utf-8)
   endif()
@@ -543,6 +554,34 @@ if(DESKTOP_UPDATER_NATIVE_BUILD_TESTS)
   target_link_libraries(windows_install_authorizer
     PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
   gtest_discover_tests(windows_install_authorizer DISCOVERY_MODE PRE_TEST)
+
+  add_executable(windows_inno_policy
+    test/helper/windows_inno_policy_test.cpp)
+  target_compile_features(windows_inno_policy PRIVATE cxx_std_17)
+  target_compile_definitions(windows_inno_policy
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_inno_policy PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_inno_policy
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_inno_policy)
+
+  add_executable(windows_inno_transaction_journal
+    test/helper/windows_inno_transaction_journal_test.cpp)
+  target_compile_features(windows_inno_transaction_journal PRIVATE cxx_std_17)
+  target_compile_definitions(windows_inno_transaction_journal
+    PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+      _WIN32_WINNT=0x0A00)
+  if(MSVC)
+    target_compile_options(windows_inno_transaction_journal PRIVATE /utf-8)
+  endif()
+  target_link_libraries(windows_inno_transaction_journal
+    PRIVATE desktop_updater_install_helper_support GTest::gtest_main)
+  gtest_discover_tests(windows_inno_transaction_journal)
 
   add_executable(windows_archive_restage
     test/helper/windows_archive_restage_test.cpp)

@@ -27,10 +27,12 @@ class WindowsPersistentRecoveryError : public std::runtime_error {
 };
 
 struct WindowsPersistentTransactionRecord {
-  static constexpr std::int64_t kSchemaVersion = 3;
+  static constexpr std::int64_t kSchemaVersion = 4;
 
   std::int64_t schema_version = kSchemaVersion;
   std::string transaction_id;
+  // directoryReplace | windowsInno
+  std::string transaction_kind;
   std::string policy_id;
   std::string package_id;
   std::string helper_endpoint_identity_sha256;
@@ -136,6 +138,19 @@ DecideWindowsAutonomousRecoveryAuthority(bool portable_policy,
                                          bool elevated,
                                          bool stable_host_verified);
 
+enum class WindowsPersistentInnoRecoveryAction {
+  kRecoveryRequired,
+  kComplete,
+  kRollBack,
+  kManualActionRequired,
+};
+
+WindowsPersistentInnoRecoveryAction DecideWindowsPersistentInnoRecovery(
+    const std::string& record_state,
+    bool exact_owner_alive,
+    bool desired_install_verified,
+    bool old_install_verified);
+
 class WindowsPersistentTransactionIndex {
  public:
   WindowsPersistentTransactionIndex(const WindowsHelperPolicy& policy,
@@ -148,6 +163,7 @@ class WindowsPersistentTransactionIndex {
       const WindowsPersistentTransactionIndex&) = delete;
 
   void PersistPreparing(const std::string& transaction_id,
+                        const std::string& transaction_kind,
                         const std::filesystem::path& target_path,
                         const std::string& journal_canonical,
                         DWORD executor_process_id,

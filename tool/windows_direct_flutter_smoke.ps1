@@ -3,10 +3,16 @@ param(
   [ValidateSet("Debug", "Release")]
   [string]$Configuration,
   [Parameter(Mandatory = $true)]
-  [string]$EvidencePath
+  [string]$EvidencePath,
+  [switch]$ProvisionDisposableUserTrust,
+  [ValidatePattern('^[0-9a-fA-F]{64}$')]
+  [string]$ExpectedSignerCertificateSha256,
+  [string]$ExpectedSignerPublisher
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "windows_smoke_profile_cleanup.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $exampleRoot = Join-Path $repositoryRoot "example"
@@ -19,11 +25,24 @@ if (-not (Test-Path -LiteralPath $app -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
   throw "Windows $Configuration Flutter smoke helper is missing: $helper"
 }
+if ($ProvisionDisposableUserTrust) {
+  if ([string]::IsNullOrWhiteSpace($ExpectedSignerCertificateSha256) -or
+      [string]::IsNullOrWhiteSpace($ExpectedSignerPublisher)) {
+    throw "Disposable CurrentUser trust requires the expected certificate SHA-256 and publisher."
+  }
+} elseif (-not [string]::IsNullOrWhiteSpace($ExpectedSignerCertificateSha256) -or
+    -not [string]::IsNullOrWhiteSpace($ExpectedSignerPublisher)) {
+  throw "Expected signer identity requires -ProvisionDisposableUserTrust."
+}
 
 $smokeRunId = [Guid]::NewGuid().ToString("N")
-$smokeRoot = Join-Path $env:RUNNER_TEMP "flutter-windows-update-smoke-$($Configuration.ToLowerInvariant())-$smokeRunId"
+$configurationToken = $Configuration.Substring(0, 1).ToLowerInvariant()
+$smokeRoot = Join-Path $env:RUNNER_TEMP "duf-$configurationToken-$smokeRunId"
 $install = Join-Path $smokeRoot "install"
+$installedApp = Join-Path $install "desktop_updater_example.exe"
+$installedHelper = Join-Path $install "desktop_updater_install_helper.exe"
 $smokeRunner = Join-Path $smokeRoot "updater_smoke.exe"
+$smokeTrustCertificate = Join-Path $smokeRoot "disposable-user-trust.cer"
 $runnerWorkingDirectory = $smokeRoot
 $capturedDiagnostics = Join-Path $smokeRoot "helper-diagnostics.jsonl"
 $runnerOut = Join-Path $smokeRoot "runner.out"
@@ -38,6 +57,9 @@ $helperEventStart = Get-Date
 $prelaunchAcls = @()
 $smokeSucceeded = $false
 $primaryFailure = $null
+$disposableTrustStores = @()
+$disposableSignerCertificateSha256 = $null
+$disposableSignerSelfSigned = $false
 
 $smokeRootFullPath = [IO.Path]::GetFullPath($smokeRoot)
 $smokeRootWithSeparator = "$smokeRootFullPath$([IO.Path]::DirectorySeparatorChar)"
@@ -173,23 +195,55 @@ function Get-WindowsSmokeTopLevelEntries {
   )
 }
 
+function ConvertTo-WindowsSmokeComparablePath {
+  param(
+    [AllowNull()]
+    [AllowEmptyString()]
+    [string]$Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return $null
+  }
+
+  $candidate = $Path.Trim()
+  if ($candidate.StartsWith("\\?\UNC\", [StringComparison]::OrdinalIgnoreCase)) {
+    $candidate = "\\$($candidate.Substring(8))"
+  } elseif ($candidate.StartsWith("\\?\", [StringComparison]::OrdinalIgnoreCase)) {
+    $candidate = $candidate.Substring(4)
+  }
+
+  try {
+    return [IO.Path]::GetFullPath($candidate)
+  } catch {
+    return $null
+  }
+}
+
 function Stop-WindowsSmokeRelaunchProcess {
   param(
     [Parameter(Mandatory = $true)]
     [string]$ExecutablePath
   )
 
-  $targetName = [IO.Path]::GetFileName($ExecutablePath)
-  $targetProcessName = [IO.Path]::GetFileNameWithoutExtension($targetName)
+  $expectedPath = ConvertTo-WindowsSmokeComparablePath $ExecutablePath
+  if ([string]::IsNullOrWhiteSpace($expectedPath)) {
+    throw "Windows smoke relaunch executable path is invalid: $ExecutablePath"
+  }
+  $targetName = [IO.Path]::GetFileName($expectedPath).Replace("'", "''")
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
     $remaining = @(
-      Get-Process -Name $targetProcessName -ErrorAction SilentlyContinue
+      Get-CimInstance Win32_Process -Filter "Name='$targetName'" |
+        Where-Object {
+          -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
+          (ConvertTo-WindowsSmokeComparablePath $_.ExecutablePath) -eq $expectedPath
+        }
     )
     if ($remaining.Count -eq 0) {
       return
     }
     foreach ($process in $remaining) {
-      & taskkill.exe /F /T /PID $process.Id 2>$null | Out-Null
+      & taskkill.exe /F /T /PID $process.ProcessId 2>$null | Out-Null
     }
     [System.Threading.Thread]::Sleep(100)
   }
@@ -220,6 +274,26 @@ function Repair-WindowsSmokeCleanupAccess {
   & icacls.exe $Root /grant '*S-1-5-18:(OI)(CI)F' /T /C | Out-Null
   if ($LASTEXITCODE -ne 0) {
     throw "Windows smoke cleanup could not grant SYSTEM access to $Root."
+  }
+}
+
+function Remove-WindowsSmokeRootWithRetry {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Root
+  )
+
+  Repair-WindowsSmokeCleanupAccess -Root $Root
+  for ($attempt = 0; $attempt -lt 24; $attempt++) {
+    try {
+      Remove-Item -LiteralPath $Root -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($attempt -eq 23) {
+        throw
+      }
+      Start-Sleep -Milliseconds 250
+    }
   }
 }
 
@@ -457,7 +531,15 @@ function Save-WindowsFlutterSmokeEvidence {
       workingDirectory = ConvertTo-WindowsSmokeEvidenceText $runnerWorkingDirectory
     }
     schemaVersion = 1
-    standardUser = if ($null -ne $smokeUser) { [PSCustomObject]@{ sid = $smokeUser.SID.Value } } else { $null }
+    standardUser = if ($null -ne $smokeUser) {
+      [PSCustomObject]@{
+        sid = $smokeUser.SID.Value
+        signerCertificateSha256 = $disposableSignerCertificateSha256
+        trustStores = @($disposableTrustStores)
+      }
+    } else {
+      $null
+    }
     tasks = $tasks
   }
   $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidenceRoot "report.json") -Encoding utf8
@@ -487,6 +569,62 @@ try {
   }
   New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
   Copy-Item -LiteralPath $runnerRoot -Destination $install -Recurse -Force
+
+  if ($ProvisionDisposableUserTrust) {
+    $signatures = @(
+      Get-AuthenticodeSignature -LiteralPath $app
+      Get-AuthenticodeSignature -LiteralPath $helper
+    )
+    $signerCertificates = [Collections.Generic.List[object]]::new()
+    foreach ($signature in $signatures) {
+      if ($signature.Status -ne 'Valid' -or
+          $null -eq $signature.SignerCertificate) {
+        throw "Disposable CurrentUser trust refuses an invalid source signature."
+      }
+      $signerCertificates.Add($signature.SignerCertificate) | Out-Null
+    }
+    $certificateHashes = @(
+      $signerCertificates |
+        ForEach-Object {
+          [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($_.RawData)
+          ).ToLowerInvariant()
+        }
+    )
+    $expectedCertificateHash = `
+      $ExpectedSignerCertificateSha256.ToLowerInvariant()
+    if ($certificateHashes.Count -ne 2 -or
+        $certificateHashes[0] -ne $expectedCertificateHash -or
+        $certificateHashes[1] -ne $expectedCertificateHash) {
+      throw "Disposable CurrentUser trust signer certificate SHA-256 changed."
+    }
+    foreach ($certificate in $signerCertificates) {
+      $publisher = $certificate.GetNameInfo(
+        [Security.Cryptography.X509Certificates.X509NameType]::SimpleName,
+        $false
+      )
+      if ($publisher -ne $ExpectedSignerPublisher) {
+        throw "Disposable CurrentUser trust signer publisher changed."
+      }
+    }
+    $signerCertificate = $signerCertificates[0]
+    if ($signerCertificate.HasPrivateKey) {
+      throw "Disposable CurrentUser trust must export only a public certificate."
+    }
+    $disposableSignerCertificateSha256 = $expectedCertificateHash
+    $disposableSignerSelfSigned = `
+      $signerCertificate.Subject -eq $signerCertificate.Issuer
+    $disposableTrustStores = @('TrustedPublisher')
+    if ($disposableSignerSelfSigned) {
+      $disposableTrustStores = @('Root', 'TrustedPublisher')
+    }
+    [IO.File]::WriteAllBytes(
+      $smokeTrustCertificate,
+      $signerCertificate.Export(
+        [Security.Cryptography.X509Certificates.X509ContentType]::Cert
+      )
+    )
+  }
 
   Push-Location $exampleRoot
   try {
@@ -524,8 +662,6 @@ try {
     throw "Windows Flutter smoke account could not own its disposable lane."
   }
 
-  $userTemp = Join-Path $smokeRoot "user-temp"
-  New-Item -ItemType Directory -Path $userTemp -Force | Out-Null
   $smokeCredential = [System.Management.Automation.PSCredential]::new(
     "$env:COMPUTERNAME\$smokeUserName",
     $smokePassword
@@ -535,9 +671,33 @@ try {
   )
   $smokeUserProfile = Join-Path $profilesDirectory $smokeUserName
   $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
+  $userTemp = Join-Path $smokeLocalAppData "Temp"
+  $provisionTrustToken = if ($ProvisionDisposableUserTrust) { "1" } else { "0" }
+  $selfSignedTrustToken = if ($disposableSignerSelfSigned) { "1" } else { "0" }
+  $trustCertificatePath = if ($ProvisionDisposableUserTrust) {
+    $smokeTrustCertificate
+  } else {
+    ""
+  }
+  $trustCertificateSha256 = if ($ProvisionDisposableUserTrust) {
+    $disposableSignerCertificateSha256
+  } else {
+    ""
+  }
+  $trustCertificatePublisher = if ($ProvisionDisposableUserTrust) {
+    $ExpectedSignerPublisher
+  } else {
+    ""
+  }
   $smokeEnvironment = @{
     APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
     DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
+    DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_SHA256 = $trustCertificateSha256
+    DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_PUBLISHER = $trustCertificatePublisher
+    DESKTOP_UPDATER_SMOKE_PROVISION_USER_TRUST = $provisionTrustToken
+    DESKTOP_UPDATER_SMOKE_SIGNED_HELPER = $installedHelper
+    DESKTOP_UPDATER_SMOKE_SIGNER_SELF_SIGNED = $selfSignedTrustToken
+    DESKTOP_UPDATER_SMOKE_TRUST_CERTIFICATE = $trustCertificatePath
     HOME = $smokeUserProfile
     HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
     HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
@@ -566,6 +726,46 @@ try {
     '  throw "LocalApplicationData resolved outside the standard-user profile."'
     '}'
     '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
+    '$tempPath = Join-Path $localAppData "Temp"'
+    '[IO.Directory]::CreateDirectory($tempPath) | Out-Null'
+    'if ($env:DESKTOP_UPDATER_SMOKE_PROVISION_USER_TRUST -eq "1") {'
+    '  $certificatePath = $env:DESKTOP_UPDATER_SMOKE_TRUST_CERTIFICATE'
+    '  $expectedCertificateSha256 = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_SHA256'
+    '  $expectedPublisher = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_PUBLISHER'
+    '  $signedHelper = $env:DESKTOP_UPDATER_SMOKE_SIGNED_HELPER'
+    '  $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)'
+    '  try {'
+    '    if ($certificate.HasPrivateKey) {'
+    '      throw "Disposable trust certificate unexpectedly contains a private key."'
+    '    }'
+    '    $certificateSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($certificate.RawData)).ToLowerInvariant()'
+    '    $publisher = $certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)'
+    '    if ($certificateSha256 -ne $expectedCertificateSha256 -or $publisher -ne $expectedPublisher) {'
+    '      throw "Disposable trust certificate identity changed."'
+    '    }'
+    '    $storeNames = @("TrustedPublisher")'
+    '    if ($env:DESKTOP_UPDATER_SMOKE_SIGNER_SELF_SIGNED -eq "1") {'
+    '      $storeNames = @("Root", "TrustedPublisher")'
+    '    }'
+    '    foreach ($storeName in $storeNames) {'
+    '      $certutilOutput = & certutil.exe -user -f -addstore $storeName $certificatePath 2>&1'
+    '      if ($LASTEXITCODE -ne 0) {'
+    '        throw "certutil failed to add disposable CurrentUser trust to $storeName`: $certutilOutput"'
+    '      }'
+    '    }'
+    '    $helperSignature = Get-AuthenticodeSignature -LiteralPath $signedHelper'
+    '    if ($helperSignature.Status -ne "Valid" -or $null -eq $helperSignature.SignerCertificate) {'
+    '      throw "Disposable user does not trust the signed helper."'
+    '    }'
+    '    $helperCertificateSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($helperSignature.SignerCertificate.RawData)).ToLowerInvariant()'
+    '    $helperPublisher = $helperSignature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)'
+    '    if ($helperCertificateSha256 -ne $expectedCertificateSha256 -or $helperPublisher -ne $expectedPublisher) {'
+    '      throw "Disposable user trusted an unexpected helper signer."'
+    '    }'
+    '  } finally {'
+    '    $certificate.Dispose()'
+    '  }'
+    '}'
     '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
     'try {'
     '  [IO.File]::WriteAllText($probe, "ready", [Text.UTF8Encoding]::new($false))'
@@ -600,6 +800,9 @@ try {
     if ($profileProbeProcess.ExitCode -ne 0) {
       throw "Windows Flutter smoke could not initialize LocalAppData for the standard user."
     }
+    if (-not (Test-Path -LiteralPath $userTemp -PathType Container)) {
+      throw "Windows Flutter smoke could not initialize its standard-user TEMP."
+    }
     $prelaunchAcls = @(
       Get-WindowsSmokeAclSnapshot -Label "smokeRoot" -Path $smokeRoot
       Get-WindowsSmokeAclSnapshot -Label "install" -Path $install
@@ -609,7 +812,7 @@ try {
     # Keeping the outer sentinel waiter inside $install pins that directory on
     # Windows and prevents the helper from atomically replacing it after exit.
     $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
-      "--app", (Join-Path $install "desktop_updater_example.exe"),
+      "--app", $installedApp,
       "--diagnostics-log", $capturedDiagnostics
     ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $runnerWorkingDirectory -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -PassThru
   } finally {
@@ -647,9 +850,21 @@ try {
   $cleanupFailures = [Collections.Generic.List[string]]::new()
   if ($null -ne $smokeProcess) {
     try {
-      Stop-WindowsSmokeRelaunchProcess -ExecutablePath $app
+      Stop-WindowsSmokeRelaunchProcess -ExecutablePath $installedApp
     } catch {
       $cleanupMessage = "Windows Flutter smoke relaunch cleanup failed: $($_.Exception.Message)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
+  }
+  if ($smokeUserCreated -and $null -ne $smokeUser -and
+      -not [string]::IsNullOrWhiteSpace($smokeUserProfile)) {
+    try {
+      Remove-WindowsSmokeUserProfile `
+        -Sid $smokeUser.SID.Value `
+        -ExpectedPath $smokeUserProfile
+    } catch {
+      $cleanupMessage = "Windows Flutter smoke profile cleanup failed: $($_.Exception.Message)"
       $cleanupFailures.Add($cleanupMessage) | Out-Null
       Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
     }
@@ -665,8 +880,7 @@ try {
   }
   if (Test-Path -LiteralPath $smokeRoot) {
     try {
-      Repair-WindowsSmokeCleanupAccess -Root $smokeRoot
-      Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction Stop
+      Remove-WindowsSmokeRootWithRetry -Root $smokeRoot
     } catch {
       $cleanupMessage = "Windows Flutter smoke root cleanup failed: $($_.Exception.Message)"
       $cleanupFailures.Add($cleanupMessage) | Out-Null

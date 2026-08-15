@@ -334,7 +334,7 @@ void main() {
     );
   });
 
-  test("NuGet package carries wrappers, win-x64 DLLs, helper, and policy", () {
+  test("NuGet package carries wrappers and selected Windows RID assets", () {
     final project = readRequiredFile(
       "windows/native/dotnet/DesktopUpdater.Native/DesktopUpdater.Native.csproj",
     );
@@ -357,7 +357,11 @@ void main() {
     expect(project, contains(r'Include="$(RuntimeDllPath)"'));
     expect(project, contains(r'Include="$(InstallHelperPath)"'));
     expect(project, contains(r'Include="$(HelperPolicyPath)"'));
-    expect(project, contains('PackagePath="runtimes/win-x64/native"'));
+    expect(
+      project,
+      contains('PackagePath="runtimes/\$(NativeRuntimeIdentifier)/native"'),
+    );
+    expect(project, contains("win-arm64"));
     expect(
       project,
       contains("buildTransitive/DesktopUpdater.Native.targets"),
@@ -366,6 +370,8 @@ void main() {
     expect(targets, contains("desktop_updater_runtime.dll"));
     expect(targets, contains("desktop_updater_install_helper.exe"));
     expect(targets, contains("desktop_updater_helper_policy.json"));
+    expect(targets, contains("NETCoreSdkRuntimeIdentifier"));
+    expect(targets, contains(r"$(_DesktopUpdaterNativeRuntimeIdentifier)"));
     expect(
       consumerProject,
       contains('PackageReference Include="DesktopUpdater.Native"'),
@@ -379,15 +385,15 @@ void main() {
     expect(consumerSource, contains('"path components"'));
   });
 
-  test("NuGet target rejects unsupported RIDs before copying x64 DLLs", () {
+  test("NuGet target rejects unsupported Windows RIDs before copying", () {
     final targets = readRequiredFile(
       "windows/native/dotnet/DesktopUpdater.Native/buildTransitive/"
       "DesktopUpdater.Native.targets",
     );
     const unsupportedRidCondition =
-        r'''Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64'"''';
+        r'''Condition="'$(_DesktopUpdaterNativeRuntimeIdentifier)' != 'win-x64' and '$(_DesktopUpdaterNativeRuntimeIdentifier)' != 'win-arm64'"''';
     const unsupportedRidMessage =
-        "DesktopUpdater.Native supports only RuntimeIdentifier 'win-x64'";
+        "DesktopUpdater.Native supports RuntimeIdentifier 'win-x64' or 'win-arm64'";
 
     expect(targets, contains(unsupportedRidCondition));
     expect(targets, contains(unsupportedRidMessage));
@@ -558,7 +564,9 @@ bool isIgnoredBySimplePubPattern(String path, Iterable<String> patterns) {
 String readRequiredFile(String path) {
   final file = File(path);
   expect(file.existsSync(), isTrue, reason: "$path must exist");
-  return file.existsSync() ? file.readAsStringSync() : "";
+  return file.existsSync()
+      ? file.readAsStringSync().replaceAll("\r\n", "\n")
+      : "";
 }
 
 String readRequiredDirectory(
@@ -574,6 +582,6 @@ String readRequiredDirectory(
       .listSync(recursive: true)
       .whereType<File>()
       .where((file) => extensions.any(file.path.endsWith))
-      .map((file) => file.readAsStringSync())
+      .map((file) => file.readAsStringSync().replaceAll("\r\n", "\n"))
       .join("\n");
 }

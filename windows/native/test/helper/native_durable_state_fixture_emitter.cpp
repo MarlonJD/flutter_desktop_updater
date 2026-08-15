@@ -15,8 +15,7 @@
 namespace desktop_updater::helper {
 namespace {
 
-constexpr char kTransactionId[] =
-    "00000000-0000-4000-8000-000000000025";
+constexpr char kTransactionId[] = "00000000-0000-4000-8000-000000000025";
 
 WindowsTransactionJournal TransactionJournal() {
   const WindowsTransactionPaths paths =
@@ -56,10 +55,11 @@ WindowsTransactionJournal TransactionJournal() {
   return journal;
 }
 
-WindowsPersistentTransactionRecord PersistentRecord(
-    const std::string& journal_canonical) {
+WindowsPersistentTransactionRecord
+PersistentRecord(const std::string &journal_canonical) {
   return {WindowsPersistentTransactionRecord::kSchemaVersion,
           kTransactionId,
+          "directoryReplace",
           "com.example.desktop-updater.privileged",
           "com.example.app",
           std::string(64, 'e'),
@@ -112,12 +112,10 @@ ProtectedWindowsHelperEndpointV1 ProtectedEndpoint() {
           std::string(64, 'b')};
 }
 
-void WriteExact(const std::filesystem::path& path,
-                const std::string& bytes) {
+void WriteExact(const std::filesystem::path &path, const std::string &bytes) {
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   if (!output) {
-    throw std::runtime_error("could not open fixture output: " +
-                             path.string());
+    throw std::runtime_error("could not open fixture output: " + path.string());
   }
   output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
   if (!output) {
@@ -126,18 +124,17 @@ void WriteExact(const std::filesystem::path& path,
   }
 }
 
-std::string ReadExact(const std::filesystem::path& path) {
+std::string ReadExact(const std::filesystem::path &path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
-    throw std::runtime_error("could not open fixture input: " +
-                             path.string());
+    throw std::runtime_error("could not open fixture input: " + path.string());
   }
   return std::string(std::istreambuf_iterator<char>(input),
                      std::istreambuf_iterator<char>());
 }
 
 template <typename Decode>
-void VerifyExact(const std::filesystem::path& path, Decode decode) {
+void VerifyExact(const std::filesystem::path &path, Decode decode) {
   const std::string frozen = ReadExact(path);
   const std::string reencoded = decode(frozen);
   if (reencoded != frozen) {
@@ -146,38 +143,48 @@ void VerifyExact(const std::filesystem::path& path, Decode decode) {
   }
 }
 
-void VerifyFixtures(const std::filesystem::path& input_directory) {
-  VerifyExact(input_directory / "transaction-journal-schema2.json",
-              [](const std::string& value) {
-                return WindowsTransactionJournal::DecodeStrict(value)
-                    .EncodeCanonical();
-              });
-  VerifyExact(input_directory / "persistent-record-schema3.json",
-              [](const std::string& value) {
-                return WindowsPersistentTransactionRecord::DecodeStrict(value)
-                    .EncodeCanonical();
-              });
+void VerifyFixtures(const std::filesystem::path &input_directory) {
+  VerifyExact(
+      input_directory / "transaction-journal-schema2.json",
+      [](const std::string &value) {
+        return WindowsTransactionJournal::DecodeStrict(value).EncodeCanonical();
+      });
+  const std::filesystem::path current_persistent_record =
+      input_directory / "persistent-record-schema4.json";
+  const std::filesystem::path legacy_persistent_record =
+      input_directory / "persistent-record-schema3.json";
+  if (std::filesystem::exists(current_persistent_record)) {
+    VerifyExact(current_persistent_record, [](const std::string &value) {
+      return WindowsPersistentTransactionRecord::DecodeStrict(value)
+          .EncodeCanonical();
+    });
+  } else {
+    VerifyExact(legacy_persistent_record, [](const std::string &value) {
+      return WindowsPersistentTransactionRecord::DecodeStrict(value)
+          .EncodeCanonical();
+    });
+  }
   VerifyExact(input_directory / "resolver-claim-schema1.json",
-              [](const std::string& value) {
+              [](const std::string &value) {
                 return WindowsPersistentResolverClaim::DecodeStrict(value)
                     .EncodeCanonical();
               });
   VerifyExact(input_directory / "portable-locator-schema1.json",
-              [](const std::string& value) {
+              [](const std::string &value) {
                 return WindowsPortableTransactionLocatorV1::DecodeStrict(value)
                     .EncodeCanonical();
               });
   VerifyExact(input_directory / "protected-helper-endpoint-schema1.json",
-              [](const std::string& value) {
+              [](const std::string &value) {
                 return ProtectedWindowsHelperEndpointV1::DecodeStrict(value)
                     .EncodeCanonical();
               });
 }
 
-}  // namespace
-}  // namespace desktop_updater::helper
+} // namespace
+} // namespace desktop_updater::helper
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   using namespace desktop_updater::helper;
   try {
     if (argc == 3 && std::string(argv[1]) == "--verify") {
@@ -196,7 +203,7 @@ int main(int argc, char** argv) {
     const std::string journal_canonical = journal.EncodeCanonical();
     WriteExact(output_directory / "transaction-journal-schema2.json",
                journal_canonical);
-    WriteExact(output_directory / "persistent-record-schema3.json",
+    WriteExact(output_directory / "persistent-record-schema4.json",
                PersistentRecord(journal_canonical).EncodeCanonical());
     WriteExact(output_directory / "resolver-claim-schema1.json",
                ResolverClaim().EncodeCanonical());
@@ -205,7 +212,7 @@ int main(int argc, char** argv) {
     WriteExact(output_directory / "protected-helper-endpoint-schema1.json",
                ProtectedEndpoint().EncodeCanonical());
     return 0;
-  } catch (const std::exception& error) {
+  } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;
   }

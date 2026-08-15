@@ -145,4 +145,8 @@ void main() {
   });
 }
 
-String _source(String filePath) => File(filePath).readAsStringSync();
+String _source(String filePath) =>
+    File(filePath).readAsStringSync().replaceAll("\r\n", "\n").replaceAll(
+          "\r",
+          "\n",
+        );

@@ -89,19 +89,47 @@ void main() {
     ]) {
       expect(releaseDescriptor, isNot(contains('\"$futureKind\"')));
     }
-    final repositoryFiles = Directory(".")
-        .listSync(recursive: true, followLinks: false)
-        .whereType<File>()
-        .map((file) => file.path.toLowerCase())
-        .where(
-          (path) =>
-              path.contains("appimage_packager") ||
-              path.contains("deb_packager") ||
-              path.contains("rpm_packager") ||
-              path.contains("flatpak_repository_publisher") ||
-              path.contains("snap_store_publisher"),
-        )
-        .toList();
+    // Keep the production-scope scan bounded to canonical repository roots.
+    // Retained readiness evidence may contain partially removed dependency
+    // caches, which must not alter this source contract's result.
+    final repositoryFiles = <String>[];
+    for (final root in const [
+      ".github",
+      "assets",
+      "bin",
+      "doc",
+      "docs",
+      "example",
+      "fixtures",
+      "lib",
+      "linux",
+      "macos",
+      "native_runtime",
+      "schemas",
+      "script",
+      "spikes",
+      "test",
+      "third_party",
+      "tool",
+      "windows",
+    ]) {
+      final directory = Directory(root);
+      if (!directory.existsSync()) continue;
+      repositoryFiles.addAll(
+        directory
+            .listSync(recursive: true, followLinks: false)
+            .whereType<File>()
+            .map((file) => file.path.toLowerCase())
+            .where(
+              (path) =>
+                  path.contains("appimage_packager") ||
+                  path.contains("deb_packager") ||
+                  path.contains("rpm_packager") ||
+                  path.contains("flatpak_repository_publisher") ||
+                  path.contains("snap_store_publisher"),
+            ),
+      );
+    }
     expect(repositoryFiles, isEmpty);
     final workflow = requiredFile(".github/workflows/desktop-updater-ci.yml");
     expect(workflow, isNot(contains("SNAPCRAFT_STORE_CREDENTIALS")));

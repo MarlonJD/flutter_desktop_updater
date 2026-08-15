@@ -39,6 +39,17 @@ void ValidatePortableWindowsTargetAuthorityFacts(
     const std::wstring &target, const std::wstring &caller_executable,
     bool target_writable, bool parent_writable);
 
+enum class WindowsProtectedInstallTransactionKind {
+  kDirectoryReplace,
+  kWindowsInno,
+};
+
+WindowsProtectedInstallTransactionKind
+ClassifyWindowsProtectedInstallTransaction(
+    const WindowsHelperPolicy& policy,
+    const desktop_updater::runtime::internal::NativeInstallTransactionRequestV1&
+        request);
+
 class WindowsNativeInstallAuthorizer final
     : public desktop_updater::runtime::internal::
           NativeInstallRequestAuthorizerV1 {

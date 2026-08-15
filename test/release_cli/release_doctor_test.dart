@@ -35,7 +35,7 @@ void main() {
 
   test("missing updates.baseUrl is a blocking config error", () async {
     final root = await _createProject(
-      config: """
+      config: r"""
 updates:
   channel: stable
 """,
@@ -131,9 +131,9 @@ updates:
     }
   });
 
-  test("doctor warns when Inno installer lacks Authenticode policy", () async {
+  test("doctor reports protected Inno configuration", () async {
     final root = await _createProject(
-      config: """
+      config: r"""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -141,6 +141,11 @@ windows:
     kind: inno
     mode: generated
     appId: com.example.app
+    privilegesRequired: admin
+    protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 """,
     );
     try {
@@ -155,8 +160,10 @@ windows:
       expect(exitCode, 0);
       expect(
         output.toString(),
-        contains(
-          "WARNING: Windows Inno installer updates should configure Authenticode thumbprints.",
+        isNot(
+          contains(
+            "WARNING: Windows Inno installer updates should configure Authenticode thumbprints.",
+          ),
         ),
       );
       expect(

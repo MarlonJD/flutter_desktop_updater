@@ -292,7 +292,8 @@ std::optional<ScopedRegistryKey> OpenRecordKey(const std::wstring& path,
         KEY_QUERY_VALUE | KEY_SET_VALUE | READ_CONTROL | KEY_WOW64_64KEY,
         &attributes, &raw_key, disposition);
     if (status != ERROR_SUCCESS || raw_key == nullptr) {
-      Fail("protected helper locator cannot be created");
+      Fail("protected helper locator cannot be created (Windows status " +
+           std::to_string(status) + ")");
     }
   }
   ScopedRegistryKey key(raw_key);

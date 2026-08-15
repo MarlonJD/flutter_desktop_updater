@@ -307,7 +307,7 @@ void main() {
     final store = _MemoryRecoveryStore();
     await _writePendingMarker(store: store, stagingRoot: root);
     DesktopUpdaterPlatform.instance = _RecordingPlatform(
-      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+      nativeRecovery: _nativeRecoveryForHost(
         query: (_) async => throw StateError("transport lost"),
         recover: (_) async => null,
       ),
@@ -324,7 +324,7 @@ void main() {
     expect(store.markerFor("stable"), isNotNull);
 
     DesktopUpdaterPlatform.instance = _RecordingPlatform(
-      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+      nativeRecovery: _nativeRecoveryForHost(
         query: (transactionId) async => _nativeStatus(
           transactionId: transactionId,
           state: NativeInstallTransactionState.unknown,
@@ -359,7 +359,7 @@ void main() {
     final store = _MemoryRecoveryStore();
     await _writePendingMarker(store: store, stagingRoot: root);
     DesktopUpdaterPlatform.instance = _RecordingPlatform(
-      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+      nativeRecovery: _nativeRecoveryForHost(
         query: (transactionId) async => _nativeStatus(
           transactionId: transactionId,
           state: NativeInstallTransactionState.completed,
@@ -380,6 +380,22 @@ void main() {
 
     expect(store.markerFor("stable"), isNull);
   });
+}
+
+NativeInstallRecovery _nativeRecoveryForHost({
+  required NativeInstallStatusOperation query,
+  required NativeInstallStatusOperation recover,
+}) {
+  if (Platform.isWindows) {
+    return AtomicAfterExitNativeInstallRecovery(
+      query: query,
+      resolveAfterExit: query,
+    );
+  }
+  return QueryAndRecoverNativeInstallRecovery(
+    query: query,
+    recover: recover,
+  );
 }
 
 class _RecordingPlatform

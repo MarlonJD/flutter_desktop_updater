@@ -29,10 +29,12 @@
 #include "stage_provenance.h"
 #include "windows_native_install_request_builder.h"
 #include "windows_one_shot_transport.h"
+#include "windows_portable_recovery_host.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_protected_helper_locator.h"
 #include "windows_recovery_transport.h"
 #include "windows_uninstall_record_proof.h"
+#include "windows_path_identity.h"
 
 #ifndef DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR
 #define DESKTOP_UPDATER_PROTECTED_HELPER_INSTALL_DIR ""
@@ -43,6 +45,10 @@ namespace fs = std::filesystem;
 namespace desktop_updater {
 namespace native {
 namespace {
+
+using windows_path_identity::NormalizedPath;
+using windows_path_identity::PathEquals;
+using windows_path_identity::ExtendedLengthPath;
 
 constexpr std::size_t kMaximumInstalledIdentityMarkerBytes = 64 * 1024;
 constexpr std::size_t kMaximumHelperMetadataBytes = 16 * 1024 * 1024;
@@ -103,8 +109,9 @@ std::string WideToUtf8(const std::wstring& value) {
 
 std::string ReadBoundedRegularFileNoReparse(const fs::path& path,
                                             std::size_t maximum_bytes) {
+  const std::wstring native_path = ExtendedLengthPath(path);
   HANDLE raw_file = CreateFileW(
-      path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
+      native_path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
       nullptr, OPEN_EXISTING,
       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
   if (raw_file == INVALID_HANDLE_VALUE) {
@@ -168,6 +175,15 @@ std::string CanonicalJsonFile(const fs::path& path,
   return contents;
 }
 
+std::string CanonicalPolicyFile(const fs::path& path, const char* description) {
+  const std::string contents = CanonicalJsonFile(
+      path, kMaximumHelperPolicyBytes, description, true);
+  if (!contents.empty() && contents.back() == '\n') {
+    return contents.substr(0, contents.size() - 1);
+  }
+  return contents;
+}
+
 void ValidateConfiguredWindowsHelperPath(
     const helper::ProtectedWindowsHelperEndpointV1& endpoint) {
   const std::string configured =
@@ -175,8 +191,7 @@ void ValidateConfiguredWindowsHelperPath(
   if (!configured.empty()) {
     const fs::path expected =
         fs::u8path(configured) / kWindowsHelperExecutableName;
-    if (_wcsicmp(expected.lexically_normal().c_str(),
-                 endpoint.helper_path.lexically_normal().c_str()) != 0) {
+    if (!PathEquals(expected, endpoint.helper_path)) {
       throw std::runtime_error(
           "Protected Windows helper install directory is not configured for "
           "the registered endpoint.");
@@ -356,27 +371,9 @@ bool StrictInheritedHandle(const std::wstring& value, HANDLE* handle) {
   return true;
 }
 
-std::wstring NormalizedDirectoryPath(const fs::path& path) {
-  std::wstring value = path.lexically_normal().wstring();
-  if (value.rfind(L"\\\\?\\", 0) == 0) {
-    value.erase(0, 4);
-  }
-  while (!value.empty() && (value.back() == L'\\' || value.back() == L'/')) {
-    value.pop_back();
-  }
-  return value;
-}
-
-bool PathEquals(const fs::path& first, const fs::path& second) {
-  const std::wstring first_value = NormalizedDirectoryPath(first);
-  const std::wstring second_value = NormalizedDirectoryPath(second);
-  return !first_value.empty() && !second_value.empty() &&
-         _wcsicmp(first_value.c_str(), second_value.c_str()) == 0;
-}
-
 bool IsSameOrChildPath(const fs::path& root, const fs::path& candidate) {
-  const std::wstring root_value = NormalizedDirectoryPath(root);
-  const std::wstring candidate_value = NormalizedDirectoryPath(candidate);
+  const std::wstring root_value = NormalizedPath(root);
+  const std::wstring candidate_value = NormalizedPath(candidate);
   if (root_value.empty() || candidate_value.empty()) {
     return false;
   }
@@ -867,8 +864,8 @@ WindowsHelperClientContext LoadWindowsHelperClientContext(
         "Registered Windows helper endpoint identity does not match.");
   }
   const fs::path policy_path = endpoint.policy_path;
-  const std::string policy_json = CanonicalJsonFile(
-      policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  const std::string policy_json =
+      CanonicalPolicyFile(policy_path, "Windows helper policy");
   if (Sha256Hex(policy_json) != endpoint.policy_sha256) {
     throw std::runtime_error(
         "Registered Windows helper policy digest does not match.");
@@ -917,8 +914,8 @@ WindowsHelperClientContext LoadPortableWindowsHelperClientContext(
     throw std::runtime_error(
         "Portable Windows helper is not app-adjacent.");
   }
-  const std::string policy_json = CanonicalJsonFile(
-      policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  const std::string policy_json =
+      CanonicalPolicyFile(policy_path, "Windows helper policy");
   const runtime::internal::JsonValue policy_value =
       runtime::internal::ParseJson(policy_json);
   const std::string application_package_id =
@@ -962,9 +959,8 @@ WindowsHelperClientContext LoadFrozenPortableWindowsTransactionClientContext(
     throw std::runtime_error(
         "Frozen portable Windows helper identity does not match.");
   }
-  const std::string policy_json = CanonicalJsonFile(
-      endpoint.policy_path, kMaximumHelperPolicyBytes,
-      "Frozen portable Windows helper policy");
+  const std::string policy_json = CanonicalPolicyFile(
+      endpoint.policy_path, "Frozen portable Windows helper policy");
   if (Sha256Hex(policy_json) != endpoint.locator.policy_sha256) {
     throw std::runtime_error(
         "Frozen portable Windows policy digest does not match.");
@@ -1040,8 +1036,8 @@ bool AdjacentPolicyDeclaresPortable(const fs::path& running_executable) {
     throw std::runtime_error(
         "Adjacent Windows helper/policy layout is incomplete or unsafe.");
   }
-  const std::string canonical = CanonicalJsonFile(
-      policy_path, kMaximumHelperPolicyBytes, "Windows helper policy");
+  const std::string canonical =
+      CanonicalPolicyFile(policy_path, "Windows helper policy");
   const runtime::internal::JsonValue value =
       runtime::internal::ParseJson(canonical);
   const auto& roots = value.at("allowedInstallRoots").array();
@@ -1343,7 +1339,7 @@ InstallTransactionStatus RunWindowsPersistentOperation(
         context.portable
             ? helper::LaunchAuthenticatedPortableRecoveryRequest(
                   context.helper_path, context.policy, request,
-                  kWindowsHelperStartupTimeoutMilliseconds)
+                  helper::kPortableWindowsHelperStartupTimeoutMilliseconds)
             : helper::LaunchAuthenticatedElevatedRecoveryRequest(
                   context.helper_path, context.policy, request,
                   kWindowsHelperStartupTimeoutMilliseconds);
@@ -1577,16 +1573,19 @@ InstallResult PrepareInstall(
                        error.what()};
   }
   try {
+    const DWORD helper_startup_timeout =
+        portable ? helper::kPortableWindowsHelperStartupTimeoutMilliseconds
+                 : kWindowsHelperStartupTimeoutMilliseconds;
     helper::WindowsElevatedHelperLaunch launch =
         portable
             ? helper::LaunchAuthenticatedPortableHelper(
                   prepared->helper.helper_path, prepared->helper.policy,
                   prepared->nonce, prepared->canonical_request,
-                  kWindowsHelperStartupTimeoutMilliseconds)
+                  helper_startup_timeout)
             : helper::LaunchAuthenticatedElevatedHelper(
                   prepared->helper.helper_path, prepared->helper.policy,
                   prepared->nonce, prepared->canonical_request,
-                  kWindowsHelperStartupTimeoutMilliseconds);
+                  helper_startup_timeout);
     if (launch.result != helper::ElevationLaunchResult::kLaunched ||
         launch.session == nullptr) {
       return {false,
@@ -1754,9 +1753,9 @@ InstallTransactionStatus ResolvePendingInstallAfterExit(
 
 bool IsStrictChildPath(const std::wstring& root,
                        const std::wstring& candidate) {
-  const std::wstring root_value = NormalizedDirectoryPath(fs::path(root));
+  const std::wstring root_value = NormalizedPath(fs::path(root));
   const std::wstring candidate_value =
-      NormalizedDirectoryPath(fs::path(candidate));
+      NormalizedPath(fs::path(candidate));
   const std::wstring root_with_slash = root_value + L"\\";
   return candidate_value.size() > root_with_slash.size() &&
          _wcsnicmp(candidate_value.c_str(), root_with_slash.c_str(),
@@ -1773,8 +1772,8 @@ bool RegistryRecordMatchesInstallTarget(
     return false;
   }
   return _wcsicmp(
-             NormalizedDirectoryPath(fs::path(install_location)).c_str(),
-             NormalizedDirectoryPath(fs::path(canonical_target)).c_str()) ==
+             NormalizedPath(fs::path(install_location)).c_str(),
+             NormalizedPath(fs::path(canonical_target)).c_str()) ==
              0 &&
          package_id == expected_package_id;
 }

@@ -16,7 +16,10 @@ param(
   [string] $OutputPath,
 
   [Parameter(Mandatory = $true)]
-  [string] $PackageVersion
+  [string] $PackageVersion,
+
+  [ValidateSet("win-x64", "win-arm64")]
+  [string] $RuntimeIdentifier = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +48,7 @@ dotnet restore $project `
   --ignore-failed-sources `
   --no-cache `
   "-p:NuGetAudit=false" `
+  "-p:DesktopUpdaterNativeRuntimeIdentifier=$RuntimeIdentifier" `
   "-p:DesktopUpdaterNativeVersion=$PackageVersion" `
   "-p:RestorePackagesPath=$packages" `
   "-p:BaseIntermediateOutputPath=$obj" `
@@ -56,6 +60,7 @@ dotnet build $project `
   --no-restore `
   --output $OutputPath `
   "-p:NuGetAudit=false" `
+  "-p:DesktopUpdaterNativeRuntimeIdentifier=$RuntimeIdentifier" `
   "-p:DesktopUpdaterNativeVersion=$PackageVersion" `
   "-p:RestorePackagesPath=$packages" `
   "-p:BaseIntermediateOutputPath=$obj" `
@@ -64,10 +69,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $entryNames = @(
-  "runtimes/win-x64/native/desktop_updater_native.dll",
-  "runtimes/win-x64/native/desktop_updater_runtime.dll",
-  "runtimes/win-x64/native/desktop_updater_install_helper.exe",
-  "runtimes/win-x64/native/desktop_updater_helper_policy.json"
+  "runtimes/$RuntimeIdentifier/native/desktop_updater_native.dll",
+  "runtimes/$RuntimeIdentifier/native/desktop_updater_runtime.dll",
+  "runtimes/$RuntimeIdentifier/native/desktop_updater_install_helper.exe",
+  "runtimes/$RuntimeIdentifier/native/desktop_updater_helper_policy.json"
 )
 $expectedHashes = @{}
 $archive = [System.IO.Compression.ZipFile]::OpenRead($package)
@@ -93,7 +98,7 @@ try {
 }
 
 foreach ($fileName in $expectedHashes.Keys) {
-  $normalizedSuffix = "/runtimes/win-x64/native/$fileName"
+  $normalizedSuffix = "/runtimes/$RuntimeIdentifier/native/$fileName"
   $resolvedDlls = @(
     Get-ChildItem -LiteralPath $packages -Recurse -File |
       Where-Object {

@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "json_value.h"
 #include "windows_file_transaction.h"
@@ -57,6 +58,40 @@ class ThrowingFaultInjector final : public WindowsTransactionFaultInjector {
  private:
   WindowsTransactionFaultPoint point_;
   bool thrown_ = false;
+};
+
+class DelayedTargetSharingInjector final : public WindowsTransactionFaultInjector {
+ public:
+  explicit DelayedTargetSharingInjector(std::filesystem::path target)
+      : target_(std::move(target)) {}
+
+  ~DelayedTargetSharingInjector() override {
+    if (release_thread_.joinable()) release_thread_.join();
+  }
+
+  void Hit(WindowsTransactionFaultPoint point) override {
+    if (point != WindowsTransactionFaultPoint::kBeforeBackupRename ||
+        started_) {
+      return;
+    }
+    started_ = true;
+    HANDLE blocker = CreateFileW(
+        target_.c_str(), FILE_LIST_DIRECTORY | SYNCHRONIZE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (blocker == INVALID_HANDLE_VALUE) {
+      throw std::runtime_error("target sharing blocker open failed");
+    }
+    release_thread_ = std::thread([blocker]() {
+      Sleep(6500);
+      CloseHandle(blocker);
+    });
+  }
+
+ private:
+  std::filesystem::path target_;
+  std::thread release_thread_;
+  bool started_ = false;
 };
 
 class WindowsTransactionFixture {
@@ -131,6 +166,25 @@ TEST(WindowsFileTransaction, SwapsUnicodeTreeAndRemovesDerivedState) {
 
   EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
   EXPECT_FALSE(std::filesystem::exists(fixture.stage));
+  EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
+}
+
+TEST(WindowsFileTransaction,
+     RetriesTransientTargetSharingUntilTheBoundedRenameBudgetExpires) {
+  WindowsTransactionFixture fixture;
+  DelayedTargetSharingInjector injector(fixture.target / L"version.txt");
+  auto transaction = fixture.MakeTransaction(
+      "00000000-0000-4000-8000-000000000008", &injector);
+  transaction->Prepare();
+
+  try {
+    EXPECT_EQ(WindowsFileTransactionResult::kCompleted,
+              transaction->ExecutePrepared());
+  } catch (const std::exception& error) {
+    ADD_FAILURE() << error.what();
+  }
+
+  EXPECT_EQ("new", fixture.ReadVersion(fixture.target));
   EXPECT_TRUE(FindWindowsTransactionArtifacts(fixture.root).empty());
 }
 

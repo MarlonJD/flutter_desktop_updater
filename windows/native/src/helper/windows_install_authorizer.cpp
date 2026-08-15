@@ -19,17 +19,21 @@
 #include <utility>
 #include <vector>
 
+#include "../windows_path_identity.h"
 #include "helper_authenticode.h"
 #include "json_value.h"
-#include "windows_file_transaction.h"
 #include "windows_archive_restage.h"
+#include "windows_file_transaction.h"
 #include "windows_helper_bootstrap.h"
 #include "windows_helper_diagnostics.h"
+#include "windows_inno_policy.h"
+#include "windows_inno_restage.h"
+#include "windows_inno_transaction_journal.h"
+#include "windows_one_shot_transport.h"
 #include "windows_persistent_recovery.h"
+#include "windows_portable_transaction_index.h"
 #include "windows_recovery_host.h"
 #include "windows_relaunch_service.h"
-#include "windows_one_shot_transport.h"
-#include "windows_portable_transaction_index.h"
 #include "windows_uninstall_record_proof.h"
 
 namespace desktop_updater::helper {
@@ -188,17 +192,20 @@ std::vector<std::uint8_t> BCryptSha256Bytes(const std::string& bytes) {
   return digest;
 }
 
-std::string BCryptSha256Hex(const std::string& bytes) {
+std::string BCryptSha256Hex(const std::string &bytes) {
   return StageBytesToHex(BCryptSha256Bytes(bytes));
 }
 
-std::string ReadRegularFileNoReparse(const std::filesystem::path& path,
+std::string ReadRegularFileNoReparse(const std::filesystem::path &path,
                                      std::size_t maximum_bytes) {
+  const std::wstring native_path =
+      desktop_updater::native::windows_path_identity::ExtendedLengthPath(path);
   UniqueWindowsHandle file(CreateFileW(
-      path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
+      native_path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
       nullptr, OPEN_EXISTING,
       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-  if (!file.valid()) Fail("helper metadata file is unavailable");
+  if (!file.valid())
+    Fail("helper metadata file is unavailable");
   BY_HANDLE_FILE_INFORMATION information{};
   if (!GetFileInformationByHandle(file.get(), &information) ||
       (information.dwFileAttributes &
@@ -636,7 +643,8 @@ class WindowsPortableDirectoryPreparedTransaction final
               transaction_id_, policy_, endpoint_, caller_process_);
           failure_event.Advance(
               WindowsHelperEvent::kPortableRecoveryStorageFailure);
-          index_.PersistPreparing(transaction_id_, target_path_, frozen,
+          index_.PersistPreparing(transaction_id_, "directoryReplace",
+                                  target_path_, frozen,
                                   executor_process_id_,
                                   executor_process_start_identity_,
                                   caller_process_id_,
@@ -646,7 +654,9 @@ class WindowsPortableDirectoryPreparedTransaction final
         [this, &failure_event]() {
           failure_event.Advance(
               WindowsHelperEvent::kPortableRecoveryHostFailure);
-          recovery_host_.ArmAndStart(recovery_host_definition_, 30'000);
+          recovery_host_.ArmAndStart(
+              recovery_host_definition_,
+              kPortableWindowsHelperStartupTimeoutMilliseconds);
           recovery_host_armed_ = true;
         },
         [this, &failure_event]() {
@@ -806,7 +816,8 @@ class WindowsDirectoryPreparedTransaction final
   std::string PrepareDurableJournal() override {
     const std::string frozen = transaction_.initial_journal_canonical();
     BindProtectedWindowsTransactionEndpoint(transaction_id_, endpoint_);
-    index_.PersistPreparing(transaction_id_, target_path_, frozen,
+    index_.PersistPreparing(transaction_id_, "directoryReplace", target_path_,
+                            frozen,
                             executor_process_id_,
                             executor_process_start_identity_,
                             caller_process_id_,
@@ -891,6 +902,260 @@ class WindowsDirectoryPreparedTransaction final
   WindowsFileTransaction transaction_;
   CallerTokenWindowsLauncher launcher_;
   WindowsRelaunchService relaunch_service_;
+};
+
+bool VerifyProtectedInnoInstalledPackage(
+    const ProtectedWindowsInnoExpectation& expectation,
+    ProtectedWindowsInnoVerifier& verifier) {
+  try {
+    verifier.VerifyInstalledPackage(expectation);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+ProtectedWindowsInnoExpectation OldProtectedInnoExpectation(
+    const ProtectedWindowsInnoJournal& journal) {
+  ProtectedWindowsInnoExpectation result = journal.BuildExpectation();
+  result.expected_version = journal.current_version;
+  result.expected_build_number = journal.current_build_number;
+  result.execution.installed_executable_sha256 =
+      journal.current_executable_sha256;
+  return result;
+}
+
+ProtectedWindowsInnoJournal BuildProtectedInnoJournal(
+    const std::filesystem::path& target_path,
+    const ProtectedWindowsInnoRestage& restage,
+    const NativeInstallTransactionRequestV1& request,
+    ProtectedWindowsInnoExecutionPolicy execution,
+    DWORD owner_process_id,
+    std::uint64_t owner_process_start_identity) {
+  ProtectedWindowsInnoJournal journal;
+  journal.transaction_id = request.transaction_id;
+  journal.package_id = request.package_id;
+  journal.target_path = target_path;
+  journal.installer_leaf = restage.leaf();
+  journal.installer_sha256 = request.stage.artifact_sha256;
+  journal.installer_length = request.stage.artifact_length;
+  journal.descriptor_sha256 = request.signed_descriptor.canonical_sha256;
+  journal.provenance_sha256 = request.stage.provenance_sha256;
+  journal.current_version = request.current_identity.version;
+  journal.current_build_number = request.current_identity.build_number;
+  journal.current_executable_sha256 = request.caller.executable_sha256;
+  journal.desired_version = request.desired_identity.version;
+  journal.desired_build_number = request.desired_identity.build_number;
+  journal.execution = std::move(execution);
+  journal.owner_process_id = owner_process_id;
+  journal.owner_process_start_identity = owner_process_start_identity;
+  (void)journal.EncodeCanonical();
+  return journal;
+}
+
+class WindowsInnoPreparedTransaction final
+    : public NativeInstallPreparedTransactionV1 {
+ public:
+  WindowsInnoPreparedTransaction(
+      std::filesystem::path target_path,
+      ProtectedWindowsInnoRestage restage,
+      const NativeInstallTransactionRequestV1& request,
+      ProtectedWindowsInnoExecutionPolicy execution,
+      const WindowsHelperPolicy& policy,
+      ProtectedWindowsHelperEndpointV1 endpoint,
+      HANDLE caller_process)
+      : target_path_(std::move(target_path)),
+        transaction_id_(request.transaction_id),
+        endpoint_(std::move(endpoint)),
+        recovery_ready_nonce_(SecureWindowsReadyToken()),
+        recovery_host_definition_(BuildWindowsRecoveryHostTaskDefinition(
+            endpoint_, transaction_id_, recovery_ready_nonce_)),
+        executor_process_id_(GetCurrentProcessId()),
+        executor_process_start_identity_(
+            WindowsProcessStartIdentity(GetCurrentProcess())),
+        caller_process_id_(GetProcessId(caller_process)),
+        caller_process_start_identity_(
+            WindowsProcessStartIdentity(caller_process)),
+        index_(policy, caller_process),
+        restage_(std::move(restage)),
+        journal_(BuildProtectedInnoJournal(
+            target_path_, restage_, request, std::move(execution),
+            executor_process_id_, executor_process_start_identity_)),
+        launcher_(caller_process) {}
+
+  const std::string& transaction_id() const override {
+    return transaction_id_;
+  }
+
+  std::string PrepareDurableJournal() override {
+    const ScopedWindowsHelperFailureEvent failure_event(
+        WindowsHelperEvent::kProtectedPreparationFailure);
+    ScopedWindowsHelperFailureEvent preparation_stage(
+        WindowsHelperEvent::kProtectedJournalValidationFailure);
+    const std::string frozen = journal_.EncodeCanonical();
+    preparation_stage.Advance(
+        WindowsHelperEvent::kProtectedArtifactVerificationFailure);
+    verifier_.VerifyInstaller(journal_.BuildExpectation());
+    preparation_stage.Advance(
+        WindowsHelperEvent::kProtectedEndpointBindingFailure);
+    BindProtectedWindowsTransactionEndpoint(transaction_id_, endpoint_);
+    preparation_stage.Advance(
+        WindowsHelperEvent::kProtectedRecoveryStorageFailure);
+    index_.PersistPreparing(
+        transaction_id_, "windowsInno", target_path_, frozen,
+        executor_process_id_, executor_process_start_identity_,
+        caller_process_id_, caller_process_start_identity_,
+        recovery_ready_nonce_);
+    preparation_stage.Advance(
+        WindowsHelperEvent::kProtectedRecoveryHostFailure);
+    recovery_host_.ArmAndStart(recovery_host_definition_, 30'000);
+    recovery_host_armed_ = true;
+    preparation_stage.Advance(
+        WindowsHelperEvent::kProtectedActivationFailure);
+    index_.PersistActive(transaction_id_, frozen);
+    restage_.PreserveForRecovery();
+    return frozen;
+  }
+
+  void MarkCommitAccepted() override {
+    index_.MarkCommitAccepted(transaction_id_);
+    commit_accepted_ = true;
+  }
+
+  void ExecuteAfterCallerExit() override {
+    ProtectedWindowsInnoRecoveryDecision decision;
+    std::exception_ptr execution_failure;
+    try {
+      (void)ExecuteProtectedWindowsInnoHandoff(
+          journal_.BuildExpectation(), verifier_, runner_);
+      decision = ProtectedWindowsInnoRecoveryDecision::kCompleted;
+    } catch (...) {
+      execution_failure = std::current_exception();
+      decision = ObserveInstalledOutcome();
+    }
+    FinalizeInstalledOutcome(decision);
+    RelaunchTerminalOutcome(decision);
+    if (decision == ProtectedWindowsInnoRecoveryDecision::kRolledBack) {
+      if (execution_failure != nullptr) std::rethrow_exception(execution_failure);
+      throw WindowsInnoPolicyError("protected Inno transaction rolled back");
+    }
+  }
+
+  void CancelPrepared() override {
+    const ProtectedWindowsInnoRecoveryDecision decision =
+        ObserveInstalledOutcome();
+    if (decision != ProtectedWindowsInnoRecoveryDecision::kRolledBack) {
+      index_.PersistTerminal(transaction_id_, "manualActionRequired", "none");
+      throw WindowsInnoPolicyError(
+          "protected Inno cancellation target is ambiguous");
+    }
+    FinalizeInstalledOutcome(decision);
+    if (!commit_accepted_) DisarmRecoveryHost();
+  }
+
+ private:
+  ProtectedWindowsInnoRecoveryDecision ObserveInstalledOutcome() {
+    const bool desired = VerifyProtectedInnoInstalledPackage(
+        journal_.BuildExpectation(), verifier_);
+    const bool old = VerifyProtectedInnoInstalledPackage(
+        OldProtectedInnoExpectation(journal_), verifier_);
+    return DecideProtectedWindowsInnoRecovery(false, desired, old);
+  }
+
+  void FinalizeInstalledOutcome(
+      ProtectedWindowsInnoRecoveryDecision decision) {
+    if (decision ==
+            ProtectedWindowsInnoRecoveryDecision::kRecoveryRequired ||
+        decision ==
+            ProtectedWindowsInnoRecoveryDecision::kManualActionRequired) {
+      index_.PersistTerminal(transaction_id_, "manualActionRequired", "none");
+      throw WindowsInnoPolicyError(
+          "protected Inno installed outcome is ambiguous");
+    }
+    const bool completed =
+        decision == ProtectedWindowsInnoRecoveryDecision::kCompleted;
+    if (!completed) index_.MarkCancelling(transaction_id_);
+    index_.PersistCleanupPending(
+        transaction_id_,
+        completed ? "completedCleanupPending" : "rolledBackCleanupPending",
+        completed ? "newTarget" : "oldTarget");
+    restage_.RemoveExact();
+    index_.PersistTerminal(transaction_id_,
+                           completed ? "completed" : "rolledBack",
+                           completed ? "newTarget" : "oldTarget");
+  }
+
+  void RelaunchTerminalOutcome(
+      ProtectedWindowsInnoRecoveryDecision decision) {
+    if (!journal_.execution.relaunch_after_install) {
+      DisarmRecoveryHost();
+      return;
+    }
+    WindowsPersistentResolverClaim claim{
+        WindowsPersistentResolverClaim::kSchemaVersion,
+        transaction_id_,
+        static_cast<std::int64_t>(executor_process_id_),
+        static_cast<std::int64_t>(executor_process_start_identity_),
+        static_cast<std::int64_t>(caller_process_id_),
+        static_cast<std::int64_t>(caller_process_start_identity_),
+        SecureWindowsReadyToken(),
+        "claimed"};
+    if (index_.ClaimResolver(claim) != WindowsResolverClaimDecision::kOwn) {
+      throw WindowsRelaunchError(
+          "protected Inno relaunch is owned by another resolver");
+    }
+    const ProtectedWindowsInnoExpectation expectation =
+        decision == ProtectedWindowsInnoRecoveryDecision::kCompleted
+            ? journal_.BuildExpectation()
+            : OldProtectedInnoExpectation(journal_);
+    const WindowsAtMostOnceRelaunchOutcome outcome =
+        RunWindowsAtMostOnceRelaunch(
+            [this, &claim]() { return index_.ConsumeResolverClaim(claim); },
+            [this]() { index_.MarkRelaunchAttempting(transaction_id_); },
+            [this, &expectation]() {
+              verifier_.VerifyInstalledPackage(expectation);
+              launcher_.Launch(
+                  expectation.install_root /
+                  expectation.execution.installed_executable_relative_path);
+            },
+            [this](bool launched) {
+              index_.PersistRelaunchOutcome(transaction_id_, launched);
+            });
+    if (outcome != WindowsAtMostOnceRelaunchOutcome::kLaunched) {
+      throw WindowsRelaunchError("protected Inno relaunch failed");
+    }
+    DisarmRecoveryHost();
+  }
+
+  void DisarmRecoveryHost() noexcept {
+    if (!recovery_host_armed_) return;
+    try {
+      recovery_host_.Disarm(recovery_host_definition_);
+      recovery_host_armed_ = false;
+    } catch (...) {
+      // The stable SYSTEM recovery host observes the terminal record and
+      // removes the exact transaction task.
+    }
+  }
+
+  std::filesystem::path target_path_;
+  std::string transaction_id_;
+  ProtectedWindowsHelperEndpointV1 endpoint_;
+  std::string recovery_ready_nonce_;
+  WindowsRecoveryHostTaskDefinition recovery_host_definition_;
+  TaskSchedulerWindowsRecoveryHostController recovery_host_;
+  DWORD executor_process_id_;
+  std::uint64_t executor_process_start_identity_;
+  DWORD caller_process_id_;
+  std::uint64_t caller_process_start_identity_;
+  bool recovery_host_armed_ = false;
+  bool commit_accepted_ = false;
+  WindowsPersistentTransactionIndex index_;
+  ProtectedWindowsInnoRestage restage_;
+  ProtectedWindowsInnoJournal journal_;
+  AuthenticodeProtectedWindowsInnoVerifier verifier_;
+  CreateProcessProtectedWindowsInnoRunner runner_;
+  CallerTokenWindowsLauncher launcher_;
 };
 
 }  // namespace
@@ -1018,6 +1283,28 @@ void ValidatePortableWindowsTargetAuthorityFacts(
   }
 }
 
+WindowsProtectedInstallTransactionKind
+ClassifyWindowsProtectedInstallTransaction(
+    const WindowsHelperPolicy& policy,
+    const NativeInstallTransactionRequestV1& request) {
+  if (policy.is_portable() ||
+      request.target.target_class != "applicationDirectory" ||
+      !policy.AllowsRequest(request.protocol_version,
+                            request.target.target_class, request.strategy,
+                            request.provider)) {
+    Fail("protected Windows transaction exceeds sealed policy authority");
+  }
+  if (request.strategy == "directoryReplace" &&
+      request.provider == "platformDirectory") {
+    return WindowsProtectedInstallTransactionKind::kDirectoryReplace;
+  }
+  if (request.strategy == "verifiedInstallerHandoff" &&
+      request.provider == "windowsInno") {
+    return WindowsProtectedInstallTransactionKind::kWindowsInno;
+  }
+  Fail("protected Windows provider transaction kind is invalid");
+}
+
 NativeInstallAuthorizationPolicyV1
 BuildWindowsNativeInstallAuthorizationPolicy(
     const WindowsHelperPolicy& policy) {
@@ -1103,10 +1390,12 @@ WindowsNativeInstallAuthorizer::helper_endpoint_identity_sha256() const {
 std::unique_ptr<NativeInstallPreparedTransactionV1>
 WindowsNativeInstallAuthorizer::Authorize(
     const NativeInstallTransactionRequestV1& request) {
-  if (request.strategy != "directoryReplace" ||
-      request.provider != "platformDirectory") {
-    Fail("Windows provider transaction is not directory replacement");
-  }
+  const ScopedWindowsHelperFailureEvent failure_event(
+      WindowsHelperEvent::kProtectedAuthorizationFailure);
+  ScopedWindowsHelperFailureEvent authorization_stage(
+      WindowsHelperEvent::kProtectedRequestValidationFailure);
+  const WindowsProtectedInstallTransactionKind transaction_kind =
+      ClassifyWindowsProtectedInstallTransaction(policy_, request);
   RecordWindowsHelperEvent(WindowsHelperEvent::kStagingPathValidation);
   const std::filesystem::path target =
       CanonicalDirectory(request.target.path_hint, "target path");
@@ -1115,11 +1404,15 @@ WindowsNativeInstallAuthorizer::Authorize(
   if (IsAtOrUnder(stage, target) || IsAtOrUnder(target, stage)) {
     Fail("stage and target paths overlap");
   }
+  authorization_stage.Advance(
+      WindowsHelperEvent::kProtectedTargetAuthorityFailure);
   ValidateRetainedCaller(caller_process_, target, request, policy_);
   ValidateTargetLocationAndExecutableAuthority(target, request, policy_,
                                                caller_process_);
   ValidateTargetIdentityProof(target, request, policy_, caller_process_);
 
+  authorization_stage.Advance(
+      WindowsHelperEvent::kProtectedStageAuthorizationFailure);
   const StageProvenanceMarker marker = VerifyStageProvenance(
       stage, request.stage.provenance_sha256, BCryptSha256Bytes);
   const std::string release_manifest = ReadRegularFileNoReparse(
@@ -1130,22 +1423,52 @@ WindowsNativeInstallAuthorizer::Authorize(
           request, BuildWindowsNativeInstallAuthorizationPolicy(policy_),
           "windows", release_manifest, marker,
           request.stage.provenance_sha256, BCryptSha256Hex);
-  if (authorized.descriptor.artifact.kind != "zip") {
-    Fail("directory replacement requires a signed Windows ZIP descriptor");
+  authorization_stage.Advance(
+      WindowsHelperEvent::kProtectedPayloadPreparationFailure);
+  if (transaction_kind ==
+      WindowsProtectedInstallTransactionKind::kDirectoryReplace) {
+    if (authorized.descriptor.artifact.kind != "zip") {
+      Fail("directory replacement requires a signed Windows ZIP descriptor");
+    }
+    WindowsVerifiedArchiveRestage restage = RestageVerifiedWindowsZip(
+        stage, target.parent_path(), request.transaction_id,
+        request.package_id, request.signed_descriptor.canonical_sha256,
+        request.stage.artifact_sha256, request.stage.artifact_length,
+        release_manifest, WindowsArchiveRestageAuthority::kInstallerProtected,
+        caller_process_);
+    WindowsVerifiedPayloadIdentity expected =
+        BuildWindowsExpectedPayloadIdentity(
+            request, restage.provenance(), restage.payload_seal_sha256(),
+            policy_);
+    authorization_stage.Advance(
+        WindowsHelperEvent::kProtectedTransactionConstructionFailure);
+    return std::make_unique<WindowsDirectoryPreparedTransaction>(
+        target, std::move(restage), request.transaction_id,
+        std::move(expected), policy_, endpoint_, caller_process_);
   }
-  WindowsVerifiedArchiveRestage restage = RestageVerifiedWindowsZip(
-      stage, target.parent_path(), request.transaction_id,
-      request.package_id, request.signed_descriptor.canonical_sha256,
-      request.stage.artifact_sha256, request.stage.artifact_length,
-      release_manifest, WindowsArchiveRestageAuthority::kInstallerProtected,
-      caller_process_);
-  WindowsVerifiedPayloadIdentity expected =
-      BuildWindowsExpectedPayloadIdentity(
-          request, restage.provenance(), restage.payload_seal_sha256(),
-          policy_);
-  return std::make_unique<WindowsDirectoryPreparedTransaction>(
-      target, std::move(restage), request.transaction_id,
-      std::move(expected), policy_, endpoint_, caller_process_);
+
+  if (authorized.descriptor.artifact.kind != "innoInstaller") {
+    Fail("protected Windows Inno requires a signed installer descriptor");
+  }
+  ProtectedWindowsInnoExecutionPolicy execution =
+      ParseProtectedWindowsInnoExecutionPolicy(authorized.descriptor);
+  const std::filesystem::path requested_executable =
+      std::filesystem::path(Utf8ToWide(
+          request.target.executable_relative_path, "target executable"));
+  if (requested_executable !=
+      execution.installed_executable_relative_path) {
+    Fail("protected Inno executable authority changed");
+  }
+  ProtectedWindowsInnoRestage restage =
+      RestageProtectedWindowsInnoInstaller(
+          stage / L"installer.exe", target.parent_path(),
+          request.transaction_id, request.stage.artifact_sha256,
+          request.stage.artifact_length, caller_process_);
+  authorization_stage.Advance(
+      WindowsHelperEvent::kProtectedTransactionConstructionFailure);
+  return std::make_unique<WindowsInnoPreparedTransaction>(
+      target, std::move(restage), request, std::move(execution), policy_,
+      endpoint_, caller_process_);
 }
 
 WindowsPortableInstallAuthorizer::WindowsPortableInstallAuthorizer(

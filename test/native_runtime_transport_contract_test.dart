@@ -3,6 +3,8 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+import "support/dart_cli.dart";
+
 void main() {
   test("Swift transport enforces bounded redirect and download policy", () {
     final source = readRequiredFile(
@@ -171,7 +173,7 @@ void main() {
   });
 
   test("native fixture server exposes relative redirect policies", () async {
-    final process = await Process.start("dart", [
+    final process = await Process.start(resolveDartExecutable(), [
       "run",
       "tool/native_transport_fixture_server.dart",
       "--port",
@@ -227,6 +229,57 @@ void main() {
         await redirectLocation(baseUrl, "/redirect/missing-location"),
         isNull,
       );
+    } finally {
+      process.kill();
+      await process.exitCode;
+    }
+  });
+
+  test("native fixture server can serve a bounded local release feed",
+      () async {
+    final root = await Directory.systemTemp.createTemp(
+      "native_transport_static_feed_",
+    );
+    addTearDown(() => root.delete(recursive: true));
+    await File("${root.path}${Platform.pathSeparator}app-archive.json")
+        .writeAsString('{"ready":true}');
+
+    final process = await Process.start(resolveDartExecutable(), [
+      "run",
+      "tool/native_transport_fixture_server.dart",
+      "--port",
+      "0",
+      "--root",
+      root.path,
+    ]);
+    try {
+      final ready = await process.stdout
+          .transform(systemEncoding.decoder)
+          .transform(const LineSplitter())
+          .firstWhere((line) => line.startsWith("READY "))
+          .timeout(const Duration(seconds: 10));
+      final baseUrl = ready.replaceFirst("READY ", "");
+      final client = HttpClient();
+      try {
+        final response = await (await client.getUrl(
+          Uri.parse("$baseUrl/app-archive.json"),
+        ))
+            .close();
+        expect(response.statusCode, HttpStatus.ok);
+        expect(
+          await response.transform(utf8.decoder).join(),
+          '{"ready":true}',
+        );
+
+        final traversal = await (await client.getUrl(
+          Uri.parse("$baseUrl/%2e%2e%5Coutside.txt"),
+        ))
+            .close();
+        await traversal.drain<void>();
+        expect(traversal.statusCode, HttpStatus.badRequest);
+      } finally {
+        client.close(force: true);
+      }
     } finally {
       process.kill();
       await process.exitCode;

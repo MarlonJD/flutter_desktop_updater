@@ -125,7 +125,7 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
     ).readAsStringSync();
     final helperSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final diagnosticsSource = File(
       "macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift",
     ).readAsStringSync();

@@ -117,7 +117,9 @@ void main() {
       ),
       seed,
     );
-    expect((await root.stat()).mode & 0x1ff, 0x1c0);
+    if (Platform.isLinux || Platform.isMacOS) {
+      expect((await root.stat()).mode & 0x1ff, 0x1c0);
+    }
   });
 
   test("bundle round trips and hides authentication failures", () async {

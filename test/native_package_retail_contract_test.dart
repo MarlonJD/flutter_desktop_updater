@@ -316,7 +316,7 @@ void main() {
 
   test("NuGet consumer verifier rejects missing isolation and hash proof", () {
     const valid = r'''
-param($PackagePath, $PackageSource, $ProjectPath, $LaneRoot, $OutputPath, $PackageVersion)
+param($PackagePath, $PackageSource, $ProjectPath, $LaneRoot, $OutputPath, $PackageVersion, $RuntimeIdentifier)
 $packageSource = $PackageSource
 Remove-Item -LiteralPath $LaneRoot -Recurse -Force
 $projectDirectory = Split-Path -Parent $ProjectPath
@@ -324,10 +324,10 @@ Join-Path $projectDirectory "obj"
 Join-Path $projectDirectory "bin"
 $packages = Join-Path $LaneRoot "packages"
 $obj = Join-Path $LaneRoot "obj"
-dotnet restore $ProjectPath --source $packageSource --packages $packages --ignore-failed-sources --no-cache -p:NuGetAudit=false -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
-dotnet build $ProjectPath --no-restore --output $OutputPath -p:NuGetAudit=false -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
-$nativeEntry = $archive.GetEntry("runtimes/win-x64/native/desktop_updater_native.dll")
-$runtimeEntry = $archive.GetEntry("runtimes/win-x64/native/desktop_updater_runtime.dll")
+dotnet restore $ProjectPath --source $packageSource --packages $packages --ignore-failed-sources --no-cache -p:NuGetAudit=false -p:DesktopUpdaterNativeRuntimeIdentifier=$RuntimeIdentifier -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
+dotnet build $ProjectPath --no-restore --output $OutputPath -p:NuGetAudit=false -p:DesktopUpdaterNativeRuntimeIdentifier=$RuntimeIdentifier -p:DesktopUpdaterNativeVersion=$PackageVersion -p:RestorePackagesPath=$packages -p:BaseIntermediateOutputPath=$obj -p:MSBuildProjectExtensionsPath=$obj
+$nativeEntry = $archive.GetEntry("runtimes/$RuntimeIdentifier/native/desktop_updater_native.dll")
+$runtimeEntry = $archive.GetEntry("runtimes/$RuntimeIdentifier/native/desktop_updater_runtime.dll")
 $expectedHash = $sha256.ComputeHash($stream)
 Get-FileHash -LiteralPath $resolvedDll -Algorithm SHA256
 Get-FileHash -LiteralPath $outputDll -Algorithm SHA256
@@ -417,6 +417,7 @@ List<String> validateNuGetConsumerVerifier(String source) {
     r"$LaneRoot",
     r"$OutputPath",
     r"$PackageVersion",
+    r"$RuntimeIdentifier",
   ]) {
     require(parameter, "missing verifier parameter $parameter");
   }
@@ -436,6 +437,10 @@ List<String> validateNuGetConsumerVerifier(String source) {
   require(r'Join-Path $LaneRoot "obj"', "isolated obj directory");
   require(r"--source $packageSource", "local-only package source");
   require(r"--packages $packages", "isolated restore packages");
+  require(
+    r"-p:DesktopUpdaterNativeRuntimeIdentifier=$RuntimeIdentifier",
+    "explicit native asset RID",
+  );
   require("--ignore-failed-sources", "offline local restore");
   require("--no-cache", "restore bypasses global cache");
   require("-p:NuGetAudit=false", "offline audit configuration");
@@ -454,11 +459,11 @@ List<String> validateNuGetConsumerVerifier(String source) {
   );
   require("--no-restore", "build reuses isolated restore");
   require(
-    "runtimes/win-x64/native/desktop_updater_native.dll",
+    r"runtimes/$RuntimeIdentifier/native/desktop_updater_native.dll",
     "candidate native DLL entry",
   );
   require(
-    "runtimes/win-x64/native/desktop_updater_runtime.dll",
+    r"runtimes/$RuntimeIdentifier/native/desktop_updater_runtime.dll",
     "candidate runtime DLL entry",
   );
   require(

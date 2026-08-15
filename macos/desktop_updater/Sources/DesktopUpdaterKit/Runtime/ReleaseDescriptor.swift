@@ -66,6 +66,14 @@ public struct ReleaseInstall {
                 metadata["inheritInstallDirectory"],
                 default: true
             )
+            let installedExecutableRelativePath = try runtimeString(
+                metadata,
+                "installedExecutableRelativePath"
+            )
+            let installedExecutableSha256 = try runtimeString(
+                metadata,
+                "installedExecutableSha256"
+            )
             let logFileName = try runtimeOptionalString(
                 metadata["logFileName"],
                 default: "desktop_updater_inno_install.log"
@@ -76,7 +84,7 @@ public struct ReleaseInstall {
             )
             let elevation = try runtimeOptionalString(
                 metadata["requiresElevation"],
-                default: "auto"
+                default: ""
             )
             var authenticode: [String: Any] = ["required": false]
             if let rawAuthenticode = metadata["authenticode"] {
@@ -98,6 +106,8 @@ public struct ReleaseInstall {
             normalized["inno"] = [
                 "silentArgs": arguments,
                 "inheritInstallDirectory": inheritDirectory,
+                "installedExecutableRelativePath": installedExecutableRelativePath,
+                "installedExecutableSha256": installedExecutableSha256,
                 "logFileName": logFileName,
                 "relaunchAfterInstall": relaunch,
                 "requiresElevation": elevation,
@@ -185,23 +195,75 @@ public struct ReleaseInstall {
                 as? [String: Any]
             let thumbprints =
                 (authenticode?["sha256Thumbprints"] as? [String]) ?? []
+            let arguments =
+                (innoMetadata?["silentArgs"] as? [String]) ?? []
+            let installedExecutable =
+                (innoMetadata?["installedExecutableRelativePath"] as? String) ?? ""
+            let installedExecutableSegments = installedExecutable
+                .replacingOccurrences(of: "\\", with: "/")
+                .split(separator: "/", omittingEmptySubsequences: false)
+            let installedExecutablePathIsSafe =
+                !installedExecutable.isEmpty &&
+                !installedExecutable.hasPrefix("/") &&
+                installedExecutable.range(
+                    of: "^[A-Za-z]:",
+                    options: .regularExpression
+                ) == nil &&
+                installedExecutable.lowercased().hasSuffix(".exe") &&
+                installedExecutableSegments.allSatisfy({ segment in
+                    !segment.isEmpty && segment != "." && segment != ".." &&
+                    !segment.hasSuffix(".") && !segment.hasSuffix(" ") &&
+                    segment.rangeOfCharacter(
+                        from: CharacterSet(charactersIn: ":*?\"<>|")
+                    ) == nil
+                })
+            let allowedArguments: Set<String> = [
+                "/CLOSEAPPLICATIONS",
+                "/FORCECLOSEAPPLICATIONS",
+                "/NOCANCEL",
+                "/NORESTART",
+                "/SILENT",
+                "/SP-",
+                "/SUPPRESSMSGBOXES",
+                "/VERYSILENT",
+            ]
+            let silentModeCount = arguments.filter({
+                $0 == "/VERYSILENT" || $0 == "/SILENT"
+            }).count
+            let uniqueThumbprints = Set(thumbprints.map({ $0.lowercased() }))
             guard platform == "windows",
                   strategy == "innoInstaller",
                   let metadata = innoMetadata,
-                  let arguments = metadata["silentArgs"] as? [String],
-                  !arguments.isEmpty,
-                  arguments.contains("/VERYSILENT") || arguments.contains("/SILENT"),
+                  Set(arguments).count == arguments.count,
+                  arguments.allSatisfy({ allowedArguments.contains($0) }),
+                  silentModeCount == 1,
+                  arguments.contains("/NORESTART"),
+                  metadata["inheritInstallDirectory"] as? Bool == true,
+                  installedExecutablePathIsSafe,
+                  let installedExecutableSha256 =
+                    metadata["installedExecutableSha256"] as? String,
+                  installedExecutableSha256.range(
+                    of: "^[0-9a-f]{64}$",
+                    options: .regularExpression
+                  ) != nil,
                   let logFileName = metadata["logFileName"] as? String,
                   !logFileName.trimmingCharacters(
                       in: .whitespacesAndNewlines
                   ).isEmpty,
-                  !logFileName.contains("/"),
-                  !logFileName.contains("\\"),
+                  logFileName != ".",
+                  logFileName != "..",
+                  logFileName.rangeOfCharacter(
+                    from: CharacterSet(charactersIn: "\\/:*?\"<>|")
+                  ) == nil,
+                  !logFileName.hasSuffix("."),
+                  !logFileName.hasSuffix(" "),
                   let elevation = metadata["requiresElevation"] as? String,
-                  ["auto", "always", "never"].contains(elevation),
+                  elevation == "always",
                   let authenticode,
                   let required = authenticode["required"] as? Bool,
-                  !required || !thumbprints.isEmpty,
+                  required,
+                  !thumbprints.isEmpty,
+                  uniqueThumbprints.count == thumbprints.count,
                   thumbprints.allSatisfy({
                       $0.range(
                           of: "^[0-9A-Fa-f]{64}$",

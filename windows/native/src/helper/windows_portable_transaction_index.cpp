@@ -669,6 +669,7 @@ void ValidatePortableProbeRecord(const WindowsHelperPolicy& policy,
       "schemaVersion",
       "targetPathHint",
       "transactionId",
+      "transactionKind",
       "verifiedOutcome",
   };
   std::set<std::string> actual;
@@ -707,8 +708,9 @@ void ValidatePortableProbeRecord(const WindowsHelperPolicy& policy,
   const bool attempt_started = relaunch == "launchAttempting" ||
                                relaunch == "launched" ||
                                relaunch == "launchFailed";
-  if (actual != expected || value.at("schemaVersion").integer() != 3 ||
+  if (actual != expected || value.at("schemaVersion").integer() != 4 ||
       value.at("transactionId").string() != transaction_id ||
+      value.at("transactionKind").string() != "directoryReplace" ||
       value.at("policyId").string() != policy.policy_id() ||
       value.at("packageId").string() != policy.application_package_id() ||
       value.at("helperEndpointIdentitySha256").string() !=
@@ -806,7 +808,8 @@ PortableRecordTransitionFacts ReadPortableRecordTransitionFacts(
            "schemaVersion",
            "targetPathHint",
            "transactionId",
-       }) {
+           "transactionKind",
+        }) {
     immutable.emplace(key, value.at(key));
   }
   return {EncodeCanonicalJson(JsonValue(std::move(immutable))),

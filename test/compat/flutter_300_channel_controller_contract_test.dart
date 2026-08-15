@@ -2,6 +2,8 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+import "../support/dart_cli.dart";
+
 void main() {
   test("3.0 platform handoff requires the verified native payload", () async {
     final result = await _analyze("verified_platform_contract.dart");
@@ -35,7 +37,7 @@ void main() {
 
 Future<ProcessResult> _analyze(String fixture) {
   return Process.run(
-    "dart",
+    resolveDartExecutable(),
     <String>[
       "analyze",
       "--format",

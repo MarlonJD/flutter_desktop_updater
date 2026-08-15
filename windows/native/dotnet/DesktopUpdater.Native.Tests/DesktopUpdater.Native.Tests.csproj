@@ -22,7 +22,8 @@
     AfterTargets="Build"
     Condition="'$(OS)' == 'Windows_NT'">
     <PropertyGroup>
-      <NativeDllPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../build/Release/desktop_updater_native.dll'))</NativeDllPath>
+      <NativeDllPath
+        Condition="'$(NativeDllPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../build/Release/desktop_updater_native.dll'))</NativeDllPath>
     </PropertyGroup>
     <Error
       Condition="!Exists('$(NativeDllPath)')"

@@ -122,7 +122,7 @@ void main() {
 
       final helper = File(
         "windows/native/src/helper/windows_install_authorizer.cpp",
-      ).readAsStringSync();
+      ).readAsStringSync().replaceAll("\r\n", "\n").replaceAll("\r", "\n");
       final portableAuthorize = helper.indexOf(
         "WindowsPortableInstallAuthorizer::Authorize",
       );

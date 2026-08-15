@@ -76,6 +76,7 @@ final class FlutterProjectAdapter implements ProjectAdapter {
       packageId: metadata.packageId,
       version: metadata.version,
       buildNumber: metadata.buildNumber,
+      executableRelativePath: overrides.executableRelativePath,
     );
   }
 }

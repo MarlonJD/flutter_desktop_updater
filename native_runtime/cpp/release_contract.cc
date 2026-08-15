@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -47,6 +48,33 @@ std::string RequiredTrimmedString(const JsonValue& value,
 bool HasScheme(const std::string& value) {
   const std::size_t separator = value.find(':');
   return separator != std::string::npos && separator > 0;
+}
+
+bool IsSafeWindowsExecutableRelativePath(const std::string& value) {
+  if (value.empty() || value.front() == '/' || value.front() == '\\' ||
+      value.find(':') != std::string::npos) {
+    return false;
+  }
+  std::size_t start = 0;
+  while (start < value.size()) {
+    const std::size_t end = value.find_first_of("/\\", start);
+    const std::string segment = value.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
+    if (segment.empty() || segment == "." || segment == ".." ||
+        segment.back() == '.' || segment.back() == ' ' ||
+        segment.find_first_of("*?\"<>|") != std::string::npos) {
+      return false;
+    }
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  if (value.size() < 4) return false;
+  std::string suffix = value.substr(value.size() - 4);
+  std::transform(suffix.begin(), suffix.end(), suffix.begin(),
+                 [](unsigned char byte) {
+                   return static_cast<char>(std::tolower(byte));
+                 });
+  return suffix == ".exe";
 }
 
 std::int64_t ParseComponent(const std::string& value);
@@ -320,6 +348,12 @@ JsonValue NormalizeInstall(const JsonValue& install,
         "inheritInstallDirectory",
         JsonValue(OptionalBoolean(*inno, "inheritInstallDirectory", true)));
     metadata.emplace(
+        "installedExecutableRelativePath",
+        JsonValue(RequiredString(*inno, "installedExecutableRelativePath")));
+    metadata.emplace(
+        "installedExecutableSha256",
+        JsonValue(RequiredString(*inno, "installedExecutableSha256")));
+    metadata.emplace(
         "logFileName",
         JsonValue(OptionalStringWithDefault(
             *inno, "logFileName", "desktop_updater_inno_install.log")));
@@ -329,7 +363,7 @@ JsonValue NormalizeInstall(const JsonValue& install,
     metadata.emplace(
         "requiresElevation",
         JsonValue(OptionalStringWithDefault(*inno, "requiresElevation",
-                                            "auto")));
+                                             "")));
     metadata.emplace("authenticode", JsonValue(std::move(authenticode)));
     normalized.emplace("inno", JsonValue(std::move(metadata)));
   }
@@ -399,28 +433,53 @@ void ValidateInstall(const ReleaseDescriptor& descriptor) {
       throw JsonError("Invalid Inno install strategy.");
     }
     const JsonValue& metadata = descriptor.install.at("inno");
+    const std::string installed_executable =
+        RequiredString(metadata, "installedExecutableRelativePath");
+    const std::string installed_executable_sha256 =
+        RequiredString(metadata, "installedExecutableSha256");
+    static const std::regex kInstalledExecutableSha256("^[0-9a-f]{64}$");
+    if (!IsSafeWindowsExecutableRelativePath(installed_executable) ||
+        !std::regex_match(installed_executable_sha256,
+                          kInstalledExecutableSha256)) {
+      throw JsonError("Invalid Inno installed executable identity.");
+    }
+    static const std::set<std::string> kAllowedArguments = {
+        "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS", "/NOCANCEL",
+        "/NORESTART",         "/SILENT",                "/SP-",
+        "/SUPPRESSMSGBOXES",  "/VERYSILENT"};
     const JsonValue::Array& arguments = metadata.at("silentArgs").array();
-    if (arguments.empty() ||
-        std::none_of(arguments.begin(), arguments.end(), [](const JsonValue& value) {
-          const std::string argument = value.string();
-          return argument == "/VERYSILENT" || argument == "/SILENT";
-        })) {
+    std::set<std::string> unique_arguments;
+    int silent_mode_count = 0;
+    bool has_no_restart = false;
+    for (const JsonValue& value : arguments) {
+      const std::string argument = value.string();
+      if (kAllowedArguments.count(argument) == 0 ||
+          !unique_arguments.insert(argument).second) {
+        throw JsonError("Invalid Inno fixed argument vector.");
+      }
+      if (argument == "/VERYSILENT" || argument == "/SILENT") {
+        ++silent_mode_count;
+      }
+      has_no_restart = has_no_restart || argument == "/NORESTART";
+    }
+    if (silent_mode_count != 1 || !has_no_restart ||
+        !metadata.at("inheritInstallDirectory").boolean()) {
       throw JsonError("Invalid Inno silent arguments.");
     }
     const JsonValue* log_value = metadata.find("logFileName");
     const std::string log_file =
         log_value == nullptr ? "desktop_updater_inno_install.log"
                              : log_value->string();
-    if (Trim(log_file).empty() || log_file.find('/') != std::string::npos ||
-        log_file.find('\\') != std::string::npos) {
+    if (Trim(log_file).empty() || log_file == "." || log_file == ".." ||
+        log_file.find_first_of("\\/:*?\"<>|") != std::string::npos ||
+        log_file.back() == '.' || log_file.back() == ' ') {
       throw JsonError("Invalid Inno log file name.");
     }
     const JsonValue* elevation_value = metadata.find("requiresElevation");
     const std::string elevation =
-        elevation_value == nullptr ? "auto" : elevation_value->string();
-    if (elevation != "auto" && elevation != "always" &&
-        elevation != "never") {
-      throw JsonError("Invalid Inno elevation policy.");
+        elevation_value == nullptr ? "" : elevation_value->string();
+    if (elevation != "always") {
+      throw JsonError("Inno descriptor does not require protected elevation.");
     }
     const JsonValue* authenticode = metadata.find("authenticode");
     const JsonValue* required_value =
@@ -430,16 +489,20 @@ void ValidateInstall(const ReleaseDescriptor& descriptor) {
     const JsonValue* thumbprints = authenticode == nullptr
                                        ? nullptr
                                        : authenticode->find("sha256Thumbprints");
-    if (required &&
-        (thumbprints == nullptr || thumbprints->array().empty())) {
-      throw JsonError("Missing required Authenticode thumbprints.");
+    if (!required || thumbprints == nullptr || thumbprints->array().empty()) {
+      throw JsonError("Protected Inno requires Authenticode thumbprints.");
     }
-    if (thumbprints != nullptr) {
-      static const std::regex kThumbprint("^[0-9A-Fa-f]{64}$");
-      for (const JsonValue& thumbprint : thumbprints->array()) {
-        if (!std::regex_match(thumbprint.string(), kThumbprint)) {
-          throw JsonError("Invalid Authenticode thumbprint.");
-        }
+    static const std::regex kThumbprint("^[0-9A-Fa-f]{64}$");
+    std::set<std::string> unique_thumbprints;
+    for (const JsonValue& thumbprint : thumbprints->array()) {
+      std::string normalized = thumbprint.string();
+      std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                     [](unsigned char value) {
+                       return static_cast<char>(std::tolower(value));
+                     });
+      if (!std::regex_match(thumbprint.string(), kThumbprint) ||
+          !unique_thumbprints.insert(normalized).second) {
+        throw JsonError("Invalid or duplicate Authenticode thumbprint.");
       }
     }
   }

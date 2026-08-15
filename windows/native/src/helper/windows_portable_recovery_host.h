@@ -20,6 +20,14 @@ namespace desktop_updater::helper {
 
 inline constexpr LONG kPortableWindowsTaskRunAsSelf = 0x1;
 
+// Portable preparation includes Task Scheduler registration/readback and
+// starting an already-validated exact-token recovery host. Keep this budget
+// bounded, but separate it from the 30-second protected/elevated handshake so
+// slow Windows ARM64 hosts do not time out after all authorization checks have
+// succeeded.
+inline constexpr DWORD kPortableWindowsHelperStartupTimeoutMilliseconds =
+    90 * 1000;
+
 class WindowsPortableRecoveryHostError : public std::runtime_error {
  public:
   explicit WindowsPortableRecoveryHostError(const std::string& detail)
@@ -82,6 +90,8 @@ class PortableWindowsRecoveryHostController;
 PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
     const WindowsHelperPolicy& policy,
     const VerifiedWindowsExecutable& source_helper_identity,
+    HANDLE source_helper_file,
+    HANDLE source_policy_file,
     HANDLE authenticated_caller_process);
 
 // Loads only a previously provisioned stable endpoint for the exact current

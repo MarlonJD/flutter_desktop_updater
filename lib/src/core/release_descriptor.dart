@@ -641,6 +641,8 @@ class ReleaseInnoInstall {
   const ReleaseInnoInstall({
     required this.silentArgs,
     required this.inheritInstallDirectory,
+    required this.installedExecutableRelativePath,
+    required this.installedExecutableSha256,
     required this.logFileName,
     required this.relaunchAfterInstall,
     required this.requiresElevation,
@@ -655,10 +657,14 @@ class ReleaseInnoInstall {
         "install.inno.silentArgs",
       ),
       inheritInstallDirectory: json["inheritInstallDirectory"] as bool? ?? true,
+      installedExecutableRelativePath:
+          json["installedExecutableRelativePath"] as String? ?? "",
+      installedExecutableSha256:
+          json["installedExecutableSha256"] as String? ?? "",
       logFileName:
           json["logFileName"] as String? ?? "desktop_updater_inno_install.log",
       relaunchAfterInstall: json["relaunchAfterInstall"] as bool? ?? true,
-      requiresElevation: json["requiresElevation"] as String? ?? "auto",
+      requiresElevation: json["requiresElevation"] as String? ?? "",
       authenticode: json["authenticode"] == null
           ? const ReleaseAuthenticodePolicy(required: false)
           : ReleaseAuthenticodePolicy.fromJson(
@@ -673,13 +679,19 @@ class ReleaseInnoInstall {
   /// Whether the helper passes the current install directory via `/DIR`.
   final bool inheritInstallDirectory;
 
+  /// Exact installed application executable path, relative to the install root.
+  final String installedExecutableRelativePath;
+
+  /// SHA-256 of the application executable produced by this installer.
+  final String installedExecutableSha256;
+
   /// Simple file name used for the Inno installer log.
   final String logFileName;
 
   /// Whether the helper should attempt to relaunch the app after install.
   final bool relaunchAfterInstall;
 
-  /// Elevation policy hint: `auto`, `always`, or `never`.
+  /// Required protected-helper elevation policy. Must be `always`.
   final String requiresElevation;
 
   /// Authenticode publisher policy for the staged installer.
@@ -690,6 +702,8 @@ class ReleaseInnoInstall {
     return {
       "silentArgs": silentArgs,
       "inheritInstallDirectory": inheritInstallDirectory,
+      "installedExecutableRelativePath": installedExecutableRelativePath,
+      "installedExecutableSha256": installedExecutableSha256,
       "logFileName": logFileName,
       "relaunchAfterInstall": relaunchAfterInstall,
       "requiresElevation": requiresElevation,
@@ -699,32 +713,89 @@ class ReleaseInnoInstall {
 
   /// Validates the Inno execution policy.
   void validate() {
-    if (silentArgs.isEmpty) {
+    const allowedArguments = {
+      "/CLOSEAPPLICATIONS",
+      "/FORCECLOSEAPPLICATIONS",
+      "/NOCANCEL",
+      "/NORESTART",
+      "/SILENT",
+      "/SP-",
+      "/SUPPRESSMSGBOXES",
+      "/VERYSILENT",
+    };
+    final uniqueArguments = <String>{};
+    var silentModeCount = 0;
+    for (final argument in silentArgs) {
+      if (!allowedArguments.contains(argument) ||
+          !uniqueArguments.add(argument)) {
+        throw const FormatException(
+          "release.json install.inno.silentArgs must contain only unique, "
+          "fixed safe arguments.",
+        );
+      }
+      if (argument == "/VERYSILENT" || argument == "/SILENT") {
+        silentModeCount++;
+      }
+    }
+    if (silentModeCount != 1 || !silentArgs.contains("/NORESTART")) {
       throw const FormatException(
-        "release.json install.inno.silentArgs must not be empty.",
+        "release.json install.inno.silentArgs must include exactly one "
+        "silent mode and /NORESTART.",
       );
     }
-    if (!silentArgs.contains("/VERYSILENT") &&
-        !silentArgs.contains("/SILENT")) {
+    if (!inheritInstallDirectory) {
       throw const FormatException(
-        "release.json install.inno.silentArgs must include /VERYSILENT "
-        "or /SILENT.",
+        "release.json install.inno requires inherited install directory.",
+      );
+    }
+    final executable = installedExecutableRelativePath.replaceAll("\\", "/");
+    final executableSegments = executable.split("/");
+    if (executable.trim().isEmpty ||
+        executable.startsWith("/") ||
+        RegExp(r"^[A-Za-z]:").hasMatch(executable) ||
+        executableSegments.any(
+          (segment) =>
+              segment.isEmpty ||
+              segment == "." ||
+              segment == ".." ||
+              segment.endsWith(".") ||
+              segment.endsWith(" ") ||
+              segment.contains(RegExp(r'''[:*?"<>|]''')),
+        ) ||
+        !executable.toLowerCase().endsWith(".exe")) {
+      throw const FormatException(
+        "release.json install.inno.installedExecutableRelativePath must be "
+        "a safe relative Windows executable path.",
+      );
+    }
+    if (!RegExp(r"^[0-9a-f]{64}$").hasMatch(installedExecutableSha256)) {
+      throw const FormatException(
+        "release.json install.inno.installedExecutableSha256 must be 64 "
+        "lowercase hex characters.",
       );
     }
     if (logFileName.trim().isEmpty ||
-        logFileName.contains("/") ||
-        logFileName.contains("\\")) {
+        logFileName == "." ||
+        logFileName == ".." ||
+        logFileName.contains(RegExp(r'''[\\/:*?"<>|]''')) ||
+        logFileName.endsWith(".") ||
+        logFileName.endsWith(" ")) {
       throw const FormatException(
         "release.json install.inno.logFileName must be a simple file name.",
       );
     }
-    if (!const ["auto", "always", "never"].contains(requiresElevation)) {
+    if (requiresElevation != "always") {
       throw const FormatException(
-        "release.json install.inno.requiresElevation must be auto, always, "
-        "or never.",
+        "release.json install.inno requires protected elevation with "
+        "requiresElevation=always.",
       );
     }
     authenticode.validate();
+    if (!authenticode.required) {
+      throw const FormatException(
+        "release.json install.inno requires Authenticode verification.",
+      );
+    }
   }
 }
 
@@ -769,11 +840,17 @@ class ReleaseAuthenticodePolicy {
         "required when Authenticode is required.",
       );
     }
+    final uniqueThumbprints = <String>{};
     for (final thumbprint in sha256Thumbprints) {
       if (!RegExp(r"^[0-9A-Fa-f]{64}$").hasMatch(thumbprint)) {
         throw const FormatException(
           "release.json Authenticode SHA-256 thumbprints must be 64 hex "
           "characters.",
+        );
+      }
+      if (!uniqueThumbprints.add(thumbprint.toLowerCase())) {
+        throw const FormatException(
+          "release.json Authenticode SHA-256 thumbprints must be unique.",
         );
       }
     }

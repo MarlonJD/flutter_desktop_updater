@@ -2,10 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 #include "desktop_updater_native_c.h"
 #include "desktop_updater_version.h"
+#include "windows_path_identity.h"
 
 namespace {
 
@@ -78,6 +80,37 @@ TEST(DesktopUpdaterNativeCAbi2, ReportsVersionAndStableFieldOrder) {
   EXPECT_EQ(offsetof(desktop_updater_result_abi2, abi_version), 0u);
   EXPECT_EQ(offsetof(desktop_updater_transaction_status_abi2, abi_version),
             0u);
+}
+
+TEST(WindowsPathIdentity, AcceptsExtendedLengthPrefixForSamePath) {
+  const std::filesystem::path configured =
+      L"C:\\Program Files\\DesktopUpdaterHelper\\desktop_updater_install_helper.exe";
+  const std::filesystem::path endpoint =
+      L"\\\\?\\C:\\Program Files\\DesktopUpdaterHelper\\desktop_updater_install_helper.exe";
+
+  EXPECT_TRUE(
+      desktop_updater::native::windows_path_identity::PathEquals(configured,
+                                                                  endpoint));
+  EXPECT_TRUE(desktop_updater::native::windows_path_identity::PathEquals(
+      endpoint, L"c:\\Program Files\\DesktopUpdaterHelper\\desktop_updater_install_helper.exe\\"));
+  EXPECT_FALSE(desktop_updater::native::windows_path_identity::PathEquals(
+      configured,
+      L"C:\\Program Files\\DesktopUpdaterHelper\\other.exe"));
+}
+
+TEST(WindowsPathIdentity, BuildsExtendedLengthPathForLocalAndUncPaths) {
+  using desktop_updater::native::windows_path_identity::ExtendedLengthPath;
+
+  EXPECT_EQ(
+      L"\\\\?\\C:\\Users\\burak\\staged\\manifest.json",
+      ExtendedLengthPath(L"C:\\Users\\burak\\staged\\manifest.json"));
+  EXPECT_EQ(
+      L"\\\\?\\UNC\\server\\share\\staged\\manifest.json",
+      ExtendedLengthPath(L"\\\\server\\share\\staged\\manifest.json"));
+  EXPECT_EQ(
+      L"\\\\?\\C:\\Users\\burak\\staged\\manifest.json",
+      ExtendedLengthPath(
+          L"\\\\?\\C:\\Users\\burak\\staged\\manifest.json"));
 }
 
 TEST(DesktopUpdaterNativeCAbi2, NullRequestDoesNotTouchOutputs) {

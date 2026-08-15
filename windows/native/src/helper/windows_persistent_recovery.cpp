@@ -18,6 +18,8 @@
 #include "json_value.h"
 #include "windows_helper_bootstrap.h"
 #include "windows_helper_diagnostics.h"
+#include "windows_inno_restage.h"
+#include "windows_inno_transaction_journal.h"
 #include "windows_portable_recovery_host.h"
 #include "windows_portable_transaction_index.h"
 #include "windows_recovery_service.h"
@@ -50,12 +52,14 @@ const std::set<std::string> kRecordStates = {"preparing",
                                              "completed",
                                              "rolledBack",
                                              "manualActionRequired"};
-const std::set<std::string> kRelaunchStates = {
-    "notRequested", "launchPending", "launchAttempting", "launched",
-    "launchFailed"};
+const std::set<std::string> kRelaunchStates = {"notRequested", "launchPending",
+                                               "launchAttempting", "launched",
+                                               "launchFailed"};
+const std::set<std::string> kTransactionKinds = {"directoryReplace",
+                                                 "windowsInno"};
 const std::set<std::string> kResolverClaimStates = {"claimed", "consumed"};
 
-bool IsRecoveryReadyNonce(const std::string& nonce) {
+bool IsRecoveryReadyNonce(const std::string &nonce) {
   return nonce.size() == 43 &&
          std::all_of(nonce.begin(), nonce.end(), [](unsigned char value) {
            return (value >= 'A' && value <= 'Z') ||
@@ -66,18 +70,20 @@ bool IsRecoveryReadyNonce(const std::string& nonce) {
 }
 
 class ScopedRegistryKey {
- public:
+public:
   explicit ScopedRegistryKey(HKEY key = nullptr) : key_(key) {}
   ~ScopedRegistryKey() {
-    if (key_ != nullptr) RegCloseKey(key_);
+    if (key_ != nullptr)
+      RegCloseKey(key_);
   }
-  ScopedRegistryKey(const ScopedRegistryKey&) = delete;
-  ScopedRegistryKey& operator=(const ScopedRegistryKey&) = delete;
-  ScopedRegistryKey(ScopedRegistryKey&& other) noexcept
+  ScopedRegistryKey(const ScopedRegistryKey &) = delete;
+  ScopedRegistryKey &operator=(const ScopedRegistryKey &) = delete;
+  ScopedRegistryKey(ScopedRegistryKey &&other) noexcept
       : key_(other.release()) {}
-  ScopedRegistryKey& operator=(ScopedRegistryKey&& other) noexcept {
+  ScopedRegistryKey &operator=(ScopedRegistryKey &&other) noexcept {
     if (this != &other) {
-      if (key_ != nullptr) RegCloseKey(key_);
+      if (key_ != nullptr)
+        RegCloseKey(key_);
       key_ = other.release();
     }
     return *this;
@@ -89,11 +95,11 @@ class ScopedRegistryKey {
     return result;
   }
 
- private:
+private:
   HKEY key_;
 };
 
-std::wstring Utf8ToWide(const std::string& value) {
+std::wstring Utf8ToWide(const std::string &value) {
   if (value.empty() || value.size() > static_cast<std::size_t>(
                                           std::numeric_limits<int>::max())) {
     throw WindowsPersistentRecoveryError("persistent UTF-8 value is invalid");
@@ -113,7 +119,7 @@ std::wstring Utf8ToWide(const std::string& value) {
   return result;
 }
 
-std::string WideToUtf8(const std::wstring& value) {
+std::string WideToUtf8(const std::wstring &value) {
   if (value.empty() || value.size() > static_cast<std::size_t>(
                                           std::numeric_limits<int>::max())) {
     throw WindowsPersistentRecoveryError("persistent path is invalid");
@@ -133,20 +139,20 @@ std::string WideToUtf8(const std::wstring& value) {
   return result;
 }
 
-void RequireTransactionId(const std::string& transaction_id) {
+void RequireTransactionId(const std::string &transaction_id) {
   if (!std::regex_match(transaction_id, kTransactionId)) {
     throw WindowsPersistentRecoveryError("transaction ID is invalid");
   }
 }
 
-void RequireExactKeys(const JsonValue& value,
-                      const std::set<std::string>& expected) {
-  const auto& object = value.object();
+void RequireExactKeys(const JsonValue &value,
+                      const std::set<std::string> &expected) {
+  const auto &object = value.object();
   if (object.size() != expected.size()) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction record fields are invalid");
   }
-  for (const std::string& key : expected) {
+  for (const std::string &key : expected) {
     if (object.find(key) == object.end()) {
       throw WindowsPersistentRecoveryError(
           "persistent transaction record fields are invalid");
@@ -154,7 +160,7 @@ void RequireExactKeys(const JsonValue& value,
   }
 }
 
-std::filesystem::path CanonicalAbsolutePath(const std::string& encoded) {
+std::filesystem::path CanonicalAbsolutePath(const std::string &encoded) {
   const std::filesystem::path path(Utf8ToWide(encoded));
   if (!path.is_absolute() || path.lexically_normal() != path ||
       path.filename().empty()) {
@@ -181,7 +187,7 @@ std::filesystem::path ProcessExecutablePath(HANDLE process) {
 
 UniqueWindowsHandle OpenExactRecoveryActor(std::int64_t process_id,
                                            std::int64_t process_start_identity,
-                                           const char* actor) {
+                                           const char *actor) {
   UniqueWindowsHandle process(
       OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE,
                   static_cast<DWORD>(process_id)));
@@ -202,8 +208,8 @@ UniqueWindowsHandle OpenExactRecoveryActor(std::int64_t process_id,
 }
 
 std::unique_ptr<CallerTokenWindowsLauncher> WaitForExactRecoveryActorsExit(
-    const WindowsPersistentTransactionRecord& record,
-    const std::function<void(const std::string&)>& signal_ready) {
+    const WindowsPersistentTransactionRecord &record,
+    const std::function<void(const std::string &)> &signal_ready) {
   if (!signal_ready) {
     throw WindowsPersistentRecoveryError(
         "autonomous recovery readiness signal is unavailable");
@@ -220,7 +226,7 @@ std::unique_ptr<CallerTokenWindowsLauncher> WaitForExactRecoveryActorsExit(
       // either actor to exit. The SYSTEM host never launches with its own
       // token, and a boot-time host with no surviving caller records failure.
       launcher = std::make_unique<CallerTokenWindowsLauncher>(caller.get());
-    } catch (const std::exception&) {
+    } catch (const std::exception &) {
       launcher.reset();
     }
   }
@@ -243,18 +249,20 @@ std::unique_ptr<CallerTokenWindowsLauncher> WaitForExactRecoveryActorsExit(
 
 std::wstring NormalizeComparablePath(std::filesystem::path path) {
   std::wstring value = path.lexically_normal().wstring();
-  if (value.rfind(L"\\\\?\\", 0) == 0) value.erase(0, 4);
+  if (value.rfind(L"\\\\?\\", 0) == 0)
+    value.erase(0, 4);
   std::replace(value.begin(), value.end(), L'/', L'\\');
   std::transform(value.begin(), value.end(), value.begin(),
                  [](wchar_t character) { return std::towlower(character); });
-  while (value.size() > 3 && value.back() == L'\\') value.pop_back();
+  while (value.size() > 3 && value.back() == L'\\')
+    value.pop_back();
   return value;
 }
 
-bool ApplicationIdentityMatchesPolicy(
-    const VerifiedWindowsExecutable& identity,
-    const WindowsHelperPolicy& policy) {
-  if (!identity.signature_valid) return false;
+bool ApplicationIdentityMatchesPolicy(const VerifiedWindowsExecutable &identity,
+                                      const WindowsHelperPolicy &policy) {
+  if (!identity.signature_valid)
+    return false;
   if (policy.is_portable()) {
     return policy.application_signer_kind() == "sha256" &&
            identity.sha256 == policy.application_signer_identity();
@@ -293,7 +301,8 @@ void RejectCallerWritableRegistryKey(HKEY key, HANDLE caller_process) {
                       &owner, nullptr, &dacl, nullptr, &raw_descriptor);
   if (security != ERROR_SUCCESS || raw_descriptor == nullptr ||
       dacl == nullptr) {
-    if (raw_descriptor != nullptr) LocalFree(raw_descriptor);
+    if (raw_descriptor != nullptr)
+      LocalFree(raw_descriptor);
     throw WindowsPersistentRecoveryError(
         "persistent index security descriptor is unavailable");
   }
@@ -326,19 +335,20 @@ void RejectCallerWritableRegistryKey(HKEY key, HANDLE caller_process) {
   bool system_full_control = false;
   bool administrators_full_control = false;
   for (DWORD index = 0; index < dacl->AceCount; ++index) {
-    void* raw_ace = nullptr;
+    void *raw_ace = nullptr;
     if (!GetAce(dacl, index, &raw_ace) || raw_ace == nullptr) {
       throw WindowsPersistentRecoveryError(
           "persistent index DACL is unreadable");
     }
-    const ACE_HEADER* header = static_cast<const ACE_HEADER*>(raw_ace);
-    if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
+    const ACE_HEADER *header = static_cast<const ACE_HEADER *>(raw_ace);
+    if (header->AceType == ACCESS_DENIED_ACE_TYPE)
+      continue;
     if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) {
       throw WindowsPersistentRecoveryError(
           "persistent index DACL contains unsupported authority");
     }
-    const auto* ace = static_cast<const ACCESS_ALLOWED_ACE*>(raw_ace);
-    PSID sid = const_cast<DWORD*>(&ace->SidStart);
+    const auto *ace = static_cast<const ACCESS_ALLOWED_ACE *>(raw_ace);
+    PSID sid = const_cast<DWORD *>(&ace->SidStart);
     constexpr DWORD write_authority =
         KEY_SET_VALUE | KEY_CREATE_SUB_KEY | DELETE | WRITE_DAC | WRITE_OWNER;
     if ((ace->Mask & write_authority) != 0 && !is_trusted_sid(sid)) {
@@ -369,7 +379,7 @@ void RejectCallerWritableRegistryKey(HKEY key, HANDLE caller_process) {
   BOOL access = FALSE;
   if (!AccessCheck(raw_descriptor, caller_token.get(), MAXIMUM_ALLOWED,
                    &mapping,
-                   reinterpret_cast<PRIVILEGE_SET*>(privileges.data()),
+                   reinterpret_cast<PRIVILEGE_SET *>(privileges.data()),
                    &privileges_size, &granted, &access)) {
     throw WindowsPersistentRecoveryError(
         "persistent index caller access check failed");
@@ -382,7 +392,7 @@ void RejectCallerWritableRegistryKey(HKEY key, HANDLE caller_process) {
   }
 }
 
-HKEY OpenPersistentIndexKey(const WindowsHelperPolicy& policy,
+HKEY OpenPersistentIndexKey(const WindowsHelperPolicy &policy,
                             HANDLE caller_process, bool create_if_missing) {
   const std::string binding = policy.policy_id() + "\n" +
                               policy.application_package_id() + "\n" +
@@ -394,7 +404,8 @@ HKEY OpenPersistentIndexKey(const WindowsHelperPolicy& policy,
     const LSTATUS open_status = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE, key_path.c_str(), 0,
         KEY_READ | KEY_WRITE | READ_CONTROL | KEY_WOW64_64KEY, &raw_key);
-    if (open_status == ERROR_FILE_NOT_FOUND) return nullptr;
+    if (open_status == ERROR_FILE_NOT_FOUND)
+      return nullptr;
     if (open_status != ERROR_SUCCESS || raw_key == nullptr) {
       throw WindowsPersistentRecoveryError(
           "installer-protected persistent index is unavailable");
@@ -432,7 +443,7 @@ HKEY OpenPersistentIndexKey(const WindowsHelperPolicy& policy,
 }
 
 HKEY CreatePersistentTransactionKey(HKEY parent,
-                                    const std::string& transaction_id,
+                                    const std::string &transaction_id,
                                     HANDLE caller_process) {
   PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -467,14 +478,15 @@ HKEY CreatePersistentTransactionKey(HKEY parent,
   return key.release();
 }
 
-std::optional<ScopedRegistryKey> OpenPersistentTransactionKey(
-    HKEY parent, const std::string& transaction_id, HANDLE caller_process,
-    REGSAM access) {
+std::optional<ScopedRegistryKey>
+OpenPersistentTransactionKey(HKEY parent, const std::string &transaction_id,
+                             HANDLE caller_process, REGSAM access) {
   HKEY raw_key = nullptr;
   const LSTATUS status =
       RegOpenKeyExW(parent, Utf8ToWide(transaction_id).c_str(), 0,
                     access | READ_CONTROL | KEY_WOW64_64KEY, &raw_key);
-  if (status == ERROR_FILE_NOT_FOUND) return std::nullopt;
+  if (status == ERROR_FILE_NOT_FOUND)
+    return std::nullopt;
   if (status != ERROR_SUCCESS || raw_key == nullptr) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction claim is unavailable");
@@ -485,11 +497,11 @@ std::optional<ScopedRegistryKey> OpenPersistentTransactionKey(
 }
 
 void WritePersistentRecord(HKEY key,
-                           const WindowsPersistentTransactionRecord& record) {
+                           const WindowsPersistentTransactionRecord &record) {
   const std::string canonical = record.EncodeCanonical();
   if (canonical.size() > std::numeric_limits<DWORD>::max() ||
       RegSetValueExW(key, kPersistentRecordValueName, 0, REG_BINARY,
-                     reinterpret_cast<const BYTE*>(canonical.data()),
+                     reinterpret_cast<const BYTE *>(canonical.data()),
                      static_cast<DWORD>(canonical.size())) != ERROR_SUCCESS ||
       RegFlushKey(key) != ERROR_SUCCESS) {
     throw WindowsPersistentRecoveryError(
@@ -497,13 +509,14 @@ void WritePersistentRecord(HKEY key,
   }
 }
 
-std::optional<WindowsPersistentResolverClaim> ReadPersistentResolverClaim(
-    HKEY key, const std::string& transaction_id) {
+std::optional<WindowsPersistentResolverClaim>
+ReadPersistentResolverClaim(HKEY key, const std::string &transaction_id) {
   DWORD type = 0;
   DWORD size = 0;
   LSTATUS status = RegQueryValueExW(key, kPersistentResolverClaimValueName,
                                     nullptr, &type, nullptr, &size);
-  if (status == ERROR_FILE_NOT_FOUND) return std::nullopt;
+  if (status == ERROR_FILE_NOT_FOUND)
+    return std::nullopt;
   if (status != ERROR_SUCCESS || type != REG_BINARY || size == 0 ||
       size > kMaximumPersistentResolverClaimBytes) {
     throw WindowsPersistentRecoveryError(
@@ -513,7 +526,7 @@ std::optional<WindowsPersistentResolverClaim> ReadPersistentResolverClaim(
   DWORD received = size;
   status =
       RegQueryValueExW(key, kPersistentResolverClaimValueName, nullptr, &type,
-                       reinterpret_cast<BYTE*>(bytes.data()), &received);
+                       reinterpret_cast<BYTE *>(bytes.data()), &received);
   if (status != ERROR_SUCCESS || type != REG_BINARY || received != size) {
     throw WindowsPersistentRecoveryError(
         "persistent resolver claim read failed");
@@ -528,11 +541,11 @@ std::optional<WindowsPersistentResolverClaim> ReadPersistentResolverClaim(
 }
 
 void WritePersistentResolverClaim(HKEY key,
-                                  const WindowsPersistentResolverClaim& claim) {
+                                  const WindowsPersistentResolverClaim &claim) {
   const std::string canonical = claim.EncodeCanonical();
   if (canonical.size() > std::numeric_limits<DWORD>::max() ||
       RegSetValueExW(key, kPersistentResolverClaimValueName, 0, REG_BINARY,
-                     reinterpret_cast<const BYTE*>(canonical.data()),
+                     reinterpret_cast<const BYTE *>(canonical.data()),
                      static_cast<DWORD>(canonical.size())) != ERROR_SUCCESS ||
       RegFlushKey(key) != ERROR_SUCCESS) {
     throw WindowsPersistentRecoveryError(
@@ -541,8 +554,8 @@ void WritePersistentResolverClaim(HKEY key,
 }
 
 class ScopedResolverClaimMutex {
- public:
-  ScopedResolverClaimMutex(const WindowsPersistentTransactionRecord& record,
+public:
+  ScopedResolverClaimMutex(const WindowsPersistentTransactionRecord &record,
                            bool portable) {
     // The protected high-entropy recovery nonce prevents an unprivileged
     // process from pre-creating the global synchronization object by name.
@@ -573,7 +586,7 @@ class ScopedResolverClaimMutex {
         throw WindowsPersistentRecoveryError(
             "portable resolver user SID is unavailable");
       }
-      const auto* user = reinterpret_cast<const TOKEN_USER*>(bytes.data());
+      const auto *user = reinterpret_cast<const TOKEN_USER *>(bytes.data());
       LPWSTR raw_sid = nullptr;
       if (user->User.Sid == nullptr ||
           !ConvertSidToStringSidW(user->User.Sid, &raw_sid) ||
@@ -583,13 +596,12 @@ class ScopedResolverClaimMutex {
       }
       const std::wstring sid(raw_sid);
       LocalFree(raw_sid);
-      sddl = L"O:" + sid + L"G:" + sid + L"D:P(A;;GA;;;" + sid +
-             L")(A;;GA;;;SY)";
+      sddl =
+          L"O:" + sid + L"G:" + sid + L"D:P(A;;GA;;;" + sid + L")(A;;GA;;;SY)";
     }
     PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            sddl.c_str(), SDDL_REVISION_1,
-            &raw_descriptor, nullptr) ||
+            sddl.c_str(), SDDL_REVISION_1, &raw_descriptor, nullptr) ||
         raw_descriptor == nullptr) {
       throw WindowsPersistentRecoveryError(
           "persistent resolver claim mutex DACL construction failed");
@@ -616,24 +628,26 @@ class ScopedResolverClaimMutex {
   }
 
   ~ScopedResolverClaimMutex() {
-    if (owned_) (void)ReleaseMutex(handle_.get());
+    if (owned_)
+      (void)ReleaseMutex(handle_.get());
   }
 
-  ScopedResolverClaimMutex(const ScopedResolverClaimMutex&) = delete;
-  ScopedResolverClaimMutex& operator=(const ScopedResolverClaimMutex&) = delete;
+  ScopedResolverClaimMutex(const ScopedResolverClaimMutex &) = delete;
+  ScopedResolverClaimMutex &
+  operator=(const ScopedResolverClaimMutex &) = delete;
 
- private:
+private:
   UniqueWindowsHandle handle_;
   bool owned_ = false;
 };
 
-bool ResolverClaimOwnerAlive(const WindowsPersistentResolverClaim& claim) {
+bool ResolverClaimOwnerAlive(const WindowsPersistentResolverClaim &claim) {
   try {
     return OpenExactRecoveryActor(claim.resolver_process_id,
                                   claim.resolver_process_start_identity,
                                   "resolver")
         .valid();
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     // Inability to prove that an exact claimant died must not authorize a
     // second relaunch owner.
     return true;
@@ -642,21 +656,21 @@ bool ResolverClaimOwnerAlive(const WindowsPersistentResolverClaim& claim) {
 
 std::string JournalStateName(WindowsTransactionState state) {
   switch (state) {
-    case WindowsTransactionState::kPrepared:
-      return "prepared";
-    case WindowsTransactionState::kBackupCreated:
-      return "backupCreated";
-    case WindowsTransactionState::kTargetActivated:
-      return "targetActivated";
-    case WindowsTransactionState::kCompleted:
-      return "targetActivated";
-    case WindowsTransactionState::kManualActionRequired:
-      return "manualActionRequired";
+  case WindowsTransactionState::kPrepared:
+    return "prepared";
+  case WindowsTransactionState::kBackupCreated:
+    return "backupCreated";
+  case WindowsTransactionState::kTargetActivated:
+    return "targetActivated";
+  case WindowsTransactionState::kCompleted:
+    return "targetActivated";
+  case WindowsTransactionState::kManualActionRequired:
+    return "manualActionRequired";
   }
   return "manualActionRequired";
 }
 
-UniqueWindowsHandle OpenTargetParent(const std::filesystem::path& target) {
+UniqueWindowsHandle OpenTargetParent(const std::filesystem::path &target) {
   const std::filesystem::path parent = target.parent_path();
   UniqueWindowsHandle result(CreateFileW(
       parent.c_str(), GENERIC_READ | FILE_TRAVERSE | SYNCHRONIZE,
@@ -676,8 +690,8 @@ UniqueWindowsHandle OpenTargetParent(const std::filesystem::path& target) {
   return result;
 }
 
-std::optional<WindowsTransactionJournal> LoadCurrentJournal(
-    const WindowsPersistentTransactionRecord& record) {
+std::optional<WindowsTransactionJournal>
+LoadCurrentJournal(const WindowsPersistentTransactionRecord &record) {
   const WindowsTransactionJournal frozen =
       WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
   const WindowsTransactionPaths paths = WindowsTransactionPaths::Create(
@@ -689,7 +703,8 @@ std::optional<WindowsTransactionJournal> LoadCurrentJournal(
   }
   DurableWindowsTransactionJournalStore store(parent.get(), paths);
   const auto current = store.Load();
-  if (!current.has_value()) return std::nullopt;
+  if (!current.has_value())
+    return std::nullopt;
   if (current->schema_version != frozen.schema_version ||
       current->transaction_id != frozen.transaction_id ||
       current->owner_process_id != frozen.owner_process_id ||
@@ -718,20 +733,20 @@ std::optional<WindowsTransactionJournal> LoadCurrentJournal(
   return current;
 }
 
-bool VerifyExpectedPayload(HANDLE parent, const std::wstring& leaf,
-                           const WindowsVerifiedPayloadIdentity& expected) {
+bool VerifyExpectedPayload(HANDLE parent, const std::wstring &leaf,
+                           const WindowsVerifiedPayloadIdentity &expected) {
   try {
     AuthenticodeWindowsPayloadVerifier verifier(expected);
     return verifier.Verify(parent, leaf) == expected;
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     return false;
   }
 }
 
 bool VerifyInstalledTargetAuthority(
-    HANDLE parent, const WindowsTransactionJournal& frozen,
-    const WindowsPersistentTransactionRecord& record,
-    const WindowsHelperPolicy& policy, HANDLE caller_process) {
+    HANDLE parent, const WindowsTransactionJournal &frozen,
+    const WindowsPersistentTransactionRecord &record,
+    const WindowsHelperPolicy &policy, HANDLE caller_process) {
   try {
     const std::filesystem::path executable =
         record.target_path_hint /
@@ -757,13 +772,13 @@ bool VerifyInstalledTargetAuthority(
         frozen.target_name + L"\\.desktop_updater_install_identity.json",
         64 * 1024);
     const JsonValue value = ParseJson(marker);
-    const auto& object = value.object();
+    const auto &object = value.object();
     return object.size() == 2 && object.find("packageId") != object.end() &&
            object.find("schemaVersion") != object.end() &&
            value.at("schemaVersion").integer() == 1 &&
            value.at("packageId").string() == record.package_id &&
            EncodeCanonicalJson(value) == marker;
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     return false;
   }
 }
@@ -774,10 +789,10 @@ enum class FinalTopology {
   kRolledBack,
 };
 
-FinalTopology InspectFinalTopology(
-    const WindowsPersistentTransactionRecord& record,
-    const WindowsHelperPolicy& policy, bool allow_exact_lock,
-    HANDLE caller_process) {
+FinalTopology
+InspectFinalTopology(const WindowsPersistentTransactionRecord &record,
+                     const WindowsHelperPolicy &policy, bool allow_exact_lock,
+                     HANDLE caller_process) {
   const WindowsTransactionJournal frozen =
       WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
   const WindowsTransactionPaths paths = WindowsTransactionPaths::Create(
@@ -838,8 +853,8 @@ FinalTopology InspectFinalTopology(
 
 desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
 StatusFromRecoveryResult(
-    const desktop_updater::runtime::internal::NativeInstallRecoveryResultV1&
-        recovery) {
+    const desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
+        &recovery) {
   std::string state = "prepared";
   if (recovery.result_code == "completed") {
     state = "completed";
@@ -853,11 +868,73 @@ StatusFromRecoveryResult(
           recovery.result_code, recovery.journal_sha256};
 }
 
+ProtectedWindowsInnoExpectation
+OldPersistentInnoExpectation(const ProtectedWindowsInnoJournal &journal) {
+  ProtectedWindowsInnoExpectation result = journal.BuildExpectation();
+  result.expected_version = journal.current_version;
+  result.expected_build_number = journal.current_build_number;
+  result.execution.installed_executable_sha256 =
+      journal.current_executable_sha256;
+  return result;
+}
+
+bool PersistentInnoInstalledPackageMatches(
+    const ProtectedWindowsInnoExpectation &expectation,
+    ProtectedWindowsInnoVerifier &verifier) {
+  try {
+    verifier.VerifyInstalledPackage(expectation);
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
+bool PersistentTransactionExactOwnerActive(
+    const WindowsPersistentTransactionRecord &record) {
+  UniqueWindowsHandle owner = OpenExactRecoveryActor(
+      record.executor_process_id, record.executor_process_start_identity,
+      "executor");
+  if (!owner.valid())
+    return false;
+  const DWORD wait = WaitForSingleObject(owner.get(), 0);
+  if (wait == WAIT_TIMEOUT)
+    return true;
+  if (wait != WAIT_OBJECT_0) {
+    throw WindowsPersistentRecoveryError(
+        "persistent transaction executor liveness check failed");
+  }
+  return false;
+}
+
 void RelaunchRecoveredApplication(
-    const WindowsPersistentTransactionRecord& record,
-    const desktop_updater::runtime::internal::NativeInstallRecoveryResultV1&
-        recovery,
-    const WindowsHelperPolicy& policy, WindowsProcessLauncher& launcher) {
+    const WindowsPersistentTransactionRecord &record,
+    const desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
+        &recovery,
+    const WindowsHelperPolicy &policy, WindowsProcessLauncher &launcher) {
+  if (record.transaction_kind == "windowsInno") {
+    const ProtectedWindowsInnoJournal journal =
+        ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+    if (!journal.execution.relaunch_after_install) {
+      throw WindowsPersistentRecoveryError(
+          "protected Inno transaction did not request relaunch");
+    }
+    ProtectedWindowsInnoExpectation expectation;
+    if (recovery.result_code == "completed" &&
+        recovery.verified_outcome == "newTarget") {
+      expectation = journal.BuildExpectation();
+    } else if (recovery.result_code == "rolledBack" &&
+               recovery.verified_outcome == "oldTarget") {
+      expectation = OldPersistentInnoExpectation(journal);
+    } else {
+      throw WindowsPersistentRecoveryError(
+          "protected Inno recovered outcome is not relaunchable");
+    }
+    AuthenticodeProtectedWindowsInnoVerifier verifier;
+    verifier.VerifyInstalledPackage(expectation);
+    launcher.Launch(expectation.install_root /
+                    expectation.execution.installed_executable_relative_path);
+    return;
+  }
   const WindowsTransactionJournal frozen =
       WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
   if (recovery.result_code == "completed" &&
@@ -912,12 +989,12 @@ void FlushPersistentMetadata(HANDLE directory) {
 }
 
 ExactLockObservation ObserveExactLock(HANDLE parent,
-                                      const WindowsTransactionPaths& paths,
+                                      const WindowsTransactionPaths &paths,
                                       bool create_if_missing) {
   bool exists = false;
   try {
     exists = ExistsRelativeNoReparse(parent, paths.lock_name);
-  } catch (const WindowsTransactionJournalError& error) {
+  } catch (const WindowsTransactionJournalError &error) {
     if (error.code() ==
         WindowsTransactionJournalError::Code::kSharingViolation) {
       return {ExactLockObservation::State::kLiveOwner, UniqueWindowsHandle(),
@@ -967,7 +1044,7 @@ ExactLockObservation ObserveExactLock(HANDLE parent,
         }
         throw;
       }
-    } catch (const WindowsTransactionJournalError& error) {
+    } catch (const WindowsTransactionJournalError &error) {
       if (error.code() ==
           WindowsTransactionJournalError::Code::kSharingViolation) {
         return {ExactLockObservation::State::kLiveOwner, UniqueWindowsHandle(),
@@ -985,16 +1062,15 @@ ExactLockObservation ObserveExactLock(HANDLE parent,
             FILE_WRITE_THROUGH);
     switch (ClassifyWindowsTransactionLockBinding(lock.get(),
                                                   paths.transaction_id)) {
-      case WindowsTransactionLockBindingState::kExact:
-        return {ExactLockObservation::State::kAcquired, std::move(lock), false};
-      case WindowsTransactionLockBindingState::kForeign:
-        return {ExactLockObservation::State::kForeign, std::move(lock), false};
-      case WindowsTransactionLockBindingState::kMalformed:
-        return {ExactLockObservation::State::kMalformed, std::move(lock),
-                false};
+    case WindowsTransactionLockBindingState::kExact:
+      return {ExactLockObservation::State::kAcquired, std::move(lock), false};
+    case WindowsTransactionLockBindingState::kForeign:
+      return {ExactLockObservation::State::kForeign, std::move(lock), false};
+    case WindowsTransactionLockBindingState::kMalformed:
+      return {ExactLockObservation::State::kMalformed, std::move(lock), false};
     }
     return {ExactLockObservation::State::kMalformed, std::move(lock), false};
-  } catch (const WindowsTransactionJournalError& error) {
+  } catch (const WindowsTransactionJournalError &error) {
     if (error.code() ==
         WindowsTransactionJournalError::Code::kSharingViolation) {
       return {ExactLockObservation::State::kLiveOwner, UniqueWindowsHandle(),
@@ -1005,11 +1081,64 @@ ExactLockObservation ObserveExactLock(HANDLE parent,
   }
 }
 
-}  // namespace
+bool ValidatePersistentJournalBindingAndReadRelaunch(
+    const WindowsPersistentTransactionRecord &record) {
+  try {
+    if (WindowsHelperSha256Hex(record.journal_canonical) !=
+        record.journal_sha256) {
+      throw WindowsPersistentRecoveryError(
+          "persistent transaction journal digest binding is invalid");
+    }
+    if (record.transaction_kind == "directoryReplace") {
+      const WindowsTransactionJournal journal =
+          WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
+      if (journal.transaction_id != record.transaction_id ||
+          journal.owner_process_id !=
+              static_cast<DWORD>(record.executor_process_id) ||
+          journal.owner_process_start_identity !=
+              static_cast<std::uint64_t>(
+                  record.executor_process_start_identity) ||
+          journal.target_name != record.target_path_hint.filename().wstring() ||
+          journal.expected_payload_identity.package_id != record.package_id) {
+        throw WindowsPersistentRecoveryError(
+            "persistent directory journal binding is invalid");
+      }
+      return true;
+    }
+    if (record.transaction_kind == "windowsInno") {
+      const ProtectedWindowsInnoJournal journal =
+          ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+      if (journal.transaction_id != record.transaction_id ||
+          journal.package_id != record.package_id ||
+          journal.owner_process_id !=
+              static_cast<DWORD>(record.executor_process_id) ||
+          journal.owner_process_start_identity !=
+              static_cast<std::uint64_t>(
+                  record.executor_process_start_identity) ||
+          journal.target_path != record.target_path_hint) {
+        throw WindowsPersistentRecoveryError(
+            "persistent protected Inno journal binding is invalid");
+      }
+      return journal.execution.relaunch_after_install;
+    }
+    throw WindowsPersistentRecoveryError(
+        "persistent transaction kind is invalid");
+  } catch (const WindowsPersistentRecoveryError &) {
+    throw;
+  } catch (const std::exception &) {
+    throw WindowsPersistentRecoveryError(
+        "persistent transaction journal binding is invalid");
+  }
+}
+
+} // namespace
 
 std::string WindowsPersistentTransactionRecord::EncodeCanonical() const {
-  if (schema_version != kSchemaVersion ||
-      !std::regex_match(transaction_id, kTransactionId) || policy_id.empty() ||
+  const bool legacy_schema_three = schema_version == 3;
+  if ((schema_version != kSchemaVersion && !legacy_schema_three) ||
+      (legacy_schema_three && transaction_kind != "directoryReplace") ||
+      !std::regex_match(transaction_id, kTransactionId) ||
+      kTransactionKinds.count(transaction_kind) == 0 || policy_id.empty() ||
       package_id.empty() ||
       !std::regex_match(helper_endpoint_identity_sha256, kSha256) ||
       executor_process_id <= 0 ||
@@ -1037,16 +1166,19 @@ std::string WindowsPersistentTransactionRecord::EncodeCanonical() const {
     throw WindowsPersistentRecoveryError(
         "persistent transaction outcome binding is invalid");
   }
-  const bool terminal = record_state == "completed" ||
-                        record_state == "rolledBack";
+  const bool requests_relaunch =
+      ValidatePersistentJournalBindingAndReadRelaunch(*this);
+  const bool terminal =
+      record_state == "completed" || record_state == "rolledBack";
   const bool commit_requires_relaunch =
       record_state == "commitAccepted" ||
-      record_state == "completedCleanupPending" ||
-      record_state == "completed";
-  const bool attempt_has_started =
-      relaunch_state == "launchAttempting" || relaunch_state == "launched" ||
-      relaunch_state == "launchFailed";
-  if ((commit_requires_relaunch && relaunch_state == "notRequested") ||
+      record_state == "completedCleanupPending" || record_state == "completed";
+  const bool attempt_has_started = relaunch_state == "launchAttempting" ||
+                                   relaunch_state == "launched" ||
+                                   relaunch_state == "launchFailed";
+  if ((commit_requires_relaunch && requests_relaunch &&
+       relaunch_state == "notRequested") ||
+      (!requests_relaunch && relaunch_state != "notRequested") ||
       (attempt_has_started && !terminal) ||
       (!terminal && relaunch_state != "notRequested" &&
        relaunch_state != "launchPending")) {
@@ -1056,17 +1188,6 @@ std::string WindowsPersistentTransactionRecord::EncodeCanonical() const {
   if (journal_canonical.empty()) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction journal binding is missing");
-  }
-  const WindowsTransactionJournal journal =
-      WindowsTransactionJournal::DecodeStrict(journal_canonical);
-  if (journal.transaction_id != transaction_id ||
-      journal.owner_process_id != static_cast<DWORD>(executor_process_id) ||
-      journal.owner_process_start_identity !=
-          static_cast<std::uint64_t>(executor_process_start_identity) ||
-      journal.target_name != target_path_hint.filename().wstring() ||
-      WindowsHelperSha256Hex(journal_canonical) != journal_sha256) {
-    throw WindowsPersistentRecoveryError(
-        "persistent transaction journal binding is invalid");
   }
   JsonValue::Object object;
   object.emplace("helperEndpointIdentitySha256",
@@ -1088,13 +1209,16 @@ std::string WindowsPersistentTransactionRecord::EncodeCanonical() const {
   object.emplace("targetPathHint",
                  JsonValue(WideToUtf8(target_path_hint.wstring())));
   object.emplace("transactionId", JsonValue(transaction_id));
+  if (!legacy_schema_three) {
+    object.emplace("transactionKind", JsonValue(transaction_kind));
+  }
   object.emplace("verifiedOutcome", JsonValue(verified_outcome));
   return EncodeCanonicalJson(JsonValue(std::move(object)));
 }
 
 WindowsPersistentTransactionRecord
 WindowsPersistentTransactionRecord::DecodeStrict(
-    const std::string& canonical_json) {
+    const std::string &canonical_json) {
   if (canonical_json.empty() ||
       canonical_json.size() > kMaximumPersistentRecordBytes) {
     throw WindowsPersistentRecoveryError(
@@ -1106,17 +1230,34 @@ WindowsPersistentTransactionRecord::DecodeStrict(
       throw WindowsPersistentRecoveryError(
           "persistent transaction record is not canonical JSON");
     }
-    RequireExactKeys(
-        value,
-        {"callerProcessId", "callerProcessStartIdentity", "executorProcessId",
-         "executorProcessStartIdentity", "helperEndpointIdentitySha256",
-         "journalCanonical", "journalSha256", "packageId", "policyId",
-         "recordState", "recoveryReadyNonce", "relaunchState",
-         "schemaVersion", "targetPathHint", "transactionId",
-         "verifiedOutcome"});
+    const std::int64_t schema_version = value.at("schemaVersion").integer();
+    if (schema_version == 3) {
+      RequireExactKeys(value,
+                       {"callerProcessId", "callerProcessStartIdentity",
+                        "executorProcessId", "executorProcessStartIdentity",
+                        "helperEndpointIdentitySha256", "journalCanonical",
+                        "journalSha256", "packageId", "policyId", "recordState",
+                        "recoveryReadyNonce", "relaunchState", "schemaVersion",
+                        "targetPathHint", "transactionId", "verifiedOutcome"});
+    } else if (schema_version == kSchemaVersion) {
+      RequireExactKeys(value,
+                       {"callerProcessId", "callerProcessStartIdentity",
+                        "executorProcessId", "executorProcessStartIdentity",
+                        "helperEndpointIdentitySha256", "journalCanonical",
+                        "journalSha256", "packageId", "policyId", "recordState",
+                        "recoveryReadyNonce", "relaunchState", "schemaVersion",
+                        "targetPathHint", "transactionId", "transactionKind",
+                        "verifiedOutcome"});
+    } else {
+      throw WindowsPersistentRecoveryError(
+          "persistent transaction record schema is invalid");
+    }
     WindowsPersistentTransactionRecord record;
-    record.schema_version = value.at("schemaVersion").integer();
+    record.schema_version = schema_version;
     record.transaction_id = value.at("transactionId").string();
+    record.transaction_kind = schema_version == 3
+                                  ? "directoryReplace"
+                                  : value.at("transactionKind").string();
     record.policy_id = value.at("policyId").string();
     record.package_id = value.at("packageId").string();
     record.helper_endpoint_identity_sha256 =
@@ -1140,16 +1281,16 @@ WindowsPersistentTransactionRecord::DecodeStrict(
           "persistent transaction record encoding changed");
     }
     return record;
-  } catch (const WindowsPersistentRecoveryError&) {
+  } catch (const WindowsPersistentRecoveryError &) {
     throw;
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction record is corrupt");
   }
 }
 
 bool WindowsPersistentResolverClaim::operator==(
-    const WindowsPersistentResolverClaim& other) const {
+    const WindowsPersistentResolverClaim &other) const {
   return schema_version == other.schema_version &&
          transaction_id == other.transaction_id &&
          resolver_process_id == other.resolver_process_id &&
@@ -1188,7 +1329,7 @@ std::string WindowsPersistentResolverClaim::EncodeCanonical() const {
 }
 
 WindowsPersistentResolverClaim WindowsPersistentResolverClaim::DecodeStrict(
-    const std::string& canonical_json) {
+    const std::string &canonical_json) {
   if (canonical_json.empty() ||
       canonical_json.size() > kMaximumPersistentResolverClaimBytes) {
     throw WindowsPersistentRecoveryError(
@@ -1200,10 +1341,10 @@ WindowsPersistentResolverClaim WindowsPersistentResolverClaim::DecodeStrict(
       throw WindowsPersistentRecoveryError(
           "persistent resolver claim is not canonical JSON");
     }
-    RequireExactKeys(
-        value, {"callerProcessId", "callerProcessStartIdentity", "claimNonce",
-                "resolverProcessId", "resolverProcessStartIdentity",
-                "schemaVersion", "state", "transactionId"});
+    RequireExactKeys(value, {"callerProcessId", "callerProcessStartIdentity",
+                             "claimNonce", "resolverProcessId",
+                             "resolverProcessStartIdentity", "schemaVersion",
+                             "state", "transactionId"});
     WindowsPersistentResolverClaim claim;
     claim.schema_version = value.at("schemaVersion").integer();
     claim.transaction_id = value.at("transactionId").string();
@@ -1220,20 +1361,21 @@ WindowsPersistentResolverClaim WindowsPersistentResolverClaim::DecodeStrict(
           "persistent resolver claim encoding changed");
     }
     return claim;
-  } catch (const WindowsPersistentRecoveryError&) {
+  } catch (const WindowsPersistentRecoveryError &) {
     throw;
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     throw WindowsPersistentRecoveryError(
         "persistent resolver claim is corrupt");
   }
 }
 
 WindowsResolverClaimDecision DecideWindowsResolverClaim(
-    const std::optional<WindowsPersistentResolverClaim>& existing,
-    const WindowsPersistentResolverClaim& candidate,
+    const std::optional<WindowsPersistentResolverClaim> &existing,
+    const WindowsPersistentResolverClaim &candidate,
     bool existing_owner_alive) {
   (void)candidate.EncodeCanonical();
-  if (!existing.has_value()) return WindowsResolverClaimDecision::kOwn;
+  if (!existing.has_value())
+    return WindowsResolverClaimDecision::kOwn;
   (void)existing->EncodeCanonical();
   if (existing->transaction_id != candidate.transaction_id) {
     throw WindowsPersistentRecoveryError(
@@ -1242,16 +1384,17 @@ WindowsResolverClaimDecision DecideWindowsResolverClaim(
   if (existing->state == "consumed") {
     return WindowsResolverClaimDecision::kConsumed;
   }
-  if (*existing == candidate) return WindowsResolverClaimDecision::kOwn;
+  if (*existing == candidate)
+    return WindowsResolverClaimDecision::kOwn;
   return existing_owner_alive ? WindowsResolverClaimDecision::kFollow
                               : WindowsResolverClaimDecision::kOwn;
 }
 
-WindowsAtMostOnceRelaunchOutcome RunWindowsAtMostOnceRelaunch(
-    std::function<bool()> consume_attempt_claim,
-    std::function<void()> persist_attempting,
-    std::function<void()> launch,
-    std::function<void(bool)> persist_outcome) {
+WindowsAtMostOnceRelaunchOutcome
+RunWindowsAtMostOnceRelaunch(std::function<bool()> consume_attempt_claim,
+                             std::function<void()> persist_attempting,
+                             std::function<void()> launch,
+                             std::function<void(bool)> persist_outcome) {
   if (!consume_attempt_claim || !persist_attempting || !launch ||
       !persist_outcome) {
     throw WindowsPersistentRecoveryError(
@@ -1266,7 +1409,7 @@ WindowsAtMostOnceRelaunchOutcome RunWindowsAtMostOnceRelaunch(
   persist_attempting();
   try {
     launch();
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     persist_outcome(false);
     return WindowsAtMostOnceRelaunchOutcome::kFailed;
   }
@@ -1275,8 +1418,8 @@ WindowsAtMostOnceRelaunchOutcome RunWindowsAtMostOnceRelaunch(
   return WindowsAtMostOnceRelaunchOutcome::kLaunched;
 }
 
-WindowsTerminalRelaunchDecision DecideWindowsTerminalRelaunch(
-    const std::string& relaunch_state) {
+WindowsTerminalRelaunchDecision
+DecideWindowsTerminalRelaunch(const std::string &relaunch_state) {
   if (relaunch_state == "notRequested") {
     return WindowsTerminalRelaunchDecision::kNotRequested;
   }
@@ -1296,7 +1439,7 @@ WindowsTerminalRelaunchDecision DecideWindowsTerminalRelaunch(
 
 desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
 StatusFromWindowsPersistentTerminalRecord(
-    const WindowsPersistentTransactionRecord& record) {
+    const WindowsPersistentTransactionRecord &record) {
   (void)record.EncodeCanonical();
   const bool completed = record.record_state == "completed";
   const bool rolled_back = record.record_state == "rolledBack";
@@ -1305,11 +1448,8 @@ StatusFromWindowsPersistentTerminalRecord(
         "persistent transaction is not terminal");
   }
   const bool relaunch_confirmed = record.relaunch_state == "launched";
-  const bool relaunch_not_requested =
-      record.relaunch_state == "notRequested";
-  return {1,
-          record.transaction_id,
-          completed ? "completed" : "rolledBack",
+  const bool relaunch_not_requested = record.relaunch_state == "notRequested";
+  return {1, record.transaction_id, completed ? "completed" : "rolledBack",
           relaunch_confirmed || relaunch_not_requested
               ? (completed ? "completed" : "rolledBack")
               : "relaunchFailure",
@@ -1345,13 +1485,11 @@ WindowsResolveAfterExitCoordination CoordinateWindowsResolveAfterExit(
 
 WindowsAutonomousRecoveryAuthorityDecision
 DecideWindowsAutonomousRecoveryAuthority(bool portable_policy,
-                                         bool local_system,
-                                         bool elevated,
+                                         bool local_system, bool elevated,
                                          bool stable_host_verified) {
   if (portable_policy) {
     return !local_system && !elevated && stable_host_verified
-               ? WindowsAutonomousRecoveryAuthorityDecision::
-                     kPortableStableUser
+               ? WindowsAutonomousRecoveryAuthorityDecision::kPortableStableUser
                : WindowsAutonomousRecoveryAuthorityDecision::kReject;
   }
   return local_system && !stable_host_verified
@@ -1359,11 +1497,31 @@ DecideWindowsAutonomousRecoveryAuthority(bool portable_policy,
              : WindowsAutonomousRecoveryAuthorityDecision::kReject;
 }
 
+WindowsPersistentInnoRecoveryAction DecideWindowsPersistentInnoRecovery(
+    const std::string &record_state, bool exact_owner_alive,
+    bool desired_install_verified, bool old_install_verified) {
+  if (exact_owner_alive) {
+    return WindowsPersistentInnoRecoveryAction::kRecoveryRequired;
+  }
+  if (desired_install_verified == old_install_verified) {
+    return WindowsPersistentInnoRecoveryAction::kManualActionRequired;
+  }
+  if (desired_install_verified) {
+    return record_state == "commitAccepted"
+               ? WindowsPersistentInnoRecoveryAction::kComplete
+               : WindowsPersistentInnoRecoveryAction::kManualActionRequired;
+  }
+  if (record_state == "preparing" || record_state == "prepared" ||
+      record_state == "commitAccepted" || record_state == "cancelling") {
+    return WindowsPersistentInnoRecoveryAction::kRollBack;
+  }
+  return WindowsPersistentInnoRecoveryAction::kManualActionRequired;
+}
+
 WindowsPersistentTransactionIndex::WindowsPersistentTransactionIndex(
-    const WindowsHelperPolicy& policy, HANDLE caller_process,
+    const WindowsHelperPolicy &policy, HANDLE caller_process,
     bool create_if_missing)
-    : caller_process_(caller_process),
-      portable_(policy.is_portable()),
+    : caller_process_(caller_process), portable_(policy.is_portable()),
       policy_id_(policy.policy_id()),
       package_id_(policy.application_package_id()),
       helper_endpoint_identity_sha256_(policy.helper_sha256()) {
@@ -1384,15 +1542,17 @@ WindowsPersistentTransactionIndex::WindowsPersistentTransactionIndex(
 }
 
 WindowsPersistentTransactionIndex::~WindowsPersistentTransactionIndex() {
-  if (key_ != nullptr) RegCloseKey(key_);
+  if (key_ != nullptr)
+    RegCloseKey(key_);
 }
 
 void WindowsPersistentTransactionIndex::PersistPreparing(
-    const std::string& transaction_id, const std::filesystem::path& target_path,
-    const std::string& journal_canonical, DWORD executor_process_id,
+    const std::string &transaction_id, const std::string &transaction_kind,
+    const std::filesystem::path &target_path,
+    const std::string &journal_canonical, DWORD executor_process_id,
     std::uint64_t executor_process_start_identity, DWORD caller_process_id,
     std::uint64_t caller_process_start_identity,
-    const std::string& recovery_ready_nonce) {
+    const std::string &recovery_ready_nonce) {
   RequireTransactionId(transaction_id);
   if (executor_process_id == 0 || executor_process_start_identity == 0 ||
       executor_process_start_identity >
@@ -1406,21 +1566,21 @@ void WindowsPersistentTransactionIndex::PersistPreparing(
     throw WindowsPersistentRecoveryError(
         "persistent transaction process identities are invalid");
   }
-  PersistNew(
-      {WindowsPersistentTransactionRecord::kSchemaVersion, transaction_id,
-       policy_id_, package_id_, helper_endpoint_identity_sha256_,
-       static_cast<std::int64_t>(executor_process_id),
-       static_cast<std::int64_t>(executor_process_start_identity),
-       static_cast<std::int64_t>(caller_process_id),
-       static_cast<std::int64_t>(caller_process_start_identity),
-       recovery_ready_nonce,
-       std::filesystem::absolute(target_path).lexically_normal(), "preparing",
-       "none", "notRequested", journal_canonical,
-       WindowsHelperSha256Hex(journal_canonical)});
+  PersistNew({WindowsPersistentTransactionRecord::kSchemaVersion,
+              transaction_id, transaction_kind, policy_id_, package_id_,
+              helper_endpoint_identity_sha256_,
+              static_cast<std::int64_t>(executor_process_id),
+              static_cast<std::int64_t>(executor_process_start_identity),
+              static_cast<std::int64_t>(caller_process_id),
+              static_cast<std::int64_t>(caller_process_start_identity),
+              recovery_ready_nonce,
+              std::filesystem::absolute(target_path).lexically_normal(),
+              "preparing", "none", "notRequested", journal_canonical,
+              WindowsHelperSha256Hex(journal_canonical)});
 }
 
 void WindowsPersistentTransactionIndex::PersistActive(
-    const std::string& transaction_id, const std::string& journal_canonical) {
+    const std::string &transaction_id, const std::string &journal_canonical) {
   auto record = Load(transaction_id);
   if (!record.has_value() || record->record_state != "preparing") {
     throw WindowsPersistentRecoveryError(
@@ -1436,7 +1596,7 @@ void WindowsPersistentTransactionIndex::PersistActive(
 }
 
 void WindowsPersistentTransactionIndex::MarkCommitAccepted(
-    const std::string& transaction_id) {
+    const std::string &transaction_id) {
   auto record = Load(transaction_id);
   if (!record.has_value() || record->record_state != "prepared" ||
       record->journal_canonical.empty()) {
@@ -1444,12 +1604,14 @@ void WindowsPersistentTransactionIndex::MarkCommitAccepted(
         "persistent transaction is not prepared");
   }
   record->record_state = "commitAccepted";
-  record->relaunch_state = "launchPending";
+  if (ValidatePersistentJournalBindingAndReadRelaunch(*record)) {
+    record->relaunch_state = "launchPending";
+  }
   Persist(*record);
 }
 
 void WindowsPersistentTransactionIndex::MarkCancelling(
-    const std::string& transaction_id) {
+    const std::string &transaction_id) {
   auto record = Load(transaction_id);
   if (record.has_value() && record->record_state == "cancelling") {
     return;
@@ -1465,14 +1627,14 @@ void WindowsPersistentTransactionIndex::MarkCancelling(
 }
 
 void WindowsPersistentTransactionIndex::MarkRelaunchPending(
-    const std::string& transaction_id) {
+    const std::string &transaction_id) {
   auto record = Load(transaction_id);
-  if (!record.has_value() ||
-      record->record_state == "manualActionRequired") {
+  if (!record.has_value() || record->record_state == "manualActionRequired") {
     throw WindowsPersistentRecoveryError(
         "persistent transaction cannot request relaunch");
   }
-  if (record->relaunch_state == "launchPending") return;
+  if (record->relaunch_state == "launchPending")
+    return;
   if (record->relaunch_state != "notRequested") {
     throw WindowsPersistentRecoveryError(
         "persistent transaction relaunch is already decided");
@@ -1482,15 +1644,15 @@ void WindowsPersistentTransactionIndex::MarkRelaunchPending(
 }
 
 void WindowsPersistentTransactionIndex::MarkRelaunchAttempting(
-    const std::string& transaction_id) {
+    const std::string &transaction_id) {
   auto record = Load(transaction_id);
-  if (!record.has_value() ||
-      (record->record_state != "completed" &&
-       record->record_state != "rolledBack")) {
+  if (!record.has_value() || (record->record_state != "completed" &&
+                              record->record_state != "rolledBack")) {
     throw WindowsPersistentRecoveryError(
         "persistent relaunch requires a terminal install outcome");
   }
-  if (record->relaunch_state == "launchAttempting") return;
+  if (record->relaunch_state == "launchAttempting")
+    return;
   if (record->relaunch_state != "launchPending") {
     throw WindowsPersistentRecoveryError(
         "persistent relaunch attempt transition is invalid");
@@ -1500,16 +1662,16 @@ void WindowsPersistentTransactionIndex::MarkRelaunchAttempting(
 }
 
 void WindowsPersistentTransactionIndex::PersistRelaunchOutcome(
-    const std::string& transaction_id, bool launched) {
+    const std::string &transaction_id, bool launched) {
   auto record = Load(transaction_id);
-  if (!record.has_value() ||
-      (record->record_state != "completed" &&
-       record->record_state != "rolledBack")) {
+  if (!record.has_value() || (record->record_state != "completed" &&
+                              record->record_state != "rolledBack")) {
     throw WindowsPersistentRecoveryError(
         "persistent relaunch outcome requires a terminal install outcome");
   }
   const std::string state = launched ? "launched" : "launchFailed";
-  if (record->relaunch_state == state) return;
+  if (record->relaunch_state == state)
+    return;
   if (record->relaunch_state != "launchAttempting") {
     throw WindowsPersistentRecoveryError(
         "persistent relaunch outcome transition is invalid");
@@ -1519,8 +1681,8 @@ void WindowsPersistentTransactionIndex::PersistRelaunchOutcome(
 }
 
 void WindowsPersistentTransactionIndex::PersistCleanupPending(
-    const std::string& transaction_id, const std::string& state,
-    const std::string& verified_outcome) {
+    const std::string &transaction_id, const std::string &state,
+    const std::string &verified_outcome) {
   if ((state != "completedCleanupPending" &&
        state != "rolledBackCleanupPending") ||
       (state == "completedCleanupPending" && verified_outcome != "newTarget") ||
@@ -1551,8 +1713,8 @@ void WindowsPersistentTransactionIndex::PersistCleanupPending(
 }
 
 void WindowsPersistentTransactionIndex::PersistTerminal(
-    const std::string& transaction_id, const std::string& state,
-    const std::string& verified_outcome) {
+    const std::string &transaction_id, const std::string &state,
+    const std::string &verified_outcome) {
   if ((state != "completed" && state != "rolledBack" &&
        state != "manualActionRequired") ||
       (state == "completed" && verified_outcome != "newTarget") ||
@@ -1590,19 +1752,23 @@ void WindowsPersistentTransactionIndex::PersistTerminal(
 
 std::optional<WindowsPersistentTransactionRecord>
 WindowsPersistentTransactionIndex::Load(
-    const std::string& transaction_id) const {
+    const std::string &transaction_id) const {
   RequireTransactionId(transaction_id);
   std::string bytes;
   if (portable_) {
-    if (portable_store_ == nullptr) return std::nullopt;
+    if (portable_store_ == nullptr)
+      return std::nullopt;
     const auto record = portable_store_->ReadRecord(transaction_id);
-    if (!record.has_value()) return std::nullopt;
+    if (!record.has_value())
+      return std::nullopt;
     bytes = *record;
   } else {
-    if (key_ == nullptr) return std::nullopt;
+    if (key_ == nullptr)
+      return std::nullopt;
     auto transaction_key = OpenPersistentTransactionKey(
         key_, transaction_id, caller_process_, KEY_QUERY_VALUE);
-    if (!transaction_key.has_value()) return std::nullopt;
+    if (!transaction_key.has_value())
+      return std::nullopt;
     DWORD type = 0;
     DWORD size = 0;
     LSTATUS status =
@@ -1617,7 +1783,7 @@ WindowsPersistentTransactionIndex::Load(
     DWORD received = size;
     status = RegQueryValueExW(
         transaction_key->get(), kPersistentRecordValueName, nullptr, &type,
-        reinterpret_cast<BYTE*>(bytes.data()), &received);
+        reinterpret_cast<BYTE *>(bytes.data()), &received);
     if (status != ERROR_SUCCESS || type != REG_BINARY || received != size) {
       throw WindowsPersistentRecoveryError(
           "persistent transaction index read failed");
@@ -1639,7 +1805,7 @@ WindowsPersistentTransactionIndex::Load(
 }
 
 WindowsResolverClaimDecision WindowsPersistentTransactionIndex::ClaimResolver(
-    const WindowsPersistentResolverClaim& candidate) {
+    const WindowsPersistentResolverClaim &candidate) {
   (void)candidate.EncodeCanonical();
   const auto initial_record = Load(candidate.transaction_id);
   if (!initial_record.has_value()) {
@@ -1696,10 +1862,11 @@ WindowsResolverClaimDecision WindowsPersistentTransactionIndex::ClaimResolver(
 }
 
 bool WindowsPersistentTransactionIndex::ConsumeResolverClaim(
-    const WindowsPersistentResolverClaim& candidate) {
+    const WindowsPersistentResolverClaim &candidate) {
   (void)candidate.EncodeCanonical();
   const auto initial_record = Load(candidate.transaction_id);
-  if (!initial_record.has_value()) return false;
+  if (!initial_record.has_value())
+    return false;
   ScopedResolverClaimMutex mutex(*initial_record, portable_);
   const auto current_record = Load(candidate.transaction_id);
   if (!current_record.has_value() || current_record->recovery_ready_nonce !=
@@ -1713,13 +1880,15 @@ bool WindowsPersistentTransactionIndex::ConsumeResolverClaim(
         portable_store_->ReadResolverClaim(candidate.transaction_id);
     if (encoded.has_value()) {
       existing = WindowsPersistentResolverClaim::DecodeStrict(*encoded);
-      if (existing->transaction_id != candidate.transaction_id) return false;
+      if (existing->transaction_id != candidate.transaction_id)
+        return false;
     }
   } else {
     transaction_key = OpenPersistentTransactionKey(
         key_, candidate.transaction_id, caller_process_,
         KEY_QUERY_VALUE | KEY_SET_VALUE);
-    if (!transaction_key.has_value()) return false;
+    if (!transaction_key.has_value())
+      return false;
     existing = ReadPersistentResolverClaim(transaction_key->get(),
                                            candidate.transaction_id);
   }
@@ -1739,8 +1908,13 @@ bool WindowsPersistentTransactionIndex::ConsumeResolverClaim(
 }
 
 void WindowsPersistentTransactionIndex::PersistNew(
-    const WindowsPersistentTransactionRecord& record) {
+    const WindowsPersistentTransactionRecord &record) {
   RequireTransactionId(record.transaction_id);
+  if (record.schema_version !=
+      WindowsPersistentTransactionRecord::kSchemaVersion) {
+    throw WindowsPersistentRecoveryError(
+        "new persistent transaction record schema is invalid");
+  }
   if (portable_) {
     if (portable_store_ == nullptr) {
       throw WindowsPersistentRecoveryError(
@@ -1764,36 +1938,39 @@ void WindowsPersistentTransactionIndex::PersistNew(
 }
 
 void WindowsPersistentTransactionIndex::Persist(
-    const WindowsPersistentTransactionRecord& record) {
+    const WindowsPersistentTransactionRecord &record) {
+  WindowsPersistentTransactionRecord current_record = record;
+  current_record.schema_version =
+      WindowsPersistentTransactionRecord::kSchemaVersion;
   if (portable_) {
     if (portable_store_ == nullptr) {
       throw WindowsPersistentRecoveryError(
           "portable persistent transaction index is unavailable");
     }
-    portable_store_->WriteRecord(record.transaction_id,
-                                 record.EncodeCanonical());
+    portable_store_->WriteRecord(current_record.transaction_id,
+                                 current_record.EncodeCanonical());
     return;
   }
   if (key_ == nullptr) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction index is unavailable");
   }
-  auto transaction_key =
-      OpenPersistentTransactionKey(key_, record.transaction_id, caller_process_,
-                                   KEY_QUERY_VALUE | KEY_SET_VALUE);
+  auto transaction_key = OpenPersistentTransactionKey(
+      key_, current_record.transaction_id, caller_process_,
+      KEY_QUERY_VALUE | KEY_SET_VALUE);
   if (!transaction_key.has_value()) {
     throw WindowsPersistentRecoveryError(
         "persistent transaction claim is unavailable");
   }
-  WritePersistentRecord(transaction_key->get(), record);
+  WritePersistentRecord(transaction_key->get(), current_record);
 }
 
 WindowsPersistentRecoveryService::WindowsPersistentRecoveryService(
-    const WindowsHelperPolicy& policy, HANDLE caller_process)
+    const WindowsHelperPolicy &policy, HANDLE caller_process)
     : policy_(policy), caller_process_(caller_process) {}
 
 WindowsPersistentRecoveryService::WindowsPersistentRecoveryService(
-    const WindowsHelperPolicy& policy)
+    const WindowsHelperPolicy &policy)
     : policy_(policy), caller_process_(nullptr) {}
 
 void WindowsPersistentRecoveryService::AuthenticateCaller() const {
@@ -1832,7 +2009,7 @@ void WindowsPersistentRecoveryService::AuthenticateAutonomousHost() const {
   }
   std::array<unsigned char, SECURITY_MAX_SID_SIZE> system_sid{};
   DWORD system_sid_size = static_cast<DWORD>(system_sid.size());
-  const auto* user = reinterpret_cast<const TOKEN_USER*>(token_user.data());
+  const auto *user = reinterpret_cast<const TOKEN_USER *>(token_user.data());
   if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, system_sid.data(),
                           &system_sid_size) ||
       user->User.Sid == nullptr) {
@@ -1850,16 +2027,16 @@ void WindowsPersistentRecoveryService::AuthenticateAutonomousHost() const {
   const bool elevated = elevation.TokenIsElevated != 0;
   if (policy_.is_portable()) {
     ValidateCurrentPortableWindowsRecoveryHost(policy_);
-    if (DecideWindowsAutonomousRecoveryAuthority(
-            true, local_system, elevated, true) !=
+    if (DecideWindowsAutonomousRecoveryAuthority(true, local_system, elevated,
+                                                 true) !=
         WindowsAutonomousRecoveryAuthorityDecision::kPortableStableUser) {
       throw WindowsPersistentRecoveryError(
           "portable autonomous recovery host authority is rejected");
     }
     return;
   }
-  if (DecideWindowsAutonomousRecoveryAuthority(
-          false, local_system, elevated, false) !=
+  if (DecideWindowsAutonomousRecoveryAuthority(false, local_system, elevated,
+                                               false) !=
       WindowsAutonomousRecoveryAuthorityDecision::kProtectedSystem) {
     throw WindowsPersistentRecoveryError(
         "protected autonomous recovery requires LocalSystem");
@@ -1876,7 +2053,7 @@ void WindowsPersistentRecoveryService::AuthenticateAutonomousHost() const {
 }
 
 void WindowsPersistentRecoveryService::AuthenticateCallerForRecord(
-    const WindowsPersistentTransactionRecord& record) const {
+    const WindowsPersistentTransactionRecord &record) const {
   const std::filesystem::path caller_path =
       ProcessExecutablePath(caller_process_);
   const VerifiedWindowsExecutable identity =
@@ -1885,11 +2062,31 @@ void WindowsPersistentRecoveryService::AuthenticateCallerForRecord(
       VerifyWindowsExecutableStillMatches(caller_path, identity);
   if (policy_.is_portable()) {
     if (DecideWindowsPortableTransactionCallerAuthority(
-            policy_, record.transaction_id, record.EncodeCanonical(),
-            identity, caller_path, still_matches) ==
-        WindowsPortableTransactionResolution::kReject) {
+            policy_, record.transaction_id, record.EncodeCanonical(), identity,
+            caller_path,
+            still_matches) == WindowsPortableTransactionResolution::kReject) {
       throw WindowsPersistentRecoveryError(
           "portable recovery caller is not a frozen transaction generation");
+    }
+    return;
+  }
+  if (record.transaction_kind == "windowsInno") {
+    const ProtectedWindowsInnoJournal journal =
+        ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+    const std::filesystem::path expected_path =
+        record.target_path_hint /
+        journal.execution.installed_executable_relative_path;
+    const bool frozen_generation =
+        identity.sha256 == journal.current_executable_sha256 ||
+        identity.sha256 == journal.execution.installed_executable_sha256;
+    if (!ApplicationIdentityMatchesPolicy(identity, policy_) ||
+        !frozen_generation ||
+        NormalizeComparablePath(identity.final_path) !=
+            NormalizeComparablePath(expected_path) ||
+        !still_matches) {
+      throw WindowsPersistentRecoveryError(
+          "protected Inno recovery caller is not a frozen application "
+          "generation");
     }
     return;
   }
@@ -1916,9 +2113,10 @@ void WindowsPersistentRecoveryService::EnsureIndex() {
 }
 
 desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
-WindowsPersistentRecoveryService::Query(const std::string& transaction_id) {
+WindowsPersistentRecoveryService::Query(const std::string &transaction_id) {
   RequireTransactionId(transaction_id);
-  if (!policy_.is_portable()) AuthenticateCaller();
+  if (!policy_.is_portable())
+    AuthenticateCaller();
   try {
     EnsureIndex();
     const auto record = index_->Load(transaction_id);
@@ -1943,6 +2141,10 @@ WindowsPersistentRecoveryService::Query(const std::string& transaction_id) {
       return {1, transaction_id, "prepared", "recoveryRequired",
               record->journal_sha256};
     }
+    if (record->transaction_kind == "windowsInno") {
+      return {1, transaction_id, "prepared", "recoveryRequired",
+              record->journal_sha256};
+    }
     const auto journal = LoadCurrentJournal(*record);
     if (!journal.has_value()) {
       return {1, transaction_id, "prepared", "recoveryRequired",
@@ -1954,7 +2156,7 @@ WindowsPersistentRecoveryService::Query(const std::string& transaction_id) {
     }
     return {1, transaction_id, JournalStateName(journal->state),
             "recoveryRequired", record->journal_sha256};
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     return {1, transaction_id, "manualActionRequired", "journalCorrupt",
             std::string(64, '0')};
   }
@@ -1962,11 +2164,11 @@ WindowsPersistentRecoveryService::Query(const std::string& transaction_id) {
 
 desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
 WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
-    const std::string& transaction_id,
+    const std::string &transaction_id,
     std::function<void(const desktop_updater::runtime::internal::
-                           NativeInstallTransactionStatusV1&)>
+                           NativeInstallTransactionStatusV1 &)>
         acknowledge,
-    WindowsProcessLauncher& launcher) {
+    WindowsProcessLauncher &launcher) {
   if (!acknowledge) {
     throw WindowsPersistentRecoveryError(
         "pending recovery acknowledgement is unavailable");
@@ -1975,6 +2177,7 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
   auto status = Query(transaction_id);
   std::optional<WindowsPersistentTransactionRecord> frozen_record;
   std::optional<WindowsPersistentResolverClaim> resolver_claim;
+  bool frozen_record_requests_relaunch = false;
   if (status.result_code == "recoveryRequired") {
     try {
       EnsureIndex();
@@ -1986,7 +2189,11 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
         AuthenticateCallerForRecord(*frozen_record);
         // The app will exit after the acknowledgement. Make the absence of a
         // confirmed relaunch durable before that irreversible handoff.
-        index_->MarkRelaunchPending(transaction_id);
+        frozen_record_requests_relaunch =
+            ValidatePersistentJournalBindingAndReadRelaunch(*frozen_record);
+        if (frozen_record_requests_relaunch) {
+          index_->MarkRelaunchPending(transaction_id);
+        }
         frozen_record = index_->Load(transaction_id);
         if (!frozen_record.has_value()) {
           throw WindowsPersistentRecoveryError(
@@ -2025,7 +2232,7 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
               "pending recovery relaunch claim is already consumed");
         }
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception &) {
       frozen_record.reset();
       resolver_claim.reset();
       status = {1, transaction_id, "manualActionRequired", "journalCorrupt",
@@ -2037,7 +2244,8 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
   // acknowledgement callback owns the exact-process wait; re-checking here
   // prevents recovery if a future transport callback returns early.
   acknowledge(status);
-  if (status.result_code != "recoveryRequired") return status;
+  if (status.result_code != "recoveryRequired")
+    return status;
   if (!frozen_record.has_value() || !resolver_claim.has_value() ||
       WaitForSingleObject(caller_process_, 0) != WAIT_OBJECT_0) {
     throw WindowsPersistentRecoveryError(
@@ -2069,7 +2277,9 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
                 remaining, kConcurrentRecoveryOwnerPollMilliseconds)));
             return true;
           },
-          [this, &resolver_claim]() {
+          [this, &resolver_claim, &frozen_record_requests_relaunch]() {
+            if (!frozen_record_requests_relaunch)
+              return false;
             if (index_->ClaimResolver(*resolver_claim) !=
                 WindowsResolverClaimDecision::kOwn) {
               return false;
@@ -2086,9 +2296,8 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
                 index_->MarkRelaunchAttempting(transaction_id);
               },
               [this, &frozen_record, &coordinated, &launcher]() {
-                RelaunchRecoveredApplication(*frozen_record,
-                                             coordinated.recovery, policy_,
-                                             launcher);
+                RelaunchRecoveredApplication(
+                    *frozen_record, coordinated.recovery, policy_, launcher);
               },
               [this, &transaction_id](bool launched) {
                 index_->PersistRelaunchOutcome(transaction_id, launched);
@@ -2096,32 +2305,31 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
       if (relaunch != WindowsAtMostOnceRelaunchOutcome::kLaunched) {
         final_status.result_code = "relaunchFailure";
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception &) {
       final_status.result_code = "relaunchFailure";
     }
   }
   try {
     const auto latest = index_->Load(transaction_id);
-    if (latest.has_value() &&
-        (latest->record_state == "completed" ||
-         latest->record_state == "rolledBack")) {
+    if (latest.has_value() && (latest->record_state == "completed" ||
+                               latest->record_state == "rolledBack")) {
       return StatusFromWindowsPersistentTerminalRecord(*latest);
     }
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     final_status.result_code = "relaunchFailure";
   }
   return final_status;
 }
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
-WindowsPersistentRecoveryService::Recover(const std::string& transaction_id) {
+WindowsPersistentRecoveryService::Recover(const std::string &transaction_id) {
   return RecoverBound(transaction_id, true, caller_process_);
 }
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverAutonomously(
-    const std::string& transaction_id,
-    std::function<void(const std::string&)> signal_ready) {
+    const std::string &transaction_id,
+    std::function<void(const std::string &)> signal_ready) {
   RequireTransactionId(transaction_id);
   AuthenticateAutonomousHost();
   RecordWindowsHelperEvent(WindowsHelperEvent::kPortableStageProvenanceFailure);
@@ -2138,26 +2346,26 @@ WindowsPersistentRecoveryService::RecoverAutonomously(
       WaitForExactRecoveryActorsExit(*record, signal_ready);
   RecordWindowsHelperEvent(WindowsHelperEvent::kPortableStageRestageFailure);
   auto recovery = RecoverBound(transaction_id, false, nullptr);
-  const bool terminal =
-      (recovery.result_code == "completed" &&
-       recovery.verified_outcome == "newTarget") ||
-      (recovery.result_code == "rolledBack" &&
-       recovery.verified_outcome == "oldTarget");
-  if (!terminal) return recovery;
+  const bool terminal = (recovery.result_code == "completed" &&
+                         recovery.verified_outcome == "newTarget") ||
+                        (recovery.result_code == "rolledBack" &&
+                         recovery.verified_outcome == "oldTarget");
+  if (!terminal)
+    return recovery;
 
   const auto terminal_record = index_->Load(transaction_id);
   if (!terminal_record.has_value()) {
     return recovery;
   }
   switch (DecideWindowsTerminalRelaunch(terminal_record->relaunch_state)) {
-    case WindowsTerminalRelaunchDecision::kNotRequested:
-    case WindowsTerminalRelaunchDecision::kAlreadyLaunched:
-      return recovery;
-    case WindowsTerminalRelaunchDecision::kFailClosed:
-      recovery.result_code = "relaunchFailure";
-      return recovery;
-    case WindowsTerminalRelaunchDecision::kAttempt:
-      break;
+  case WindowsTerminalRelaunchDecision::kNotRequested:
+  case WindowsTerminalRelaunchDecision::kAlreadyLaunched:
+    return recovery;
+  case WindowsTerminalRelaunchDecision::kFailClosed:
+    recovery.result_code = "relaunchFailure";
+    return recovery;
+  case WindowsTerminalRelaunchDecision::kAttempt:
+    break;
   }
   try {
     const std::uint64_t resolver_start_identity =
@@ -2213,7 +2421,7 @@ WindowsPersistentRecoveryService::RecoverAutonomously(
     if (outcome != WindowsAtMostOnceRelaunchOutcome::kLaunched) {
       recovery.result_code = "relaunchFailure";
     }
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     recovery.result_code = "relaunchFailure";
   }
   return recovery;
@@ -2221,11 +2429,13 @@ WindowsPersistentRecoveryService::RecoverAutonomously(
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverBound(
-    const std::string& transaction_id, bool authenticate_caller,
-    HANDLE proof_caller_process, bool* exact_owner_active) {
-  if (exact_owner_active != nullptr) *exact_owner_active = false;
+    const std::string &transaction_id, bool authenticate_caller,
+    HANDLE proof_caller_process, bool *exact_owner_active) {
+  if (exact_owner_active != nullptr)
+    *exact_owner_active = false;
   RequireTransactionId(transaction_id);
-  if (authenticate_caller && !policy_.is_portable()) AuthenticateCaller();
+  if (authenticate_caller && !policy_.is_portable())
+    AuthenticateCaller();
   try {
     EnsureIndex();
     const auto record = index_->Load(transaction_id);
@@ -2233,7 +2443,8 @@ WindowsPersistentRecoveryService::RecoverBound(
       return {1, transaction_id, "helperUnavailable", "none",
               std::string(64, '0')};
     }
-    if (authenticate_caller) AuthenticateCallerForRecord(*record);
+    if (authenticate_caller)
+      AuthenticateCallerForRecord(*record);
     if (record->record_state == "completed" ||
         record->record_state == "rolledBack") {
       return RecoverTerminal(*record, proof_caller_process);
@@ -2247,7 +2458,7 @@ WindowsPersistentRecoveryService::RecoverBound(
               record->journal_sha256};
     }
     return RecoverActive(*record, proof_caller_process, exact_owner_active);
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     return {1, transaction_id, "manualActionRequired", "none",
             std::string(64, '0')};
   }
@@ -2255,8 +2466,50 @@ WindowsPersistentRecoveryService::RecoverBound(
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverActive(
-    const WindowsPersistentTransactionRecord& record,
-    HANDLE proof_caller_process, bool* exact_owner_active) {
+    const WindowsPersistentTransactionRecord &record,
+    HANDLE proof_caller_process, bool *exact_owner_active) {
+  if (record.transaction_kind == "windowsInno") {
+    const ProtectedWindowsInnoJournal journal =
+        ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+    if (PersistentTransactionExactOwnerActive(record)) {
+      if (exact_owner_active != nullptr)
+        *exact_owner_active = true;
+      return {1, record.transaction_id, "recoveryRequired", "none",
+              record.journal_sha256};
+    }
+    AuthenticodeProtectedWindowsInnoVerifier verifier;
+    const bool desired = PersistentInnoInstalledPackageMatches(
+        journal.BuildExpectation(), verifier);
+    const bool old = PersistentInnoInstalledPackageMatches(
+        OldPersistentInnoExpectation(journal), verifier);
+    const WindowsPersistentInnoRecoveryAction decision =
+        DecideWindowsPersistentInnoRecovery(record.record_state, false, desired,
+                                            old);
+    if (decision == WindowsPersistentInnoRecoveryAction::kRecoveryRequired ||
+        decision ==
+            WindowsPersistentInnoRecoveryAction::kManualActionRequired) {
+      index_->PersistTerminal(record.transaction_id, "manualActionRequired",
+                              "none");
+      return {1, record.transaction_id, "manualActionRequired", "none",
+              record.journal_sha256};
+    }
+    const bool completed =
+        decision == WindowsPersistentInnoRecoveryAction::kComplete;
+    if (!completed)
+      index_->MarkCancelling(record.transaction_id);
+    index_->PersistCleanupPending(record.transaction_id,
+                                  completed ? "completedCleanupPending"
+                                            : "rolledBackCleanupPending",
+                                  completed ? "newTarget" : "oldTarget");
+    RemoveRecoveredProtectedWindowsInnoInstaller(
+        journal.BuildExpectation().installer_path, journal.installer_sha256,
+        journal.installer_length);
+    index_->PersistTerminal(record.transaction_id,
+                            completed ? "completed" : "rolledBack",
+                            completed ? "newTarget" : "oldTarget");
+    return {1, record.transaction_id, completed ? "completed" : "rolledBack",
+            completed ? "newTarget" : "oldTarget", record.journal_sha256};
+  }
   const auto current = LoadCurrentJournal(record);
   if (!current.has_value()) {
     return RecoverPreparingWithoutJournal(record, proof_caller_process,
@@ -2297,22 +2550,23 @@ WindowsPersistentRecoveryService::RecoverActive(
       },
       true);
   switch (recovery.Recover()) {
-    case WindowsRecoveryOutcome::kRecovered:
-      return {1, record.transaction_id, "completed", "newTarget",
-              record.journal_sha256};
-    case WindowsRecoveryOutcome::kRolledBack:
-      return {1, record.transaction_id, "rolledBack", "oldTarget",
-              record.journal_sha256};
-    case WindowsRecoveryOutcome::kNothingToRecover:
-      return RecoverPreparingWithoutJournal(record, proof_caller_process,
-                                            exact_owner_active);
-    case WindowsRecoveryOutcome::kLiveOwner:
-      if (exact_owner_active != nullptr) *exact_owner_active = true;
-      return {1, record.transaction_id, "recoveryRequired", "none",
-              record.journal_sha256};
-    case WindowsRecoveryOutcome::kManualActionRequired:
-      return {1, record.transaction_id, "manualActionRequired", "none",
-              record.journal_sha256};
+  case WindowsRecoveryOutcome::kRecovered:
+    return {1, record.transaction_id, "completed", "newTarget",
+            record.journal_sha256};
+  case WindowsRecoveryOutcome::kRolledBack:
+    return {1, record.transaction_id, "rolledBack", "oldTarget",
+            record.journal_sha256};
+  case WindowsRecoveryOutcome::kNothingToRecover:
+    return RecoverPreparingWithoutJournal(record, proof_caller_process,
+                                          exact_owner_active);
+  case WindowsRecoveryOutcome::kLiveOwner:
+    if (exact_owner_active != nullptr)
+      *exact_owner_active = true;
+    return {1, record.transaction_id, "recoveryRequired", "none",
+            record.journal_sha256};
+  case WindowsRecoveryOutcome::kManualActionRequired:
+    return {1, record.transaction_id, "manualActionRequired", "none",
+            record.journal_sha256};
   }
   return {1, record.transaction_id, "manualActionRequired", "none",
           record.journal_sha256};
@@ -2320,8 +2574,8 @@ WindowsPersistentRecoveryService::RecoverActive(
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverPreparingWithoutJournal(
-    const WindowsPersistentTransactionRecord& record,
-    HANDLE proof_caller_process, bool* exact_owner_active) {
+    const WindowsPersistentTransactionRecord &record,
+    HANDLE proof_caller_process, bool *exact_owner_active) {
   const WindowsTransactionJournal frozen =
       WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
   const WindowsTransactionPaths paths = WindowsTransactionPaths::Create(
@@ -2333,7 +2587,8 @@ WindowsPersistentRecoveryService::RecoverPreparingWithoutJournal(
   }
   ExactLockObservation lock = ObserveExactLock(parent.get(), paths, true);
   if (lock.state == ExactLockObservation::State::kLiveOwner) {
-    if (exact_owner_active != nullptr) *exact_owner_active = true;
+    if (exact_owner_active != nullptr)
+      *exact_owner_active = true;
     return {1, record.transaction_id, "recoveryRequired", "none",
             record.journal_sha256};
   }
@@ -2362,10 +2617,10 @@ WindowsPersistentRecoveryService::RecoverPreparingWithoutJournal(
             record.journal_sha256};
   }
 
-  index_->PersistCleanupPending(
-      record.transaction_id,
-      completed ? "completedCleanupPending" : "rolledBackCleanupPending",
-      completed ? "newTarget" : "oldTarget");
+  index_->PersistCleanupPending(record.transaction_id,
+                                completed ? "completedCleanupPending"
+                                          : "rolledBackCleanupPending",
+                                completed ? "newTarget" : "oldTarget");
   DeleteHandleExact(lock.handle.get());
   lock.handle.reset();
   FlushPersistentMetadata(parent.get());
@@ -2378,11 +2633,41 @@ WindowsPersistentRecoveryService::RecoverPreparingWithoutJournal(
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverCleanupPending(
-    const WindowsPersistentTransactionRecord& record,
-    bool* exact_owner_active) {
+    const WindowsPersistentTransactionRecord &record,
+    bool *exact_owner_active) {
   const bool completed = record.record_state == "completedCleanupPending";
   const std::string final_state = completed ? "completed" : "rolledBack";
   const std::string final_outcome = completed ? "newTarget" : "oldTarget";
+  if (record.transaction_kind == "windowsInno") {
+    try {
+      if (PersistentTransactionExactOwnerActive(record)) {
+        if (exact_owner_active != nullptr)
+          *exact_owner_active = true;
+        return {1, record.transaction_id, "recoveryRequired", "none",
+                record.journal_sha256};
+      }
+      const ProtectedWindowsInnoJournal journal =
+          ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+      AuthenticodeProtectedWindowsInnoVerifier verifier;
+      const ProtectedWindowsInnoExpectation expectation =
+          completed ? journal.BuildExpectation()
+                    : OldPersistentInnoExpectation(journal);
+      if (!PersistentInnoInstalledPackageMatches(expectation, verifier)) {
+        return {1, record.transaction_id, "manualActionRequired", "none",
+                record.journal_sha256};
+      }
+      RemoveRecoveredProtectedWindowsInnoInstaller(
+          journal.BuildExpectation().installer_path, journal.installer_sha256,
+          journal.installer_length);
+      index_->PersistTerminal(record.transaction_id, final_state,
+                              final_outcome);
+      return {1, record.transaction_id, final_state, final_outcome,
+              record.journal_sha256};
+    } catch (const std::exception &) {
+      return {1, record.transaction_id, "recoveryRequired", "none",
+              record.journal_sha256};
+    }
+  }
   try {
     const WindowsTransactionJournal frozen =
         WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
@@ -2395,7 +2680,8 @@ WindowsPersistentRecoveryService::RecoverCleanupPending(
     }
     ExactLockObservation lock = ObserveExactLock(parent.get(), paths, false);
     if (lock.state == ExactLockObservation::State::kLiveOwner) {
-      if (exact_owner_active != nullptr) *exact_owner_active = true;
+      if (exact_owner_active != nullptr)
+        *exact_owner_active = true;
       return {1, record.transaction_id, "recoveryRequired", "none",
               record.journal_sha256};
     }
@@ -2415,7 +2701,7 @@ WindowsPersistentRecoveryService::RecoverCleanupPending(
     index_->PersistTerminal(record.transaction_id, final_state, final_outcome);
     return {1, record.transaction_id, final_state, final_outcome,
             record.journal_sha256};
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     return {1, record.transaction_id, "recoveryRequired", "none",
             record.journal_sha256};
   }
@@ -2423,8 +2709,24 @@ WindowsPersistentRecoveryService::RecoverCleanupPending(
 
 desktop_updater::runtime::internal::NativeInstallRecoveryResultV1
 WindowsPersistentRecoveryService::RecoverTerminal(
-    const WindowsPersistentTransactionRecord& record,
+    const WindowsPersistentTransactionRecord &record,
     HANDLE proof_caller_process) {
+  if (record.transaction_kind == "windowsInno") {
+    try {
+      const ProtectedWindowsInnoJournal journal =
+          ProtectedWindowsInnoJournal::DecodeStrict(record.journal_canonical);
+      RemoveRecoveredProtectedWindowsInnoInstaller(
+          journal.BuildExpectation().installer_path, journal.installer_sha256,
+          journal.installer_length);
+    } catch (const std::exception &) {
+      // A mismatched protected leaf is never deleted through path-only
+      // cleanup; the terminal tombstone remains historical authority.
+    }
+    return {1, record.transaction_id,
+            record.record_state == "completed" ? "completed" : "rolledBack",
+            record.record_state == "completed" ? "newTarget" : "oldTarget",
+            record.journal_sha256};
+  }
   try {
     const WindowsTransactionJournal frozen =
         WindowsTransactionJournal::DecodeStrict(record.journal_canonical);
@@ -2444,7 +2746,7 @@ WindowsPersistentRecoveryService::RecoverTerminal(
         FlushPersistentMetadata(parent.get());
       }
     }
-  } catch (const std::exception&) {
+  } catch (const std::exception &) {
     // A final tombstone is historical authority. Cleanup is best-effort and
     // must never reinterpret an older outcome after a later valid update.
   }
@@ -2454,4 +2756,4 @@ WindowsPersistentRecoveryService::RecoverTerminal(
           record.journal_sha256};
 }
 
-}  // namespace desktop_updater::helper
+} // namespace desktop_updater::helper

@@ -554,6 +554,29 @@ void WriteHandle(HANDLE file, const std::string& bytes) {
   }
 }
 
+std::string ReadCanonicalPolicyHandle(HANDLE file,
+                                      std::filesystem::path* final_path) {
+  if (file == nullptr || file == INVALID_HANDLE_VALUE) {
+    Fail("portable recovery policy handle is unavailable");
+  }
+  const WindowsFileIdentity identity = ReadWindowsFileIdentity(file);
+  if (identity.directory ||
+      (identity.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+      identity.number_of_links != 1) {
+    Fail("portable recovery policy is not a plain single-link file");
+  }
+  const std::string canonical = ReadHandle(file, kMaximumPolicyBytes);
+  if (canonical.empty()) Fail("portable recovery policy is empty");
+  const JsonValue parsed = ParseJson(canonical);
+  if (EncodeCanonicalJson(parsed) != canonical) {
+    Fail("portable recovery policy is not canonical JSON");
+  }
+  if (final_path != nullptr) {
+    *final_path = FinalPath(file).lexically_normal();
+  }
+  return canonical;
+}
+
 std::string ReadCanonicalPolicy(const std::filesystem::path& path,
                                 std::filesystem::path* final_path) {
   UniqueWindowsHandle file(CreateFileW(
@@ -562,22 +585,7 @@ std::string ReadCanonicalPolicy(const std::filesystem::path& path,
       FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
   if (!file.valid()) Fail("portable recovery policy cannot open");
-  const WindowsFileIdentity identity = ReadWindowsFileIdentity(file.get());
-  if (identity.directory ||
-      (identity.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
-      identity.number_of_links != 1) {
-    Fail("portable recovery policy is not a plain single-link file");
-  }
-  const std::string canonical = ReadHandle(file.get(), kMaximumPolicyBytes);
-  if (canonical.empty()) Fail("portable recovery policy is empty");
-  const JsonValue parsed = ParseJson(canonical);
-  if (EncodeCanonicalJson(parsed) != canonical) {
-    Fail("portable recovery policy is not canonical JSON");
-  }
-  if (final_path != nullptr) {
-    *final_path = FinalPath(file.get()).lexically_normal();
-  }
-  return canonical;
+  return ReadCanonicalPolicyHandle(file.get(), final_path);
 }
 
 bool PoliciesEqual(const WindowsHelperPolicy& first,
@@ -653,23 +661,19 @@ std::filesystem::path CurrentExecutablePath() {
 }
 
 void CopySourceHelper(HANDLE destination,
+                      HANDLE source,
                       const VerifiedWindowsExecutable& source_identity) {
-  UniqueWindowsHandle source(CreateFileW(
-      source_identity.final_path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES |
-                                               READ_CONTROL | SYNCHRONIZE,
-      FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-  if (!source.valid() ||
-      !VerifyWindowsExecutableStillMatches(source_identity.final_path,
-                                           source_identity)) {
-    Fail("portable recovery source helper identity changed");
+  if (source == nullptr || source == INVALID_HANDLE_VALUE) {
+    Fail("portable recovery source helper handle is unavailable");
   }
-  const WindowsFileIdentity identity = ReadWindowsFileIdentity(source.get());
-  ValidatePortableWindowsRetainedHelperFacts(
-      source_identity, identity, Sha256Handle(source.get()),
-      FinalPath(source.get()));
+  auto validate_source = [&]() {
+    const WindowsFileIdentity identity = ReadWindowsFileIdentity(source);
+    ValidatePortableWindowsRetainedHelperFacts(
+        source_identity, identity, Sha256Handle(source), FinalPath(source));
+  };
+  validate_source();
   LARGE_INTEGER start{};
-  if (!SetFilePointerEx(source.get(), start, nullptr, FILE_BEGIN) ||
+  if (!SetFilePointerEx(source, start, nullptr, FILE_BEGIN) ||
       !SetFilePointerEx(destination, start, nullptr, FILE_BEGIN) ||
       !SetEndOfFile(destination)) {
     Fail("portable recovery helper copy initialization failed");
@@ -677,7 +681,7 @@ void CopySourceHelper(HANDLE destination,
   std::array<unsigned char, 64 * 1024> buffer{};
   for (;;) {
     DWORD count = 0;
-    if (!ReadFile(source.get(), buffer.data(),
+    if (!ReadFile(source, buffer.data(),
                   static_cast<DWORD>(buffer.size()), &count, nullptr)) {
       Fail("portable recovery helper source read failed");
     }
@@ -688,11 +692,10 @@ void CopySourceHelper(HANDLE destination,
       Fail("portable recovery helper copy failed");
     }
   }
-  if (!FlushFileBuffers(destination) ||
-      !VerifyWindowsExecutableStillMatches(source_identity.final_path,
-                                           source_identity)) {
+  if (!FlushFileBuffers(destination)) {
     Fail("portable recovery helper copy was not stable");
   }
+  validate_source();
 }
 
 void EnsureStablePolicy(HANDLE endpoint_directory,
@@ -717,12 +720,13 @@ void EnsureStableHelper(HANDLE endpoint_directory,
                         PSID user,
                         const std::wstring& user_sid,
                         const WindowsHelperPolicy& policy,
+                        HANDLE source_helper_file,
                         const VerifiedWindowsExecutable& source_identity) {
   StableFileOpen opened = OpenOrCreateSecureFile(
       endpoint_directory, kHelperFileName, GENERIC_READ | GENERIC_WRITE, user,
       user_sid);
   if (opened.created) {
-    CopySourceHelper(opened.file.get(), source_identity);
+    CopySourceHelper(opened.file.get(), source_helper_file, source_identity);
     FlushWindowsDirectory(endpoint_directory);
   }
   ValidateExactUserSecurity(opened.file.get(), user, false);
@@ -1453,6 +1457,8 @@ void ValidatePortableWindowsRecoveryTaskSemanticFacts(
 PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
     const WindowsHelperPolicy& policy,
     const VerifiedWindowsExecutable& source_helper_identity,
+    HANDLE source_helper_file,
+    HANDLE source_policy_file,
     HANDLE authenticated_caller_process) {
   PortableRecoveryProvisionDiagnostics diagnostics;
   const CurrentTokenFacts current = ReadCurrentTokenFacts();
@@ -1466,17 +1472,22 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
   }
   diagnostics.Advance(PortableRecoveryProvisionStage::kSource);
   ValidateWindowsHelperIdentity(source_helper_identity, policy, false);
-  if (!VerifyWindowsExecutableStillMatches(
-          source_helper_identity.final_path, source_helper_identity)) {
-    Fail("portable recovery source helper identity changed");
+  if (source_helper_file == nullptr ||
+      source_helper_file == INVALID_HANDLE_VALUE) {
+    Fail("portable recovery source helper handle is unavailable");
   }
-  const std::filesystem::path source_policy_path =
-      source_helper_identity.final_path.parent_path() / kPolicyFileName;
+  const WindowsFileIdentity source_helper_file_identity =
+      ReadWindowsFileIdentity(source_helper_file);
+  const std::filesystem::path source_helper_final =
+      FinalPath(source_helper_file).lexically_normal();
+  ValidatePortableWindowsRetainedHelperFacts(
+      source_helper_identity, source_helper_file_identity,
+      Sha256Handle(source_helper_file), source_helper_final);
   std::filesystem::path source_policy_final;
   const std::string canonical_policy =
-      ReadCanonicalPolicy(source_policy_path, &source_policy_final);
+      ReadCanonicalPolicyHandle(source_policy_file, &source_policy_final);
   if (NormalizePath(source_policy_final.parent_path()) !=
-          NormalizePath(source_helper_identity.final_path.parent_path()) ||
+          NormalizePath(source_helper_final.parent_path()) ||
       _wcsicmp(source_policy_final.filename().c_str(), kPolicyFileName) != 0) {
     Fail("portable recovery source policy is not adjacent");
   }
@@ -1493,7 +1504,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
       local_app_data_path, policy, source_helper_identity.sha256,
       WindowsHelperSha256Hex(canonical_policy), current.user_sid);
   switch (DecidePortableWindowsRecoveryHostSource(
-      endpoint, source_helper_identity.final_path, source_policy_final)) {
+      endpoint, source_helper_final, source_policy_final)) {
     case PortableWindowsRecoveryHostSourceDecision::kReuseExactStable: {
       diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
       PortableWindowsRecoveryHostBootstrap stable =
@@ -1549,7 +1560,7 @@ PortableWindowsRecoveryHostEndpointV1 ProvisionPortableWindowsRecoveryHost(
                        current.user_sid, canonical_policy);
     EnsureStableHelper(tree.endpoint.get(), endpoint,
                        SidPointer(current.user), current.user_sid, policy,
-                       source_helper_identity);
+                       source_helper_file, source_helper_identity);
   };
   try {
     provision_and_read_back();
@@ -1907,43 +1918,24 @@ void TaskSchedulerPortableWindowsRecoveryHostController::ArmAndStart(
   }
 
   diagnostics.Advance(PortableRecoveryProvisionStage::kArtifact);
-  ScopedVariant parameters;
-  ScopedBstr run_user(AccountNameForSid(definition.principal_user_id));
-  ComPtr<IRunningTask> running;
+  // The exact task registration/readback above is the durable logon-time
+  // recovery boundary. For the current caller, start the same validated
+  // helper directly in the caller's exact token instead of waiting for
+  // Task Scheduler's synchronous interactive-token RunEx call. That call can
+  // block for tens of seconds for credential-created standard users and would
+  // consume the app-facing reservation deadline before the helper is ready.
   UniqueWindowsHandle direct_process;
   const auto launch_direct_fallback = [&]() {
     if (direct_process.valid()) return;
     RecordWindowsHelperEvent(WindowsHelperEvent::kPortableAuthorizationFailure);
     direct_process = LaunchPortableWindowsRecoveryHostDirect(definition);
   };
-  const HRESULT start = registered.get()->RunEx(
-      parameters.value(), definition.run_flags, 0, run_user.get(),
-      running.put());
-  if (FAILED(start)) {
-    const bool use_direct_fallback =
-        IsPortableWindowsRecoveryTaskStartFallback(start);
-    if (!use_direct_fallback) {
-      Check(start, "Task Scheduler portable recovery start failed");
-    }
-    // The durable task has already passed exact registration/readback. A
-    // credential-created standard-user process can still lack a Winlogon
-    // session, so Task Scheduler cannot start its INTERACTIVE_TOKEN task.
-    // Start the same verified helper directly in the current exact token and
-    // keep the task registered for the next real user logon.
-    launch_direct_fallback();
-  }
-  ULONGLONG started = GetTickCount64();
-  const ULONGLONG task_fallback_grace_milliseconds =
-      std::min<DWORD>(startup_timeout_milliseconds, 5'000);
+  // Keep the task registered for the next real user logon while avoiding a
+  // duplicate current-session Task Scheduler launch.
+  launch_direct_fallback();
+  const ULONGLONG started = GetTickCount64();
   for (;;) {
     if (WaitForSingleObject(ready_event.get(), 25) == WAIT_OBJECT_0) return;
-    const ULONGLONG elapsed = GetTickCount64() - started;
-    if (!direct_process.valid() &&
-        elapsed >= task_fallback_grace_milliseconds) {
-      launch_direct_fallback();
-      started = GetTickCount64();
-      continue;
-    }
     if (direct_process.valid()) {
       const DWORD process_wait = WaitForSingleObject(direct_process.get(), 0);
       if (process_wait == WAIT_OBJECT_0) {

@@ -361,7 +361,7 @@ updates:
       packager: _RecordingPackager(<String>[]),
       innoPackager: innoPackager,
     );
-    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString(r"""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -370,6 +370,11 @@ windows:
     mode: generated
     appId: com.example.app
     outputBaseName: CustomSetup
+    privilegesRequired: admin
+    protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--egas_manager--2.1.0
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 """);
     try {
       final manifest = await publisher.publish(
@@ -1346,15 +1351,23 @@ class _FakeInnoPackager extends InnoInstallerPackager {
         sha256: "b" * 64,
         length: await artifact.length(),
       ),
-      install: const ReleaseInstall(
+      install: ReleaseInstall(
         strategy: "innoInstaller",
         inno: ReleaseInnoInstall(
           silentArgs: ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
           inheritInstallDirectory: true,
+          installedExecutableRelativePath:
+              request.executableRelativePath ?? "Example.exe",
+          installedExecutableSha256: "cd" * 32,
           logFileName: "desktop_updater_inno_install.log",
           relaunchAfterInstall: true,
-          requiresElevation: "auto",
-          authenticode: ReleaseAuthenticodePolicy(required: false),
+          requiresElevation: "always",
+          authenticode: ReleaseAuthenticodePolicy(
+            required: true,
+            sha256Thumbprints: [
+              "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+            ],
+          ),
         ),
       ),
       minimumUpdaterVersion: request.minimumUpdaterVersion,

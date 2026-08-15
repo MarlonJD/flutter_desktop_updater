@@ -566,7 +566,7 @@ WindowsElevatedHelperLaunch LaunchAuthenticatedElevatedHelper(
   launch.lpVerb = L"runas";
   launch.lpFile = fixed_helper_path.c_str();
   launch.lpParameters = parameters.c_str();
-  launch.nShow = SW_HIDE;
+  launch.nShow = SW_SHOWNORMAL;
   if (!ShellExecuteExW(&launch)) {
     return {ClassifyElevationResult(GetLastError(), false), nullptr};
   }
@@ -835,7 +835,7 @@ WindowsElevatedHelperExchange LaunchAuthenticatedElevatedHelperExchange(
   launch.lpVerb = L"runas";
   launch.lpFile = fixed_helper_path.c_str();
   launch.lpParameters = parameters.c_str();
-  launch.nShow = SW_HIDE;
+  launch.nShow = SW_SHOWNORMAL;
   if (!ShellExecuteExW(&launch)) {
     return {ClassifyElevationResult(GetLastError(), false), "", ""};
   }

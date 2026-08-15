@@ -4,6 +4,8 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
+import "support/dart_cli.dart";
+
 void main() {
   const fixtureRoot = "fixtures/compat/native-install-helper/v1";
   const generatorPath = "tool/generate_native_install_helper_fixtures.dart";
@@ -41,7 +43,7 @@ void main() {
     } finally {
       await root.delete(recursive: true);
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   test("request schema seals every authority-bearing object", () async {
     final schema = await _readJson(
@@ -120,31 +122,35 @@ void main() {
       expect((result.stdout as String).trim(), "valid");
       expect(result.stderr, isEmpty);
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
-  test("every generated invalid request has a stable failure", () async {
-    final fixture = await _readJson("$fixtureRoot/invalid-requests.json");
-    final cases = _mapList(fixture, "cases");
-    expect(cases, isNotEmpty);
+  test(
+    "every generated invalid request has a stable failure",
+    () async {
+      final fixture = await _readJson("$fixtureRoot/invalid-requests.json");
+      final cases = _mapList(fixture, "cases");
+      expect(cases, isNotEmpty);
 
-    for (final entry in cases) {
-      final result = await _validateRequest(
-        generatorPath,
-        entry["rawJson"] as String? ?? jsonEncode(entry["request"]),
-      );
-      expect(
-        result.exitCode,
-        1,
-        reason: _processReason(entry["name"] as String, result),
-      );
-      expect(result.stdout, isEmpty);
-      expect(
-        (result.stderr as String).trim(),
-        entry["expectedFailure"],
-        reason: entry["name"] as String,
-      );
-    }
-  });
+      for (final entry in cases) {
+        final result = await _validateRequest(
+          generatorPath,
+          entry["rawJson"] as String? ?? jsonEncode(entry["request"]),
+        );
+        expect(
+          result.exitCode,
+          1,
+          reason: _processReason(entry["name"] as String, result),
+        );
+        expect(result.stdout, isEmpty);
+        expect(
+          (result.stderr as String).trim(),
+          entry["expectedFailure"],
+          reason: entry["name"] as String,
+        );
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 
   test("canonical JSON is UTF-8, sorted, integer-preserving, and strict",
       () async {
@@ -183,7 +189,7 @@ void main() {
         expect(result.stderr, isEmpty);
       }
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   test("journal fixtures contain only normative state transitions", () async {
     final fixture = await _readJson("$fixtureRoot/journal-transitions.json");
@@ -431,46 +437,15 @@ Future<ProcessResult> _runGeneratorResult(
   String generatorPath,
   List<String> arguments,
 ) {
-  final flutterRoot = Platform.environment["FLUTTER_ROOT"];
-  final executable = flutterRoot == null
-      ? _dartExecutableFromPath()
-      : _cachedDartExecutable(flutterRoot);
   return Process.run(
-    executable,
+    resolveDartExecutable(),
     <String>[generatorPath, ...arguments],
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
     environment: <String, String>{
       ...Platform.environment,
       "DART_TOOL_DISABLE_ANALYTICS": "1",
     },
-  );
-}
-
-String _dartExecutableFromPath() {
-  final executableName = Platform.isWindows ? "dart.exe" : "dart";
-  final pathValue = Platform.environment["PATH"] ?? "";
-  for (final directory in pathValue.split(Platform.isWindows ? ";" : ":")) {
-    final wrapper = File(path.join(directory, executableName));
-    if (!wrapper.existsSync()) {
-      continue;
-    }
-    final parent = Directory(directory).parent.path;
-    final cached = _cachedDartExecutable(parent);
-    if (File(cached).existsSync()) {
-      return cached;
-    }
-    return wrapper.path;
-  }
-  return executableName;
-}
-
-String _cachedDartExecutable(String flutterRoot) {
-  return path.join(
-    flutterRoot,
-    "bin",
-    "cache",
-    "dart-sdk",
-    "bin",
-    Platform.isWindows ? "dart.exe" : "dart",
   );
 }
 

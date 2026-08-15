@@ -1635,6 +1635,8 @@ final class _SmokeServer {
       artifactBytes: await artifact.readAsBytes(),
       allowUnsignedArtifact: false,
       publisherThumbprint: null,
+      installedExecutableRelativePath: null,
+      installedExecutableSha256: null,
       minimumUpdaterVersion: _minimumUpdaterVersion,
     );
     if (descriptor["minimumUpdaterVersion"] != _minimumUpdaterVersion ||

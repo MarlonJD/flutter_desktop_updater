@@ -17,6 +17,16 @@ if ($Mode -eq "Unprivileged") {
   if ($process.ExitCode -ne 0) {
     throw "The fixed helper executable failed its version probe with exit code $($process.ExitCode)."
   }
+  $invalidNonce = ("A" * 42) + "é"
+  $process = Start-Process -FilePath $helper -ArgumentList @(
+    "--portable-pipe",
+    "\\.\pipe\desktop-updater-invalid-nonce",
+    "--nonce",
+    $invalidNonce
+  ) -Wait -PassThru
+  if ($process.ExitCode -ne 160) {
+    throw "The helper did not reject a non-ASCII nonce with ERROR_BAD_ARGUMENTS; exit code $($process.ExitCode)."
+  }
   $output = & ctest --test-dir $build -C Release -R "(WindowsHelperAuth|WindowsFileTransaction|WindowsCrashRecovery)" --output-on-failure --no-tests=error 2>&1
   $exitCode = $LASTEXITCODE
   $output | ForEach-Object { Write-Host $_ }

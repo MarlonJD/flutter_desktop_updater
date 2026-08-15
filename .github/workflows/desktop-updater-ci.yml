@@ -657,6 +657,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $ConfirmPreference = "None"
+          . ./tool/windows_smoke_profile_cleanup.ps1
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
           $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
           $packageSource = (Resolve-Path windows/native/artifacts).Path
@@ -977,10 +978,14 @@ jobs:
             if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
             if ($smokeUserCreated) {
-              Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+              try {
+                Remove-WindowsSmokeUserProfile -Sid $smokeUser.SID.Value -ExpectedPath $smokeUserProfile
+              } finally {
+                Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+              }
             }
           }
-      - name: Windows native runtime Inno smoke
+      - name: Windows native runtime unprivileged Inno transport smoke
         if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         shell: pwsh
         env:
@@ -1032,6 +1037,7 @@ jobs:
           $sha256 = [Security.Cryptography.SHA256]::Create()
           try { $publisher = ([BitConverter]::ToString($sha256.ComputeHash($certificate.RawData))).Replace('-', '') } finally { $sha256.Dispose(); $certificate.Dispose() }
           $ready = Join-Path $smokeRoot "ready.json"
+          $installedExecutable = Join-Path $payload "DesktopUpdater.RuntimeCompile.exe"
           $server = Start-Process dart -ArgumentList @(
             "run", "tool/native_runtime_smoke_server.dart",
             "--artifact", $installer,
@@ -1040,6 +1046,8 @@ jobs:
             "--package-id", "com.example.native-runtime-smoke",
             "--app-name", "NativeRuntimeSmoke",
             "--publisher-thumbprint", $publisher,
+            "--installed-executable", $installedExecutable,
+            "--installed-executable-relative-path", "DesktopUpdater.RuntimeCompile.exe",
             "--ready-file", $ready,
             "--port", "43895"
           ) -PassThru
@@ -1294,7 +1302,7 @@ jobs:
     name: Windows Authenticode/UAC Helper (not run unless enabled)
     runs-on: [self-hosted, Windows, X64, desktop-updater-uac]
     needs: changes
-    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.windows == 'true')
+    if: github.event_name == 'workflow_dispatch' && (vars.DESKTOP_UPDATER_RUN_ELEVATED_HELPER_E2E == '1' || vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1') && (needs.changes.outputs.full == 'true' || needs.changes.outputs.windows == 'true' || needs.changes.outputs.runtime == 'true')
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -1331,10 +1339,101 @@ jobs:
         env:
           DESKTOP_UPDATER_ALLOW_INTERACTIVE_UAC_SMOKE: "1"
         run: ./tool/windows_install_helper_smoke.ps1 -Mode Elevated -BuildDirectory windows/native/build-elevated
-      - name: Remove ephemeral signing credential
+      - name: Prepare protected Inno signer in CurrentUser stores
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pfx = Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx"
+          if (-not (Test-Path -LiteralPath $pfx -PathType Leaf) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+            throw "Protected Inno signer credentials are required."
+          }
+          $password = ConvertTo-SecureString $env:WINDOWS_CODE_SIGNING_P12_PASSWORD -AsPlainText -Force
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:WINDOWS_CODE_SIGNING_P12_PASSWORD)
+          try {
+            $sha1 = $certificate.Thumbprint.ToUpperInvariant()
+            $sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($certificate.RawData)).ToLowerInvariant()
+            $publisher = $certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            if ([string]::IsNullOrWhiteSpace($publisher)) {
+              throw "Protected Inno signer publisher is unavailable."
+            }
+            $publicCertificate = Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.cer"
+            [IO.File]::WriteAllBytes($publicCertificate, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            $stores = @("My", "TrustedPublisher")
+            if ($certificate.Subject -eq $certificate.Issuer) {
+              $stores += "Root"
+            }
+            foreach ($store in $stores) {
+              $existing = Test-Path -LiteralPath "Cert:\CurrentUser\$store\$sha1"
+              "DESKTOP_UPDATER_INNO_ADDED_$($store.ToUpperInvariant())=$([int](-not $existing))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              if ($existing) { continue }
+              if ($store -eq "My") {
+                Import-PfxCertificate -FilePath $pfx -CertStoreLocation "Cert:\CurrentUser\My" -Password $password | Out-Null
+              } else {
+                Import-Certificate -FilePath $publicCertificate -CertStoreLocation "Cert:\CurrentUser\$store" | Out-Null
+              }
+            }
+            "DESKTOP_UPDATER_INNO_CERT_SHA1=$sha1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "DESKTOP_UPDATER_INNO_CERT_SHA256=$sha256" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "DESKTOP_UPDATER_INNO_CERT_PUBLISHER=$publisher" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } finally {
+            $certificate.Dispose()
+          }
+      - name: Windows native runtime Inno smoke
+        if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $script = (Resolve-Path tool/windows_inno_smoke.ps1).Path
+          $wrapper = Join-Path $env:RUNNER_TEMP "desktop-updater-protected-inno-elevated.ps1"
+          $escapedWorkspace = $env:GITHUB_WORKSPACE.Replace("'", "''")
+          $escapedScript = $script.Replace("'", "''")
+          $escapedPublisher = $env:DESKTOP_UPDATER_INNO_CERT_PUBLISHER.Replace("'", "''")
+          @"
+          `$ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath '$escapedWorkspace'
+          try {
+            & '$escapedScript' -SigningCertificateSha1 '$env:DESKTOP_UPDATER_INNO_CERT_SHA1' -SigningCertificateSha256 '$env:DESKTOP_UPDATER_INNO_CERT_SHA256' -SigningPublisher '$escapedPublisher'
+            exit 0
+          } catch {
+            Write-Error `$_
+            exit 1
+          }
+          "@ | Set-Content -LiteralPath $wrapper -Encoding UTF8NoBOM
+          $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
+          $process = Start-Process -FilePath $pwsh -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", "`"$wrapper`""
+          ) -WorkingDirectory $env:GITHUB_WORKSPACE -Verb RunAs -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Protected Windows Inno smoke failed with exit code $($process.ExitCode)."
+          }
+      - name: Upload protected Windows Inno smoke evidence
+        if: always() && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-protected-inno-smoke-${{ github.sha }}
+          path: reports/windows-arm64-production-readiness/inno-e2e-*
+          if-no-files-found: warn
+      - name: Remove ephemeral signing credential and trust
         if: always()
         shell: pwsh
-        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx") -Force -ErrorAction SilentlyContinue
+        run: |
+          $sha1 = $env:DESKTOP_UPDATER_INNO_CERT_SHA1
+          if (-not [string]::IsNullOrWhiteSpace($sha1)) {
+            foreach ($store in @("My", "Root", "TrustedPublisher")) {
+              $added = [Environment]::GetEnvironmentVariable("DESKTOP_UPDATER_INNO_ADDED_$($store.ToUpperInvariant())")
+              if ($added -eq "1") {
+                Remove-Item -LiteralPath "Cert:\CurrentUser\$store\$sha1" -Force -ErrorAction SilentlyContinue
+              }
+            }
+          }
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.pfx") -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-helper-signing.cer") -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "desktop-updater-protected-inno-elevated.ps1") -Force -ErrorAction SilentlyContinue
 
   macos-native:
     name: macOS Native Consumer

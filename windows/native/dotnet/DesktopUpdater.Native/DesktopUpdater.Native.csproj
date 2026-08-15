@@ -13,28 +13,29 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/MarlonJD/flutter_desktop_updater</RepositoryUrl>
+    <NativeRuntimeIdentifier Condition="'$(NativeRuntimeIdentifier)' == ''">win-x64</NativeRuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
     <None
       Include="$(NativeDllPath)"
       Pack="true"
-      PackagePath="runtimes/win-x64/native"
+      PackagePath="runtimes/$(NativeRuntimeIdentifier)/native"
       Condition="'$(NativeDllPath)' != ''" />
     <None
       Include="$(RuntimeDllPath)"
       Pack="true"
-      PackagePath="runtimes/win-x64/native"
+      PackagePath="runtimes/$(NativeRuntimeIdentifier)/native"
       Condition="'$(RuntimeDllPath)' != ''" />
     <None
       Include="$(InstallHelperPath)"
       Pack="true"
-      PackagePath="runtimes/win-x64/native/desktop_updater_install_helper.exe"
+      PackagePath="runtimes/$(NativeRuntimeIdentifier)/native/desktop_updater_install_helper.exe"
       Condition="'$(InstallHelperPath)' != ''" />
     <None
       Include="$(HelperPolicyPath)"
       Pack="true"
-      PackagePath="runtimes/win-x64/native/desktop_updater_helper_policy.json"
+      PackagePath="runtimes/$(NativeRuntimeIdentifier)/native/desktop_updater_helper_policy.json"
       Condition="'$(HelperPolicyPath)' != ''" />
     <None
       Include="README.md"
@@ -52,6 +53,9 @@
   </ItemGroup>
 
   <Target Name="VerifyNativeDllForPack" BeforeTargets="Pack">
+    <Error
+      Condition="'$(NativeRuntimeIdentifier)' != 'win-x64' and '$(NativeRuntimeIdentifier)' != 'win-arm64'"
+      Text="NativeRuntimeIdentifier must be 'win-x64' or 'win-arm64'; received '$(NativeRuntimeIdentifier)'." />
     <Error
       Condition="'$(NativeDllPath)' == ''"
       Text="NativeDllPath must point to the built desktop_updater_native.dll." />

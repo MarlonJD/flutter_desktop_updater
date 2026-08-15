@@ -35,12 +35,13 @@ Install Inno Setup on the Windows machine or CI runner that publishes Windows
 releases. `release publish --platform windows` invokes `iscc` by default; set
 `windows.installer.isccPath` when `iscc` is not on `PATH`.
 
-Production releases should also use Authenticode:
+Inno update releases require Authenticode:
 
 - Sign the installer or use an Inno signing flow in your pipeline.
 - Timestamp signatures.
-- Configure `authenticodeThumbprints` when the updater should verify the staged
-  installer certificate before execution.
+- Configure at least one fixed certificate SHA-256 in
+  `authenticodeThumbprints`; publishing rejects a missing or duplicate
+  allowlist.
 - Keep the same app identity between the first install and updates.
 
 ## Config
@@ -66,7 +67,7 @@ windows:
       - /VERYSILENT
       - /SUPPRESSMSGBOXES
       - /NORESTART
-    requiresElevation: auto
+    requiresElevation: always
     authenticodeThumbprints:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 ```
@@ -79,7 +80,8 @@ Important fields:
 - `isccPath`: optional explicit path to `ISCC.exe`.
 - `outputBaseName`: optional installer filename stem. Defaults to
   `<app>-<version>-windows-setup`.
-- `privilegesRequired`: `admin` or `lowest`. Defaults to `lowest`.
+- `privilegesRequired`: must be `admin`. Inno updates use only the protected
+  helper authority.
 - `protectedHelperInstallDir`: required only for generated administrative
   installers. It must use the exact security-epoch generation leaf
   `C:\Program Files\DesktopUpdaterHelperGenerationV1--<package-id>--<release-version>`,
@@ -89,9 +91,9 @@ Important fields:
   `DesktopUpdater\Helpers` layout is rejected.
 - `silentArgs`: installer args used by the updater. Defaults to
   `/VERYSILENT`, `/SUPPRESSMSGBOXES`, and `/NORESTART`.
-- `requiresElevation`: descriptor hint: `auto`, `always`, or `never`.
-- `authenticodeThumbprints`: allowed SHA-256 signer certificate fingerprints for
-  runtime installer verification.
+- `requiresElevation`: must be `always`.
+- `authenticodeThumbprints`: one or more unique allowed SHA-256 signer
+  certificate fingerprints for mandatory runtime installer verification.
 
 Generated mode also accepts `setupIcon`, `licenseFile`,
 `architecturesAllowed`, and `architecturesInstallIn64BitMode`.

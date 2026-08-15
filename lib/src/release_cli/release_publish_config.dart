@@ -690,28 +690,7 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
 }
 
 void _validateInnoConfig(InnoPublishConfig config) {
-  if (!const ["generated", "script"].contains(config.mode)) {
-    throw const FormatException(
-      "windows.installer.mode must be generated or script.",
-    );
-  }
-  if (config.mode == "script" &&
-      (config.script == null || config.script!.trim().isEmpty)) {
-    throw const FormatException(
-      "windows.installer.script is required when mode is script.",
-    );
-  }
-  if (!const ["admin", "lowest"].contains(config.privilegesRequired)) {
-    throw const FormatException(
-      "windows.installer.privilegesRequired must be admin or lowest.",
-    );
-  }
-  if (!const ["auto", "always", "never"].contains(config.requiresElevation)) {
-    throw const FormatException(
-      "windows.installer.requiresElevation must be auto, always, or never.",
-    );
-  }
-  resolveGeneratedProtectedHelperInstallDir(config);
+  validateInnoPublishConfig(config);
 }
 
 Uri _normalizeBaseUrl(String value) {

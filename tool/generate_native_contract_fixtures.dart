@@ -310,9 +310,11 @@ ReleaseInstall _installFor(String platform, String kind) {
       inno: ReleaseInnoInstall(
         silentArgs: const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
         inheritInstallDirectory: true,
+        installedExecutableRelativePath: "Example.exe",
+        installedExecutableSha256: "cd" * 32,
         logFileName: "desktop_updater_inno_install.log",
         relaunchAfterInstall: true,
-        requiresElevation: "auto",
+        requiresElevation: "always",
         authenticode: ReleaseAuthenticodePolicy(
           required: true,
           sha256Thumbprints: ["AB" * 32],
@@ -401,9 +403,7 @@ Future<void> _generateCanonicalSignatureCases(
   omittedInno
     ..remove("inheritInstallDirectory")
     ..remove("logFileName")
-    ..remove("relaunchAfterInstall")
-    ..remove("requiresElevation")
-    ..remove("authenticode");
+    ..remove("relaunchAfterInstall");
   final ignoredUnknownKeys = _cloneMap(baseDescriptor);
   ignoredUnknownKeys["ignoredTopLevel"] = true;
   _mapAt(ignoredUnknownKeys, "artifact")["ignoredArtifactField"] = "ignored";
@@ -557,7 +557,7 @@ Future<void> _generateCanonicalSignatureCases(
       },
       "normalizationCases": [
         _canonicalNormalizationCase(
-          "canonicalization applies omitted install defaults",
+          "canonicalization applies omitted optional install defaults",
           omittedInstallDefaults,
         ),
         _canonicalNormalizationCase(

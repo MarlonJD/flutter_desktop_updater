@@ -20,6 +20,11 @@
 
 namespace {
 
+constexpr DWORD kWindowsProtectedHelperStartupTimeoutMilliseconds =
+    30 * 1000;
+constexpr DWORD kWindowsPortableHelperStartupTimeoutMilliseconds =
+    desktop_updater::helper::kPortableWindowsHelperStartupTimeoutMilliseconds;
+
 bool IsElevated() {
   HANDLE raw_token = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
@@ -33,6 +38,22 @@ bool IsElevated() {
       elevation.TokenIsElevated != 0;
   CloseHandle(raw_token);
   return elevated;
+}
+
+bool TryReadExactAsciiArgument(const wchar_t* value,
+                               std::size_t expected_length,
+                               std::string* result) {
+  if (value == nullptr || result == nullptr) return false;
+  const std::wstring wide(value);
+  if (wide.size() != expected_length) return false;
+  std::string ascii;
+  ascii.reserve(wide.size());
+  for (wchar_t character : wide) {
+    if (character > 0x7f) return false;
+    ascii.push_back(static_cast<char>(character));
+  }
+  *result = ascii;
+  return true;
 }
 
 int Run(int argument_count, wchar_t** arguments) {
@@ -66,13 +87,10 @@ int Run(int argument_count, wchar_t** arguments) {
   if (argument_count == 3 &&
       std::wstring(arguments[1]) == L"--portable-recover-current") {
     if (IsElevated()) return ERROR_ELEVATION_REQUIRED;
-    const std::wstring wide_transaction_id(arguments[2]);
-    if (wide_transaction_id.size() != 36) return ERROR_BAD_ARGUMENTS;
-    for (wchar_t character : wide_transaction_id) {
-      if (character > 0x7f) return ERROR_BAD_ARGUMENTS;
+    std::string transaction_id;
+    if (!TryReadExactAsciiArgument(arguments[2], 36, &transaction_id)) {
+      return ERROR_BAD_ARGUMENTS;
     }
-    const std::string transaction_id(wide_transaction_id.begin(),
-                                     wide_transaction_id.end());
     try {
       auto bootstrap = desktop_updater::helper::
           LoadPortableWindowsRecoveryHostBootstrap();
@@ -127,13 +145,10 @@ int Run(int argument_count, wchar_t** arguments) {
   }
   if (argument_count == 3 &&
       std::wstring(arguments[1]) == L"--recover-current") {
-    const std::wstring wide_transaction_id(arguments[2]);
-    if (wide_transaction_id.size() != 36) return ERROR_BAD_ARGUMENTS;
-    for (wchar_t character : wide_transaction_id) {
-      if (character > 0x7f) return ERROR_BAD_ARGUMENTS;
+    std::string transaction_id;
+    if (!TryReadExactAsciiArgument(arguments[2], 36, &transaction_id)) {
+      return ERROR_BAD_ARGUMENTS;
     }
-    const std::string transaction_id(wide_transaction_id.begin(),
-                                     wide_transaction_id.end());
     try {
       auto bootstrap = desktop_updater::helper::
           LoadWindowsHelperBootstrapForAutonomousRecovery(transaction_id);
@@ -176,9 +191,10 @@ int Run(int argument_count, wchar_t** arguments) {
       std::wstring(arguments[1]) == L"--portable-pipe" &&
       std::wstring(arguments[3]) == L"--nonce") {
     const std::wstring pipe_name(arguments[2]);
-    const std::wstring wide_nonce(arguments[4]);
-    if (wide_nonce.size() != 43) return ERROR_BAD_ARGUMENTS;
-    const std::string nonce(wide_nonce.begin(), wide_nonce.end());
+    std::string nonce;
+    if (!TryReadExactAsciiArgument(arguments[4], 43, &nonce)) {
+      return ERROR_BAD_ARGUMENTS;
+    }
     enum class PortablePipeStage {
       kConnect,
       kBootstrap,
@@ -188,7 +204,7 @@ int Run(int argument_count, wchar_t** arguments) {
     PortablePipeStage stage = PortablePipeStage::kConnect;
     try {
       return desktop_updater::helper::ConnectPortableHelperToCallerPipe(
-          pipe_name, nonce, 30'000,
+          pipe_name, nonce, kWindowsPortableHelperStartupTimeoutMilliseconds,
           [&nonce, &stage](HANDLE pipe,
                            DWORD caller_process_id,
                            HANDLE caller_process) {
@@ -199,6 +215,7 @@ int Run(int argument_count, wchar_t** arguments) {
             const auto recovery_endpoint = desktop_updater::helper::
                 ProvisionPortableWindowsRecoveryHost(
                     bootstrap.policy(), bootstrap.helper_identity(),
+                    bootstrap.helper_file(), bootstrap.policy_file(),
                     caller_process);
             bootstrap.ReleaseRetainedHandles();
             stage = PortablePipeStage::kSession;
@@ -213,7 +230,8 @@ int Run(int argument_count, wchar_t** arguments) {
                 desktop_updater::helper::SecureWindowsReadyToken,
                 desktop_updater::helper::WindowsHelperSha256Hex,
                 desktop_updater::helper::WindowsHelperNowUnixMilliseconds,
-                300'000, 30'000);
+                300'000,
+                kWindowsPortableHelperStartupTimeoutMilliseconds);
           });
     } catch (const std::exception&) {
       using desktop_updater::helper::RecordWindowsHelperEvent;
@@ -244,12 +262,13 @@ int Run(int argument_count, wchar_t** arguments) {
   if (!IsElevated()) return ERROR_ELEVATION_REQUIRED;
 
   const std::wstring pipe_name(arguments[2]);
-  const std::wstring wide_nonce(arguments[4]);
-  if (wide_nonce.size() != 43) return ERROR_BAD_ARGUMENTS;
-  const std::string nonce(wide_nonce.begin(), wide_nonce.end());
+  std::string nonce;
+  if (!TryReadExactAsciiArgument(arguments[4], 43, &nonce)) {
+    return ERROR_BAD_ARGUMENTS;
+  }
   try {
     return desktop_updater::helper::ConnectElevatedHelperToCallerPipe(
-        pipe_name, nonce, 30'000,
+        pipe_name, nonce, kWindowsProtectedHelperStartupTimeoutMilliseconds,
         [&nonce](HANDLE pipe,
                  DWORD caller_process_id,
                  HANDLE caller_process) {
@@ -266,7 +285,7 @@ int Run(int argument_count, wchar_t** arguments) {
               desktop_updater::helper::SecureWindowsReadyToken,
               desktop_updater::helper::WindowsHelperSha256Hex,
               desktop_updater::helper::WindowsHelperNowUnixMilliseconds,
-              300'000, 30'000);
+              300'000, kWindowsProtectedHelperStartupTimeoutMilliseconds);
         });
   } catch (const std::exception&) {
     return ERROR_ACCESS_DENIED;

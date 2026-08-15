@@ -33,7 +33,54 @@ class InnoInstallerPackager {
     required InnoPublishConfig config,
     String? outputBaseName,
   }) async {
+    validateInnoPublishConfig(config);
     await request.outputDirectory.create(recursive: true);
+    final rawExecutableRelativePath = request.executableRelativePath?.trim();
+    if (request.input is! Directory ||
+        rawExecutableRelativePath == null ||
+        rawExecutableRelativePath.isEmpty) {
+      throw FileSystemException(
+        "Inno packaging requires a Windows Release directory and its exact "
+        "application executable relative path.",
+        request.input.path,
+      );
+    }
+    final executableRelativePath =
+        path.windows.normalize(rawExecutableRelativePath);
+    final executableSegments = path.windows.split(executableRelativePath);
+    if (path.windows.isAbsolute(executableRelativePath) ||
+        executableRelativePath == "." ||
+        executableSegments.any(
+          (segment) =>
+              segment.isEmpty ||
+              segment == "." ||
+              segment == ".." ||
+              segment.endsWith(".") ||
+              segment.endsWith(" ") ||
+              segment.contains(RegExp(r'''[:*?"<>|]''')),
+        ) ||
+        !executableRelativePath.toLowerCase().endsWith(".exe")) {
+      throw const FormatException(
+        "Inno application executable must be a safe relative Windows EXE "
+        "path.",
+      );
+    }
+    final installedExecutable = File(
+      path.joinAll([request.input.path, ...executableSegments]),
+    );
+    if (await FileSystemEntity.type(
+              installedExecutable.path,
+              followLinks: false,
+            ) !=
+            FileSystemEntityType.file ||
+        !await installedExecutable.exists() ||
+        await installedExecutable.length() == 0) {
+      throw FileSystemException(
+        "Inno installed application executable is unavailable.",
+        installedExecutable.path,
+      );
+    }
+    final installedExecutableSha256 = await sha256File(installedExecutable);
     final protectedHelperInstallDir =
         resolveGeneratedProtectedHelperInstallDir(config);
     _GeneratedProtectedHelperInputs? protectedInputs;
@@ -91,6 +138,7 @@ class InnoInstallerPackager {
           outputDirectoryPath: request.outputDirectory.path,
           outputBaseName: resolvedOutputBaseName,
           installedIdentitySourcePath: installedIdentitySource.path,
+          executableRelativePath: executableRelativePath,
           protectedHelperSha256: protectedInputs?.helperSha256,
           protectedPolicySha256: protectedInputs?.policySha256,
         ),
@@ -130,6 +178,8 @@ class InnoInstallerPackager {
         inno: ReleaseInnoInstall(
           silentArgs: config.silentArgs,
           inheritInstallDirectory: true,
+          installedExecutableRelativePath: executableRelativePath,
+          installedExecutableSha256: installedExecutableSha256,
           logFileName: "desktop_updater_inno_install.log",
           relaunchAfterInstall: true,
           requiresElevation: config.requiresElevation,

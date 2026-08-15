@@ -12,6 +12,7 @@ void main() {
   const policySha256 =
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const identitySource = r"C:\repo\dist\.desktop_updater_install_identity.json";
+  const executableRelativePath = "Example.exe";
 
   test("generates Inno setup script for a Flutter Windows release", () {
     final metadata = ProjectMetadata(
@@ -47,6 +48,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
 
     expect(script, contains('#define MyAppName "Example"'));
@@ -108,6 +110,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
 
     const protectedDir =
@@ -166,6 +169,15 @@ void main() {
     expect(script, contains(policySha256));
     expect(script, contains("GetSHA256OfFile"));
     expect(script, contains("FILE_ATTRIBUTE_REPARSE_POINT"));
+    expect(
+      script,
+      contains(
+        "function DesktopUpdaterGetFileAttributes(const FileName: String): "
+        "Integer; external 'GetFileAttributesW@kernel32.dll stdcall';",
+      ),
+    );
+    expect(
+        script, isNot(contains("Attributes := GetFileAttributes(Current);")));
     expect(script, contains("--validate-endpoint"));
     expect(script, isNot(contains("onlyifdoesntexist")));
     expect(
@@ -208,6 +220,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
 
     expect(RegExp("uninsneveruninstall").allMatches(script), hasLength(3));
@@ -247,6 +260,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
 
     final preflight = _between(
@@ -314,6 +328,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
 
     expect(script, isNot(contains("HelperExists <> PolicyExists")));
@@ -373,6 +388,7 @@ void main() {
       protectedHelperSha256: helperSha256,
       protectedPolicySha256: policySha256,
       installedIdentitySourcePath: identitySource,
+      executableRelativePath: executableRelativePath,
     );
     final registration = _between(
       script,
@@ -420,6 +436,7 @@ void main() {
           protectedHelperSha256: helperSha256,
           protectedPolicySha256: policySha256,
           installedIdentitySourcePath: identitySource,
+          executableRelativePath: executableRelativePath,
         );
 
     const generationLeaf =
@@ -505,6 +522,7 @@ void main() {
           protectedHelperSha256: helperSha256,
           protectedPolicySha256: policySha256,
           installedIdentitySourcePath: identitySource,
+          executableRelativePath: executableRelativePath,
         ),
         throwsA(isA<FormatException>()),
         reason: installDir,

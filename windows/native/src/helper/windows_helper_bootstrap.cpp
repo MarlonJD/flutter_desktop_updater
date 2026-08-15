@@ -99,6 +99,9 @@ std::string ReadPolicy(HANDLE file) {
     }
     offset += count;
   }
+  if (!result.empty() && result.back() == '\n') {
+    result.pop_back();
+  }
   return result;
 }
 
@@ -509,14 +512,14 @@ PortableWindowsHelperBootstrap LoadPortableWindowsHelperBootstrap(
   VerifiedWindowsExecutable helper_identity =
       VerifyWindowsExecutable(helper_path);
   UniqueWindowsHandle helper_file = OpenPortableObject(
-      helper_identity.final_path, false, "portable helper executable");
+      helper_path, false, "portable helper executable");
   if (NormalizePath(FinalPath(helper_file.get())) !=
       NormalizePath(helper_identity.final_path)) {
     Fail("portable helper handle identity changed");
   }
 
   const std::filesystem::path policy_path =
-      helper_identity.final_path.parent_path() / kWindowsHelperPolicyName;
+      helper_path.parent_path() / kWindowsHelperPolicyName;
   UniqueWindowsHandle policy_file = OpenPortableObject(
       policy_path, false, "portable helper policy");
   const std::filesystem::path final_policy_path = FinalPath(policy_file.get());

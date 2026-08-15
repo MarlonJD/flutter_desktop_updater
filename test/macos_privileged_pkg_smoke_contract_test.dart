@@ -234,6 +234,31 @@ void main() {
     );
   });
 
+  test("PKG descriptor callers explicitly omit Inno executable metadata", () {
+    for (final harness in [
+      "tool/macos_privileged_pkg_smoke.dart",
+      "tool/macos_privileged_pkg_recovery_smoke.dart",
+    ]) {
+      final source = File(harness).readAsStringSync();
+      final callStart = source.indexOf("smoke_server.signedDescriptor(");
+      final callEnd = source.indexOf("    );", callStart);
+      expect(callStart, isNonNegative, reason: harness);
+      expect(callEnd, greaterThan(callStart), reason: harness);
+      final call = source.substring(callStart, callEnd);
+
+      expect(
+        call,
+        contains("installedExecutableRelativePath: null,"),
+        reason: harness,
+      );
+      expect(
+        call,
+        contains("installedExecutableSha256: null,"),
+        reason: harness,
+      );
+    }
+  });
+
   test("bootstrap accepts only the exact package-installed v1 baseline", () {
     final smokeFile = File("tool/macos_privileged_pkg_smoke.dart");
     if (!smokeFile.existsSync()) return;

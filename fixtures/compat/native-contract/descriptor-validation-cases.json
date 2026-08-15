@@ -445,9 +445,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -553,9 +555,11 @@
           "inno": {
             "silentArgs": [],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -571,7 +575,7 @@
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
       "expectedValid": false,
-      "expectedErrorContains": "release.json install.inno.silentArgs must not be empty."
+      "expectedErrorContains": "release.json install.inno.silentArgs must include exactly one silent mode and /NORESTART."
     },
     {
       "name": "invalid Inno inherit directory type",
@@ -598,9 +602,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": "true",
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -643,9 +649,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": "true",
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -688,9 +696,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": 42,
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -733,6 +743,8 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
             "requiresElevation": true,
@@ -778,9 +790,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "../installer.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -823,6 +837,8 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
             "requiresElevation": "sometimes",
@@ -841,7 +857,7 @@
         "generatedAt": "2026-07-10T00:00:00.000Z"
       },
       "expectedValid": false,
-      "expectedErrorContains": "release.json install.inno.requiresElevation must be auto, always, or never."
+      "expectedErrorContains": "release.json install.inno requires protected elevation with requiresElevation=always."
     },
     {
       "name": "missing Authenticode thumbprints",
@@ -868,9 +884,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true
             }
@@ -910,9 +928,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": "true",
               "sha256Thumbprints": [
@@ -954,9 +974,11 @@
               null
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -1000,9 +1022,11 @@
               }
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -1046,9 +1070,11 @@
               ]
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -1090,9 +1116,11 @@
               42
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -1134,9 +1162,11 @@
               true
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
@@ -1217,9 +1247,11 @@
               "/NORESTART"
             ],
             "inheritInstallDirectory": true,
+            "installedExecutableRelativePath": "Example.exe",
+            "installedExecutableSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logFileName": "desktop_updater_inno_install.log",
             "relaunchAfterInstall": true,
-            "requiresElevation": "auto",
+            "requiresElevation": "always",
             "authenticode": {
               "required": true,
               "sha256Thumbprints": [
