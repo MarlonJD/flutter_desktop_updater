@@ -148,7 +148,30 @@ The YAML stores non-secret identity names and profile/keychain references only.
 Certificates, keychain passwords, App Store Connect API keys, and notary
 credentials remain app-owned machine or CI secrets.
 
+For CI, the signing references can remain outside generated YAML. When the
+fields are absent, set only these canonical variables:
+
+```sh
+export DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION="Developer ID Application: Example Corp (TEAMID1234)"
+export DESKTOP_UPDATER_MACOS_NOTARY_PROFILE="desktop-updater-notary"
+export DESKTOP_UPDATER_MACOS_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+```
+
+An explicit YAML value wins; an explicit blank or non-string value fails closed
+and does not use an ambient value. Legacy aliases and environment notarization
+flags are ignored. The publish smoke therefore keeps credentials in the
+process environment and writes only `notarize`, `staple`, and
+`gatekeeperAssess` to generated YAML.
+
 ## Apple Acceptance Gates
+
+The publisher completes the app trust gate before packaging: configuration,
+`prePackage`, read-only inventory, inner-to-outer signing, typed app
+notarization acceptance, stapling, validation, and Gatekeeper assessment.
+Packaging then applies the same typed notarization/staple/assessment checks to
+the exact DMG or PKG. The final distributable is audited before release
+metadata is signed or uploaded; a macOS `postPackage` hook is rejected while
+built-in notarization is enabled.
 
 Production-ready macOS evidence uses real Apple trust validation:
 

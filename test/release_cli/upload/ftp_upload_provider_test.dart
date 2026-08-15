@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:crypto/crypto.dart";
 import "package:desktop_updater/src/release_cli/publish_manifest.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/upload/ftp_upload_provider.dart";
@@ -9,6 +10,363 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
+  test("default FTP client refuses to overwrite a changed index", () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_revision_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations()
+        ..files["/updates/app-archive.json"] = "old index".codeUnits;
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: const RemoteIndexRevision.present(
+            sha256:
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            etag: null,
+          ),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("changed before publish"),
+          ),
+        ),
+      );
+
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "old index",
+      );
+      expect(operations.directories, isEmpty);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client fails closed when the lease is occupied", () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_lock_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations()
+        ..directories.add("/updates/.app-archive.json.desktop_updater.lock");
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: const RemoteIndexRevision.absent(),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(operations.files, isEmpty);
+      expect(
+        operations.directories,
+        contains("/updates/.app-archive.json.desktop_updater.lock"),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client publishes a missing index with an exclusive lease",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_lease_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations();
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      final receipt = await client.writeIndexFileWithLease(
+        file: index,
+        remotePath: "/updates/app-archive.json",
+        config: const FtpUploadConfig(
+          host: "localhost",
+          remotePath: "/updates",
+          username: "deploy",
+          allowInsecure: true,
+        ),
+        expectedRevision: const RemoteIndexRevision.absent(),
+      );
+
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "new index",
+      );
+      expect(operations.directories, isEmpty);
+      expect(operations.events, contains("rename"));
+      expect(receipt.observedPriorRevision, const RemoteIndexRevision.absent());
+      expect(receipt.mechanism, IndexPublishMechanism.exclusiveLease);
+      expect(receipt.leaseEvidenceSha256, matches(RegExp(r"^[0-9a-f]{64}$")));
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client cleans a partial file after upload failure",
+      () async {
+    final tempDir =
+        await Directory.systemTemp.createTemp("ftp_upload_failure_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations()..failUpload = true;
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: const RemoteIndexRevision.absent(),
+        ),
+        throwsA(isA<StateError>().having(
+          (error) => error.message,
+          "message",
+          contains("upload failed"),
+        )),
+      );
+
+      expect(operations.files, isEmpty);
+      expect(operations.directories, isEmpty);
+      expect(operations.events, contains("removeFile"));
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client rejects a revision change after upload", () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_revision_race_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final oldBytes = "old index".codeUnits;
+      final operations = RecordingFtpRemoteOperations();
+      operations.files["/updates/app-archive.json"] = oldBytes;
+      operations.afterUpload = () {
+        operations.files["/updates/app-archive.json"] = "raced index".codeUnits;
+      };
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: RemoteIndexRevision.present(
+            sha256: sha256.convert(oldBytes).toString(),
+            etag: null,
+          ),
+        ),
+        throwsA(isA<StateError>().having(
+          (error) => error.message,
+          "message",
+          contains("changed before publish"),
+        )),
+      );
+
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "raced index",
+      );
+      expect(
+          operations.files.keys,
+          isNot(contains(
+            "/updates/.app-archive.json.desktop_updater.lock/app-archive.json.",
+          )));
+      expect(operations.directories, isEmpty);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client explains unsupported atomic replacement", () async {
+    final tempDir =
+        await Directory.systemTemp.createTemp("ftp_rename_failure_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final oldBytes = "old index".codeUnits;
+      final operations = RecordingFtpRemoteOperations()
+        ..files["/updates/app-archive.json"] = oldBytes
+        ..failRename = true;
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: RemoteIndexRevision.present(
+            sha256: sha256.convert(oldBytes).toString(),
+            etag: null,
+          ),
+        ),
+        throwsA(
+          isA<StateError>()
+              .having(
+                (error) => error.message,
+                "message",
+                contains("RNFR/RNTO"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("Apache FtpServer"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("did not fall back to STOR"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("SFTP"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains("rename failed"),
+              ),
+        ),
+      );
+
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "old index",
+      );
+      expect(operations.directories, isEmpty);
+      expect(
+        operations.events.where((event) => event == "upload"),
+        hasLength(1),
+      );
+      expect(operations.events, contains("rename"));
+      expect(operations.events, contains("removeFile"));
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client reports lease cleanup failure after publication",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_cleanup_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations()
+        ..failRemoveDirectory = true;
+      final client = CurlFtpRemoteFileClient(operations: operations);
+      const leasePath = "/updates/.app-archive.json.desktop_updater.lock";
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: const RemoteIndexRevision.absent(),
+        ),
+        throwsA(
+          isA<StateError>()
+              .having(
+                (error) => error.message,
+                "message",
+                contains("FTP index was published"),
+              )
+              .having(
+                (error) => error.message,
+                "message",
+                contains(leasePath),
+              ),
+        ),
+      );
+
+      expect(
+        String.fromCharCodes(operations.files["/updates/app-archive.json"]!),
+        "new index",
+      );
+      expect(operations.directories, contains(leasePath));
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test("default FTP client preserves publish failure over cleanup failure",
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp("ftp_dual_failure_");
+    try {
+      final index = File(path.join(tempDir.path, "app-archive.json"));
+      await index.writeAsString("new index");
+      final operations = RecordingFtpRemoteOperations()
+        ..failUpload = true
+        ..failRemoveDirectory = true;
+      final client = CurlFtpRemoteFileClient(operations: operations);
+
+      await expectLater(
+        client.writeIndexFileWithLease(
+          file: index,
+          remotePath: "/updates/app-archive.json",
+          config: const FtpUploadConfig(
+            host: "localhost",
+            remotePath: "/updates",
+            username: "deploy",
+            allowInsecure: true,
+          ),
+          expectedRevision: const RemoteIndexRevision.absent(),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("upload failed"),
+          ),
+        ),
+      );
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test("ftp config requires allowInsecure true", () async {
     await expectLater(
       ReleasePublishConfig.fromYaml("""
@@ -27,6 +385,16 @@ ftp:
         ),
       ),
     );
+  });
+
+  test("publishing guide documents FTP atomic replacement requirements", () {
+    final publishingGuide = File("docs/publishing.md").readAsStringSync();
+
+    expect(publishingGuide, contains("Apache FtpServer's native filesystem"));
+    expect(publishingGuide, contains("server-side atomic replacement"));
+    expect(publishingGuide, contains("Never work around this limitation"));
+    expect(publishingGuide, contains("direct `STOR`"));
+    expect(publishingGuide, contains("SFTP, S3-compatible storage"));
   });
 
   test("ftp uploader rejects app archive publish without lease", () async {
@@ -107,6 +475,81 @@ class RecordingFtpRemoteFileClient implements FtpRemoteFileClient {
     required FtpUploadConfig config,
   }) async {
     writes.add(FtpRemoteWrite(file: file, remotePath: remotePath));
+  }
+}
+
+class RecordingFtpRemoteOperations implements FtpRemoteOperations {
+  final files = <String, List<int>>{};
+  final directories = <String>{};
+  final events = <String>[];
+  bool failUpload = false;
+  bool failRename = false;
+  bool failRemoveDirectory = false;
+  void Function()? afterUpload;
+
+  @override
+  Future<void> upload(
+    File file,
+    String remotePath,
+    FtpUploadConfig config,
+  ) async {
+    events.add("upload");
+    files[remotePath] = await file.readAsBytes();
+    afterUpload?.call();
+    if (failUpload) throw StateError("upload failed");
+  }
+
+  @override
+  Future<List<int>?> read(
+    String remotePath,
+    FtpUploadConfig config,
+  ) async {
+    events.add("read");
+    final value = files[remotePath];
+    return value == null ? null : List<int>.from(value);
+  }
+
+  @override
+  Future<void> makeDirectory(
+    String remotePath,
+    FtpUploadConfig config,
+  ) async {
+    events.add("makeDirectory");
+    if (!directories.add(remotePath)) {
+      throw StateError("directory already exists");
+    }
+  }
+
+  @override
+  Future<void> removeDirectory(
+    String remotePath,
+    FtpUploadConfig config,
+  ) async {
+    events.add("removeDirectory");
+    if (failRemoveDirectory) throw StateError("remove directory failed");
+    directories.remove(remotePath);
+  }
+
+  @override
+  Future<void> removeFile(
+    String remotePath,
+    FtpUploadConfig config,
+  ) async {
+    events.add("removeFile");
+    files.remove(remotePath);
+  }
+
+  @override
+  Future<void> rename(
+    String from,
+    String to,
+    FtpUploadConfig config,
+  ) async {
+    events.add("rename");
+    if (failRename) throw StateError("rename failed");
+    final value = files.remove(from);
+    if (value == null) throw StateError("source missing");
+    files[to] = value;
   }
 }
 

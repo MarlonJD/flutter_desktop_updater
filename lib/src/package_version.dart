@@ -1,3 +1,3 @@
 /// Version of the `desktop_updater` package used in runtime policy checks and
 /// diagnostics reports.
-const String desktopUpdaterPackageVersion = "3.1.3";
+const String desktopUpdaterPackageVersion = "3.1.6";

@@ -108,6 +108,40 @@ updates:
     }
   });
 
+  test("FTP provider reports the atomic replacement requirement", () async {
+    final root = await _createProject(
+      config: """
+updates:
+  baseUrl: https://updates.example.com
+ftp:
+  host: ftp.example.com
+  remotePath: /updates
+  username: deploy
+  allowInsecure: true
+""",
+    );
+    try {
+      final output = StringBuffer();
+
+      final exitCode = await runReleaseCommand(
+        ["doctor", "--platform", "linux"],
+        projectRoot: root,
+        output: output,
+      );
+
+      expect(exitCode, 0);
+      expect(output.toString(), contains("OK: upload provider = ftp"));
+      expect(
+        output.toString(),
+        contains("RNTO to atomically replace an existing destination"),
+      );
+      expect(output.toString(), contains("Apache FtpServer"));
+      expect(output.toString(), contains("server-side atomic replacement"));
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
   test("windows without pre-package signing hook warns only", () async {
     final root = await _createProject(config: _minimalConfig);
     try {

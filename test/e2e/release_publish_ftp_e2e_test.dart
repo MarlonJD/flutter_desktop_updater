@@ -24,7 +24,7 @@ void main() {
     }
 
     await startDockerComposeServices(["ftp", "static"]);
-    await waitForPort(2121);
+    await waitForTcpPrefix(2121, "220");
     await waitForPort(8088);
     final fixture = await createReleasePublishE2eFixture(
       baseUrl: Uri.parse("http://127.0.0.1:8088/ftp/updates/"),
@@ -38,8 +38,22 @@ ftp:
 """,
     );
     try {
-      final output = await publishFixture(fixture);
-      expect(output.toString(), contains("OK: Published and validated."));
+      final initialOutput = await publishFixture(fixture);
+      expect(
+        initialOutput.toString(),
+        contains("OK: Published and validated."),
+      );
+
+      // The second publication must recover the hosted history and use the
+      // normal revision-checked lease path without --initialize-feed.
+      final followUpOutput = await publishFixture(
+        fixture,
+        initializeFeed: false,
+      );
+      expect(
+        followUpOutput.toString(),
+        contains("OK: Published and validated."),
+      );
     } finally {
       await fixture.delete();
     }

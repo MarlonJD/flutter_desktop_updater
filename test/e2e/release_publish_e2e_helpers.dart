@@ -299,7 +299,10 @@ bool get releasePublishE2eEnabled {
   return Platform.environment["DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E"] == "1";
 }
 
-Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
+Future<StringBuffer> publishFixture(
+  ReleasePublishE2eFixture fixture, {
+  bool initializeFeed = true,
+}) async {
   final output = StringBuffer();
   final exitCode = await runReleaseCommand(
     [
@@ -307,7 +310,7 @@ Future<StringBuffer> publishFixture(ReleasePublishE2eFixture fixture) async {
       "--platform",
       fixture.platform,
       "--skip-build-for-test",
-      "--initialize-feed",
+      if (initializeFeed) "--initialize-feed",
     ],
     projectRoot: fixture.projectRoot,
     output: output,

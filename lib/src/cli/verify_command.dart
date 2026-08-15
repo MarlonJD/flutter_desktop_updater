@@ -186,7 +186,7 @@ Future<void> _verifyMacOSDmgArtifact({
     },
   );
   const trust = AppleTrustCommands();
-  await trust.verifyApp(copiedApp);
+  await trust.verifyApp(copiedApp, deep: true);
   await trust.assessExecute(copiedApp);
   await trust.validateStaple(copiedApp);
   output.writeln("macOS DMG artifact verified.");

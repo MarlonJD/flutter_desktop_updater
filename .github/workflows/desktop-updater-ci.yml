@@ -196,6 +196,17 @@ jobs:
           set -euo pipefail
           mapfile -t files < <(printf '%s' "$TEST_FILES" | sed '/^$/d')
           flutter test --no-pub "${files[@]}"
+      - name: Test FTP release publish end to end
+        if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
+        env:
+          DESKTOP_UPDATER_RUN_RELEASE_PUBLISH_E2E: "1"
+          DESKTOP_UPDATER_FTP_PASSWORD: desktop-updater-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker compose -f test/e2e/docker/docker-compose.release-publish.yml down -v' EXIT
+          docker info >/dev/null
+          flutter test --no-pub test/e2e/release_publish_ftp_e2e_test.dart
       - name: Check CLI entrypoints
         if: needs.changes.outputs.full == 'true' || needs.changes.outputs.cli == 'true'
         run: |
@@ -269,6 +280,9 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
+      - name: Run Windows CurrentUser DPAPI host test
+        if: runner.os == 'Windows'
+        run: flutter test --no-pub test/release_cli/windows_dpapi_current_user_test.dart
       - name: Build and checksum Unix candidate-only CLI
         if: runner.os != 'Windows'
         shell: bash
@@ -1730,6 +1744,10 @@ jobs:
       - name: Assert forged raw MethodChannel payload fails macOS plugin boundary
         working-directory: example
         run: flutter test integration_test/plugin_integration_test.dart -d macos --name "forged raw MethodChannel payload fails native validation"
+      - name: Install repository dependencies for release trust fixture
+        run: flutter pub get
+      - name: Run secretless ad hoc macOS release trust fixture
+        run: flutter test --no-pub test/release_cli/macos_release_trust_real_test.dart
 
   macos-notarized:
     name: macOS Notarized Publish
@@ -1791,7 +1809,28 @@ jobs:
         env:
           DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E: "1"
           DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
-        run: dart run tool/release_publish_smoke.dart --platform macos --notarize
+          DESKTOP_UPDATER_RELEASE_PUBLISH_EVIDENCE_ROOT: ${{ runner.temp }}/desktop-updater-release-publish-evidence
+        run: dart run tool/release_publish_smoke.dart --platform macos --notarize --app-bundle-name "desktop_updater_example.app"
+      - name: Audit the actual downloaded hosted macOS artifact
+        if: vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
+        env:
+          EVIDENCE_ROOT: ${{ runner.temp }}/desktop-updater-release-publish-evidence
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          artifact="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifactPath"])' "$EVIDENCE_ROOT/publish-smoke.json")"
+          dart run tool/macos_release_publish_evidence.dart \
+            --artifact "$artifact" \
+            --metadata "$EVIDENCE_ROOT/publish-smoke.json" \
+            --git-commit "$GITHUB_SHA" \
+            --evidence "$EVIDENCE_ROOT/macos-release-publish-evidence.json"
+      - name: Upload macOS release publishing evidence
+        if: always() && vars.DESKTOP_UPDATER_RUN_NOTARIZED_PUBLISH_E2E == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-publishing-evidence
+          path: ${{ runner.temp }}/desktop-updater-release-publish-evidence
+          if-no-files-found: warn
       - name: macOS native runtime DMG smoke
         if: vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         env:

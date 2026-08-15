@@ -52,8 +52,9 @@ updates:
     }
   });
 
-  test("loads explicit macOS notarization config", () async {
-    final config = await ReleasePublishConfig.fromYaml("""
+  test("rejects disabled macOS trust gates during notarization", () async {
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com
 
@@ -64,20 +65,196 @@ macos:
   keychain: /Users/me/Library/Keychains/login.keychain-db
   staple: false
   gatekeeperAssess: false
-""");
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.staple must be true"),
+        ),
+      ),
+    );
+
+    await expectLater(
+      ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
+  notaryProfile: desktop-updater-notary
+  keychain: /Users/me/Library/Keychains/login.keychain-db
+  gatekeeperAssess: false
+"""),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("macos.gatekeeperAssess must be true"),
+        ),
+      ),
+    );
+  });
+
+  test(
+    "loads canonical macOS signing references from an injected environment",
+    () async {
+      final config = await ReleasePublishConfig.fromYaml(
+        """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+""",
+        environment: const {
+          "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION":
+              "  Developer ID Application: Example Corp (TEAMID1234)  ",
+          "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "  desktop-updater-notary  ",
+          "DESKTOP_UPDATER_MACOS_KEYCHAIN":
+              "  /Users/me/Library/Keychains/login.keychain-db  ",
+        },
+      );
+
+      expect(config.macos.notarize, isTrue);
+      expect(
+        config.macos.developerIdApplication,
+        "Developer ID Application: Example Corp (TEAMID1234)",
+      );
+      expect(config.macos.notaryProfile, "desktop-updater-notary");
+      expect(
+        config.macos.keychain,
+        "/Users/me/Library/Keychains/login.keychain-db",
+      );
+    },
+  );
+
+  test("allows default keychain resolution when keychain is omitted", () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+""",
+      environment: const {
+        "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "identity",
+        "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "general-notary",
+      },
+    );
 
     expect(config.macos.notarize, isTrue);
-    expect(
-      config.macos.developerIdApplication,
-      "Developer ID Application: Example Corp (TEAMID1234)",
+    expect(config.macos.developerIdApplication, "identity");
+    expect(config.macos.notaryProfile, "general-notary");
+    expect(config.macos.keychain, isNull);
+  });
+
+  test("load forwards an injected environment to macOS references", () async {
+    final root = await Directory.systemTemp.createTemp("release_config_");
+    try {
+      await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com
+macos:
+  notarize: true
+""");
+
+      final config = await ReleasePublishConfig.load(
+        projectRoot: root,
+        cliOverrides: const ReleasePublishOverrides(),
+        environment: const {
+          "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "identity",
+          "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "profile",
+          "DESKTOP_UPDATER_MACOS_KEYCHAIN": "keychain",
+        },
+      );
+
+      expect(config.macos.developerIdApplication, "identity");
+      expect(config.macos.notaryProfile, "profile");
+      expect(config.macos.keychain, "keychain");
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test(
+    "YAML macOS signing references take precedence over the environment",
+    () async {
+      final config = await ReleasePublishConfig.fromYaml(
+        """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: yaml-identity
+  notaryProfile: yaml-profile
+  keychain: yaml-keychain
+""",
+        environment: const {
+          "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "env-identity",
+          "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE": "env-profile",
+          "DESKTOP_UPDATER_MACOS_KEYCHAIN": "env-keychain",
+        },
+      );
+
+      expect(config.macos.developerIdApplication, "yaml-identity");
+      expect(config.macos.notaryProfile, "yaml-profile");
+      expect(config.macos.keychain, "yaml-keychain");
+    },
+  );
+
+  test(
+    "explicit blank or non-string macOS references do not fall back",
+    () async {
+      for (final value in <String>["\"\"", "\"   \"", "123"]) {
+        await expectLater(
+          ReleasePublishConfig.fromYaml(
+            """
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  developerIdApplication: $value
+""",
+            environment: const {
+              "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION": "env-identity",
+            },
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              "message",
+              contains(
+                "macos.developerIdApplication must be a nonblank string",
+              ),
+            ),
+          ),
+          reason: value,
+        );
+      }
+    },
+  );
+
+  test("legacy and notarization environment flags are ignored", () async {
+    final config = await ReleasePublishConfig.fromYaml(
+      """
+updates:
+  baseUrl: https://updates.example.com
+""",
+      environment: const {
+        "DESKTOP_UPDATER_NOTARIZE": "1",
+        "DESKTOP_UPDATER_DEVELOPER_ID_APPLICATION": "legacy-identity",
+        "DESKTOP_UPDATER_NOTARY_PROFILE": "legacy-profile",
+        "DESKTOP_UPDATER_KEYCHAIN": "legacy-keychain",
+      },
     );
-    expect(config.macos.notaryProfile, "desktop-updater-notary");
-    expect(
-      config.macos.keychain,
-      "/Users/me/Library/Keychains/login.keychain-db",
-    );
-    expect(config.macos.staple, isFalse);
-    expect(config.macos.gatekeeperAssess, isFalse);
+
+    expect(config.macos.notarize, isFalse);
+    expect(config.macos.developerIdApplication, isNull);
+    expect(config.macos.notaryProfile, isNull);
+    expect(config.macos.keychain, isNull);
   });
 
   test("loads macOS DMG artifact publish config", () async {
@@ -110,19 +287,14 @@ updates:
   });
 
   test("macOS DMG defaults use the configured app name", () async {
-    final config = await ReleasePublishConfig.fromYaml(
-      """
+    final config = await ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com
 
 macos:
   artifact:
     kind: dmg
-""",
-      cliOverrides: const ReleasePublishOverrides(
-        appName: "Example Studio",
-      ),
-    );
+""", cliOverrides: const ReleasePublishOverrides(appName: "Example Studio"));
 
     expect(config.macos.dmg.volumeName, "Example Studio");
     expect(config.macos.dmg.appBundleName, "Example Studio.app");
@@ -261,8 +433,7 @@ macos:
       }
     });
 
-    final config = await ReleasePublishConfig.fromYaml(
-      r"""
+    final config = await ReleasePublishConfig.fromYaml(r"""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -289,9 +460,7 @@ windows:
     requiresElevation: always
     authenticodeThumbprints:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
-""",
-      projectRoot: root,
-    );
+""", projectRoot: root);
 
     final inno = config.windows.installer;
     expect(inno.kind, "inno");
@@ -307,16 +476,17 @@ windows:
     expect(inno.authenticodeThumbprints.single, hasLength(64));
   });
 
-  test("generated Inno config requires an admin protected helper directory",
-      () async {
-    for (final invalidConfig in <String>[
-      "",
-      "    protectedHelperInstallDir: helper",
-      "    protectedHelperInstallDir: C:\\Program Files\\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
-    ]) {
-      final privileges = invalidConfig.isEmpty ? "admin" : "lowest";
-      await expectLater(
-        ReleasePublishConfig.fromYaml("""
+  test(
+    "generated Inno config requires an admin protected helper directory",
+    () async {
+      for (final invalidConfig in <String>[
+        "",
+        "    protectedHelperInstallDir: helper",
+        "    protectedHelperInstallDir: C:\\Program Files\\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
+      ]) {
+        final privileges = invalidConfig.isEmpty ? "admin" : "lowest";
+        await expectLater(
+          ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -329,23 +499,25 @@ windows:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 $invalidConfig
 """),
-        throwsA(isA<FormatException>()),
-      );
-    }
-  });
+          throwsA(isA<FormatException>()),
+        );
+      }
+    },
+  );
 
-  test("generated admin Inno config rejects unsafe protected helper roots",
-      () async {
-    for (final installDir in <String>[
-      r"C:\Program Files",
-      r"C:\Windows",
-      r"C:\Windows\System32",
-      r"C:\Program Files\DesktopUpdater\Helpers\com.example.app",
-      r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app",
-      r"C:\Program Files\Nested\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
-    ]) {
-      await expectLater(
-        ReleasePublishConfig.fromYaml("""
+  test(
+    "generated admin Inno config rejects unsafe protected helper roots",
+    () async {
+      for (final installDir in <String>[
+        r"C:\Program Files",
+        r"C:\Windows",
+        r"C:\Windows\System32",
+        r"C:\Program Files\DesktopUpdater\Helpers\com.example.app",
+        r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app",
+        r"C:\Program Files\Nested\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
+      ]) {
+        await expectLater(
+          ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -358,24 +530,26 @@ windows:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
     protectedHelperInstallDir: ${installDir}
 """),
-        throwsA(isA<FormatException>()),
-        reason: installDir,
-      );
-    }
-  });
-
-  test("custom Inno scripts retain responsibility for helper provisioning",
-      () async {
-    final root = await Directory.systemTemp.createTemp("inno_script_config_");
-    addTearDown(() async {
-      if (await root.exists()) {
-        await root.delete(recursive: true);
+          throwsA(isA<FormatException>()),
+          reason: installDir,
+        );
       }
-    });
-    final script = File(path.join(root.path, "setup.iss"));
-    await script.writeAsString("[Setup]\nAppName=Example\n");
+    },
+  );
 
-    final config = await ReleasePublishConfig.fromYaml("""
+  test(
+    "custom Inno scripts retain responsibility for helper provisioning",
+    () async {
+      final root = await Directory.systemTemp.createTemp("inno_script_config_");
+      addTearDown(() async {
+        if (await root.exists()) {
+          await root.delete(recursive: true);
+        }
+      });
+      final script = File(path.join(root.path, "setup.iss"));
+      await script.writeAsString("[Setup]\nAppName=Example\n");
+
+      final config = await ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com/
 windows:
@@ -389,13 +563,13 @@ windows:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 """);
 
-    expect(config.windows.installer.protectedHelperInstallDir, isNull);
-    expect(config.windows.installer.privilegesRequired, "admin");
-  });
+      expect(config.windows.installer.protectedHelperInstallDir, isNull);
+      expect(config.windows.installer.privilegesRequired, "lowest");
+    },
+  );
 
   test("cli notarize flag enables configured macOS notarization", () async {
-    final config = await ReleasePublishConfig.fromYaml(
-      """
+    final config = await ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com
 
@@ -403,19 +577,18 @@ macos:
   developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
   notaryProfile: desktop-updater-notary
   keychain: /Users/me/Library/Keychains/login.keychain-db
-""",
-      cliOverrides: const ReleasePublishOverrides(notarize: true),
-    );
+""", cliOverrides: const ReleasePublishOverrides(notarize: true));
 
     expect(config.macos.notarize, isTrue);
     expect(config.macos.staple, isTrue);
     expect(config.macos.gatekeeperAssess, isTrue);
   });
 
-  test("notarization requires non-secret Apple credential references",
-      () async {
-    await expectLater(
-      ReleasePublishConfig.fromYaml("""
+  test(
+    "notarization requires non-secret Apple credential references",
+    () async {
+      await expectLater(
+        ReleasePublishConfig.fromYaml("""
 updates:
   baseUrl: https://updates.example.com
 
@@ -424,15 +597,16 @@ macos:
   notaryProfile: desktop-updater-notary
   keychain: /Users/me/Library/Keychains/login.keychain-db
 """),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          "message",
-          contains("macos.developerIdApplication is required"),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("macos.developerIdApplication is required"),
+          ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   test("loads pre-package and post-package hooks", () async {
     final config = await ReleasePublishConfig.fromYaml("""
@@ -466,6 +640,36 @@ hooks:
     ]);
   });
 
+  test(
+    "rejects macOS post-package hooks when notarization is enabled",
+    () async {
+      await expectLater(
+        ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com
+
+macos:
+  notarize: true
+  developerIdApplication: identity
+  notaryProfile: profile
+  keychain: keychain
+
+hooks:
+  postPackage:
+    - command: ./tool/mutate.sh
+      platforms: [macos]
+"""),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            contains("postPackage hooks are not allowed"),
+          ),
+        ),
+      );
+    },
+  );
+
   test("loads additional release files", () async {
     final config = await ReleasePublishConfig.fromYaml("""
 updates:
@@ -485,10 +689,7 @@ additionalFiles:
     expect(config.additionalFiles.first.destination, "docs/manuals");
     expect(config.additionalFiles.first.platforms, ["linux", "windows"]);
     expect(config.additionalFiles.last.source, "release-assets/macos-help");
-    expect(
-      config.additionalFiles.last.destination,
-      "Contents/Resources/Help",
-    );
+    expect(config.additionalFiles.last.destination, "Contents/Resources/Help");
     expect(config.additionalFiles.last.platforms, ["macos"]);
   });
 

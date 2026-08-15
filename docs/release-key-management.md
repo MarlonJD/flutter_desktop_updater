@@ -72,7 +72,11 @@ per-user directory with a `0700` directory and `0600` file policy. This is
 filesystem-permission protection and is not equivalent to Keychain or Secret
 Service storage. On Windows, the profile store uses DPAPI `CurrentUser` and
 stores only DPAPI ciphertext; it never falls back to a plaintext Windows key
-file. Windows DPAPI evidence must come from a Windows host or CI lane.
+file. The PowerShell DPAPI child receives one Base64 request through stdin,
+drains stdout and stderr concurrently, bounds output, and is killed and awaited
+when its timeout covers stdin, streams, or exit. Invalid output and process
+failures are reported generically without exposing keys, ciphertext, or child
+streams. Windows DPAPI evidence must come from a Windows host or CI lane.
 
 No command edits `.zshrc`, `.bashrc`, PowerShell profiles, `setx`, registry
 environment variables, or the parent process environment. A child CLI cannot

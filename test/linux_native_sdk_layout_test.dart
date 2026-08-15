@@ -71,7 +71,7 @@ void main() {
     expect(header, isNot(contains("Flutter")));
     expect(header, isNot(contains("Gtk")));
     expect(version, contains("DESKTOP_UPDATER_NATIVE_API_VERSION 2u"));
-    expect(version, contains('DESKTOP_UPDATER_NATIVE_VERSION_STRING "3.1.3"'));
+    expect(version, contains('DESKTOP_UPDATER_NATIVE_VERSION_STRING "3.1.6"'));
   });
 
   test("Linux plugin links the source-first native directory", () {

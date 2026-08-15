@@ -1,3 +1,39 @@
+## 3.1.6
+
+* Hardened cross-platform release publishing with strict hosted-artifact
+  validation, bounded transport behavior, and release-surface contract tests.
+* Added credentialed macOS publish evidence for Developer ID signing,
+  notarization, stapling, hardened runtime, nested target entitlements, strict
+  signatures, Gatekeeper assessment, and final hosted artifact auditing.
+* Made the macOS notarization keychain optional when the configured
+  `general-notary` profile is available in the user's global keychain search
+  list, while preserving explicit keychain support.
+
+## 3.1.5
+
+* Kept FTP index publication fail-closed when a server cannot atomically
+  replace an existing destination with `RNTO`, while replacing the raw rename
+  failure with actionable diagnostics.
+* Added `release doctor` guidance and documented Apache FtpServer's native
+  overwrite limitation, the required server-side atomic replacement boundary,
+  and safe SFTP, S3-compatible, or server-backed custom command alternatives.
+* Explicitly rejected partial or unavailable live-index windows from direct
+  `STOR`, `DELE` plus `RNTO`, and multi-command backup shuffles. Thanks to
+  @Nicoeevee for reporting the production Apache FtpServer behavior in PR #71.
+
+## 3.1.4
+
+* Added exclusive lease publication for FTP-hosted `app-archive.json` indexes,
+  including hosted revision checks before and after the temporary upload and a
+  server-side rename before validating the published bytes.
+* Hardened FTP failure handling by resolving quote commands relative to the
+  authenticated FTP root, failing closed instead of directly overwriting the
+  live index when rename fails, and reporting stale lease cleanup failures with
+  the exact recovery path.
+* Added regression coverage and a required real Docker FTP end-to-end lane with
+  protocol-banner readiness and native container architecture selection. Thanks
+  to @Nicoeevee for the original contribution in PR #71.
+
 ## 3.1.3
 
 * Fixed Windows direct-ZIP updates for exact per-user app roots created by

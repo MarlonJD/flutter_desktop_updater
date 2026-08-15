@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 project(desktop_updater_linux_runtime_compile LANGUAGES CXX)
 
-find_package(desktop_updater_native 3.1.3 EXACT CONFIG REQUIRED)
+find_package(desktop_updater_native 3.1.6 EXACT CONFIG REQUIRED)
 if(NOT TARGET desktop_updater::runtime)
   message(FATAL_ERROR
     "The installed package does not provide desktop_updater::runtime; "

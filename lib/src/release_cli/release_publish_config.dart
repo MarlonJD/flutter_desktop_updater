@@ -114,6 +114,7 @@ class ReleasePublishConfig {
   static Future<ReleasePublishConfig> load({
     required Directory projectRoot,
     required ReleasePublishOverrides cliOverrides,
+    Map<String, String>? environment,
   }) async {
     final configPath = cliOverrides.configPath ??
         path.join(projectRoot.path, "desktop_updater.yaml");
@@ -124,6 +125,7 @@ class ReleasePublishConfig {
       yaml,
       projectRoot: projectRoot,
       cliOverrides: cliOverrides,
+      environment: environment,
     );
   }
 
@@ -131,6 +133,7 @@ class ReleasePublishConfig {
     String yaml, {
     Directory? projectRoot,
     ReleasePublishOverrides cliOverrides = const ReleasePublishOverrides(),
+    Map<String, String>? environment,
   }) async {
     final root = projectRoot ?? Directory.current;
     final document = yaml.trim().isEmpty
@@ -148,9 +151,18 @@ class ReleasePublishConfig {
     final channelValue =
         cliOverrides.channel ?? _stringValue(updates, "channel") ?? "stable";
     final provider = _readUploadProvider(document);
-    final macos = _readMacOSConfig(document, cliOverrides);
+    final macos = _readMacOSConfig(
+      document,
+      cliOverrides,
+      environment: environment ?? Platform.environment,
+    );
     final windows = _readWindowsConfig(document);
     final hooks = _readHooksConfig(document);
+    if (macos.notarize && hooks.hasPostPackageHookFor("macos")) {
+      throw const FormatException(
+        "macOS postPackage hooks are not allowed when built-in notarization is enabled.",
+      );
+    }
     final additionalFiles = _readAdditionalFilesConfig(document);
 
     return ReleasePublishConfig(
@@ -239,10 +251,7 @@ class ReleaseHooksConfig {
 }
 
 class ReleaseHookConfig {
-  const ReleaseHookConfig({
-    required this.command,
-    this.platforms = const [],
-  });
+  const ReleaseHookConfig({required this.command, this.platforms = const []});
 
   final String command;
   final List<String> platforms;
@@ -344,10 +353,7 @@ ReleaseHooksConfig _readHooksConfig(Map<String, dynamic> document) {
   );
 }
 
-List<ReleaseHookConfig> _readHookList(
-  Map<String, dynamic> hooks,
-  String key,
-) {
+List<ReleaseHookConfig> _readHookList(Map<String, dynamic> hooks, String key) {
   final value = hooks[key];
   if (value == null) {
     return const [];
@@ -357,10 +363,7 @@ List<ReleaseHookConfig> _readHookList(
   }
   return [
     for (var i = 0; i < value.length; i += 1)
-      _readHookConfig(
-        _hookMap(value[i], "hooks.$key[$i]"),
-        "hooks.$key[$i]",
-      ),
+      _readHookConfig(_hookMap(value[i], "hooks.$key[$i]"), "hooks.$key[$i]"),
   ];
 }
 
@@ -382,10 +385,7 @@ Map<String, dynamic> _hookMap(Object? value, String displayName) {
   throw FormatException("$displayName must be a map.");
 }
 
-List<String> _readHookPlatforms(
-  Map<String, dynamic> hook,
-  String displayName,
-) {
+List<String> _readHookPlatforms(Map<String, dynamic> hook, String displayName) {
   return _readPlatformList(hook, displayName);
 }
 
@@ -430,10 +430,7 @@ Map<String, dynamic> _additionalFileMap(Object? value, String displayName) {
   throw FormatException("$displayName must be a map.");
 }
 
-List<String> _readPlatformList(
-  Map<String, dynamic> map,
-  String displayName,
-) {
+List<String> _readPlatformList(Map<String, dynamic> map, String displayName) {
   final value = map["platforms"];
   if (value == null) {
     return const [];
@@ -453,10 +450,7 @@ List<String> _readPlatformList(
   ];
 }
 
-void _rejectSecretHookKeys(
-  Map<String, dynamic> hook,
-  String displayName,
-) {
+void _rejectSecretHookKeys(Map<String, dynamic> hook, String displayName) {
   const forbiddenKeys = {
     "env",
     "environment",
@@ -474,9 +468,12 @@ void _rejectSecretHookKeys(
 }
 
 UploadConfig _readUploadProvider(Map<String, dynamic> document) {
-  final providerBlocks = ["s3", "sftp", "ftp", "customCommand"]
-      .where((name) => document[name] != null)
-      .toList(growable: false);
+  final providerBlocks = [
+    "s3",
+    "sftp",
+    "ftp",
+    "customCommand",
+  ].where((name) => document[name] != null).toList(growable: false);
   if (providerBlocks.length > 1) {
     throw FormatException(
       "Only one upload provider can be configured. Found: ${providerBlocks.join(", ")}.",
@@ -519,11 +516,7 @@ UploadConfig _readUploadProvider(Map<String, dynamic> document) {
       );
     case "customCommand":
       return CustomCommandUploadConfig(
-        command: _requiredString(
-          provider,
-          "command",
-          "customCommand.command",
-        ),
+        command: _requiredString(provider, "command", "customCommand.command"),
       );
   }
   return const ManualUploadConfig();
@@ -531,8 +524,9 @@ UploadConfig _readUploadProvider(Map<String, dynamic> document) {
 
 MacOSPublishConfig _readMacOSConfig(
   Map<String, dynamic> document,
-  ReleasePublishOverrides cliOverrides,
-) {
+  ReleasePublishOverrides cliOverrides, {
+  required Map<String, String> environment,
+}) {
   final macos = _mapValue(document, "macos");
   final artifact = _mapValue(macos, "artifact");
   final artifactKind = _readMacOSArtifactKind(
@@ -548,9 +542,27 @@ MacOSPublishConfig _readMacOSConfig(
     artifactKind: artifactKind,
     dmg: dmg,
     pkg: pkg,
-    developerIdApplication: _stringValue(macos, "developerIdApplication"),
-    notaryProfile: _stringValue(macos, "notaryProfile"),
-    keychain: _stringValue(macos, "keychain"),
+    developerIdApplication: _macOSReferenceValue(
+      macos,
+      "developerIdApplication",
+      "macos.developerIdApplication",
+      environment,
+      "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION",
+    ),
+    notaryProfile: _macOSReferenceValue(
+      macos,
+      "notaryProfile",
+      "macos.notaryProfile",
+      environment,
+      "DESKTOP_UPDATER_MACOS_NOTARY_PROFILE",
+    ),
+    keychain: _macOSReferenceValue(
+      macos,
+      "keychain",
+      "macos.keychain",
+      environment,
+      "DESKTOP_UPDATER_MACOS_KEYCHAIN",
+    ),
     staple: _boolValue(macos, "staple", displayName: "macos.staple") ?? true,
     gatekeeperAssess: _boolValue(
           macos,
@@ -566,7 +578,16 @@ MacOSPublishConfig _readMacOSConfig(
       "macos.developerIdApplication",
     );
     _requireConfigValue(config.notaryProfile, "macos.notaryProfile");
-    _requireConfigValue(config.keychain, "macos.keychain");
+    if (!config.staple) {
+      throw const FormatException(
+        "macos.staple must be true when macos.notarize is true.",
+      );
+    }
+    if (!config.gatekeeperAssess) {
+      throw const FormatException(
+        "macos.gatekeeperAssess must be true when macos.notarize is true.",
+      );
+    }
   }
 
   if (config.artifactKind == MacOSArtifactKind.pkg &&
@@ -671,8 +692,10 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
     updatesUrl: _stringValue(installer, "updatesUrl"),
     privilegesRequired:
         _stringValue(installer, "privilegesRequired") ?? "lowest",
-    protectedHelperInstallDir:
-        _stringValue(installer, "protectedHelperInstallDir"),
+    protectedHelperInstallDir: _stringValue(
+      installer,
+      "protectedHelperInstallDir",
+    ),
     architecturesAllowed:
         _stringValue(installer, "architecturesAllowed") ?? "x64",
     architecturesInstallIn64BitMode:
@@ -747,6 +770,24 @@ String? _stringValue(Map<String, dynamic> map, String key) {
   return value?.toString();
 }
 
+String? _macOSReferenceValue(
+  Map<String, dynamic> map,
+  String key,
+  String displayName,
+  Map<String, String> environment,
+  String environmentKey,
+) {
+  if (map.containsKey(key)) {
+    final value = map[key];
+    if (value is! String || value.trim().isEmpty) {
+      throw FormatException("$displayName must be a nonblank string.");
+    }
+    return value;
+  }
+  final value = environment[environmentKey]?.trim();
+  return value == null || value.isEmpty ? null : value;
+}
+
 List<String>? _stringListValue(Map<String, dynamic> map, String key) {
   final value = map[key];
   if (value == null) {
@@ -770,11 +811,7 @@ String _requiredString(
   return value;
 }
 
-bool? _boolValue(
-  Map<String, dynamic> map,
-  String key, {
-  String? displayName,
-}) {
+bool? _boolValue(Map<String, dynamic> map, String key, {String? displayName}) {
   final value = map[key];
   if (value == null) {
     return null;

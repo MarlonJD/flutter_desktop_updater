@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:desktop_updater/src/macos_update.dart";
+import "package:desktop_updater/src/release_cli/macos/macos_release_trust.dart";
 
 class AppleTrustCommands {
   const AppleTrustCommands({this.runProcess = defaultProcessRunner});
@@ -35,10 +36,10 @@ class AppleTrustCommands {
     ]);
   }
 
-  Future<void> verifyApp(Directory app) async {
+  Future<void> verifyApp(Directory app, {bool deep = false}) async {
     await _runChecked("/usr/bin/codesign", [
       "--verify",
-      "--deep",
+      if (deep) "--deep",
       "--strict",
       "--verbose=2",
       app.path,
@@ -46,12 +47,12 @@ class AppleTrustCommands {
     await _runChecked("/usr/bin/codesign", ["-dvvv", app.path]);
   }
 
-  Future<void> submitForNotarization({
+  Future<MacOSNotarySubmission> submitForNotarization({
     required File archive,
     required String notaryProfile,
     String? keychain,
   }) async {
-    await _runChecked("/usr/bin/xcrun", [
+    final result = await _runChecked("/usr/bin/xcrun", [
       "notarytool",
       "submit",
       archive.path,
@@ -59,7 +60,10 @@ class AppleTrustCommands {
       notaryProfile,
       if (keychain != null) ...["--keychain", keychain],
       "--wait",
+      "--output-format",
+      "json",
     ]);
+    return MacOSReleaseTrust.parseNotarySubmission(result.stdout.toString());
   }
 
   Future<void> staple(FileSystemEntity artifact) async {

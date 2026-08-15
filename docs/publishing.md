@@ -620,6 +620,17 @@ bucket listing. S3-compatible publish credentials still belong to the
 publish/upload side; runtime S3 access should be exposed as fetchable HTTPS
 URLs, signed URLs, proxy URLs, or app-owned request headers.
 
+Hosted `release validate` keeps metadata requests fail-fast. It streams the
+selected artifact with `client.send`, enforces the signed descriptor length and
+any `Content-Length`, rejects truncated or oversized bodies, and creates a
+per-attempt temporary directory only after successful 2xx headers. It retries
+only transport `http.ClientException` and `SocketException` failures, with the
+configured bounded `UpdateRetryPolicy`; HTTP statuses, content/length errors,
+filesystem failures, JSON/identity/signature failures, and platform trust
+failures are not retried. Failed attempt directories are removed without
+masking the primary error, while the caller owns cleanup only after a complete
+file is returned.
+
 ## Common Minimum Setup
 
 Do this once in the app repository. The
@@ -1083,14 +1094,48 @@ API key, `.p12` Developer ID certificate, passwords, API key ID, issuer ID, and
 CI keychain password must still come from the user's machine, keychain, CI
 secrets, or standard environment setup.
 
+The three macOS signing references may also be supplied by the calling process
+when their YAML fields are absent:
+
+```sh
+export DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION="Developer ID Application: Example Corp (TEAMID1234)"
+export DESKTOP_UPDATER_MACOS_NOTARY_PROFILE="desktop-updater-notary"
+export DESKTOP_UPDATER_MACOS_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+```
+
+Only these canonical variables are recognized. An explicit YAML value wins;
+an explicit blank or non-string YAML value is an error and does not fall back
+to the environment. Environment values are trimmed. Environment flags and
+legacy aliases do not enable notarization or provide signing references.
+
 When notarization is enabled, publish runs:
 
-1. Build the Release `.app`.
-2. Sign with `macos.developerIdApplication`.
-3. Submit the signed app with `macos.notaryProfile` and `macos.keychain`.
-4. Staple when `macos.staple` is true.
-5. Run Gatekeeper assessment when `macos.gatekeeperAssess` is true.
-6. Package, upload, and validate only after those gates pass.
+1. Validate configuration and reject macOS-applicable `postPackage` hooks.
+2. Run `prePackage` hooks.
+3. Complete a read-only bundle-topology, Mach-O, symlink, entitlement, and
+   sealed-helper-policy preflight. No `codesign` mutation is allowed before it
+   succeeds.
+4. Sign nested code inner-to-outer, with the outer app last, and verify every
+   target plus the final app.
+5. Submit the app notarization archive with `--output-format json` and require
+   a nonblank submission ID whose typed status is exactly `Accepted`.
+6. Staple, validate the ticket, and Gatekeeper-assess the app.
+7. Package the stapled app.
+8. For DMG or PKG, notarize the exact container, require typed `Accepted`,
+   staple, validate, and Gatekeeper-assess that same container.
+9. Audit the exact final distributable downloaded/uploaded: ZIP contents are
+   safely extracted, DMGs are mounted read-only and detached, and PKGs are
+   expanded safely. The contained app is checked again.
+10. Recompute final artifact length and SHA-256, then sign release metadata.
+11. Upload without any further artifact mutation.
+
+The final macOS artifact audit is a trust gate, not a source-only check. A
+successful workflow should retain the final artifact SHA-256 and length, the
+pre-staple notarization archive digest, typed submission ID(s), target
+inventory, identifiers and designated requirements, equal Team IDs, hardened
+runtime flags, per-target entitlement hashes, absence of
+`com.apple.security.get-task-allow`, strict signature results, stapler results,
+and Gatekeeper results. Keep this evidence bound to the exact source/PR head.
 
 This keeps notarization intentional and avoids silently using whatever Developer
 ID identity happens to be installed on the machine.
@@ -1224,10 +1269,23 @@ xcrun notarytool store-credentials desktop-updater-notary \
   --validate
 ```
 
-Use the same `--keychain-profile` and `--keychain` pair for every later
-`notarytool` command. If `notarytool` later says
-`No Keychain password item found`, it is usually reading a different keychain
-from the one where the profile was stored.
+For an already-provisioned profile, first verify default/global resolution
+without forcing a keychain path:
+
+```sh
+xcrun notarytool history \
+  --keychain-profile general-notary \
+  --output-format json >/dev/null
+```
+
+This is the profile-availability check and uses macOS's keychain search list.
+Use the same `--keychain-profile` and `--keychain` pair for later commands when
+the profile was explicitly stored in a named keychain. If the default check
+succeeds but an explicit `--keychain` lookup returns `No Keychain password item
+found`, classify that as an explicit-keychain path mismatch, not as a missing
+profile. Use the profile's actual stored keychain or the repository flow's
+default-resolution mode; never guess a keychain path or print credential
+contents.
 
 CI should create an ephemeral keychain, import the Developer ID `.p12`, and
 store the notary profile into that same keychain:
@@ -1534,6 +1592,31 @@ Set:
 DESKTOP_UPDATER_FTP_PASSWORD=...
 ```
 
+The FTP provider requires more than basic `RNFR`/`RNTO` support. After a
+complete temporary index is uploaded under the exclusive lease directory, the
+server must atomically replace the existing `app-archive.json` when `RNTO`
+names that existing destination. The source and destination must be on the
+same filesystem boundary, and a failed rename must leave publication safe to
+retry after the hosted index is validated.
+
+Apache FtpServer's native filesystem is not compatible with this requirement
+by default. Its
+[`NativeFtpFile.move`](https://github.com/apache/mina-ftpserver/blob/4ff3bc9a7898f9a15dc13416d8defbd9ed97dcf6/core/src/main/java/org/apache/ftpserver/filesystem/nativefs/impl/NativeFtpFile.java#L276-L290)
+implementation deliberately rejects a rename when the destination exists, and
+its
+[`testRenameToFileExists`](https://github.com/apache/mina-ftpserver/blob/4ff3bc9a7898f9a15dc13416d8defbd9ed97dcf6/core/src/test/java/org/apache/ftpserver/clienttests/RenameTest.java#L150-L161)
+test protects that behavior. If you control that server, install an allowlisted
+server-side atomic replacement that accepts only the lease temporary file and
+the exact live index path, verifies both paths remain inside the configured
+update root and on the same filesystem, and fails when the host cannot provide
+an atomic replace. Otherwise use SFTP, S3-compatible storage, or a
+`customCommand` backed by server-side atomic publication.
+
+Never work around this limitation with direct `STOR`, `DELE` followed by
+`RNTO`, or a multi-command backup shuffle. Direct upload can expose partial
+JSON, while delete and backup sequences create a window in which readers see
+no live index. The built-in FTP provider fails closed instead.
+
 Prefer SFTP or S3-compatible upload for production.
 
 ### Custom Command
@@ -1680,5 +1763,10 @@ workflow skeleton.
 - `AWS CLI executable not found`: install `aws` or use another provider.
 - `ftp.allowInsecure: true is required`: use SFTP/S3, or explicitly opt in for
   a legacy FTP host.
+- `FTP could not atomically replace ... with RNFR/RNTO`: verify rename
+  permissions and overwrite-rename support. Apache FtpServer's native
+  filesystem rejects an existing destination; configure a server-side atomic
+  replacement or use SFTP, S3-compatible storage, or a `customCommand` backed
+  by server-side atomic publication. Validate the hosted index before retrying.
 - Long `Cache-Control` on `app-archive.json`: keep index caching short so
   clients see newly published releases promptly.

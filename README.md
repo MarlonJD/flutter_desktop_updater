@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.1.3
+  desktop_updater: ^3.1.6
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -423,7 +423,7 @@ localization: DesktopUpdateLocalization(
 
 ## Diagnostics And Recovery
 
-The 3.1.3 release retains the explicit app-owned diagnostics and recovery
+The 3.1.6 release retains the explicit app-owned diagnostics and recovery
 wiring introduced in 3.0. The Dart controller remains quiet unless the app
 provides its own sink; it performs no package-owned upload or telemetry. The
 privileged macOS helper additionally writes security-scoped lifecycle evidence

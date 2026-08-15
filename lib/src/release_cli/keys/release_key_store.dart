@@ -204,12 +204,48 @@ final class LocalFileReleaseKeyStore implements ReleaseKeySecretStore {
   }
 }
 
+/// The process surface required by the Windows DPAPI store.
+abstract interface class WindowsDpapiProcess {
+  /// The process standard output stream.
+  Stream<List<int>> get stdout;
+
+  /// The process standard error stream.
+  Stream<List<int>> get stderr;
+
+  /// Completes with the process exit code.
+  Future<int> get exitCode;
+
+  /// Writes the one base64 request value to standard input.
+  Future<void> writeStdin(String value);
+
+  /// Closes standard input after the request is written.
+  Future<void> closeStdin();
+
+  /// Terminates the process and waits for its exit.
+  Future<void> killAndWait();
+}
+
+/// Starts one isolated PowerShell process for a DPAPI operation.
+typedef WindowsDpapiProcessStarter = Future<WindowsDpapiProcess> Function({
+  required String operation,
+  required Map<String, String> environment,
+});
+
 /// Windows per-user DPAPI storage. It never falls back to plaintext files.
 final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
-  WindowsDpapiReleaseKeyStore({Directory? rootDirectory})
-      : rootDirectory = rootDirectory ?? _defaultWindowsRoot();
+  WindowsDpapiReleaseKeyStore({
+    Directory? rootDirectory,
+    WindowsDpapiProcessStarter? startProcess,
+    bool Function()? isWindowsHost,
+    this.processTimeout = const Duration(seconds: 15),
+  })  : rootDirectory = rootDirectory ?? _defaultWindowsRoot(),
+        startProcess = startProcess ?? _startWindowsDpapiProcess,
+        isWindowsHost = isWindowsHost ?? (() => Platform.isWindows);
 
   final Directory rootDirectory;
+  final WindowsDpapiProcessStarter startProcess;
+  final bool Function() isWindowsHost;
+  final Duration processTimeout;
 
   @override
   String get description => "Windows DPAPI (CurrentUser)";
@@ -219,6 +255,7 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
     required String profileId,
     required String keyId,
   }) async {
+    _requireWindowsHost();
     final values = await _readValues(profileId);
     final encoded = values[keyId];
     if (encoded == null) return null;
@@ -236,9 +273,7 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
     required String keyId,
     required List<int> seed,
   }) async {
-    if (!Platform.isWindows) {
-      throw UnsupportedError("Windows DPAPI is available only on Windows.");
-    }
+    _requireWindowsHost();
     if (seed.length != 32) {
       throw const FormatException(
           "Ed25519 private seeds must contain 32 bytes.");
@@ -259,6 +294,7 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
     required String profileId,
     required String keyId,
   }) async {
+    _requireWindowsHost();
     final values = await _readValues(profileId);
     if (values.remove(keyId) != null) await _writeValues(profileId, values);
   }
@@ -290,9 +326,6 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
 
   Future<void> _writeValues(
       String profileId, Map<String, String> values) async {
-    if (!Platform.isWindows) {
-      throw UnsupportedError("Windows DPAPI is available only on Windows.");
-    }
     await rootDirectory.create(recursive: true);
     final file = _profileFile(profileId);
     final temporary = File(
@@ -320,42 +353,192 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
   }
 
   Future<List<int>> _runDpapi(String operation, List<int> bytes) async {
-    if (!Platform.isWindows) {
+    late final WindowsDpapiProcess process;
+    try {
+      process = await startProcess(
+        operation: operation,
+        environment: {
+          ...Platform.environment,
+          "DESKTOP_UPDATER_DPAPI_OPERATION": operation,
+        },
+      );
+    } on Object {
+      throw StateError("Windows DPAPI process could not be started.");
+    }
+
+    final stdoutFuture = _collectBounded(process.stdout, _maxDpapiStdoutBytes);
+    final stderrFuture = _drain(process.stderr);
+    final operationFuture = () async {
+      await process.writeStdin(base64Encode(bytes));
+      await process.closeStdin();
+      final outputs = await Future.wait<dynamic>([
+        stdoutFuture,
+        stderrFuture,
+        process.exitCode,
+      ]);
+      return (
+        stdout: outputs[0] as _BoundedOutput,
+        exitCode: outputs[2] as int,
+      );
+    }();
+
+    var operationCompleted = false;
+    try {
+      final result = await operationFuture.timeout(processTimeout);
+      operationCompleted = true;
+      if (result.exitCode != 0) {
+        throw StateError(
+          "Windows DPAPI operation failed (exit code ${result.exitCode}).",
+        );
+      }
+      if (result.stdout.exceeded) {
+        throw StateError("Windows DPAPI returned oversized data.");
+      }
+      final output = const Utf8Decoder(allowMalformed: true).convert(
+        result.stdout.bytes,
+      );
+      return _decodeCanonicalDpapiOutput(output);
+    } on TimeoutException {
+      await _killAfterFailure(process, stdoutFuture, stderrFuture);
+      throw StateError("Windows DPAPI operation timed out.");
+    } on Object {
+      if (!operationCompleted) {
+        await _killAfterFailure(process, stdoutFuture, stderrFuture);
+      }
+      throw StateError("Windows DPAPI operation failed.");
+    }
+  }
+
+  void _requireWindowsHost() {
+    if (!isWindowsHost()) {
       throw UnsupportedError("Windows DPAPI is available only on Windows.");
     }
-    final process = await Process.start(
-      "powershell.exe",
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-        _encodedPowerShellScript,
-      ],
-      environment: {
-        ...Platform.environment,
-        "DESKTOP_UPDATER_DPAPI_OPERATION": operation,
-      },
-    );
-    process.stdin.write(base64Encode(bytes));
-    await process.stdin.close();
-    final stdout = await process.stdout.transform(utf8.decoder).join();
-    final stderr = await process.stderr.transform(utf8.decoder).join();
-    final exitCode = await process.exitCode;
-    if (exitCode != 0) {
-      // Do not include PowerShell output: it could contain sensitive data.
-      throw StateError(
-        "Windows DPAPI operation failed (exit code $exitCode): "
-        "${stderr.trim().isEmpty ? "unknown error" : "operation rejected"}.",
+  }
+}
+
+const _maxDpapiStdoutBytes = 1024 * 1024;
+const _maxDpapiStderrBytes = 64 * 1024;
+
+final class _BoundedOutput {
+  const _BoundedOutput(this.bytes, this.exceeded);
+
+  final List<int> bytes;
+  final bool exceeded;
+}
+
+Future<_BoundedOutput> _collectBounded(
+  Stream<List<int>> stream,
+  int maximumBytes,
+) async {
+  final bytes = <int>[];
+  var totalBytes = 0;
+  var exceeded = false;
+  await for (final chunk in stream) {
+    totalBytes += chunk.length;
+    if (totalBytes > maximumBytes) {
+      exceeded = true;
+    }
+    if (bytes.length < maximumBytes) {
+      final remaining = maximumBytes - bytes.length;
+      bytes.addAll(
+        chunk.length <= remaining ? chunk : chunk.sublist(0, remaining),
       );
     }
-    try {
-      return _decodeBase64(stdout.trim());
-    } on FormatException {
-      throw StateError("Windows DPAPI returned invalid data.");
+  }
+  return _BoundedOutput(bytes, exceeded);
+}
+
+Future<void> _drain(Stream<List<int>> stream) async {
+  var discarded = 0;
+  await for (final chunk in stream) {
+    discarded += chunk.length;
+    if (discarded > _maxDpapiStderrBytes) {
+      discarded = _maxDpapiStderrBytes;
     }
+  }
+}
+
+Future<void> _killAfterFailure(
+  WindowsDpapiProcess process,
+  Future<_BoundedOutput> stdoutFuture,
+  Future<void> stderrFuture,
+) async {
+  try {
+    await process.killAndWait().timeout(const Duration(seconds: 2));
+  } on Object {
+    // Preserve the primary DPAPI failure.
+  }
+  try {
+    await Future.wait<void>([stdoutFuture, stderrFuture])
+        .timeout(const Duration(seconds: 2));
+  } on Object {
+    // A broken child stream must not mask the primary DPAPI failure.
+  }
+}
+
+List<int> _decodeCanonicalDpapiOutput(String output) {
+  if (output.isEmpty ||
+      output.trim() != output ||
+      output.contains(RegExp(r"\s"))) {
+    throw StateError("Windows DPAPI returned invalid data.");
+  }
+  try {
+    final decoded = base64Decode(output);
+    if (base64Encode(decoded) != output) {
+      throw const FormatException();
+    }
+    return decoded;
+  } on FormatException {
+    throw StateError("Windows DPAPI returned invalid data.");
+  }
+}
+
+Future<WindowsDpapiProcess> _startWindowsDpapiProcess({
+  required String operation,
+  required Map<String, String> environment,
+}) async {
+  final process = await Process.start(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+      _encodedPowerShellScript,
+    ],
+    environment: environment,
+  );
+  return _WindowsDpapiProcess(process);
+}
+
+final class _WindowsDpapiProcess implements WindowsDpapiProcess {
+  _WindowsDpapiProcess(this._process);
+
+  final Process _process;
+
+  @override
+  Stream<List<int>> get stdout => _process.stdout;
+
+  @override
+  Stream<List<int>> get stderr => _process.stderr;
+
+  @override
+  Future<int> get exitCode => _process.exitCode;
+
+  @override
+  Future<void> writeStdin(String value) async {
+    _process.stdin.write(value);
+  }
+
+  @override
+  Future<void> closeStdin() => _process.stdin.close();
+
+  @override
+  Future<void> killAndWait() async {
+    _process.kill();
+    await _process.exitCode;
   }
 }
 
@@ -431,6 +614,7 @@ Future<void> _checkFilePermissions(File file) async {
 }
 
 const _dpapiScript = r'''
+$ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
 $encoded = [Console]::In.ReadToEnd().Trim()

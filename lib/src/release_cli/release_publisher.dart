@@ -18,6 +18,7 @@ import "package:desktop_updater/src/release_cli/inno/inno_installer_packager.dar
 import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/macos/dmg_packager.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
+import "package:desktop_updater/src/release_cli/macos/macos_release_trust.dart";
 import "package:desktop_updater/src/release_cli/macos/pkg_packager.dart";
 import "package:desktop_updater/src/release_cli/manual_project_adapter.dart";
 import "package:desktop_updater/src/release_cli/platform_release_profile.dart";
@@ -59,8 +60,9 @@ class ReleaseSigningOptions {
     required this.publicKeyId,
     required this.privateKeyBase64,
     required Map<String, String> trustedReleasePublicKeys,
-  }) : trustedReleasePublicKeys =
-            normalizeReleasePublicKeys(trustedReleasePublicKeys);
+  }) : trustedReleasePublicKeys = normalizeReleasePublicKeys(
+          trustedReleasePublicKeys,
+        );
 
   /// Pinned key identifier written to the signature envelope.
   final String publicKeyId;
@@ -85,6 +87,7 @@ class ReleasePublisher {
     this.runHookCommand = defaultReleaseHookCommandRunner,
     this.httpClient,
     this.isMacOSHost,
+    this.macOSReleaseTrust,
     BuildProcessStarter startBuildProcess = defaultBuildProcessStarter,
   }) : _startBuildProcess = startBuildProcess;
 
@@ -101,6 +104,7 @@ class ReleasePublisher {
   final ReleaseHookCommandRunner runHookCommand;
   final http.Client? httpClient;
   final bool? isMacOSHost;
+  final MacOSReleaseTrust? macOSReleaseTrust;
   final BuildProcessStarter _startBuildProcess;
 
   Future<PublishManifest> publish({
@@ -239,15 +243,6 @@ class ReleasePublisher {
       output: output,
     );
 
-    if (platform == "macos" && config.macos.notarize) {
-      await _notarizeMacOS(
-        app: metadata.input,
-        config: config.macos,
-        runProcess: runProcess,
-        output: output,
-      );
-    }
-
     await _runReleaseHooks(
       hooks: config.hooks.prePackage,
       phase: "prePackage",
@@ -258,6 +253,16 @@ class ReleasePublisher {
       runHookCommand: runHookCommand,
       output: output,
     );
+
+    if (platform == "macos" && config.macos.notarize) {
+      await _notarizeMacOS(
+        app: metadata.input,
+        config: config.macos,
+        runProcess: runProcess,
+        output: output,
+        trust: macOSReleaseTrust,
+      );
+    }
 
     output.writeln("Packaging update...");
     final archiveAppName = _artifactNameStem(metadata.appName);
@@ -393,6 +398,22 @@ class ReleasePublisher {
       output: output,
     );
 
+    if (platform == "macos" && config.macos.notarize) {
+      final appBundleName =
+          packageResult.descriptor.install.macosDmg?.appBundleName ??
+              (metadata.appName.endsWith(".app")
+                  ? metadata.appName
+                  : "${metadata.appName}.app");
+      await (macOSReleaseTrust ?? MacOSReleaseTrust(runProcess: runProcess))
+          .auditFinalArtifact(
+        artifact: packageResult.artifact,
+        kind: packageResult.descriptor.artifact.kind,
+        appBundleName: appBundleName,
+        expectedApplicationIdentifier: metadata.packageId,
+      );
+      output.writeln("Final macOS distributable trust audit: verified locally");
+    }
+
     final finalArtifactSha256 = await sha256File(packageResult.artifact);
     final finalArtifactLength = await packageResult.artifact.length();
     final finalDescriptor = _releaseDescriptorForFinalArtifact(
@@ -477,15 +498,11 @@ class ReleasePublisher {
       );
       try {
         if (descriptor.signature?.publicKeyId != publicKeyId) {
-          throw StateError(
-            "Final release.json signature verification failed.",
-          );
+          throw StateError("Final release.json signature verification failed.");
         }
         await strictArtifactVerifier.verifyDescriptor(descriptor);
       } on Object {
-        throw StateError(
-          "Final release.json signature verification failed.",
-        );
+        throw StateError("Final release.json signature verification failed.");
       }
 
       await ReleaseIndexSigner().sign(
@@ -565,10 +582,7 @@ Future<void> _copyAdditionalFiles({
       output.writeln(
         "Adding release file: ${source.path} -> ${destination.path}",
       );
-      await _copyAdditionalFileSource(
-        source: source,
-        destination: destination,
-      );
+      await _copyAdditionalFileSource(source: source, destination: destination);
     }
   }
 }
@@ -668,10 +682,7 @@ Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
   );
   final local = existingFile == null
       ? null
-      : await _readSignedAppArchiveFile(
-          existingFile,
-          verifier: verifier,
-        );
+      : await _readSignedAppArchiveFile(existingFile, verifier: verifier);
 
   if (hosted == null) {
     if (!overrides.initializeFeed) {
@@ -734,17 +745,12 @@ Future<void> _writeFrozenHistoryToAppArchive({
 }) async {
   await archiveFile.parent.create(recursive: true);
   final index = history.index ??
-      ReleaseIndex(
-        schemaVersion: 3,
-        appName: archiveAppName,
-        items: const [],
-      );
+      ReleaseIndex(schemaVersion: 3, appName: archiveAppName, items: const []);
   await _writeJsonFile(
-      archiveFile,
-      {
-        ...index.toJson(),
-        "signature": null,
-      }..removeWhere((key, value) => value == null));
+    archiveFile,
+    {...index.toJson(), "signature": null}
+      ..removeWhere((key, value) => value == null),
+  );
 }
 
 Future<_HostedSignedAppArchive?> _fetchHostedAppArchive({
@@ -834,29 +840,20 @@ final class _SignedPublicationHistory {
 }
 
 final class _HostedSignedAppArchive {
-  const _HostedSignedAppArchive({
-    required this.index,
-    required this.revision,
-  });
+  const _HostedSignedAppArchive({required this.index, required this.revision});
 
   final ReleaseIndex index;
   final RemoteIndexRevision revision;
 }
 
 final class _LocalSignedAppArchive {
-  const _LocalSignedAppArchive({
-    required this.index,
-    required this.sha256,
-  });
+  const _LocalSignedAppArchive({required this.index, required this.sha256});
 
   final ReleaseIndex index;
   final String sha256;
 }
 
-String _relativePublishPath({
-  required Directory root,
-  required File file,
-}) {
+String _relativePublishPath({required Directory root, required File file}) {
   final rootPath = path.normalize(root.absolute.path);
   final filePath = path.normalize(file.absolute.path);
   if (!path.isWithin(rootPath, filePath)) {
@@ -928,10 +925,9 @@ Future<List<FileSystemEntity>> _additionalFileSources({
 
   final matcher = _globRegExp(absolutePattern);
   final matches = <FileSystemEntity>[];
-  await for (final entity in Directory(searchRoot).list(
-    recursive: _globNeedsRecursive(absolutePattern),
-    followLinks: false,
-  )) {
+  await for (final entity in Directory(
+    searchRoot,
+  ).list(recursive: _globNeedsRecursive(absolutePattern), followLinks: false)) {
     if (matcher.hasMatch(path.normalize(entity.path))) {
       matches.add(entity);
     }
@@ -971,8 +967,9 @@ Future<void> _copyAdditionalFileSource({
     );
   }
   if (type == FileSystemEntityType.file) {
-    final target =
-        File(path.join(destination.path, path.basename(source.path)));
+    final target = File(
+      path.join(destination.path, path.basename(source.path)),
+    );
     await _copyFile(File(source.path), target);
     return;
   }
@@ -1043,10 +1040,10 @@ Future<void> _preserveMode(
     return;
   }
   final mode = (await source.stat()).mode & 0x1ff;
-  final result = await Process.run(
-    "/bin/chmod",
-    [mode.toRadixString(8), target.path],
-  );
+  final result = await Process.run("/bin/chmod", [
+    mode.toRadixString(8),
+    target.path,
+  ]);
   if (result.exitCode != 0) {
     throw ProcessException(
       "/bin/chmod",
@@ -1168,8 +1165,9 @@ Map<String, String> _releaseHookEnvironment({
     "DESKTOP_UPDATER_APP_ARCHIVE_FILE": layout.appArchiveFile.path,
     "DESKTOP_UPDATER_RELEASE_FILE": layout.releaseFile.path,
     "DESKTOP_UPDATER_ARTIFACT_FILE": layout.artifactFile.path,
-    "DESKTOP_UPDATER_ARTIFACT_KIND":
-        _artifactKindForPath(layout.artifactFile.path),
+    "DESKTOP_UPDATER_ARTIFACT_KIND": _artifactKindForPath(
+      layout.artifactFile.path,
+    ),
     "DESKTOP_UPDATER_APP_ARCHIVE_URL": layout.appArchiveUrl.toString(),
     "DESKTOP_UPDATER_RELEASE_URL": layout.releaseUrl.toString(),
     "DESKTOP_UPDATER_ARTIFACT_URL": layout.artifactUrl.toString(),
@@ -1181,6 +1179,7 @@ Future<void> _notarizeMacOS({
   required MacOSPublishConfig config,
   required ProcessRunner runProcess,
   required StringSink output,
+  MacOSReleaseTrust? trust,
 }) async {
   if (app is! Directory) {
     throw FileSystemException(
@@ -1189,20 +1188,17 @@ Future<void> _notarizeMacOS({
     );
   }
 
+  final effectiveTrust = trust ?? MacOSReleaseTrust(runProcess: runProcess);
+  final inventory = await effectiveTrust.preflight(app: app);
   output.writeln("Signing macOS app...");
-  await _signMacOSAppForNotarization(
-    app: app,
-    developerIdApplication: config.developerIdApplication!,
-    runProcess: runProcess,
-  );
-  await _runChecked(
-    "/usr/bin/codesign",
-    ["--verify", "--deep", "--strict", "--verbose=2", app.path],
-    runProcess,
+  await effectiveTrust.signAndVerify(
+    inventory: inventory,
+    identity: config.developerIdApplication!,
   );
 
-  final tempDir =
-      await Directory.systemTemp.createTemp("desktop_updater_notary_");
+  final tempDir = await Directory.systemTemp.createTemp(
+    "desktop_updater_notary_",
+  );
   try {
     final notaryZip = path.join(tempDir.path, "notary.zip");
     output.writeln("Creating macOS notarization archive...");
@@ -1211,142 +1207,30 @@ Future<void> _notarizeMacOS({
       archivePath: notaryZip,
       runProcess: runProcess,
     );
+    final preStapleSha256 = await sha256File(File(notaryZip));
+    final preStapleLength = await File(notaryZip).length();
+    output.writeln(
+      "macOS app pre-staple notarization archive SHA-256: "
+      "$preStapleSha256 (length=$preStapleLength)",
+    );
 
     output.writeln("Submitting macOS app for notarization...");
-    final result = await _runChecked(
-      "/usr/bin/xcrun",
-      [
-        "notarytool",
-        "submit",
-        notaryZip,
-        "--keychain-profile",
-        config.notaryProfile!,
-        "--keychain",
-        config.keychain!,
-        "--wait",
-        "--output-format",
-        "json",
-      ],
-      runProcess,
+    final submission = await effectiveTrust.submit(
+      archive: File(notaryZip),
+      profile: config.notaryProfile!,
+      keychain: config.keychain,
     );
-    _verifyNotarySubmissionAccepted(result.stdout.toString());
+    output.writeln("macOS app notarization: Accepted (${submission.id})");
   } finally {
     await tempDir.delete(recursive: true);
   }
 
-  if (config.staple) {
-    output.writeln("Stapling macOS notarization ticket...");
-    await _runChecked(
-      "/usr/bin/xcrun",
-      ["stapler", "staple", app.path],
-      runProcess,
-    );
-    await _runChecked(
-      "/usr/bin/xcrun",
-      ["stapler", "validate", app.path],
-      runProcess,
-    );
-  }
-
-  if (config.gatekeeperAssess) {
-    output.writeln("Assessing macOS app with Gatekeeper...");
-    await _runChecked(
-      "/usr/sbin/spctl",
-      ["--assess", "--type", "execute", "--verbose=2", app.path],
-      runProcess,
-    );
-  }
-}
-
-Future<void> _signMacOSAppForNotarization({
-  required Directory app,
-  required String developerIdApplication,
-  required ProcessRunner runProcess,
-}) async {
-  final nestedCode = await _nestedMacOSCodeToSign(app);
-  for (final entity in nestedCode) {
-    await _runChecked(
-      "/usr/bin/codesign",
-      _codesignArguments(developerIdApplication, entity.path),
-      runProcess,
-    );
-  }
-  await _runChecked(
-    "/usr/bin/codesign",
-    _codesignArguments(developerIdApplication, app.path),
-    runProcess,
+  output.writeln("Stapling macOS notarization ticket...");
+  await effectiveTrust.stapleAndAssess(
+    artifact: app,
+    gatekeeperExecute: config.gatekeeperAssess,
+    gatekeeperInstall: false,
   );
-}
-
-Future<List<FileSystemEntity>> _nestedMacOSCodeToSign(Directory app) async {
-  final frameworks = Directory(path.join(app.path, "Contents", "Frameworks"));
-  if (!await frameworks.exists()) {
-    return const [];
-  }
-
-  final entities = <FileSystemEntity>[];
-  await for (final entity in frameworks.list(
-    recursive: true,
-    followLinks: false,
-  )) {
-    if (_shouldSignNestedMacOSCode(entity)) {
-      entities.add(entity);
-    }
-  }
-  entities.sort((a, b) {
-    final depthComparison =
-        path.split(b.path).length.compareTo(path.split(a.path).length);
-    if (depthComparison != 0) {
-      return depthComparison;
-    }
-    return a.path.compareTo(b.path);
-  });
-  return entities;
-}
-
-bool _shouldSignNestedMacOSCode(FileSystemEntity entity) {
-  final extension = path.extension(entity.path).toLowerCase();
-  if (entity is Directory) {
-    return const {".app", ".appex", ".framework", ".xpc"}.contains(extension);
-  }
-  if (entity is File) {
-    return const {".dylib", ".so"}.contains(extension);
-  }
-  return false;
-}
-
-List<String> _codesignArguments(String identity, String target) {
-  return [
-    "--force",
-    "--options",
-    "runtime",
-    "--timestamp",
-    "--sign",
-    identity,
-    target,
-  ];
-}
-
-void _verifyNotarySubmissionAccepted(String response) {
-  late final Object? decoded;
-  try {
-    decoded = jsonDecode(response);
-  } on FormatException catch (error) {
-    throw StateError(
-      "Unable to parse macOS notarization response: ${error.message}",
-    );
-  }
-  if (decoded is! Map<String, Object?>) {
-    throw StateError("Unable to parse macOS notarization response.");
-  }
-
-  final status = decoded["status"]?.toString();
-  if (status == "Accepted") {
-    return;
-  }
-  final id = decoded["id"]?.toString();
-  final suffix = id == null || id.isEmpty ? "" : " for submission $id";
-  throw StateError("macOS notarization failed: $status$suffix.");
 }
 
 FileSystemEntity? _resolveManualArtifactRoot(
@@ -1375,47 +1259,32 @@ Future<ProcessResult> defaultReleaseHookCommandRunner(
   if (Platform.isWindows) {
     return _runWindowsReleaseHook(command, environment);
   }
-  return Process.run(
-    "/bin/sh",
-    ["-c", command],
-    environment: environment,
-  );
+  return Process.run("/bin/sh", ["-c", command], environment: environment);
 }
 
 Future<ProcessResult> _runWindowsReleaseHook(
   String command,
   Map<String, String> environment,
 ) async {
-  final tempDir =
-      await Directory.systemTemp.createTemp("desktop_updater_hook_");
+  final tempDir = await Directory.systemTemp.createTemp(
+    "desktop_updater_hook_",
+  );
   try {
     final script = File(path.join(tempDir.path, "hook.cmd"));
     await script.writeAsString("@echo off\r\n$command\r\n");
     return await Process.run(
-      "cmd",
-      ["/d", "/e:on", "/v:off", "/c", script.path],
-      environment: environment,
-    );
+        "cmd",
+        [
+          "/d",
+          "/e:on",
+          "/v:off",
+          "/c",
+          script.path,
+        ],
+        environment: environment);
   } finally {
     await tempDir.delete(recursive: true);
   }
-}
-
-Future<ProcessResult> _runChecked(
-  String executable,
-  List<String> arguments,
-  ProcessRunner runProcess,
-) async {
-  final result = await runProcess(executable, arguments);
-  if (result.exitCode != 0) {
-    throw ProcessException(
-      executable,
-      arguments,
-      "Command failed with exit ${result.exitCode}: ${result.stderr}${result.stdout}",
-      result.exitCode,
-    );
-  }
-  return result;
 }
 
 UploadProvider _providerFor(UploadConfig config) {
@@ -1523,8 +1392,9 @@ Future<void> _uploadAndValidate({
 
   output.writeln("Validating hosted update selection...");
   await validator.validate(
-    manifestFile:
-        File(path.join(localRoot.path, ".desktop_updater_publish.json")),
+    manifestFile: File(
+      path.join(localRoot.path, ".desktop_updater_publish.json"),
+    ),
     fromVersion: null,
     output: output,
   );

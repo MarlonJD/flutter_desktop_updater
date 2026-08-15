@@ -95,12 +95,21 @@ Recent 3.0 hardening includes:
   files do not survive an update;
 - opt-in notarized macOS `release publish` flow that signs nested Flutter
   frameworks before the outer app bundle and verifies the notarized result
-  before packaging.
+  before packaging; final ZIP/DMG/PKG audits recheck the exact distributable
+  before release metadata signing;
 - feed-bound release-key profiles with automatic Ed25519 key IDs, protected
   local private-key storage, authenticated encrypted export/import, existing
   3.0 key adoption, and two-phase rotation. macOS/Linux use restrictive local
   file permissions; Windows uses DPAPI `CurrentUser` without a plaintext
   fallback. Key profiles are not runtime trust authorities.
+
+Release publishing treats the macOS environment as a narrow configuration
+input: only the canonical `DESKTOP_UPDATER_MACOS_*` reference variables are
+accepted, YAML presence/type errors fail closed, and credentials are not
+written to generated YAML or smoke logs. Windows DPAPI subprocesses use stdin,
+concurrent bounded stream handling, timeout/kill/await, and redacted generic
+errors. Hosted artifact validation retries only bounded transport failures;
+metadata and trust failures remain fail-fast.
 
 ## Release Operation Guidance
 
