@@ -327,6 +327,7 @@ Future<void> main(List<String> args) async {
         await _writeWindowsHelperEventDiagnostics(
           diagnosticsLogPath: diagnosticsLogPath,
           eventStart: helperEventStart,
+          expectRelaunch: relaunch,
         );
       }
 
@@ -1194,6 +1195,7 @@ Future<void> _expectLinuxTransactionEvents({
 Future<void> _writeWindowsHelperEventDiagnostics({
   required String diagnosticsLogPath,
   required DateTime eventStart,
+  required bool expectRelaunch,
 }) async {
   final start = _powershellSingleQuoted(eventStart.toIso8601String());
   final command = """
@@ -1210,61 +1212,79 @@ Future<void> _writeWindowsHelperEventDiagnostics({
   })
 \$events | ConvertTo-Json -Compress -Depth 3
 """;
-  final result = await Process.run(
-    "powershell.exe",
-    <String>[
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      command,
-    ],
-    runInShell: false,
-  );
-  if (result.exitCode != 0) {
-    throw ProcessException(
+  final expectedEventIds = <int>{1000, 1004, 1007, 1014};
+  if (expectRelaunch) {
+    expectedEventIds.add(1016);
+  }
+  Object? lastFailure;
+  for (var attempt = 0; attempt < 180; attempt++) {
+    final result = await Process.run(
       "powershell.exe",
-      const <String>["Get-WinEvent"],
-      "${result.stdout}${result.stderr}",
-      result.exitCode,
+      <String>[
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        command,
+      ],
+      runInShell: false,
     );
-  }
-
-  final output = result.stdout.toString().trim();
-  if (output.isEmpty) {
-    throw StateError(
-      "Windows helper Event Log diagnostics were empty for the smoke run.",
-    );
-  }
-  final decoded = jsonDecode(output);
-  final records = decoded is List ? decoded : <Object?>[decoded];
-  final lines = <String>[];
-  for (final record in records) {
-    if (record is! Map) {
-      continue;
+    if (result.exitCode != 0) {
+      lastFailure = ProcessException(
+        "powershell.exe",
+        const <String>["Get-WinEvent"],
+        "${result.stdout}${result.stderr}",
+        result.exitCode,
+      );
+    } else {
+      try {
+        final output = result.stdout.toString().trim();
+        if (output.isEmpty) {
+          throw StateError("Windows helper Event Log output was empty.");
+        }
+        final decoded = jsonDecode(output);
+        final records = decoded is List ? decoded : <Object?>[decoded];
+        final lines = <String>[];
+        final observedEventIds = <int>{};
+        for (final record in records) {
+          if (record is! Map) {
+            continue;
+          }
+          final id = int.tryParse(record["id"].toString());
+          final event = id == null ? null : _windowsHelperEventNames[id];
+          if (event == null || id == null) {
+            continue;
+          }
+          observedEventIds.add(id);
+          lines.add(
+            jsonEncode(<String, Object?>{
+              "event": event,
+              "id": id,
+              "timestampUtc": record["timestampUtc"],
+            }),
+          );
+        }
+        final missingEventIds = expectedEventIds.difference(observedEventIds);
+        if (lines.isNotEmpty && missingEventIds.isEmpty) {
+          await File(diagnosticsLogPath).writeAsString(
+            "${lines.join("\n")}\n",
+            mode: FileMode.append,
+            flush: true,
+          );
+          return;
+        }
+        lastFailure = StateError(
+          "Windows helper Event Log is missing event IDs: "
+          "${missingEventIds.toList()..sort()}",
+        );
+      } on Object catch (error) {
+        lastFailure = error;
+      }
     }
-    final id = int.tryParse(record["id"].toString());
-    final event = id == null ? null : _windowsHelperEventNames[id];
-    if (event == null) {
-      continue;
-    }
-    lines.add(
-      jsonEncode(<String, Object?>{
-        "event": event,
-        "id": id,
-        "timestampUtc": record["timestampUtc"],
-      }),
-    );
+    await Future<void>.delayed(const Duration(milliseconds: 250));
   }
-  if (lines.isEmpty) {
-    throw StateError(
-      "Windows helper Event Log diagnostics contained no known helper events.",
-    );
-  }
-  await File(diagnosticsLogPath).writeAsString(
-    "${lines.join("\n")}\n",
-    mode: FileMode.append,
-    flush: true,
+  throw StateError(
+    "Timed out waiting for Windows helper Event Log diagnostics: $lastFailure",
   );
 }
 

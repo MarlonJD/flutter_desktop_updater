@@ -989,6 +989,17 @@ void main() {
         '      const Duration(minutes: 2),',
       ),
     );
+    expect(tool, contains("required bool expectRelaunch"));
+    expect(
+      tool,
+      contains("expectedEventIds = <int>{1000, 1004, 1007, 1014}"),
+    );
+    expect(tool, contains("expectedEventIds.add(1016)"));
+    expect(tool, contains("attempt < 180"));
+    expect(
+      tool,
+      contains("Future<void>.delayed(const Duration(milliseconds: 250)"),
+    );
     expect(tool, isNot(contains("DESKTOP_UPDATER_SMOKE_STAGING")));
     expect(tool, isNot(contains("DESKTOP_UPDATER_SMOKE_INSTALL_ROOT")));
     expect(app, contains("_desktopUpdaterController.checkVersion()"));
