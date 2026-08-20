@@ -1192,53 +1192,39 @@ void main() {
     );
   });
 
-  test("Windows direct smoke verifies disposable trust after certutil", () {
+  test("Windows direct smoke verifies disposable trust in CurrentUser stores",
+      () {
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
 
+    expect(runner, contains("function Add-DisposableTrustCertificate"));
     expect(runner, contains("function Assert-DisposableTrustCertificate"));
     expect(runner, contains(r'Cert:\CurrentUser\" + $StoreName'));
     expect(runner, contains(r"Get-DesktopUpdaterSha256 $_.RawData"));
-    expect(runner, contains(r"$certutilExit = $certutilProcess.ExitCode"));
-    expect(
-      runner,
-      contains("certutil failed to add disposable CurrentUser trust"),
-    );
+    expect(runner, contains(r"$store.Add($Certificate)"));
+    expect(runner, contains("StoreLocation]::CurrentUser"));
     expect(
       runner,
       contains("disposable CurrentUser trust store postcondition"),
     );
   });
 
-  test("Windows direct smoke keeps disposable trust gate interactive", () {
+  test("Windows direct smoke keeps disposable trust gate noninteractive", () {
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
 
     expect(runner, contains(r"$profileProbeArguments = @("));
-    expect(
-      runner,
-      contains(r'''$profileProbeArguments += "-NonInteractive"'''),
-    );
-    expect(
-      runner,
-      contains(
-          r"$profileProbeWindowStyle = if ($ProvisionDisposableUserTrust)"),
-    );
-    expect(runner, contains("[Diagnostics.ProcessWindowStyle]::Normal"));
+    expect(runner, contains(r'''"-NonInteractive"'''));
+    expect(runner, contains("[Diagnostics.ProcessWindowStyle]::Hidden"));
+    expect(runner, isNot(contains("[Diagnostics.ProcessWindowStyle]::Normal")));
     expect(runner, contains(r"$ProvisionDisposableUserTrust"));
   });
 
-  test("Windows direct smoke gives certutil its own visible manual process",
-      () {
+  test("Windows direct smoke mutates disposable trust in process", () {
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
 
-    expect(
-      runner,
-      contains(
-          r'''$certutilProcess = Start-Process -FilePath "certutil.exe"'''),
-    );
-    expect(runner, contains("-RedirectStandardOutput"));
-    expect(runner, contains("-RedirectStandardError"));
-    expect(runner, contains("-Wait -PassThru"));
-    expect(runner, isNot(contains("@(& certutil.exe")));
+    expect(runner, contains("X509Store]::new"));
+    expect(runner, contains("$store.Open"));
+    expect(runner, contains("$store.Close"));
+    expect(runner, isNot(contains('Start-Process -FilePath "certutil.exe"')));
   });
 
   test("Windows final elevated lanes dispatch through PowerShell 7", () {

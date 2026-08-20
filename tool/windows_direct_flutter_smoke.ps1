@@ -1224,6 +1224,22 @@ try {
     '    throw "disposable CurrentUser trust store unexpectedly contains a private key."'
     '  }'
     '}'
+    'function Add-DisposableTrustCertificate {'
+    '  param('
+    '    [Parameter(Mandatory = $true)] [string] $StoreName,'
+    '    [Parameter(Mandatory = $true)] [Security.Cryptography.X509Certificates.X509Certificate2] $Certificate'
+    '  )'
+    '  $store = [Security.Cryptography.X509Certificates.X509Store]::new('
+    '    $StoreName,'
+    '    [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser'
+    '  )'
+    '  try {'
+    '    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)'
+    '    $store.Add($Certificate)'
+    '  } finally {'
+    '    $store.Close()'
+    '  }'
+    '}'
     '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
     'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
     '  throw "LocalApplicationData is unavailable."'
@@ -1255,37 +1271,7 @@ try {
     '      $storeNames = @("Root", "TrustedPublisher")'
     '    }'
     '    foreach ($storeName in $storeNames) {'
-    '      $certutilStdoutPath = Join-Path $localAppData ("desktop-updater-certutil-{0}.out" -f [Guid]::NewGuid().ToString("N"))'
-    '      $certutilStderrPath = Join-Path $localAppData ("desktop-updater-certutil-{0}.err" -f [Guid]::NewGuid().ToString("N"))'
-    '      $certutilProcess = Start-Process -FilePath "certutil.exe" -ArgumentList @('
-    '        "-user",'
-    '        "-f",'
-    '        "-addstore",'
-    '        $storeName,'
-    '        $certificatePath'
-    '      ) -WindowStyle Hidden -RedirectStandardOutput $certutilStdoutPath -RedirectStandardError $certutilStderrPath -PassThru'
-    '      $certutilCompleted = $certutilProcess.WaitForExit(30000)'
-    '      if (-not $certutilCompleted) {'
-    '        $certutilPid = [int]$certutilProcess.Id'
-    '        & taskkill.exe /F /T /PID $certutilPid 2>$null | Out-Null'
-    '        throw "certutil timed out adding disposable trust to $storeName; exact PID $certutilPid was stopped."'
-    '      }'
-    '      $certutilExit = $certutilProcess.ExitCode'
-    '      $certutilOutput = @('
-    '        Get-Content -LiteralPath $certutilStdoutPath -ErrorAction SilentlyContinue'
-    '        Get-Content -LiteralPath $certutilStderrPath -ErrorAction SilentlyContinue'
-    '      )'
-    '      try {'
-    '        Assert-DisposableTrustCertificate -StoreName $storeName -ExpectedSha256 $expectedCertificateSha256 -ExpectedPublisher $expectedPublisher'
-    '      } catch {'
-    '        if ($certutilExit -ne 0) {'
-    '          throw "certutil failed to add disposable CurrentUser trust to $storeName (exit $certutilExit) and the store postcondition was not met`: $certutilOutput"'
-    '        }'
-    '        throw'
-    '      }'
-    '      if ($certutilExit -ne 0) {'
-    '        Write-Warning "certutil returned exit $certutilExit after the exact disposable CurrentUser trust postcondition passed for $storeName`: $certutilOutput"'
-    '      }'
+    '      Add-DisposableTrustCertificate -StoreName $storeName -Certificate $certificate'
     '      Assert-DisposableTrustCertificate -StoreName $storeName -ExpectedSha256 $expectedCertificateSha256 -ExpectedPublisher $expectedPublisher'
     '    }'
     '    $helperSignature = Get-AuthenticodeSignature -LiteralPath $signedHelper'
@@ -1479,11 +1465,9 @@ try {
     $env:TMP = $userTemp
     $profileProbeArguments = @(
       "-NoLogo",
-      "-NoProfile"
+      "-NoProfile",
+      "-NonInteractive"
     )
-    if (-not $ProvisionDisposableUserTrust) {
-      $profileProbeArguments += "-NonInteractive"
-    }
     $profileProbeArguments += @(
       "-ExecutionPolicy",
       "Bypass",
@@ -1517,11 +1501,7 @@ try {
           "-File", $standardUserFilesystemProbePath
         )
     }
-    $profileProbeWindowStyle = if ($ProvisionDisposableUserTrust) {
-      [Diagnostics.ProcessWindowStyle]::Normal
-    } else {
-      [Diagnostics.ProcessWindowStyle]::Hidden
-    }
+    $profileProbeWindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
     if ($startProcessSupportsEnvironment) {
       $profileProbeProcess = Start-Process -FilePath $profileProbeShell `
         -ArgumentList $profileProbeArguments `
