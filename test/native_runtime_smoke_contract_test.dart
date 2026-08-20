@@ -1159,6 +1159,7 @@ void main() {
     expect(runner, contains("ExpectedSignerCertificateSha256"));
     expect(runner, contains("ExpectedSignerPublisher"));
     expect(runner, contains("Get-AuthenticodeSignature"));
+    expect(runner, contains("Import-Module Microsoft.PowerShell.Security"));
     expect(runner, contains("X509Certificate2"));
     expect(runner, contains("StoreLocation]::CurrentUser"));
     expect(runner, contains("OpenFlags]::ReadWrite"));

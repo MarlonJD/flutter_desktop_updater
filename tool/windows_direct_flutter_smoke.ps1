@@ -1125,6 +1125,7 @@ try {
     USERDOMAIN = $env:COMPUTERNAME
     USERNAME = $smokeUserName
     USERPROFILE = $smokeUserProfile
+    PSModulePath = $env:PSModulePath
     WINDIR = $env:WINDIR
   }
   $startProcessSupportsEnvironment = @(
@@ -1192,6 +1193,7 @@ try {
   $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
   $profileProbeScript = @(
     '$ErrorActionPreference = "Stop"'
+    'Import-Module Microsoft.PowerShell.Security -ErrorAction Stop'
     'function Get-DesktopUpdaterSha256([byte[]] $RawData) {'
     '  $algorithm = [Security.Cryptography.SHA256]::Create()'
     '  try {'
