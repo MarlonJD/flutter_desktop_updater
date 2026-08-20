@@ -1160,8 +1160,8 @@ void main() {
     expect(runner, contains("ExpectedSignerPublisher"));
     expect(runner, contains("Get-AuthenticodeSignature"));
     expect(runner, contains("X509Certificate2"));
-    expect(runner, contains(r'"-user",'));
-    expect(runner, contains(r'"-addstore",'));
+    expect(runner, contains("StoreLocation]::CurrentUser"));
+    expect(runner, contains("OpenFlags]::ReadWrite"));
     expect(runner, contains(r'@("Root", "TrustedPublisher")'));
     expect(
       runner,
@@ -1198,7 +1198,8 @@ void main() {
 
     expect(runner, contains("function Add-DisposableTrustCertificate"));
     expect(runner, contains("function Assert-DisposableTrustCertificate"));
-    expect(runner, contains(r'Cert:\CurrentUser\" + $StoreName'));
+    expect(runner, contains("OpenFlags]::ReadOnly"));
+    expect(runner, contains(r"$store.Certificates"));
     expect(runner, contains(r"Get-DesktopUpdaterSha256 $_.RawData"));
     expect(runner, contains(r"$store.Add($Certificate)"));
     expect(runner, contains("StoreLocation]::CurrentUser"));
