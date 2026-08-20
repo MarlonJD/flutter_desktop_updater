@@ -1,0 +1,146 @@
+name: Windows Production Signing Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing_provider:
+        description: "Production signing backend"
+        required: true
+        type: choice
+        options:
+          - artifact-signing
+          - public-ca-pfx
+        default: artifact-signing
+      ref:
+        description: "Git ref to build"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  windows-production-signing:
+    name: Build, sign, and verify Windows Release
+    runs-on: windows-2025
+    environment: windows-production-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build example Release candidate
+        working-directory: example
+        run: flutter build windows --release
+
+      - name: Azure login for Artifact Signing
+        if: ${{ inputs.signing_provider == 'artifact-signing' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign with Microsoft Artifact Signing
+        if: ${{ inputs.signing_provider == 'artifact-signing' }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\example\build\windows\x64\runner\Release
+          files-folder-filter: exe,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Sign with public CA fallback
+        if: ${{ inputs.signing_provider == 'public-ca-pfx' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_TIMESTAMP_URL)) {
+            throw "Public CA signing requires protected PFX, password, and timestamp configuration."
+          }
+          $signingRoot = Join-Path $env:RUNNER_TEMP "windows-production-signing"
+          $pfx = Join-Path $signingRoot "public-ca.pfx"
+          New-Item -ItemType Directory -Path $signingRoot -Force | Out-Null
+          [IO.File]::WriteAllBytes(
+            $pfx,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_BASE64)
+          )
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) {
+            throw "x64 signtool.exe was not found."
+          }
+          try {
+            $targets = @(
+              Get-ChildItem -LiteralPath "example\build\windows\x64\runner\Release" -Recurse -File |
+                Where-Object { $_.Extension -in @(".exe", ".dll") }
+            )
+            if ($targets.Count -eq 0) {
+              throw "No Release PE files were found to sign."
+            }
+            foreach ($target in $targets) {
+              & $signtool.FullName sign /fd SHA256 /tr $env:WINDOWS_TIMESTAMP_URL /td SHA256 `
+                /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD $target.FullName
+              if ($LASTEXITCODE -ne 0) {
+                throw "signtool failed for $($target.FullName) with exit code $LASTEXITCODE."
+              }
+            }
+          } finally {
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Verify final Authenticode signatures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) {
+            throw "x64 signtool.exe was not found."
+          }
+          $targets = @(
+            Get-ChildItem -LiteralPath "example\build\windows\x64\runner\Release" -Recurse -File |
+              Where-Object { $_.Extension -in @(".exe", ".dll") }
+          )
+          if ($targets.Count -eq 0) {
+            throw "No Release PE files were found to verify."
+          }
+          foreach ($target in $targets) {
+            & $signtool.FullName verify /pa /all $target.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed for $($target.FullName)."
+            }
+          }
+
+      - name: Upload signed Release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-production-signed-release-${{ github.run_id }}
+          path: example/build/windows/x64/runner/Release
+          if-no-files-found: error

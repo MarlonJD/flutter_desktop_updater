@@ -169,6 +169,26 @@ void main() {
     );
   });
 
+  test("Windows production signing candidate keeps primary and fallback paths",
+      () {
+    final workflow = _readCanonicalText(
+      ".github/workflows/windows-production-signing.yml",
+    );
+
+    expect(workflow, contains("azure/artifact-signing-action@v2"));
+    expect(workflow, contains("azure/login@v3"));
+    expect(workflow, contains("public-ca-pfx"));
+    expect(workflow, contains("WINDOWS_CERTIFICATE_PFX_BASE64"));
+    expect(workflow, contains("timestamp-rfc3161"));
+    expect(workflow, contains("signtool.FullName verify /pa /all"));
+    expect(workflow, contains("id-token: write"));
+    expect(workflow, isNot(contains("desktop-updater-hosted-smoke-only")));
+    expect(
+      workflow,
+      isNot(contains("WINDOWS_CERTIFICATE_PASSWORD: \"")),
+    );
+  });
+
   test(
       "Windows update smoke preserves failure evidence outside its cleanup root",
       () {

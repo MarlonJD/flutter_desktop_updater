@@ -234,6 +234,27 @@ WINDOWS_CERTIFICATE_PASSWORD
 WINDOWS_TIMESTAMP_URL
 ```
 
+The repository's preferred production provider is Microsoft Artifact Signing
+with GitHub OIDC. Configure the protected `windows-production-signing`
+environment with these non-secret variables and secrets:
+
+```text
+ARTIFACT_SIGNING_ENDPOINT
+ARTIFACT_SIGNING_ACCOUNT
+ARTIFACT_SIGNING_PROFILE
+AZURE_CLIENT_ID
+AZURE_TENANT_ID
+AZURE_SUBSCRIPTION_ID
+```
+
+The Azure identity needs only the Artifact Signing Certificate Profile Signer
+role. The `AZURE_CLIENT_ID`, tenant, and subscription identify the federated
+identity; the signing private key remains in the managed signing service. The
+`public-ca-pfx` workflow input is the fallback path and reads the protected PFX
+only into the ephemeral runner filesystem before deleting it. The manual
+candidate workflow is
+`.github/workflows/windows-production-signing.yml`.
+
 For Linux direct zip distribution, restore the encrypted release-key bundle and
 use the profile-backed `release publish`, `release sign`, or `verify` commands
 before treating the lane as production-trusted. Do not add raw release-key

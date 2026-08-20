@@ -168,6 +168,23 @@ Microsoft Artifact Signing is a managed signing service. It is useful when you
 want certificate lifecycle and private key custody managed through Azure instead
 of a local PFX or USB token.
 
+For this repository's non-Store Windows release path, the provider order is:
+
+1. **Primary:** Microsoft Artifact Signing Public Trust when the publisher is
+   eligible and the Azure account/profile has completed identity validation.
+2. **Fallback:** a public CA OV Code Signing certificate used through the CA's
+   HSM/cloud signing integration or a protected CI secret.
+3. **Test-only:** the existing ephemeral self-signed certificate used by hosted
+   smoke tests. It must never be used for public release artifacts.
+
+The manual candidate workflow at
+`.github/workflows/windows-production-signing.yml` implements the first two
+paths. It is `workflow_dispatch`-only, signs the final example Release bundle,
+verifies every discovered `.exe`/`.dll` with SignTool, and uploads a signed
+candidate without publishing it. Configure the protected
+`windows-production-signing` environment before running it. No private key,
+PFX, password, or Azure credential belongs in the repository.
+
 Good fit when:
 
 - Your team already uses Azure.
