@@ -90,6 +90,7 @@ void main() {
     expect(runner, contains("Add-DisposableTrustCertificate"));
     expect(runner, contains("OpenFlags]::ReadWrite"));
     expect(runner, isNot(contains("certutil.exe")));
+    expect(runner, contains('"--relaunch"'));
     expect(runner, contains("windows_process_tree_cleanup.ps1"));
     expect(runner, contains("Stop-ExactProcessTree -RootProcessId"));
     expect(runner, isNot(contains(r"-WorkingDirectory $install")));

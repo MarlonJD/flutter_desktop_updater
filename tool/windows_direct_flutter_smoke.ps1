@@ -1502,7 +1502,8 @@ try {
         -TargetPath $smokeRunner `
         -TargetArguments @(
           "--app", $installedApp,
-          "--diagnostics-log", $capturedDiagnostics
+          "--diagnostics-log", $capturedDiagnostics,
+          "--relaunch"
         )
       New-WindowsSmokeEnvironmentLauncher `
         -LauncherPath $standardUserFilesystemLauncherPath `
@@ -1572,7 +1573,8 @@ try {
     if ($startProcessSupportsEnvironment) {
       $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
         "--app", $installedApp,
-        "--diagnostics-log", $capturedDiagnostics
+        "--diagnostics-log", $capturedDiagnostics,
+        "--relaunch"
       ) -Credential $smokeCredential -LoadUserProfile `
         -Environment $smokeEnvironment -WorkingDirectory $runnerWorkingDirectory `
         -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr `
