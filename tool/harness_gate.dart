@@ -331,7 +331,7 @@ List<String> _structuralFailures() {
       );
     }
     final actualCoverageDigest =
-        sha256.convert(File(_coveragePath).readAsBytesSync()).toString();
+        sha256.convert(_canonicalRepositoryTextBytes(_coveragePath)).toString();
     if (manifest["coverage_sha256"] != actualCoverageDigest) {
       failures.add(
         "$_certificationPath coverage_sha256 does not match $_coveragePath. "
@@ -393,6 +393,11 @@ List<String> _structuralFailures() {
   }
 
   return failures;
+}
+
+List<int> _canonicalRepositoryTextBytes(String path) {
+  final text = utf8.decode(File(path).readAsBytesSync());
+  return utf8.encode(text.replaceAll("\r\n", "\n"));
 }
 
 Future<List<String>> _certificationFailures({

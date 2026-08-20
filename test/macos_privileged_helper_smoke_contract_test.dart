@@ -13,7 +13,10 @@ void main() {
     if (!debugPolicyFile.existsSync()) {
       return;
     }
-    final policySource = debugPolicyFile.readAsStringSync();
+    final policySource = debugPolicyFile.readAsStringSync().replaceAll(
+          "\r\n",
+          "\n",
+        );
     final policy = jsonDecode(policySource) as Map<String, dynamic>;
     final applicationSigner =
         policy["allowedApplicationSigner"] as Map<String, dynamic>;
@@ -56,7 +59,7 @@ void main() {
     ).readAsStringSync();
     final policy = File(
       "example/macos/Runner/DesktopUpdaterHelperPolicy.json",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final project = File(
       "example/macos/Runner.xcodeproj/project.pbxproj",
     ).readAsStringSync();

@@ -50,6 +50,9 @@ void main() {
   test("runtime smoke harness is local, bounded, signed, and disposable", () {
     final server = readFile("tool/native_runtime_smoke_server.dart");
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final innoTool = readFile(
+      "tool/windows_native_runtime_inno_transport_smoke.ps1",
+    );
     final linuxSample = readDirectory("example/native/linux-cmake-runtime");
 
     expect(server, contains("Ed25519"));
@@ -64,15 +67,20 @@ void main() {
       contains('addOption("installed-executable-relative-path")'),
     );
     expect(server, contains('"requiresElevation": "always"'));
+    expect(innoTool, contains(r"[string] $SigningCertificateSha1"));
+    expect(innoTool, contains(r"[string] $SigningCertificateSha256"));
+    expect(innoTool,
+        contains(r"sign /fd SHA256 /sha1 $SigningCertificateSha1 $Path"));
+    expect(innoTool, contains("Get-AuthenticodeSignature"));
     expect(
-      workflow,
-      contains(r'"--installed-executable", $installedExecutable'),
+      [workflow, innoTool].join("\n"),
+      contains(r"'--installed-executable', $installedExecutable"),
     );
     expect(
-      workflow,
+      [workflow, innoTool].join("\n"),
       contains(
-        '"--installed-executable-relative-path", '
-        '"DesktopUpdater.RuntimeCompile.exe"',
+        "'--installed-executable-relative-path', "
+        "'DesktopUpdater.RuntimeCompile.exe'",
       ),
     );
 
@@ -113,6 +121,7 @@ void main() {
     final lane = workflow.substring(start, end);
     final protectedContract = [
       lane,
+      readFile("tool/windows_inno_smoke_launcher.ps1"),
       readFile("tool/windows_inno_smoke.ps1"),
       readFile("tool/windows_inno_smoke_signing_hook.ps1"),
       readFile("lib/src/release_cli/inno/inno_script_builder.dart"),
@@ -122,8 +131,9 @@ void main() {
       workflow.substring(jobStart, jobEnd),
       contains("[self-hosted, Windows, X64, desktop-updater-uac]"),
     );
-    expect(lane, contains("tool/windows_inno_smoke.ps1"));
-    expect(lane, contains("-Verb RunAs"));
+    expect(lane, contains("tool/windows_inno_smoke_launcher.ps1"));
+    expect(protectedContract, contains("-Verb RunAs"));
+    expect(protectedContract, contains("-Architecture x64"));
     expect(lane, isNot(contains("PrivilegesRequired=lowest")));
     expect(protectedContract, contains("privilegesRequired: admin"));
     expect(protectedContract, contains("desktop_updater_install_helper.exe"));
@@ -152,7 +162,7 @@ void main() {
     expect(uploadEnd, greaterThan(uploadStart));
     expect(
       workflow.substring(uploadStart, uploadEnd),
-      contains("reports/windows-arm64-production-readiness/inno-e2e-*"),
+      contains("reports/windows-x64-production-readiness/inno-e2e-*"),
     );
   });
 
@@ -272,21 +282,26 @@ void main() {
 
   test("ZIP smokes preserve caller-owned staging roots", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final zipTool = readFile("tool/windows_native_runtime_zip_smoke.ps1");
+    final innoTool = readFile(
+      "tool/windows_native_runtime_inno_transport_smoke.ps1",
+    );
+    final windowsZip = [workflow, zipTool].join("\n");
 
-    expect(workflow, contains(r"$cleanupComplete = $false"));
-    expect(workflow, contains(r"$stagingRoot = Join-Path $smokeRoot"));
-    expect(workflow, contains(r"$stagingClean = (Test-Path -LiteralPath"));
+    expect(windowsZip, contains(r"$cleanupComplete = $false"));
+    expect(windowsZip, contains(r"$stagingRoot = Join-Path $runtimeRoot"));
+    expect(windowsZip, contains(r"$stagingClean = (Test-Path -LiteralPath"));
     expect(
-      workflow,
+      windowsZip,
       contains(r"Get-ChildItem -LiteralPath $stagingRoot -Force"),
     );
     expect(
-      workflow,
+      windowsZip,
       contains(
-        r"$versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete",
+        r"if ($versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete)",
       ),
     );
-    expect(workflow, isNot(contains(r"$stagingRemoved")));
+    expect(windowsZip, isNot(contains(r"$stagingRemoved")));
     expect(
       RegExp(
         RegExp.escape(r'test -d "$smoke_root/runtime/staging"'),
@@ -306,6 +321,23 @@ void main() {
       workflow,
       isNot(contains(r'test ! -e "$smoke_root/runtime/staging"')),
     );
+    expect(
+      innoTool,
+      contains(r"$safeRoot = Join-Path $env:LOCALAPPDATA"),
+    );
+    expect(innoTool, contains(r"$runtimeRoot = Join-Path $safeRoot 'runtime'"));
+    expect(innoTool, contains(r"--smoke-root $runtimeRoot"));
+    expect(innoTool, contains(r"$safeRootCreated = $false"));
+    expect(innoTool, contains("safe root cleanup"));
+    expect(innoTool, contains(".desktop_updater_install_identity.json"));
+    expect(innoTool, contains("allowedApplicationSigner"));
+    expect(innoTool, isNot(contains(r"Join-Path $SmokeRoot 'runtime'")));
+    for (final tool in [zipTool, innoTool]) {
+      expect(tool, contains("windows_process_tree_cleanup.ps1"));
+      expect(tool, contains("Stop-ExactProcessTree"));
+      expect(tool, isNot(contains(r"Stop-Process -Id $server.Id")));
+    }
+    expect(workflow, contains("Stop-ExactProcessTree \$server.Id"));
   });
 
   test("macOS runtime command surface has no unsigned mode", () {
@@ -589,6 +621,7 @@ void main() {
 
   test("Windows ZIP smoke seals matching identity and portable policy", () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final zipTool = readFile("tool/windows_native_runtime_zip_smoke.ps1");
     final setupStart = workflow.indexOf(
       "- name: Prepare hosted Windows ZIP smoke signing trust",
     );
@@ -621,13 +654,13 @@ void main() {
     expect(cleanupStart, greaterThan(end));
     expect(cleanupEnd, greaterThan(cleanupStart));
     final setupLane = workflow.substring(setupStart, setupEnd);
-    final lane = workflow.substring(start, end);
+    final lane = [workflow.substring(start, end), zipTool].join("\n");
     final cleanupLane = workflow.substring(cleanupStart, cleanupEnd);
     expect(
       RegExp(
         RegExp.escape(".desktop_updater_install_identity.json"),
       ).allMatches(lane),
-      hasLength(2),
+      hasLength(1),
     );
     expect(lane, contains(r'"packageId":"com.example.native-runtime-smoke"'));
     expect(
@@ -663,9 +696,36 @@ void main() {
     expect(setupLane, contains("certificate is ready"));
     expect(setupLane, contains(r'$storeName trust is ready'));
     expect(lane, contains("signtool.exe"));
+    expect(
+      zipTool,
+      contains(
+        r"DESKTOP_UPDATER_SMOKE_PROVISION_USER_TRUST = if ($provisionDisposableUserTrust)",
+      ),
+    );
+    expect(zipTool, contains(r"certutil.exe -user -f -addstore $storeName"));
+    expect(zipTool, contains(r"@('Root', 'TrustedPublisher')"));
+    expect(
+      zipTool,
+      contains(r"Get-AuthenticodeSignature -LiteralPath $signedHelper"),
+    );
+    expect(zipTool,
+        contains(r"$trustCertificateSource = $SigningCertificatePath"));
+    expect(zipTool, isNot(contains("defaultTrustCertificate")));
+    expect(
+      zipTool,
+      contains(
+        r"$profileProbeParameters.WindowStyle = [Diagnostics.ProcessWindowStyle]::Normal",
+      ),
+    );
+    expect(
+      zipTool,
+      contains(
+          "The Root import is an explicit manual Windows Security Warning gate."),
+    );
+    expect(zipTool, isNot(contains("certutil.exe -addstore")));
     expect(lane, contains("New-LocalUser"));
-    expect(lane, contains('Get-LocalGroup -SID "S-1-5-32-544"'));
-    expect(lane, contains('Get-LocalGroup -SID "S-1-5-32-545"'));
+    expect(lane, contains("Get-LocalGroup -SID 'S-1-5-32-544'"));
+    expect(lane, contains("Get-LocalGroup -SID 'S-1-5-32-545'"));
     expect(lane, contains(r"-Credential $smokeCredential"));
     expect(lane, contains("-LoadUserProfile"));
     expect(
@@ -683,12 +743,11 @@ void main() {
     expect(
       lane,
       contains(
-        r"[IO.File]::WriteAllText("
-        "\n"
-        r"                $profileProbePath,",
+        r"[IO.File]::WriteAllText($profileProbePath,",
       ),
     );
-    expect(lane, contains(r'"-File", $profileProbePath'));
+    expect(lane, contains("'-File'"));
+    expect(lane, contains(r"$profileProbePath"));
     expect(lane, isNot(contains("-EncodedCommand")));
     expect(lane, isNot(contains("ToBase64String")));
     expect(
@@ -696,6 +755,28 @@ void main() {
       contains(
         r"DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData",
       ),
+    );
+    expect(lane, contains(r"DESKTOP_UPDATER_SMOKE_USER_ROOT = $userSmokeRoot"));
+    expect(
+        lane, contains(r"DESKTOP_UPDATER_SMOKE_USER_INSTALL = $userInstall"));
+    expect(
+        lane, contains(r"DESKTOP_UPDATER_SMOKE_USER_PAYLOAD = $userPayload"));
+    expect(lane,
+        contains(r"DESKTOP_UPDATER_SMOKE_USER_RUNTIME = $userRuntimeRoot"));
+    expect(lane, contains(r"foreach ($path in @("));
+    expect(lane, contains(r"$install = $userInstall"));
+    expect(lane, contains(r"$payload = $userPayload"));
+    expect(lane, contains(r"$runtimeRoot = $userRuntimeRoot"));
+    expect(
+      lane,
+      contains(
+        r"Copy-Item -LiteralPath $_.FullName -Destination $destinationRoot -Recurse -Force",
+      ),
+    );
+    expect(lane, contains(r"'--smoke-root', $runtimeRoot"));
+    expect(
+      lane,
+      contains(r"$postSmokeStatePath = Join-Path $userSmokeRoot"),
     );
     expect(
       lane,
@@ -708,16 +789,18 @@ void main() {
         r"-Credential \$smokeCredential -LoadUserProfile "
         r"-Environment \$smokeEnvironment",
       ).allMatches(lane),
-      hasLength(3),
+      hasLength(2),
     );
+    expect(zipTool, contains(r"Credential = $smokeCredential"));
+    expect(zipTool, contains(r"LoadUserProfile = $true"));
     expect(lane, contains("Portable restage deliberately protects"));
     expect(
       lane,
       contains(
-        r'$smokeEnvironment["DESKTOP_UPDATER_SMOKE_INSTALL"] = $install',
+        r'$smokeEnvironment.DESKTOP_UPDATER_SMOKE_INSTALL = $install',
       ),
     );
-    expect(lane, contains('"post-smoke-verify.ps1"'));
+    expect(lane, contains("'post-smoke-verify.ps1'"));
     expect(
       lane,
       contains("Standard-user ZIP smoke did not observe version 2.7.1."),
@@ -727,7 +810,7 @@ void main() {
       lessThan(
         lane.indexOf(
           r'$runtimeProcess = Start-Process -FilePath '
-          r'(Join-Path $install "DesktopUpdater.RuntimeCompile.exe")',
+          r"(Join-Path $install 'DesktopUpdater.RuntimeCompile.exe')",
         ),
       ),
     );
@@ -740,12 +823,17 @@ void main() {
         ),
       ),
     );
-    expect(lane, contains(r'$signingRoot = Join-Path $env:RUNNER_TEMP'));
-    expect(lane, contains(r'Join-Path $signingRoot "hosted-smoke.pfx"'));
+    expect(lane, contains(r"$pfx = Join-Path $SigningRoot 'hosted-smoke.pfx'"));
     expect(
       lane,
       contains(r"sign /fd SHA256 /f $pfx /p $pfxPassword $binary"),
     );
+    expect(lane, contains(r"[string] $SigningCertificateSha1"));
+    expect(lane, contains(r"[string] $SigningCertificateSha256"));
+    expect(lane,
+        contains(r"sign /fd SHA256 /sha1 $SigningCertificateSha1 $binary"));
+    expect(lane, contains("Get-AuthenticodeSignature"));
+    expect(lane, contains("SignerCertificate"));
     expect(lane, isNot(contains("Set-AuthenticodeSignature")));
     expect(lane, contains(r"failed to trust ${binary}:"));
     expect(cleanupLane, contains("if: always()"));
@@ -787,6 +875,7 @@ void main() {
       "Windows ZIP smoke outlives helper retries and preserves Event Log evidence",
       () {
     final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final zipTool = readFile("tool/windows_native_runtime_zip_smoke.ps1");
     final start = workflow.indexOf("- name: Windows native runtime ZIP smoke");
     final end = workflow.indexOf(
       "- name: Windows native runtime unprivileged Inno transport smoke",
@@ -795,9 +884,9 @@ void main() {
 
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
-    final lane = workflow.substring(start, end);
+    final lane = [workflow.substring(start, end), zipTool].join("\n");
     expect(lane, contains("timeout-minutes: 12"));
-    expect(lane, contains(r'$ConfirmPreference = "None"'));
+    expect(lane, contains(r"$ConfirmPreference = 'None'"));
     expect(
       lane,
       contains(r"for ($attempt = 0; $attempt -lt 600; $attempt++)"),
@@ -805,7 +894,7 @@ void main() {
     expect(
         lane,
         contains(
-            r'$helperEventProvider = "DesktopUpdater.InstallHelper.ProtocolV1"'));
+            r"$helperEventProvider = 'DesktopUpdater.InstallHelper.ProtocolV1'"));
     expect(
         lane,
         contains(
@@ -816,18 +905,17 @@ void main() {
             r'$cleanupComplete = @($helperEvents | Where-Object { $_.Id -eq 1014 }).Count -gt 0'));
     expect(lane, isNot(contains(r'Get-Content -LiteralPath $diagnosticsPath')));
     final eventQuery = lane.indexOf(
-      r'Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart }',
+      r"Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $helperEventStart }",
     );
     final versionFailure = lane.indexOf(
-      "Windows ZIP runtime smoke did not install version 2.7.1.",
+      "Windows ZIP runtime smoke helper/version/staging evidence is incomplete.",
     );
-    final smokeCleanup = workflow.indexOf(
-      r"Remove-Item -LiteralPath $smokeRoot -Recurse -Force",
-      end,
+    final smokeCleanup = zipTool.indexOf(
+      r"Remove-Item -LiteralPath $SmokeRoot -Recurse -Force",
     );
     expect(eventQuery, greaterThanOrEqualTo(0));
     expect(versionFailure, greaterThan(eventQuery));
-    expect(smokeCleanup, greaterThan(end));
+    expect(smokeCleanup, greaterThanOrEqualTo(0));
   });
 
   test("direct Flutter smokes use the controller-owned signed update flow", () {
@@ -955,6 +1043,16 @@ void main() {
     );
   });
 
+  test("Windows direct Flutter preserves raw launch evidence before cleanup",
+      () {
+    final source = readFile("tool/windows_direct_flutter_smoke.ps1");
+
+    expect(source, contains("raw-"));
+    expect(source, contains(r"$profileProbeOut"));
+    expect(source, contains(r"$profileProbeErr"));
+    expect(source, contains(r"Copy-Item -LiteralPath $rawOutput"));
+  });
+
   test("Windows direct Flutter smoke reserves legacy path headroom", () {
     final source = readFile("tool/windows_direct_flutter_smoke.ps1");
 
@@ -991,7 +1089,7 @@ void main() {
   test("Windows standard-user smokes remove their exact user profile", () {
     final cleanup = readFile("tool/windows_smoke_profile_cleanup.ps1");
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
-    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
+    final zipTool = readFile("tool/windows_native_runtime_zip_smoke.ps1");
 
     expect(cleanup, contains("Get-CimInstance Win32_UserProfile"));
     expect(cleanup, contains("Remove-CimInstance -InputObject"));
@@ -1010,39 +1108,60 @@ void main() {
     expect(directProfile, greaterThanOrEqualTo(0));
     expect(directAccount, greaterThan(directProfile));
 
-    final zipStart = workflow.indexOf(
-      "- name: Windows native runtime ZIP smoke",
-    );
-    final zipEnd = workflow.indexOf(
-      "- name: Windows native runtime unprivileged Inno transport smoke",
-      zipStart,
-    );
-    final zipLane = workflow.substring(zipStart, zipEnd);
-    final zipProfile = zipLane.indexOf("Remove-WindowsSmokeUserProfile");
-    final zipAccount = zipLane.indexOf("Remove-LocalUser");
+    final zipProfile = zipTool.indexOf("Remove-WindowsSmokeUserProfile");
+    final zipAccount = zipTool.indexOf("Remove-LocalUser");
     expect(zipProfile, greaterThanOrEqualTo(0));
     expect(zipAccount, greaterThan(zipProfile));
+  });
+
+  test("Windows standard-user profile probe uses a system-owned shell", () {
+    final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
+    final zipTool = readFile("tool/windows_native_runtime_zip_smoke.ps1");
+
+    expect(
+        runner, contains(r"$profileProbeShell = Join-Path $env:SystemRoot `"));
+    expect(
+      runner,
+      contains(r"'System32\WindowsPowerShell\v1.0\powershell.exe'"),
+    );
+    expect(
+      runner,
+      contains("Windows PowerShell profile probe host is missing"),
+    );
+    expect(
+      runner,
+      isNot(contains(r"$profileProbeShell = (Get-Process -Id $PID).Path")),
+    );
+    expect(
+      zipTool,
+      contains(r"$profileProbeShell = Join-Path $env:SystemRoot `"),
+    );
+    expect(
+      zipTool,
+      contains(r"'System32\WindowsPowerShell\v1.0\powershell.exe'"),
+    );
+    expect(
+      zipTool,
+      contains("Windows ZIP smoke profile probe host is missing"),
+    );
+    expect(
+      zipTool,
+      isNot(contains(r"Start-Process -FilePath (Get-Process -Id $PID).Path")),
+    );
   });
 
   test("Windows direct smoke scopes temporary trust to its disposable user",
       () {
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
-    final localWrapper = readFile(
-      "reports/windows-arm64-production-readiness/"
-      "run-final-elevated-lanes.ps1",
-    );
+    final workflow = readFile(".github/workflows/desktop-updater-ci.yml");
 
     expect(runner, contains(r"[switch]$ProvisionDisposableUserTrust"));
     expect(runner, contains("ExpectedSignerCertificateSha256"));
     expect(runner, contains("ExpectedSignerPublisher"));
     expect(runner, contains("Get-AuthenticodeSignature"));
     expect(runner, contains("X509Certificate2"));
-    expect(
-      runner,
-      contains(
-        r"certutil.exe -user -f -addstore $storeName $certificatePath",
-      ),
-    );
+    expect(runner, contains(r'"-user",'));
+    expect(runner, contains(r'"-addstore",'));
     expect(runner, contains(r'@("Root", "TrustedPublisher")'));
     expect(
       runner,
@@ -1052,39 +1171,87 @@ void main() {
     expect(runner, isNot(contains("-addstore -enterprise")));
     expect(runner, isNot(contains("Cert:\\LocalMachine")));
     expect(
-      localWrapper,
-      contains("'-ProvisionDisposableUserTrust'"),
+      workflow,
+      contains("-ProvisionDisposableUserTrust"),
     );
     expect(
-      localWrapper,
-      contains(r"'-ExpectedSignerCertificateSha256', $certificateSha256"),
+      workflow,
+      contains(r"-ExpectedSignerCertificateSha256 $certificateSha256"),
     );
     expect(
-      localWrapper,
-      contains(
-        r"""'-ExpectedSignerPublisher', ('"' + $certificatePublisher + '"')""",
-      ),
+      workflow,
+      contains(r"-ExpectedSignerPublisher $certificatePublisher"),
+    );
+    expect(
+      workflow,
+      contains("DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256"),
+    );
+    expect(
+      workflow,
+      contains("DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER"),
     );
   });
 
-  test("Windows final elevated lanes dispatch through PowerShell 7", () {
-    final uacLauncher = readFile(
-      "reports/windows-arm64-production-readiness/start-fresh-signed-uac.ps1",
-    );
-    final pwshLauncher = readFile(
-      "reports/windows-arm64-production-readiness/start-final-elevated-pwsh.ps1",
-    );
-    final finalLanes = readFile(
-      "reports/windows-arm64-production-readiness/run-final-elevated-lanes.ps1",
-    );
+  test("Windows direct smoke verifies disposable trust after certutil", () {
+    final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
 
-    expect(uacLauncher, contains("start-final-elevated-pwsh.ps1"));
-    expect(uacLauncher, contains('ExpectedApp "Windows PowerShell"'));
-    expect(uacLauncher, contains('ExpectedPublisher "Microsoft Windows"'));
-    expect(pwshLauncher, contains("Get-Command pwsh.exe"));
-    expect(pwshLauncher, contains(r"-File', $wrapper"));
-    expect(finalLanes, contains("[Convert]::ToHexString"));
-    expect(finalLanes, contains("[Security.Cryptography.SHA256]::HashData"));
+    expect(runner, contains("function Assert-DisposableTrustCertificate"));
+    expect(runner, contains(r'Cert:\CurrentUser\" + $StoreName'));
+    expect(runner, contains(r"Get-DesktopUpdaterSha256 $_.RawData"));
+    expect(runner, contains(r"$certutilExit = $certutilProcess.ExitCode"));
+    expect(
+      runner,
+      contains("certutil failed to add disposable CurrentUser trust"),
+    );
+    expect(
+      runner,
+      contains("disposable CurrentUser trust store postcondition"),
+    );
+  });
+
+  test("Windows direct smoke keeps disposable trust gate interactive", () {
+    final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
+
+    expect(runner, contains(r"$profileProbeArguments = @("));
+    expect(
+      runner,
+      contains(r'''$profileProbeArguments += "-NonInteractive"'''),
+    );
+    expect(
+      runner,
+      contains(
+          r"$profileProbeWindowStyle = if ($ProvisionDisposableUserTrust)"),
+    );
+    expect(runner, contains("[Diagnostics.ProcessWindowStyle]::Normal"));
+    expect(runner, contains(r"$ProvisionDisposableUserTrust"));
+  });
+
+  test("Windows direct smoke gives certutil its own visible manual process",
+      () {
+    final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
+
+    expect(
+      runner,
+      contains(
+          r'''$certutilProcess = Start-Process -FilePath "certutil.exe"'''),
+    );
+    expect(runner, contains("-RedirectStandardOutput"));
+    expect(runner, contains("-RedirectStandardError"));
+    expect(runner, contains("-Wait -PassThru"));
+    expect(runner, isNot(contains("@(& certutil.exe")));
+  });
+
+  test("Windows final elevated lanes dispatch through PowerShell 7", () {
+    final launcher = readFile("tool/windows_inno_smoke_launcher.ps1");
+
+    expect(launcher, contains("Get-Command pwsh.exe"));
+    expect(
+      launcher,
+      contains(r"""'-File', ('"' + $smokeScript + '"')"""),
+    );
+    expect(launcher, contains("-Verb RunAs"));
+    expect(launcher, contains(r"$process.Refresh()"));
+    expect(launcher, contains("-Wait -PassThru"));
   });
 
   test("Windows Flutter smokes sign both caller and helper before handoff", () {
@@ -1119,6 +1286,12 @@ void main() {
         "[Environment+SpecialFolderOption]::Create)",
       ),
     );
+    expect(
+      runner,
+      contains('"-ExecutionPolicy",\n      "Bypass",'),
+    );
+    expect(runner, contains("Get-DesktopUpdaterSha256"));
+    expect(runner, contains(r"ComputeHash($RawData)"));
     expect(
       runner,
       contains(

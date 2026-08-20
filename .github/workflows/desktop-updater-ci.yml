@@ -376,7 +376,16 @@ jobs:
             $certificatePath,
             $smokeCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
           )
+          $certificateSha256 = [Convert]::ToHexString(
+            [System.Security.Cryptography.SHA256]::HashData($smokeCertificate.RawData)
+          ).ToLowerInvariant()
+          $certificatePublisher = $smokeCertificate.GetNameInfo(
+            [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName,
+            $false
+          )
           $smokeCertificate.Thumbprint | Set-Content -LiteralPath (Join-Path $signingRoot "hosted-smoke.thumbprint") -NoNewline
+          "DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256=$certificateSha256" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER=$certificatePublisher" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Hosted Windows ZIP smoke certificate is ready."
           try {
             $trustedStoresPath = Join-Path $signingRoot "hosted-smoke.stores"
@@ -511,6 +520,7 @@ jobs:
       - name: Run Windows Unicode and relative redirect target-host gates
         shell: pwsh
         run: |
+          . ./tool/windows_process_tree_cleanup.ps1
           $serverOut = Join-Path $env:RUNNER_TEMP "native-transport-server.out"
           $serverErr = Join-Path $env:RUNNER_TEMP "native-transport-server.err"
           $server = Start-Process dart -ArgumentList @(
@@ -540,7 +550,7 @@ jobs:
               throw "Standalone Windows native CTest registered zero tests."
             }
           } finally {
-            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+            Stop-ExactProcessTree $server.Id "native_transport_fixture_server.dart"
           }
       - name: Install Windows native SDK
         run: cmake --install windows/native/build --config Release --prefix windows/native/install
@@ -669,336 +679,14 @@ jobs:
         timeout-minutes: 12
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $ConfirmPreference = "None"
-          . ./tool/windows_smoke_profile_cleanup.ps1
-          $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip"
-          $signingRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-zip-signing"
-          $packageSource = (Resolve-Path windows/native/artifacts).Path
-          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
-          $build = Join-Path $smokeRoot "build"
-          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host "Hosted Windows ZIP smoke runtime consumer is ready."
-          $pfx = Join-Path $signingRoot "hosted-smoke.pfx"
-          $pfxPassword = "desktop-updater-hosted-smoke-only"
-          if (-not (Test-Path -LiteralPath $pfx -PathType Leaf)) {
-            throw "Hosted Windows ZIP smoke PFX is unavailable."
-          }
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
-          if ($null -eq $signtool) {
-            throw "signtool.exe was not found for hosted Windows ZIP smoke."
-          }
-          foreach ($binary in @(
-            (Join-Path $build "DesktopUpdater.RuntimeCompile.exe"),
-            (Join-Path $build "desktop_updater_install_helper.exe")
-          )) {
-            & $signtool.FullName sign /fd SHA256 /f $pfx /p $pfxPassword $binary
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $signature = Get-AuthenticodeSignature -FilePath $binary
-            if ($signature.Status -ne "Valid") {
-              throw "Hosted Windows ZIP smoke failed to trust ${binary}: $($signature.Status)"
-            }
-          }
-          Write-Host "Hosted Windows ZIP smoke signing trust is ready."
-          $install = Join-Path $smokeRoot "install"
-          $payload = Join-Path $smokeRoot "payload"
-          Copy-Item -LiteralPath $build -Destination $install -Recurse
-          Copy-Item -LiteralPath $build -Destination $payload -Recurse
-          "2.7.0" | Set-Content (Join-Path $install "version.txt")
-          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
-          $installedIdentity = '{"packageId":"com.example.native-runtime-smoke","schemaVersion":1}'
-          $installedIdentity | Set-Content -LiteralPath (Join-Path $install ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
-          $installedIdentity | Set-Content -LiteralPath (Join-Path $payload ".desktop_updater_install_identity.json") -NoNewline -Encoding utf8
-          foreach ($root in @($install, $payload)) {
-            $caller = Join-Path $root "DesktopUpdater.RuntimeCompile.exe"
-            $helper = Join-Path $root "desktop_updater_install_helper.exe"
-            $callerSha256 = (Get-FileHash -LiteralPath $caller -Algorithm SHA256).Hash.ToLowerInvariant()
-            $helperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
-            $portablePolicy = [ordered]@{
-              allowedApplicationSigner = [ordered]@{ kind = "sha256"; value = $callerSha256 }
-              allowedHelperSigner = [ordered]@{ kind = "sha256"; value = $helperSha256 }
-              allowedInstallRoots = @()
-              allowedStrategies = @(
-                [ordered]@{ provider = "platformDirectory"; strategy = "directoryReplace" }
-              )
-              allowedTargetClasses = @("sameUserWritable")
-              applicationPackageId = "com.example.native-runtime-smoke"
-              helperServiceId = "com.example.desktop-updater.helper"
-              minimumHelperProtocolVersion = 1
-              policyId = "com.example.desktop-updater.portable"
-              policyVersion = 1
-              releaseRootPublicKeys = @(
-                [ordered]@{
-                  algorithm = "ed25519"
-                  keyId = "native-runtime-smoke-stable"
-                  publicKeyBase64 = "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y="
-                }
-              )
-            }
-            $canonicalPolicy = $portablePolicy | ConvertTo-Json -Compress -Depth 8
-            [IO.File]::WriteAllText(
-              (Join-Path $root "desktop_updater_helper_policy.json"),
-              $canonicalPolicy,
-              [Text.UTF8Encoding]::new($false)
-            )
-          }
-          $artifact = Join-Path $smokeRoot "update.zip"
-          Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $artifact
-          $ready = Join-Path $smokeRoot "ready.json"
-          $serverOut = Join-Path $smokeRoot "server.out"
-          $serverErr = Join-Path $smokeRoot "server.err"
-          $smokeUser = $null
-          $smokeUserCreated = $false
-          $server = Start-Process dart -ArgumentList @(
-            "run", "tool/native_runtime_smoke_server.dart",
-            "--artifact", $artifact,
-            "--artifact-kind", "zip",
-            "--platform", "windows",
-            "--package-id", "com.example.native-runtime-smoke",
-            "--app-name", "NativeRuntimeSmoke",
-            "--ready-file", $ready,
-            "--port", "43892"
-          ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru
-          try {
-            for ($attempt = 0; $attempt -lt 60; $attempt++) {
-              if (Test-Path -LiteralPath $ready) {
-                try {
-                  Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
-                  break
-                } catch {}
-              }
-              Start-Sleep -Milliseconds 250
-            }
-            if (-not (Test-Path -LiteralPath $ready)) {
-              Get-Content $serverOut, $serverErr -ErrorAction SilentlyContinue
-              throw "Native runtime ZIP server did not start."
-            }
-            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43892/health" | Out-Null
-            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
-            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
-            $helperEventProvider = "DesktopUpdater.InstallHelper.ProtocolV1"
-            $diagnosticsPath = Join-Path $smokeRoot "helper-diagnostics.jsonl"
-            $smokeUserName = "duzip$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
-            $smokePasswordText = "Du!9$([Guid]::NewGuid().ToString('N'))"
-            $smokePassword = ConvertTo-SecureString $smokePasswordText -AsPlainText -Force
-            $smokeUser = New-LocalUser -Name $smokeUserName -Password $smokePassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword
-            $smokeUserCreated = $true
-            $users = Get-LocalGroup -SID "S-1-5-32-545"
-            $isUser = @(
-              Get-LocalGroupMember -Group $users.Name |
-                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
-            ).Count -ne 0
-            if (-not $isUser) {
-              Add-LocalGroupMember -Group $users.Name -Member $smokeUser
-            }
-            $administrators = Get-LocalGroup -SID "S-1-5-32-544"
-            $isAdministrator = @(
-              Get-LocalGroupMember -Group $administrators.Name |
-                Where-Object { $_.SID.Value -eq $smokeUser.SID.Value }
-            ).Count -ne 0
-            if ($isAdministrator) {
-              throw "Hosted Windows ZIP smoke account unexpectedly has administrator authority."
-            }
-            & icacls.exe $smokeRoot /grant:r "*$($smokeUser.SID.Value):(OI)(CI)F" /T /C | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-              throw "Hosted Windows ZIP smoke account could not own its disposable lane."
-            }
-            $userTemp = Join-Path $smokeRoot "user-temp"
-            New-Item -ItemType Directory -Path $userTemp -Force | Out-Null
-            $smokeCredential = [System.Management.Automation.PSCredential]::new(
-              "$env:COMPUTERNAME\$smokeUserName",
-              $smokePassword
-            )
-            $profilesDirectory = [Environment]::ExpandEnvironmentVariables(
-              (Get-ItemProperty -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" -Name ProfilesDirectory).ProfilesDirectory
-            )
-            $smokeUserProfile = Join-Path $profilesDirectory $smokeUserName
-            $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
-            $smokeEnvironment = @{
-              APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
-              DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
-              DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
-              HOME = $smokeUserProfile
-              HOMEDRIVE = Split-Path -Qualifier $smokeUserProfile
-              HOMEPATH = $smokeUserProfile.Substring((Split-Path -Qualifier $smokeUserProfile).Length)
-              LOCALAPPDATA = $smokeLocalAppData
-              TEMP = $userTemp
-              TMP = $userTemp
-              USERDOMAIN = $env:COMPUTERNAME
-              USERNAME = $smokeUserName
-              USERPROFILE = $smokeUserProfile
-            }
-            $smokePasswordText = $null
-            $helperEventStart = Get-Date
-            Write-Host "Hosted Windows ZIP smoke update handoff is starting."
-            $runtimeOut = Join-Path $smokeRoot "runtime.out"
-            $runtimeErr = Join-Path $smokeRoot "runtime.err"
-            $originalTemp = $env:TEMP
-            $originalTmp = $env:TMP
-            try {
-              $env:TEMP = $userTemp
-              $env:TMP = $userTemp
-              $profileProbeOut = Join-Path $smokeRoot "profile-probe.out"
-              $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
-              $profileProbeScript = @(
-                '$ErrorActionPreference = "Stop"'
-                '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
-                'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
-                '  throw "LocalApplicationData is unavailable."'
-                '}'
-                '$expectedLocalAppData = $env:DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA'
-                'if (-not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath($localAppData), [IO.Path]::GetFullPath($expectedLocalAppData))) {'
-                '  throw "LocalApplicationData resolved outside the standard-user profile."'
-                '}'
-                '[IO.Directory]::CreateDirectory($localAppData) | Out-Null'
-                '$probe = Join-Path $localAppData ("desktop-updater-profile-probe-{0}.tmp" -f [Guid]::NewGuid().ToString("N"))'
-                'try {'
-                '  [IO.File]::WriteAllText($probe, "ready", [Text.UTF8Encoding]::new($false))'
-                '} finally {'
-                '  Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue'
-                '}'
-                'Write-Output "Hosted Windows ZIP smoke LocalAppData is ready."'
-              ) -join [Environment]::NewLine
-              $profileProbePath = Join-Path $smokeRoot "profile-probe.ps1"
-              [IO.File]::WriteAllText(
-                $profileProbePath,
-                $profileProbeScript,
-                [Text.UTF8Encoding]::new($false)
-              )
-              $profileProbeShell = (Get-Process -Id $PID).Path
-              # CreateProcessWithLogonW limits credentialed command lines to
-              # 1024 characters, so keep the probe body out of ArgumentList.
-              $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-File", $profileProbePath
-              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
-              Get-Content $profileProbeOut, $profileProbeErr -ErrorAction SilentlyContinue
-              if ($profileProbeProcess.ExitCode -ne 0) {
-                throw "Hosted Windows ZIP smoke could not initialize LocalAppData for the standard user."
-              }
-              $runtimeProcess = Start-Process -FilePath (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") -ArgumentList @(
-                "--smoke",
-                "--app-archive-url", $serverInfo.appArchiveUrl,
-                "--public-key-base64", $serverInfo.publicKeyBase64,
-                "--package-id", "com.example.native-runtime-smoke",
-                "--smoke-root", (Join-Path $smokeRoot "runtime"),
-                "--diagnostics-log", $diagnosticsPath
-              ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $install -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr -Wait -PassThru
-            } finally {
-              $env:TEMP = $originalTemp
-              $env:TMP = $originalTmp
-            }
-            Get-Content $runtimeOut, $runtimeErr -ErrorAction SilentlyContinue
-            $runtimeExit = $runtimeProcess.ExitCode
-            if ($runtimeExit -ne 0) {
-              $helperEvents = @(
-                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
-                  Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" }
-              )
-              foreach ($helperEvent in $helperEvents) {
-                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
-              }
-              throw "Hosted Windows ZIP smoke standard-user runtime exited with code $runtimeExit."
-            }
-            Write-Host "Hosted Windows ZIP smoke update handoff returned."
-            $stagingRoot = Join-Path $smokeRoot "runtime/staging"
-            # Portable restage deliberately protects the replacement tree for
-            # SYSTEM and the standard-user caller only.  Keep filesystem
-            # assertions under that same caller identity; the runner account
-            # should inspect protocol evidence, not bypass the target DACL.
-            $postSmokeStatePath = Join-Path $smokeRoot "post-smoke-state.json"
-            $postSmokeVerifyOut = Join-Path $smokeRoot "post-smoke-verify.out"
-            $postSmokeVerifyErr = Join-Path $smokeRoot "post-smoke-verify.err"
-            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_INSTALL"] = $install
-            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_STAGING"] = $stagingRoot
-            $smokeEnvironment["DESKTOP_UPDATER_SMOKE_VERIFY_OUT"] = $postSmokeStatePath
-            $postSmokeScript = @'
-            $ErrorActionPreference = "Stop"
-            $versionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL "version.txt"
-            $stagingRoot = $env:DESKTOP_UPDATER_SMOKE_STAGING
-            $versionReady = $false
-            $stagingClean = $false
-            for ($attempt = 0; $attempt -lt 600; $attempt++) {
-              try {
-                $versionReady = (Test-Path -LiteralPath $versionFile) -and ((Get-Content -Raw $versionFile).Trim() -eq "2.7.1")
-                $stagingClean = (Test-Path -LiteralPath $stagingRoot -PathType Container) -and (@(Get-ChildItem -LiteralPath $stagingRoot -Force).Count -eq 0)
-              } catch {
-                $versionReady = $false
-                $stagingClean = $false
-              }
-              if ($versionReady -and $stagingClean) { break }
-              Start-Sleep -Milliseconds 250
-            }
-            [ordered]@{
-              versionReady = $versionReady
-              stagingClean = $stagingClean
-            } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
-            if (-not $versionReady) { throw "Standard-user ZIP smoke did not observe version 2.7.1." }
-            if (-not $stagingClean) { throw "Standard-user ZIP smoke observed an owned staging child." }
-          '@
-            $postSmokeScriptPath = Join-Path $smokeRoot "post-smoke-verify.ps1"
-            [IO.File]::WriteAllText(
-              $postSmokeScriptPath,
-              $postSmokeScript,
-              [Text.UTF8Encoding]::new($false)
-            )
-            $postSmokeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
-              "-NoLogo",
-              "-NoProfile",
-              "-NonInteractive",
-              "-File", $postSmokeScriptPath
-            ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $postSmokeVerifyOut -RedirectStandardError $postSmokeVerifyErr -Wait -PassThru
-            Get-Content $postSmokeVerifyOut, $postSmokeVerifyErr -ErrorAction SilentlyContinue
-            if ($postSmokeProcess.ExitCode -ne 0) {
-              throw "Hosted Windows ZIP smoke standard-user filesystem verification exited with code $($postSmokeProcess.ExitCode)."
-            }
-            $postSmokeState = Get-Content -Raw -LiteralPath $postSmokeStatePath | ConvertFrom-Json
-            $versionReady = [bool]$postSmokeState.versionReady
-            $stagingClean = [bool]$postSmokeState.stagingClean
-            $moveComplete = $false
-            $cleanupComplete = $false
-            for ($attempt = 0; $attempt -lt 600; $attempt++) {
-              $helperEvents = @(
-                Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = $helperEventStart } -ErrorAction SilentlyContinue |
-                  Where-Object { $_.ProviderName -eq $helperEventProvider }
-              )
-              $moveComplete = @($helperEvents | Where-Object { $_.Id -eq 1008 }).Count -gt 0
-              $cleanupComplete = @($helperEvents | Where-Object { $_.Id -eq 1014 }).Count -gt 0
-              if ($versionReady -and $stagingClean -and $moveComplete -and $cleanupComplete) { break }
-              Start-Sleep -Milliseconds 250
-            }
-            if (-not $versionReady) {
-              throw "Windows ZIP runtime smoke did not install version 2.7.1."
-            }
-            if (-not $stagingClean) {
-              throw "Windows ZIP runtime smoke left an owned staging child."
-            }
-            if (-not $moveComplete -or -not $cleanupComplete) {
-              foreach ($helperEvent in $helperEvents) {
-                Write-Host "Windows helper event $($helperEvent.Id): $($helperEvent.LevelDisplayName)"
-              }
-              throw "Windows ZIP runtime smoke helper events are incomplete."
-            }
-          } finally {
-            if (Test-Path -LiteralPath $ready) {
-              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
-              try {
-                Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43892/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null
-              } catch {}
-            }
-            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
-            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
-            if ($smokeUserCreated) {
-              try {
-                Remove-WindowsSmokeUserProfile -Sid $smokeUser.SID.Value -ExpectedPath $smokeUserProfile
-              } finally {
-                Remove-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
-              }
-            }
-          }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "x64 signtool.exe was not found." }
+          ./tool/windows_native_runtime_zip_smoke.ps1 `
+            -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION `
+            -PackagePath (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path `
+            -PackageSource (Resolve-Path windows/native/artifacts).Path `
+            -SigntoolPath $signtool.FullName
       - name: Windows native runtime unprivileged Inno transport smoke
         if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         shell: pwsh
@@ -1007,91 +695,32 @@ jobs:
           WINDOWS_CODE_SIGNING_P12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_P12_PASSWORD }}
         run: |
           $ErrorActionPreference = "Stop"
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_P12_PASSWORD)) {
             throw "Signed Inno runtime smoke credentials are required."
           }
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            throw "Official Inno Setup provider prerequisite is unavailable."
+          }
           choco install innosetup --no-progress -y
+          $iscc = (Get-Command iscc.exe -ErrorAction Stop).Source
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "x64 signtool.exe was not found." }
           $smokeRoot = Join-Path $env:RUNNER_TEMP "native-runtime-windows-inno"
-          $packageSource = (Resolve-Path windows/native/artifacts).Path
-          $package = (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path
-          $build = Join-Path $smokeRoot "build"
-          & tool/verify_windows_nuget_consumer.ps1 -PackagePath $package -PackageSource $packageSource -ProjectPath example/native/windows-dotnet-runtime/DesktopUpdater.RuntimeCompile.csproj -LaneRoot $smokeRoot -OutputPath $build -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $install = Join-Path $smokeRoot "install"
-          $payload = Join-Path $smokeRoot "payload"
-          Copy-Item -LiteralPath $build -Destination $install -Recurse
-          Copy-Item -LiteralPath $build -Destination $payload -Recurse
-          "2.7.0" | Set-Content (Join-Path $install "version.txt")
-          "2.7.1" | Set-Content (Join-Path $payload "version.txt")
-          $iss = Join-Path $smokeRoot "runtime-smoke.iss"
-          @(
-            "[Setup]",
-            "AppId=NativeRuntimeSmoke",
-            "AppName=NativeRuntimeSmoke",
-            "AppVersion=2.7.1",
-            "DefaultDirName={autopf}\NativeRuntimeSmoke",
-            "OutputDir=$smokeRoot",
-            "OutputBaseFilename=native-runtime-smoke",
-            "Uninstallable=no",
-            "PrivilegesRequired=lowest",
-            "ArchitecturesAllowed=x64compatible",
-            "[Files]",
-            "Source: `"$payload\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs"
-          ) | Set-Content -LiteralPath $iss -Encoding UTF8
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $installer = Join-Path $smokeRoot "native-runtime-smoke.exe"
           $pfx = Join-Path $smokeRoot "code-signing.pfx"
+          New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_P12_BASE64))
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
-          if ($null -eq $signtool) { throw "signtool.exe was not found." }
-          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CODE_SIGNING_P12_PASSWORD $installer
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:WINDOWS_CODE_SIGNING_P12_PASSWORD)
-          $sha256 = [Security.Cryptography.SHA256]::Create()
-          try { $publisher = ([BitConverter]::ToString($sha256.ComputeHash($certificate.RawData))).Replace('-', '') } finally { $sha256.Dispose(); $certificate.Dispose() }
-          $ready = Join-Path $smokeRoot "ready.json"
-          $installedExecutable = Join-Path $payload "DesktopUpdater.RuntimeCompile.exe"
-          $server = Start-Process dart -ArgumentList @(
-            "run", "tool/native_runtime_smoke_server.dart",
-            "--artifact", $installer,
-            "--artifact-kind", "innoInstaller",
-            "--platform", "windows",
-            "--package-id", "com.example.native-runtime-smoke",
-            "--app-name", "NativeRuntimeSmoke",
-            "--publisher-thumbprint", $publisher,
-            "--installed-executable", $installedExecutable,
-            "--installed-executable-relative-path", "DesktopUpdater.RuntimeCompile.exe",
-            "--ready-file", $ready,
-            "--port", "43895"
-          ) -PassThru
           try {
-            for ($attempt = 0; $attempt -lt 60; $attempt++) {
-              if (Test-Path -LiteralPath $ready) {
-                try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null; break } catch {}
-              }
-              Start-Sleep -Milliseconds 250
-            }
-            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:43895/health" | Out-Null
-            $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
-            $env:DESKTOP_UPDATER_SMOKE_SKIP_RELAUNCH = "1"
-            & (Join-Path $install "DesktopUpdater.RuntimeCompile.exe") --smoke --app-archive-url $serverInfo.appArchiveUrl --public-key-base64 $serverInfo.publicKeyBase64 --package-id "com.example.native-runtime-smoke" --smoke-root (Join-Path $smokeRoot "runtime") --diagnostics-log (Join-Path $smokeRoot "helper-diagnostics.jsonl")
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            for ($attempt = 0; $attempt -lt 240; $attempt++) {
-              if ((Test-Path (Join-Path $install "version.txt")) -and ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -eq "2.7.1")) { break }
-              Start-Sleep -Milliseconds 250
-            }
-            if ((Get-Content -Raw (Join-Path $install "version.txt")).Trim() -ne "2.7.1") { throw "Windows Inno runtime smoke did not install version 2.7.1." }
-            $diagnostics = Get-Content -Raw (Join-Path $smokeRoot "helper-diagnostics.jsonl")
-            if ($diagnostics -notmatch '"event":"inno authenticode verified"' -or $diagnostics -notmatch '"event":"inno installer success"') { throw "Windows Inno runtime smoke diagnostics are incomplete." }
+            ./tool/windows_native_runtime_inno_transport_smoke.ps1 `
+              -PackageVersion $env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION `
+              -PackagePath (Resolve-Path "windows/native/artifacts/DesktopUpdater.Native.$env:DESKTOP_UPDATER_NATIVE_PACKAGE_VERSION.nupkg").Path `
+              -PackageSource (Resolve-Path windows/native/artifacts).Path `
+              -IsccPath $iscc -SigntoolPath $signtool.FullName `
+              -PfxPath $pfx -PfxPassword $env:WINDOWS_CODE_SIGNING_P12_PASSWORD `
+              -SmokeRoot $smokeRoot
           } finally {
-            if (Test-Path -LiteralPath $ready) {
-              $serverInfo = Get-Content -Raw $ready | ConvertFrom-Json
-              try { Invoke-WebRequest -UseBasicParsing -Method Post "http://127.0.0.1:43895/shutdown?token=$($serverInfo.shutdownToken)" | Out-Null } catch {}
-            }
-            if (-not $server.HasExited) { $server.WaitForExit(5000) | Out-Null }
-            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
-            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
           }
       - name: Build example
         working-directory: example
@@ -1142,11 +771,21 @@ jobs:
       - name: Run update smoke Debug run 1
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-1")
+          $certificateSha256 = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256
+          $certificatePublisher = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-1") `
+            -ProvisionDisposableUserTrust `
+            -ExpectedSignerCertificateSha256 $certificateSha256 `
+            -ExpectedSignerPublisher $certificatePublisher
       - name: Run update smoke Debug run 2
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-2")
+          $certificateSha256 = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256
+          $certificatePublisher = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Debug -EvidencePath (Join-Path $PWD "reports/windows-v3-debug-run-2") `
+            -ProvisionDisposableUserTrust `
+            -ExpectedSignerCertificateSha256 $certificateSha256 `
+            -ExpectedSignerPublisher $certificatePublisher
       - name: Upload update smoke diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
@@ -1204,11 +843,21 @@ jobs:
       - name: Run update smoke Release run 1
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-1")
+          $certificateSha256 = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256
+          $certificatePublisher = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-1") `
+            -ProvisionDisposableUserTrust `
+            -ExpectedSignerCertificateSha256 $certificateSha256 `
+            -ExpectedSignerPublisher $certificatePublisher
       - name: Run update smoke Release run 2
         shell: pwsh
         run: |
-          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-2")
+          $certificateSha256 = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_SHA256
+          $certificatePublisher = $env:DESKTOP_UPDATER_HOSTED_ZIP_CERT_PUBLISHER
+          ./tool/windows_direct_flutter_smoke.ps1 -Configuration Release -EvidencePath (Join-Path $PWD "reports/windows-v3-release-run-2") `
+            -ProvisionDisposableUserTrust `
+            -ExpectedSignerCertificateSha256 $certificateSha256 `
+            -ExpectedSignerPublisher $certificatePublisher
       - name: Upload update smoke release diagnostics
         if: ${{ failure() || vars.DESKTOP_UPDATER_UPLOAD_SMOKE_DIAGNOSTICS == '1' }}
         uses: actions/upload-artifact@v4
@@ -1400,37 +1049,34 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $script = (Resolve-Path tool/windows_inno_smoke.ps1).Path
-          $wrapper = Join-Path $env:RUNNER_TEMP "desktop-updater-protected-inno-elevated.ps1"
-          $escapedWorkspace = $env:GITHUB_WORKSPACE.Replace("'", "''")
-          $escapedScript = $script.Replace("'", "''")
-          $escapedPublisher = $env:DESKTOP_UPDATER_INNO_CERT_PUBLISHER.Replace("'", "''")
-          @"
-          `$ErrorActionPreference = 'Stop'
-          Set-Location -LiteralPath '$escapedWorkspace'
-          try {
-            & '$escapedScript' -SigningCertificateSha1 '$env:DESKTOP_UPDATER_INNO_CERT_SHA1' -SigningCertificateSha256 '$env:DESKTOP_UPDATER_INNO_CERT_SHA256' -SigningPublisher '$escapedPublisher'
-            exit 0
-          } catch {
-            Write-Error `$_
-            exit 1
-          }
-          "@ | Set-Content -LiteralPath $wrapper -Encoding UTF8NoBOM
-          $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
-          $process = Start-Process -FilePath $pwsh -ArgumentList @(
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-File", "`"$wrapper`""
-          ) -WorkingDirectory $env:GITHUB_WORKSPACE -Verb RunAs -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Protected Windows Inno smoke failed with exit code $($process.ExitCode)."
-          }
+          $isccCommand = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          $iscc = @(
+            $(if ($null -ne $isccCommand) { $isccCommand.Source })
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
+          if ($null -eq $iscc) { throw "Inno Setup Compiler is required for protected Windows Inno smoke." }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if ($null -eq $signtool) { throw "x64 signtool.exe was not found for protected Windows Inno smoke." }
+          & (Resolve-Path tool/windows_inno_smoke_launcher.ps1).Path `
+            -IsccPath $iscc `
+            -SigntoolPath $signtool.FullName `
+            -SigningCertificateSha1 $env:DESKTOP_UPDATER_INNO_CERT_SHA1 `
+            -SigningCertificateSha256 $env:DESKTOP_UPDATER_INNO_CERT_SHA256 `
+            -SigningPublisher $env:DESKTOP_UPDATER_INNO_CERT_PUBLISHER `
+            -Architecture x64 `
+            -EvidenceRootPath (Join-Path $env:GITHUB_WORKSPACE "reports/windows-x64-production-readiness") `
+            -PackageIdPrefix "com.openai.desktop-updater.x64-readiness" `
+            -AppIdPrefix "desktop-updater-x64-readiness" `
+            -InstallerPublisher "desktop_updater X64 local readiness" `
+            -InstallRootPrefix "DesktopUpdaterX64Readiness"
       - name: Upload protected Windows Inno smoke evidence
         if: always() && vars.DESKTOP_UPDATER_RUN_SIGNED_NATIVE_RUNTIME_E2E == '1'
         uses: actions/upload-artifact@v4
         with:
           name: windows-protected-inno-smoke-${{ github.sha }}
-          path: reports/windows-arm64-production-readiness/inno-e2e-*
+          path: reports/windows-x64-production-readiness/inno-e2e-*
           if-no-files-found: warn
       - name: Remove ephemeral signing credential and trust
         if: always()

@@ -38,8 +38,9 @@ void main() {
     );
     expect(
       inventory.targets.any(
-        (target) =>
-            target.path.endsWith("Contents/Helpers/extensionless-helper"),
+        (target) => target.path
+            .replaceAll("\\", "/")
+            .endsWith("Contents/Helpers/extensionless-helper"),
       ),
       isTrue,
     );
@@ -172,7 +173,9 @@ void main() {
         "value":
             "identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic",
       },
-      "allowedInstallRoots": ["/Applications"],
+      "allowedInstallRoots": [
+        Platform.isWindows ? r"C:\Applications" : "/Applications",
+      ],
       "allowedStrategies": [
         {"provider": "platformDirectory", "strategy": "directoryReplace"},
         {"provider": "macosInstaller", "strategy": "verifiedInstallerHandoff"},

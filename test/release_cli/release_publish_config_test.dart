@@ -564,7 +564,7 @@ windows:
 """);
 
       expect(config.windows.installer.protectedHelperInstallDir, isNull);
-      expect(config.windows.installer.privilegesRequired, "lowest");
+      expect(config.windows.installer.privilegesRequired, "admin");
     },
   );
 

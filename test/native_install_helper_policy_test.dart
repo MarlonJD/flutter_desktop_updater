@@ -80,8 +80,14 @@ void main() {
         generatorPath,
         <String>["--fixture-output", second.path],
       );
-      expect(await first.readAsBytes(), await second.readAsBytes());
-      expect(await first.readAsBytes(), await File(fixturePath).readAsBytes());
+      expect(
+        _canonicalBytes(await first.readAsBytes()),
+        _canonicalBytes(await second.readAsBytes()),
+      );
+      expect(
+        _canonicalBytes(await first.readAsBytes()),
+        _canonicalBytes(await File(fixturePath).readAsBytes()),
+      );
     } finally {
       await root.delete(recursive: true);
     }
@@ -251,4 +257,10 @@ List<Map<String, dynamic>> _mapList(
   return (source[key] as List)
       .map((entry) => Map<String, dynamic>.from(entry as Map))
       .toList();
+}
+
+List<int> _canonicalBytes(List<int> bytes) {
+  return utf8.encode(
+    utf8.decode(bytes).replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
+  );
 }

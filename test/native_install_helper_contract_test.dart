@@ -480,11 +480,17 @@ Future<Map<String, List<int>>> _readTree(Directory root) async {
       if (!generatedContractFixtures.contains(relative)) {
         continue;
       }
-      files[relative] = await entity.readAsBytes();
+      files[relative] = _canonicalBytes(await entity.readAsBytes());
     }
   }
   return Map<String, List<int>>.fromEntries(
     files.entries.toList()
       ..sort((left, right) => left.key.compareTo(right.key)),
+  );
+}
+
+List<int> _canonicalBytes(List<int> bytes) {
+  return utf8.encode(
+    utf8.decode(bytes).replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
   );
 }

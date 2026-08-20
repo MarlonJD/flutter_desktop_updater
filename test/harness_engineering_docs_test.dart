@@ -243,7 +243,9 @@ void main() {
         "docs/agent-harness/certification.json",
       ).readAsStringSync(),
     ) as Map<String, dynamic>;
-    final coverageDigest = sha256.convert(utf8.encode(coverage)).toString();
+    final coverageDigest = sha256
+        .convert(utf8.encode(coverage.replaceAll("\r\n", "\n")))
+        .toString();
 
     expect(certification["schema_version"], 2);
     expect(certification["claim"], "harness-ready");

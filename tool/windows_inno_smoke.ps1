@@ -2,6 +2,13 @@
 param(
   [string] $IsccPath,
   [string] $SigntoolPath,
+  [ValidateSet('x64', 'arm64')]
+  [string] $Architecture = 'arm64',
+  [string] $EvidenceRootPath,
+  [string] $PackageIdPrefix,
+  [string] $AppIdPrefix,
+  [string] $InstallerPublisher,
+  [string] $InstallRootPrefix,
   [Parameter(Mandatory)]
   [ValidatePattern('^[0-9A-Fa-f]{40}$')]
   [string] $SigningCertificateSha1,
@@ -17,6 +24,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows_process_tree_cleanup.ps1')
 
 function ConvertTo-YamlSingleQuoted([string] $Value) {
   return "'" + $Value.Replace("'", "''") + "'"
@@ -427,25 +435,40 @@ function Resolve-Iscc([string] $ExplicitPath) {
   return [IO.Path]::GetFullPath($resolved)
 }
 
-function Resolve-Signtool([string] $ExplicitPath) {
+function Resolve-Signtool(
+  [string] $ExplicitPath,
+  [ValidateSet('x64', 'arm64')]
+  [string] $Architecture
+) {
+  $requiredLeaf = $Architecture.ToLowerInvariant()
   $discovered = Get-Command signtool.exe -ErrorAction SilentlyContinue
   $candidates = @(
     $ExplicitPath
-    $(if ($discovered) { $discovered.Source })
+    $(if ($discovered -and
+        [IO.Path]::GetFileName(
+          [IO.Path]::GetDirectoryName($discovered.Source)
+        ) -eq $requiredLeaf) { $discovered.Source })
     @(Get-ChildItem `
-      -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\arm64\signtool.exe" `
-      -ErrorAction SilentlyContinue | Sort-Object FullName -Descending |
-      ForEach-Object FullName)
-    @(Get-ChildItem `
-      -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" `
+      -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\$requiredLeaf\signtool.exe" `
       -ErrorAction SilentlyContinue | Sort-Object FullName -Descending |
       ForEach-Object FullName)
   ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-  $resolved = $candidates |
-    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-    Select-Object -First 1
+  $resolved = $null
+  foreach ($candidate in $candidates) {
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      continue
+    }
+    $candidateLeaf = [IO.Path]::GetFileName(
+      [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($candidate))
+    )
+    if ($candidateLeaf -ne $requiredLeaf) {
+      throw "Refusing $candidateLeaf SignTool for $Architecture smoke."
+    }
+    $resolved = $candidate
+    break
+  }
   if (-not $resolved) {
-    throw 'signtool.exe is required for the signed Windows Inno smoke.'
+    throw "The exact $Architecture signtool.exe is required for the signed Windows Inno smoke."
   }
   return [IO.Path]::GetFullPath($resolved)
 }
@@ -781,7 +804,8 @@ function Remove-SmokeSystemResidue(
   [string] $PolicyId,
   [string] $HelperServiceId,
   [string] $InstallRoot,
-  [string[]] $ProtectedHelperInstallDirs
+  [string[]] $ProtectedHelperInstallDirs,
+  [string] $InstallRootPrefix
 ) {
   $failures = [Collections.Generic.List[string]]::new()
   try {
@@ -882,7 +906,7 @@ function Remove-SmokeSystemResidue(
         'DesktopUpdaterHelperGenerationV1--' + $PackageId + '--',
         [StringComparison]::Ordinal
       ) -or $leaf.StartsWith(
-        'DesktopUpdaterArm64Readiness-',
+        $InstallRootPrefix + '-',
         [StringComparison]::Ordinal
       )
       if (-not $resolved.StartsWith(
@@ -917,6 +941,7 @@ function Publish-SmokeVersion(
   [string] $CertificateSha256,
   [string] $SigningHookPath,
   [string] $EvidenceRoot,
+  [string] $InstallerPublisher,
   [bool] $InitializeFeed
 ) {
   $versionRoot = Join-Path $TempRoot "version-$Version"
@@ -967,7 +992,7 @@ windows:
     isccPath: $yamlIscc
     outputBaseName: desktop-updater-inno-smoke-$Version
     appId: $yamlAppId
-    publisher: desktop_updater ARM64 local readiness
+    publisher: $InstallerPublisher
     privilegesRequired: admin
     protectedHelperInstallDir: $yamlProtectedHelper
     requiresElevation: always
@@ -1539,7 +1564,7 @@ if (-not $principal.IsInRole(
 $repoRoot = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
 $exampleRoot = Join-Path $repoRoot 'example'
 $resolvedIscc = Resolve-Iscc $IsccPath
-$resolvedSigntool = Resolve-Signtool $SigntoolPath
+$resolvedSigntool = Resolve-Signtool $SigntoolPath $Architecture
 $script:certificateSha1 = $SigningCertificateSha1.ToUpperInvariant()
 $script:certificateSha256 = $SigningCertificateSha256.ToLowerInvariant()
 $script:certificatePublisher = $SigningPublisher.Trim()
@@ -1548,8 +1573,69 @@ Assert-SmokeCertificate `
   $script:certificatePublisher
 
 $reportsRoot = Join-Path $repoRoot 'reports'
-$readinessRoot = Join-Path $reportsRoot `
-  'windows-arm64-production-readiness'
+$resolvedReportsRoot = [IO.Path]::GetFullPath($reportsRoot)
+$reportsPrefix = $resolvedReportsRoot.TrimEnd(
+  [IO.Path]::DirectorySeparatorChar
+) + [IO.Path]::DirectorySeparatorChar
+$readinessRoot = if ([string]::IsNullOrWhiteSpace($EvidenceRootPath)) {
+  Join-Path $reportsRoot 'windows-arm64-production-readiness'
+} else {
+  [IO.Path]::GetFullPath($EvidenceRootPath)
+}
+if (-not $readinessRoot.StartsWith(
+    $reportsPrefix,
+    [StringComparison]::OrdinalIgnoreCase
+  )) {
+  throw "Evidence root must remain below $resolvedReportsRoot."
+}
+if (Test-Path -LiteralPath $readinessRoot) {
+  $readinessItem = Get-Item -LiteralPath $readinessRoot -Force
+  if (($readinessItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw "Evidence root must not be a reparse point: $readinessRoot"
+  }
+}
+$defaultPackageIdPrefix = if ($Architecture -eq 'x64') {
+  'com.openai.desktop-updater.x64-readiness'
+} else {
+  'com.openai.desktop-updater.arm64-readiness'
+}
+$defaultAppIdPrefix = if ($Architecture -eq 'x64') {
+  'desktop-updater-x64-readiness'
+} else {
+  'desktop-updater-arm64-readiness'
+}
+$defaultInstallerPublisher = if ($Architecture -eq 'x64') {
+  'desktop_updater X64 local readiness'
+} else {
+  'desktop_updater ARM64 local readiness'
+}
+$defaultInstallRootPrefix = if ($Architecture -eq 'x64') {
+  'DesktopUpdaterX64Readiness'
+} else {
+  'DesktopUpdaterArm64Readiness'
+}
+if ([string]::IsNullOrWhiteSpace($PackageIdPrefix)) {
+  $PackageIdPrefix = $defaultPackageIdPrefix
+}
+if ([string]::IsNullOrWhiteSpace($AppIdPrefix)) {
+  $AppIdPrefix = $defaultAppIdPrefix
+}
+if ([string]::IsNullOrWhiteSpace($InstallerPublisher)) {
+  $InstallerPublisher = $defaultInstallerPublisher
+}
+if ([string]::IsNullOrWhiteSpace($InstallRootPrefix)) {
+  $InstallRootPrefix = $defaultInstallRootPrefix
+}
+foreach ($value in @(
+    $PackageIdPrefix,
+    $AppIdPrefix,
+    $InstallerPublisher,
+    $InstallRootPrefix
+  )) {
+  if ($value.Contains("`r") -or $value.Contains("`n")) {
+    throw 'Inno identity parameters must not contain line breaks.'
+  }
+}
 $workParent = Join-Path $readinessRoot 'work'
 $replayMode = -not [string]::IsNullOrWhiteSpace($ReplayRunToken)
 $replayAttemptToken = $null
@@ -1590,11 +1676,11 @@ New-Item -ItemType Directory -Path $tempRoot, $evidenceRoot | Out-Null
 $programFiles = [IO.Path]::GetFullPath(
   [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
 )
-$packageId = "com.openai.desktop-updater.arm64-readiness.$runToken"
-$appId = "desktop-updater-arm64-readiness-$runToken"
+$packageId = "$PackageIdPrefix.$runToken"
+$appId = "$AppIdPrefix-$runToken"
 $policyId = "$packageId.policy.v1"
 $helperServiceId = "$packageId.helper.v1"
-$installRoot = Join-Path $programFiles "DesktopUpdaterArm64Readiness-$runToken"
+$installRoot = Join-Path $programFiles "$InstallRootPrefix-$runToken"
 $helperInstall312 = Join-Path $programFiles (
   "DesktopUpdaterHelperGenerationV1--$packageId--3.1.2"
 )
@@ -1663,6 +1749,14 @@ $result = [ordered]@{
   schemaVersion = 1
   status = 'running'
   runToken = $runToken
+  architecture = $Architecture
+  evidenceRoot = $evidenceRoot
+  isccPath = $resolvedIscc
+  signtoolPath = $resolvedSigntool
+  packageIdPrefix = $PackageIdPrefix
+  appIdPrefix = $AppIdPrefix
+  installerPublisher = $InstallerPublisher
+  installRootPrefix = $InstallRootPrefix
   sourceVersion = '3.1.2'
   sourceBuildNumber = 312
   targetVersion = '3.1.3'
@@ -1812,6 +1906,7 @@ try {
       CertificateSha256 = $script:certificateSha256
       SigningHookPath = $signingHookPath
       EvidenceRoot = $evidenceRoot
+      InstallerPublisher = $InstallerPublisher
       InitializeFeed = $true
     }
     $version1 = Publish-SmokeVersion @version1Arguments
@@ -1872,6 +1967,7 @@ try {
       CertificateSha256 = $script:certificateSha256
       SigningHookPath = $signingHookPath
       EvidenceRoot = $evidenceRoot
+      InstallerPublisher = $InstallerPublisher
       InitializeFeed = $false
     }
     $version2 = Publish-SmokeVersion @version2Arguments
@@ -2027,9 +2123,12 @@ try {
   $result.status = 'failed'
   $result.error = $_.Exception.Message
 } finally {
-  if ($null -ne $feedServer -and -not $feedServer.HasExited) {
-    Stop-Process -Id $feedServer.Id -Force -ErrorAction SilentlyContinue
-    Wait-Process -Id $feedServer.Id -Timeout 15 -ErrorAction SilentlyContinue
+  if ($null -ne $feedServer) {
+    try {
+      Stop-ExactProcessTree $feedServer.Id 'native_transport_fixture_server.dart'
+    } catch {
+      $cleanupFailures += "feed server cleanup: $($_.Exception.Message)"
+    }
   }
   if ($installationStarted -and -not $uninstallCompleted -and
       (Test-Path -LiteralPath $installRoot -PathType Container)) {
@@ -2051,7 +2150,7 @@ try {
   }
   $cleanupFailures += @(Remove-SmokeSystemResidue `
     $packageId $policyId $helperServiceId $installRoot `
-    $protectedHelperInstallDirs)
+    $protectedHelperInstallDirs $InstallRootPrefix)
 
   foreach ($name in $environmentNames) {
     [Environment]::SetEnvironmentVariable(

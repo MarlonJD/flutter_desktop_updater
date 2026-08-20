@@ -306,12 +306,24 @@ void main() {
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
     );
+    final zipSmoke = readRequiredFile(
+      "tool/windows_native_runtime_zip_smoke.ps1",
+    );
+    final innoSmoke = readRequiredFile(
+      "tool/windows_native_runtime_inno_transport_smoke.ps1",
+    );
     final verifier = readRequiredFile(
       "tool/verify_windows_nuget_consumer.ps1",
     );
 
     expect(validateNuGetConsumerVerifier(verifier), isEmpty);
-    expect(validatePackagedConsumerWorkflow(workflow), isEmpty);
+    expect(
+      validatePackagedConsumerWorkflow(
+        workflow,
+        delegatedSources: [zipSmoke, innoSmoke],
+      ),
+      isEmpty,
+    );
   });
 
   test("NuGet consumer verifier rejects missing isolation and hash proof", () {
@@ -489,11 +501,15 @@ List<String> validateNuGetConsumerVerifier(String source) {
   return failures;
 }
 
-List<String> validatePackagedConsumerWorkflow(String source) {
+List<String> validatePackagedConsumerWorkflow(
+  String source, {
+  List<String> delegatedSources = const [],
+}) {
   final failures = <String>[];
+  final searchableSource = [source, ...delegatedSources].join("\n");
   final verifierCalls = RegExp(
-    r"tool/verify_windows_nuget_consumer\.ps1",
-  ).allMatches(source).length;
+    r"verify_windows_nuget_consumer\.ps1",
+  ).allMatches(searchableSource).length;
   if (verifierCalls != 3) {
     failures.add("all three packaged consumers must use verifier");
   }
@@ -512,7 +528,9 @@ List<String> validatePackagedConsumerWorkflow(String source) {
 String readRequiredFile(String path) {
   final file = File(path);
   expect(file.existsSync(), isTrue, reason: "$path must exist");
-  return file.existsSync() ? file.readAsStringSync() : "";
+  return file.existsSync()
+      ? file.readAsStringSync().replaceAll("\r\n", "\n")
+      : "";
 }
 
 String normalizeNewlines(String value) => value.replaceAll("\r\n", "\n");

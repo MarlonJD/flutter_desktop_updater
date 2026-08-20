@@ -6,7 +6,7 @@ void main() {
   test("secretless native build gates annotate sanitized log tails", () {
     final workflow = File(
       ".github/workflows/desktop-updater-ci.yml",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final bashSteps = <String, String>{
       "Run macOS install helper tests":
           "swift test --package-path macos/install_helper",

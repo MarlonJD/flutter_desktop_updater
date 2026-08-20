@@ -41,6 +41,25 @@ if (staged.Outcome != DesktopUpdaterOutcome.UpdateAvailable ||
     throw new InvalidOperationException(
         $"download_verify_and_stage failed: {staged.Outcome} {staged.Message}");
 }
+Console.WriteLine($"staged path {staged.StagedPath}");
+for (var component = new DirectoryInfo(staged.StagedPath!);
+     component is not null;
+     component = component.Parent!)
+{
+    try
+    {
+        Console.WriteLine(
+            $"staged component {component.FullName} " +
+            $"{File.GetAttributes(component.FullName)}");
+    }
+    catch (Exception error)
+    {
+        Console.WriteLine(
+            $"staged component {component.FullName} unavailable " +
+            $"{error.GetType().Name}: {error.Message}");
+    }
+    if (component.Parent is null) break;
+}
 Directory.CreateDirectory(smokeRoot);
 File.WriteAllLines(
     Path.Combine(smokeRoot, "runtime-diagnostics.log"),

@@ -74,7 +74,7 @@ void main() {
   test("CI gates are structurally bound to the macOS jobs", () {
     final valid = File(
       ".github/workflows/desktop-updater-ci.yml",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final bad = <String>[
       valid.replaceFirst("  macos-native:", "  decoy:"),
       valid.replaceFirst(
@@ -116,7 +116,7 @@ void main() {
   test("CI ignores gate text outside steps and rejects extra step fields", () {
     final valid = File(
       ".github/workflows/desktop-updater-ci.yml",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final typecheck = _step(
       "Typecheck macOS 10.14 CocoaPods fallback source set",
       _typecheck,
@@ -144,7 +144,9 @@ void main() {
   test("CI typechecks and builds both macOS integration modes", () {
     expect(
       _workflowErrors(
-        File(".github/workflows/desktop-updater-ci.yml").readAsStringSync(),
+        File(".github/workflows/desktop-updater-ci.yml")
+            .readAsStringSync()
+            .replaceAll("\r\n", "\n"),
       ),
       isEmpty,
     );
@@ -170,7 +172,7 @@ private func completeCopiedAppLaunch() {
   test("launch contract rejects workspace APIs in the opposite branch", () {
     final plugin = File(
       "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     final legacyInModern = plugin.replaceFirst(
       "            if #available(macOS 10.15, *) {\n",
       "            if #available(macOS 10.15, *) {\n"
@@ -192,7 +194,7 @@ private func completeCopiedAppLaunch() {
   test("launch contract tolerates unrelated availability checks", () {
     final plugin = File(
       "macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift",
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll("\r\n", "\n");
     expect(
       _launchErrors("${_unrelatedAvailability()}\n$plugin"),
       isEmpty,
@@ -343,6 +345,7 @@ List<String> _workflowErrors(String source) {
 }
 
 String? _job(String source, String id) {
+  source = source.replaceAll("\r\n", "\n");
   final lines = source.split("\n");
   final jobs = lines.indexWhere((line) => line == "jobs:");
   if (jobs < 0) return null;
@@ -423,6 +426,7 @@ List<String>? _namedStepBlocks(String job) {
 }
 
 List<String> _launchErrors(String source) {
+  source = source.replaceAll("\r\n", "\n");
   final errors = <String>[];
   final move = _function(source, "moveMacOSAppToApplications");
   final completion = _function(source, "completeCopiedAppLaunch");

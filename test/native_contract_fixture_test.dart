@@ -57,7 +57,7 @@ void main() {
       final descriptor = ReleaseDescriptor.fromJson(
         await _readJson(descriptorFile),
       );
-      final artifactBytes = await artifact.readAsBytes();
+      final artifactBytes = _canonicalBytes(await artifact.readAsBytes());
 
       expect(descriptor.buildNumber, isA<int>(), reason: entry["id"] as String);
       expect(descriptor.artifact.url.isAbsolute, isTrue);
@@ -361,10 +361,16 @@ Future<Map<String, List<int>>> _readTree(Directory root) async {
     if (entity is File) {
       final relative =
           path.relative(entity.path, from: root.path).replaceAll(r"\", "/");
-      entries[relative] = await entity.readAsBytes();
+      entries[relative] = _canonicalBytes(await entity.readAsBytes());
     }
   }
   return entries;
+}
+
+List<int> _canonicalBytes(List<int> bytes) {
+  return utf8.encode(
+    utf8.decode(bytes).replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
+  );
 }
 
 Future<Map<String, dynamic>> _readJson(File file) async {

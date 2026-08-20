@@ -16,6 +16,7 @@ modify, monitor, schedule, or certify this repository.
 | Available commands and expected signals | [`registry.md`](registry.md) |
 | Human/agent workflow, review, and escalation | [`operating-loop.md`](operating-loop.md) |
 | Local isolation, lifecycle, runtime signals, and cleanup | [`environment-contract.md`](environment-contract.md) |
+| Windows x64 production E2E lifecycle and host-boundary evidence | [`windows-x64-production-e2e.md`](windows-x64-production-e2e.md) |
 | Completion language and evidence labels | [`output-contract.md`](output-contract.md) |
 | Change-to-verification mapping | [`verification-matrix.md`](verification-matrix.md) |
 | Manual drift and entropy sweep | [`entropy-cleanup-checklist.md`](entropy-cleanup-checklist.md) |

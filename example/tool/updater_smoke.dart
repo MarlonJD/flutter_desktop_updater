@@ -128,7 +128,9 @@ Future<void> main(List<String> args) async {
     stagedAppPath: stagedAppPath,
     stageParent: payloadRoot,
   );
-  final markerPath = _join(tempRoot.path, "marker.txt");
+  final markerPath =
+      _absolutePath(Platform.environment["DESKTOP_UPDATER_SMOKE_MARKER"]) ??
+          _join(tempRoot.path, "marker.txt");
   final relaunchMarkerPath = _join(tempRoot.path, "relaunch-marker.txt");
   final recoveryStorePath = _join(tempRoot.path, "pending-install.json");
   final diagnosticsLogPath =
@@ -1267,24 +1269,25 @@ Future<void> _writeWindowsHelperEventDiagnostics({
 }
 
 Future<void> _closeWindowsSmokeRelaunch(String executablePath) async {
-  final targetName = File(executablePath).uri.pathSegments.last;
-  for (var attempt = 0; attempt < 20; attempt++) {
-    await Process.run(
-      "taskkill.exe",
-      <String>["/F", "/T", "/IM", targetName],
-      runInShell: false,
-    );
-    final remaining = await _windowsSmokeProcessIds(executablePath);
-    if (remaining.isEmpty) {
-      return;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
   if (Platform.environment[_windowsExternalRelaunchCleanupEnvironment] == "1") {
     stdout.writeln(
       "Windows smoke relaunch cleanup deferred to elevated wrapper.",
     );
     return;
+  }
+  for (var attempt = 0; attempt < 20; attempt++) {
+    final remaining = await _windowsSmokeProcessIds(executablePath);
+    if (remaining.isEmpty) {
+      return;
+    }
+    for (final processId in remaining) {
+      await Process.run(
+        "taskkill.exe",
+        <String>["/F", "/T", "/PID", "$processId"],
+        runInShell: false,
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   throw StateError(
     "Windows smoke relaunch process remained after bounded cleanup: "

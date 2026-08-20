@@ -120,9 +120,11 @@ void main() {
       );
       expect(result.exitCode, 0, reason: _processReason(result));
       expect(
-        await File(path.join(root.path, "journal-transitions.json"))
-            .readAsBytes(),
-        await File(fixturePath).readAsBytes(),
+        _canonicalTextBytes(
+          await File(path.join(root.path, "journal-transitions.json"))
+              .readAsBytes(),
+        ),
+        _canonicalTextBytes(await File(fixturePath).readAsBytes()),
       );
     } finally {
       await root.delete(recursive: true);
@@ -214,3 +216,6 @@ Future<ProcessResult> _runGenerator(
 String _processReason(ProcessResult result) {
   return "exit=${result.exitCode}\nstdout=${result.stdout}\nstderr=${result.stderr}";
 }
+
+List<int> _canonicalTextBytes(List<int> bytes) =>
+    utf8.encode(utf8.decode(bytes).replaceAll("\r\n", "\n"));

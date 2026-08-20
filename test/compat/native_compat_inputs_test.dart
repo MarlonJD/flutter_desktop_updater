@@ -1,3 +1,4 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:crypto/crypto.dart";
@@ -29,21 +30,13 @@ void main() {
       final fields = line.split("  ");
       expect(fields, hasLength(2));
       final bytes = await File("$root/${fields[1]}").readAsBytes();
-      expect(sha256.convert(bytes).toString(), fields[0]);
+      final canonicalBytes = utf8.encode(
+        utf8.decode(bytes).replaceAll("\r\n", "\n"),
+      );
+      expect(sha256.convert(canonicalBytes).toString(), fields[0]);
     }
 
-    final result = await Process.run(
-      "clang",
-      <String>[
-        "-std=c11",
-        "-Werror",
-        "-I",
-        root,
-        "-fsyntax-only",
-        "$root/prepare-v2-probe.c",
-      ],
-      runInShell: false,
-    );
+    final result = await _compileProbe(root);
     expect(result.exitCode, 0, reason: "${result.stdout}\n${result.stderr}");
 
     final dotnet = await Process.run(
@@ -53,4 +46,97 @@ void main() {
     );
     expect(dotnet.exitCode, 0, reason: "${dotnet.stdout}\n${dotnet.stderr}");
   });
+}
+
+Future<ProcessResult> _compileProbe(String root) {
+  const clangArguments = <String>[
+    "-std=c11",
+    "-Werror",
+  ];
+  if (!Platform.isWindows) {
+    return Process.run(
+      "clang",
+      <String>[
+        ...clangArguments,
+        "-I",
+        root,
+        "-fsyntax-only",
+        "$root/prepare-v2-probe.c"
+      ],
+      runInShell: false,
+    );
+  }
+  final msvc = _findMsvcCompiler();
+  if (msvc == null) {
+    return Process.run(
+      "clang",
+      <String>[
+        ...clangArguments,
+        "-I",
+        root,
+        "-fsyntax-only",
+        "$root/prepare-v2-probe.c"
+      ],
+      runInShell: false,
+    );
+  }
+  final msvcRoot = msvc.parent.parent.parent.parent.path;
+  final sdkRoot = _findWindowsSdk();
+  final arguments = <String>[
+    "/nologo",
+    "/TC",
+    "/std:c11",
+    "/W4",
+    "/WX",
+    "/Zs",
+    "/I",
+    "$msvcRoot\\include",
+  ];
+  if (sdkRoot != null) {
+    for (final directory in const <String>["ucrt", "shared", "um", "winrt"]) {
+      arguments.addAll(<String>["/I", "${sdkRoot.path}\\$directory"]);
+    }
+  }
+  arguments.addAll(<String>["/I", root, "$root\\prepare-v2-probe.c"]);
+  return Process.run(
+    msvc.path,
+    arguments,
+    runInShell: false,
+  );
+}
+
+File? _findMsvcCompiler() {
+  final root = Directory(
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools"
+    "\\VC\\Tools\\MSVC",
+  );
+  if (!root.existsSync()) return null;
+  final candidates = root
+      .listSync()
+      .whereType<Directory>()
+      .map(
+        (directory) => File(
+          "${directory.path}\\bin\\Hostx64\\x64\\cl.exe",
+        ),
+      )
+      .where((file) => file.existsSync())
+      .toList()
+    ..sort((left, right) => left.path.compareTo(right.path));
+  return candidates.isEmpty ? null : candidates.last;
+}
+
+Directory? _findWindowsSdk() {
+  final root = Directory("C:\\Program Files (x86)\\Windows Kits\\10\\Include");
+  if (!root.existsSync()) return null;
+  final candidates = root
+      .listSync()
+      .whereType<Directory>()
+      .where(
+        (directory) =>
+            Directory("${directory.path}\\ucrt").existsSync() &&
+            Directory("${directory.path}\\shared").existsSync(),
+      )
+      .toList()
+    ..sort((left, right) => left.path.compareTo(right.path));
+  return candidates.isEmpty ? null : candidates.last;
 }

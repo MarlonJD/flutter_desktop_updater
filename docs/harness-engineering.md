@@ -82,6 +82,8 @@ output. Platform smoke diagnostics use
 `reports/<platform>-update-smoke-<mode>-diagnostics.jsonl`. macOS notarized
 smoke requires manual release approval and secrets; Windows and Linux
 target-host evidence normally belongs to their named CI or manual lanes.
+The reusable Windows x64 host-boundary lifecycle is documented in the
+[Windows x64 production E2E runbook](agent-harness/windows-x64-production-e2e.md).
 
 ## Agent Feedback Loops
 

@@ -401,7 +401,6 @@ void main() {
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
     );
-
     expect(cmake, contains("windows_transaction"));
     expect(cmake, contains("windows_crash_recovery"));
     expect(journal, contains("NtCreateFile"));
@@ -610,6 +609,10 @@ void main() {
     final workflow = readRequiredFile(
       ".github/workflows/desktop-updater-ci.yml",
     );
+    final zipSmoke = readRequiredFile(
+      "tool/windows_native_runtime_zip_smoke.ps1",
+    );
+    final workflowAndTrackedSmokes = "$workflow\n$zipSmoke";
     final diagnostics = readRequiredFile(
       "windows/native/src/helper/windows_helper_diagnostics.cpp",
     );
@@ -658,8 +661,11 @@ void main() {
       recoveryHost,
       contains("WindowsHelperEvent::kPortableRecoveryArtifactFailure"),
     );
-    expect(workflow, contains("Get-WinEvent"));
-    expect(workflow, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
+    expect(workflowAndTrackedSmokes, contains("Get-WinEvent"));
+    expect(
+      workflowAndTrackedSmokes,
+      contains("DesktopUpdater.InstallHelper.ProtocolV1"),
+    );
     expect(transport, contains("WindowsHelperEvent::kWaitingForParentProcess"));
     expect(transport, contains("WindowsHelperEvent::kParentProcessExited"));
     expect(authorizer, contains("WindowsHelperEvent::kStagingPathValidation"));
@@ -1252,7 +1258,9 @@ void main() {
 String readRequiredFile(String path) {
   final file = File(path);
   expect(file.existsSync(), isTrue, reason: "$path must exist");
-  return file.existsSync() ? file.readAsStringSync() : "";
+  return file.existsSync()
+      ? file.readAsStringSync().replaceAll("\r\n", "\n").replaceAll("\r", "\n")
+      : "";
 }
 
 String readRequiredDirectory(String path) {
@@ -1269,7 +1277,12 @@ String readRequiredDirectory(String path) {
           file.path.endsWith,
         ),
       )
-      .map((file) => file.readAsStringSync())
+      .map(
+        (file) => file
+            .readAsStringSync()
+            .replaceAll("\r\n", "\n")
+            .replaceAll("\r", "\n"),
+      )
       .join("\n");
 }
 

@@ -88,7 +88,7 @@ void main() {
 
   test("Windows smoke delegates cross-user relaunch cleanup to the wrapper",
       () {
-    final smoke = File("example/tool/updater_smoke.dart").readAsStringSync();
+    final smoke = _readCanonicalText("example/tool/updater_smoke.dart");
     final runner =
         File("tool/windows_direct_flutter_smoke.ps1").readAsStringSync();
 
@@ -98,6 +98,20 @@ void main() {
         'const _windowsExternalRelaunchCleanupEnvironment =\n'
         '    "DESKTOP_UPDATER_SMOKE_EXTERNAL_RELAUNCH_CLEANUP";',
       ),
+    );
+    final cleanupFunction = smoke.substring(
+      smoke.indexOf("Future<void> _closeWindowsSmokeRelaunch"),
+      smoke.indexOf(
+        "Future<List<int>> _windowsSmokeProcessIds",
+      ),
+    );
+    expect(cleanupFunction, isNot(contains('"/IM"')));
+    expect(cleanupFunction, contains('<String>["/F", "/T", "/PID"'));
+    expect(
+      cleanupFunction.indexOf(
+        'Platform.environment[_windowsExternalRelaunchCleanupEnvironment]',
+      ),
+      lessThan(cleanupFunction.indexOf('"taskkill.exe"')),
     );
     expect(
       smoke,
@@ -114,8 +128,33 @@ void main() {
     expect(runner, contains("Stop-WindowsSmokeRelaunchProcess"));
     expect(runner, contains("taskkill.exe /F /T /PID"));
     expect(runner, contains("Repair-WindowsSmokeCleanupAccess"));
+    expect(runner, contains("SkipNestedReparseCheck"));
+    expect(runner, contains("Visit-WindowsSmokeCleanupDirectory"));
+    expect(runner, contains(r"$children = $null"));
+    expect(
+      runner,
+      contains(r"Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop"),
+    );
+    expect(
+      runner.indexOf(
+          r"Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop"),
+      lessThan(runner.indexOf(r"takeown.exe /F $Path")),
+    );
+    expect(runner, isNot(contains(r"takeown.exe /F $Path /D Y")));
     expect(runner, contains(r"takeown.exe /F $Root /R /D Y"));
     expect(runner, contains(r"icacls.exe $Root /reset /T /C"));
+    expect(runner, contains("standard-user-filesystem-evidence.json"));
+    expect(runner, contains("standard-user-filesystem-probe.ps1"));
+    expect(runner, contains("DESKTOP_UPDATER_SMOKE_FILESYSTEM_EVIDENCE"));
+    expect(runner, contains("standardUserFilesystemEvidence"));
+    expect(runner, contains("lifecycleEvents"));
+    expect(runner, contains(r"^event=(checking|downloading|installing)$"));
+    expect(runner, contains("collectionWarnings"));
+    expect(
+      runner,
+      contains(
+          "provider-filtered event log unavailable; fallback event query used"),
+    );
   });
 
   test(
@@ -147,16 +186,7 @@ void main() {
       ),
     );
     expect(runner, contains(r"$smokeRootWithSeparator"));
-    expect(
-      runner,
-      matches(
-        RegExp(
-          r"if \(-not \$smokeSucceeded\) \{\s*"
-          r"try \{\s*"
-          r"Save-WindowsFlutterSmokeEvidence",
-        ),
-      ),
-    );
+    expect(runner, contains(r"$evidenceCaptureFailure"));
     expect(
       runner,
       contains(
@@ -171,7 +201,7 @@ void main() {
     expect(runner, contains("DesktopUpdater.InstallHelper.ProtocolV1"));
     expect(runner, contains("Read-WindowsSmokeSharedText"));
     expect(runner, contains(r"[IO.FileShare]::Delete"));
-    expect(runner, isNot(contains("Get-FileHash")));
+    expect(runner, contains("Get-FileHash"));
     expect(runner, isNot(contains("ZipArchive")));
     expect(runner, contains("Remove-WindowsSmokeRootWithRetry"));
     expect(runner, contains("Start-Sleep -Milliseconds 250"));
@@ -312,7 +342,8 @@ void main() {
         r'Invoke-WebRequest -UseBasicParsing "${feedBaseUrl}health"',
       ),
     );
-    expect(source, contains("Stop-Process -Id \$feedServer.Id -Force"));
+    expect(source, contains("Stop-ExactProcessTree \$feedServer.Id"));
+    expect(source, contains("native_transport_fixture_server.dart"));
     expect(
       source,
       matches(
@@ -447,14 +478,11 @@ void main() {
 
   test("bounded Inno diagnostic launcher quotes spaced publisher arguments",
       () {
-    final launcher = File(
-      "reports/windows-arm64-production-readiness/"
-      "start-protected-inno-diagnostic-pwsh.ps1",
-    ).readAsStringSync();
+    final launcher = _readCanonicalText("tool/windows_inno_smoke_launcher.ps1");
 
     expect(
       launcher,
-      contains(r"""('"' + $signingPublisher + '"')"""),
+      contains(r"""('"' + $SigningPublisher + '"')"""),
     );
     expect(launcher, contains(r"[string] $ReplayRunToken"));
     expect(launcher, contains(r"$process.Refresh()"));
@@ -608,9 +636,8 @@ void main() {
   });
 
   test("native app policy readers normalize the canonical final LF", () {
-    final native = File(
-      "windows/native/src/desktop_updater_native.cpp",
-    ).readAsStringSync();
+    final native =
+        _readCanonicalText("windows/native/src/desktop_updater_native.cpp");
 
     expect(native, contains("std::string CanonicalPolicyFile("));
     expect(native, contains("contents.substr(0, contents.size() - 1)"));
@@ -723,7 +750,7 @@ void main() {
     );
     expect(
       workflow.substring(elevatedJob, macosJob),
-      contains("tool/windows_inno_smoke.ps1"),
+      contains("tool/windows_inno_smoke_launcher.ps1"),
     );
     expect(
       workflow,
@@ -780,4 +807,8 @@ void main() {
       ),
     );
   });
+}
+
+String _readCanonicalText(String path) {
+  return File(path).readAsStringSync().replaceAll("\r\n", "\n");
 }

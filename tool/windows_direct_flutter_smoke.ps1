@@ -38,6 +38,7 @@ if ($ProvisionDisposableUserTrust) {
 $smokeRunId = [Guid]::NewGuid().ToString("N")
 $configurationToken = $Configuration.Substring(0, 1).ToLowerInvariant()
 $smokeRoot = Join-Path $env:RUNNER_TEMP "duf-$configurationToken-$smokeRunId"
+$smokeRootOwnershipMarker = Join-Path $smokeRoot ".desktop_updater_smoke_run.json"
 $install = Join-Path $smokeRoot "install"
 $installedApp = Join-Path $install "desktop_updater_example.exe"
 $installedHelper = Join-Path $install "desktop_updater_install_helper.exe"
@@ -45,14 +46,20 @@ $smokeRunner = Join-Path $smokeRoot "updater_smoke.exe"
 $smokeTrustCertificate = Join-Path $smokeRoot "disposable-user-trust.cer"
 $runnerWorkingDirectory = $smokeRoot
 $capturedDiagnostics = Join-Path $smokeRoot "helper-diagnostics.jsonl"
+$standardUserFilesystemEvidencePath = Join-Path $smokeRoot "standard-user-filesystem-evidence.json"
+$standardUserFilesystemProbePath = Join-Path $smokeRoot "standard-user-filesystem-probe.ps1"
+$standardUserFilesystemProbeOut = Join-Path $smokeRoot "standard-user-filesystem-probe.out"
+$standardUserFilesystemProbeErr = Join-Path $smokeRoot "standard-user-filesystem-probe.err"
 $runnerOut = Join-Path $smokeRoot "runner.out"
 $runnerErr = Join-Path $smokeRoot "runner.err"
+$markerPath = Join-Path $smokeRoot "smoke-marker.txt"
 $smokeUser = $null
 $smokeUserCreated = $false
 $smokeUserProfile = $null
 $smokeLocalAppData = $null
 $userTemp = $null
 $smokeProcess = $null
+$standardUserFilesystemEvidence = $null
 $helperEventStart = Get-Date
 $prelaunchAcls = @()
 $smokeSucceeded = $false
@@ -60,6 +67,21 @@ $primaryFailure = $null
 $disposableTrustStores = @()
 $disposableSignerCertificateSha256 = $null
 $disposableSignerSelfSigned = $false
+$expectedSmokeVersion = "2.7.1"
+$expectedAppSha256 = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
+$expectedHelperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+
+function Get-WindowsSmokeCertificateSha256([byte[]] $RawData) {
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    return (
+      [BitConverter]::ToString($algorithm.ComputeHash($RawData)) -replace '-', ''
+    ).ToLowerInvariant()
+  } finally {
+    $algorithm.Dispose()
+  }
+}
+$helperEventBaselineRecordId = 0
 
 $smokeRootFullPath = [IO.Path]::GetFullPath($smokeRoot)
 $smokeRootWithSeparator = "$smokeRootFullPath$([IO.Path]::DirectorySeparatorChar)"
@@ -250,6 +272,53 @@ function Stop-WindowsSmokeRelaunchProcess {
   throw "Windows smoke relaunch process remained after elevated cleanup: $ExecutablePath"
 }
 
+function Assert-WindowsSmokeOwnedRoot {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Root,
+    [switch]$SkipNestedReparseCheck
+  )
+
+  $resolvedRoot = [IO.Path]::GetFullPath($Root)
+  $runnerTemp = [IO.Path]::GetFullPath([string]$env:RUNNER_TEMP)
+  $runnerTempPrefix = $runnerTemp.TrimEnd(
+    [IO.Path]::DirectorySeparatorChar
+  ) + [IO.Path]::DirectorySeparatorChar
+  if (-not $resolvedRoot.StartsWith(
+      $runnerTempPrefix,
+      [StringComparison]::OrdinalIgnoreCase
+    ) -or [IO.Path]::GetFileName($resolvedRoot) -notmatch '^duf-[dr]-[0-9a-f]{32}$') {
+    throw "Refusing cleanup outside the task-scoped Windows smoke root: $resolvedRoot"
+  }
+  $parent = Get-Item -LiteralPath (Split-Path $resolvedRoot -Parent) -Force
+  $rootItem = Get-Item -LiteralPath $resolvedRoot -Force
+  if (($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+      ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw "Refusing cleanup through a reparse-point smoke root: $resolvedRoot"
+  }
+  $marker = Join-Path $resolvedRoot ".desktop_updater_smoke_run.json"
+  if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+    throw "Task-owned Windows smoke marker is missing: $marker"
+  }
+  $markerDocument = Get-Content -Raw -LiteralPath $marker | ConvertFrom-Json
+  $expectedRunId = [IO.Path]::GetFileName($resolvedRoot) -replace '^duf-[dr]-', ''
+  $expectedOwnerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  if ([string]$markerDocument.runId -ne $expectedRunId -or
+      [string]$markerDocument.configuration -notin @('Debug', 'Release') -or
+      [string]$markerDocument.ownerSid -ne $expectedOwnerSid) {
+    throw "Windows smoke ownership marker does not match $resolvedRoot"
+  }
+  if (-not $SkipNestedReparseCheck) {
+    $nestedReparse = @(
+      Get-ChildItem -LiteralPath $resolvedRoot -Recurse -Force -ErrorAction Stop |
+        Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }
+    )
+    if ($nestedReparse.Count -ne 0) {
+      throw "Refusing recursive cleanup with nested reparse points: $resolvedRoot"
+    }
+  }
+}
+
 function Repair-WindowsSmokeCleanupAccess {
   param(
     [Parameter(Mandatory = $true)]
@@ -259,6 +328,47 @@ function Repair-WindowsSmokeCleanupAccess {
   if (-not (Test-Path -LiteralPath $Root)) {
     return
   }
+
+  # A protected child can deny the recursive preflight before its own ACL is
+  # repaired. Validate the task-owned root identity first, then walk one
+  # directory at a time. Each child is checked for reparse status before it is
+  # opened or repaired, and the full reparse guard runs again before removal.
+  Assert-WindowsSmokeOwnedRoot -Root $Root -SkipNestedReparseCheck
+  function Visit-WindowsSmokeCleanupDirectory {
+    param(
+      [Parameter(Mandatory = $true)]
+      [string]$Path
+    )
+
+    $children = $null
+    try {
+      $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop)
+    } catch {
+      & takeown.exe /F $Path | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Windows smoke cleanup could not take ownership of $Path."
+      }
+      & icacls.exe $Path /grant '*S-1-5-32-544:(OI)(CI)F' /C | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Windows smoke cleanup could not grant Administrators access to $Path."
+      }
+      & icacls.exe $Path /grant '*S-1-5-18:(OI)(CI)F' /C | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Windows smoke cleanup could not grant SYSTEM access to $Path."
+      }
+      $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop)
+    }
+
+    foreach ($child in $children) {
+      if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Refusing recursive cleanup with nested reparse point: $($child.FullName)"
+      }
+      if ($child.PSIsContainer) {
+        Visit-WindowsSmokeCleanupDirectory -Path $child.FullName
+      }
+    }
+  }
+  Visit-WindowsSmokeCleanupDirectory -Path $Root
   & takeown.exe /F $Root /R /D Y | Out-Null
   if ($LASTEXITCODE -ne 0) {
     throw "Windows smoke cleanup could not take ownership of $Root."
@@ -284,6 +394,7 @@ function Remove-WindowsSmokeRootWithRetry {
   )
 
   Repair-WindowsSmokeCleanupAccess -Root $Root
+  Assert-WindowsSmokeOwnedRoot -Root $Root
   for ($attempt = 0; $attempt -lt 24; $attempt++) {
     try {
       Remove-Item -LiteralPath $Root -Recurse -Force -ErrorAction Stop
@@ -300,6 +411,22 @@ function Remove-WindowsSmokeRootWithRetry {
 function Save-WindowsFlutterSmokeEvidence {
   New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
   $collectionErrors = [Collections.Generic.List[string]]::new()
+  $collectionWarnings = [Collections.Generic.List[string]]::new()
+  foreach ($rawOutput in @($profileProbeOut, $profileProbeErr, $runnerOut, $runnerErr)) {
+    if (-not (Test-Path -LiteralPath $rawOutput -PathType Leaf)) {
+      continue
+    }
+    try {
+      Copy-Item -LiteralPath $rawOutput `
+        -Destination (Join-Path $evidenceRoot (
+          "raw-" + [IO.Path]::GetFileName($rawOutput)
+        )) -Force -ErrorAction Stop
+    } catch {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "raw launch evidence copy: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+  }
 
   $eventRecords = @()
   try {
@@ -309,22 +436,34 @@ function Save-WindowsFlutterSmokeEvidence {
         ProviderName = "DesktopUpdater.InstallHelper.ProtocolV1"
         StartTime = $helperEventStart
       } -ErrorAction Stop |
+        Where-Object {
+          $null -eq $_.RecordId -or
+          [long]$_.RecordId -gt $helperEventBaselineRecordId
+        } |
         Sort-Object TimeCreated, RecordId
     )
   } catch {
-    $collectionErrors.Add(
-      (ConvertTo-WindowsSmokeEvidenceText "provider-filtered event log: $($_.Exception.Message)")
-    ) | Out-Null
+    $providerEventError = ConvertTo-WindowsSmokeEvidenceText $_.Exception.Message
     try {
       $eventRecords = @(
         Get-WinEvent -FilterHashtable @{
           LogName = "Application"
           StartTime = $helperEventStart
         } -ErrorAction Stop |
-          Where-Object { $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" } |
+          Where-Object {
+            $_.ProviderName -eq "DesktopUpdater.InstallHelper.ProtocolV1" -and
+            ($null -eq $_.RecordId -or
+              [long]$_.RecordId -gt $helperEventBaselineRecordId)
+          } |
           Sort-Object TimeCreated, RecordId
       )
+      $collectionWarnings.Add(
+        "provider-filtered event log unavailable; fallback event query used: $providerEventError"
+      ) | Out-Null
     } catch {
+      $collectionErrors.Add(
+        "provider-filtered event log: $providerEventError"
+      ) | Out-Null
       $collectionErrors.Add(
         (ConvertTo-WindowsSmokeEvidenceText "fallback event log: $($_.Exception.Message)")
       ) | Out-Null
@@ -345,6 +484,89 @@ function Save-WindowsFlutterSmokeEvidence {
       }
     }
   )
+
+  $diagnosticEvents = @()
+  $lifecycleEvents = @()
+  $relaunchEvidenceObserved = $false
+  $diagnosticGateFailures = [Collections.Generic.List[string]]::new()
+  if (-not (Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf)) {
+    $collectionErrors.Add("helper diagnostics log is missing") | Out-Null
+  } else {
+    foreach ($line in @(Get-Content -LiteralPath $capturedDiagnostics -ErrorAction Stop)) {
+      $normalizedLine = $line.Trim()
+      if ([string]::IsNullOrWhiteSpace($normalizedLine)) {
+        continue
+      }
+      if ($normalizedLine -match '^event=(checking|downloading|installing)$') {
+        $lifecycleEvents += $Matches[1]
+        continue
+      }
+      if ($normalizedLine -eq 'event=relaunch') {
+        $relaunchEvidenceObserved = $true
+        continue
+      }
+      if ($normalizedLine -match '^event=failed:') {
+        $diagnosticGateFailures.Add(
+          "Dart lifecycle failure event observed: $normalizedLine"
+        ) | Out-Null
+        continue
+      }
+      try {
+        $diagnosticEvents += ,($normalizedLine | ConvertFrom-Json)
+      } catch {
+        $collectionErrors.Add(
+          (ConvertTo-WindowsSmokeEvidenceText "helper diagnostics JSON: $($_.Exception.Message)")
+        ) | Out-Null
+      }
+    }
+  }
+  $expectedLifecycleEvents = @("checking", "downloading", "installing")
+  $lifecycleOrderMatches = $lifecycleEvents.Count -eq $expectedLifecycleEvents.Count
+  if ($lifecycleOrderMatches) {
+    for ($index = 0; $index -lt $expectedLifecycleEvents.Count; $index++) {
+      if ([string]$lifecycleEvents[$index] -ne $expectedLifecycleEvents[$index]) {
+        $lifecycleOrderMatches = $false
+        break
+      }
+    }
+  }
+  if (-not $lifecycleOrderMatches) {
+    $diagnosticGateFailures.Add(
+      "helper lifecycle events did not match the expected ordered sequence"
+    ) | Out-Null
+  }
+  $expectedDiagnosticEvents = @(
+    'helper scheduled'
+    'backup start'
+    'move start'
+    'cleanup success'
+  )
+  $diagnosticCursor = -1
+  foreach ($expectedEvent in $expectedDiagnosticEvents) {
+    $found = $false
+    for ($index = $diagnosticCursor + 1; $index -lt $diagnosticEvents.Count; $index++) {
+      if ([string]$diagnosticEvents[$index].event -eq $expectedEvent) {
+        $diagnosticCursor = $index
+        $found = $true
+        break
+      }
+    }
+    if (-not $found) {
+      $diagnosticGateFailures.Add(
+        "helper diagnostics missing ordered event: $expectedEvent"
+      ) | Out-Null
+    }
+  }
+  $failureEvents = @(
+    $events | Where-Object {
+      [int]$_.id -ge 1047 -and [int]$_.id -le 1059
+    }
+  )
+  if ($failureEvents.Count -ne 0) {
+    $diagnosticGateFailures.Add(
+      "helper failure event IDs observed: $(@($failureEvents.id) -join ',')"
+    ) | Out-Null
+  }
 
   $tasks = @()
   if ($null -ne $smokeUser) {
@@ -421,6 +643,37 @@ function Save-WindowsFlutterSmokeEvidence {
     ) | Out-Null
   }
 
+  $standardUserFilesystemEvidence = $null
+  if (-not (Test-Path -LiteralPath $standardUserFilesystemEvidencePath -PathType Leaf)) {
+    $collectionErrors.Add("standard-user filesystem evidence is missing") | Out-Null
+  } else {
+    try {
+      $candidateFilesystemEvidence = Get-Content -Raw `
+        -LiteralPath $standardUserFilesystemEvidencePath -ErrorAction Stop |
+        ConvertFrom-Json
+      if ($null -eq $candidateFilesystemEvidence -or
+          $null -eq $candidateFilesystemEvidence.filesystem) {
+        throw "standard-user filesystem evidence document is incomplete"
+      }
+      if ($null -eq $smokeUser -or
+          [string]$candidateFilesystemEvidence.userSid -ne $smokeUser.SID.Value) {
+        throw "standard-user filesystem evidence SID does not match the disposable user"
+      }
+      $probeErrors = @(
+        $candidateFilesystemEvidence.errors |
+          Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+      )
+      if ($probeErrors.Count -ne 0) {
+        throw "standard-user filesystem probe reported errors: $($probeErrors -join '; ')"
+      }
+      $standardUserFilesystemEvidence = $candidateFilesystemEvidence
+    } catch {
+      $collectionErrors.Add(
+        (ConvertTo-WindowsSmokeEvidenceText "standard-user filesystem evidence: $($_.Exception.Message)")
+      ) | Out-Null
+    }
+  }
+
   $recoveryActive = $activeProcesses.Count -ne 0 -or @(
     $tasks | Where-Object { $_.state -eq "Running" }
   ).Count -ne 0
@@ -428,27 +681,75 @@ function Save-WindowsFlutterSmokeEvidence {
     diagnosticsExists = Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf
     installExists = $null
     sentinelExists = $null
+    expectedVersion = $expectedSmokeVersion
+    installedVersion = $null
+    expectedAppSha256 = $expectedAppSha256
+    installedAppSha256 = $null
+    expectedHelperSha256 = $expectedHelperSha256
+    installedHelperSha256 = $null
+    marker = $null
+    recoveryRootExists = $false
     skippedReason = if ($recoveryActive) { "helper-or-recovery-active" } else { $null }
     topLevelSmokeEntries = @()
     topLevelUserTempEntries = @()
   }
   $recoveryRecords = @()
   if (-not $recoveryActive) {
-    try {
-      $filesystem.installExists = Test-Path -LiteralPath $install -PathType Container
-    } catch {
-      $filesystem.installExists = $null
-      $collectionErrors.Add(
-        (ConvertTo-WindowsSmokeEvidenceText "install directory probe: $($_.Exception.Message)")
-      ) | Out-Null
-    }
-    try {
-      $filesystem.sentinelExists = Test-Path -LiteralPath (Join-Path $install "desktop_updater_smoke.txt") -PathType Leaf
-    } catch {
-      $filesystem.sentinelExists = $null
-      $collectionErrors.Add(
-        (ConvertTo-WindowsSmokeEvidenceText "install sentinel probe: $($_.Exception.Message)")
-      ) | Out-Null
+    if ($null -ne $standardUserFilesystemEvidence) {
+      $probeFilesystem = $standardUserFilesystemEvidence.filesystem
+      $filesystem.installExists = $probeFilesystem.installExists
+      $filesystem.sentinelExists = $probeFilesystem.sentinelExists
+      $filesystem.installedVersion = $probeFilesystem.installedVersion
+      $filesystem.installedAppSha256 = $probeFilesystem.installedAppSha256
+      $filesystem.installedHelperSha256 = $probeFilesystem.installedHelperSha256
+      $filesystem.marker = $probeFilesystem.marker
+      $filesystem.recoveryRootExists = $probeFilesystem.recoveryRootExists
+      $recoveryRecords = @(
+        $standardUserFilesystemEvidence.recoveryRecords |
+          Where-Object { $null -ne $_ }
+      )
+    } else {
+      try {
+        $filesystem.installExists = Test-Path -LiteralPath $install -PathType Container
+      } catch {
+        $filesystem.installExists = $null
+        $collectionErrors.Add(
+          (ConvertTo-WindowsSmokeEvidenceText "install directory probe: $($_.Exception.Message)")
+        ) | Out-Null
+      }
+      try {
+        $filesystem.sentinelExists = Test-Path -LiteralPath (Join-Path $install "desktop_updater_smoke.txt") -PathType Leaf
+      } catch {
+        $filesystem.sentinelExists = $null
+        $collectionErrors.Add(
+          (ConvertTo-WindowsSmokeEvidenceText "install sentinel probe: $($_.Exception.Message)")
+        ) | Out-Null
+      }
+      try {
+        $versionPath = Join-Path $install ".desktop_updater_smoke_version.txt"
+        if (Test-Path -LiteralPath $versionPath -PathType Leaf) {
+          $filesystem.installedVersion = (Get-Content -Raw -LiteralPath $versionPath).Trim()
+        }
+        $installedAppPath = Join-Path $install "desktop_updater_example.exe"
+        $installedHelperPath = Join-Path $install "desktop_updater_install_helper.exe"
+        if (Test-Path -LiteralPath $installedAppPath -PathType Leaf) {
+          $filesystem.installedAppSha256 = (
+            Get-FileHash -LiteralPath $installedAppPath -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+        }
+        if (Test-Path -LiteralPath $installedHelperPath -PathType Leaf) {
+          $filesystem.installedHelperSha256 = (
+            Get-FileHash -LiteralPath $installedHelperPath -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+        }
+        if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+          $filesystem.marker = (Get-Content -Raw -LiteralPath $markerPath).Trim()
+        }
+      } catch {
+        $collectionErrors.Add(
+          (ConvertTo-WindowsSmokeEvidenceText "version/hash/stage probe: $($_.Exception.Message)")
+        ) | Out-Null
+      }
     }
     try {
       $filesystem.topLevelSmokeEntries = @(Get-WindowsSmokeTopLevelEntries $smokeRoot)
@@ -465,10 +766,12 @@ function Save-WindowsFlutterSmokeEvidence {
       ) | Out-Null
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($smokeLocalAppData)) {
+    if ($null -eq $standardUserFilesystemEvidence -and
+        -not [string]::IsNullOrWhiteSpace($smokeLocalAppData)) {
       $recoveryRoot = Join-Path $smokeLocalAppData "desktop_updater_portable_transactions_v1"
       try {
         if (Test-Path -LiteralPath $recoveryRoot -PathType Container) {
+          $filesystem.recoveryRootExists = $true
           $recoveryNames = @(
             "record.json",
             "record.next",
@@ -503,7 +806,7 @@ function Save-WindowsFlutterSmokeEvidence {
             }
           )
         } else {
-          $collectionErrors.Add("recovery records: root absent or inaccessible") | Out-Null
+          $filesystem.recoveryRootExists = $false
         }
       } catch {
         $collectionErrors.Add(
@@ -513,14 +816,92 @@ function Save-WindowsFlutterSmokeEvidence {
     }
   }
 
+  $activeRecoveryRecords = @(
+    foreach ($recoveryRecord in $recoveryRecords) {
+      if ($null -eq $recoveryRecord.content) {
+        $recoveryRecord
+        continue
+      }
+      $leafName = Split-Path -Leaf ([string]$recoveryRecord.relativePath)
+      try {
+        $recordDocument = [string]$recoveryRecord.content | ConvertFrom-Json
+        if ($leafName -eq "record.json") {
+          if ([string]$recordDocument.recordState -notin @("completed", "rolledBack") -or
+              [string]$recordDocument.relaunchState -notin @("launched", "notRequested")) {
+            $recoveryRecord
+          }
+        } elseif ($leafName -eq "resolver_claim.json") {
+          if ([string]$recordDocument.state -ne "consumed") {
+            $recoveryRecord
+          }
+        } elseif ($leafName -in @("record.next", "resolver_claim.next", "locator.next")) {
+          $recoveryRecord
+        } elseif ($leafName -ne "locator.json") {
+          $recoveryRecord
+        }
+      } catch {
+        $recoveryRecord
+      }
+    }
+  )
+
+  $hardEvidenceFailures = [Collections.Generic.List[string]]::new()
+  foreach ($collectionError in $collectionErrors) {
+    $hardEvidenceFailures.Add("collection error: $collectionError") | Out-Null
+  }
+  if ($activeProcesses.Count -ne 0) {
+    $hardEvidenceFailures.Add("unexpected active process evidence") | Out-Null
+  }
+  if (@($tasks | Where-Object { $_.state -eq "Running" }).Count -ne 0) {
+    $hardEvidenceFailures.Add("unexpected active scheduled task evidence") | Out-Null
+  }
+  if (-not $filesystem.diagnosticsExists) {
+    $hardEvidenceFailures.Add("helper diagnostics file is missing") | Out-Null
+  }
+  if (-not $relaunchEvidenceObserved) {
+    $hardEvidenceFailures.Add("Dart relaunch evidence event is missing") | Out-Null
+  }
+  if (-not $filesystem.installExists -or -not $filesystem.sentinelExists) {
+    $hardEvidenceFailures.Add("installed payload or sentinel evidence is missing") | Out-Null
+  }
+  if ($filesystem.installedVersion -ne $expectedSmokeVersion) {
+    $hardEvidenceFailures.Add(
+      "expected version $expectedSmokeVersion, observed $($filesystem.installedVersion)"
+    ) | Out-Null
+  }
+  if ($filesystem.installedAppSha256 -ne $expectedAppSha256) {
+    $hardEvidenceFailures.Add("installed app hash does not match the signed source app") | Out-Null
+  }
+  if ($filesystem.installedHelperSha256 -ne $expectedHelperSha256) {
+    $hardEvidenceFailures.Add("installed helper hash does not match the signed source helper") | Out-Null
+  }
+  if ($filesystem.marker -ne "installing") {
+    $hardEvidenceFailures.Add("install stage marker is not installing") | Out-Null
+  }
+  if ($activeRecoveryRecords.Count -ne 0) {
+    $hardEvidenceFailures.Add("active recovery state remained after controller cleanup") | Out-Null
+  }
+  foreach ($diagnosticGateFailure in $diagnosticGateFailures) {
+    $hardEvidenceFailures.Add($diagnosticGateFailure) | Out-Null
+  }
+
   $report = [PSCustomObject]@{
     activeProcesses = $activeProcesses
+    applicationEventBaselineRecordId = $helperEventBaselineRecordId
     capturedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
     collectionErrors = @($collectionErrors)
+    collectionWarnings = @($collectionWarnings)
     configuration = $Configuration
     events = $events
+    diagnosticEvents = $diagnosticEvents
     filesystem = $filesystem
+    hardEvidenceGate = [PSCustomObject]@{
+      passed = $hardEvidenceFailures.Count -eq 0
+      failures = @($hardEvidenceFailures)
+    }
     helperEventStartUtc = $helperEventStart.ToUniversalTime().ToString("o")
+    lifecycleEvents = $lifecycleEvents
+    relaunchEvidenceObserved = $relaunchEvidenceObserved
     prelaunchAcls = $prelaunchAcls
     primaryFailure = ConvertTo-WindowsSmokeEvidenceText $primaryFailure
     recoveryRecords = $recoveryRecords
@@ -531,6 +912,7 @@ function Save-WindowsFlutterSmokeEvidence {
       workingDirectory = ConvertTo-WindowsSmokeEvidenceText $runnerWorkingDirectory
     }
     schemaVersion = 1
+    standardUserFilesystemEvidence = $standardUserFilesystemEvidence
     standardUser = if ($null -ne $smokeUser) {
       [PSCustomObject]@{
         sid = $smokeUser.SID.Value
@@ -547,7 +929,10 @@ function Save-WindowsFlutterSmokeEvidence {
   foreach ($textArtifact in @(
       [PSCustomObject]@{ name = "runner.out"; path = $runnerOut },
       [PSCustomObject]@{ name = "runner.err"; path = $runnerErr },
-      [PSCustomObject]@{ name = "helper-diagnostics.jsonl"; path = $capturedDiagnostics }
+      [PSCustomObject]@{ name = "helper-diagnostics.jsonl"; path = $capturedDiagnostics },
+      [PSCustomObject]@{ name = "standard-user-filesystem-evidence.json"; path = $standardUserFilesystemEvidencePath },
+      [PSCustomObject]@{ name = "standard-user-filesystem-probe.out"; path = $standardUserFilesystemProbeOut },
+      [PSCustomObject]@{ name = "standard-user-filesystem-probe.err"; path = $standardUserFilesystemProbeErr }
     )) {
     if (Test-Path -LiteralPath $textArtifact.path -PathType Leaf) {
       try {
@@ -561,6 +946,9 @@ function Save-WindowsFlutterSmokeEvidence {
       }
     }
   }
+  if ($hardEvidenceFailures.Count -ne 0) {
+    throw "Windows $Configuration Flutter smoke hard evidence gate failed: $($hardEvidenceFailures -join '; ')"
+  }
 }
 
 try {
@@ -568,7 +956,22 @@ try {
     throw "Unique Windows Flutter smoke root already exists: $smokeRoot"
   }
   New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+  [IO.File]::WriteAllText(
+    $smokeRootOwnershipMarker,
+    (@{
+      runId = $smokeRunId
+      configuration = $Configuration
+      ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+      createdAtUtc = [DateTimeOffset]::UtcNow.ToString("o")
+    } | ConvertTo-Json -Compress),
+    [Text.UTF8Encoding]::new($false)
+  )
   Copy-Item -LiteralPath $runnerRoot -Destination $install -Recurse -Force
+  [IO.File]::WriteAllText(
+    (Join-Path $install ".desktop_updater_smoke_version.txt"),
+    $expectedSmokeVersion + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false)
+  )
 
   if ($ProvisionDisposableUserTrust) {
     $signatures = @(
@@ -586,9 +989,7 @@ try {
     $certificateHashes = @(
       $signerCertificates |
         ForEach-Object {
-          [Convert]::ToHexString(
-            [Security.Cryptography.SHA256]::HashData($_.RawData)
-          ).ToLowerInvariant()
+          Get-WindowsSmokeCertificateSha256 $_.RawData
         }
     )
     $expectedCertificateHash = `
@@ -661,6 +1062,10 @@ try {
   if ($LASTEXITCODE -ne 0) {
     throw "Windows Flutter smoke account could not own its disposable lane."
   }
+  & icacls.exe $smokeRoot /grant "*$($smokeUser.SID.Value):F" /C | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows Flutter smoke account could not read its disposable lane root."
+  }
 
   $smokeCredential = [System.Management.Automation.PSCredential]::new(
     "$env:COMPUTERNAME\$smokeUserName",
@@ -692,8 +1097,15 @@ try {
   $smokeEnvironment = @{
     APPDATA = Join-Path $smokeUserProfile "AppData\Roaming"
     DESKTOP_UPDATER_SMOKE_EXPECTED_LOCALAPPDATA = $smokeLocalAppData
+    DESKTOP_UPDATER_SMOKE_EXPECTED_VERSION = $expectedSmokeVersion
     DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_SHA256 = $trustCertificateSha256
     DESKTOP_UPDATER_SMOKE_EXPECTED_SIGNER_PUBLISHER = $trustCertificatePublisher
+    DESKTOP_UPDATER_SMOKE_EXPECTED_APP_SHA256 = $expectedAppSha256
+    DESKTOP_UPDATER_SMOKE_EXPECTED_HELPER_SHA256 = $expectedHelperSha256
+    DESKTOP_UPDATER_SMOKE_FILESYSTEM_EVIDENCE = $standardUserFilesystemEvidencePath
+    DESKTOP_UPDATER_SMOKE_FILESYSTEM_INSTALL_ROOT = $install
+    DESKTOP_UPDATER_SMOKE_FILESYSTEM_RECOVERY_ROOT = Join-Path $smokeLocalAppData "desktop_updater_portable_transactions_v1"
+    DESKTOP_UPDATER_SMOKE_MARKER = $markerPath
     DESKTOP_UPDATER_SMOKE_PROVISION_USER_TRUST = $provisionTrustToken
     DESKTOP_UPDATER_SMOKE_SIGNED_HELPER = $installedHelper
     DESKTOP_UPDATER_SMOKE_SIGNER_SELF_SIGNED = $selfSignedTrustToken
@@ -712,11 +1124,103 @@ try {
     USERPROFILE = $smokeUserProfile
     WINDIR = $env:WINDIR
   }
+  $startProcessSupportsEnvironment = @(
+    (Get-Command -Name Start-Process -ErrorAction Stop).Parameters.Keys
+  ) -contains 'Environment'
+  function Quote-WindowsSmokePowerShellArgument([string] $Value) {
+    return "'" + ($Value -replace "'", "''") + "'"
+  }
+  function New-WindowsSmokeEnvironmentLauncher(
+    [string] $LauncherPath,
+    [string] $TargetPath,
+    [string[]] $TargetArguments
+  ) {
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('$ErrorActionPreference = "Stop"')
+    foreach ($entry in $smokeEnvironment.GetEnumerator()) {
+      $lines.Add(
+        ('$env:{0} = {1}' -f
+          $entry.Key,
+          (Quote-WindowsSmokePowerShellArgument ([string]$entry.Value)))
+      )
+    }
+    $lines.Add('$ErrorActionPreference = "Continue"')
+    $quotedArgumentArray = @(
+      $TargetArguments |
+        ForEach-Object {
+          Quote-WindowsSmokePowerShellArgument ([string]$_)
+        }
+    ) -join ', '
+    $lines.Add(
+      ('$nativeStdoutPath = Join-Path $PSScriptRoot ("launcher-stdout-{0}.out")' -f
+        [Guid]::NewGuid().ToString("N"))
+    )
+    $lines.Add(
+      ('$nativeStderrPath = Join-Path $PSScriptRoot ("launcher-stderr-{0}.err")' -f
+        [Guid]::NewGuid().ToString("N"))
+    )
+    $targetPathLiteral = Quote-WindowsSmokePowerShellArgument $TargetPath
+    $lines.Add(
+      ('$targetProcess = Start-Process -FilePath ' + $targetPathLiteral +
+        ' -ArgumentList @(' + $quotedArgumentArray + ') ' +
+        '-WorkingDirectory $PSScriptRoot -RedirectStandardOutput ' +
+        '$nativeStdoutPath -RedirectStandardError $nativeStderrPath -Wait -PassThru')
+    )
+    $lines.Add(
+      'if (Test-Path -LiteralPath $nativeStdoutPath -PathType Leaf) {' +
+      ' Get-Content -LiteralPath $nativeStdoutPath | ForEach-Object {' +
+      ' [Console]::Out.WriteLine($_) } }'
+    )
+    $lines.Add(
+      'if (Test-Path -LiteralPath $nativeStderrPath -PathType Leaf) {' +
+      ' Get-Content -LiteralPath $nativeStderrPath | ForEach-Object {' +
+      ' [Console]::Error.WriteLine($_) } }'
+    )
+    $lines.Add('$exitCode = $targetProcess.ExitCode')
+    $lines.Add('exit $exitCode')
+    [IO.File]::WriteAllText(
+      $LauncherPath,
+      ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+      [Text.UTF8Encoding]::new($false)
+    )
+  }
   $smokePasswordText = $null
   $profileProbeOut = Join-Path $smokeRoot "profile-probe.out"
   $profileProbeErr = Join-Path $smokeRoot "profile-probe.err"
   $profileProbeScript = @(
     '$ErrorActionPreference = "Stop"'
+    'function Get-DesktopUpdaterSha256([byte[]] $RawData) {'
+    '  $algorithm = [Security.Cryptography.SHA256]::Create()'
+    '  try {'
+    '    return ([BitConverter]::ToString($algorithm.ComputeHash($RawData)) -replace "-", "").ToLowerInvariant()'
+    '  } finally {'
+    '    $algorithm.Dispose()'
+    '  }'
+    '}'
+    'function Assert-DisposableTrustCertificate {'
+    '  param('
+    '    [Parameter(Mandatory = $true)] [string] $StoreName,'
+    '    [Parameter(Mandatory = $true)] [string] $ExpectedSha256,'
+    '    [Parameter(Mandatory = $true)] [string] $ExpectedPublisher'
+    '  )'
+    '  $storePath = "Cert:\CurrentUser\" + $StoreName'
+    '  $matches = @('
+    '    Get-ChildItem -LiteralPath $storePath -ErrorAction Stop |'
+    '      Where-Object {'
+    '        (Get-DesktopUpdaterSha256 $_.RawData) -eq $ExpectedSha256 -and'
+    '          $_.GetNameInfo('
+    '            [Security.Cryptography.X509Certificates.X509NameType]::SimpleName,'
+    '            $false'
+    '          ) -eq $ExpectedPublisher'
+    '      }'
+    '  )'
+    '  if ($matches.Count -ne 1) {'
+    '    throw "disposable CurrentUser trust store postcondition failed for $StoreName."'
+    '  }'
+    '  if ($matches[0].HasPrivateKey) {'
+    '    throw "disposable CurrentUser trust store unexpectedly contains a private key."'
+    '  }'
+    '}'
     '$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, [Environment+SpecialFolderOption]::Create)'
     'if ([string]::IsNullOrWhiteSpace($localAppData)) {'
     '  throw "LocalApplicationData is unavailable."'
@@ -738,7 +1242,7 @@ try {
     '    if ($certificate.HasPrivateKey) {'
     '      throw "Disposable trust certificate unexpectedly contains a private key."'
     '    }'
-    '    $certificateSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($certificate.RawData)).ToLowerInvariant()'
+    '    $certificateSha256 = Get-DesktopUpdaterSha256 $certificate.RawData'
     '    $publisher = $certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)'
     '    if ($certificateSha256 -ne $expectedCertificateSha256 -or $publisher -ne $expectedPublisher) {'
     '      throw "Disposable trust certificate identity changed."'
@@ -748,16 +1252,38 @@ try {
     '      $storeNames = @("Root", "TrustedPublisher")'
     '    }'
     '    foreach ($storeName in $storeNames) {'
-    '      $certutilOutput = & certutil.exe -user -f -addstore $storeName $certificatePath 2>&1'
-    '      if ($LASTEXITCODE -ne 0) {'
-    '        throw "certutil failed to add disposable CurrentUser trust to $storeName`: $certutilOutput"'
+    '      $certutilStdoutPath = Join-Path $localAppData ("desktop-updater-certutil-{0}.out" -f [Guid]::NewGuid().ToString("N"))'
+    '      $certutilStderrPath = Join-Path $localAppData ("desktop-updater-certutil-{0}.err" -f [Guid]::NewGuid().ToString("N"))'
+    '      $certutilProcess = Start-Process -FilePath "certutil.exe" -ArgumentList @('
+    '        "-user",'
+    '        "-f",'
+    '        "-addstore",'
+    '        $storeName,'
+    '        $certificatePath'
+    '      ) -WindowStyle Normal -RedirectStandardOutput $certutilStdoutPath -RedirectStandardError $certutilStderrPath -Wait -PassThru'
+    '      $certutilExit = $certutilProcess.ExitCode'
+    '      $certutilOutput = @('
+    '        Get-Content -LiteralPath $certutilStdoutPath -ErrorAction SilentlyContinue'
+    '        Get-Content -LiteralPath $certutilStderrPath -ErrorAction SilentlyContinue'
+    '      )'
+    '      try {'
+    '        Assert-DisposableTrustCertificate -StoreName $storeName -ExpectedSha256 $expectedCertificateSha256 -ExpectedPublisher $expectedPublisher'
+    '      } catch {'
+    '        if ($certutilExit -ne 0) {'
+    '          throw "certutil failed to add disposable CurrentUser trust to $storeName (exit $certutilExit) and the store postcondition was not met`: $certutilOutput"'
+    '        }'
+    '        throw'
     '      }'
+    '      if ($certutilExit -ne 0) {'
+    '        Write-Warning "certutil returned exit $certutilExit after the exact disposable CurrentUser trust postcondition passed for $storeName`: $certutilOutput"'
+    '      }'
+    '      Assert-DisposableTrustCertificate -StoreName $storeName -ExpectedSha256 $expectedCertificateSha256 -ExpectedPublisher $expectedPublisher'
     '    }'
     '    $helperSignature = Get-AuthenticodeSignature -LiteralPath $signedHelper'
     '    if ($helperSignature.Status -ne "Valid" -or $null -eq $helperSignature.SignerCertificate) {'
     '      throw "Disposable user does not trust the signed helper."'
     '    }'
-    '    $helperCertificateSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($helperSignature.SignerCertificate.RawData)).ToLowerInvariant()'
+    '    $helperCertificateSha256 = Get-DesktopUpdaterSha256 $helperSignature.SignerCertificate.RawData'
     '    $helperPublisher = $helperSignature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)'
     '    if ($helperCertificateSha256 -ne $expectedCertificateSha256 -or $helperPublisher -ne $expectedPublisher) {'
     '      throw "Disposable user trusted an unexpected helper signer."'
@@ -780,18 +1306,235 @@ try {
     $profileProbeScript,
     [Text.UTF8Encoding]::new($false)
   )
-  $profileProbeShell = (Get-Process -Id $PID).Path
+  $standardUserFilesystemProbeScript = @(
+    '$ErrorActionPreference = "Stop"'
+    '$evidencePath = $env:DESKTOP_UPDATER_SMOKE_FILESYSTEM_EVIDENCE'
+    '$installRoot = $env:DESKTOP_UPDATER_SMOKE_FILESYSTEM_INSTALL_ROOT'
+    '$recoveryRoot = $env:DESKTOP_UPDATER_SMOKE_FILESYSTEM_RECOVERY_ROOT'
+    '$markerPath = $env:DESKTOP_UPDATER_SMOKE_MARKER'
+    '$recoveryNames = @('
+    '  "record.json"'
+    '  "record.next"'
+    '  "resolver_claim.json"'
+    '  "resolver_claim.next"'
+    '  "locator.json"'
+    '  "locator.next"'
+    ')'
+    '$errors = [Collections.Generic.List[string]]::new()'
+    '$recoveryRecords = [Collections.Generic.List[object]]::new()'
+    'function Add-ProbeError([string] $Message) {'
+    '  if (-not [string]::IsNullOrWhiteSpace($Message)) {'
+    '    $errors.Add($Message) | Out-Null'
+    '  }'
+    '}'
+    'function Get-ProbeSha256([string] $Path) {'
+    '  return (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()'
+    '}'
+    'function Read-RecoveryDirectory {'
+    '  param('
+    '    [Parameter(Mandatory = $true)] [string] $Path,'
+    '    [Parameter(Mandatory = $true)] [string] $RelativePath,'
+    '    [Parameter(Mandatory = $true)] [int] $Depth'
+    '  )'
+    '  if ($recoveryRecords.Count -ge 32) {'
+    '    return'
+    '  }'
+    '  foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop)) {'
+    '    if ($recoveryRecords.Count -ge 32) {'
+    '      return'
+    '    }'
+    '    if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {'
+    '      Add-ProbeError ("recovery tree contains a reparse point: {0}" -f $RelativePath)'
+    '      continue'
+    '    }'
+    '    $childRelativePath = Join-Path $RelativePath $child.Name'
+    '    if ($child.PSIsContainer) {'
+    '      if ($Depth -lt 3) {'
+    '        Read-RecoveryDirectory -Path $child.FullName -RelativePath $childRelativePath -Depth ($Depth + 1)'
+    '      }'
+    '      continue'
+    '    }'
+    '    if ($recoveryNames -notcontains $child.Name) {'
+    '      continue'
+    '    }'
+    '    try {'
+    '      if ($child.Length -gt 1048576) {'
+    '        throw "recovery record exceeds 1048576 bytes"'
+    '      }'
+    '      $content = [IO.File]::ReadAllText($child.FullName, [Text.UTF8Encoding]::new($false, $false))'
+    '      $recoveryRecords.Add([PSCustomObject]@{'
+    '        content = $content'
+    '        error = $null'
+    '        relativePath = $childRelativePath'
+    '      }) | Out-Null'
+    '    } catch {'
+    '      $message = $_.Exception.Message'
+    '      $recoveryRecords.Add([PSCustomObject]@{'
+    '        content = $null'
+    '        error = $message'
+    '        relativePath = $childRelativePath'
+    '      }) | Out-Null'
+    '      Add-ProbeError ("recovery record read: {0}" -f $message)'
+    '    }'
+    '  }'
+    '}'
+    '$filesystem = [ordered]@{'
+    '  installExists = $false'
+    '  sentinelExists = $false'
+    '  installedVersion = $null'
+    '  installedAppSha256 = $null'
+    '  installedHelperSha256 = $null'
+    '  marker = $null'
+    '  recoveryRootExists = $false'
+    '}'
+    '$userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value'
+    'try {'
+    '  if ([string]::IsNullOrWhiteSpace($installRoot)) {'
+    '    throw "standard-user install root is unavailable"'
+    '  }'
+    '  $installItem = Get-Item -LiteralPath $installRoot -Force -ErrorAction Stop'
+    '  if (-not $installItem.PSIsContainer) {'
+    '    throw "standard-user install root is not a directory"'
+    '  }'
+    '  $filesystem.installExists = $true'
+    '  $sentinelPath = Join-Path $installRoot "desktop_updater_smoke.txt"'
+    '  $sentinelItem = Get-Item -LiteralPath $sentinelPath -Force -ErrorAction Stop'
+    '  if ($sentinelItem.PSIsContainer) {'
+    '    throw "standard-user smoke sentinel is not a file"'
+    '  }'
+    '  $filesystem.sentinelExists = $true'
+    '  $versionPath = Join-Path $installRoot ".desktop_updater_smoke_version.txt"'
+    '  $filesystem.installedVersion = (Get-Content -Raw -LiteralPath $versionPath -ErrorAction Stop).Trim()'
+    '  $filesystem.installedAppSha256 = Get-ProbeSha256 (Join-Path $installRoot "desktop_updater_example.exe")'
+    '  $filesystem.installedHelperSha256 = Get-ProbeSha256 (Join-Path $installRoot "desktop_updater_install_helper.exe")'
+    '  $filesystem.marker = (Get-Content -Raw -LiteralPath $markerPath -ErrorAction Stop).Trim()'
+    '} catch {'
+    '  Add-ProbeError $_.Exception.Message'
+    '}'
+    'try {'
+    '  if (-not [string]::IsNullOrWhiteSpace($recoveryRoot)) {'
+    '    try {'
+    '      $recoveryItem = Get-Item -LiteralPath $recoveryRoot -Force -ErrorAction Stop'
+    '      if (-not $recoveryItem.PSIsContainer) {'
+    '        throw "standard-user recovery root is not a directory"'
+    '      }'
+    '      $filesystem.recoveryRootExists = $true'
+    '      Read-RecoveryDirectory -Path $recoveryRoot -RelativePath "..." -Depth 0'
+    '    } catch {'
+    '      if ($_.Exception.Message -notmatch "Cannot find path|cannot find the path|PathNotFound") {'
+    '        Add-ProbeError $_.Exception.Message'
+    '      }'
+    '    }'
+    '  }'
+    '} catch {'
+    '  Add-ProbeError $_.Exception.Message'
+    '}'
+    '$document = [ordered]@{'
+    '  capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("o")'
+    '  userSid = $userSid'
+    '  errors = @($errors)'
+    '  filesystem = [PSCustomObject]$filesystem'
+    '  recoveryRecords = @($recoveryRecords)'
+    '}'
+    'try {'
+    '  $document | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8 -ErrorAction Stop'
+    '} catch {'
+    '  Write-Error ("standard-user filesystem evidence write failed: {0}" -f $_.Exception.Message)'
+    '  exit 1'
+    '}'
+    'if ($errors.Count -ne 0) {'
+    '  Write-Error ("standard-user filesystem evidence reported errors: {0}" -f ($errors -join "; "))'
+    '  exit 1'
+    '}'
+    'Write-Output "Windows Flutter smoke standard-user filesystem evidence captured."'
+    'exit 0'
+  ) -join [Environment]::NewLine
+  [IO.File]::WriteAllText(
+    $standardUserFilesystemProbePath,
+    $standardUserFilesystemProbeScript,
+    [Text.UTF8Encoding]::new($false)
+  )
+  # The owner/high driver may be hosted from a private AppData path that the
+  # disposable standard user cannot execute. Use the system-owned Windows
+  # PowerShell host for the profile/trust probe instead of leaking the driver
+  # host path across the account boundary.
+  $profileProbeShell = Join-Path $env:SystemRoot `
+    'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if (-not (Test-Path -LiteralPath $profileProbeShell -PathType Leaf)) {
+    throw "Windows PowerShell profile probe host is missing: $profileProbeShell"
+  }
   $originalTemp = $env:TEMP
   $originalTmp = $env:TMP
   try {
     $env:TEMP = $userTemp
     $env:TMP = $userTemp
-    $profileProbeProcess = Start-Process -FilePath $profileProbeShell -ArgumentList @(
+    $profileProbeArguments = @(
       "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
+      "-NoProfile"
+    )
+    if (-not $ProvisionDisposableUserTrust) {
+      $profileProbeArguments += "-NonInteractive"
+    }
+    $profileProbeArguments += @(
+      "-ExecutionPolicy",
+      "Bypass",
       "-File", $profileProbePath
-    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $smokeRoot -RedirectStandardOutput $profileProbeOut -RedirectStandardError $profileProbeErr -Wait -PassThru
+    )
+    $profileProbeLauncherPath = Join-Path $smokeRoot "profile-probe-launcher.ps1"
+    $runnerLauncherPath = Join-Path $smokeRoot "runner-launcher.ps1"
+    $standardUserFilesystemLauncherPath = Join-Path `
+      $smokeRoot "standard-user-filesystem-launcher.ps1"
+    if (-not $startProcessSupportsEnvironment) {
+      New-WindowsSmokeEnvironmentLauncher `
+        -LauncherPath $profileProbeLauncherPath `
+        -TargetPath $profileProbeShell `
+        -TargetArguments $profileProbeArguments
+      New-WindowsSmokeEnvironmentLauncher `
+        -LauncherPath $runnerLauncherPath `
+        -TargetPath $smokeRunner `
+        -TargetArguments @(
+          "--app", $installedApp,
+          "--diagnostics-log", $capturedDiagnostics
+        )
+      New-WindowsSmokeEnvironmentLauncher `
+        -LauncherPath $standardUserFilesystemLauncherPath `
+        -TargetPath $profileProbeShell `
+        -TargetArguments @(
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File", $standardUserFilesystemProbePath
+        )
+    }
+    $profileProbeWindowStyle = if ($ProvisionDisposableUserTrust) {
+      [Diagnostics.ProcessWindowStyle]::Normal
+    } else {
+      [Diagnostics.ProcessWindowStyle]::Hidden
+    }
+    if ($startProcessSupportsEnvironment) {
+      $profileProbeProcess = Start-Process -FilePath $profileProbeShell `
+        -ArgumentList $profileProbeArguments `
+        -Credential $smokeCredential -LoadUserProfile `
+        -Environment $smokeEnvironment -WorkingDirectory $smokeRoot `
+        -WindowStyle $profileProbeWindowStyle `
+        -RedirectStandardOutput $profileProbeOut `
+        -RedirectStandardError $profileProbeErr -Wait -PassThru
+    } else {
+      $profileProbeProcess = Start-Process -FilePath $profileProbeShell `
+        -ArgumentList @(
+          "-NoLogo",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File", $profileProbeLauncherPath
+        ) -Credential $smokeCredential -LoadUserProfile `
+        -WorkingDirectory $smokeRoot `
+        -WindowStyle $profileProbeWindowStyle `
+        -RedirectStandardOutput $profileProbeOut `
+        -RedirectStandardError $profileProbeErr -Wait -PassThru
+    }
     foreach ($profileOutputPath in @($profileProbeOut, $profileProbeErr)) {
       if (Test-Path -LiteralPath $profileOutputPath -PathType Leaf) {
         Write-Host (Read-WindowsSmokeSharedText $profileOutputPath)
@@ -809,12 +1552,40 @@ try {
       Get-WindowsSmokeAclSnapshot -Label "smokeLocalAppData" -Path $smokeLocalAppData
     )
     $helperEventStart = Get-Date
+    try {
+      $applicationBaseline = Get-WinEvent -LogName "Application" -MaxEvents 1 `
+        -ErrorAction Stop
+      if ($null -eq $applicationBaseline -or
+          $null -eq $applicationBaseline.RecordId) {
+        throw "Application Event Log baseline did not expose a RecordId."
+      }
+      $helperEventBaselineRecordId = [long]$applicationBaseline.RecordId
+    } catch {
+      throw "Application Event Log baseline capture failed: $($_.Exception.Message)"
+    }
     # Keeping the outer sentinel waiter inside $install pins that directory on
     # Windows and prevents the helper from atomically replacing it after exit.
-    $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
-      "--app", $installedApp,
-      "--diagnostics-log", $capturedDiagnostics
-    ) -Credential $smokeCredential -LoadUserProfile -Environment $smokeEnvironment -WorkingDirectory $runnerWorkingDirectory -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -PassThru
+    if ($startProcessSupportsEnvironment) {
+      $smokeProcess = Start-Process -FilePath $smokeRunner -ArgumentList @(
+        "--app", $installedApp,
+        "--diagnostics-log", $capturedDiagnostics
+      ) -Credential $smokeCredential -LoadUserProfile `
+        -Environment $smokeEnvironment -WorkingDirectory $runnerWorkingDirectory `
+        -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr `
+        -PassThru
+    } else {
+      $smokeProcess = Start-Process -FilePath $profileProbeShell `
+        -ArgumentList @(
+          "-NoLogo",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File", $runnerLauncherPath
+        ) -Credential $smokeCredential -LoadUserProfile `
+        -WorkingDirectory $runnerWorkingDirectory `
+        -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr `
+        -Wait -PassThru
+    }
   } finally {
     $env:TEMP = $originalTemp
     $env:TMP = $originalTmp
@@ -834,19 +1605,56 @@ try {
   if (-not (Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf)) {
     throw "Windows $Configuration Flutter smoke diagnostics are unavailable."
   }
-  Save-WindowsFlutterSmokeEvidence
+  Stop-WindowsSmokeRelaunchProcess -ExecutablePath $installedApp
+  if ($startProcessSupportsEnvironment) {
+    $standardUserFilesystemProbeProcess = Start-Process `
+      -FilePath $profileProbeShell `
+      -ArgumentList @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File", $standardUserFilesystemProbePath
+      ) -Credential $smokeCredential -LoadUserProfile `
+      -Environment $smokeEnvironment -WorkingDirectory $smokeRoot `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $standardUserFilesystemProbeOut `
+      -RedirectStandardError $standardUserFilesystemProbeErr -Wait -PassThru
+  } else {
+    $standardUserFilesystemProbeProcess = Start-Process `
+      -FilePath $profileProbeShell `
+      -ArgumentList @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File", $standardUserFilesystemLauncherPath
+      ) -Credential $smokeCredential -LoadUserProfile `
+      -WorkingDirectory $smokeRoot `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $standardUserFilesystemProbeOut `
+      -RedirectStandardError $standardUserFilesystemProbeErr -Wait -PassThru
+  }
+  foreach ($filesystemProbeOutputPath in @(
+      $standardUserFilesystemProbeOut,
+      $standardUserFilesystemProbeErr
+    )) {
+    if (Test-Path -LiteralPath $filesystemProbeOutputPath -PathType Leaf) {
+      Write-Host (Read-WindowsSmokeSharedText $filesystemProbeOutputPath)
+    }
+  }
+  if ($standardUserFilesystemProbeProcess.ExitCode -ne 0) {
+    throw "Windows $Configuration Flutter smoke standard-user filesystem evidence probe failed."
+  }
+  if (-not (Test-Path -LiteralPath $standardUserFilesystemEvidencePath -PathType Leaf)) {
+    throw "Windows $Configuration Flutter smoke standard-user filesystem evidence is unavailable."
+  }
   $smokeSucceeded = $true
 } catch {
   $primaryFailure = $_.Exception.ToString()
   throw
 } finally {
-  if (-not $smokeSucceeded) {
-    try {
-      Save-WindowsFlutterSmokeEvidence
-    } catch {
-      Write-Warning (ConvertTo-WindowsSmokeEvidenceText "Windows Flutter smoke evidence capture failed: $($_.Exception.Message)")
-    }
-  }
   $cleanupFailures = [Collections.Generic.List[string]]::new()
   if ($null -ne $smokeProcess) {
     try {
@@ -856,6 +1664,16 @@ try {
       $cleanupFailures.Add($cleanupMessage) | Out-Null
       Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
     }
+  }
+  $evidenceCaptureFailure = $null
+  try {
+    # Capture while the owned filesystem still exists, after the relaunch
+    # process has been stopped. The later account/profile/root cleanup is
+    # recorded separately and cannot erase the primary evidence.
+    Save-WindowsFlutterSmokeEvidence
+  } catch {
+    $evidenceCaptureFailure = $_.Exception.ToString()
+    Write-Warning (ConvertTo-WindowsSmokeEvidenceText "Windows Flutter smoke evidence capture failed: $evidenceCaptureFailure")
   }
   if ($smokeUserCreated -and $null -ne $smokeUser -and
       -not [string]::IsNullOrWhiteSpace($smokeUserProfile)) {
@@ -878,6 +1696,17 @@ try {
       Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
     }
   }
+  $smokeUserRemaining = $false
+  if ($smokeUserCreated -and $null -ne $smokeUser) {
+    $smokeUserRemaining = $null -ne (
+      Get-LocalUser -Name $smokeUser.Name -ErrorAction SilentlyContinue
+    )
+    if ($smokeUserRemaining) {
+      $cleanupMessage = "Windows Flutter smoke account remains after cleanup: $($smokeUser.Name)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
+  }
   if (Test-Path -LiteralPath $smokeRoot) {
     try {
       Remove-WindowsSmokeRootWithRetry -Root $smokeRoot
@@ -892,7 +1721,19 @@ try {
     $cleanupFailures.Add($cleanupMessage) | Out-Null
     Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
   }
+  New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+  [ordered]@{
+    capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("o")
+    passed = $cleanupFailures.Count -eq 0
+    failures = @($cleanupFailures)
+    smokeRootExists = Test-Path -LiteralPath $smokeRoot
+    smokeUserRemoved = -not $smokeUserRemaining
+  } | ConvertTo-Json -Depth 6 | Set-Content `
+    -LiteralPath (Join-Path $evidenceRoot "cleanup.json") -Encoding utf8
   if ($smokeSucceeded -and $cleanupFailures.Count -ne 0) {
     throw "Windows Flutter smoke succeeded but cleanup failed."
+  }
+  if ($smokeSucceeded -and $null -ne $evidenceCaptureFailure) {
+    throw "Windows Flutter smoke succeeded but evidence integrity failed: $evidenceCaptureFailure"
   }
 }

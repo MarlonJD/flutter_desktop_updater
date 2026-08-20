@@ -26,6 +26,47 @@ namespace {
 
 using desktop_updater::runtime::internal::JsonValue;
 
+constexpr wchar_t kRestartedEnvironment[] = L"DESKTOP_UPDATER_RESTARTED";
+
+bool EnvironmentEntryHasName(const std::wstring& entry,
+                             const wchar_t* name) {
+  const std::size_t name_length = wcslen(name);
+  return entry.size() > name_length && entry[name_length] == L'=' &&
+         _wcsnicmp(entry.c_str(), name, name_length) == 0;
+}
+
+std::vector<wchar_t> BuildRelaunchEnvironment(void* raw_environment) {
+  if (raw_environment == nullptr) {
+    throw WindowsRelaunchError("relaunch environment is unavailable");
+  }
+  std::vector<std::wstring> entries;
+  const wchar_t* cursor = static_cast<const wchar_t*>(raw_environment);
+  while (*cursor != L'\0') {
+    std::wstring entry(cursor);
+    if (!EnvironmentEntryHasName(entry, kRestartedEnvironment)) {
+      entries.push_back(std::move(entry));
+    }
+    cursor += wcslen(cursor) + 1;
+  }
+  entries.emplace_back(std::wstring(kRestartedEnvironment) + L"=1");
+  std::sort(entries.begin(), entries.end(),
+            [](const std::wstring& left, const std::wstring& right) {
+              return _wcsicmp(left.c_str(), right.c_str()) < 0;
+            });
+  std::size_t length = 1;
+  for (const std::wstring& entry : entries) {
+    length += entry.size() + 1;
+  }
+  std::vector<wchar_t> result;
+  result.reserve(length);
+  for (const std::wstring& entry : entries) {
+    result.insert(result.end(), entry.begin(), entry.end());
+    result.push_back(L'\0');
+  }
+  result.push_back(L'\0');
+  return result;
+}
+
 std::wstring Utf8ToWide(const std::string& value) {
   const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                                          value.data(),
@@ -489,6 +530,21 @@ void AuthenticodeWindowsPayloadVerifier::ReleaseRetainedHandles() noexcept {
 
 void CreateProcessWindowsLauncher::Launch(
     const std::filesystem::path& executable) {
+  LPWCH raw_environment = GetEnvironmentStringsW();
+  if (raw_environment == nullptr) {
+    throw WindowsRelaunchError("process relaunch environment is unavailable");
+  }
+  struct EnvironmentStringsDestroyer {
+    void operator()(wchar_t* value) const {
+      if (value != nullptr) {
+        FreeEnvironmentStringsW(value);
+      }
+    }
+  };
+  std::unique_ptr<wchar_t, EnvironmentStringsDestroyer> environment_owner(
+      raw_environment);
+  std::vector<wchar_t> relaunch_environment =
+      BuildRelaunchEnvironment(raw_environment);
   std::wstring command_line = L"\"" + executable.wstring() + L"\"";
   std::vector<wchar_t> mutable_command(command_line.begin(), command_line.end());
   mutable_command.push_back(L'\0');
@@ -496,7 +552,8 @@ void CreateProcessWindowsLauncher::Launch(
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
   if (!CreateProcessW(executable.c_str(), mutable_command.data(), nullptr,
-                      nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT, nullptr,
+                      nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT,
+                      relaunch_environment.data(),
                       executable.parent_path().c_str(), &startup, &process)) {
     throw WindowsRelaunchError("CreateProcessW verified relaunch failed");
   }
@@ -553,6 +610,8 @@ void CallerTokenWindowsLauncher::Launch(
     }
   };
   std::unique_ptr<void, EnvironmentDestroyer> environment_owner(environment);
+  std::vector<wchar_t> relaunch_environment =
+      BuildRelaunchEnvironment(environment);
   std::wstring command_line = L"\"" + executable.wstring() + L"\"";
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
@@ -561,7 +620,8 @@ void CallerTokenWindowsLauncher::Launch(
   if (!CreateProcessWithTokenW(
           caller_primary_token_.get(), LOGON_WITH_PROFILE,
           executable.c_str(), command_line.data(), CREATE_UNICODE_ENVIRONMENT,
-          environment, working_directory.c_str(), &startup, &process)) {
+          relaunch_environment.data(), working_directory.c_str(), &startup,
+          &process)) {
     throw WindowsRelaunchError("caller-token process relaunch failed");
   }
   CloseHandle(process.hThread);
