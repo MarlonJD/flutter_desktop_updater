@@ -1062,6 +1062,20 @@ private keys, passwords, tokens, or inline environment maps in
 keychains, standard credential files, or environment variables owned by the
 calling release job.
 
+### Windows App Control Boundary
+
+The Windows signing hook is the normal publisher-trust integration. An App
+Control for Business (WDAC) supplemental allow policy is an enterprise device
+policy, not a requirement for ordinary Windows releases, and `release publish`
+does not create or deploy one. Enterprise IT owns the base policy, policy
+signer/authorization, audit-to-enforcement rollout, deployment, rollback, and
+revocation.
+
+If an enterprise customer needs first-class App Control policy support, open a
+repository issue describing the Windows edition, existing base-policy contract,
+signing/key custody, deployment channel, and rollback requirements. The
+integration can then be evaluated and added as a separately scoped feature.
+
 ### macOS Notarization Opt-In
 
 `release publish --platform macos` notarizes only when you explicitly opt in.

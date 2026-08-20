@@ -215,6 +215,28 @@ This can be a strong route for corporate apps, but it only works inside the
 managed trust boundary. It does not create public Windows publisher trust for
 unmanaged users.
 
+### App Control / WDAC Supplemental Policies
+
+An App Control for Business (WDAC) supplemental allow policy is not required for
+normal Windows releases. Public or unmanaged customers need the normal
+Authenticode-signed `.exe`/`.dll` files, a signed installer when applicable, and
+the package's signed update metadata. The customer's Windows security policy
+and SmartScreen/reputation behavior remain separate concerns.
+
+Supplemental policies are relevant only when an enterprise customer already
+manages its Windows devices with an App Control base policy. In that case the
+customer's IT/security team owns the base-policy relationship, policy signer or
+authorization, audit-to-enforcement rollout, distribution, rollback, and
+revocation. `desktop_updater` does not currently generate, install, or mutate a
+customer's App Control base or supplemental policy as part of `release publish`.
+
+If an enterprise customer requires first-class App Control policy integration,
+open a repository issue with the target Windows editions, base-policy and
+signer contract, deployment channel, audit/enforcement workflow, rollback
+requirements, and key-custody constraints. That requirement can then be
+evaluated and added as a separately scoped product feature; it is not an
+implicit part of ordinary Windows publishing today.
+
 ## Linux Options
 
 Linux has no single OS-wide equivalent of macOS notarization or Windows public
