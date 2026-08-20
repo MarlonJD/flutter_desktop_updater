@@ -160,7 +160,7 @@ void main() {
     expect(runner, contains("lifecycleEvents"));
     expect(runner, contains(r"^event=(checking|downloading|installing)$"));
     expect(runner, contains('decodedEvent.event -eq "relaunch attempt"'));
-    expect(runner, contains("[int]$_.id -eq 1016"));
+    expect(runner, contains(r"[int]$_.id -eq 1016"));
     expect(runner, contains("collectionWarnings"));
     expect(
       runner,
