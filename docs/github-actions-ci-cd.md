@@ -255,6 +255,52 @@ only into the ephemeral runner filesystem before deleting it. The manual
 candidate workflow is
 `.github/workflows/windows-production-signing.yml`.
 
+## Future Microsoft Store CD
+
+Microsoft Store MSIX publishing is a separate future channel from the direct
+ZIP/Inno update workflow. The current repository does not contain a Store
+packaging or publishing workflow. When an app repository adds that channel, it
+can use Microsoft's official Store publisher action and `msstore` CLI to publish
+the package path after the Flutter Release/MSIX build:
+
+```yaml
+- name: Configure Microsoft Store CLI
+  uses: microsoft/microsoft-store-apppublisher@v1.1
+
+- name: Configure Partner Center credentials
+  shell: pwsh
+  run: |
+    msstore reconfigure `
+      --tenantId "${{ secrets.AZURE_AD_TENANT_ID }}" `
+      --sellerId "${{ secrets.SELLER_ID }}" `
+      --clientId "${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}" `
+      --clientSecret "${{ secrets.AZURE_AD_APPLICATION_SECRET }}"
+
+- name: Publish MSIX package
+  shell: pwsh
+  run: msstore publish "${{ github.workspace }}/release/package.msix" -id "${{ vars.STORE_PRODUCT_ID }}"
+```
+
+The Partner Center app, product identity, first submission, and age-rating
+setup are initially manual. Store credentials belong only in a protected GitHub
+environment; `STORE_PRODUCT_ID` may be a repository or environment variable.
+Subsequent package and metadata submissions can be automated through the
+[Microsoft Store GitHub Actions workflow](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/github-actions)
+and the [Store Submission API](https://learn.microsoft.com/en-us/windows/apps/publish/store-submission-api).
+
+Store-installed MSIX updates are Store-managed and must not be routed through
+`desktop_updater`'s direct artifact updater. A future native Windows bridge may
+use the [`StoreContext` update APIs](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/package-updates-from-store)
+for an in-app update action, but this is optional and does not replace the
+Store's normal update service.
+
+Store/MSIX design ideas, implementation proposals, and focused documentation
+changes are welcome. Please open an
+[issue](https://github.com/MarlonJD/flutter_desktop_updater/issues/new/choose)
+for requirements or trade-offs, or submit a
+[pull request](https://github.com/MarlonJD/flutter_desktop_updater/compare)
+that keeps Store delivery separate from direct ZIP/Inno publishing.
+
 For Linux direct zip distribution, restore the encrypted release-key bundle and
 use the profile-backed `release publish`, `release sign`, or `verify` commands
 before treating the lane as production-trusted. Do not add raw release-key

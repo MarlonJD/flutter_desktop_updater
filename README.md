@@ -474,6 +474,14 @@ both checking and downloading/staging.
   required.
 - Windows can publish direct zip artifacts or
   [Inno Setup installer artifacts](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/windows-inno-installer-updates.md).
+- Microsoft Store/MSIX is a planned separate Windows distribution channel.
+  Store packaging, manifest, Partner Center, update-ownership, and CI ideas are
+  welcome through an
+  [issue](https://github.com/MarlonJD/flutter_desktop_updater/issues/new/choose)
+  or a focused
+  [pull request](https://github.com/MarlonJD/flutter_desktop_updater/compare).
+  Keep Store-managed updates separate from the direct ZIP/Inno updater; see
+  [Windows and Linux production release options](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/windows-linux-production-release.md).
 - Linux direct zip distribution should add descriptor signing or another
   publisher-authenticity policy when production trust matters.
 

@@ -266,6 +266,43 @@ Notes:
   manifests and points users to installer packages. It does not replace signing
   the installer or binary itself.
 
+#### Planned Store delivery
+
+The intended future Store flow is:
+
+```text
+Flutter Release -> MSIX -> msstore CLI/GitHub Action -> Partner Center -> Microsoft Store
+```
+
+Microsoft's official
+[`microsoft/microsoft-store-apppublisher`](https://github.com/microsoft/microsoft-store-apppublisher)
+GitHub Action and Store Developer CLI support publishing an MSIX from a package
+path, updating metadata, and submitting a package. The first Partner Center app
+setup and initial submission, including age-rating work, remain manual; later
+package submissions can be automated with protected CI credentials. See
+[Microsoft Store GitHub Actions](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/github-actions)
+and the [Store Submission API](https://learn.microsoft.com/en-us/windows/apps/publish/store-submission-api).
+
+This repository does not currently implement MSIX packaging, Partner Center
+submission, or Store publishing. A future implementation should remain a
+separate app-owned release workflow and must not replace the current direct
+ZIP/Inno workflow. Store-installed MSIX packages should be updated by the
+Store. If the app later needs an in-app "check now" or "install now" action,
+the Windows `StoreContext` APIs can be evaluated as a native bridge; Store's
+built-in update service remains the default authority.
+
+#### Windows Store contributions welcome
+
+The Store/MSIX channel is intentionally open for design feedback and
+implementation contributions. Ideas, real-world use cases, package/manifest
+proposals, Store-specific test plans, and workflow improvements are welcome.
+Please [open an issue](https://github.com/MarlonJD/flutter_desktop_updater/issues/new/choose)
+to discuss a requirement or trade-off, or submit a
+[pull request](https://github.com/MarlonJD/flutter_desktop_updater/compare) for
+a focused implementation or documentation improvement. Contributions should
+keep Store-managed updates separate from direct ZIP/Inno updates and must not
+place Partner Center or signing credentials in the repository.
+
 ### Enterprise Or Private Trust
 
 For internal apps, public trust may not be required.
