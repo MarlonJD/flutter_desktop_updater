@@ -83,6 +83,12 @@ void main() {
       ),
     );
     expect(runner, contains(r"Wait-Process -Id $smokeProcess.Id"));
+    expect(
+      runner,
+      contains(r"-Timeout $smokeRunnerTimeoutSeconds"),
+    );
+    expect(runner, contains("windows_process_tree_cleanup.ps1"));
+    expect(runner, contains("Stop-ExactProcessTree -RootProcessId"));
     expect(runner, isNot(contains(r"-WorkingDirectory $install")));
   });
 

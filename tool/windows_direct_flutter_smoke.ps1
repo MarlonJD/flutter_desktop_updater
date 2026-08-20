@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "windows_smoke_profile_cleanup.ps1")
+. (Join-Path $PSScriptRoot "windows_process_tree_cleanup.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $exampleRoot = Join-Path $repositoryRoot "example"
@@ -59,6 +60,7 @@ $smokeUserProfile = $null
 $smokeLocalAppData = $null
 $userTemp = $null
 $smokeProcess = $null
+$smokeRunnerTimeoutSeconds = 180
 $standardUserFilesystemEvidence = $null
 $helperEventStart = Get-Date
 $prelaunchAcls = @()
@@ -909,6 +911,7 @@ function Save-WindowsFlutterSmokeEvidence {
     runner = [PSCustomObject]@{
       exitCode = if ($null -ne $smokeProcess) { $smokeProcess.ExitCode } else { $null }
       processId = $outerRunnerProcessId
+      timeoutSeconds = $smokeRunnerTimeoutSeconds
       workingDirectory = ConvertTo-WindowsSmokeEvidenceText $runnerWorkingDirectory
     }
     schemaVersion = 1
@@ -1591,7 +1594,15 @@ try {
     $env:TMP = $originalTmp
   }
   if (-not $smokeProcess.HasExited) {
-    Wait-Process -Id $smokeProcess.Id -ErrorAction Stop | Out-Null
+    Wait-Process -Id $smokeProcess.Id `
+      -Timeout $smokeRunnerTimeoutSeconds `
+      -ErrorAction Stop | Out-Null
+    $smokeProcess.Refresh()
+    if (-not $smokeProcess.HasExited) {
+      $timedOutProcessId = [int]$smokeProcess.Id
+      Stop-ExactProcessTree -RootProcessId $timedOutProcessId
+      throw "Windows $Configuration Flutter smoke runner timed out after $smokeRunnerTimeoutSeconds seconds; exact root PID $timedOutProcessId was stopped."
+    }
   }
   $smokeProcess.Refresh()
   foreach ($runnerOutputPath in @($runnerOut, $runnerErr)) {
@@ -1657,6 +1668,16 @@ try {
 } finally {
   $cleanupFailures = [Collections.Generic.List[string]]::new()
   if ($null -ne $smokeProcess) {
+    try {
+      $smokeProcess.Refresh()
+      if (-not $smokeProcess.HasExited) {
+        Stop-ExactProcessTree -RootProcessId ([int]$smokeProcess.Id)
+      }
+    } catch {
+      $cleanupMessage = "Windows Flutter smoke runner process-tree cleanup failed: $($_.Exception.Message)"
+      $cleanupFailures.Add($cleanupMessage) | Out-Null
+      Write-Warning (ConvertTo-WindowsSmokeEvidenceText $cleanupMessage)
+    }
     try {
       Stop-WindowsSmokeRelaunchProcess -ExecutablePath $installedApp
     } catch {
