@@ -5,6 +5,14 @@ production-readiness work. It describes how to produce and verify evidence; it
 does not make a local test identity, App Control policy, or installed-system
 mutation part of the package release.
 
+The current product scope is B2C Windows distribution. App Control/WDAC
+supplemental-policy authoring, enterprise base-policy authorization, and MDM
+policy deployment are optional research lanes for a future enterprise feature;
+they are out of scope and must not block the B2C release gate. If an enterprise
+customer needs that integration, open an issue with the policy, signer,
+deployment, rollback, and key-custody requirements before adding it to the
+product contract.
+
 ## Scope and claims
 
 Use this runbook for a clean, serial Windows x64 validation of native builds,

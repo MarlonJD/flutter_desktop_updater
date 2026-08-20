@@ -1066,15 +1066,23 @@ calling release job.
 
 The Windows signing hook is the normal publisher-trust integration. An App
 Control for Business (WDAC) supplemental allow policy is an enterprise device
-policy, not a requirement for ordinary Windows releases, and `release publish`
-does not create or deploy one. Enterprise IT owns the base policy, policy
-signer/authorization, audit-to-enforcement rollout, deployment, rollback, and
-revocation.
+policy, not a requirement for the current B2C release priority, and
+`release publish` does not create or deploy one. Enterprise IT owns the base
+policy, policy signer/authorization, audit-to-enforcement rollout, deployment,
+rollback, and revocation. This lane is out of scope and is not a B2C release
+gate.
+
+For B2C Windows releases, focus the release gate on a final x64 Release build,
+timestamped Authenticode signatures, signed release metadata, hosted
+validation, and executed normal-user direct-ZIP or Inno E2E for the selected
+channel. UAC evidence is required only for an elevated distribution path;
+per-user `AppData\Local` distribution can remain unprivileged.
 
 If an enterprise customer needs first-class App Control policy support, open a
 repository issue describing the Windows edition, existing base-policy contract,
 signing/key custody, deployment channel, and rollback requirements. The
-integration can then be evaluated and added as a separately scoped feature.
+integration can then be evaluated and added as a separately scoped enterprise
+feature.
 
 ### macOS Notarization Opt-In
 

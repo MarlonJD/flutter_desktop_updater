@@ -35,6 +35,33 @@ For `desktop_updater` direct zip updates:
   The hash proves the downloaded zip matches the descriptor. The descriptor also
   needs to come from a trusted channel or be signed by a pinned publisher key.
 
+## Current Windows Product Scope: B2C First
+
+The current product priority is B2C Windows distribution. A B2C release does
+not require an enterprise App Control (WDAC) supplemental policy, an enterprise
+base-policy signer, Intune/MDM policy deployment, or a customer-managed policy
+rollback workflow.
+
+The B2C Windows release gate is:
+
+1. Build the final x64 Release bundle.
+2. Authenticode-sign the final signable `.exe` and `.dll` files.
+3. Add an RFC 3161 timestamp and verify the signatures and certificate chain.
+4. Package the signed files as direct ZIP or Inno installer artifacts.
+5. Sign and validate `app-archive.json`/`release.json` with the app's release-key
+   profile.
+6. Run the hosted validation and the selected normal-user install/update smoke.
+
+UAC is a B2C gate only when the chosen distribution path requires elevation,
+such as a protected `Program Files` install or an administrative Inno
+installer. A per-user `AppData\Local` install can remain unprivileged and does
+not require a secure-desktop UAC acceptance test.
+
+The remaining B2C gaps are production signing credentials/provider access,
+timestamped final artifacts, a clean x64 Release build, and executed direct-ZIP
+or Inno normal-user E2E evidence for the selected channel. These are separate
+from enterprise App Control policy work.
+
 ## Windows Options
 
 ### Direct Zip Plus Authenticode
@@ -215,7 +242,7 @@ This can be a strong route for corporate apps, but it only works inside the
 managed trust boundary. It does not create public Windows publisher trust for
 unmanaged users.
 
-### App Control / WDAC Supplemental Policies
+### Out of Scope: App Control / WDAC Supplemental Policies
 
 An App Control for Business (WDAC) supplemental allow policy is not required for
 normal Windows releases. Public or unmanaged customers need the normal
@@ -224,18 +251,20 @@ the package's signed update metadata. The customer's Windows security policy
 and SmartScreen/reputation behavior remain separate concerns.
 
 Supplemental policies are relevant only when an enterprise customer already
-manages its Windows devices with an App Control base policy. In that case the
-customer's IT/security team owns the base-policy relationship, policy signer or
-authorization, audit-to-enforcement rollout, distribution, rollback, and
-revocation. `desktop_updater` does not currently generate, install, or mutate a
-customer's App Control base or supplemental policy as part of `release publish`.
+manages its Windows devices with an App Control base policy. This enterprise
+lane is currently out of scope and must not block the B2C release gate. If that
+lane is needed, the customer's IT/security team owns the base-policy
+relationship, policy signer or authorization, audit-to-enforcement rollout,
+distribution, rollback, and revocation. `desktop_updater` does not currently
+generate, install, or mutate a customer's App Control base or supplemental
+policy as part of `release publish`.
 
-If an enterprise customer requires first-class App Control policy integration,
-open a repository issue with the target Windows editions, base-policy and
-signer contract, deployment channel, audit/enforcement workflow, rollback
-requirements, and key-custody constraints. That requirement can then be
-evaluated and added as a separately scoped product feature; it is not an
-implicit part of ordinary Windows publishing today.
+If an enterprise customer later requires first-class App Control policy
+integration, open a repository issue with the target Windows editions,
+base-policy and signer contract, deployment channel, audit/enforcement workflow,
+rollback requirements, and key-custody constraints. The requirement can then
+be evaluated and added as a separately scoped enterprise feature; it is not an
+implicit part of ordinary B2C Windows publishing today.
 
 ## Linux Options
 
