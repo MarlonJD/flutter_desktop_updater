@@ -190,6 +190,10 @@ void main() {
     expect(source, contains("Inno Setup"));
     expect(source, contains("unins###.exe"));
     expect(source, contains("not full Inno installer updating"));
+    expect(source, contains("SignPath Foundation"));
+    expect(source, contains("qualifying open-source"));
+    expect(source, contains("does not currently implement MSIX packaging"));
+    expect(source, contains("Store-installed package should be updated"));
   });
 
   test("publishing docs describe full Inno installer update mode", () {

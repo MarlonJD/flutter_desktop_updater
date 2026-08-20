@@ -223,6 +223,22 @@ Notes:
 - EV code signing can help publisher reputation in some Windows workflows, but
   it is not a replacement for update metadata authenticity.
 
+### SignPath Foundation For Eligible Open Source Projects
+
+SignPath Foundation is a possible free signing route for qualifying open-source
+projects. It is not a free general-purpose public CA certificate: the project
+must apply and pass the foundation's eligibility and technical review, and the
+certificate is issued and custody-managed by SignPath Foundation.
+
+- Treat this as an OSS publishing option, not the default signing identity for
+  a closed or commercial B2C application.
+- Approval, signing constraints, publisher presentation, and revocation remain
+  controlled by the foundation's current program terms.
+- A self-signed certificate remains sufficient only for local or test-only
+  artifacts.
+
+See <https://signpath.org/> for the current application and program terms.
+
 ### MSIX Or Microsoft Store
 
 MSIX and Microsoft Store distribution are separate from the direct zip updater
@@ -237,6 +253,12 @@ Good fit when:
 Notes:
 
 - MSIX packages are signed with SignTool or by the store pipeline.
+- This repository does not currently implement MSIX packaging, Partner Center
+  submission, or Store publishing. That is a future separate distribution
+  channel, not part of the current direct ZIP/Inno updater path.
+- Store publishing is important for package distribution and Store-managed
+  updates. A Store-installed package should be updated by the Microsoft Store,
+  not by `desktop_updater` mutating the registered package.
 - A Store/MSIX channel should normally own updates for that install channel. Do
   not mix an app-owned self-updater into a store-governed install without a clear
   policy reason.
