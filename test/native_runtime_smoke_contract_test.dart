@@ -1160,6 +1160,8 @@ void main() {
     expect(runner, contains("ExpectedSignerPublisher"));
     expect(runner, contains("Get-AuthenticodeSignature"));
     expect(runner, contains("Import-Module Microsoft.PowerShell.Security"));
+    expect(runner, contains("windowsPowerShellModulePath"));
+    expect(runner, contains("System32\\WindowsPowerShell\\v1.0\\Modules"));
     expect(runner, contains("X509Certificate2"));
     expect(runner, contains("StoreLocation]::CurrentUser"));
     expect(runner, contains("OpenFlags]::ReadWrite"));

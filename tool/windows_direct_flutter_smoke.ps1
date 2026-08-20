@@ -1080,6 +1080,11 @@ try {
   $smokeUserProfile = Join-Path $profilesDirectory $smokeUserName
   $smokeLocalAppData = Join-Path $smokeUserProfile "AppData\Local"
   $userTemp = Join-Path $smokeLocalAppData "Temp"
+  $windowsPowerShellModulePath = @(
+    (Join-Path $smokeUserProfile "Documents\WindowsPowerShell\Modules")
+    (Join-Path $env:ProgramFiles "WindowsPowerShell\Modules")
+    (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\Modules")
+  ) -join [IO.Path]::PathSeparator
   $provisionTrustToken = if ($ProvisionDisposableUserTrust) { "1" } else { "0" }
   $selfSignedTrustToken = if ($disposableSignerSelfSigned) { "1" } else { "0" }
   $trustCertificatePath = if ($ProvisionDisposableUserTrust) {
@@ -1125,7 +1130,7 @@ try {
     USERDOMAIN = $env:COMPUTERNAME
     USERNAME = $smokeUserName
     USERPROFILE = $smokeUserProfile
-    PSModulePath = $env:PSModulePath
+    PSModulePath = $windowsPowerShellModulePath
     WINDIR = $env:WINDIR
   }
   $startProcessSupportsEnvironment = @(
