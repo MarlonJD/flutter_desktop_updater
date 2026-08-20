@@ -489,7 +489,9 @@ function Save-WindowsFlutterSmokeEvidence {
 
   $diagnosticEvents = @()
   $lifecycleEvents = @()
-  $relaunchEvidenceObserved = $false
+  $relaunchEvidenceObserved = @(
+    $events | Where-Object { [int]$_.id -eq 1016 }
+  ).Count -ne 0
   $diagnosticGateFailures = [Collections.Generic.List[string]]::new()
   if (-not (Test-Path -LiteralPath $capturedDiagnostics -PathType Leaf)) {
     $collectionErrors.Add("helper diagnostics log is missing") | Out-Null
