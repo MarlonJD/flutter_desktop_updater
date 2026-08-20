@@ -1260,7 +1260,6 @@ try {
     '      $certutilProcess = Start-Process -FilePath "certutil.exe" -ArgumentList @('
     '        "-user",'
     '        "-f",'
-    '        "-silent",'
     '        "-addstore",'
     '        $storeName,'
     '        $certificatePath'
