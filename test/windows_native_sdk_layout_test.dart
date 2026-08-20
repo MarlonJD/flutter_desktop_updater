@@ -86,9 +86,11 @@ void main() {
     expect(
       pluginCmake,
       contains(
-        r"gtest_discover_tests(${TEST_RUNNER} DISCOVERY_MODE PRE_TEST)",
+        r"gtest_discover_tests(${TEST_RUNNER}",
       ),
     );
+    expect(pluginCmake, contains("DISCOVERY_MODE PRE_TEST"));
+    expect(pluginCmake, contains("DISCOVERY_TIMEOUT 30"));
     expect(
       pluginCmake,
       isNot(contains(r"gtest_discover_tests(${TEST_RUNNER})")),

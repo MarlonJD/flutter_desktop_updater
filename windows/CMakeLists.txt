@@ -121,5 +121,7 @@ add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD
 # POST_BUILD prevents production Flutter builds from depending on starting the
 # test executable within CMake's short discovery timeout.
 include(GoogleTest)
-gtest_discover_tests(${TEST_RUNNER} DISCOVERY_MODE PRE_TEST)
+gtest_discover_tests(${TEST_RUNNER}
+  DISCOVERY_MODE PRE_TEST
+  DISCOVERY_TIMEOUT 30)
 endif()
