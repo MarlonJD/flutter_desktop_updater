@@ -87,6 +87,8 @@ void main() {
       runner,
       contains(r"-Timeout $smokeRunnerTimeoutSeconds"),
     );
+    expect(runner, contains(r'"-silent",'));
+    expect(runner, contains(r"$certutilProcess.WaitForExit(30000)"));
     expect(runner, contains("windows_process_tree_cleanup.ps1"));
     expect(runner, contains("Stop-ExactProcessTree -RootProcessId"));
     expect(runner, isNot(contains(r"-WorkingDirectory $install")));
