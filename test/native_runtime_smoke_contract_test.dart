@@ -1226,8 +1226,8 @@ void main() {
     final runner = readFile("tool/windows_direct_flutter_smoke.ps1");
 
     expect(runner, contains("X509Store]::new"));
-    expect(runner, contains("$store.Open"));
-    expect(runner, contains("$store.Close"));
+    expect(runner, contains(r"$store.Open"));
+    expect(runner, contains(r"$store.Close"));
     expect(runner, isNot(contains('Start-Process -FilePath "certutil.exe"')));
   });
 
