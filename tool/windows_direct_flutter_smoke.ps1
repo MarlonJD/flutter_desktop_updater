@@ -514,7 +514,11 @@ function Save-WindowsFlutterSmokeEvidence {
         continue
       }
       try {
-        $diagnosticEvents += ,($normalizedLine | ConvertFrom-Json)
+        $decodedEvent = $normalizedLine | ConvertFrom-Json
+        if ([string]$decodedEvent.event -eq "relaunch attempt") {
+          $relaunchEvidenceObserved = $true
+        }
+        $diagnosticEvents += ,$decodedEvent
       } catch {
         $collectionErrors.Add(
           (ConvertTo-WindowsSmokeEvidenceText "helper diagnostics JSON: $($_.Exception.Message)")

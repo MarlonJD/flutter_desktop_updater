@@ -159,6 +159,7 @@ void main() {
     expect(runner, contains("standardUserFilesystemEvidence"));
     expect(runner, contains("lifecycleEvents"));
     expect(runner, contains(r"^event=(checking|downloading|installing)$"));
+    expect(runner, contains('decodedEvent.event -eq "relaunch attempt"'));
     expect(runner, contains("collectionWarnings"));
     expect(
       runner,
