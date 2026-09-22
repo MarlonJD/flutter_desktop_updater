@@ -1,3 +1,23 @@
+## 3.2.0
+
+* Fixed duplicate macOS Dock tiles after updates by relaunching app bundles
+  through LaunchServices. Thanks to @hobleyd for the fix in PR #75.
+* Added a real bundled-app regression test covering process exit, executable
+  replacement, and a single LaunchServices registration after relaunch.
+* **Breaking:** Windows Inno updates now require administrative privileges,
+  `requiresElevation: always`, and Authenticode verification against an explicit
+  certificate SHA-256 allowlist. Unsupported silent arguments and unsafe paths
+  are rejected.
+* **Breaking:** `ReleaseInnoInstall` requires
+  `installedExecutableRelativePath` and `installedExecutableSha256`. The release
+  publisher records these values automatically; manually authored descriptors
+  and direct constructor calls must supply them.
+* Hardened Windows protected update authorization, installer staging, durable
+  recovery, and relaunch verification, including helper diagnostic completion.
+* Improved Windows and Linux end-to-end test coverage and added a manual
+  Windows production-signing candidate workflow for Microsoft Artifact Signing
+  and public CA certificates.
+
 ## 3.1.6
 
 * Hardened cross-platform release publishing with strict hosted-artifact
