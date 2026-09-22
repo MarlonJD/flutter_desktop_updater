@@ -44,6 +44,8 @@ private func spawnConcurrentSleeper() throws -> pid_t {
     return processIdentifier
 }
 
+runBundledRestartFixtureIfRequested()
+
 guard MacApplicationRestarter.awaitRestartParentExitIfRequested() else {
     _exit(5)
 }

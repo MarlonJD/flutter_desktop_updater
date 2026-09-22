@@ -78,6 +78,7 @@ public struct MacApplicationRestarter {
         "DESKTOP_UPDATER_RESTART_READY_FD"
     private static let restartedEnvironment = "DESKTOP_UPDATER_RESTARTED"
     private static let reexecEnvironment = "DESKTOP_UPDATER_RESTART_REEXEC"
+    private static let launchServicesOpenToolPath = "/usr/bin/open"
 
     private let currentExecutableURL: () -> URL?
     private let schedule: (URL) throws -> Void
@@ -189,10 +190,75 @@ public struct MacApplicationRestarter {
             return false
         }
 
+        unsetenv(reexecEnvironment)
+
+        // An application has to come back through LaunchServices, not by
+        // exec'ing its own executable. This process was posix_spawn'd by the
+        // outgoing instance, so LaunchServices never registered it *as* the
+        // application -- and exec'ing the replaced binary in place keeps it
+        // that way, so the Dock draws the relaunched app as a second,
+        // unpinned tile beside the one the user already has. Handing the
+        // bundle to `open` replaces this process with one LaunchServices
+        // owns, which reuses the existing tile.
+        //
+        // No `-n`: that asks for a *new* instance, which is the very thing
+        // being avoided here. The outgoing instance has already exited -- the
+        // lifetime pipe above is what proves it -- and the executable has
+        // already been replaced, so a plain open launches the new build once.
+        if let bundlePath = enclosingApplicationBundlePath(
+            executablePath: executableURL.path
+        ) {
+            return replaceProcessImage(
+                executablePath: launchServicesOpenToolPath,
+                arguments: ["open", "--", bundlePath]
+            )
+        }
+
+        // A bare executable -- anything not shipped as an .app, including this
+        // package's own restart fixtures -- has no bundle to hand over, so it
+        // keeps re-exec'ing itself.
         var arguments = CommandLine.arguments
         if arguments.isEmpty {
             arguments = [executableURL.path]
         }
+        return replaceProcessImage(
+            executablePath: executableURL.path,
+            arguments: arguments
+        )
+    }
+
+    /// The `.app` an executable laid out as
+    /// `<name>.app/Contents/MacOS/<executable>` belongs to, or nil when it is
+    /// not inside a bundle.
+    ///
+    /// Matched on the bundle's own structure rather than on `Bundle.main`,
+    /// which answers for the *running* image and would follow the executable
+    /// wherever it had been replaced from.
+    static func enclosingApplicationBundlePath(
+        executablePath: String
+    ) -> String? {
+        let executableURL = URL(fileURLWithPath: executablePath)
+            .standardizedFileURL
+        let macOSDirectory = executableURL.deletingLastPathComponent()
+        guard macOSDirectory.lastPathComponent == "MacOS" else { return nil }
+        let contentsDirectory = macOSDirectory.deletingLastPathComponent()
+        guard contentsDirectory.lastPathComponent == "Contents" else {
+            return nil
+        }
+        let bundleURL = contentsDirectory.deletingLastPathComponent()
+        guard bundleURL.pathExtension == "app",
+              bundleURL.deletingPathExtension().lastPathComponent.isEmpty
+                == false else {
+            return nil
+        }
+        return bundleURL.path
+    }
+
+    /// `execve`, which only ever returns on failure.
+    private static func replaceProcessImage(
+        executablePath: String,
+        arguments: [String]
+    ) -> Bool {
         var pointers = arguments.map { strdup($0) }
         pointers.append(nil)
         defer {
@@ -200,9 +266,8 @@ public struct MacApplicationRestarter {
                 free(pointer)
             }
         }
-        unsetenv(reexecEnvironment)
         let result = pointers.withUnsafeMutableBufferPointer { buffer in
-            executableURL.path.withCString { executable in
+            executablePath.withCString { executable in
                 execve(executable, buffer.baseAddress, environ)
             }
         }
