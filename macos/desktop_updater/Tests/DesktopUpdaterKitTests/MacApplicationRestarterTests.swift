@@ -4,6 +4,51 @@ import XCTest
 @testable import DesktopUpdaterKit
 
 final class MacApplicationRestarterTests: XCTestCase {
+    func testBundledExecutableResolvesItsApplicationBundle() {
+        XCTAssertEqual(
+            MacApplicationRestarter.enclosingApplicationBundlePath(
+                executablePath: "/Applications/Example.app/Contents/MacOS/Example"
+            ),
+            "/Applications/Example.app"
+        )
+    }
+
+    func testBundleResolutionStandardisesThePath() {
+        XCTAssertEqual(
+            MacApplicationRestarter.enclosingApplicationBundlePath(
+                executablePath:
+                    "/Applications/./Example.app/Contents/MacOS/../MacOS/Example"
+            ),
+            "/Applications/Example.app"
+        )
+    }
+
+    func testBareExecutableResolvesNoApplicationBundle() {
+        // The restart fixtures in this package are bare executables, and so is
+        // anything not shipped as an .app: both keep re-exec'ing themselves.
+        XCTAssertNil(
+            MacApplicationRestarter.enclosingApplicationBundlePath(
+                executablePath: "/usr/local/bin/example"
+            )
+        )
+    }
+
+    func testPartialBundleLayoutResolvesNoApplicationBundle() {
+        for path in [
+            "/Applications/Example.app/Contents/Example",
+            "/Applications/Example.app/MacOS/Example",
+            "/Applications/Example/Contents/MacOS/Example",
+            "/Applications/.app/Contents/MacOS/Example",
+        ] {
+            XCTAssertNil(
+                MacApplicationRestarter.enclosingApplicationBundlePath(
+                    executablePath: path
+                ),
+                "\(path) is not a bundled executable"
+            )
+        }
+    }
+
     func testRealRestartWaitsForCallerExitAndIsolatesDescriptors() throws {
         let fixture = try restartFixtureURL()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
