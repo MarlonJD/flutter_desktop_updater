@@ -260,6 +260,32 @@ Future<void> waitForPort(int port) async {
   throw StateError("Timed out waiting for localhost:$port. $lastError");
 }
 
+Future<void> waitForHttpServer(int port) async {
+  final uri = Uri.parse("http://127.0.0.1:$port/");
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  Object? lastError;
+  while (DateTime.now().isBefore(deadline)) {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 1);
+    try {
+      final request =
+          await client.getUrl(uri).timeout(const Duration(seconds: 1));
+      final response =
+          await request.close().timeout(const Duration(seconds: 1));
+      await response.drain<void>().timeout(const Duration(seconds: 1));
+      if (response.statusCode == HttpStatus.ok) {
+        return;
+      }
+      lastError = "Expected HTTP 200 from $uri, got ${response.statusCode}";
+    } on Object catch (error) {
+      lastError = error;
+    } finally {
+      client.close(force: true);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+  }
+  throw StateError("Timed out waiting for HTTP readiness at $uri. $lastError");
+}
+
 Future<void> waitForTcpPrefix(int port, String prefix) async {
   final deadline = DateTime.now().add(const Duration(seconds: 30));
   Object? lastError;

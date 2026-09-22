@@ -27,7 +27,7 @@ void main() {
     await chownSftpUploadVolume();
     await waitForPort(2222);
     await waitForTcpPrefix(2222, "SSH-");
-    await waitForPort(8088);
+    await waitForHttpServer(8088);
     final fixture = await createReleasePublishE2eFixture(
       baseUrl: Uri.parse("http://127.0.0.1:8088/sftp/updates/"),
       providerConfig: """
