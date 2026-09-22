@@ -2454,9 +2454,6 @@ jobs:
       - name: Run integration tests release
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
-      - name: Run release publish smoke
-        working-directory: example
-        run: dart run tool/release_publish_smoke.dart --platform linux
       - name: Run update smoke release
         working-directory: example
         run: xvfb-run -a dart run tool/updater_smoke.dart --config Release --diagnostics-log ../reports/linux-update-smoke-release-diagnostics.jsonl
@@ -2467,6 +2464,11 @@ jobs:
           name: linux-update-smoke-release-diagnostics
           path: reports/linux-update-smoke-release-diagnostics.jsonl
           if-no-files-found: ignore
+      # Publishing rebuilds Release as 9.9.9, the update smoke's target version.
+      # Keep it after the update smoke so the installed app is still older.
+      - name: Run release publish smoke
+        working-directory: example
+        run: dart run tool/release_publish_smoke.dart --platform linux
       - name: Assert removed Linux CMake consumer
         shell: bash
         run: |
