@@ -253,15 +253,27 @@ Response Perform(const std::string& url,
   }
   Response response;
   DWORD status_bytes = sizeof(response.status);
-  WinHttpQueryHeaders(request.get(),
-                      WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                      WINHTTP_HEADER_NAME_BY_INDEX, &response.status,
-                      &status_bytes, WINHTTP_NO_HEADER_INDEX);
+  if (!WinHttpQueryHeaders(
+          request.get(),
+          WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+          WINHTTP_HEADER_NAME_BY_INDEX, &response.status, &status_bytes,
+          WINHTTP_NO_HEADER_INDEX)) {
+    throw std::runtime_error("WinHTTP response status query failed.");
+  }
   if (RedirectStatus(response.status)) {
     const std::optional<std::wstring> location =
         QueryHeader(request.get(), WINHTTP_QUERY_LOCATION);
     if (!location.has_value()) throw MissingRedirectLocationError();
     response.location = WideToUtf8(*location);
+    return response;
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return response;
+  }
+  // The caller discards the partial file and restarts from byte zero when a
+  // server ignores Range. Do not stream the full response into the resumed
+  // file or apply its remaining-byte budget before that restart can happen.
+  if (artifact != nullptr && resume > 0 && response.status == 200) {
     return response;
   }
   const std::optional<std::wstring> content_range =
@@ -343,24 +355,36 @@ std::vector<std::uint8_t> WinHttpUpdateTransport::DownloadMetadata(
   }
   std::string url = initial_url;
   for (int redirects = 0; redirects <= options_.maximum_redirects; ++redirects) {
+    bool redirected = false;
     for (int attempt = 0; attempt < options_.maximum_retries; ++attempt) {
+      Response response;
       try {
-        Response response = Perform(
+        response = Perform(
             url, options_, 0, nullptr, options_.maximum_metadata_bytes, {});
-        if (RedirectStatus(response.status)) {
-          url = ResolveRedirectURL(url, response.location);
-          break;
-        }
-        if (response.status >= 200 && response.status < 300) return response.body;
-        if (!RetryableStatus(response.status)) {
-          throw std::runtime_error("Metadata HTTP status failed.");
-        }
       } catch (const MissingRedirectLocationError&) {
         throw;
       } catch (...) {
         if (attempt + 1 == options_.maximum_retries) throw;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        continue;
+      }
+
+      if (RedirectStatus(response.status)) {
+        url = ResolveRedirectURL(url, response.location);
+        redirected = true;
+        break;
+      }
+      if (response.status >= 200 && response.status < 300) {
+        return response.body;
+      }
+      if (!RetryableStatus(response.status) ||
+          attempt + 1 == options_.maximum_retries) {
+        throw std::runtime_error("Metadata HTTP status failed.");
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!redirected) {
+      throw std::runtime_error("Metadata HTTP status failed.");
     }
   }
   throw std::runtime_error("Update redirect limit exceeded.");

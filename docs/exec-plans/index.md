@@ -29,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-10-03 - Project review findings remediation](completed/2026-10-03-review-findings-remediation.md)
 - [2026-07-28 - Windows local E2E readiness](completed/2026-07-28-windows-local-e2e-readiness-plan.md)
 - [2026-07-23 - Harness engineering convergence](completed/2026-07-23-harness-engineering-convergence-plan.md)
 - [2026-07-08 - macOS DMG and PKG production integration (implementation completed; production gate superseded)](completed/2026-07-08-macos-dmg-pkg-production-integration-plan.md)

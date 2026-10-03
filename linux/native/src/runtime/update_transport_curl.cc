@@ -83,7 +83,10 @@ std::size_t WriteCallback(char* bytes,
                           void* context_pointer) {
   ResponseContext& context = *static_cast<ResponseContext*>(context_pointer);
   const std::size_t length = size * count;
-  if (context.status >= 300 && context.status < 400) return length;
+  if (context.status != 0 &&
+      (context.status < 200 || context.status >= 300)) {
+    return length;
+  }
   if (context.received > context.maximum_bytes -
                              static_cast<std::int64_t>(length)) {
     return 0;

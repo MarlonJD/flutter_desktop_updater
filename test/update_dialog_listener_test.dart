@@ -1,5 +1,6 @@
+import "dart:async";
+
 import "package:desktop_updater/desktop_updater.dart";
-import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -53,6 +54,154 @@ void main() {
       expect(find.byType(AlertDialog), findsOneWidget);
     },
   );
+
+  testWidgets("showUpdateDialog closes after skip completes", (tester) async {
+    final controller = _TestDesktopUpdaterController()
+      ..showAvailableUpdate()
+      ..skipUpdateCompleter = Completer<void>();
+
+    await tester.pumpWidget(_buildDirectUpdateDialogApp(controller));
+    await tester.tap(find.text("Show update"));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("Skip this version"));
+    await tester.pump();
+
+    expect(controller.skipUpdateCallCount, 1);
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    controller.skipUpdateCompleter!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets("listener fresh-install Not now closes after skip completes", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()
+      ..skipUpdateCompleter = Completer<void>();
+
+    await tester.pumpWidget(_buildTestApp(controller));
+    controller.showFreshInstallUpdate(mandatory: false);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("Not now"));
+    await tester.pump();
+
+    expect(controller.skipUpdateCallCount, 1);
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    controller.skipUpdateCompleter!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets("skip does not pop a route opened above its dialog", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()
+      ..skipUpdateCompleter = Completer<void>();
+
+    await tester.pumpWidget(_buildTestApp(controller));
+    controller.showAvailableUpdate();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("Skip this version"));
+    await tester.pump();
+    unawaited(
+      tester.state<NavigatorState>(find.byType(Navigator)).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text("Overlay route")),
+            ),
+          ),
+    );
+    await tester.pumpAndSettle();
+
+    controller.skipUpdateCompleter!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text("Overlay route"), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets("skip completion leaves a route open after its dialog closed", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()
+      ..showAvailableUpdate()
+      ..skipUpdateCompleter = Completer<void>();
+
+    await tester.pumpWidget(_buildDirectUpdateDialogApp(controller));
+    await tester.tap(find.text("Show update"));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("Skip this version"));
+    await tester.pump();
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text("Replacement route")),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    controller.skipUpdateCompleter!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text("Replacement route"), findsOneWidget);
+  });
+
+  testWidgets("skip does not pop a host route for an embedded widget", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: UpdateDialogWidget(controller: controller)),
+      ),
+    );
+
+    await tester.tap(find.text("Skip this version"));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(UpdateDialogWidget), findsOneWidget);
+    expect(find.text("Skip this version"), findsOneWidget);
+  });
+
+  testWidgets("embedded skip does not require a Navigator ancestor", (
+    tester,
+  ) async {
+    final controller = _TestDesktopUpdaterController()..showAvailableUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) {
+          return Scaffold(body: UpdateDialogWidget(controller: controller));
+        },
+      ),
+    );
+
+    expect(find.byType(Navigator), findsNothing);
+    await tester.tap(find.text("Skip this version"));
+    await tester.pumpAndSettle();
+
+    expect(controller.skipUpdateCallCount, 1);
+    expect(find.byType(UpdateDialogWidget), findsOneWidget);
+  });
 
   testWidgets(
     "mandatory save-first from listener dismisses dialogs so the app can save",
@@ -247,7 +396,7 @@ void main() {
 
       await tester.tap(find.text("Try again"));
       await tester.pump();
-      expect(controller.restartAppCallCount, 1);
+      expect(controller.approvalRetryCallCount, 1);
     },
   );
 }
@@ -262,6 +411,25 @@ Widget _buildTestApp(
       body: UpdateDialogListener(
         controller: controller,
         mandatoryReadyToInstallBehavior: mandatoryReadyToInstallBehavior,
+      ),
+    ),
+  );
+}
+
+Widget _buildDirectUpdateDialogApp(
+  _TestDesktopUpdaterController controller,
+) {
+  return MaterialApp(
+    home: Scaffold(
+      body: Builder(
+        builder: (context) {
+          return TextButton(
+            onPressed: () {
+              showUpdateDialog<void>(context, controller: controller);
+            },
+            child: const Text("Show update"),
+          );
+        },
       ),
     ),
   );
@@ -325,7 +493,10 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
 
   bool _skipUpdate = false;
   UpdateState _state = const UpdateIdle();
+  Completer<void>? skipUpdateCompleter;
+  int skipUpdateCallCount = 0;
   int restartAppCallCount = 0;
+  int approvalRetryCallCount = 0;
   int openSettingsCallCount = 0;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
@@ -378,6 +549,19 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
     notifyListeners();
   }
 
+  void showFreshInstallUpdate({bool mandatory = false}) {
+    _state = UpdateFreshInstallRequired(
+      descriptor: _descriptor,
+      freshInstall: ReleaseFreshInstall(
+        downloadUrl: Uri.parse("https://example.com/download/latest"),
+        message: "Install from a fresh download.",
+      ),
+      mandatory: mandatory,
+    );
+    _skipUpdate = false;
+    notifyListeners();
+  }
+
   void showFailedUpdate() {
     _state = UpdateFailed(
       StateError("network down"),
@@ -399,13 +583,23 @@ class _TestDesktopUpdaterController extends DesktopUpdaterController {
 
   @override
   Future<void> makeSkipUpdate() async {
+    skipUpdateCallCount += 1;
     _skipUpdate = true;
+    final completion = skipUpdateCompleter;
+    if (completion != null) {
+      await completion.future;
+    }
     notifyListeners();
   }
 
   @override
   Future<void> restartApp() async {
     restartAppCallCount += 1;
+  }
+
+  @override
+  Future<void> retryInstallAfterMacOSHelperApproval() async {
+    approvalRetryCallCount += 1;
   }
 
   @override

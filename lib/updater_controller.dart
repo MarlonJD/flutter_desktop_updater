@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:collection";
 import "dart:io";
 import "dart:math";
 
@@ -21,6 +22,7 @@ import "package:desktop_updater/src/io/http_update_transport.dart"
     show UpdateRequestHeadersProvider;
 import "package:desktop_updater/src/io/release_notes_fetcher.dart";
 import "package:desktop_updater/src/localization.dart";
+import "package:desktop_updater/src/macos_privileged_helper_approval.dart";
 import "package:desktop_updater/src/manual_update_check_result.dart";
 import "package:desktop_updater/src/version_info.dart";
 import "package:flutter/foundation.dart";
@@ -46,6 +48,9 @@ typedef ReleaseNotesLoader = Future<ReleaseNotes> Function(
 typedef ExternalUrlLauncher = Future<void> Function(
   Uri url,
 );
+
+final Map<UpdateRecoveryStore, Set<String>> _activeInstallLocks =
+    HashMap<UpdateRecoveryStore, Set<String>>.identity();
 
 /// Coordinates update checks, downloads, and install handoff for UI code.
 ///
@@ -282,6 +287,8 @@ class DesktopUpdaterController extends ChangeNotifier {
   String? _stageProvenanceSha256;
   String? _currentAppVersion;
   UpdateCleanupReport? _lastCleanupReport;
+  bool _installInProgress = false;
+  String? _approvalRetryTransactionId;
 
   final ReleaseNotesLoader? _releaseNotesLoader;
   final Uri? _releaseNotesUrl;
@@ -385,7 +392,12 @@ class DesktopUpdaterController extends ChangeNotifier {
   /// This is the strict low-level check: failures move [state] to
   /// [UpdateFailed] and are rethrown to the caller. Use [checkForUpdates] for
   /// user-triggered checks that should return a typed result instead.
-  Future<void> checkVersion() async {
+  Future<void> checkVersion() => _checkVersion();
+
+  Future<void> _checkVersion({bool duringApprovalRetry = false}) async {
+    if (_installInProgress && !duringApprovalRetry) {
+      throw StateError("An install attempt is already in progress.");
+    }
     final archiveUrl = _appArchiveUrl;
     if (archiveUrl == null) {
       throw StateError("App archive URL is not set.");
@@ -610,7 +622,12 @@ class DesktopUpdaterController extends ChangeNotifier {
   ///
   /// A successful call moves [state] to [UpdateReadyToInstall]. Failures move
   /// [state] to [UpdateFailed] and are rethrown.
-  Future<void> downloadUpdate() async {
+  Future<void> downloadUpdate() => _downloadUpdate();
+
+  Future<void> _downloadUpdate({bool duringApprovalRetry = false}) async {
+    if (_installInProgress && !duringApprovalRetry) {
+      throw StateError("An install attempt is already in progress.");
+    }
     final descriptor = _activeDescriptor;
     final client = _client;
     final checkResult = _activeCheckResult;
@@ -721,18 +738,90 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   /// Hands the staged update to the native installer or restart helper.
   Future<void> restartApp() async {
+    _beginInstallAttempt();
+    try {
+      await _restartApp();
+    } finally {
+      _endInstallAttempt();
+    }
+  }
+
+  /// Recovers an approval-denied macOS handoff, stages a fresh verified
+  /// artifact, and retries the install.
+  ///
+  /// The retry proceeds only when the authenticated helper confirms that the
+  /// prior transaction is absent or ended without activating the update.
+  Future<void> retryInstallAfterMacOSHelperApproval() async {
+    _beginInstallAttempt();
+    try {
+      final transactionId = _approvalRetryTransactionId;
+      if (transactionId == null) {
+        throw StateError("No macOS approval retry is pending.");
+      }
+      final marker = await recoveryStore.readPendingInstall(channel: channel);
+      if (marker == null || marker.transactionId != transactionId) {
+        throw StateError("The pending install receipt changed.");
+      }
+      final recovery = DesktopUpdaterPlatform.instance.nativeInstallRecovery;
+      if (recovery is! QueryAndRecoverNativeInstallRecovery) {
+        throw StateError("Authenticated native install status is unavailable.");
+      }
+      final status = await recovery.queryInstallTransaction(transactionId);
+      if (!_isAuthenticatedSafeRetryStatus(status, transactionId)) {
+        throw StateError(
+          "The previous install transaction is not verified as inactive.",
+        );
+      }
+      if (!await _cleanupRecoveredOwnedStage(marker)) {
+        throw StateError("The previous install stage could not be cleaned.");
+      }
+      await _clearRetryReceipt(marker);
+      _approvalRetryTransactionId = null;
+
+      await _checkVersion(duringApprovalRetry: true);
+      if (_activeDescriptor == null || _activeCheckResult == null) {
+        throw StateError("No update is available to retry.");
+      }
+      await _downloadUpdate(duringApprovalRetry: true);
+      await _restartApp();
+    } on Object catch (error) {
+      if (_approvalRetryTransactionId == null) {
+        _state = UpdateFailed(
+          error,
+          report: _buildProblemReport(
+            error,
+            updateVersion: _activeDescriptor?.version,
+          ),
+        );
+        notifyListeners();
+      }
+      rethrow;
+    } finally {
+      _endInstallAttempt();
+    }
+  }
+
+  Future<void> _restartApp() async {
     final stagingPath = _stagingPath;
     final stageResult = _activeStageResult;
     final provenance = _stageProvenance;
     final provenanceSha256 = _stageProvenanceSha256;
     final client = _client;
+    final descriptor = _activeDescriptor;
+    final appVersion = _currentAppVersion;
     if (stagingPath == null ||
         stagingPath.isEmpty ||
         stageResult == null ||
         provenance == null ||
         provenanceSha256 == null ||
-        client == null) {
+        client == null ||
+        descriptor == null) {
       throw StateError("No downloaded update is ready to install.");
+    }
+    if (await recoveryStore.readPendingInstall(channel: channel) != null) {
+      throw StateError(
+        "A pending install must be recovered before another install.",
+      );
     }
 
     _state = const UpdateInstalling();
@@ -760,12 +849,16 @@ class DesktopUpdaterController extends ChangeNotifier {
     notifyListeners();
 
     var dispatchAttempted = false;
+    String? transactionId;
     try {
-      _validateNativeInstallTrust();
-      final candidateTransactionId = _createInstallTransactionId();
+      _validateNativeInstallTrust(descriptor);
+      transactionId = _createInstallTransactionId();
       final receipt = await _writePendingRecoveryMarker(
         stagingPath,
-        candidateTransactionId,
+        transactionId,
+        descriptor: descriptor,
+        appVersion: appVersion,
+        stageProvenanceSha256: provenanceSha256,
       );
       // Once the durable receipt exists, every failure from the dispatch
       // boundary is ambiguous to the app. Keep the marker until authenticated
@@ -782,10 +875,13 @@ class DesktopUpdaterController extends ChangeNotifier {
       );
       _recordCleanupReport(cleanupReport);
       _state = UpdateInstalling(cleanupReport: cleanupReport);
+      _approvalRetryTransactionId = null;
       notifyListeners();
     } on Object catch (error) {
-      if (!dispatchAttempted) {
-        await _clearPendingRecoveryMarker();
+      if (dispatchAttempted &&
+          transactionId != null &&
+          isMacOSPrivilegedHelperApprovalRequiredError(error)) {
+        _approvalRetryTransactionId = transactionId;
       }
       _recordCleanupReport(
         _buildCleanupReport(
@@ -826,8 +922,76 @@ class DesktopUpdaterController extends ChangeNotifier {
     }
   }
 
-  void _validateNativeInstallTrust() {
-    final signature = _activeDescriptor?.signature;
+  void _beginInstallAttempt() {
+    if (_installInProgress) {
+      throw StateError("An install attempt is already in progress.");
+    }
+    final channels = _activeInstallLocks.putIfAbsent(
+      recoveryStore,
+      () => <String>{},
+    );
+    if (!channels.add(channel)) {
+      throw StateError("An install attempt is already in progress.");
+    }
+    _installInProgress = true;
+  }
+
+  void _endInstallAttempt() {
+    if (!_installInProgress) {
+      return;
+    }
+    _installInProgress = false;
+    final channels = _activeInstallLocks[recoveryStore];
+    channels?.remove(channel);
+    if (channels != null && channels.isEmpty) {
+      _activeInstallLocks.remove(recoveryStore);
+    }
+  }
+
+  bool _isAuthenticatedSafeRetryStatus(
+    NativeInstallTransactionStatus? status,
+    String transactionId,
+  ) {
+    final digestPattern = RegExp(r"^[0-9a-f]{64}$");
+    if (status == null ||
+        status.transactionId != transactionId ||
+        !digestPattern.hasMatch(status.responseDigestSha256) ||
+        !digestPattern.hasMatch(status.helperEndpointIdentitySha256)) {
+      return false;
+    }
+    return status.isTerminalFailure ||
+        (status.isTerminalSuccess && status.responseDigestSha256 == "0" * 64);
+  }
+
+  Future<void> _clearRetryReceipt(
+    UpdateInstallRecoveryMarker expected,
+  ) async {
+    final current = await recoveryStore.readPendingInstall(channel: channel);
+    persistedInstallTransactionFromExactReadback(
+      written: expected,
+      readback: current,
+    );
+    await recoveryStore.clearPendingInstall(channel: channel);
+    if (await recoveryStore.readPendingInstall(channel: channel) != null) {
+      throw StateError("The pending install receipt could not be cleared.");
+    }
+  }
+
+  Future<void> _clearUnclaimedCandidate(
+    UpdateInstallRecoveryMarker candidate,
+  ) async {
+    final current = await recoveryStore.readPendingInstall(channel: channel);
+    if (current?.transactionId != candidate.transactionId) {
+      throw StateError("The unclaimed recovery marker changed.");
+    }
+    await recoveryStore.clearPendingInstall(channel: channel);
+    if (await recoveryStore.readPendingInstall(channel: channel) != null) {
+      throw StateError("The unclaimed recovery marker could not be cleared.");
+    }
+  }
+
+  void _validateNativeInstallTrust(ReleaseDescriptor descriptor) {
+    final signature = descriptor.signature;
     if (signature == null ||
         signature.algorithm != "ed25519" ||
         signature.publicKeyId.trim().isEmpty ||
@@ -998,23 +1162,28 @@ class DesktopUpdaterController extends ChangeNotifier {
 
   Future<PersistedInstallTransaction> _writePendingRecoveryMarker(
     String stagingPath,
-    String? transactionId,
-  ) async {
-    final descriptor = _activeDescriptor;
-    if (descriptor == null || transactionId == null) {
-      throw StateError("No active descriptor or transaction is available.");
+    String transactionId, {
+    required ReleaseDescriptor descriptor,
+    required String? appVersion,
+    required String stageProvenanceSha256,
+  }) async {
+    final existing = await recoveryStore.readPendingInstall(channel: channel);
+    if (existing != null) {
+      throw StateError(
+        "A pending install must be recovered before another install.",
+      );
     }
     final marker = UpdateInstallRecoveryMarker.pendingV3(
       createdAt: DateTime.now(),
       packageVersion: _diagnosticsRecorder.packageVersion,
       platform: _diagnosticsRecorder.platform,
       channel: channel,
-      appVersion: _currentAppVersion,
+      appVersion: appVersion,
       updateVersion: descriptor.version,
       updateBuildNumber: descriptor.buildNumber,
       expectedPackageId: expectedPackageId,
       stagingPath: stagingPath,
-      stageProvenanceSha256: _stageProvenanceSha256!,
+      stageProvenanceSha256: stageProvenanceSha256,
       diagnosticsText: _buildProblemReport(
         StateError("Install handoff pending."),
         updateVersion: descriptor.version,
@@ -1031,6 +1200,16 @@ class DesktopUpdaterController extends ChangeNotifier {
         readback: readback,
       );
     } on Object catch (error) {
+      try {
+        await _clearUnclaimedCandidate(marker);
+      } on Object catch (cleanupError) {
+        _diagnosticsRecorder.record(
+          stage: UpdateDiagnosticStage.install,
+          level: UpdateDiagnosticLevel.warning,
+          message: "Unclaimed recovery marker cleanup failed.",
+          error: cleanupError,
+        );
+      }
       _diagnosticsRecorder.record(
         stage: UpdateDiagnosticStage.install,
         level: UpdateDiagnosticLevel.error,

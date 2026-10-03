@@ -48,6 +48,32 @@ void RunTransportFixtureTests(UpdateTransport* transport,
       transport->DownloadMetadata(base_url + "/retry");
   Expect(std::string(retried.begin(), retried.end()) == "metadata",
          "Retry metadata response differs.");
+
+  const auto expect_metadata_failure =
+      [transport, &base_url](const std::string& path,
+                             const std::string& count_path,
+                             const std::string& expected_count,
+                             const std::string& label) {
+    std::string failure;
+    try {
+      transport->DownloadMetadata(base_url + path);
+    } catch (const std::exception& error) {
+      failure = error.what();
+    }
+    Expect(!failure.empty(), label + " response was accepted.");
+    Expect(failure != "Update redirect limit exceeded.",
+           label + " failure was reported as a redirect limit.");
+
+    const std::vector<std::uint8_t> count =
+        transport->DownloadMetadata(base_url + count_path);
+    Expect(std::string(count.begin(), count.end()) == expected_count,
+           label + " request count differs.");
+  };
+  expect_metadata_failure("/retry/exhaust", "/retry/exhaust/count", "3",
+                          "Exhausted retryable metadata");
+  expect_metadata_failure("/status/not-found", "/status/not-found/count",
+                          "1", "Non-retryable metadata");
+
   bool oversized = false;
   try {
     transport->DownloadMetadata(base_url + "/oversize");
@@ -70,7 +96,7 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   }
   std::int64_t final_progress = 0;
   ArtifactDownloadRequest request;
-  request.url = base_url + "/artifact";
+  request.url = base_url + "/artifact/retry-error-body";
   request.destination_path = destination.u8string();
   request.destination_filesystem_path = destination;
   request.expected_length = static_cast<std::int64_t>(artifact.size());
@@ -80,9 +106,29 @@ void RunTransportFixtureTests(UpdateTransport* transport,
   };
   transport->DownloadArtifact(request);
   Expect(ReadFile(destination) == artifact, "Resumed artifact differs.");
+  Expect(Hex(sha256(ReadFile(destination))) == request.expected_sha256,
+         "Resumed artifact SHA-256 differs.");
   Expect(final_progress == static_cast<std::int64_t>(artifact.size()),
          "Artifact progress total differs.");
-  Expect(ReadFile(partial).empty(), ".part file remains after success.");
+  Expect(!std::filesystem::exists(partial),
+         ".part file remains after success.");
+
+  std::filesystem::remove(destination);
+  {
+    std::ofstream output(partial, std::ios::binary);
+    output.write(artifact.data(), 7);
+  }
+  request.url = base_url + "/artifact/ignore-range";
+  final_progress = 0;
+  transport->DownloadArtifact(request);
+  Expect(ReadFile(destination) == artifact,
+         "Range-ignoring artifact response differs.");
+  Expect(Hex(sha256(ReadFile(destination))) == request.expected_sha256,
+         "Range-ignoring artifact SHA-256 differs.");
+  Expect(final_progress == static_cast<std::int64_t>(artifact.size()),
+         "Range-ignoring artifact progress total differs.");
+  Expect(!std::filesystem::exists(partial),
+         ".part file remains after restarting an ignored range.");
 
   request.destination_path = destination.u8string() + ".bad";
   request.destination_filesystem_path =
@@ -95,7 +141,7 @@ void RunTransportFixtureTests(UpdateTransport* transport,
     integrity_failed = true;
   }
   Expect(integrity_failed, "Bad artifact SHA-256 was accepted.");
-  Expect(ReadFile(request.destination_path + ".part").empty(),
+  Expect(!std::filesystem::exists(request.destination_path + ".part"),
          ".part file remains after terminal failure.");
   std::filesystem::remove(destination);
   std::filesystem::remove(std::filesystem::u8path(request.destination_path));

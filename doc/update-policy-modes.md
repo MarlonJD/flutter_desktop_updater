@@ -29,7 +29,7 @@ soft prompt:
   "platform": "macos",
   "channel": "stable",
   "mandatory": false,
-  "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+  "release": "https://updates.example.com/releases/stable/2.4.0/build-240/macos/release.json"
 }
 ```
 
@@ -56,7 +56,7 @@ work:
   "platform": "macos",
   "channel": "stable",
   "mandatory": true,
-  "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+  "release": "https://updates.example.com/releases/stable/2.4.0/build-240/macos/release.json"
 }
 ```
 
@@ -91,7 +91,7 @@ top level because the app needs the policy before downloading any artifact.
       "platform": "macos",
       "channel": "stable",
       "mandatory": true,
-      "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+      "release": "https://updates.example.com/releases/stable/2.4.0/build-240/macos/release.json"
     }
   ]
 }
@@ -127,7 +127,7 @@ installer.
     "downloadUrl": "https://example.com/download/latest",
     "message": "This update must be installed from a fresh download."
   },
-  "release": "https://updates.example.com/releases/2.4.0/macos/release.json"
+  "release": "https://updates.example.com/releases/stable/2.4.0/build-240/macos/release.json"
 }
 ```
 

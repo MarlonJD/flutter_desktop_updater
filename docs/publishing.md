@@ -167,7 +167,7 @@ best release for the current platform, channel, and installed version.
       "platform": "macos",
       "channel": "stable",
       "mandatory": false,
-      "release": "https://updates.example.com/releases/3.1.0/macos/release.json"
+      "release": "https://updates.example.com/releases/stable/3.1.0/build-310/macos/release.json"
     }
   ]
 }
@@ -187,7 +187,7 @@ artifact; Windows can also use an Inno Setup installer artifact.
   "channel": "stable",
   "artifact": {
     "kind": "zip",
-    "url": "https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip",
+    "url": "https://updates.example.com/releases/stable/3.1.0/build-310/macos/Example-3.1.0-macos.zip",
     "sha256": "64-lowercase-hex-characters",
     "length": 12345678
   },
@@ -234,7 +234,7 @@ zip until delta verification and patch application ship with their own tests.
   {
     "fromVersion": "3.0.0",
     "kind": "bsdiff",
-    "url": "https://updates.example.com/releases/3.1.0/macos/3.0.0-to-3.1.0.patch",
+    "url": "https://updates.example.com/releases/stable/3.1.0/build-310/macos/3.0.0-to-3.1.0.patch",
     "sha256": "64-lowercase-hex-characters",
     "length": 456
   }
@@ -348,7 +348,7 @@ top level because the app needs the policy before downloading any artifact:
       "platform": "macos",
       "channel": "stable",
       "mandatory": true,
-      "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
+      "release": "https://updates.example.com/releases/stable/3.0.0/build-240/macos/release.json"
     }
   ]
 }
@@ -381,7 +381,7 @@ transition, or updater-runtime transition.
     "downloadUrl": "https://example.com/download/latest",
     "message": "This update must be installed from a fresh download."
   },
-  "release": "https://updates.example.com/releases/3.0.0/macos/release.json"
+  "release": "https://updates.example.com/releases/stable/3.0.0/build-240/macos/release.json"
 }
 ```
 
@@ -672,9 +672,18 @@ hosted paths by default:
 
 ```text
 https://updates.example.com/app-archive.json
-https://updates.example.com/releases/3.1.0/macos/release.json
-https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip
+https://updates.example.com/releases/stable/3.1.0/build-310/macos/release.json
+https://updates.example.com/releases/stable/3.1.0/build-310/macos/Example-3.1.0-macos.zip
 ```
+
+The publisher stores each immutable release under
+`releases/<channel>/<version>/<build-<number>|no-build>/<platform>/`. For
+example, `stable`, version `3.1.0`, and build `310` use
+`releases/stable/3.1.0/build-310/macos/`; when there is no build number, the
+segment is `no-build`. Channel, version, and platform values must be URL-safe
+single segments. The publisher refuses to reuse an identity already present in
+verified hosted history or the local index, and refuses to package into an
+existing release directory.
 
 3. Generate the feed-bound signing profile:
 
@@ -769,8 +778,8 @@ With only the minimum config, the command writes:
 dist/desktop_updater/
   .desktop_updater_publish.json
   app-archive.json
-  releases/<version>/<platform>/release.json
-  releases/<version>/<platform>/<artifact>.zip
+  releases/<channel>/<version>/<build-<number>|no-build>/<platform>/release.json
+  releases/<channel>/<version>/<build-<number>|no-build>/<platform>/<artifact>.zip
 ```
 
 It then prints the frozen hosted revision, the trusted public-key map, and the
@@ -839,7 +848,7 @@ before uploading them:
 
 ```sh
 dart run desktop_updater:release sign \
-  --release dist/desktop_updater/releases/3.1.0/linux/release.json \
+  --release dist/desktop_updater/releases/stable/3.1.0/build-310/linux/release.json \
   --app-archive dist/desktop_updater/app-archive.json
 ```
 
@@ -1707,7 +1716,7 @@ Package a release manually:
 ```sh
 dart run desktop_updater:package \
   --input build/macos/Build/Products/Release/Example.app \
-  --output dist/3.1.0/macos \
+  --output dist/desktop_updater/releases/stable/3.1.0/build-310/macos \
   --package-id com.example.app \
   --app-name Example.app \
   --version 3.1.0 \
@@ -1715,7 +1724,7 @@ dart run desktop_updater:package \
   --platform macos \
   --channel stable \
   --install-strategy wholeBundleReplace \
-  --artifact-url https://updates.example.com/releases/3.1.0/macos/Example-3.1.0-macos.zip
+  --artifact-url https://updates.example.com/releases/stable/3.1.0/build-310/macos/Example-3.1.0-macos.zip
 ```
 
 Update `app-archive.json`:
@@ -1728,14 +1737,14 @@ dart run desktop_updater:app_archive upsert \
   --build-number 310 \
   --platform macos \
   --channel stable \
-  --release-url https://updates.example.com/releases/3.1.0/macos/release.json
+  --release-url https://updates.example.com/releases/stable/3.1.0/build-310/macos/release.json
 ```
 
 Verify one release descriptor and artifact:
 
 ```sh
 dart run desktop_updater:verify \
-  --release dist/3.1.0/macos/release.json
+  --release dist/desktop_updater/releases/stable/3.1.0/build-310/macos/release.json
 ```
 
 ## CI

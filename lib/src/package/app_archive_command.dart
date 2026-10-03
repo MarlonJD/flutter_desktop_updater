@@ -85,7 +85,7 @@ String _usage(ArgParser parser) {
 Create or update desktop_updater app-archive.json metadata.
 
 Usage:
-  dart run desktop_updater:app_archive upsert --archive dist/app-archive.json --app-name "Example App" --version 2.0.0 --platform macos --release-url https://updates.example.com/releases/2.0.0/macos/release.json
+  dart run desktop_updater:app_archive upsert --archive dist/app-archive.json --app-name "Example App" --version 2.0.0 --platform macos --release-url https://updates.example.com/releases/stable/2.0.0/no-build/macos/release.json
 
 Commands:
   upsert    Create app-archive.json if needed, or replace a matching release item.
@@ -99,7 +99,7 @@ String _upsertUsage(ArgParser parser) {
 Create or update one app-archive.json release item.
 
 Usage:
-  dart run desktop_updater:app_archive upsert --archive dist/app-archive.json --app-name "Example App" --version 2.0.0 --build-number 200 --platform macos --channel stable --release-url https://updates.example.com/releases/2.0.0/macos/release.json
+  dart run desktop_updater:app_archive upsert --archive dist/app-archive.json --app-name "Example App" --version 2.0.0 --build-number 200 --platform macos --channel stable --release-url https://updates.example.com/releases/stable/2.0.0/build-200/macos/release.json
 
 ${parser.usage}
 """;

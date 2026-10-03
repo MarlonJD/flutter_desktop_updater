@@ -336,9 +336,142 @@ updates:
       expect(packager.requests.single.appName, "Egas Manager.app");
       expect(
         packager.requests.single.artifactUrl.toString(),
-        "https://updates.example.com/releases/2.1.0/macos/"
+        "https://updates.example.com/releases/stable/2.1.0/no-build/macos/"
         "Egas%20Manager-2.1.0-macos.zip",
       );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test(
+    "channel and build variants preserve prior release bytes and reject duplicates",
+    () async {
+      final root = await _createWindowsFixture();
+      final packager = _RecordingPackager(<String>[]);
+      final publisher = ReleasePublisher(skipBuild: true, packager: packager);
+      final output = StringBuffer();
+      try {
+        Future<PublishManifest> publish({
+          required String channel,
+          required int buildNumber,
+        }) =>
+            publisher.publish(
+              projectRoot: root,
+              platform: "windows",
+              overrides: ReleasePublishOverrides(
+                channel: channel,
+                version: "2.1.0",
+                buildNumber: buildNumber,
+                initializeFeed: true,
+              ),
+              output: output,
+            );
+
+        final stableBuildOne = await publish(channel: "stable", buildNumber: 1);
+        final stableDescriptor = File(
+          path.join(
+            root.path,
+            "dist",
+            "desktop_updater",
+            stableBuildOne.release.path,
+          ),
+        );
+        final stableArtifact = File(
+          path.join(
+            root.path,
+            "dist",
+            "desktop_updater",
+            stableBuildOne.artifact.path,
+          ),
+        );
+        final stableDescriptorBytes = await stableDescriptor.readAsBytes();
+        final stableArtifactBytes = await stableArtifact.readAsBytes();
+
+        final stableBuildTwo = await publish(channel: "stable", buildNumber: 2);
+        final betaBuildOne = await publish(channel: "beta", buildNumber: 1);
+
+        expect(stableBuildOne.release.url, isNot(stableBuildTwo.release.url));
+        expect(stableBuildOne.release.url, isNot(betaBuildOne.release.url));
+        expect(stableBuildOne.artifact.url, isNot(stableBuildTwo.artifact.url));
+        expect(stableBuildOne.artifact.url, isNot(betaBuildOne.artifact.url));
+        expect(stableBuildOne.appArchive.url, stableBuildTwo.appArchive.url);
+        expect(stableBuildOne.appArchive.url, betaBuildOne.appArchive.url);
+        expect(await stableDescriptor.readAsBytes(), stableDescriptorBytes);
+        expect(await stableArtifact.readAsBytes(), stableArtifactBytes);
+
+        final archive = ReleaseIndex.fromJson(
+          jsonDecode(
+            await File(
+              path.join(
+                root.path,
+                "dist",
+                "desktop_updater",
+                "app-archive.json",
+              ),
+            ).readAsString(),
+          ) as Map<String, dynamic>,
+        );
+        expect(
+          archive.items
+              .map((item) => "${item.channel}:${item.buildNumber}")
+              .toSet(),
+          {"stable:1", "stable:2", "beta:1"},
+        );
+
+        await expectLater(
+          publish(channel: "stable", buildNumber: 1),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              "message",
+              contains("local app-archive.json"),
+            ),
+          ),
+        );
+        expect(packager.requests, hasLength(3));
+        expect(await stableDescriptor.readAsBytes(), stableDescriptorBytes);
+        expect(await stableArtifact.readAsBytes(), stableArtifactBytes);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
+  test("publisher refuses an occupied local release directory before packaging",
+      () async {
+    final root = await _createWindowsFixture();
+    final packager = _RecordingPackager(<String>[]);
+    final releaseDirectory = Directory(
+      path.join(
+        root.path,
+        "dist",
+        "desktop_updater",
+        "releases",
+        "stable",
+        "2.1.0",
+        "no-build",
+        "windows",
+      ),
+    );
+    await releaseDirectory.create(recursive: true);
+    try {
+      await expectLater(
+        ReleasePublisher(skipBuild: true, packager: packager).publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(initializeFeed: true),
+          output: StringBuffer(),
+        ),
+        throwsA(
+          isA<FileSystemException>().having(
+            (error) => error.message,
+            "message",
+            contains("Release output directory already exists"),
+          ),
+        ),
+      );
+      expect(packager.requests, isEmpty);
     } finally {
       await root.delete(recursive: true);
     }
@@ -377,14 +510,15 @@ windows:
       );
 
       expect(manifest.artifact.kind, "innoInstaller");
-      expect(manifest.artifact.path, "releases/2.1.0/windows/CustomSetup.exe");
+      expect(manifest.artifact.path,
+          "releases/stable/2.1.0/no-build/windows/CustomSetup.exe");
       expect(
         manifest.artifact.url.toString(),
-        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
       );
       expect(
         innoPackager.requests.single.artifactUrl.toString(),
-        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
       );
       expect(innoPackager.requests.single.minimumUpdaterVersion, "2.5.0");
       expect(innoPackager.outputBaseNames.single, "CustomSetup");
@@ -400,11 +534,11 @@ windows:
       );
       expect(
         writtenManifest.artifact.path,
-        "releases/2.1.0/windows/CustomSetup.exe",
+        "releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
       );
       expect(
         writtenManifest.artifact.url.toString(),
-        "https://updates.example.com/releases/2.1.0/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
       );
     } finally {
       await root.delete(recursive: true);
@@ -550,7 +684,8 @@ macos:
         );
         expect(
           hookCalls.first.environment["DESKTOP_UPDATER_RELEASE_FILE"],
-          endsWith(path.join("releases", "2.1.0", "windows", "release.json")),
+          endsWith(path.join("releases", "stable", "2.1.0", "no-build",
+              "windows", "release.json")),
         );
         expect(
           hookCalls.last.environment["DESKTOP_UPDATER_PUBLISH_MANIFEST"],
@@ -617,7 +752,9 @@ macos:
                 "dist",
                 "desktop_updater",
                 "releases",
+                "stable",
                 "2.1.0",
+                "no-build",
                 "windows",
                 "release.json",
               ),
@@ -734,6 +871,67 @@ macos:
           ),
           throwsA(isA<Exception>()),
         );
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    "signed publisher rejects an identity already in hosted history before packaging",
+    () async {
+      final root = await _createWindowsFixture();
+      final seed = List<int>.generate(32, (index) => index);
+      final publicKeys = await _publicKeysForSeed(seed);
+      final packager = _RecordingPackager(<String>[]);
+      final hostedArchive = await _writeSignedAppArchive(
+        root: root,
+        relativePath: "hosted-duplicate-app-archive.json",
+        seed: seed,
+        items: [
+          ReleaseIndexItem(
+            version: "2.1.0",
+            buildNumber: null,
+            platform: "windows",
+            channel: "stable",
+            mandatory: false,
+            release: Uri.parse(
+              "https://updates.example.com/releases/stable/2.1.0/no-build/windows/release.json",
+            ),
+          ),
+        ],
+      );
+      final hostedBytes = await hostedArchive.readAsBytes();
+      try {
+        final publisher = ReleasePublisher(
+          skipBuild: true,
+          packager: packager,
+          httpClient: MockClient(
+            (_) async => http.Response.bytes(hostedBytes, 200),
+          ),
+        );
+
+        await expectLater(
+          publisher.publish(
+            projectRoot: root,
+            platform: "windows",
+            overrides: const ReleasePublishOverrides(),
+            signing: ReleaseSigningOptions(
+              publicKeyId: "stable-2026",
+              privateKeyBase64: base64Encode(seed),
+              trustedReleasePublicKeys: publicKeys,
+            ),
+            output: StringBuffer(),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              "message",
+              contains("signed publication history"),
+            ),
+          ),
+        );
+        expect(packager.requests, isEmpty);
       } finally {
         await root.delete(recursive: true);
       }

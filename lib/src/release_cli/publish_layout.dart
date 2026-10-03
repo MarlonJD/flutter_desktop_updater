@@ -52,27 +52,45 @@ class PublishLayout {
     required Directory outputDirectory,
     required Uri baseUrl,
     required String version,
+    required int? buildNumber,
     required String platform,
+    required String channel,
     required String appName,
     String artifactExtension = ".zip",
     String artifactSuffix = "",
     String? artifactFileName,
   }) {
+    final safeChannel = _requireIdentitySegment(channel, "channel");
+    final safeVersion = _requireIdentitySegment(version, "version");
+    final safePlatform = _requireIdentitySegment(platform, "platform");
+    if (buildNumber != null && buildNumber < 0) {
+      throw const FormatException(
+        "Release build number must be zero or greater when provided.",
+      );
+    }
+    final buildSegment =
+        buildNumber == null ? "no-build" : "build-$buildNumber";
     final normalizedBaseUrl = _normalizeBaseUrl(baseUrl);
-    final artifactName = artifactFileName ??
-        "${_artifactNameStem(appName)}-$version-$platform$artifactSuffix$artifactExtension";
-    final releaseRelativePath = path.posix.join(
+    final artifactName = _requireArtifactFileName(
+      artifactFileName ??
+          "${_artifactNameStem(appName)}-$safeVersion-$safePlatform"
+              "$artifactSuffix$artifactExtension",
+    );
+    final releaseSegments = [
       "releases",
-      version,
-      platform,
+      safeChannel,
+      safeVersion,
+      buildSegment,
+      safePlatform,
+    ];
+    final releaseRelativePath = path.posix.joinAll([
+      ...releaseSegments,
       "release.json",
-    );
-    final artifactRelativePath = path.posix.join(
-      "releases",
-      version,
-      platform,
+    ]);
+    final artifactRelativePath = path.posix.joinAll([
+      ...releaseSegments,
       artifactName,
-    );
+    ]);
 
     return PublishLayout(
       outputDirectory: outputDirectory,
@@ -80,10 +98,52 @@ class PublishLayout {
       releaseRelativePath: releaseRelativePath,
       artifactRelativePath: artifactRelativePath,
       appArchiveUrl: normalizedBaseUrl.resolve("app-archive.json"),
-      releaseUrl: normalizedBaseUrl.resolve(releaseRelativePath),
-      artifactUrl: normalizedBaseUrl.resolve(artifactRelativePath),
+      releaseUrl: _resolvePathSegments(
+        normalizedBaseUrl,
+        [...releaseSegments, "release.json"],
+      ),
+      artifactUrl: _resolvePathSegments(
+        normalizedBaseUrl,
+        [...releaseSegments, artifactName],
+      ),
     );
   }
+}
+
+final _identitySegmentPattern = RegExp(
+  r"^[A-Za-z0-9](?:[A-Za-z0-9.+_-]*[A-Za-z0-9_+-])?$",
+);
+
+String _requireIdentitySegment(String value, String name) {
+  if (!_identitySegmentPattern.hasMatch(value) ||
+      value == "." ||
+      value == "..") {
+    throw FormatException(
+      "Release $name must be one URL-safe path segment containing only "
+      "letters, numbers, dots, plus signs, underscores, and hyphens.",
+    );
+  }
+  return value;
+}
+
+String _requireArtifactFileName(String value) {
+  if (value.isEmpty ||
+      value == "." ||
+      value == ".." ||
+      value.endsWith(".") ||
+      value.endsWith(" ") ||
+      value.contains("%") ||
+      value.codeUnits.any((unit) => unit < 0x20) ||
+      RegExp(r'[<>:"/\\|?*]').hasMatch(value)) {
+    throw const FormatException(
+      "Release artifact name must be a single safe file name.",
+    );
+  }
+  return value;
+}
+
+Uri _resolvePathSegments(Uri baseUrl, List<String> segments) {
+  return baseUrl.resolve(segments.map(Uri.encodeComponent).join("/"));
 }
 
 Uri _normalizeBaseUrl(Uri baseUrl) {

@@ -61,7 +61,8 @@ bool _shouldShowSliver(DesktopUpdaterController controller) {
     UpdateFreshInstallRequired() ||
     UpdateBlockedBySupportPolicy() ||
     UpdateDownloading() ||
-    UpdateReadyToInstall() =>
+    UpdateReadyToInstall() ||
+    UpdateFailed() =>
       true,
     _ => false,
   };

@@ -95,7 +95,7 @@ Usage:
   dart run desktop_updater:release doctor --platform macos
   dart run desktop_updater:release keygen
   dart run desktop_updater:release publish --platform macos
-  dart run desktop_updater:release sign --release dist/desktop_updater/releases/3.1.0/macos/release.json
+  dart run desktop_updater:release sign --release dist/desktop_updater/releases/stable/3.1.0/build-310/macos/release.json
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json
 
 ${parser.usage}

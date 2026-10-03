@@ -32,6 +32,10 @@ Use it when your screen can let the updater own the top-level scroll container.
 It is best for simple pages, settings screens, or apps that do not already have
 a custom sliver layout.
 
+The wrapper keeps the card visible after an update failure so users can open
+the problem report or retry the update. macOS helper-approval failures also
+keep their settings and retry actions available.
+
 ```dart
 DesktopUpdateWidget(
   controller: controller,
@@ -52,6 +56,8 @@ state.
 
 Use it when your app already uses a `CustomScrollView` and you want the update
 surface to participate in the same scroll layout as the rest of the page.
+It remains visible for failed updates so the card's report and recovery actions
+stay available.
 
 ```dart
 CustomScrollView(
@@ -125,7 +131,8 @@ wrapper widgets handle placement.
   a "View report" action. When macOS reports
   `PrivilegedHelperApprovalRequired`, the stock card and dialog instead explain
   that background-item permission is required, show `Open settings`, and show
-  `Try again` for the retained staged update.
+  `Try again`. That action checks authenticated transaction status, then
+  obtains a fresh verified stage before retrying the handoff.
 
 Writable macOS directory-replacement targets stay on the unprivileged helper
 path. PKG installer updates always require the `SMAppService` root daemon
@@ -133,8 +140,9 @@ because the fixed system-installer operation needs root, so this approval UI
 can appear for PKG even when the app's parent directory is writable.
 It is a first-enable or revoked-approval recovery UI, not a prompt that should
 appear for every update; an already enabled daemon is reused.
-Custom UI can use `isMacOSPrivilegedHelperApprovalRequiredError(state.error)`
-and call `controller.openMacOSBackgroundItemsSettings()` to provide the same
+Custom UI can use `isMacOSPrivilegedHelperApprovalRequiredError(state.error)`,
+call `controller.openMacOSBackgroundItemsSettings()`, and retry with
+`controller.retryInstallAfterMacOSHelperApproval()` to provide the same
 recovery action.
 The stock title, explanation, settings action, and retry action are localized
 through the four `macosPrivilegedHelperApproval*Text` fields on

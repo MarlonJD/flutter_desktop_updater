@@ -9,6 +9,7 @@ import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
+import "package:desktop_updater/src/macos_privileged_helper_approval.dart";
 import "package:desktop_updater/updater_controller.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -101,6 +102,7 @@ void main() {
     await expectLater(controller.restartApp(), throwsA(isA<StateError>()));
 
     expect(platform.installRequests, isEmpty);
+    expect(store.markerFor("stable"), isNull);
   });
 
   test("throwing recovery write blocks platform dispatch", () async {
@@ -202,30 +204,235 @@ void main() {
     }
   });
 
-  test("valid persisted receipt dispatches exactly one verified request",
-      () async {
+  test("repeat install preserves the receipt and dispatch identity", () async {
     final fixture = await _ControllerFixture.create();
     addTearDown(fixture.delete);
     final platform = _RecordingPlatform();
+    final store = _MemoryRecoveryStore();
     DesktopUpdaterPlatform.instance = platform;
     final controller = DesktopUpdaterController(
       appArchiveUrl: fixture.archiveFile.uri,
       expectedPackageId: "com.example.app",
       trustedReleasePublicKeys: fixture.publicKeys,
-      recoveryStore: _MemoryRecoveryStore(),
+      recoveryStore: store,
       skipInitialVersionCheck: true,
     );
 
     await controller.checkVersion();
     await controller.downloadUpdate();
     await controller.restartApp();
+    final markerAfterDispatch = store.markerFor("stable");
+    final stateAfterDispatch = controller.state;
+    await expectLater(controller.restartApp(), throwsA(isA<StateError>()));
 
     expect(platform.installRequests, hasLength(1));
     final request = platform.installRequests.single;
+    expect(markerAfterDispatch, isNotNull);
+    expect(identical(store.markerFor("stable"), markerAfterDispatch), isTrue);
+    expect(store.markerFor("stable")?.transactionId, request.transactionId);
+    expect(identical(controller.state, stateAfterDispatch), isTrue);
     expect(request.expectedPackageId, "com.example.app");
     expect(request.expectedArtifactSha256, fixture.artifactSha256);
     expect(request.stageProvenanceSha256, matches(RegExp(r"^[0-9a-f]{64}$")));
     expect(request.transactionId, matches(RegExp(r"^[0-9a-f-]{36}$")));
+  });
+
+  test("ambiguous native failure preserves its original receipt", () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform(
+      installAction: (_) async => throw StateError("transport lost"),
+    );
+    final store = _MemoryRecoveryStore();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    await expectLater(controller.restartApp(), throwsStateError);
+    final originalMarker = store.markerFor("stable");
+    await expectLater(controller.restartApp(), throwsStateError);
+
+    expect(platform.installRequests, hasLength(1));
+    expect(originalMarker, isNotNull);
+    expect(identical(store.markerFor("stable"), originalMarker), isTrue);
+    expect(
+      store.markerFor("stable")?.transactionId,
+      platform.installRequests.single.transactionId,
+    );
+  });
+
+  test("preexisting receipt survives a newly checked and staged update",
+      () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final stagingRoot = await Directory.systemTemp.createTemp("preexisting_");
+    addTearDown(() async {
+      if (await stagingRoot.exists()) {
+        await stagingRoot.delete(recursive: true);
+      }
+    });
+    final store = _MemoryRecoveryStore();
+    final marker = await _writePendingMarker(
+      store: store,
+      stagingRoot: stagingRoot,
+    );
+    final platform = _RecordingPlatform();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    final readyState = controller.state;
+    await expectLater(controller.restartApp(), throwsStateError);
+
+    expect(identical(store.markerFor("stable"), marker), isTrue);
+    expect(identical(controller.state, readyState), isTrue);
+    expect(platform.installRequests, isEmpty);
+  });
+
+  test("approval retry requires authenticated inactive status and restages",
+      () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    var dispatchCount = 0;
+    String? queriedTransactionId;
+    final platform = _RecordingPlatform(
+      installAction: (_) async {
+        dispatchCount += 1;
+        if (dispatchCount == 1) {
+          throw PlatformException(
+            code: macOSPrivilegedHelperApprovalRequiredErrorCode,
+          );
+        }
+      },
+      nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+        query: (transactionId) async {
+          queriedTransactionId = transactionId;
+          return _nativeStatus(
+            transactionId: transactionId,
+            state: NativeInstallTransactionState.completed,
+            resultCode: NativeInstallTransactionResultCode.succeeded,
+            responseDigestSha256: "0" * 64,
+          );
+        },
+        recover: (_) async => null,
+      ),
+    );
+    final store = _MemoryRecoveryStore();
+    DesktopUpdaterPlatform.instance = platform;
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: fixture.archiveFile.uri,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: fixture.publicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.checkVersion();
+    await controller.downloadUpdate();
+    final firstStage = controller.state as UpdateReadyToInstall;
+    await expectLater(
+      controller.restartApp(),
+      throwsA(isA<PlatformException>()),
+    );
+    final firstMarker = store.markerFor("stable");
+    expect(firstMarker, isNotNull);
+
+    await controller.retryInstallAfterMacOSHelperApproval();
+
+    expect(queriedTransactionId, firstMarker!.transactionId);
+    expect(platform.installRequests, hasLength(2));
+    expect(platform.installRequests.last.transactionId,
+        isNot(firstMarker.transactionId));
+    expect(
+      (controller.state as UpdateInstalling).cleanupReport,
+      isNotNull,
+    );
+    expect(
+      (platform.installRequests.last.stagingPath),
+      isNot(firstStage.stagingPath),
+    );
+    expect(
+      store.markerFor("stable")?.transactionId,
+      platform.installRequests.last.transactionId,
+    );
+  });
+
+  test(
+      "approval retry preserves receipt for null, unauthenticated, and wrong ID",
+      () async {
+    final invalidStatuses = <NativeInstallTransactionStatus? Function(String)>[
+      (_) => null,
+      (transactionId) => _nativeStatus(
+            transactionId: transactionId,
+            state: NativeInstallTransactionState.unknown,
+            resultCode: NativeInstallTransactionResultCode.authenticationFailed,
+          ),
+      (transactionId) => _nativeStatus(
+            transactionId: transactionId,
+            returnedTransactionId: "123e4567-e89b-42d3-a456-426614174999",
+            state: NativeInstallTransactionState.completed,
+            resultCode: NativeInstallTransactionResultCode.succeeded,
+            responseDigestSha256: "0" * 64,
+          ),
+    ];
+
+    for (final invalidStatus in invalidStatuses) {
+      final fixture = await _ControllerFixture.create();
+      addTearDown(fixture.delete);
+      final platform = _RecordingPlatform(
+        installAction: (_) async => throw PlatformException(
+          code: macOSPrivilegedHelperApprovalRequiredErrorCode,
+        ),
+        nativeRecovery: QueryAndRecoverNativeInstallRecovery(
+          query: (transactionId) async => invalidStatus(transactionId),
+          recover: (_) async => null,
+        ),
+      );
+      final store = _MemoryRecoveryStore();
+      DesktopUpdaterPlatform.instance = platform;
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveFile.uri,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        recoveryStore: store,
+        skipInitialVersionCheck: true,
+      );
+
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+        controller.restartApp(),
+        throwsA(isA<PlatformException>()),
+      );
+      final marker = store.markerFor("stable");
+      await expectLater(
+        controller.retryInstallAfterMacOSHelperApproval(),
+        throwsStateError,
+      );
+
+      expect(platform.installRequests, hasLength(1));
+      expect(identical(store.markerFor("stable"), marker), isTrue);
+      expect(
+        isMacOSPrivilegedHelperApprovalRequiredError(
+          (controller.state as UpdateFailed).error,
+        ),
+        isTrue,
+      );
+    }
   });
 
   test("stage A receipt cannot authorize stage B platform dispatch", () async {
@@ -274,12 +481,13 @@ void main() {
     final fixture = await _ControllerFixture.create();
     addTearDown(fixture.delete);
     final platform = _RecordingPlatform();
+    final store = _MemoryRecoveryStore();
     DesktopUpdaterPlatform.instance = platform;
     final controller = DesktopUpdaterController(
       appArchiveUrl: fixture.archiveFile.uri,
       expectedPackageId: "com.example.app",
       trustedReleasePublicKeys: fixture.publicKeys,
-      recoveryStore: _MemoryRecoveryStore(),
+      recoveryStore: store,
       skipInitialVersionCheck: true,
     );
 
@@ -294,6 +502,49 @@ void main() {
 
     expect(platform.installRequests, hasLength(1));
     expect(results.whereType<StateError>(), hasLength(1));
+    expect(
+      store.markerFor("stable")?.transactionId,
+      platform.installRequests.single.transactionId,
+    );
+  });
+
+  test("shared store rejects overlapping installs from two controllers",
+      () async {
+    final fixture = await _ControllerFixture.create();
+    addTearDown(fixture.delete);
+    final platform = _RecordingPlatform();
+    final store = _MemoryRecoveryStore();
+    DesktopUpdaterPlatform.instance = platform;
+    final controllers = List<DesktopUpdaterController>.generate(
+      2,
+      (_) => DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveFile.uri,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        recoveryStore: store,
+        skipInitialVersionCheck: true,
+      ),
+    );
+    for (final controller in controllers) {
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+    }
+
+    final results = await Future.wait<Object?>(
+      controllers.map(
+        (controller) => controller
+            .restartApp()
+            .then<Object?>((_) => null)
+            .catchError((error) => error),
+      ),
+    );
+
+    expect(platform.installRequests, hasLength(1));
+    expect(results.whereType<StateError>(), hasLength(1));
+    expect(
+      store.markerFor("stable")?.transactionId,
+      platform.installRequests.single.transactionId,
+    );
   });
 
   test("recovery marker survives transport loss and unauthenticated status",
@@ -401,8 +652,10 @@ NativeInstallRecovery _nativeRecoveryForHost({
 class _RecordingPlatform
     with MockPlatformInterfaceMixin
     implements DesktopUpdaterPlatform {
-  _RecordingPlatform({NativeInstallRecovery? nativeRecovery})
-      : _nativeRecovery = nativeRecovery ??
+  _RecordingPlatform({
+    NativeInstallRecovery? nativeRecovery,
+    this.installAction,
+  }) : _nativeRecovery = nativeRecovery ??
             QueryAndRecoverNativeInstallRecovery(
               query: (_) async => null,
               recover: (_) async => null,
@@ -410,6 +663,8 @@ class _RecordingPlatform
 
   final installRequests = <VerifiedNativeInstallRequest>[];
   final NativeInstallRecovery _nativeRecovery;
+  final Future<void> Function(VerifiedNativeInstallRequest request)?
+      installAction;
 
   @override
   Future<String?> getPlatformVersion() async => "42";
@@ -422,6 +677,7 @@ class _RecordingPlatform
     VerifiedNativeInstallRequest request,
   ) async {
     installRequests.add(request);
+    await installAction?.call(request);
   }
 
   @override
@@ -540,14 +796,17 @@ NativeInstallTransactionStatus _nativeStatus({
   required String transactionId,
   required NativeInstallTransactionState state,
   required NativeInstallTransactionResultCode resultCode,
+  String? responseDigestSha256,
+  String? helperEndpointIdentitySha256,
+  String? returnedTransactionId,
 }) {
   return NativeInstallTransactionStatus(
-    transactionId: transactionId,
+    transactionId: returnedTransactionId ?? transactionId,
     state: state,
     resultCode: resultCode,
     detail: "",
-    responseDigestSha256: "b" * 64,
-    helperEndpointIdentitySha256: "c" * 64,
+    responseDigestSha256: responseDigestSha256 ?? "b" * 64,
+    helperEndpointIdentitySha256: helperEndpointIdentitySha256 ?? "c" * 64,
   );
 }
 

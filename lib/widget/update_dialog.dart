@@ -114,7 +114,7 @@ class _UpdateDialogListenerState extends State<UpdateDialogListener> {
           context: context,
           barrierDismissible: _canDismissDialog(controller.state),
           builder: (context) {
-            return UpdateDialogWidget(
+            return UpdateDialogWidget._ownedDialog(
               controller: controller,
               backgroundColor: widget.backgroundColor,
               iconColor: widget.iconColor,
@@ -193,7 +193,7 @@ Future showUpdateDialog<T>(
     builder: (context) {
       return _withLocalizationDirection(
         controller,
-        UpdateDialogWidget(
+        UpdateDialogWidget._ownedDialog(
           controller: controller,
           backgroundColor: backgroundColor,
           iconColor: iconColor,
@@ -343,7 +343,21 @@ class UpdateDialogWidget extends StatelessWidget {
     this.buttonIconColor,
     this.mandatoryReadyToInstallBehavior =
         MandatoryReadyToInstallBehavior.promptToSaveFirst,
-  }) : notifier = controller;
+  })  : notifier = controller,
+        _dismissOnSkip = false;
+
+  const UpdateDialogWidget._ownedDialog({
+    required DesktopUpdaterController controller,
+    this.backgroundColor,
+    this.iconColor,
+    this.shadowColor,
+    this.textColor,
+    this.buttonTextColor,
+    this.buttonIconColor,
+    this.mandatoryReadyToInstallBehavior =
+        MandatoryReadyToInstallBehavior.promptToSaveFirst,
+  })  : notifier = controller,
+        _dismissOnSkip = true;
 
   /// The controller for the update dialog.
   final DesktopUpdaterController notifier;
@@ -368,6 +382,8 @@ class UpdateDialogWidget extends StatelessWidget {
 
   /// Dialog behavior after a mandatory update has been staged.
   final MandatoryReadyToInstallBehavior mandatoryReadyToInstallBehavior;
+
+  final bool _dismissOnSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -431,7 +447,9 @@ class UpdateDialogWidget extends StatelessWidget {
                           style: TextStyle(color: buttonTextColor),
                         ),
                         onPressed: () {
-                          unawaited(notifier.restartApp());
+                          unawaited(
+                            notifier.retryInstallAfterMacOSHelperApproval(),
+                          );
                         },
                       ),
                     ] else
@@ -603,7 +621,7 @@ class UpdateDialogWidget extends StatelessWidget {
                               style: TextStyle(color: buttonTextColor),
                             ),
                             onPressed: () {
-                              unawaited(notifier.makeSkipUpdate());
+                              unawaited(_skipUpdate(context));
                             },
                           ),
                         if (!_isMandatoryUpdate(state))
@@ -632,7 +650,7 @@ class UpdateDialogWidget extends StatelessWidget {
                               style: TextStyle(color: buttonTextColor),
                             ),
                             onPressed: () {
-                              unawaited(notifier.makeSkipUpdate());
+                              unawaited(_skipUpdate(context));
                             },
                           ),
                         if (!_isMandatoryUpdate(state))
@@ -655,6 +673,31 @@ class UpdateDialogWidget extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _skipUpdate(BuildContext context) async {
+    if (!_dismissOnSkip) {
+      await notifier.makeSkipUpdate();
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
+
+    await notifier.makeSkipUpdate();
+
+    if (!context.mounted ||
+        !navigator.mounted ||
+        route == null ||
+        !route.isActive) {
+      return;
+    }
+
+    if (route.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(route);
+    }
   }
 
   @override

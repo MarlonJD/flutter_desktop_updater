@@ -1,3 +1,20 @@
+## 3.2.1
+
+* Serialized update handoffs and retained transaction identity across repeated
+  requests and ambiguous install failures. Approval retries now require
+  authenticated recovery evidence and verified staging.
+* Made app release paths immutable by channel, version, build number, and
+  platform, and rejected reuse of an existing release identity.
+* Bounded HTTP response consumption and completed cancellation before retry or
+  cleanup. Linux and Windows transports reject error bodies before writing,
+  restart ignored range responses, and bound metadata retries independently of
+  redirects.
+* Fixed updater cards subscribing from idle, kept failure reports and recovery
+  actions visible, and limited dialog dismissal to the updater-owned route.
+* Preserved equal encrypted Windows release-key material by comparing the
+  decrypted seed bytes before writing.
+* Raised the minimum `http` dependency to 1.5.0 for abortable requests.
+
 ## 3.2.0
 
 * Fixed duplicate macOS Dock tiles after updates by relaunching app bundles

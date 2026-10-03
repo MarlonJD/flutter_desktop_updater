@@ -279,13 +279,27 @@ final class WindowsDpapiReleaseKeyStore implements ReleaseKeySecretStore {
           "Ed25519 private seeds must contain 32 bytes.");
     }
     final values = await _readValues(profileId);
-    final protectedBytes = await _runDpapi("protect", seed);
-    final encoded = base64Encode(protectedBytes);
     final previous = values[keyId];
-    if (previous != null && previous != encoded) {
-      throw StateError("A different private key already exists.");
+    if (previous != null) {
+      final existingSeed = await _runDpapi(
+        "unprotect",
+        _decodeBase64(previous),
+      );
+      if (existingSeed.length != 32) {
+        throw StateError("Windows DPAPI returned an invalid release seed.");
+      }
+      var difference = 0;
+      for (var index = 0; index < seed.length; index++) {
+        difference |= existingSeed[index] ^ seed[index];
+      }
+      if (difference != 0) {
+        throw StateError("A different private key already exists.");
+      }
+      return;
     }
-    values[keyId] = encoded;
+
+    final protectedBytes = await _runDpapi("protect", seed);
+    values[keyId] = base64Encode(protectedBytes);
     await _writeValues(profileId, values);
   }
 

@@ -156,78 +156,97 @@ class HttpUpdateTransport implements BoundedUpdateTransport {
         actualBytes: resumeFrom,
       );
     }
-    final request = http.Request("GET", source);
     final requestHeadersProvider = _requestHeadersProvider;
-    if (requestHeadersProvider != null) {
-      request.headers.addAll(await requestHeadersProvider(source));
-    }
-    if (resumeFrom > 0) {
-      request.headers[HttpHeaders.rangeHeader] = "bytes=$resumeFrom-";
-    }
-    final future = _client.send(request);
-    final response =
-        timeout == null ? await future : await future.timeout(timeout);
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.stream.drain<void>();
-      if (_retryPolicy.shouldRetryStatusCode(response.statusCode)) {
-        throw _RetryableHttpStatusException(response.statusCode);
+    final requestHeaders = requestHeadersProvider == null
+        ? null
+        : await requestHeadersProvider(source);
+    final attempt = _HttpRequestAttempt(timeout);
+    try {
+      final request = http.AbortableRequest(
+        "GET",
+        source,
+        abortTrigger: attempt.abortTrigger,
+      );
+      if (requestHeaders != null) {
+        request.headers.addAll(requestHeaders);
       }
-      throw HttpException(
-        "Failed to download $source: HTTP ${response.statusCode}",
-        uri: source,
-      );
-    }
+      if (resumeFrom > 0) {
+        request.headers[HttpHeaders.rangeHeader] = "bytes=$resumeFrom-";
+      }
+      final response = await attempt.send(_client.send(request));
+      await attempt.trackResponseStream(response.stream);
+      attempt.checkActive();
 
-    if (resumeFrom > 0 && response.statusCode == HttpStatus.partialContent) {
-      final contentRange = await _validateContentRange(
-        response,
-        expectedStart: resumeFrom,
-        source: source,
-      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await attempt.drain(response.stream);
+        if (_retryPolicy.shouldRetryStatusCode(response.statusCode)) {
+          throw _RetryableHttpStatusException(response.statusCode);
+        }
+        throw HttpException(
+          "Failed to download $source: HTTP ${response.statusCode}",
+          uri: source,
+        );
+      }
+
+      if (resumeFrom > 0 && response.statusCode == HttpStatus.partialContent) {
+        final contentRange = await _validateContentRange(
+          response,
+          attempt: attempt,
+          expectedStart: resumeFrom,
+          source: source,
+        );
+        attempt.checkActive();
+        _checkDeclaredSize(
+          source: source,
+          maximumBytes: maximumBytes,
+          actualBytes: contentRange.totalBytes,
+        );
+        await _writeStream(
+          response.stream,
+          partial,
+          attempt: attempt,
+          source: source,
+          maximumBytes: maximumBytes,
+          mode: FileMode.append,
+          initialReceivedBytes: resumeFrom,
+          totalBytes: contentRange.totalBytes,
+          onProgress: onProgress,
+        );
+        attempt.checkActive();
+        return;
+      }
+
+      if (resumeFrom > 0 && response.statusCode != HttpStatus.ok) {
+        await attempt.drain(response.stream);
+        throw HttpException(
+          "Failed to resume $source: HTTP ${response.statusCode}",
+          uri: source,
+        );
+      }
+
+      if (resumeFrom > 0 && await partial.exists()) {
+        await partial.delete();
+      }
+      attempt.checkActive();
       _checkDeclaredSize(
         source: source,
         maximumBytes: maximumBytes,
-        actualBytes: contentRange.totalBytes,
+        actualBytes: response.contentLength,
       );
       await _writeStream(
         response.stream,
         partial,
+        attempt: attempt,
         source: source,
         maximumBytes: maximumBytes,
-        mode: FileMode.append,
-        initialReceivedBytes: resumeFrom,
-        totalBytes: contentRange.totalBytes,
+        mode: FileMode.write,
+        totalBytes: response.contentLength,
         onProgress: onProgress,
       );
-      return;
+      attempt.checkActive();
+    } finally {
+      await attempt.close();
     }
-
-    if (resumeFrom > 0 && response.statusCode != HttpStatus.ok) {
-      await response.stream.drain<void>();
-      throw HttpException(
-        "Failed to resume $source: HTTP ${response.statusCode}",
-        uri: source,
-      );
-    }
-
-    if (resumeFrom > 0 && await partial.exists()) {
-      await partial.delete();
-    }
-    _checkDeclaredSize(
-      source: source,
-      maximumBytes: maximumBytes,
-      actualBytes: response.contentLength,
-    );
-    await _writeStream(
-      response.stream,
-      partial,
-      source: source,
-      maximumBytes: maximumBytes,
-      mode: FileMode.write,
-      totalBytes: response.contentLength,
-      onProgress: onProgress,
-    );
   }
 
   bool _canRetry(int attempt) {
@@ -238,6 +257,182 @@ class HttpUpdateTransport implements BoundedUpdateTransport {
   void close() {
     _client.close();
   }
+}
+
+/// Bounds one HTTP request and owns cancellation for its response body.
+class _HttpRequestAttempt {
+  _HttpRequestAttempt(this._timeout) {
+    if (_timeout != null) {
+      _timer = Timer(_timeout, _expire);
+    }
+  }
+
+  final Duration? _timeout;
+  final Completer<void> _abortCompleter = Completer<void>();
+  final Completer<Never> _timeoutCompleter = Completer<Never>();
+
+  Timer? _timer;
+  Stream<List<int>>? _pendingResponseStream;
+  Future<void>? _pendingCancellation;
+  StreamIterator<List<int>>? _bodyIterator;
+  Future<void>? _bodyCancellation;
+  bool _timedOut = false;
+
+  Future<void> get abortTrigger => _abortCompleter.future;
+
+  Future<http.StreamedResponse> send(
+    Future<http.StreamedResponse> responseFuture,
+  ) async {
+    if (_timeout == null) {
+      return responseFuture;
+    }
+
+    unawaited(
+      responseFuture.then<void>(
+        (response) {
+          if (_timedOut) {
+            unawaited(_cancelUnconsumed(response.stream));
+          }
+        },
+        onError: (Object _, StackTrace __) {},
+      ),
+    );
+
+    try {
+      final response = await Future.any<http.StreamedResponse>([
+        responseFuture,
+        _timeoutCompleter.future,
+      ]);
+      if (_timedOut) {
+        unawaited(_cancelUnconsumed(response.stream));
+        throw _timeoutException();
+      }
+      return response;
+    } catch (error, stackTrace) {
+      if (_timedOut) {
+        throw _timeoutException();
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<void> trackResponseStream(Stream<List<int>> stream) async {
+    _pendingResponseStream = stream;
+    if (_timedOut) {
+      _pendingResponseStream = null;
+      await _cancelUnconsumed(stream);
+      throw _timeoutException();
+    }
+  }
+
+  Future<void> drain(Stream<List<int>> stream) {
+    return consume(stream, (_) {});
+  }
+
+  Future<void> consume(
+    Stream<List<int>> stream,
+    void Function(List<int> chunk) onChunk,
+  ) async {
+    checkActive();
+    if (identical(_pendingResponseStream, stream)) {
+      _pendingResponseStream = null;
+    }
+
+    final iterator = StreamIterator<List<int>>(stream);
+    _bodyIterator = iterator;
+    _bodyCancellation = null;
+    try {
+      while (await iterator.moveNext()) {
+        checkActive();
+        onChunk(iterator.current);
+      }
+      checkActive();
+    } catch (_) {
+      await _cancelBody(iterator);
+      rethrow;
+    } finally {
+      await _cancelBody(iterator);
+      if (identical(_bodyIterator, iterator)) {
+        _bodyIterator = null;
+        _bodyCancellation = null;
+      }
+    }
+  }
+
+  void checkActive() {
+    if (_timedOut) {
+      throw _timeoutException();
+    }
+  }
+
+  Future<void> close() async {
+    _timer?.cancel();
+    final pendingCancellation = _pendingCancellation;
+    _pendingCancellation = null;
+    if (pendingCancellation != null) {
+      await pendingCancellation;
+    }
+    final pendingStream = _pendingResponseStream;
+    _pendingResponseStream = null;
+    if (pendingStream != null) {
+      await _cancelUnconsumed(pendingStream);
+    }
+  }
+
+  void _expire() {
+    if (_timedOut) {
+      return;
+    }
+    _timedOut = true;
+    _abortCompleter.complete();
+
+    final iterator = _bodyIterator;
+    if (iterator != null) {
+      unawaited(_cancelBody(iterator));
+      _completeTimeout();
+      return;
+    }
+
+    final pendingStream = _pendingResponseStream;
+    _pendingResponseStream = null;
+    if (pendingStream != null) {
+      _pendingCancellation = _cancelUnconsumed(pendingStream);
+    }
+    _completeTimeout();
+  }
+
+  Future<void> _cancelBody(StreamIterator<List<int>> iterator) {
+    return _bodyCancellation ??= _ignoreCancellationErrors(iterator.cancel());
+  }
+
+  Future<void> _ignoreCancellationErrors(Future<void> cancellation) async {
+    try {
+      await cancellation;
+    } on Object {
+      // Preserve the download error or timeout that caused cancellation.
+    }
+  }
+
+  Future<void> _cancelUnconsumed(Stream<List<int>> stream) async {
+    try {
+      final subscription = stream.listen(
+        (_) {},
+        onError: (Object _, StackTrace __) {},
+      );
+      await subscription.cancel();
+    } on Object {
+      // The original request error remains the useful failure to report.
+    }
+  }
+
+  void _completeTimeout() {
+    if (!_timeoutCompleter.isCompleted) {
+      _timeoutCompleter.completeError(_timeoutException());
+    }
+  }
+
+  TimeoutException _timeoutException() =>
+      TimeoutException("HTTP request timed out.", _timeout);
 }
 
 class _RetryableHttpStatusException implements Exception {
@@ -260,6 +455,7 @@ Future<void> _defaultDelay(Duration duration) {
 Future<void> _writeStream(
   Stream<List<int>> stream,
   File destination, {
+  required _HttpRequestAttempt attempt,
   required Uri source,
   required int? maximumBytes,
   required FileMode mode,
@@ -271,7 +467,7 @@ Future<void> _writeStream(
   var receivedBytes = initialReceivedBytes;
 
   try {
-    await for (final chunk in stream) {
+    await attempt.consume(stream, (chunk) {
       final nextReceivedBytes = receivedBytes + chunk.length;
       if (maximumBytes != null && nextReceivedBytes > maximumBytes) {
         throw UpdateDownloadSizeLimitException(
@@ -283,7 +479,7 @@ Future<void> _writeStream(
       sink.add(chunk);
       receivedBytes = nextReceivedBytes;
       onProgress?.call(receivedBytes, totalBytes);
-    }
+    });
   } finally {
     await sink.close();
   }
@@ -307,6 +503,7 @@ void _checkDeclaredSize({
 
 Future<_ContentRange> _validateContentRange(
   http.StreamedResponse response, {
+  required _HttpRequestAttempt attempt,
   required int expectedStart,
   required Uri source,
 }) async {
@@ -316,7 +513,7 @@ Future<_ContentRange> _validateContentRange(
       contentRange.start != expectedStart ||
       contentRange.end < contentRange.start ||
       contentRange.totalBytes <= contentRange.end) {
-    await response.stream.drain<void>();
+    await attempt.drain(response.stream);
     throw HttpException(
       "Invalid Content-Range for $source: ${header ?? "<missing>"}",
       uri: source,
@@ -325,7 +522,7 @@ Future<_ContentRange> _validateContentRange(
 
   final rangeLength = contentRange.end - contentRange.start + 1;
   if (response.contentLength != null && response.contentLength != rangeLength) {
-    await response.stream.drain<void>();
+    await attempt.drain(response.stream);
     throw HttpException(
       "Invalid Content-Range length for $source: ${header ?? "<missing>"}",
       uri: source,

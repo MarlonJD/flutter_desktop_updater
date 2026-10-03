@@ -149,6 +149,7 @@ void main() {
     expect(fixtureServer, contains('"/redirect/six/0"'));
     expect(fixtureServer, contains('"/redirect/cross-authority"'));
     expect(fixtureServer, contains('"/redirect/missing-location"'));
+    expect(fixtureServer, contains('"/artifact/ignore-range"'));
     expect(cmake.toLowerCase(), contains("winhttp"));
     expect(cmake, contains("update_transport_winhttp.cpp"));
     expect(cmake, contains("redirect_url.cc"));
@@ -229,6 +230,39 @@ void main() {
         await redirectLocation(baseUrl, "/redirect/missing-location"),
         isNull,
       );
+    } finally {
+      process.kill();
+      await process.exitCode;
+    }
+  });
+
+  test("native fixture server can ignore artifact range requests", () async {
+    final process = await Process.start(resolveDartExecutable(), [
+      "run",
+      "tool/native_transport_fixture_server.dart",
+      "--port",
+      "0",
+    ]);
+    try {
+      final ready = await process.stdout
+          .transform(systemEncoding.decoder)
+          .transform(const LineSplitter())
+          .firstWhere((line) => line.startsWith("READY "))
+          .timeout(const Duration(seconds: 10));
+      final baseUrl = ready.replaceFirst("READY ", "");
+      final client = HttpClient();
+      try {
+        final request = await client.getUrl(
+          Uri.parse("$baseUrl/artifact/ignore-range"),
+        );
+        request.headers.set(HttpHeaders.rangeHeader, "bytes=7-");
+        final response = await request.close();
+        expect(response.statusCode, HttpStatus.ok);
+        expect(await response.transform(utf8.decoder).join(),
+            "native transport artifact\n");
+      } finally {
+        client.close(force: true);
+      }
     } finally {
       process.kill();
       await process.exitCode;

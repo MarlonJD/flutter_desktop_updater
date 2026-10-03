@@ -33,7 +33,7 @@ class UpdateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final notifier = controller ??
         DesktopUpdaterInheritedNotifier.maybeOf(context)?.notifier;
-    if (notifier == null || !_shouldShowReadyUi(notifier)) {
+    if (notifier == null) {
       return const SizedBox.shrink();
     }
 
@@ -278,7 +278,7 @@ class _UpdateCardActions extends StatelessWidget {
                       .macosPrivilegedHelperApprovalRetryText!,
             ),
             onPressed: () {
-              unawaited(notifier.restartApp());
+              unawaited(notifier.retryInstallAfterMacOSHelperApproval());
             },
           ),
           if (state.report != null)

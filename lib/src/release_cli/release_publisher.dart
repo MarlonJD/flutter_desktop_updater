@@ -229,11 +229,21 @@ class ReleasePublisher {
       outputDirectory: config.outputDirectory,
       baseUrl: config.baseUrl,
       version: metadata.version,
+      buildNumber: metadata.buildNumber,
       platform: platform,
+      channel: config.channel,
       appName: metadata.appName,
       artifactExtension: artifactExtension,
       artifactSuffix: useInnoInstaller ? "-setup" : "",
       artifactFileName: useInnoInstaller ? "$innoOutputBaseName.exe" : null,
+    );
+    await _assertReleaseIdentityAvailable(
+      layout: layout,
+      version: metadata.version,
+      buildNumber: metadata.buildNumber,
+      platform: platform,
+      channel: config.channel,
+      knownHistory: signedHistory?.index,
     );
 
     await _copyAdditionalFiles(
@@ -653,6 +663,71 @@ Future<void> _writeJsonFile(File file, Map<String, dynamic> json) async {
   await file.writeAsString(
     "${const JsonEncoder.withIndent("  ").convert(json)}\n",
   );
+}
+
+Future<void> _assertReleaseIdentityAvailable({
+  required PublishLayout layout,
+  required String version,
+  required int? buildNumber,
+  required String platform,
+  required String channel,
+  required ReleaseIndex? knownHistory,
+}) async {
+  if (_containsReleaseIdentity(
+    knownHistory,
+    version: version,
+    buildNumber: buildNumber,
+    platform: platform,
+    channel: channel,
+  )) {
+    throw StateError(
+      "Release identity already exists in signed publication history.",
+    );
+  }
+
+  final localArchive = layout.appArchiveFile;
+  if (await localArchive.exists()) {
+    final decoded = jsonDecode(await localArchive.readAsString());
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException("app-archive.json must be a JSON object.");
+    }
+    final localHistory = ReleaseIndex.fromJson(decoded);
+    if (_containsReleaseIdentity(
+      localHistory,
+      version: version,
+      buildNumber: buildNumber,
+      platform: platform,
+      channel: channel,
+    )) {
+      throw StateError(
+        "Release identity already exists in local app-archive.json.",
+      );
+    }
+  }
+
+  if (await layout.releaseDirectory.exists()) {
+    throw FileSystemException(
+      "Release output directory already exists; refusing to replace it.",
+      layout.releaseDirectory.path,
+    );
+  }
+}
+
+bool _containsReleaseIdentity(
+  ReleaseIndex? index, {
+  required String version,
+  required int? buildNumber,
+  required String platform,
+  required String channel,
+}) {
+  return index?.items.any(
+        (item) =>
+            item.version == version &&
+            item.buildNumber == buildNumber &&
+            item.platform == platform &&
+            item.channel == channel,
+      ) ??
+      false;
 }
 
 Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({

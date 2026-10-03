@@ -36,7 +36,7 @@ DMG update descriptors preserve whole-bundle replacement semantics:
 {
   "artifact": {
     "kind": "dmg",
-    "url": "https://updates.example.com/releases/2.6.0/macos/Example-2.6.0-macos.dmg",
+    "url": "https://updates.example.com/releases/stable/2.6.0/build-260/macos/Example-2.6.0-macos.dmg",
     "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "length": 23456789
   },
@@ -68,7 +68,7 @@ PKG descriptors use installer-owned semantics:
 {
   "artifact": {
     "kind": "pkgInstaller",
-    "url": "https://updates.example.com/releases/2.6.0/macos/Example-2.6.0-macos.pkg",
+    "url": "https://updates.example.com/releases/stable/2.6.0/build-260/macos/Example-2.6.0-macos.pkg",
     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "length": 34567890
   },

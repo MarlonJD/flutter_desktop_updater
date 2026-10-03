@@ -72,8 +72,13 @@ try {
 
 `openMacOSBackgroundItemsSettings` opens System Settings > General > Login
 Items & Extensions. It does not grant approval itself. Ask the user to enable
-the app, return to the update UI, and retry the same staged update. Other
-install failures keep their existing error codes and diagnostics behavior.
+the app, return to the update UI, and choose `Try again`. The retry first
+queries the authenticated helper for the saved transaction. It proceeds only
+when the helper confirms the transaction is absent or ended without activating
+the update, then checks and downloads a fresh verified stage before dispatch.
+An unavailable, unauthenticated, malformed, or mismatched status keeps the
+receipt and does not authorize another install. Other install failures keep
+their existing error codes and diagnostics behavior.
 
 ## Dart Lifecycle Log
 
@@ -269,12 +274,17 @@ and exact readback are possible. Copy or adapt the repository's
 instead of using an in-memory store in production.
 
 Before native handoff, `restartApp()` writes a pending marker and immediately
-reads it back. A failed write or mismatched readback blocks native install
-dispatch. On the next startup, `DesktopUpdaterController` checks the marker
-before the first automatic update check. If the current app version does not
-match the expected update version or build number, the controller enters
-`UpdateFailed` with a redacted problem report. Startup read failures and marker
-cleanup failures are recorded as warnings so they do not crash startup.
+reads it back. Within one process, overlapping handoffs for the same recovery
+store instance and channel are rejected before state or storage changes. An
+existing marker blocks a new handoff so its transaction ID cannot be replaced.
+A failed write or mismatched readback blocks native install dispatch. Once
+dispatch may have begun, failures keep the marker until authenticated recovery
+resolves it. On the next startup,
+`DesktopUpdaterController` checks the marker before the first automatic update
+check. If the current app version does not match the expected update version
+or build number, the controller enters `UpdateFailed` with a redacted problem
+report. Startup read failures and marker cleanup failures are recorded as
+warnings so they do not crash startup.
 
 ## Support Flow
 

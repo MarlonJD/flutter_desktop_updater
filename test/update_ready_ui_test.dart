@@ -6,6 +6,31 @@ import "package:flutter_test/flutter_test.dart";
 import "fixtures/controller_v3_test_support.dart";
 
 void main() {
+  testWidgets("direct raw card listens for an available update", (
+    tester,
+  ) async {
+    final controller = _ReadyUiTestController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: UpdateCard(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text("Update Available"), findsNothing);
+
+    controller.showAvailableUpdate();
+    await tester.pump();
+
+    expect(find.text("Update Available"), findsOneWidget);
+    expect(find.text("Download"), findsOneWidget);
+  });
+
   testWidgets("direct card shows available update actions", (tester) async {
     final controller = _ReadyUiTestController();
 
@@ -320,7 +345,7 @@ void main() {
 
       await tester.tap(find.text("Try again"));
       await tester.pump();
-      expect(controller.restartAppCallCount, 1);
+      expect(controller.approvalRetryCallCount, 1);
     },
   );
 
@@ -552,6 +577,7 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   UpdateState _state = const UpdateIdle();
   int openSettingsCallCount = 0;
   int restartAppCallCount = 0;
+  int approvalRetryCallCount = 0;
 
   final ReleaseDescriptor _descriptor = ReleaseDescriptor(
     schemaVersion: 3,
@@ -691,6 +717,11 @@ class _ReadyUiTestController extends DesktopUpdaterController {
   @override
   Future<void> restartApp() async {
     restartAppCallCount += 1;
+  }
+
+  @override
+  Future<void> retryInstallAfterMacOSHelperApproval() async {
+    approvalRetryCallCount += 1;
   }
 }
 

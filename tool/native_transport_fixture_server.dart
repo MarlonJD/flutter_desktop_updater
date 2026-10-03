@@ -35,6 +35,9 @@ Future<void> main(List<String> arguments) async {
 
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
   var retryCount = 0;
+  var exhaustedRetryCount = 0;
+  var notFoundCount = 0;
+  var artifactErrorBodyCount = 0;
   var missingLocationCount = 0;
   stdout.writeln("READY http://${server.address.address}:${server.port}");
   await stdout.flush();
@@ -151,23 +154,30 @@ Future<void> main(List<String> arguments) async {
         } else {
           request.response.write("metadata");
         }
+      case "/retry/exhaust":
+        exhaustedRetryCount += 1;
+        request.response.statusCode = HttpStatus.serviceUnavailable;
+      case "/retry/exhaust/count":
+        request.response.write(exhaustedRetryCount);
+      case "/status/not-found":
+        notFoundCount += 1;
+        request.response.statusCode = HttpStatus.notFound;
+        request.response.write("x" * 64);
+      case "/status/not-found/count":
+        request.response.write(notFoundCount);
       case "/oversize":
         request.response.write("x" * 64);
       case "/artifact":
-        final bytes = utf8.encode(_artifact);
-        final range = request.headers.value(HttpHeaders.rangeHeader);
-        if (range != null && range.startsWith("bytes=")) {
-          final start = int.parse(
-            range.substring("bytes=".length).split("-").first,
-          );
-          request.response.statusCode = HttpStatus.partialContent;
-          request.response.headers.set(
-            HttpHeaders.contentRangeHeader,
-            "bytes $start-${bytes.length - 1}/${bytes.length}",
-          );
-          request.response.add(bytes.sublist(start));
+        writeArtifact(request);
+      case "/artifact/ignore-range":
+        writeArtifact(request, honorRange: false);
+      case "/artifact/retry-error-body":
+        artifactErrorBodyCount += 1;
+        if (artifactErrorBodyCount == 1) {
+          request.response.statusCode = HttpStatus.serviceUnavailable;
+          request.response.write("oops");
         } else {
-          request.response.add(bytes);
+          writeArtifact(request);
         }
       default:
         if (staticRoot == null) {
@@ -217,6 +227,24 @@ Future<void> _serveStaticFile(HttpRequest request, Directory root) async {
 void redirect(HttpRequest request, String location) {
   request.response.statusCode = HttpStatus.found;
   request.response.headers.set(HttpHeaders.locationHeader, location);
+}
+
+void writeArtifact(HttpRequest request, {bool honorRange = true}) {
+  final bytes = utf8.encode(_artifact);
+  final range = request.headers.value(HttpHeaders.rangeHeader);
+  if (honorRange && range != null && range.startsWith("bytes=")) {
+    final start = int.parse(
+      range.substring("bytes=".length).split("-").first,
+    );
+    request.response.statusCode = HttpStatus.partialContent;
+    request.response.headers.set(
+      HttpHeaders.contentRangeHeader,
+      "bytes $start-${bytes.length - 1}/${bytes.length}",
+    );
+    request.response.add(bytes.sublist(start));
+  } else {
+    request.response.add(bytes);
+  }
 }
 
 void writeMetadata(HttpRequest request) {

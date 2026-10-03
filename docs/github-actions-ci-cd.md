@@ -549,7 +549,7 @@ The final `app-archive.json` should point at the hosted descriptor, not at a fol
       "buildNumber": 310,
       "platform": "macos",
       "channel": "stable",
-      "release": "https://updates.example.com/releases/3.1.0/macos/release.json"
+      "release": "https://updates.example.com/releases/stable/3.1.0/build-310/macos/release.json"
     }
   ]
 }
