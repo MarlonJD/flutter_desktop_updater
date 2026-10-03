@@ -1,6 +1,7 @@
 import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
+import "package:path/path.dart" as path;
 
 import "release_publish_e2e_helpers.dart";
 
@@ -43,6 +44,10 @@ ftp:
         initialOutput.toString(),
         contains("OK: Published and validated."),
       );
+
+      // Keep the version while giving the follow-up publication a new identity.
+      await File(path.join(fixture.projectRoot.path, "pubspec.yaml"))
+          .writeAsString("name: release_fixture\nversion: 2.0.1+202\n");
 
       // The second publication must recover the hosted history and use the
       // normal revision-checked lease path without --initialize-feed.
