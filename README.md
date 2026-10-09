@@ -149,6 +149,10 @@ Private update hosts can add runtime authentication headers for update metadata,
 artifacts, and hosted release notes with `requestHeadersProvider`; see
 [Runtime request headers](doc/runtime-request-headers.md).
 
+For macOS, complete the [macOS setup](#macos-setup) before building or publishing
+the app. Adding the Flutter dependency does not automatically bundle the install
+helper.
+
 Before the first production publish, verify the platform toolchain:
 
 ```sh
@@ -168,6 +172,130 @@ With only `updates.baseUrl`, publish creates an upload-ready package under
 `dist/desktop_updater` and prints the manual upload and validate instructions.
 With an upload provider configured, it uploads versioned files first, validates
 them, uploads `app-archive.json` last, then validates hosted update selection.
+
+## macOS Setup
+
+The macOS updater requires a signed `DesktopUpdaterInstallHelper` inside your
+app bundle. Both SwiftPM and CocoaPods hosts need the Runner build phase below;
+installing the Flutter plugin alone does not add it. Start with `flutter pub get`
+and open `macos/Runner.xcworkspace` in Xcode.
+
+### 1. Set the app version and build number
+
+Use Flutter's `version: <version>+<build-number>` convention in your app's
+`pubspec.yaml`, for example:
+
+```yaml
+version: 1.2.3+45
+```
+
+Keep these entries in `macos/Runner/Info.plist`:
+
+```xml
+<key>CFBundleShortVersionString</key>
+<string>$(FLUTTER_BUILD_NAME)</string>
+<key>CFBundleVersion</key>
+<string>$(FLUTTER_BUILD_NUMBER)</string>
+```
+
+The built app must have `CFBundleShortVersionString = 1.2.3` and
+`CFBundleVersion = 45`. `CFBundleVersion` must be a nonnegative integer build
+number, not `1.2.3` or `1.2.3+45`: native install authorization parses it as an
+integer. Increase the build number for each release, including when the version
+name changes; update selection compares build numbers first when both releases
+provide them. If you bundle the app yourself, preserve this mapping in the final
+`Contents/Info.plist` and keep it consistent with the published `version` and
+`buildNumber` metadata. Flutter's `--build-name` and `--build-number` options
+override the corresponding pubspec values.
+
+### 2. Prepare the helper policy and signing
+
+Create an app-owned `macos/Runner/DesktopUpdaterHelperPolicy.json` and its
+canonical SHA-256 using the
+[macOS helper policy recipe](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md#macos-helper-policy-configuration).
+It binds your bundle ID, helper service ID, Apple signing requirements, allowed
+install locations and strategies, and the release public keys pinned in the
+controller. Replace the example app's identifiers, Team ID, and release keys
+with your own values.
+
+Configure Runner's signing identity in Xcode. The embed script uses
+`EXPANDED_CODE_SIGN_IDENTITY` (falling back to `CODE_SIGN_IDENTITY`) to sign the
+helper before Xcode signs the outer app. Production builds need Developer ID
+signing, hardened runtime, and notarization. For ad hoc local builds, use the
+separate development-policy settings described in the policy recipe.
+
+### 3. Add the Runner build phase
+
+In **Runner target > Build Settings**, add a user-defined setting named
+`DESKTOP_UPDATER_PACKAGE_ROOT` pointing to the resolved `desktop_updater` package
+root (the directory containing its `pubspec.yaml` and `macos/install_helper`).
+For CocoaPods, use
+`$(PROJECT_DIR)/Flutter/ephemeral/.symlinks/plugins/desktop_updater` after pod
+installation. For SwiftPM, use the resolved plugin source root from the
+`desktop_updater` entry's `rootUri` in your app's
+`.dart_tool/package_config.json` (resolve a relative URI against that file), or
+the matching local package checkout. Set the filesystem path, not the `file:`
+URI, and update it when the resolved package location changes. The nested
+`macos/desktop_updater` Swift package directory is not the package root.
+
+In **Runner target > Build Phases**, add a **New Run Script Phase** named
+**Embed Desktop Updater Install Helper**. Place it after Flutter's script that
+runs `macos_assemble.sh embed`, before outer app signing. Use `/bin/sh`, uncheck
+**Based on dependency analysis** so it runs on every build, and set
+**User Script Sandboxing** (`ENABLE_USER_SCRIPT_SANDBOXING`) to **No** for the
+Runner configurations that use this phase, as in the example project. Paste:
+
+```sh
+set -eu
+
+: "${DESKTOP_UPDATER_PACKAGE_ROOT:?Set DESKTOP_UPDATER_PACKAGE_ROOT in Runner build settings}"
+export DESKTOP_UPDATER_HELPER_INFO_TEMPLATE="${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/Configuration/Helper-Info.plist"
+export DESKTOP_UPDATER_SEALED_POLICY_PATH="${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json"
+export DESKTOP_UPDATER_SEALED_POLICY_SHA256="REPLACE_WITH_GENERATED_SHA256"
+
+"${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/embed_install_helper.sh"
+```
+
+Replace `REPLACE_WITH_GENERATED_SHA256` with the digest from step 2 and update it
+whenever you regenerate the policy. Xcode supplies the build paths and signing
+identity; run this script as a build phase. It builds the helper, embeds its
+sealed policy, writes the host's `DesktopUpdaterInstall*` metadata and launch
+daemon plist, and verifies the helper layout. Missing metadata or a digest or
+signing mismatch fails the build.
+
+The
+[example Runner project](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/example/macos/Runner.xcodeproj/project.pbxproj)
+shows the complete phase, including optional ad hoc policy settings. Its
+`../../macos/install_helper` path is specific to this repository's layout; use
+your resolved package root in a consuming app.
+
+### 4. Build and verify the app bundle
+
+Build on macOS, then substitute your actual app name below:
+
+```sh
+set -eu
+flutter build macos --release
+
+app="build/macos/Build/Products/Release/My App.app"
+test -x "$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+helper_plist=$(/usr/libexec/PlistBuddy -c \
+  'Print :DesktopUpdaterInstallHelperLaunchDaemonPlistName' "$app/Contents/Info.plist")
+test -f "$app/Contents/Library/LaunchDaemons/$helper_plist"
+/usr/bin/codesign --verify --strict --verbose=2 \
+  "$app/Contents/Helpers/DesktopUpdaterInstallHelper"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist"
+```
+
+The checks should succeed and the last two commands should print `1.2.3` and
+`45` for the example version. They verify bundle layout, signatures, and version
+fields; notarization and an actual update still require their own validation.
+Writable app replacements use the embedded one-shot helper. Protected installs
+and PKG updates use the `SMAppService` daemon on macOS 13+ and may require the
+user to approve it in System Settings; see the
+[native helper integration guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md#macos-desktopupdaterkit).
 
 ## Native Helper SDKs And Runtime Preview
 

@@ -169,14 +169,17 @@ The Swift runtime exposes this as `RuntimeError.diagnostic` with
 switch on those typed values instead of matching the diagnostic message.
 
 Flutter macOS hosts invoke `macos/install_helper/embed_install_helper.sh` from
-their final app target after Flutter assembly. The CocoaPods fallback preserves
-the tooling in its sandbox without adding helper sources to the pod's exact
+their final app target after Flutter assembly. Follow the
+[README macOS setup](../README.md#macos-setup) for the Runner build phase,
+app version/build-number mapping, and bundle verification commands. The CocoaPods
+fallback preserves the tooling in its sandbox without adding helper sources to the pod's exact
 six-source allowlist; a CocoaPods host invokes it from
-`${PODS_ROOT}/../.symlinks/plugins/desktop_updater/macos/install_helper`.
+`${PROJECT_DIR}/Flutter/ephemeral/.symlinks/plugins/desktop_updater/macos/install_helper`.
 SwiftPM hosts add the same final-app phase from the checked-out plugin source.
 The example Xcode target is shared by both Flutter integration modes and shows
-the invocation. Set `DESKTOP_UPDATER_HELPER_INFO_TEMPLATE` and
-`DESKTOP_UPDATER_SEALED_POLICY_PATH` to consumer-owned metadata, and set
+the invocation. Set `DESKTOP_UPDATER_HELPER_INFO_TEMPLATE` to the package's
+`macos/install_helper/Configuration/Helper-Info.plist` template and
+`DESKTOP_UPDATER_SEALED_POLICY_PATH` to the app-owned canonical policy, and set
 `DESKTOP_UPDATER_SEALED_POLICY_SHA256` to the digest emitted by the canonical
 policy generator. The policy must
 bind the actual app bundle identifier, helper service identifier, and Apple
@@ -205,6 +208,66 @@ The same SwiftPM product now includes the preview `UpdateClient`. Its
 `prepareInstall`/`commitAfterExit` operations are exercised by the external
 `example/native/macos-runtime` consumer. Linking the helper directly does not
 require a Flutter engine.
+
+### macOS helper policy configuration
+
+Use a checkout of this repository matching the package version in your app.
+Copy
+[`example/macos/Runner/DesktopUpdaterHelperPolicy.json`](../example/macos/Runner/DesktopUpdaterHelperPolicy.json)
+to your app as `macos/Runner/DesktopUpdaterHelperPolicy.source.json` and edit
+the source policy before generating the sealed output:
+
+| Field | App-specific value |
+| --- | --- |
+| `applicationPackageId` | Runner's `PRODUCT_BUNDLE_IDENTIFIER`, also used as the controller's `expectedPackageId` and the release `packageId` |
+| `helperServiceId` | A helper identifier owned by your app, for example `com.example.myApp.helper` |
+| `policyId` | A stable app-owned policy identifier, for example `com.example.myApp.install-policy` |
+| `allowedApplicationSigner` | `kind: appleDesignatedRequirement`; a requirement binding your app's bundle ID and Apple Team ID |
+| `allowedHelperSigner` | `kind: appleDesignatedRequirement`; a requirement binding your helper service ID and the signing Team ID |
+| `releaseRootPublicKeys` | Your release key IDs and base64 public keys from Quick Start, with `algorithm: ed25519`, matching `trustedReleasePublicKeys` |
+| `allowedInstallRoots`, `allowedTargetClasses`, `allowedStrategies` | Only the locations, target classes, and install strategies your app supports |
+
+For example, an application signer requirement can be
+`identifier com.example.myApp and anchor apple generic and certificate leaf[subject.OU] = "YOURTEAMID"`.
+Use the helper identifier in the helper requirement and substitute your actual
+Team ID in both. The example policy's keys and signing identities belong to the
+repository's smoke app; they are not defaults for your application. Keep the
+policy's `policyVersion` and `minimumHelperProtocolVersion` fields as well.
+The [policy schema](../schemas/native-install-helper-policy-v1.schema.json)
+defines the complete field and strategy contract.
+
+The example policy allows installs under `/Applications`. Run update tests from
+an app installed there, or configure the policy for your supported test location.
+
+From the package repository checkout, generate canonical JSON and its digest
+(replace the absolute app paths and bundle ID):
+
+```sh
+flutter pub get
+dart run tool/generate_native_install_helper_policy.dart \
+  --config /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.source.json \
+  --expected-package-id com.example.myApp \
+  --output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.json \
+  --digest-output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.sha256
+```
+
+Use the generated JSON for `DESKTOP_UPDATER_SEALED_POLICY_PATH` and copy the
+printed digest (also written to the `.sha256` file) into
+`DESKTOP_UPDATER_SEALED_POLICY_SHA256` in the Runner build phase. Commit these
+public policy inputs with the app and regenerate both after policy changes.
+Hashing a pretty-printed JSON file is not equivalent: the embed script checks
+the canonical bytes, excluding the generator's final newline.
+
+For local ad hoc signing (`CODE_SIGN_IDENTITY = -`), prepare and generate a
+separate development policy whose Apple requirements match the ad hoc app and
+helper. The
+[example debug policy](../example/macos/Runner/DesktopUpdaterHelperPolicy-Debug.json)
+shows the structure; replace its identities and release keys too. Configure
+`DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH` and
+`DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256` together in Runner's build settings
+or export them in the build phase. The embed script selects them only when the
+effective signing identity is `-`. Keep the Developer ID policy for distribution;
+an ad hoc build does not validate Developer ID trust or notarization.
 
 ## Windows: CMake, C ABI, And .NET
 
