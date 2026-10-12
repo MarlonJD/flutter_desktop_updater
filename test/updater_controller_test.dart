@@ -7,6 +7,7 @@ import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/desktop_updater_platform_interface.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
+import "package:desktop_updater/src/core/staged_update_provenance.dart";
 import "package:desktop_updater/src/core/update_state.dart";
 import "package:desktop_updater/src/macos_install_location.dart";
 import "package:desktop_updater/src/macos_privileged_helper_approval.dart";
@@ -630,6 +631,95 @@ void main() {
     await controller.recoverPendingInstall();
 
     expect(store.markerFor("stable"), isNull);
+  });
+  test(
+      "a completed install clears its marker when the installer consumed the stage",
+      () async {
+    // What every successful macOS install leaves behind: the helper renames
+    // the staged bundle into /Applications, so the owned stage keeps only its
+    // side files and can never re-verify against the inventory its provenance
+    // marker recorded. Holding the marker over that refused every later
+    // install, because _writePendingRecoveryMarker rejects a second marker.
+    final root = await Directory.systemTemp.createTemp("recovery_consumed_");
+    addTearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+    final stageRoot = await createOwnedStagingDirectory(parent: root);
+    final nonce = path
+        .basename(stageRoot.path)
+        .substring(desktopUpdaterStagingPrefix.length);
+    final bundle = Directory(path.join(stageRoot.path, "App.app"));
+    await Directory(path.join(bundle.path, "Contents", "MacOS"))
+        .create(recursive: true);
+    await File(path.join(bundle.path, "Contents", "MacOS", "App"))
+        .writeAsString("binary");
+    await File(path.join(stageRoot.path, ".desktop_updater_artifact.zip"))
+        .writeAsString("zip");
+    final provenance = await writeStagedUpdateProvenance(
+      stageRoot: stageRoot,
+      nonce: nonce,
+      packageId: "com.example.app",
+      descriptorSha256: "d" * 64,
+      artifactSha256: "e" * 64,
+    );
+    await bundle.delete(recursive: true);
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_desktopUpdaterChannel, (call) async {
+      if (call.method == "getCurrentVersionInfo") {
+        return <String, String?>{"version": "2.0.0", "buildNumber": "200"};
+      }
+      if (call.method == "getCurrentVersion") {
+        return "200";
+      }
+      return null;
+    });
+    final store = _MemoryRecoveryStore();
+    await store.writePendingInstall(
+      UpdateInstallRecoveryMarker.pendingV3(
+        createdAt: DateTime.utc(2026, 10, 12),
+        packageVersion: "3.2.1",
+        platform: Platform.operatingSystem,
+        channel: "stable",
+        appVersion: "1.0.0+100",
+        updateVersion: "2.0.0",
+        updateBuildNumber: 200,
+        expectedPackageId: "com.example.app",
+        stagingPath: bundle.path,
+        stageProvenanceSha256: provenance.markerSha256,
+        diagnosticsText: "pending",
+        transactionId: "123e4567-e89b-42d3-a456-426614174000",
+      ),
+    );
+    DesktopUpdaterPlatform.instance = _RecordingPlatform(
+      nativeRecovery: _nativeRecoveryForHost(
+        query: (transactionId) async => _nativeStatus(
+          transactionId: transactionId,
+          state: NativeInstallTransactionState.completed,
+          resultCode: NativeInstallTransactionResultCode.succeeded,
+        ),
+        recover: (_) async => null,
+      ),
+    );
+    final controller = DesktopUpdaterController(
+      appArchiveUrl: null,
+      expectedPackageId: "com.example.app",
+      trustedReleasePublicKeys: _trustedPublicKeys,
+      recoveryStore: store,
+      skipInitialVersionCheck: true,
+    );
+
+    await controller.recoverPendingInstall();
+
+    expect(store.markerFor("stable"), isNull);
+    expect(controller.state, isA<UpdateIdle>());
+    expect(
+      await stageRoot.exists(),
+      isFalse,
+      reason: "the side files the installer left behind are the package's own",
+    );
   });
 }
 
