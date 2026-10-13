@@ -28,6 +28,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
+        // A fallback only. By the time plugins register, NSApplicationMain
+        // has checked this process in with LaunchServices, so a restart child
+        // that waits here can be taken for the running app when it hands the
+        // bundle to `open`, and the update never relaunches. Hosts wait
+        // before NSApplicationMain instead (see the example's AppDelegate and
+        // the README's macOS setup), after which this returns at once.
         guard
             MacApplicationRestarter
                 .awaitRestartParentExitIfRequested()
