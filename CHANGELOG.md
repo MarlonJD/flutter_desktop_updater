@@ -1,3 +1,15 @@
+## 3.2.2
+
+* Fixed completed-install recovery blocking later updates when the macOS
+  installer consumed the staged app bundle. Thanks to @hobleyd for PR #79.
+* Kept staging cleanup strict for remaining files: added or changed entries
+  prevent deletion and produce a cleanup warning, while a confirmed completed
+  install no longer retains the pending recovery marker.
+* Added regression coverage for consumed staging entries and unsafe leftovers,
+  and expanded macOS helper setup and versioning documentation.
+* Applications already blocked on an older updater may need a manual update to
+  an app release using 3.2.2; the recovery fix takes effect once that app runs.
+
 ## 3.2.1
 
 * Serialized update handoffs and retained transaction identity across repeated
