@@ -286,6 +286,12 @@ or build number, the controller enters `UpdateFailed` with a redacted problem
 report. Startup read failures and marker cleanup failures are recorded as
 warnings so they do not crash startup.
 
+For a completed install whose running version matches the pending target,
+cleanup allows stage entries that the installer consumed to be missing. Every
+remaining entry must still match the recorded inventory; added or changed
+entries prevent deletion. If this cleanup fails, the controller records a
+cleanup warning and clears the pending marker so later installs can proceed.
+
 ## Support Flow
 
 Recommended user-facing copy:

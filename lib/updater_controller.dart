@@ -1131,14 +1131,19 @@ class DesktopUpdaterController extends ChangeNotifier {
     final currentAppVersion = _formatVersionInfo(currentVersion);
     _currentAppVersion = currentAppVersion ?? marker.appVersion;
     if (_matchesRecoveredTarget(currentVersion, marker)) {
-      if (!await _cleanupRecoveredOwnedStage(marker)) {
-        _failRecoveredInstall(
-          marker,
-          StateError("Completed install stage cleanup failed."),
-          message: "Completed install stage cleanup failed.",
-          appVersion: _currentAppVersion,
+      // The running app is the one the marker named, so the install is
+      // complete whatever became of the stage. An installer that moved the
+      // staged bundle into place — the macOS helper renames it into
+      // /Applications — leaves a stage holding only its side files, which the
+      // consumed-stage cleanup below accepts; and should the stage still not
+      // be cleanable, the marker is cleared anyway, because keeping it meant
+      // every later install was refused by _writePendingRecoveryMarker.
+      if (!await _cleanupRecoveredOwnedStage(marker, consumedByInstall: true)) {
+        _diagnosticsRecorder.record(
+          stage: UpdateDiagnosticStage.cleanup,
+          level: UpdateDiagnosticLevel.warning,
+          message: "Completed install left its stage behind; marker cleared.",
         );
-        return;
       }
       await _clearPendingRecoveryMarker();
       _state = const UpdateIdle();
@@ -1251,8 +1256,9 @@ class DesktopUpdaterController extends ChangeNotifier {
   }
 
   Future<bool> _cleanupRecoveredOwnedStage(
-    UpdateInstallRecoveryMarker marker,
-  ) async {
+    UpdateInstallRecoveryMarker marker, {
+    bool consumedByInstall = false,
+  }) async {
     final stagingPath = marker.stagingPath;
     if (stagingPath == null || stagingPath.isEmpty) {
       return true;
@@ -1280,6 +1286,7 @@ class DesktopUpdaterController extends ChangeNotifier {
         parent: stageRoot.parent,
         stageRoot: stageRoot,
         nonce: nonce,
+        allowMissingEntries: consumedByInstall,
       );
       _recordCleanupReport(
         _buildCleanupReport(

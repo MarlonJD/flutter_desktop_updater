@@ -308,9 +308,15 @@ Future<StagedUpdateProvenanceState> readStagedUpdateProvenance({
 }
 
 /// Verifies the client-state marker digest and every staged filesystem entry.
+///
+/// With [allowMissingEntries], entries the record names may be absent — an
+/// installer that moved the staged bundle into place leaves the stage that
+/// way — but every entry still present must match the record exactly, and
+/// nothing may have been added.
 Future<StagedUpdateProvenance> verifyStagedUpdateProvenance({
   required Directory stageRoot,
   required String expectedMarkerSha256,
+  bool allowMissingEntries = false,
 }) async {
   if (!_sha256Pattern.hasMatch(expectedMarkerSha256)) {
     throw const FormatException("Expected provenance SHA-256 is invalid.");
@@ -320,7 +326,19 @@ Future<StagedUpdateProvenance> verifyStagedUpdateProvenance({
     throw const FormatException("Stage provenance marker digest changed.");
   }
   final actual = await _inventory(stageRoot);
-  if (_canonicalJson(actual.map((entry) => entry.toJson()).toList()) !=
+  if (allowMissingEntries) {
+    final recorded = <String, String>{
+      for (final entry in state.provenance.entries)
+        entry.path: _canonicalJson(entry.toJson()),
+    };
+    for (final entry in actual) {
+      if (recorded[entry.path] != _canonicalJson(entry.toJson())) {
+        throw const FormatException("Staged update inventory changed.");
+      }
+    }
+  } else if (_canonicalJson(
+        actual.map((entry) => entry.toJson()).toList(),
+      ) !=
       _canonicalJson(
         state.provenance.entries.map((entry) => entry.toJson()).toList(),
       )) {
@@ -330,10 +348,14 @@ Future<StagedUpdateProvenance> verifyStagedUpdateProvenance({
 }
 
 /// Recursively deletes only a direct, marker-bound owned nonce child.
+///
+/// [allowMissingEntries] is for a stage an installer has already consumed
+/// part of; see [verifyStagedUpdateProvenance].
 Future<void> deleteOwnedStagingDirectory({
   required Directory parent,
   required Directory stageRoot,
   required String nonce,
+  bool allowMissingEntries = false,
 }) async {
   if (!_noncePattern.hasMatch(nonce)) {
     throw const FormatException("Owned staging cleanup nonce is invalid.");
@@ -357,6 +379,7 @@ Future<void> deleteOwnedStagingDirectory({
   await verifyStagedUpdateProvenance(
     stageRoot: stageRoot,
     expectedMarkerSha256: state.markerSha256,
+    allowMissingEntries: allowMissingEntries,
   );
   await stageRoot.delete(recursive: true);
 }

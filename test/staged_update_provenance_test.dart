@@ -136,6 +136,10 @@ void main() {
               path.join(stage.path, ".desktop_updater_release_manifest.json"))
           .writeAsString('{"tampered":true}');
     },
+    "unexpected file": (stage) async {
+      await File(path.join(stage.path, "unexpected.txt"))
+          .writeAsString("unrecorded");
+    },
     "provenance inventory": (stage) async {
       final marker = File(
         path.join(stage.path, stagedUpdateProvenanceFileName),
@@ -152,25 +156,74 @@ void main() {
         await link.create("other.bin");
       },
   }.entries) {
-    test("rejects ${mutation.key} tampering before handoff", () async {
-      final parent = await Directory.systemTemp.createTemp("stage_tamper_");
-      try {
-        final stage = await _writeFixtureStage(parent);
-        final marker = await readStagedUpdateProvenance(stageRoot: stage);
-        await mutation.value(stage);
+    for (final allowMissingEntries in [false, true]) {
+      final phase = allowMissingEntries ? "after install" : "before handoff";
+      test("rejects ${mutation.key} tampering $phase", () async {
+        final parent = await Directory.systemTemp.createTemp("stage_tamper_");
+        try {
+          final stage = await _writeFixtureStage(parent);
+          final marker = await readStagedUpdateProvenance(stageRoot: stage);
+          if (allowMissingEntries) {
+            await File(path.join(stage.path, "payload.bin")).delete();
+          }
+          await mutation.value(stage);
 
-        await expectLater(
-          verifyStagedUpdateProvenance(
-            stageRoot: stage,
-            expectedMarkerSha256: marker.markerSha256,
-          ),
-          throwsA(isA<FormatException>()),
-        );
-      } finally {
-        await parent.delete(recursive: true);
-      }
-    });
+          await expectLater(
+            verifyStagedUpdateProvenance(
+              stageRoot: stage,
+              expectedMarkerSha256: marker.markerSha256,
+              allowMissingEntries: allowMissingEntries,
+            ),
+            throwsA(isA<FormatException>()),
+          );
+        } finally {
+          await parent.delete(recursive: true);
+        }
+      });
+    }
   }
+
+  test("missing entries require explicit consumed-stage cleanup", () async {
+    final parent = await Directory.systemTemp.createTemp("stage_consumed_");
+    try {
+      final stage = await _writeFixtureStage(parent);
+      final marker = await readStagedUpdateProvenance(stageRoot: stage);
+      await File(path.join(stage.path, "payload.bin")).delete();
+
+      await expectLater(
+        verifyStagedUpdateProvenance(
+          stageRoot: stage,
+          expectedMarkerSha256: marker.markerSha256,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      await expectLater(
+        deleteOwnedStagingDirectory(
+          parent: parent,
+          stageRoot: stage,
+          nonce: _nonce,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(await stage.exists(), isTrue);
+
+      await verifyStagedUpdateProvenance(
+        stageRoot: stage,
+        expectedMarkerSha256: marker.markerSha256,
+        allowMissingEntries: true,
+      );
+      await deleteOwnedStagingDirectory(
+        parent: parent,
+        stageRoot: stage,
+        nonce: _nonce,
+        allowMissingEntries: true,
+      );
+      expect(await stage.exists(), isFalse);
+      expect(await parent.exists(), isTrue);
+    } finally {
+      await parent.delete(recursive: true);
+    }
+  });
 
   test("cleanup deletes only the marker-bound nonce child", () async {
     final parent = await Directory.systemTemp.createTemp("owned_cleanup_");
