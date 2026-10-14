@@ -17,9 +17,9 @@ in merge history and identify the host AppDelegate change in release notes.
 - [x] Commit and push the verified implementation and regression coverage.
 - [x] Merge PR #80 at its reviewed head and synchronize `main`.
 - [x] Prepare 3.2.3 metadata and synchronized native versions.
-- [ ] Pass local release checks and hosted CI for the release source.
-- [ ] Publish the immutable tag, pub.dev package, and GitHub release.
-- [ ] Verify public publication and post the concise PR follow-up.
+- [x] Pass local release checks and hosted CI for the release source.
+- [x] Publish the immutable tag, pub.dev package, and GitHub release.
+- [x] Verify public publication and post the concise PR follow-up.
 
 ## Surprises & Discoveries
 
@@ -58,10 +58,50 @@ credentials out of logs and write multiline GitHub prose via body files.
 
 ## Outcomes & Retrospective
 
-Release pending. Local signed-update evidence predates the version-only bump;
-hosted CI and publication results will be recorded separately.
+Published `desktop_updater` 3.2.3 from
+`77eec61276f8f72c03b2167bb969c95d1026aacf`. The annotated `v3.2.3` tag and
+GitHub release both identify that exact commit.
+
+- `verified locally`: the clean-source harness passed structure, formatting,
+  analysis, version checks, all 946 Flutter tests (4 skipped), and pub.dev
+  dry-run with zero warnings. The focused version/layout tests passed 23
+  tests; the native helper version suite passed all 6 tests.
+- `verified in CI`: [release-source run 38523720777](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/38523720777)
+  passed all 13 standard jobs, including Windows, Linux, macOS native,
+  SwiftPM/CocoaPods Flutter, Dart, documentation, and all CLI candidates.
+  Four explicitly manual signing/privilege jobs were skipped; the prior
+  local signed macOS update evidence remains separately scoped. The earlier
+  intermediate-source runs `38523302318` and `38523328558` were cancelled
+  after this full release-source run was queued.
+- [pub.dev 3.2.3](https://pub.dev/packages/desktop_updater/versions/3.2.3)
+  was published at `2026-10-14T07:09:37.152794Z`. The downloaded archive's
+  SHA-256 matched the registry metadata:
+  `33e9fba27871d5756cc8179d1570ecec94459dbfbcec2d5079c13008e7e0a87f`.
+  Seven critical files, including the host bootstrap, plugin, restarter,
+  helper version, README, and package versions, matched the release source
+  byte for byte.
+- [GitHub release v3.2.3](https://github.com/MarlonJD/flutter_desktop_updater/releases/tag/v3.2.3)
+  is published as the latest stable release. Its notes explain the required
+  host entrypoint change and the outgoing-executable transition boundary.
+- [PR #80 follow-up](https://github.com/MarlonJD/flutter_desktop_updater/pull/80#issuecomment-6162957017)
+  was posted through `gh` as `MarlonJD`, thanking the contributor and linking
+  the release and verification results.
+
+Local signed-update evidence predates the version-only bump. Hosted CI passed
+for the exact published release commit. The tag push also triggers the normal
+workflow for the same source; that duplicate run is separate from the passed
+release gate. No branch creation, switch, force push, or branch deletion was
+performed. The contributor's original commit remains a parent of the merge.
+
+Evidence: `reports/pr80-release-harness-check.log`,
+`reports/pr80-release-ci-result.log`, `reports/pr80-pub-publish.log`,
+`reports/pr80-publication-verification.log`, and
+`reports/pr80-release-state.log`.
 
 ## Revision history
 
 - 2026-10-14: created after explicit commit, push, merge, publish, and comment
   authorization.
+- 2026-10-14: release source passed local and hosted gates, public package
+  bytes and GitHub release were verified, and the PR follow-up was posted;
+  moved to the completed ledger.
