@@ -14,9 +14,9 @@ in merge history and identify the host AppDelegate change in release notes.
 ## Progress
 
 - [x] Inspect current source, PR head, GitHub identity, and published versions.
-- [ ] Commit and push the verified implementation and regression coverage.
-- [ ] Merge PR #80 at its reviewed head and synchronize `main`.
-- [ ] Prepare 3.2.3 metadata and synchronized native versions.
+- [x] Commit and push the verified implementation and regression coverage.
+- [x] Merge PR #80 at its reviewed head and synchronize `main`.
+- [x] Prepare 3.2.3 metadata and synchronized native versions.
 - [ ] Pass local release checks and hosted CI for the release source.
 - [ ] Publish the immutable tag, pub.dev package, and GitHub release.
 - [ ] Verify public publication and post the concise PR follow-up.
@@ -28,6 +28,11 @@ in merge history and identify the host AppDelegate change in release notes.
 - `main` starts at the 3.2.2 tag, `1859f3b`, with no intervening remote work.
 - The repository has no automatic pub.dev publication workflow. Publishing
   follows a locally validated package upload and an explicit GitHub release.
+- Implementation commit `7d3e3f6` was pushed to `main`. PR #80 merged as
+  `8bf7cdd` at the reviewed head, and the local checkout fast-forwarded to it.
+- Version synchronization and all 23 focused Dart version/layout tests passed.
+  The six native helper version tests passed. The example's path dependency
+  lock entry now records 3.2.3; no unrelated dependency versions changed.
 
 ## Decision Log
 

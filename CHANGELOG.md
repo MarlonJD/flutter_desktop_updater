@@ -1,3 +1,16 @@
+## 3.2.3
+
+* Fixed macOS update relaunch setup by waiting for the outgoing app before
+  AppKit starts. Thanks to @hobleyd for PR #80.
+* **macOS host change required:** add the early `AppDelegate.main()` bootstrap
+  from the README. Updating the package alone does not change host startup.
+  Automatic relaunch is fixed when that updated host becomes the outgoing app;
+  the update that first installs it still uses the previous executable.
+* Added a real-main-nib regression covering two consecutive replacements and
+  CI checks for the bootstrap ordering. The production smoke now verifies two
+  consecutive Flutter updates with Developer ID signing and notarization,
+  including replacement process identity, version/build, and Apple trust.
+
 ## 3.2.2
 
 * Fixed completed-install recovery blocking later updates when the macOS
