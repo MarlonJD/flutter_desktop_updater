@@ -251,6 +251,7 @@ jobs:
           test/native_helper_diagnostics_docs_test.dart
           test/native_runtime_merge_gate_docs_test.dart
           test/macos_dmg_pkg_docs_test.dart
+          test/macos_cocoapods_source_layout_test.dart
           test/release_cli/release_key_management_test.dart
 
   cli-candidates:
@@ -1220,6 +1221,8 @@ jobs:
         run: xcrun swiftc -typecheck -target x86_64-apple-macosx10.14 -swift-version 5 -module-cache-path "$RUNNER_TEMP/desktop-updater-swift-module-cache" -F "$FLUTTER_ROOT/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64" macos/desktop_updater/Sources/DesktopUpdaterKit/DesktopUpdaterVersion.swift macos/desktop_updater/Sources/DesktopUpdaterKit/Diagnostics.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacApplicationRestarter.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallHelper.swift macos/desktop_updater/Sources/DesktopUpdaterKit/MacInstallRequest.swift macos/desktop_updater/Sources/desktop_updater/DesktopUpdaterPlugin.swift
       - name: Run DesktopUpdaterKit SwiftPM tests
         run: swift test --package-path .
+      - name: Run macOS restart bootstrap contracts
+        run: flutter test --no-pub test/macos_cocoapods_source_layout_test.dart
       - name: Run external SwiftPM consumer
         run: swift run --package-path example/native/macos
       - name: macOS native runtime ZIP candidate rejection smoke

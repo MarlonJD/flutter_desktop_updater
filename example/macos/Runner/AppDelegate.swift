@@ -9,6 +9,20 @@ import ServiceManagement
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  // An update's restart child is this executable, spawned by the outgoing app.
+  // It has to wait for that app to exit before AppKit starts: once
+  // NSApplicationMain has checked the process in with LaunchServices, the
+  // `open` the child turns into finds the app already running as itself,
+  // brings that process forward and exits, and the updated app never
+  // launches. The plugin's own wait in `register(with:)` comes too late for
+  // that, and returns at once after this one has run.
+  static func main() {
+    guard MacApplicationRestarter.awaitRestartParentExitIfRequested() else {
+      _exit(78)
+    }
+    _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+  }
+
   override func applicationDidFinishLaunching(_ notification: Notification) {
     SMAppServiceSmokeHost.runIfRequested(arguments: CommandLine.arguments)
     FlutterRecoverySmokeHost.runIfRequested(arguments: CommandLine.arguments)

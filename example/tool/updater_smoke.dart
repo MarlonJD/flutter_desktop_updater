@@ -156,31 +156,11 @@ Future<void> main(List<String> args) async {
   final installedSentinel =
       File(_join(effectiveInstallRoot, sentinelRelativePath));
 
-  if (installedSentinel.existsSync()) {
-    if (productionGates) {
-      stderr.writeln(
-        "Installed app already contains ${installedSentinel.path}; refusing "
-        "to mutate a production-gates app before the update.",
-      );
-      exit(65);
-    }
-    installedSentinel.deleteSync();
-  }
-
-  if (productionGates) {
-    if (!stagedSentinel.existsSync()) {
-      stderr.writeln(
-        "Production staged app must already contain ${stagedSentinel.path} "
-        "before signing, notarization, and stapling.",
-      );
-      exit(66);
-    }
-  } else {
-    await stagedSentinel.parent.create(recursive: true);
-    await stagedSentinel.writeAsString(
-      "desktop_updater smoke ${DateTime.now().toIso8601String()}",
-    );
-  }
+  final expectedSentinel = await prepareSmokeSentinel(
+    installed: installedSentinel,
+    staged: stagedSentinel,
+    productionGates: productionGates,
+  );
 
   if (Platform.isLinux) {
     await _prepareLinuxSmokePayload(
@@ -280,12 +260,14 @@ Future<void> main(List<String> args) async {
       },
     );
 
-    stdout.writeln("Initial app process exited with code $exitCode");
+    stdout.writeln(
+      "Initial app process ${process.pid} exited with code $exitCode",
+    );
     await stdoutSubscription.cancel();
     await stderrSubscription.cancel();
 
     await _waitFor(
-      installedSentinel.existsSync,
+      () => smokeSentinelMatches(installedSentinel, expectedSentinel),
       const Duration(seconds: 45),
       "Timed out waiting for staged file to be copied into "
       "$effectiveInstallRoot",
@@ -318,6 +300,23 @@ Future<void> main(List<String> args) async {
           "relaunch",
           const Duration(seconds: 45),
         );
+        if (productionGates) {
+          final probe = await Process.run("/usr/bin/swift", [
+            File.fromUri(
+              Platform.script.resolve("verify_macos_relaunch.swift"),
+            ).path,
+            smokePackageId,
+            appPath,
+            process.pid.toString(),
+            _smokeReleaseVersion(),
+            _smokeReleaseBuild().toString(),
+          ]);
+          stdout.write(probe.stdout);
+          stderr.write(probe.stderr);
+          if (probe.exitCode != 0) {
+            throw StateError("macOS relaunch identity verification failed.");
+          }
+        }
       }
     } else {
       if (Platform.isWindows) {
@@ -971,6 +970,43 @@ Future<Map<String, dynamic>> signedIndex({
       value: base64Encode(signature.bytes),
     ).toJson(),
   };
+}
+
+/// Prepares a distinguishable replacement marker without modifying signed apps.
+Future<String> prepareSmokeSentinel({
+  required File installed,
+  required File staged,
+  required bool productionGates,
+}) async {
+  if (productionGates) {
+    if (!await staged.exists()) {
+      throw StateError(
+        "Production staged app must already contain ${staged.path} "
+        "before signing, notarization, and stapling.",
+      );
+    }
+  } else {
+    if (await installed.exists()) {
+      await installed.delete();
+    }
+    await staged.parent.create(recursive: true);
+    await staged.writeAsString(
+      "desktop_updater smoke ${DateTime.now().toIso8601String()}",
+    );
+  }
+  final expected = await staged.readAsString();
+  if (expected.trim().isEmpty || smokeSentinelMatches(installed, expected)) {
+    throw StateError("Staged smoke sentinel must identify a new update.");
+  }
+  return expected;
+}
+
+bool smokeSentinelMatches(File installed, String expected) {
+  try {
+    return installed.readAsStringSync() == expected;
+  } on FileSystemException {
+    return false;
+  }
 }
 
 String _smokeReleaseVersion() {

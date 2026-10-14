@@ -71,6 +71,40 @@ void main() {
     );
   });
 
+  test("macOS example and setup wait for restart before entering AppKit", () {
+    final host =
+        File("example/macos/Runner/AppDelegate.swift").readAsStringSync();
+    final readme = File("README.md").readAsStringSync();
+    final setup = readme
+        .split("### 4. Wait for the outgoing app before AppKit starts")
+        .last;
+    final sample = RegExp(r"```swift\n([\s\S]*?)```").firstMatch(setup);
+
+    expect(_hasEarlyRestartBootstrap(host), isTrue);
+    expect(sample, isNotNull);
+    expect(_hasEarlyRestartBootstrap(sample!.group(1)!), isTrue);
+  });
+
+  test("restart bootstrap rejects late, unchecked, or commented waits", () {
+    const guard =
+        "guard MacApplicationRestarter.awaitRestartParentExitIfRequested() "
+        "else { _exit(78) }";
+    const appKit =
+        "_ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)";
+    String host(String body) => "static func main() {\n$body\n}";
+
+    expect(_hasEarlyRestartBootstrap(host("$guard\n$appKit")), isTrue);
+    for (final body in [
+      "$appKit\n$guard",
+      "_ = NSApplication.shared\n$guard\n$appKit",
+      "// $guard\n$appKit",
+      "MacApplicationRestarter.awaitRestartParentExitIfRequested()\n$appKit",
+      "$appKit\n// $guard",
+    ]) {
+      expect(_hasEarlyRestartBootstrap(host(body)), isFalse, reason: body);
+    }
+  });
+
   test("CI gates are structurally bound to the macOS jobs", () {
     final valid = File(
       ".github/workflows/desktop-updater-ci.yml",
@@ -554,6 +588,24 @@ bool _same(List<String?> left, List<String> right) =>
     left.length == right.length &&
     List.generate(left.length, (i) => left[i] == right[i])
         .every((same) => same);
+
+bool _hasEarlyRestartBootstrap(String source) {
+  final code = maskNonCode(source);
+  final main =
+      RegExp(r"\bstatic\s+func\s+main\s*\(\s*\)\s*\{").firstMatch(code);
+  if (main == null) return false;
+  final close = matchingClose(code, main.end - 1, "{", "}");
+  if (close == null) return false;
+  final body = code.substring(main.end, close);
+  // The first operation must consume the handoff or exit. AppKit startup,
+  // including eager NSApplication.shared access, must come afterwards.
+  final wait = RegExp(
+    r"^\s*guard\s+MacApplicationRestarter\s*\.\s*awaitRestartParentExitIfRequested"
+    r"\s*\(\s*\)\s*else\s*\{\s*_exit\s*\(\s*78\s*\)\s*\}",
+  ).firstMatch(body);
+  return wait != null &&
+      RegExp(r"\bNSApplicationMain\s*\(").hasMatch(body.substring(wait.end));
+}
 
 String _podFixture() => """
 s.source_files = [

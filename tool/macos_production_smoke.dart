@@ -19,8 +19,10 @@ const _optionalEnv = {
   "DESKTOP_UPDATER_TEST_APP_NAME": "Desktop Updater Smoke",
   "DESKTOP_UPDATER_TEST_VERSION_V1": "1.0.0",
   "DESKTOP_UPDATER_TEST_VERSION_V2": "1.1.0",
+  "DESKTOP_UPDATER_TEST_VERSION_V3": "1.2.0",
   "DESKTOP_UPDATER_TEST_BUILD_V1": "100",
   "DESKTOP_UPDATER_TEST_BUILD_V2": "110",
+  "DESKTOP_UPDATER_TEST_BUILD_V3": "120",
   "DESKTOP_UPDATER_TEST_WORKDIR": "/tmp/desktop_updater_macos_smoke",
 };
 
@@ -98,8 +100,10 @@ Optional environment:
   DESKTOP_UPDATER_TEST_APP_NAME
   DESKTOP_UPDATER_TEST_VERSION_V1
   DESKTOP_UPDATER_TEST_VERSION_V2
+  DESKTOP_UPDATER_TEST_VERSION_V3
   DESKTOP_UPDATER_TEST_BUILD_V1
   DESKTOP_UPDATER_TEST_BUILD_V2
+  DESKTOP_UPDATER_TEST_BUILD_V3
   DESKTOP_UPDATER_TEST_UPDATE_BASE_URL
   DESKTOP_UPDATER_TEST_WORKDIR
   DESKTOP_UPDATER_KEEP_MACOS_SMOKE
@@ -137,6 +141,11 @@ class _MacOSProductionSmoke {
         _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V2"]!,
       );
 
+  String get versionV3 => _env(
+        "DESKTOP_UPDATER_TEST_VERSION_V3",
+        _optionalEnv["DESKTOP_UPDATER_TEST_VERSION_V3"]!,
+      );
+
   String get buildV1 => _env(
         "DESKTOP_UPDATER_TEST_BUILD_V1",
         _optionalEnv["DESKTOP_UPDATER_TEST_BUILD_V1"]!,
@@ -145,6 +154,11 @@ class _MacOSProductionSmoke {
   String get buildV2 => _env(
         "DESKTOP_UPDATER_TEST_BUILD_V2",
         _optionalEnv["DESKTOP_UPDATER_TEST_BUILD_V2"]!,
+      );
+
+  String get buildV3 => _env(
+        "DESKTOP_UPDATER_TEST_BUILD_V3",
+        _optionalEnv["DESKTOP_UPDATER_TEST_BUILD_V3"]!,
       );
 
   Directory get workDir {
@@ -271,6 +285,7 @@ class _MacOSProductionSmoke {
 
   Future<void> appUpdate() async {
     final evidence = await _Evidence.open("app-update");
+    Directory? installedApp;
     try {
       final env = await _requireLocalProductionPrerequisites(evidence);
       final v1App = await _buildSignedExampleApp(
@@ -280,26 +295,40 @@ class _MacOSProductionSmoke {
         evidence: evidence,
         env: env,
       );
-      final installedApp = await _installSmokeAppToApplications(
+      installedApp = await _installSmokeAppToApplications(
         app: v1App,
         evidence: evidence,
       );
       evidence.line("app-update: installed v1 app OK");
-      final v2App = await _buildSignedExampleApp(
-        version: versionV2,
-        buildNumber: buildV2,
-        includeUpdateSentinel: true,
-        evidence: evidence,
-        env: env,
-      );
-      await _runDirectAppUpdateSmoke(app: installedApp, stagedApp: v2App);
-      evidence.line("app-update: whole-bundle replacement OK");
-      await _verifyAppTrust(installedApp);
-      evidence.line(
-        "app-update: v2 relaunch marker observed by the relaunched app",
-      );
-      await _terminateSmokeApp(installedApp);
+      for (final release in [
+        (label: "v2", version: versionV2, build: buildV2),
+        (label: "v3", version: versionV3, build: buildV3),
+      ]) {
+        final stagedApp = await _buildSignedExampleApp(
+          version: release.version,
+          buildNumber: release.build,
+          includeUpdateSentinel: true,
+          evidence: evidence,
+          env: env,
+        );
+        await _runDirectAppUpdateSmoke(
+          app: installedApp,
+          stagedApp: stagedApp,
+          version: release.version,
+          buildNumber: release.build,
+        );
+        evidence.line("app-update: whole-bundle replacement OK");
+        await _verifyAppTrust(installedApp);
+        evidence.line(
+          "app-update: ${release.label} relaunch marker observed by the relaunched app",
+        );
+        await _terminateSmokeApp(installedApp);
+      }
+      evidence.line("app-update: two consecutive signed updates OK");
     } finally {
+      if (installedApp != null) {
+        await _terminateSmokeApp(installedApp);
+      }
       await evidence.close();
     }
   }
@@ -959,24 +988,33 @@ class _MacOSProductionSmoke {
   Future<void> _runDirectAppUpdateSmoke({
     required Directory app,
     required Directory stagedApp,
+    required String version,
+    required String buildNumber,
   }) async {
     final diagnosticsLogPath = path.join(
       workDir.path,
-      "direct-app-smoke-diagnostics.jsonl",
+      "direct-app-smoke-$version-$buildNumber-diagnostics.jsonl",
     );
     await File(diagnosticsLogPath).parent.create(recursive: true);
-    await _runChecked("dart", [
-      "run",
-      "example/tool/updater_smoke.dart",
-      "--app",
-      app.path,
-      "--staged-app",
-      stagedApp.path,
-      "--production-gates",
-      "--relaunch",
-      "--diagnostics-log",
-      diagnosticsLogPath,
-    ]);
+    await _runChecked(
+      "dart",
+      [
+        "run",
+        "example/tool/updater_smoke.dart",
+        "--app",
+        app.path,
+        "--staged-app",
+        stagedApp.path,
+        "--production-gates",
+        "--relaunch",
+        "--diagnostics-log",
+        diagnosticsLogPath,
+      ],
+      environment: {
+        "DESKTOP_UPDATER_TEST_VERSION_V2": version,
+        "DESKTOP_UPDATER_TEST_BUILD_V2": buildNumber,
+      },
+    );
     await _waitForDiagnosticsEvent(diagnosticsLogPath, "relaunch");
   }
 

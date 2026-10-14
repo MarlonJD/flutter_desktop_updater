@@ -210,8 +210,10 @@ Optional smoke overrides:
 export DESKTOP_UPDATER_TEST_APP_NAME="Desktop Updater Smoke"
 export DESKTOP_UPDATER_TEST_VERSION_V1="1.0.0"
 export DESKTOP_UPDATER_TEST_VERSION_V2="1.0.1"
+export DESKTOP_UPDATER_TEST_VERSION_V3="1.0.2"
 export DESKTOP_UPDATER_TEST_BUILD_V1="100"
 export DESKTOP_UPDATER_TEST_BUILD_V2="101"
+export DESKTOP_UPDATER_TEST_BUILD_V3="102"
 export DESKTOP_UPDATER_TEST_WORKDIR="/tmp/desktop_updater_macos_smoke"
 ```
 
@@ -219,6 +221,7 @@ Smoke commands:
 
 ```sh
 dart run tool/macos_production_smoke.dart doctor
+dart run tool/macos_production_smoke.dart app-update
 dart run tool/macos_production_smoke.dart dmg-first-install
 dart run tool/macos_production_smoke.dart move-to-applications
 dart run tool/macos_production_smoke.dart dmg-update
@@ -228,6 +231,14 @@ dart run tool/macos_production_smoke.dart all --cleanup
 ```
 
 Evidence is written under `reports/macos-production-smoke/`.
+
+`app-update` builds three signed, notarized, stapled Flutter apps and performs
+two consecutive updates in the same installed bundle (v1 to v2 to v3).
+Every outgoing version contains the current updater. Each transition checks
+the exact new sentinel without modifying signed resources, a new process,
+the expected version/build, one fully launched regular LaunchServices app,
+and the installed bundle's Apple trust. Diagnostics are retained separately
+for each transition. Set all version/build overrides to increasing values.
 
 `pkg-artifact` builds and verifies the signed, notarized, stapled PKG without
 attempting an install handoff. `pkg-install-verify` is a separate opt-in QA gate

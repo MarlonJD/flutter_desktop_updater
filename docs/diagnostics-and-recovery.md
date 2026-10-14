@@ -38,6 +38,26 @@ Pick an app-owned support directory for your Dart diagnostics sink, show that
 path in your own Settings or support UI, and own retention, rotation,
 encryption, and upload consent.
 
+## macOS Installs Successfully But Does Not Reopen
+
+Helper `cleanup success` confirms installation, not that the replacement app
+launched. The restart child must consume its handoff before `NSApplicationMain`
+initializes AppKit and loads the main nib. Waiting only in plugin registration
+can register that child with LaunchServices as the running app; its later
+`open` handoff can then activate the child instead of launching the replacement.
+
+Add the early `AppDelegate.main()` bootstrap from
+[macOS setup](../README.md#4-wait-for-the-outgoing-app-before-appkit-starts).
+Updating the package dependency alone does not add this host entrypoint.
+The outgoing executable owns the restart, so installing the bootstrap cannot
+repair the already-running old executable. If necessary, reopen that first
+updated app manually, then verify an update initiated by the fixed app.
+
+When validating a restart change, use two consecutive update transitions and
+observe the replacement's version/build and new process after each transition.
+A successful install, a normal app launch, or a transition initiated by an
+older updater does not by itself verify the new restart implementation.
+
 ## macOS Privileged Helper Approval
 
 macOS directory-replacement updates use the bundled helper without elevation

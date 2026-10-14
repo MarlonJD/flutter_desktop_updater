@@ -124,6 +124,11 @@ public struct MacApplicationRestarter {
         )
     }
 
+    /// Consume a restart handoff before calling `NSApplicationMain` or otherwise
+    /// initializing AppKit. Waiting during plugin registration is too late:
+    /// LaunchServices can mistake the waiting child for the relaunched app.
+    /// A normal launch returns immediately; an invalid handoff returns false
+    /// and the host must exit without starting the application.
     public static func awaitRestartParentExitIfRequested() -> Bool {
         let lifetimeValue = getenv(lifetimeDescriptorEnvironment)
             .map { String(cString: $0) }

@@ -94,6 +94,18 @@ multiarch pkg-config consumers. Every CTest invocation rejects “No tests were
 found.” These are configured gates, not `verified in CI` evidence until that
 exact revision runs successfully on the named target host.
 
+The macOS SwiftPM suite includes a secretless, ad hoc signed restart fixture
+that enters `NSApplicationMain`, loads a main nib, and performs two consecutive
+executable replacements. It checks that the waiting child has not initialized
+AppKit, both relaunched apps have loaded the nib, and each replacement has a
+new PID with exactly one LaunchServices registration. The example and README
+bootstrap ordering is also guarded by the documentation and macOS native CI
+lanes, including changes confined to the host entrypoint or setup guide.
+This proves the bootstrap/restart boundary; it does not perform a Flutter
+engine update, a helper-authorized install, or notarization. A signed app's
+release validation must separately observe its actual version/build after
+consecutive updates, including one initiated by the candidate updater.
+
 The standalone helpers now implement the transaction journal, cross-process
 target lock, Windows reparse checks, Linux mount/bind checks, and crash
 recovery. Implementation and workflow configuration are not execution

@@ -269,7 +269,44 @@ shows the complete phase, including optional ad hoc policy settings. Its
 `../../macos/install_helper` path is specific to this repository's layout; use
 your resolved package root in a consuming app.
 
-### 4. Build and verify the app bundle
+### 4. Wait for the outgoing app before AppKit starts
+
+After an update installs, the outgoing app relaunches the new one through a
+restart child: a copy of its own executable that waits for it to exit, then
+hands the bundle to `open`. That wait has to finish before `NSApplicationMain`
+runs. Once AppKit has checked the child in with LaunchServices, `open` finds the
+app already running as the child, brings it forward and exits, so the update
+installs but the app never comes back. The plugin also waits when it registers,
+but that is too late, so replace the `main()` that `@main` generates in
+`macos/Runner/AppDelegate.swift`:
+
+```swift
+import Cocoa
+import FlutterMacOS
+import desktop_updater
+#if canImport(DesktopUpdaterKit)
+import DesktopUpdaterKit
+#endif
+
+@main
+class AppDelegate: FlutterAppDelegate {
+  static func main() {
+    guard MacApplicationRestarter.awaitRestartParentExitIfRequested() else {
+      _exit(78)
+    }
+    _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+  }
+
+  // ...the rest of your AppDelegate.
+}
+```
+
+`MacApplicationRestarter` is in `DesktopUpdaterKit` under SwiftPM and in the
+`desktop_updater` module under CocoaPods; the imports above cover both. A normal
+launch returns at once. The fix applies from the update *after* the one that
+installs it, because the restart child is always the outgoing app's executable.
+
+### 5. Build and verify the app bundle
 
 Build on macOS, then substitute your actual app name below:
 

@@ -6,7 +6,7 @@ import XCTest
 final class MacApplicationBundleRestartTests: XCTestCase {
     // Exercise the application registration used by the Dock without changing
     // the user's pinned applications or inspecting the Dock's private state.
-    func testReplacementRelaunchesOnceThroughLaunchServices() throws {
+    func testTwoReplacementsRelaunchThroughMainNibAndLaunchServices() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory.appendingPathComponent(
             "desktop-updater-bundle-restart-\(UUID().uuidString)",
@@ -40,10 +40,12 @@ final class MacApplicationBundleRestartTests: XCTestCase {
             "CFBundleVersion": "1",
             "CFBundleShortVersionString": "1.0",
             "NSPrincipalClass": "NSApplication",
+            "NSMainNibFile": "RestartFixture",
         ]
         try PropertyListSerialization.data(
             fromPropertyList: info, format: .xml, options: 0
         ).write(to: application.appendingPathComponent("Contents/Info.plist"))
+        try compileMainNib(in: application, root: root)
         try runTool(
             "/usr/bin/codesign", ["--force", "--sign", "-", application.path]
         )
@@ -55,68 +57,68 @@ final class MacApplicationBundleRestartTests: XCTestCase {
         try runTool(
             "/usr/bin/open", ["--", application.path], environment: environment
         )
-        let prepared = try readProof("prepared.json", in: root)
-        let waiting = try readProof("waiting.json", in: root)
-        XCTAssertNotEqual(prepared.pid, waiting.pid)
-        XCTAssertEqual(prepared.executableInode, waiting.executableInode)
-        let relaunchProof = root.appendingPathComponent("relaunched.json")
-        XCTAssertFalse(fileManager.fileExists(atPath: relaunchProof.path))
+        var launched = try readProof("launched.json", in: root)
+        XCTAssertFalse(launched.restarted)
+        XCTAssertTrue(launched.appKitInitialized)
+        XCTAssertTrue(launched.nibLoaded)
+        XCTAssertTrue(launched.handoffCleared)
 
-        // Let the outgoing app exit before publishing the replacement. The
-        // waiting child must survive the lifetime barrier without launching it.
-        try Data().write(to: root.appendingPathComponent("exit-requested"))
-        XCTAssertTrue(waitUntil { !self.processExists(prepared.pid) })
-        XCTAssertTrue(processExists(waiting.pid))
-        XCTAssertFalse(fileManager.fileExists(atPath: relaunchProof.path))
+        for _ in 0..<2 {
+            let parent = launched
+            let launchProof = root.appendingPathComponent("launched.json")
+            try fileManager.removeItem(at: launchProof)
+            try Data().write(to: root.appendingPathComponent("restart-\(parent.pid)"))
+            let prepared = try readProof("prepared-\(parent.pid).json", in: root)
+            let waiting = try readProof("waiting-\(parent.pid).json", in: root)
+            XCTAssertEqual(prepared.pid, parent.pid)
+            XCTAssertNotEqual(prepared.pid, waiting.pid)
+            XCTAssertEqual(prepared.executableInode, waiting.executableInode)
+            XCTAssertFalse(waiting.appKitInitialized, "Restart must wait before AppKit initialization")
+            XCTAssertFalse(waiting.nibLoaded, "Plugin registration in awakeFromNib is too late")
+            guard !waiting.appKitInitialized && !waiting.nibLoaded else { return }
+            XCTAssertFalse(fileManager.fileExists(atPath: launchProof.path))
 
-        // An atomic replacement gives the executable a new inode, just as an
-        // installed update does, while retaining this fixture's valid signature.
-        let replacement = root.appendingPathComponent("replacement")
-        try fileManager.copyItem(at: executable, to: replacement)
-        XCTAssertEqual(rename(replacement.path, executable.path), 0)
-        let relaunched = try readProof("relaunched.json", in: root)
-        XCTAssertNotEqual(relaunched.executableInode, waiting.executableInode)
-        XCTAssertEqual(relaunched.executable, executable.path)
-        XCTAssertEqual(relaunched.bundleIdentifier, bundleIdentifier)
-        XCTAssertTrue(relaunched.restarted)
-        XCTAssertTrue(relaunched.handoffCleared)
+            // The child must survive its parent's exit without launching until
+            // the executable is replaced. Repeat using the relaunched parent.
+            try Data().write(to: root.appendingPathComponent("exit-\(parent.pid)"))
+            XCTAssertTrue(waitUntil { !self.processExists(parent.pid) })
+            XCTAssertTrue(processExists(waiting.pid))
+            XCTAssertFalse(fileManager.fileExists(atPath: launchProof.path))
 
-        // execve of the replacement in the waiting child preserves its PID.
-        // A LaunchServices launch creates a new, registered application instead.
-        XCTAssertNotEqual(
-            relaunched.pid, waiting.pid,
-            "The replacement kept the restart child's PID; LaunchServices was bypassed."
-        )
-        guard relaunched.pid != waiting.pid else { return }
-        XCTAssertNotEqual(relaunched.pid, prepared.pid)
-        XCTAssertTrue(waitUntil { !self.processExists(waiting.pid) })
-        let registeredOnce = waitUntil {
-            let applications = NSRunningApplication.runningApplications(
-                withBundleIdentifier: bundleIdentifier
+            let replacement = root.appendingPathComponent("replacement")
+            try fileManager.copyItem(at: executable, to: replacement)
+            XCTAssertEqual(rename(replacement.path, executable.path), 0)
+            launched = try readProof("launched.json", in: root)
+            XCTAssertNotEqual(launched.executableInode, waiting.executableInode)
+            XCTAssertEqual(launched.executable, executable.path)
+            XCTAssertEqual(launched.bundleIdentifier, bundleIdentifier)
+            XCTAssertTrue(launched.restarted)
+            XCTAssertTrue(launched.handoffCleared)
+            XCTAssertTrue(launched.appKitInitialized)
+            XCTAssertTrue(launched.nibLoaded)
+
+            XCTAssertNotEqual(
+                launched.pid, waiting.pid,
+                "The replacement kept the restart child's PID; LaunchServices was bypassed."
             )
-            return applications.count == 1
-                && applications[0].processIdentifier == relaunched.pid
-                && applications[0].isFinishedLaunching
+            guard launched.pid != waiting.pid else { return }
+            XCTAssertNotEqual(launched.pid, parent.pid)
+            XCTAssertTrue(waitUntil { !self.processExists(waiting.pid) })
+            XCTAssertTrue(waitUntil {
+                let applications = NSRunningApplication.runningApplications(
+                    withBundleIdentifier: bundleIdentifier
+                )
+                return applications.count == 1
+                    && applications[0].processIdentifier == launched.pid
+                    && applications[0].isFinishedLaunching
+            }, "The replacement must be the only registered, fully launched application")
+            let running = try XCTUnwrap(NSRunningApplication(processIdentifier: launched.pid))
+            XCTAssertEqual(running.bundleURL?.resolvingSymlinksInPath().path, application.path)
+            XCTAssertEqual(running.activationPolicy, .regular)
         }
-        let registrations = NSRunningApplication.runningApplications(
-            withBundleIdentifier: bundleIdentifier
-        ).map {
-            "pid=\($0.processIdentifier), launched=\($0.isFinishedLaunching), "
-                + "terminated=\($0.isTerminated)"
-        }
-        XCTAssertTrue(
-            registeredOnce, "LaunchServices registrations: \(registrations)"
-        )
-        let running = try XCTUnwrap(
-            NSRunningApplication(processIdentifier: relaunched.pid)
-        )
-        XCTAssertEqual(
-            running.bundleURL?.resolvingSymlinksInPath().path, application.path
-        )
-        XCTAssertEqual(running.activationPolicy, .regular)
 
-        try Data().write(to: root.appendingPathComponent("finish"))
-        XCTAssertTrue(waitUntil { !self.processExists(relaunched.pid) })
+        try Data().write(to: root.appendingPathComponent("finish-\(launched.pid)"))
+        XCTAssertTrue(waitUntil { !self.processExists(launched.pid) })
     }
 
     private struct Proof: Decodable {
@@ -126,6 +128,48 @@ final class MacApplicationBundleRestartTests: XCTestCase {
         let bundleIdentifier: String
         let restarted: Bool
         let handoffCleared: Bool
+        let appKitInitialized: Bool
+        let nibLoaded: Bool
+    }
+
+    private func compileMainNib(in application: URL, root: URL) throws {
+        let resources = application.appendingPathComponent("Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let xib = root.appendingPathComponent("RestartFixture.xib")
+        // A real main nib instantiates the application delegate and a window
+        // whose awakeFromNib follows Flutter's plugin-registration lifecycle.
+        try """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="14490.70" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
+            <dependencies>
+                <deployment identifier="macosx"/>
+                <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="14490.70"/>
+                <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+            </dependencies>
+            <objects>
+                <customObject id="-2" userLabel="File's Owner" customClass="NSApplication">
+                    <connections>
+                        <outlet property="delegate" destination="delegate" id="delegate-outlet"/>
+                    </connections>
+                </customObject>
+                <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
+                <customObject id="-3" userLabel="Application" customClass="NSObject"/>
+                <customObject id="delegate" customClass="MacApplicationRestartFixtureDelegate"/>
+                <window title="Restart Fixture" visibleAtLaunch="NO" releasedWhenClosed="NO" id="window" customClass="MacApplicationRestartFixtureWindow">
+                    <windowStyleMask key="styleMask" titled="YES"/>
+                    <rect key="contentRect" x="0" y="0" width="100" height="100"/>
+                    <view key="contentView" id="view">
+                        <rect key="frame" x="0" y="0" width="100" height="100"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                    </view>
+                </window>
+            </objects>
+        </document>
+        """.write(to: xib, atomically: true, encoding: .utf8)
+        try runTool("/usr/bin/xcrun", [
+            "ibtool", "--compile", resources.appendingPathComponent("RestartFixture.nib").path,
+            xib.path,
+        ])
     }
 
     private func readProof(_ name: String, in root: URL) throws -> Proof {
@@ -154,7 +198,6 @@ final class MacApplicationBundleRestartTests: XCTestCase {
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
         try process.run()
         guard waitUntil({ !process.isRunning }) else {
             kill(process.processIdentifier, SIGKILL)
@@ -162,7 +205,12 @@ final class MacApplicationBundleRestartTests: XCTestCase {
             XCTFail("Timed out running \(executable)")
             throw NSError(domain: "MacApplicationBundleRestartTests", code: 2)
         }
-        XCTAssertEqual(process.terminationStatus, 0, executable)
+        guard process.terminationStatus == 0 else {
+            throw NSError(
+                domain: "MacApplicationBundleRestartTests", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "\(executable) failed: \(process.terminationStatus)"]
+            )
+        }
     }
 
     private func waitUntil(_ condition: () -> Bool) -> Bool {

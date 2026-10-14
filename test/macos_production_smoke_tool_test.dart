@@ -2,6 +2,8 @@ import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
 
+import "../example/tool/updater_smoke.dart" as smoke;
+
 void main() {
   test("macOS production smoke exposes required commands", () {
     final source = File("tool/macos_production_smoke.dart").readAsStringSync();
@@ -46,8 +48,84 @@ void main() {
     expect(source, contains("app-update: whole-bundle replacement OK"));
     expect(
       source,
-      contains("app-update: v2 relaunch marker observed by the relaunched app"),
+      contains("two consecutive signed updates OK"),
     );
+    expect(
+      source,
+      contains('(label: "v2", version: versionV2, build: buildV2)'),
+    );
+    expect(
+      source,
+      contains('(label: "v3", version: versionV3, build: buildV3)'),
+    );
+    expect(source, contains('"DESKTOP_UPDATER_TEST_VERSION_V2": version'));
+    expect(source, contains('"DESKTOP_UPDATER_TEST_BUILD_V2": buildNumber'));
+  });
+
+  group("consecutive production smoke sentinels", () {
+    late Directory root;
+    late File installed;
+    late File staged;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync("smoke_sentinel_test_");
+      installed = File("${root.path}/installed.txt");
+      staged = File("${root.path}/staged.txt");
+    });
+
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test("preserves both signed bundles and requires new marker contents",
+        () async {
+      installed.writeAsStringSync("signed v2\n");
+      staged.writeAsStringSync("signed v3\n");
+
+      final expected = await smoke.prepareSmokeSentinel(
+        installed: installed,
+        staged: staged,
+        productionGates: true,
+      );
+
+      expect(installed.readAsStringSync(), "signed v2\n");
+      expect(staged.readAsStringSync(), "signed v3\n");
+      expect(smoke.smokeSentinelMatches(installed, expected), isFalse);
+      installed.writeAsStringSync(expected);
+      expect(smoke.smokeSentinelMatches(installed, expected), isTrue);
+      installed.deleteSync();
+      expect(smoke.smokeSentinelMatches(installed, expected), isFalse);
+    });
+
+    test("rejects indistinguishable updates without changing signed files",
+        () async {
+      installed.writeAsStringSync("signed v2\n");
+      staged.writeAsStringSync("signed v2\n");
+
+      await expectLater(
+        smoke.prepareSmokeSentinel(
+          installed: installed,
+          staged: staged,
+          productionGates: true,
+        ),
+        throwsStateError,
+      );
+      expect(installed.readAsStringSync(), "signed v2\n");
+      expect(staged.readAsStringSync(), "signed v2\n");
+    });
+
+    test("rejects missing or empty signed markers", () async {
+      for (final contents in <String?>[null, "\n"]) {
+        if (contents != null) staged.writeAsStringSync(contents);
+        await expectLater(
+          smoke.prepareSmokeSentinel(
+            installed: installed,
+            staged: staged,
+            productionGates: true,
+          ),
+          throwsStateError,
+        );
+        expect(installed.existsSync(), isFalse);
+      }
+    });
   });
 
   test("macOS production smoke clears stale sentinel from v1 app builds", () {
