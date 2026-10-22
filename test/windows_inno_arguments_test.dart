@@ -14,7 +14,7 @@ void main() {
   });
 
   test(
-    "Windows Inno launch preserves complete paths in the child process",
+    "Windows Inno launch preserves paths and explicit closure choices",
     () async {
       final root = await Directory.systemTemp.createTemp("inno arguments ");
       addTearDown(() async => root.delete(recursive: true));
@@ -40,10 +40,7 @@ public static class CaptureArguments {
 $installer = $env:INNO_TEST_CAPTURE
 $targetRoot = $env:INNO_TEST_TARGET
 $logPath = $env:INNO_TEST_LOG
-$inno = @{
-  inheritInstallDirectory = $env:INNO_TEST_INHERIT -eq 'true'
-  silentArgs = @($env:INNO_TEST_SILENT_ARGS | ConvertFrom-Json)
-}
+$inno = $env:INNO_TEST_CONFIG | ConvertFrom-Json
 function Write-DiagnosticsEvent([string] $Message) {}
 """ +
             _innoLaunchScript() +
@@ -111,8 +108,10 @@ if ($process.ExitCode -ne 0) {
             "INNO_TEST_OUTPUT": output.path,
             "INNO_TEST_TARGET": request.target,
             "INNO_TEST_LOG": log,
-            "INNO_TEST_INHERIT": request.inherit.toString(),
-            "INNO_TEST_SILENT_ARGS": jsonEncode(request.arguments),
+            "INNO_TEST_CONFIG": jsonEncode({
+              "inheritInstallDirectory": request.inherit,
+              "silentArgs": request.arguments,
+            }),
           },
         );
         final stdoutFuture = process.stdout.transform(utf8.decoder).join();
