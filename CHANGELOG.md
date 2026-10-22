@@ -1,3 +1,11 @@
+## 2.7.1
+
+* Fixed Windows Inno installer updates using truncated installation or log
+  paths when those paths contain spaces, including `Program Files (x86)`.
+* This patch preserves the 2.7.x API and update configuration.
+* The fix takes effect when an app built with 2.7.1 starts the update. Apps
+  already affected on 2.7.0 may need a manual installer update first.
+
 ## 2.7.0
 
 * Added production macOS DMG and PKG artifact publishing, validation, and local

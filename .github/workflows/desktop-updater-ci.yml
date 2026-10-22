@@ -45,6 +45,8 @@ jobs:
       - name: Build example
         working-directory: example
         run: flutter build windows --debug
+      - name: Test Windows Inno argument forwarding
+        run: flutter test --no-pub test/windows_inno_arguments_test.dart
       - name: Build native tests
         working-directory: example
         run: cmake --build build/windows/x64 --config Debug --target desktop_updater_test
