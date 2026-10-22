@@ -12,8 +12,8 @@ public sealed class InnoLockingApp : Form {
   private InnoLockingApp(string readyPath) {
     this.readyPath = readyPath;
     Text = "desktop_updater Inno regression fixture";
-    ShowInTaskbar = false;
-    Opacity = 0;
+    // Restart Manager can terminate invisible applications without honoring
+    // their shutdown veto. Keep a real visible window for the failure control.
   }
 
   protected override void OnShown(EventArgs e) {

@@ -125,6 +125,12 @@ Source: "$newExecutable"; DestDir: "{app}"; Flags: ignoreversion
   Wait-Until 'both locking processes' {
     (Test-Path -LiteralPath $blockingReady) -and (Test-Path -LiteralPath $otherReady)
   }
+  Wait-Until 'visible application windows' {
+    $blockingProcess.Refresh()
+    $unrelatedProcess.Refresh()
+    $blockingProcess.MainWindowHandle -ne [IntPtr]::Zero -and
+      $unrelatedProcess.MainWindowHandle -ne [IntPtr]::Zero
+  }
 
   # Prove the original failure against the same real installer and locked EXE.
   $baselineLog = "$DiagnosticsPath.baseline.log"
