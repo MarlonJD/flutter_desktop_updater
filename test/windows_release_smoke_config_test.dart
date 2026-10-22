@@ -32,7 +32,8 @@ void main() {
     );
     expect(
       workflow,
-      contains("ctest --test-dir build/windows/x64 -C Release"),
+      contains("ctest --test-dir build/windows/x64/plugins/desktop_updater "
+          "-C Release --output-on-failure --no-tests=error"),
     );
     expect(
       workflow,

@@ -30,7 +30,12 @@ void main() {
         "cmake --build build/linux/x64/release --target desktop_updater_test",
       ),
     );
-    expect(workflow, contains("ctest --test-dir build/linux/x64/release"));
+    expect(
+      workflow,
+      contains(
+          "ctest --test-dir build/linux/x64/release/plugins/desktop_updater "
+          "--output-on-failure --no-tests=error"),
+    );
     expect(
       workflow,
       contains("xvfb-run -a dart run tool/updater_smoke.dart --config Release"),
