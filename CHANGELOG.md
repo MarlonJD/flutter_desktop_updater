@@ -1,3 +1,18 @@
+## 2.7.2
+
+* Fixed Windows Inno updates aborting when another application instance keeps
+  installed files open after the initiating process exits. The helper now
+  requests `/CLOSEAPPLICATIONS` and `/FORCECLOSEAPPLICATIONS` by default.
+* Preserved explicit `/NOCLOSEAPPLICATIONS` and `/NOFORCECLOSEAPPLICATIONS`
+  opt-outs. Save work in all instances before updating; forced closure can
+  discard unsaved state.
+* Added the same flags to release CLI descriptor defaults. Existing 2.x clients
+  can use them through release metadata; add both flags explicitly when your
+  publishing configuration supplies a custom `silentArgs` list.
+* Added real Windows Inno installation coverage for blocked files, application
+  closure, replacement, relaunch, unrelated instances, and cleanup. Fixed native
+  Windows/Linux CI test discovery so empty test runs fail.
+
 ## 2.7.1
 
 * Fixed Windows Inno installer updates using truncated installation or log
