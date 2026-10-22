@@ -54,7 +54,13 @@ void main() {
     final descriptor = ReleaseDescriptor.fromJson(json);
     expect(descriptor.artifact.kind, "innoInstaller");
     expect(descriptor.install.strategy, "innoInstaller");
-    expect(descriptor.install.inno!.silentArgs, contains("/VERYSILENT"));
+    expect(descriptor.install.inno!.silentArgs, [
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/CLOSEAPPLICATIONS",
+      "/FORCECLOSEAPPLICATIONS",
+    ]);
   });
 
   test("uses custom output base name in generated mode", () async {

@@ -65,6 +65,8 @@ windows:
       - /VERYSILENT
       - /SUPPRESSMSGBOXES
       - /NORESTART
+      - /CLOSEAPPLICATIONS
+      - /FORCECLOSEAPPLICATIONS
     requiresElevation: auto
     authenticodeThumbprints:
       - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
@@ -80,13 +82,36 @@ Important fields:
   `<app>-<version>-windows-setup`.
 - `privilegesRequired`: `admin` or `lowest`. Defaults to `lowest`.
 - `silentArgs`: installer args used by the updater. Defaults to
-  `/VERYSILENT`, `/SUPPRESSMSGBOXES`, and `/NORESTART`.
+  `/VERYSILENT`, `/SUPPRESSMSGBOXES`, `/NORESTART`, `/CLOSEAPPLICATIONS`, and
+  `/FORCECLOSEAPPLICATIONS`.
 - `requiresElevation`: descriptor hint: `auto`, `always`, or `never`.
 - `authenticodeThumbprints`: allowed SHA-256 signer certificate fingerprints for
   runtime installer verification.
 
 Generated mode also accepts `setupIcon`, `licenseFile`,
 `architecturesAllowed`, and `architecturesInstallIn64BitMode`.
+
+## Closing Running Applications
+
+The helper waits for the process that requested the update to exit. Other
+instances or child processes can still hold installed files open. The helper
+therefore adds `/CLOSEAPPLICATIONS` and `/FORCECLOSEAPPLICATIONS` when they are
+missing, so Inno Restart Manager can close processes using files being replaced.
+It does not select processes just because they have the same executable name.
+
+Save work in all application instances before starting an update: forced
+closure can discard unsaved state. To require graceful closure, include
+`/NOFORCECLOSEAPPLICATIONS` in `silentArgs`; to prevent installer-driven closure
+entirely, include `/NOCLOSEAPPLICATIONS`. These explicit choices suppress the
+helper's automatic additions, including when written in lowercase. Do not also
+supply the corresponding positive flags, which Inno treats as higher priority.
+A locked application can still cause a silent installation to abort when
+closure is disabled.
+
+The release CLI also includes both closure flags in newly generated descriptor
+defaults. Existing 2.x clients forward these descriptor arguments. If your
+configuration or publishing process supplies `silentArgs` explicitly, add the
+two flags there to enable the same behavior for already installed clients.
 
 ## Generated Script Mode
 

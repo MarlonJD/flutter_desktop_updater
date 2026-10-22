@@ -42,7 +42,7 @@ $targetRoot = $env:INNO_TEST_TARGET
 $logPath = $env:INNO_TEST_LOG
 $inno = @{
   inheritInstallDirectory = $env:INNO_TEST_INHERIT -eq 'true'
-  silentArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+  silentArgs = @($env:INNO_TEST_SILENT_ARGS | ConvertFrom-Json)
 }
 function Write-DiagnosticsEvent([string] $Message) {}
 """ +
@@ -54,57 +54,87 @@ if ($process.ExitCode -ne 0) {
 """,
       );
 
-      for (final target in <String>[
+      const defaultArgs = [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+      ];
+      const closureArgs = ["/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS"];
+      const targets = <String>[
         r"C:\Program Files (x86)\Example App",
         r"C:\Program Files\Example App",
         r"C:\Users\Jane Doe\应用 更新",
         r"C:\Apps\O'Brien App",
         r"C:\Apps\Example",
-      ]) {
-        for (final inherit in [true, false]) {
-          const log =
-              r"C:\Users\Jane Doe\AppData\Local\Temp\Inno update (1).log";
-          final process = await Process.start(
-            "powershell.exe",
-            [
-              "-NoProfile",
-              "-NonInteractive",
-              "-ExecutionPolicy",
-              "Bypass",
-              "-File",
-              script.path,
-            ],
-            environment: {
-              "INNO_TEST_CAPTURE": capture.path,
-              "INNO_TEST_OUTPUT": output.path,
-              "INNO_TEST_TARGET": target,
-              "INNO_TEST_LOG": log,
-              "INNO_TEST_INHERIT": inherit.toString(),
-            },
+      ];
+      final cases = [
+        for (final target in targets)
+          for (final inherit in [true, false])
+            (
+              target: target,
+              inherit: inherit,
+              arguments: defaultArgs,
+              expected: [...defaultArgs, ...closureArgs],
+            ),
+        for (final arguments in [
+          [...defaultArgs, "/NOCLOSEAPPLICATIONS"],
+          [...defaultArgs, "/noforcecloseapplications"],
+          [...defaultArgs, "/closeapplications", "/forcecloseapplications"],
+        ])
+          (
+            target: targets.first,
+            inherit: true,
+            arguments: arguments,
+            expected: arguments,
+          ),
+        (
+          target: targets.first,
+          inherit: true,
+          arguments: [...defaultArgs, "/CLOSEAPPLICATIONS"],
+          expected: [...defaultArgs, ...closureArgs],
+        ),
+      ];
+      for (final request in cases) {
+        const log = r"C:\Users\Jane Doe\AppData\Local\Temp\Inno update (1).log";
+        final process = await Process.start(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script.path,
+          ],
+          environment: {
+            "INNO_TEST_CAPTURE": capture.path,
+            "INNO_TEST_OUTPUT": output.path,
+            "INNO_TEST_TARGET": request.target,
+            "INNO_TEST_LOG": log,
+            "INNO_TEST_INHERIT": request.inherit.toString(),
+            "INNO_TEST_SILENT_ARGS": jsonEncode(request.arguments),
+          },
+        );
+        final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+        final stderrFuture = process.stderr.transform(utf8.decoder).join();
+        try {
+          final exitCode = await process.exitCode.timeout(
+            const Duration(seconds: 30),
           );
-          final stdoutFuture = process.stdout.transform(utf8.decoder).join();
-          final stderrFuture = process.stderr.transform(utf8.decoder).join();
-          try {
-            final exitCode = await process.exitCode.timeout(
-              const Duration(seconds: 30),
-            );
-            expect(
-              exitCode,
-              0,
-              reason: "${await stdoutFuture}\n${await stderrFuture}",
-            );
-            expect(await output.readAsLines(), [
-              "/VERYSILENT",
-              "/SUPPRESSMSGBOXES",
-              "/NORESTART",
-              if (inherit) "/DIR=$target",
-              "/LOG=$log",
-            ]);
-            await output.delete();
-          } finally {
-            process.kill();
-            await process.exitCode;
-          }
+          expect(
+            exitCode,
+            0,
+            reason: "${await stdoutFuture}\n${await stderrFuture}",
+          );
+          expect(await output.readAsLines(), [
+            ...request.expected,
+            if (request.inherit) "/DIR=${request.target}",
+            "/LOG=$log",
+          ]);
+          await output.delete();
+        } finally {
+          process.kill();
+          await process.exitCode;
         }
       }
     },

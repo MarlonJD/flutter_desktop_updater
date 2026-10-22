@@ -23,7 +23,13 @@ class InnoPublishConfig {
     this.architecturesInstallIn64BitMode = "x64",
     this.setupIcon,
     this.licenseFile,
-    this.silentArgs = const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+    this.silentArgs = const [
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/CLOSEAPPLICATIONS",
+      "/FORCECLOSEAPPLICATIONS",
+    ],
     this.requiresElevation = "auto",
     this.authenticodeThumbprints = const [],
   });
@@ -44,7 +50,13 @@ class InnoPublishConfig {
         architecturesInstallIn64BitMode = "x64",
         setupIcon = null,
         licenseFile = null,
-        silentArgs = const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        silentArgs = const [
+          "/VERYSILENT",
+          "/SUPPRESSMSGBOXES",
+          "/NORESTART",
+          "/CLOSEAPPLICATIONS",
+          "/FORCECLOSEAPPLICATIONS",
+        ],
         requiresElevation = "auto",
         authenticodeThumbprints = const [];
 

@@ -633,7 +633,13 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
     setupIcon: _stringValue(installer, "setupIcon"),
     licenseFile: _stringValue(installer, "licenseFile"),
     silentArgs: _stringListValue(installer, "silentArgs") ??
-        const ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        const [
+          "/VERYSILENT",
+          "/SUPPRESSMSGBOXES",
+          "/NORESTART",
+          "/CLOSEAPPLICATIONS",
+          "/FORCECLOSEAPPLICATIONS",
+        ],
     requiresElevation: _stringValue(installer, "requiresElevation") ?? "auto",
     authenticodeThumbprints:
         _stringListValue(installer, "authenticodeThumbprints") ?? const [],

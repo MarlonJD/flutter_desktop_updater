@@ -131,6 +131,13 @@ the configured silent arguments instead of extracting a zip. Inno owns the
 uninstall log and installed-file metadata in this mode, including later-version
 files that direct zip compatibility cannot add to Inno's uninstall record.
 
+If the Inno log reports that applications could not be shut down, another
+instance may still hold installed files open after the initiating process has
+exited. Inno updates request file-based application closure by default; see
+[Closing running applications](windows-inno-installer-updates.md#closing-running-applications)
+for explicit opt-outs and how to configure already installed 2.x clients.
+An unsuccessful installer exit stops the helper before its relaunch step.
+
 For macOS DMG update artifacts, diagnostics may include:
 `dmg primary signature verified`, `dmg mounted`, `dmg app copied`, and
 `dmg detached`.

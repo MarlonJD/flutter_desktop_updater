@@ -253,6 +253,26 @@ macos:
     );
   });
 
+  test("default Inno publishing requests closure of remaining instances",
+      () async {
+    final config = await ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: generated
+""");
+
+    expect(config.windows.installer.silentArgs, [
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/CLOSEAPPLICATIONS",
+      "/FORCECLOSEAPPLICATIONS",
+    ]);
+  });
+
   test("loads Windows Inno installer publish config", () async {
     final root = await Directory.systemTemp.createTemp("inno_config_");
     addTearDown(() async {
