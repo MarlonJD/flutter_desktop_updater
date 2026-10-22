@@ -56,7 +56,7 @@ jobs:
         run: cmake --build build/windows/x64 --config Debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Debug --output-on-failure
+        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Debug --output-on-failure --no-tests=error
       - name: Run integration tests
         working-directory: example
         run: flutter test integration_test -d windows
@@ -88,7 +88,7 @@ jobs:
         run: cmake --build build/windows/x64 --config Release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/windows/x64 -C Release --output-on-failure
+        run: ctest --test-dir build/windows/x64/plugins/desktop_updater -C Release --output-on-failure --no-tests=error
       - name: Run integration tests release
         working-directory: example
         run: flutter test integration_test -d windows
@@ -189,7 +189,7 @@ jobs:
         run: cmake --build build/linux/x64/debug --target desktop_updater_test
       - name: Run native tests
         working-directory: example
-        run: ctest --test-dir build/linux/x64/debug --output-on-failure
+        run: ctest --test-dir build/linux/x64/debug/plugins/desktop_updater --output-on-failure --no-tests=error
       - name: Run integration tests
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
@@ -214,7 +214,7 @@ jobs:
         run: cmake --build build/linux/x64/release --target desktop_updater_test
       - name: Run native tests release
         working-directory: example
-        run: ctest --test-dir build/linux/x64/release --output-on-failure
+        run: ctest --test-dir build/linux/x64/release/plugins/desktop_updater --output-on-failure --no-tests=error
       - name: Run integration tests release
         working-directory: example
         run: xvfb-run -a flutter test integration_test -d linux
