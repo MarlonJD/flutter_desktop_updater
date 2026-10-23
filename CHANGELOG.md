@@ -1,3 +1,10 @@
+## 3.2.4
+
+* Fix macOS release preflight rejecting executable-bit data files in validated
+  bundle resource directories, including flutter_inappwebview CSS and HTML
+  assets inside versioned App.framework bundles. Resource bytes and permissions
+  remain unchanged; Mach-O discovery and code-location checks remain enforced.
+
 ## 3.2.3
 
 * Fixed macOS update relaunch setup by waiting for the outgoing app before

@@ -18,6 +18,27 @@ void main() {
     final commands = <String>[];
     final packager = _RecordingPackager(commands);
     try {
+      final resource = File(
+        path.join(
+          _macOSAppPath(root),
+          "Contents",
+          "Frameworks",
+          "App.framework",
+          "Resources",
+          "flutter_assets",
+          "t-rex.css",
+        ),
+      );
+      const resourceContents = "#main-frame-error { display: block; }\n";
+      await resource.parent.create(recursive: true);
+      await resource.writeAsString(resourceContents);
+      if (!Platform.isWindows) {
+        expect(
+          (await Process.run("chmod", ["755", resource.path])).exitCode,
+          0,
+        );
+      }
+      final resourceMode = (await resource.stat()).mode;
       final runProcess = (String executable, List<String> arguments) async {
         final extraCopied = await File(
           path.join(
@@ -90,6 +111,12 @@ void main() {
           .where((command) => command.contains("/usr/bin/codesign --force"))
           .toList();
       expect(signCommands, hasLength(3));
+      expect(await resource.readAsString(), resourceContents);
+      expect((await resource.stat()).mode, resourceMode);
+      expect(
+        commands.where((command) => command.contains(resource.path)),
+        isEmpty,
+      );
       expect(signCommands[0], contains("extraCopied=true"));
       expect(
         signCommands[0],

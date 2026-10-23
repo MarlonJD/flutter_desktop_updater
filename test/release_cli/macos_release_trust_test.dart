@@ -50,6 +50,226 @@ void main() {
     );
   });
 
+  test(
+    "preflight preserves executable data in versioned framework resources",
+    () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Resources.app");
+      final framework = await _createVersionedFramework(app);
+      final assets = Directory(
+        path.joinAll([
+          framework.path,
+          "Versions",
+          "A",
+          "Resources",
+          "flutter_assets",
+          "packages",
+          "flutter_inappwebview",
+          "assets",
+          "t_rex_runner",
+        ]),
+      );
+      final files = <File>[];
+      final modes = <int>[];
+      const contents = {
+        "t-rex.css": "#main-frame-error { display: block; }\n",
+        "t-rex.html": "<div class=\"runner-container\"></div>\n",
+      };
+      for (final entry in contents.entries) {
+        final file = await _writeExecutable(assets, entry.key, entry.value);
+        files.add(file);
+        modes.add((await file.stat()).mode);
+      }
+      final commands = <String>[];
+      final inventory = await MacOSReleaseTrust(
+        runProcess: (executable, arguments) async {
+          commands.add(executable);
+          return ProcessResult(0, 0, "", "");
+        },
+      ).preflight(app: app);
+
+      expect(
+        inventory.targets.map((target) => target.kind),
+        unorderedEquals([
+          MacOSCodeTargetKind.application,
+          MacOSCodeTargetKind.framework,
+        ]),
+      );
+      for (var index = 0; index < files.length; index++) {
+        expect(
+          await files[index].readAsString(),
+          contents.values.elementAt(index),
+        );
+        expect((await files[index].stat()).mode, modes[index]);
+      }
+      expect(commands, isNot(contains("/usr/bin/codesign")));
+    },
+    skip: Platform.isWindows ? "Requires POSIX modes and symlinks" : false,
+  );
+
+  for (final fixture in [
+    (
+      "Contents/Frameworks/Flat.framework",
+      MacOSCodeTargetKind.framework,
+      "Resources"
+    ),
+    ("Contents/PlugIns/Assets.bundle", MacOSCodeTargetKind.bundle, "Resources"),
+    (
+      "Contents/PlugIns/Content.bundle",
+      MacOSCodeTargetKind.bundle,
+      "Contents/Resources"
+    ),
+    (
+      "Contents/PlugIns/Test.appex",
+      MacOSCodeTargetKind.appExtension,
+      "Contents/Resources"
+    ),
+    (
+      "Contents/XPCServices/Test.xpc",
+      MacOSCodeTargetKind.xpc,
+      "Contents/Resources"
+    ),
+    (
+      "Contents/Library/SystemExtensions/Test.systemextension",
+      MacOSCodeTargetKind.systemExtension,
+      "Contents/Resources"
+    ),
+    (
+      "Contents/Library/LoginItems/Login.app",
+      MacOSCodeTargetKind.application,
+      "Contents/Resources"
+    ),
+  ]) {
+    test(
+      "preflight accepts executable data in ${fixture.$1}/${fixture.$3}",
+      () async {
+        final root = await Directory.systemTemp.createTemp("macos_trust_");
+        addTearDown(() => root.delete(recursive: true));
+        final app = await _createSimpleApp(root, name: "Resources.app");
+        await _createBundle(
+          app,
+          fixture.$1,
+          kind: fixture.$2,
+          identifier: "com.example.nested",
+          executable: "Nested",
+        );
+        await _writeExecutable(
+          app,
+          "${fixture.$1}/${fixture.$3}/asset",
+          "data",
+        );
+
+        final inventory = await MacOSReleaseTrust(
+          readFileIdentity: (_) async => null,
+        ).preflight(app: app);
+
+        expect(inventory.targets, hasLength(2));
+        expect(
+          inventory.targets.map((target) => target.kind),
+          unorderedEquals([MacOSCodeTargetKind.application, fixture.$2]),
+        );
+      },
+      skip: Platform.isWindows ? "Requires POSIX execute bits" : false,
+    );
+  }
+
+  test(
+    "preflight inventories Mach-O resources regardless of extension or mode",
+    () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Native.app");
+      final framework = await _createVersionedFramework(app);
+      final native = File(
+        path.join(framework.path, "Versions", "A", "Resources", "native.css"),
+      );
+      await native.writeAsBytes(_machO);
+      expect((await Process.run("chmod", ["644", native.path])).exitCode, 0);
+
+      final inventory = await MacOSReleaseTrust(
+        readFileIdentity: (_) async => null,
+      ).preflight(app: app);
+
+      expect(inventory.targets, hasLength(3));
+      final nativePath = await native.resolveSymbolicLinks();
+      final target = inventory.targets.singleWhere(
+        (target) => target.path == nativePath,
+      );
+      expect(target.kind, MacOSCodeTargetKind.executable);
+    },
+    skip: Platform.isWindows ? "Requires POSIX modes and symlinks" : false,
+  );
+
+  test("preflight still rejects Mach-O in outer application resources",
+      () async {
+    final root = await Directory.systemTemp.createTemp("macos_trust_");
+    addTearDown(() => root.delete(recursive: true));
+    final app = await _createSimpleApp(root, name: "Native.app");
+    final native =
+        File(path.join(app.path, "Contents", "Resources", "native.css"));
+    await native.parent.create(recursive: true);
+    await native.writeAsBytes(_machO);
+
+    await expectLater(
+      MacOSReleaseTrust(readFileIdentity: (_) async => null)
+          .preflight(app: app),
+      throwsA(
+        isA<FileSystemException>().having(
+          (error) => error.message,
+          "message",
+          "Unexpected executable code outside a standard macOS code location.",
+        ),
+      ),
+    );
+  });
+
+  for (final relative in [
+    "Contents/MacOS/t-rex.css",
+    "Contents/Helpers/Resources/t-rex.css",
+    "Contents/Frameworks/Resources/t-rex.css",
+    "Contents/Frameworks/App.framework/t-rex.css",
+    "Contents/Frameworks/App.framework/Versions/A/t-rex.css",
+    "Contents/Frameworks/App.framework/Versions/A/Resources/Nested.app/Contents/MacOS/t-rex.css",
+  ]) {
+    test(
+      "preflight rejects executable non-Mach-O code at $relative",
+      () async {
+        final root = await Directory.systemTemp.createTemp("macos_trust_");
+        addTearDown(() => root.delete(recursive: true));
+        final app = await _createSimpleApp(root, name: "Code.app");
+        final framework = await _createVersionedFramework(app);
+        await _createBundle(
+          framework,
+          "Versions/A/Resources/Nested.app",
+          kind: MacOSCodeTargetKind.application,
+          identifier: "com.example.nested",
+          executable: "Nested",
+        );
+        final file = await _writeExecutable(app, relative, "not native code");
+
+        await expectLater(
+          MacOSReleaseTrust(readFileIdentity: (_) async => null)
+              .preflight(app: app),
+          throwsA(
+            isA<FileSystemException>()
+                .having(
+                  (error) => error.message,
+                  "message",
+                  "macOS application contains executable bytes that are not Mach-O.",
+                )
+                .having(
+                  (error) => error.path,
+                  "path",
+                  await file.resolveSymbolicLinks(),
+                ),
+          ),
+        );
+      },
+      skip: Platform.isWindows ? "Requires POSIX modes and symlinks" : false,
+    );
+  }
+
   test("preflight rejects malformed applications before mutation", () async {
     final root = await Directory.systemTemp.createTemp("macos_trust_");
     addTearDown(() => root.delete(recursive: true));
@@ -462,6 +682,38 @@ Future<Directory> _createSimpleApp(
   );
   await main.writeAsBytes(_machO);
   return app;
+}
+
+Future<File> _writeExecutable(
+  Directory root,
+  String relative,
+  String contents,
+) async {
+  final file = File(path.join(root.path, relative));
+  await file.parent.create(recursive: true);
+  await file.writeAsString(contents);
+  expect((await Process.run("chmod", ["755", file.path])).exitCode, 0);
+  return file;
+}
+
+Future<Directory> _createVersionedFramework(Directory app) async {
+  final framework =
+      Directory(path.join(app.path, "Contents", "Frameworks", "App.framework"));
+  final version = Directory(path.join(framework.path, "Versions", "A"));
+  final resources = Directory(path.join(version.path, "Resources"));
+  await resources.create(recursive: true);
+  await File(path.join(resources.path, "Info.plist")).writeAsString(
+    _plist({
+      "CFBundleIdentifier": "com.example.framework",
+      "CFBundleExecutable": "App",
+    }),
+  );
+  await File(path.join(version.path, "App")).writeAsBytes(_machO);
+  await Link(path.join(framework.path, "Versions", "Current")).create("A");
+  await Link(path.join(framework.path, "Resources"))
+      .create("Versions/Current/Resources");
+  await Link(path.join(framework.path, "App")).create("Versions/Current/App");
+  return framework;
 }
 
 Future<void> _createBundle(

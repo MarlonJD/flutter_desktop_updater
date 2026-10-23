@@ -294,12 +294,11 @@ class MacOSReleaseTrust {
       if (type != FileSystemEntityType.file) continue;
       final file = File(entity.path);
       await _rejectSymlinkAncestors(file.path, includeSelf: true);
+      final normalized = path.normalize(path.absolute(file.path));
       final isMachO = await _isMachO(file);
       if (!isMachO) {
-        if (_isAllowedCodeLocation(
-              path.normalize(path.absolute(file.path)),
-              appPath,
-            ) &&
+        if (_isAllowedCodeLocation(normalized, appPath) &&
+            !_isBundleResourceLocation(normalized, bundles) &&
             await _isExecutable(file)) {
           throw FileSystemException(
             "macOS application contains executable bytes that are not Mach-O.",
@@ -309,7 +308,6 @@ class MacOSReleaseTrust {
         continue;
       }
       await _rejectSymlinkAncestors(file.path, includeSelf: true);
-      final normalized = path.normalize(path.absolute(file.path));
       if (principalPaths.contains(normalized)) continue;
       final fileIdentity = await _stableFileIdentity(normalized);
       if (fileIdentity != null && principalIdentities.contains(fileIdentity)) {
@@ -1602,6 +1600,39 @@ bool _isAllowedCodeLocation(String filePath, String appPath) {
     }
   }
   return false;
+}
+
+bool _isBundleResourceLocation(
+  String filePath,
+  Map<String, _BundleInfo> bundles,
+) {
+  var directory = path.dirname(filePath);
+  while (true) {
+    final bundle = bundles[directory];
+    if (bundle != null) {
+      // Stop at the nearest validated bundle: nested code must not inherit an
+      // enclosing bundle's resource classification. Only non-Mach-O files use
+      // this exception; native code is always inventoried separately.
+      final parts = path.split(path.relative(filePath, from: directory));
+      if (bundle.kind == MacOSCodeTargetKind.framework) {
+        return (parts.length >= 2 && parts[0] == "Resources") ||
+            (parts.length >= 4 &&
+                parts[0] == "Versions" &&
+                parts[2] == "Resources");
+      }
+      if (bundle.kind == MacOSCodeTargetKind.bundle &&
+          parts.length >= 2 &&
+          parts[0] == "Resources") {
+        return true;
+      }
+      return parts.length >= 3 &&
+          parts[0] == "Contents" &&
+          parts[1] == "Resources";
+    }
+    final parent = path.dirname(directory);
+    if (parent == directory) return false;
+    directory = parent;
+  }
 }
 
 Future<bool> _isExecutable(File file) async {

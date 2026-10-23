@@ -1160,6 +1160,16 @@ When notarization is enabled, publish runs:
 10. Recompute final artifact length and SHA-256, then sign release metadata.
 11. Upload without any further artifact mutation.
 
+Preflight recognizes non-Mach-O files in the standard `Resources` directories
+of validated bundles as data, even when they have execute permission bits.
+This includes Flutter assets in versioned framework resources such as
+`App.framework/Versions/A/Resources/flutter_assets/`. It leaves their bytes
+and permissions unchanged. Resource classification stops at nested bundle
+boundaries, so executable non-Mach-O files in a nested app's code directories
+are still rejected. Mach-O files are detected by their contents regardless of
+extension or permissions and remain subject to code-location, signing, and
+verification checks.
+
 The final macOS artifact audit is a trust gate, not a source-only check. A
 successful workflow should retain the final artifact SHA-256 and length, the
 pre-staple notarization archive digest, typed submission ID(s), target
