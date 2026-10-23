@@ -1,3 +1,15 @@
+## 2.7.3
+
+* Fix macOS release signing stripping existing application entitlements,
+  including sandbox file-selection permissions. Re-signing now asks codesign
+  to preserve each target's existing entitlements without copying permissions
+  between the outer app and nested code.
+* Rebuild the app with its required production entitlements and publish with
+  the updated tooling. An already stripped bundle cannot recover missing
+  entitlements by re-signing alone.
+* Add native ad hoc signing regression coverage for distinct app/nested-app
+  permissions, unsigned input, and strict signature verification.
+
 ## 2.7.2
 
 * Fixed Windows Inno updates aborting when another application instance keeps

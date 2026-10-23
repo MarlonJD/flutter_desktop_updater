@@ -1103,6 +1103,14 @@ Use this order for production-trusted macOS artifacts:
 8. Package and publish the stapled `.app`.
 9. Validate the hosted update.
 
+When re-signing, the publisher preserves each target's own existing
+entitlements, including sandbox file-selection permissions. It does not copy
+the outer app's permissions to nested code or invent permissions for unsigned
+input. Build the app with its required production entitlements before
+publishing. If an earlier publishing run already stripped those entitlements,
+rebuild the app from source before publishing again; re-signing the stripped
+bundle cannot recover missing permissions.
+
 The high-level command supports this order with `--notarize` or
 `macos.notarize: true`. Apps with more complex signing needs can still use the
 low-level `package`, `app_archive`, upload, and `release validate` commands

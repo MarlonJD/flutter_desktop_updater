@@ -15,6 +15,7 @@ class AppleTrustCommands {
       "--force",
       "--options",
       "runtime",
+      "--preserve-metadata=entitlements",
       "--timestamp",
       "--sign",
       identity,

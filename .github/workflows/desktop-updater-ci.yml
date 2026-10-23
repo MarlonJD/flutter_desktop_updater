@@ -30,6 +30,19 @@ jobs:
       - name: Pub publish dry-run
         run: dart pub publish --dry-run
 
+  macos-signing:
+    name: macOS entitlement preservation
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Verify native ad hoc signing preserves entitlements
+        run: flutter test --no-pub test/release_cli/apple_trust_commands_test.dart test/release_cli/macos_notarization_test.dart --reporter expanded
+
   windows:
     name: Windows
     runs-on: windows-latest

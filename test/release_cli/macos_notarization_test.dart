@@ -1,7 +1,9 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/package/release_packager.dart";
+import "package:desktop_updater/src/release_cli/macos/apple_trust_commands.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_publisher.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -58,6 +60,10 @@ void main() {
       );
 
       final appPath = _macOSAppPath(root);
+      expect(
+        commands.take(3),
+        everyElement(contains("--preserve-metadata=entitlements")),
+      );
       expect(commands[0], contains("extraCopied=true"));
       expect(commands[0], contains("/usr/bin/codesign --force"));
       expect(
@@ -157,6 +163,218 @@ void main() {
       await root.delete(recursive: true);
     }
   });
+
+  test(
+    "native macOS signing preserves each target's own entitlements",
+    () async {
+      final root = await _createMacOSFixture();
+      addTearDown(() => root.delete(recursive: true));
+      final app = Directory(_macOSAppPath(root));
+      await app.delete(recursive: true);
+      final nested = Directory(
+        path.join(app.path, "Contents", "Frameworks", "Nested.app"),
+      );
+      final framework = Directory(
+        path.join(app.path, "Contents", "Frameworks", "App.framework"),
+      );
+      await _createNativeBundle(app, "Outer", framework: false);
+      await _createNativeBundle(nested, "Nested", framework: false);
+      await _createNativeBundle(framework, "App", framework: true);
+      final resource =
+          File(path.join(framework.path, "Resources", "t-rex.css"));
+      await resource.writeAsString("#main-frame-error { display: block; }\n");
+      await _runNative("chmod", ["755", resource.path]);
+      final resourceMode = (await resource.stat()).mode;
+      final resourceBytes = await resource.readAsBytes();
+      const outerXml = "<key>com.apple.security.app-sandbox</key><true/>"
+          "<key>com.apple.security.files.user-selected.read-write</key><true/>"
+          "<key>com.apple.security.network.client</key><true/>";
+      const nestedXml = "<key>com.apple.security.app-sandbox</key><true/>"
+          "<key>com.apple.security.files.user-selected.read-only</key><true/>"
+          "<key>com.apple.security.application-groups</key><array><string>com.example.group</string></array>";
+      final outerEntitlements = File(path.join(root.path, "outer.plist"));
+      final nestedEntitlements = File(path.join(root.path, "nested.plist"));
+      await outerEntitlements.writeAsString(_nativePlist(outerXml));
+      await nestedEntitlements.writeAsString(_nativePlist(nestedXml));
+      await _runNative("/usr/bin/codesign", [
+        "--force",
+        "--sign",
+        "-",
+        "--entitlements",
+        nestedEntitlements.path,
+        nested.path,
+      ]);
+      await _runNative(
+        "/usr/bin/codesign",
+        ["--force", "--sign", "-", framework.path],
+      );
+      await _runNative("/usr/bin/codesign", [
+        "--force",
+        "--sign",
+        "-",
+        "--entitlements",
+        outerEntitlements.path,
+        app.path,
+      ]);
+      final outerBefore = await _nativeEntitlements(app, root);
+      final nestedBefore = await _nativeEntitlements(nested, root);
+      expect(
+        outerBefore,
+        containsPair(
+          "com.apple.security.files.user-selected.read-write",
+          true,
+        ),
+      );
+      expect(
+        nestedBefore,
+        containsPair("com.apple.security.files.user-selected.read-only", true),
+      );
+      expect(nestedBefore, isNot(equals(outerBefore)));
+      final commands = <String>[];
+
+      Future<ProcessResult> runProcess(
+        String executable,
+        List<String> arguments,
+      ) async {
+        commands.add([executable, ...arguments].join(" "));
+        if (executable == "/usr/bin/codesign") {
+          // Run the production signing arguments with a local ad hoc identity.
+          // Notarization, Gatekeeper, and Developer ID trust are outside this test.
+          final local = arguments.where((arg) => arg != "--timestamp").toList();
+          final sign = local.indexOf("--sign");
+          if (sign >= 0) local[sign + 1] = "-";
+          return Process.run(executable, local);
+        }
+        if (executable == "/usr/bin/xcrun" && arguments.first == "notarytool") {
+          return ProcessResult(
+            0,
+            0,
+            '{"id":"fixture-submission","status":"Accepted"}',
+            "",
+          );
+        }
+        return ProcessResult(0, 0, "", "");
+      }
+
+      await ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(commands),
+        runProcess: runProcess,
+      ).publish(
+        projectRoot: root,
+        platform: "macos",
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+      );
+
+      expect(await _nativeEntitlements(app, root), outerBefore);
+      expect(await _nativeEntitlements(nested, root), nestedBefore);
+      expect(await _nativeEntitlements(framework, root), isEmpty);
+      expect((await resource.stat()).mode, resourceMode);
+      expect(await resource.readAsBytes(), resourceBytes);
+      expect(
+        commands.where(
+          (command) => command.startsWith("/usr/bin/codesign --force"),
+        ),
+        hasLength(3),
+      );
+
+      final trust = AppleTrustCommands(runProcess: runProcess);
+      await trust.codesignApp(app: app, identity: "-");
+      await trust.verifyApp(app);
+      expect(await _nativeEntitlements(app, root), outerBefore);
+      expect(await _nativeEntitlements(nested, root), nestedBefore);
+
+      final unsigned = Directory(path.join(root.path, "Unsigned.app"));
+      await _createNativeBundle(unsigned, "Unsigned", framework: false);
+      await _runNative("/usr/bin/codesign", [
+        "--remove-signature",
+        path.join(unsigned.path, "Contents", "MacOS", "Unsigned"),
+      ]);
+      await trust.codesignApp(app: unsigned, identity: "-");
+      await trust.verifyApp(unsigned);
+      expect(await _nativeEntitlements(unsigned, root), isEmpty);
+    },
+    skip: !Platform.isMacOS ? "Requires macOS codesign and clang" : false,
+  );
+}
+
+String _nativePlist(String entries) =>
+    '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>$entries</dict></plist>';
+
+Future<void> _createNativeBundle(
+  Directory bundle,
+  String executable, {
+  required bool framework,
+}) async {
+  final info = File(
+    path.join(
+      bundle.path,
+      framework ? "Resources" : "Contents",
+      "Info.plist",
+    ),
+  );
+  final binary = File(
+    framework
+        ? path.join(bundle.path, executable)
+        : path.join(bundle.path, "Contents", "MacOS", executable),
+  );
+  await info.parent.create(recursive: true);
+  await binary.parent.create(recursive: true);
+  await info.writeAsString(
+    _nativePlist(
+      "<key>CFBundleIdentifier</key><string>com.example.$executable</string>"
+      "<key>CFBundleExecutable</key><string>$executable</string>"
+      "<key>CFBundlePackageType</key><string>${framework ? "FMWK" : "APPL"}</string>"
+      "<key>CFBundleVersion</key><string>1</string>",
+    ),
+  );
+  final source = File(path.join(bundle.parent.path, "$executable.c"));
+  try {
+    await source.writeAsString(
+      framework
+          ? "int fixtureValue(void) { return 82; }"
+          : "int main(void) { return 0; }",
+    );
+    await _runNative(
+      "/usr/bin/clang",
+      [if (framework) "-dynamiclib", source.path, "-o", binary.path],
+    );
+  } finally {
+    if (await source.exists()) await source.delete();
+  }
+}
+
+Future<ProcessResult> _runNative(
+  String executable,
+  List<String> arguments,
+) async {
+  final result = await Process.run(executable, arguments);
+  expect(
+    result.exitCode,
+    0,
+    reason: "$executable $arguments\n${result.stderr}",
+  );
+  return result;
+}
+
+Future<Object?> _nativeEntitlements(Directory bundle, Directory root) async {
+  final result = await _runNative(
+    "/usr/bin/codesign",
+    ["-d", "--entitlements", ":-", bundle.path],
+  );
+  final output = "${result.stdout}\n${result.stderr}";
+  final start = output.indexOf("<?xml");
+  if (start < 0) return <String, Object?>{};
+  final end = output.indexOf("</plist>", start);
+  expect(end, greaterThan(start));
+  final plist = File(path.join(root.path, "observed.plist"));
+  await plist.writeAsString(output.substring(start, end + "</plist>".length));
+  final converted = await _runNative(
+    "/usr/bin/plutil",
+    ["-convert", "json", "-o", "-", plist.path],
+  );
+  return jsonDecode(converted.stdout.toString());
 }
 
 Future<void> _writeAdditionalFilesConfig(Directory root) async {

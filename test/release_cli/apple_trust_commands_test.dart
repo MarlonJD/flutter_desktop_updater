@@ -40,6 +40,7 @@ void main() {
         "--force",
         "--options",
         "runtime",
+        "--preserve-metadata=entitlements",
         "--timestamp",
         "--sign",
         "Developer ID Application: Example Corp (TEAMID1234)",

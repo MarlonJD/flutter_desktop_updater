@@ -812,6 +812,7 @@ List<String> _codesignArguments(String identity, String target) {
     "--force",
     "--options",
     "runtime",
+    "--preserve-metadata=entitlements",
     "--timestamp",
     "--sign",
     identity,
