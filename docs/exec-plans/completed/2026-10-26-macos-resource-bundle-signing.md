@@ -28,7 +28,8 @@ current branch. Version changes and publication are outside this task.
   but the target-building loop ignores that distinction.
 - Both signing and final-artifact verification read entitlements for every
   target. Catching extraction failures globally would weaken code checks.
-- The available host is Linux; actual Apple signing commands are unavailable.
+- The initial validation host was Linux; actual Apple signing commands were
+  unavailable for that run. The macOS follow-up below covers real signing.
 - The original topology fixture treated a resource-only bundle as code. It
   now contains an executable plugin bundle, while dedicated fixtures cover
   resource-only bundles in all three supported Info.plist layouts.
@@ -46,7 +47,7 @@ current branch. Version changes and publication are outside this task.
 
 ## Verification and recovery
 
-Validation host: Linux, Flutter 3.47.8, Dart 3.13.7. Local SDKs and caches live
+Initial validation host: Linux, Flutter 3.47.8, Dart 3.13.7. Local SDKs and caches live
 outside the repository. The full suite additionally needed Clang 19 and .NET 8.
 Use a conventional `umask 022`, writable `PUB_CACHE`,
 `ANALYZER_STATE_LOCATION_OVERRIDE`, and .NET cache/state locations when
@@ -101,6 +102,65 @@ Fixtures use temporary directories and teardown. Generated .NET `bin/` and
 feed are required for local verification. The new real fixture is picked up
 by the existing macOS CI lane; workflow configuration is not execution evidence.
 
+## macOS follow-up verification
+
+Source: `95cf5bbd5ff01ffff6357866db8defc3e006e04c`. Verification ran on
+2026-10-26 with macOS 27.0.1 (26A434), Apple Silicon arm64, Xcode 27.1
+(27A9275), Flutter 3.48.0-0.1.pre at
+`aadfc384985debe5c4f6c05832a6a6127c505631`, and Dart 3.13.0-266.0.dev.
+
+- `verified locally`: the focused trust, notarization-process, and real
+  codesign suites passed all 40 tests; neither real macOS fixture was skipped.
+- `verified locally`: the parent commit's signer reproduced the reported
+  entitlement-extraction error on an unsigned `OrderedSet_privacy.bundle`.
+  The current signer completed Developer ID signing on the same fixture,
+  with framework and application targets only, equal Team IDs, hardened
+  runtime, and unchanged application entitlements and privacy-resource bytes
+  and permissions. The extracted ZIP passed signature verification; changing
+  its privacy manifest correctly invalidated the enclosing framework seal.
+- `verified locally`: the native kit passed all 146 tests on a full rerun.
+  Its first run failed the bundled restart test while waiting for
+  `launched.json`; the unchanged isolated retry and full rerun passed. The
+  test exercises two replacements through AppKit and LaunchServices. The
+  initial intermittent failure's cause remains unresolved.
+- `verified locally`: the install-helper suite passed 148 tests with six
+  skips requiring separately supplied CI fixture or crash-worker inputs.
+- `verified locally`: isolated SwiftPM and CocoaPods example exports each
+  built for macOS Debug and passed all three integration tests, including
+  forged raw MethodChannel rejection. The exports used ad hoc signing and
+  project-local integration settings. Xcode's iOS CoreSimulator warning did
+  not prevent either macOS lane from passing.
+- The broad Flutter suite was **not fully green**: 972 tests passed, four
+  skipped, and two timed out. The Windows ABI compile test passed on a
+  focused retry. The unchanged removed-Dart-API test timed out again at its
+  existing two-minute limit. All nine equivalent analyzer assertions passed
+  directly outside the Flutter runner, but this does not convert the full
+  suite into a pass. No timeout or assertion was weakened.
+- `verified locally`: after restoring the example's generated dependency
+  configuration, analysis exited 0 with 777 infos and no errors or warnings.
+  Formatting left all 287 Dart files unchanged; version consistency, the
+  31/31 structural gate, and all ten harness documentation tests passed.
+  Publish dry-run exited 0 with zero warnings. Tracked lockfiles and package
+  versions were preserved.
+- [CI run 40312411349](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40312411349)
+  succeeded for the tested commit, but its macOS native and Flutter jobs were
+  skipped. The path classifier selects CLI/Dart checks for release-tooling
+  changes before reaching the platform patterns. Selecting macOS jobs for
+  macOS release-tooling and real codesign-test changes remains a follow-up.
+- `not run`: Apple notarization, stapling/Gatekeeper production acceptance,
+  a real signed Flutter A-to-B-to-C update, privileged installation, the
+  reporter's app or its original post-update file-selection scenario, and
+  execution on Intel or older macOS/Flutter versions.
+
+Detailed local evidence is retained under
+`reports/issue82-macos-verification/`, including the baseline/current signing
+probe, native and integration logs, the initial failed harness report,
+focused retries, and direct analyzer results. These reports are local
+artifacts, not committed package files. Task-owned temporary source/build
+exports, signed fixtures, generated .NET probe output, and test processes
+were cleaned up. No release or production-readiness claim follows from these
+bounded checks.
+
 ## Outcomes & Retrospective
 
 The local fix is complete: valid resource bundles remain validated topology
@@ -111,12 +171,15 @@ permission changes were added.
 
 The previous tests exercised resource bytes and executable bundles separately,
 but did not send an unsigned resource bundle through signing and final audit.
-Those paths now have regressions. Actual macOS signing and the reporter's app
-still require target-host validation before release; this is not a production
-trust claim.
+Those paths now have regressions. The macOS follow-up verifies real Developer
+ID signing and the platform integration lanes. The unresolved test-runner
+timeout and intermittent restart failure remain recorded; the reporter's app
+and production trust/update gates still require validation before release.
 
 ## Revision history
 
 - 2026-10-26: created the implementation and verification plan.
 - 2026-10-26: completed the local fix and validation, recorded macOS host
   limitations, and moved the plan to the completed ledger.
+- 2026-10-26: recorded real macOS signing, native and Flutter integration
+  verification, CI selection limits, and unresolved full-suite boundaries.
