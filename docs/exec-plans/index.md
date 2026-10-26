@@ -13,7 +13,6 @@ branch, release, or external-write authority.
 
 ## Active
 
-- [2026-10-26 - desktop_updater 3.2.5 release](active/2026-10-26-desktop-updater-3-2-5-release.md)
 - [2026-08-10 - Windows ARM64 local production readiness](active/2026-08-10-windows-arm64-local-production-readiness.md)
 - [2026-08-13 - Release publishing hardening](active/2026-08-13-release-publishing-hardening-plan.md)
 - [2026-08-05 - Desktop Updater 3.1 release-key profile migration](active/2026-08-05-release-key-management-plan.md)
@@ -30,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-10-26 - desktop_updater 3.2.5 release](completed/2026-10-26-desktop-updater-3-2-5-release.md)
 - [2026-10-26 - macOS resource bundle signing](completed/2026-10-26-macos-resource-bundle-signing.md)
 - [2026-10-23 - Issue 82 macOS patch releases](completed/2026-10-23-issue82-macos-releases.md)
 - [2026-10-23 - macOS framework resource validation](completed/2026-10-23-macos-framework-resource-validation.md)
