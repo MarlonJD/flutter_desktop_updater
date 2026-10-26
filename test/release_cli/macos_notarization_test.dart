@@ -39,6 +39,28 @@ void main() {
         );
       }
       final resourceMode = (await resource.stat()).mode;
+      final privacyBundle = Directory(
+        path.join(
+          _macOSAppPath(root),
+          "Contents",
+          "Frameworks",
+          "App.framework",
+          "Resources",
+          "OrderedSet_privacy.bundle",
+        ),
+      );
+      await privacyBundle.create(recursive: true);
+      await File(path.join(privacyBundle.path, "Info.plist")).writeAsString('''
+<?xml version="1.0"?><plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.cocoapods.OrderedSet-privacy</string>
+</dict></plist>
+''');
+      final privacy =
+          File(path.join(privacyBundle.path, "PrivacyInfo.xcprivacy"));
+      const privacyContents = """<?xml version="1.0"?>
+<plist version="1.0"><dict><key>NSPrivacyTracking</key><false/></dict></plist>""";
+      await privacy.writeAsString(privacyContents);
+      final privacyPath = await privacyBundle.resolveSymbolicLinks();
       final runProcess = (String executable, List<String> arguments) async {
         final extraCopied = await File(
           path.join(
@@ -56,6 +78,10 @@ void main() {
             ...arguments,
           ].join(" "),
         );
+        if (executable == "/usr/bin/codesign" &&
+            arguments.last == privacyPath) {
+          return ProcessResult(0, 1, "", "code object is not signed at all");
+        }
         if (executable == "/usr/bin/xcrun" &&
             arguments.length >= 2 &&
             arguments[0] == "notarytool" &&
@@ -111,6 +137,11 @@ void main() {
           .where((command) => command.contains("/usr/bin/codesign --force"))
           .toList();
       expect(signCommands, hasLength(3));
+      expect(await privacy.readAsString(), privacyContents);
+      expect(
+        commands.where((command) => command.contains(privacyPath)),
+        isEmpty,
+      );
       expect(await resource.readAsString(), resourceContents);
       expect((await resource.stat()).mode, resourceMode);
       expect(

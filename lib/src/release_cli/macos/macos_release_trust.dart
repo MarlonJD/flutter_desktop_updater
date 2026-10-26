@@ -208,7 +208,9 @@ class MacOSReleaseTrust {
           info,
           infoFile.path,
         );
-        if (bundleKind != MacOSCodeTargetKind.bundle && principal == null) {
+        if (principal == null &&
+            (bundleKind != MacOSCodeTargetKind.bundle ||
+                info.containsKey("CFBundleExecutable"))) {
           throw FileSystemException(
             "macOS code bundle has no valid CFBundleExecutable.",
             entity.path,
@@ -277,6 +279,14 @@ class MacOSReleaseTrust {
         "CFBundleIdentifier",
         bundle.path,
       );
+      // Resource-only bundles (including CocoaPods privacy manifests) are
+      // sealed as resources by the enclosing code object. They do not require
+      // their own signature or entitlement extraction. Keep them in `bundles`
+      // for topology checks; the file scan below still inventories any Mach-O.
+      if (bundle.kind == MacOSCodeTargetKind.bundle &&
+          bundle.principalExecutable == null) {
+        continue;
+      }
       await addTarget(
         MacOSCodeTarget(
           path: bundle.path,
@@ -1478,6 +1488,9 @@ Future<String?> _principalExecutable(
     );
   } else {
     candidates.add(path.join(bundlePath, "Contents", "MacOS", executableName));
+    if (kind == MacOSCodeTargetKind.bundle) {
+      candidates.add(path.join(bundlePath, executableName));
+    }
   }
   for (final candidate in candidates) {
     final resolved = await _resolveContainedPath(candidate, bundlePath);

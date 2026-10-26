@@ -51,6 +51,305 @@ void main() {
   });
 
   test(
+    "unsigned privacy resources do not become code signing targets",
+    () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Privacy.app");
+      final framework = await _createVersionedFramework(app);
+      final bundle = Directory(
+        path.join(
+          framework.path,
+          "Versions",
+          "A",
+          "Resources",
+          "OrderedSet_privacy.bundle",
+        ),
+      );
+      await bundle.create(recursive: true);
+      await File(path.join(bundle.path, "Info.plist")).writeAsString(
+        _plist({"CFBundleIdentifier": "org.cocoapods.OrderedSet-privacy"}),
+      );
+      final privacy = File(path.join(bundle.path, "PrivacyInfo.xcprivacy"));
+      final privacyBytes = utf8.encode(_plist({"NSPrivacyTracking": "false"}));
+      await privacy.writeAsBytes(privacyBytes);
+      final privacyMode = (await privacy.stat()).mode;
+      final bundlePath = await bundle.resolveSymbolicLinks();
+      final appPath = await app.resolveSymbolicLinks();
+      final frameworkPath = await framework.resolveSymbolicLinks();
+      final commands = <List<String>>[];
+      String? entitlementFile;
+      const appEntitlements = """<?xml version="1.0"?>
+<plist version="1.0"><dict>
+<key>com.apple.security.files.user-selected.read-write</key><true/>
+</dict></plist>""";
+      final trust = MacOSReleaseTrust(
+        readFileIdentity: (_) async => null,
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments]);
+          if (executable == "/usr/bin/codesign") {
+            if (arguments.last == bundlePath) {
+              return ProcessResult(
+                0,
+                1,
+                "",
+                "code object is not signed at all",
+              );
+            }
+            if (arguments.first == "-d" &&
+                arguments.contains("--entitlements")) {
+              return ProcessResult(
+                0,
+                0,
+                arguments.last == appPath ? appEntitlements : "",
+                "",
+              );
+            }
+            if (arguments.first == "-dvvv") {
+              final identifier = arguments.last == frameworkPath
+                  ? "com.example.framework"
+                  : "com.example.audited";
+              return ProcessResult(
+                0,
+                0,
+                _codeDetails.replaceAll("com.example.audited", identifier),
+                "",
+              );
+            }
+            if (arguments.first == "--force") {
+              if (arguments.last == appPath) {
+                entitlementFile =
+                    arguments[arguments.indexOf("--entitlements") + 1];
+                expect(
+                  await File(entitlementFile!).readAsString(),
+                  appEntitlements,
+                );
+              } else {
+                expect(arguments, isNot(contains("--entitlements")));
+              }
+            }
+          }
+          return ProcessResult(0, 0, "", "");
+        },
+      );
+      final inventory = await trust.preflight(app: app);
+
+      await trust.signAndVerify(
+        inventory: inventory,
+        identity: "test identity",
+      );
+      await trust.verifyApp(inventory: inventory);
+
+      expect(inventory.targets.map((target) => target.path), [
+        frameworkPath,
+        appPath,
+      ]);
+      expect(commands.where((command) => command.last == bundlePath), isEmpty);
+      expect(
+        commands
+            .where((command) => command.contains("--force"))
+            .map((command) => command.last),
+        [frameworkPath, appPath],
+      );
+      expect(
+        commands.where((command) => command.contains("--deep")),
+        hasLength(2),
+      );
+      expect(await privacy.readAsBytes(), privacyBytes);
+      expect((await privacy.stat()).mode, privacyMode);
+      expect(entitlementFile, isNotNull);
+      expect(await File(entitlementFile!).exists(), isFalse);
+    },
+    skip: Platform.isWindows ? "Requires framework symlinks" : false,
+  );
+
+  for (final infoPath in [
+    "Info.plist",
+    "Resources/Info.plist",
+    "Contents/Info.plist",
+  ]) {
+    test(
+      "resource bundle with $infoPath is excluded from code inventory",
+      () async {
+        final root = await Directory.systemTemp.createTemp("macos_trust_");
+        addTearDown(() => root.delete(recursive: true));
+        final app = await _createSimpleApp(root, name: "Resources.app");
+        final bundle = Directory(
+          path.join(app.path, "Contents", "Resources", "Data.bundle"),
+        );
+        final info = File(path.join(bundle.path, infoPath));
+        await info.parent.create(recursive: true);
+        await info.writeAsString(
+          _plist({"CFBundleIdentifier": "com.example.data"}),
+        );
+        final inventory = await MacOSReleaseTrust(
+          readFileIdentity: (_) async => null,
+        ).preflight(app: app);
+        expect(inventory.targets.map((target) => target.kind), [
+          MacOSCodeTargetKind.application,
+        ]);
+      },
+    );
+  }
+
+  for (final flat in [false, true]) {
+    test("executable bundle remains checked (flat: $flat)", () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Code.app");
+      final bundle =
+          Directory(path.join(app.path, "Contents", "PlugIns", "Code.bundle"));
+      final info = File(
+        path.join(bundle.path, flat ? "Info.plist" : "Contents/Info.plist"),
+      );
+      final code =
+          File(path.join(bundle.path, flat ? "Code" : "Contents/MacOS/Code"));
+      await code.parent.create(recursive: true);
+      await info.writeAsString(
+        _plist({
+          "CFBundleIdentifier": "com.example.code",
+          "CFBundleExecutable": "Code",
+        }),
+      );
+      await code.writeAsBytes(_machO);
+      final bundlePath = await bundle.resolveSymbolicLinks();
+      final commands = <List<String>>[];
+      final trust = MacOSReleaseTrust(
+        readFileIdentity: (_) async => null,
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments]);
+          return ProcessResult(
+            0,
+            0,
+            "",
+            arguments.last == bundlePath ? _forbiddenEntitlements : "",
+          );
+        },
+      );
+      final inventory = await trust.preflight(app: app);
+      expect(
+        inventory.targets.map((target) => target.kind),
+        [MacOSCodeTargetKind.bundle, MacOSCodeTargetKind.application],
+      );
+      expect(inventory.targets.first.path, bundlePath);
+      await expectLater(
+        trust.signAndVerify(inventory: inventory, identity: "test identity"),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            contains("get-task-allow"),
+          ),
+        ),
+      );
+      expect(commands.where((command) => command.contains("--force")), isEmpty);
+    });
+  }
+
+  for (final declaration in [
+    "<string>Missing</string>",
+    "<string></string>",
+    "<integer>42</integer>",
+  ]) {
+    test(
+      "bundle with invalid executable declaration $declaration fails preflight",
+      () async {
+        final root = await Directory.systemTemp.createTemp("macos_trust_");
+        addTearDown(() => root.delete(recursive: true));
+        final app = await _createSimpleApp(root, name: "Invalid.app");
+        final info = File(
+          path.join(
+            app.path,
+            "Contents",
+            "PlugIns",
+            "Invalid.bundle",
+            "Contents",
+            "Info.plist",
+          ),
+        );
+        await info.parent.create(recursive: true);
+        await info.writeAsString(
+          _plistWithEntries([
+            "<key>CFBundleIdentifier</key><string>com.example.invalid</string>",
+            "<key>CFBundleExecutable</key>$declaration",
+          ]),
+        );
+        await expectLater(
+          MacOSReleaseTrust(readFileIdentity: (_) async => null)
+              .preflight(app: app),
+          throwsA(
+            isA<FileSystemException>().having(
+              (error) => error.message,
+              "message",
+              "macOS code bundle has no valid CFBundleExecutable.",
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  test(
+    "native code in a resource bundle remains an entitlement-checked target",
+    () async {
+      final root = await Directory.systemTemp.createTemp("macos_trust_");
+      addTearDown(() => root.delete(recursive: true));
+      final app = await _createSimpleApp(root, name: "Native.app");
+      const relative = "Contents/Frameworks/Assets.bundle";
+      await _createBundle(
+        app,
+        relative,
+        kind: MacOSCodeTargetKind.bundle,
+        identifier: "com.example.assets",
+      );
+      final native = File(
+        path.join(app.path, relative, "Resources", "native.css"),
+      );
+      await native.writeAsBytes(_machO);
+      final nativePath = await native.resolveSymbolicLinks();
+      final commands = <List<String>>[];
+      final trust = MacOSReleaseTrust(
+        readFileIdentity: (_) async => null,
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments]);
+          if (executable == "/usr/bin/codesign" &&
+              arguments.contains("--entitlements") &&
+              arguments.last == nativePath) {
+            return ProcessResult(0, 1, "", "code object is not signed at all");
+          }
+          return ProcessResult(0, 0, "", "");
+        },
+      );
+      final inventory = await trust.preflight(app: app);
+      expect(inventory.targets.map((target) => target.kind), [
+        MacOSCodeTargetKind.executable,
+        MacOSCodeTargetKind.application,
+      ]);
+      await expectLater(
+        trust.signAndVerify(inventory: inventory, identity: "test identity"),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            "Unable to extract macOS entitlements: $nativePath",
+          ),
+        ),
+      );
+      await expectLater(
+        trust.verifyApp(inventory: inventory),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            "message",
+            "Unable to extract macOS entitlements: $nativePath",
+          ),
+        ),
+      );
+      expect(commands.where((command) => command.contains("--force")), isEmpty);
+    },
+  );
+
+  test(
     "preflight preserves executable data in versioned framework resources",
     () async {
       final root = await Directory.systemTemp.createTemp("macos_trust_");
@@ -231,6 +530,7 @@ void main() {
     "Contents/Frameworks/App.framework/t-rex.css",
     "Contents/Frameworks/App.framework/Versions/A/t-rex.css",
     "Contents/Frameworks/App.framework/Versions/A/Resources/Nested.app/Contents/MacOS/t-rex.css",
+    "Contents/Frameworks/App.framework/Versions/A/Resources/Data.bundle/Contents/MacOS/t-rex.css",
   ]) {
     test(
       "preflight rejects executable non-Mach-O code at $relative",
@@ -245,6 +545,12 @@ void main() {
           kind: MacOSCodeTargetKind.application,
           identifier: "com.example.nested",
           executable: "Nested",
+        );
+        await _createBundle(
+          framework,
+          "Versions/A/Resources/Data.bundle",
+          kind: MacOSCodeTargetKind.bundle,
+          identifier: "com.example.data",
         );
         final file = await _writeExecutable(app, relative, "not native code");
 
@@ -542,6 +848,12 @@ void main() {
       final root = await Directory.systemTemp.createTemp("macos_trust_");
       addTearDown(() => root.delete(recursive: true));
       final app = await _createSimpleApp(root, name: "Audited.app");
+      await _createBundle(
+        app,
+        "Contents/Resources/Assets.bundle",
+        kind: MacOSCodeTargetKind.bundle,
+        identifier: "com.example.assets",
+      );
       final archive = Archive();
       await for (final entity in app.list(recursive: true)) {
         if (entity is File) {
@@ -571,6 +883,10 @@ void main() {
               ),
             );
           }
+          if (executable == "/usr/bin/codesign" &&
+              arguments.last.endsWith("Assets.bundle")) {
+            return ProcessResult(0, 1, "", "code object is not signed at all");
+          }
           if (executable == "/usr/bin/codesign" && arguments.first == "-dvvv") {
             return ProcessResult(0, 0, "", _codeDetails);
           }
@@ -583,6 +899,15 @@ void main() {
         kind: "zip",
         appBundleName: "Audited.app",
         expectedApplicationIdentifier: "com.example.audited",
+      );
+
+      expect(
+        commands.where(
+          (command) =>
+              command.first == "/usr/bin/codesign" &&
+              command.last.endsWith("Assets.bundle"),
+        ),
+        isEmpty,
       );
 
       expect(
@@ -633,9 +958,10 @@ Future<Directory> _createTopologyFixture(Directory root) async {
   );
   await _createBundle(
     app,
-    "Contents/Resources/Assets.bundle",
+    "Contents/PlugIns/Code.bundle",
     kind: MacOSCodeTargetKind.bundle,
-    identifier: "com.example.assets",
+    identifier: "com.example.code",
+    executable: "Code",
   );
   for (final relative in [
     "Contents/PlugIns/Test.appex",

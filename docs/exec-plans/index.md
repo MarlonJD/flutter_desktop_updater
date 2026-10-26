@@ -29,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-10-26 - macOS resource bundle signing](completed/2026-10-26-macos-resource-bundle-signing.md)
 - [2026-10-23 - Issue 82 macOS patch releases](completed/2026-10-23-issue82-macos-releases.md)
 - [2026-10-23 - macOS framework resource validation](completed/2026-10-23-macos-framework-resource-validation.md)
 - [2026-10-14 - desktop_updater 3.2.3 release](completed/2026-10-14-desktop-updater-3-2-3-release.md)

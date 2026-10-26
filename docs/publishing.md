@@ -1170,6 +1170,16 @@ are still rejected. Mach-O files are detected by their contents regardless of
 extension or permissions and remain subject to code-location, signing, and
 verification checks.
 
+Resource-only `.bundle` directories without `CFBundleExecutable`, including
+CocoaPods privacy bundles such as `OrderedSet_privacy.bundle`, remain part of
+the validated topology but are not independent code-signing targets. Their
+data is sealed by the enclosing signed framework or application, so they do
+not need an existing signature or entitlement extraction. Bundles that
+declare an executable must resolve to valid Mach-O code; an invalid declaration
+is rejected rather than treated as resources. Native code found anywhere
+inside a resource bundle still undergoes the usual code-location, signing,
+and verification checks. Entitlement-read failures on code targets remain fatal.
+
 The final macOS artifact audit is a trust gate, not a source-only check. A
 successful workflow should retain the final artifact SHA-256 and length, the
 pre-staple notarization archive digest, typed submission ID(s), target
