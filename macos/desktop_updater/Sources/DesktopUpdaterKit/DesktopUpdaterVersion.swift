@@ -1,4 +1,4 @@
 /// Canonical version of the Flutter-free DesktopUpdaterKit helper package.
 public enum DesktopUpdaterVersion {
-    public static let string = "3.2.4"
+    public static let string = "3.2.5"
 }

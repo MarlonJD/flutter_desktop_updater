@@ -1,3 +1,11 @@
+## 3.2.5
+
+* Fix macOS release signing of resource-only privacy bundles, including
+  `OrderedSet_privacy.bundle`. Their resources are sealed by the enclosing
+  code object without independent entitlement extraction. Native code
+  discovery, executable-bundle validation, and entitlement checks for code
+  targets remain enforced.
+
 ## 3.2.4
 
 * Fix macOS release preflight rejecting executable-bit data files in validated
