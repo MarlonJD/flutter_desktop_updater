@@ -312,6 +312,24 @@ remaining entry must still match the recorded inventory; added or changed
 entries prevent deletion. If this cleanup fails, the controller records a
 cleanup warning and clears the pending marker so later installs can proceed.
 
+On macOS, the native helper can also confirm that a transaction is absent or
+that its journal-less leftover state was cleaned. Recovery accepts the
+helper's `preparing` and `recoveryRequired` states and its
+`orphanStateCleared` result. Cleanup completion alone does not prove that the
+update was installed. If the exact original version/build is still running,
+the controller checks exact receipt readback, verifies and removes the
+unchanged owned stage, then re-reads the exact pending receipt before clearing
+it so a new check/download/install attempt can proceed. It reports the previous install as failed, not successful.
+Missing or invalid helper evidence, another running version, changed staging,
+or a replaced receipt prevents this cleanup.
+
+`Unable to prepare update installation` is a generic native preparation error;
+it does not identify a single cause. Verify the outgoing app's bundled helper,
+sealed release keys, integer build number, signing, and early restart bootstrap
+against [macOS setup](../README.md#macos-setup). Correct that setup before
+retrying. An app that cannot run the fixed recovery code may need a manual
+installation of a rebuilt app; do not delete an ambiguous recovery marker.
+
 ## Support Flow
 
 Recommended user-facing copy:

@@ -590,6 +590,158 @@ void main() {
     expect(store.markerFor("stable"), isNotNull);
   });
 
+  for (final outcome in ["absent", "orphanStateCleared"]) {
+    test("macOS $outcome recovery permits retry of a failed prepare", () async {
+      final fixture = await _ControllerFixture.create();
+      addTearDown(fixture.delete);
+      final store = _MemoryRecoveryStore();
+      var attempts = 0;
+      var recoveryAttempts = 0;
+      final platform = _RecordingPlatform(
+        installAction: (_) async {
+          if (attempts++ == 0) {
+            throw PlatformException(
+              code: "InstallError",
+              message: "Unable to prepare update installation.",
+            );
+          }
+        },
+        nativeRecovery: _nativeRecoveryForHost(
+          query: (transactionId) async => NativeInstallTransactionStatus(
+            transactionId: transactionId,
+            state: outcome == "absent"
+                ? NativeInstallTransactionState.completed
+                : NativeInstallTransactionState.prepared,
+            resultCode: outcome == "absent"
+                ? NativeInstallTransactionResultCode.succeeded
+                : NativeInstallTransactionResultCode.recoveryRequired,
+            detail: "",
+            responseDigestSha256: (outcome == "absent" ? "0" : "b") * 64,
+            helperEndpointIdentitySha256: "c" * 64,
+          ),
+          recover: (transactionId) async {
+            recoveryAttempts++;
+            return NativeInstallTransactionStatus(
+              transactionId: transactionId,
+              state: NativeInstallTransactionState.completed,
+              resultCode: NativeInstallTransactionResultCode.succeeded,
+              detail: "orphanStateCleared",
+              responseDigestSha256: "b" * 64,
+              helperEndpointIdentitySha256: "c" * 64,
+            );
+          },
+        ),
+      );
+      DesktopUpdaterPlatform.instance = platform;
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveFile.uri,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        recoveryStore: store,
+        skipInitialVersionCheck: true,
+      );
+      addTearDown(controller.dispose);
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+          controller.restartApp(), throwsA(isA<PlatformException>()));
+      final failedTransaction = store.markerFor("stable")!.transactionId;
+
+      await controller.recoverPendingInstall();
+
+      expect(controller.state, isA<UpdateFailed>());
+      expect(store.markerFor("stable"), isNull);
+      expect(controller.lastCleanupReport?.cleanupSucceeded, isTrue);
+      expect(recoveryAttempts, outcome == "absent" ? 0 : 1);
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await controller.restartApp();
+      expect(platform.installRequests, hasLength(2));
+      expect(
+          store.markerFor("stable")!.transactionId, isNot(failedTransaction));
+    }, skip: !Platform.isMacOS);
+  }
+
+  for (final unsafe in [
+    "unknown completion",
+    "wrong transaction",
+    "invalid endpoint",
+    "invalid response digest",
+    "different running app",
+    "modified stage",
+    "changed receipt",
+  ]) {
+    test("macOS inactive recovery retains receipt for $unsafe", () async {
+      final fixture = await _ControllerFixture.create();
+      addTearDown(fixture.delete);
+      final store = _MemoryRecoveryStore();
+      final platform = _RecordingPlatform(
+        installAction: (_) async =>
+            throw PlatformException(code: "InstallError"),
+        nativeRecovery: _nativeRecoveryForHost(
+          query: (transactionId) async {
+            if (unsafe == "changed receipt") {
+              await store.writePendingInstall(_copyMarker(
+                store.markerFor("stable")!,
+                transactionId: "123e4567-e89b-42d3-a456-426614174999",
+              ));
+            }
+            return NativeInstallTransactionStatus(
+              transactionId:
+                  unsafe == "wrong transaction" ? "other" : transactionId,
+              state: NativeInstallTransactionState.completed,
+              resultCode: NativeInstallTransactionResultCode.succeeded,
+              detail: "",
+              responseDigestSha256: unsafe == "invalid response digest"
+                  ? "invalid"
+                  : (unsafe == "unknown completion" ? "b" : "0") * 64,
+              helperEndpointIdentitySha256:
+                  unsafe == "invalid endpoint" ? "invalid" : "c" * 64,
+            );
+          },
+          recover: (_) async => null,
+        ),
+      );
+      DesktopUpdaterPlatform.instance = platform;
+      final controller = DesktopUpdaterController(
+        appArchiveUrl: fixture.archiveFile.uri,
+        expectedPackageId: "com.example.app",
+        trustedReleasePublicKeys: fixture.publicKeys,
+        recoveryStore: store,
+        skipInitialVersionCheck: true,
+      );
+      addTearDown(controller.dispose);
+      await controller.checkVersion();
+      await controller.downloadUpdate();
+      await expectLater(
+          controller.restartApp(), throwsA(isA<PlatformException>()));
+      final marker = store.markerFor("stable")!;
+      if (unsafe == "different running app") {
+        await store
+            .writePendingInstall(_copyMarker(marker, appVersion: "9.0.0+900"));
+      }
+      if (unsafe == "modified stage") {
+        await File(path.join(marker.stagingPath!, "unexpected.txt"))
+            .writeAsString("unverified");
+      }
+
+      await controller.recoverPendingInstall();
+
+      expect(store.markerFor("stable"), isNotNull);
+      expect(controller.state, isA<UpdateFailed>());
+      expect(platform.installRequests, hasLength(1));
+      if (unsafe == "changed receipt") {
+        expect(await Directory(marker.stagingPath!).exists(), isTrue);
+      }
+      if (unsafe == "modified stage") {
+        expect(
+            await File(path.join(marker.stagingPath!, "unexpected.txt"))
+                .readAsString(),
+            "unverified");
+      }
+    }, skip: !Platform.isMacOS);
+  }
+
   test("recovery marker clears only after authenticated terminal evidence",
       () async {
     final root = await Directory.systemTemp.createTemp("recovery_success_");

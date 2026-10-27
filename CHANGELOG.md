@@ -1,3 +1,15 @@
+## 3.2.6
+
+* Fix macOS recovery rejecting authenticated helper responses for interrupted
+  preparation and journal-less transaction cleanup.
+* Allow a fresh update attempt after macOS authenticates an absent or cleaned
+  transaction, the original app version is still running, and the owned stage
+  and exact pending receipt can be safely cleared. Unavailable, malformed, or
+  mismatched status and modified staging still retain the pending receipt.
+* Apps already stuck on an older updater may need a manual installation of an
+  app built with this version. Missing helper integration or invalid signing
+  configuration must still be corrected before installation can succeed.
+
 ## 3.2.5
 
 * Fix macOS release signing of resource-only privacy bundles, including

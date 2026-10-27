@@ -960,7 +960,9 @@ class DesktopUpdaterController extends ChangeNotifier {
       return false;
     }
     return status.isTerminalFailure ||
-        (status.isTerminalSuccess && status.responseDigestSha256 == "0" * 64);
+        (status.isTerminalSuccess &&
+            (status.responseDigestSha256 == "0" * 64 ||
+                status.detail == "orphanStateCleared"));
   }
 
   Future<void> _clearRetryReceipt(
@@ -1038,8 +1040,8 @@ class DesktopUpdaterController extends ChangeNotifier {
     );
 
     final transactionId = marker.transactionId;
+    NativeInstallTransactionStatus? nativeStatus;
     if (transactionId != null && transactionId.isNotEmpty) {
-      final NativeInstallTransactionStatus? nativeStatus;
       try {
         final recovery = DesktopUpdaterPlatform.instance.nativeInstallRecovery;
         if (_isWindows) {
@@ -1148,6 +1150,50 @@ class DesktopUpdaterController extends ChangeNotifier {
       await _clearPendingRecoveryMarker();
       _state = const UpdateIdle();
       notifyListeners();
+      return;
+    }
+
+    // macOS also reports terminal completion when it authenticated an absent
+    // transaction or removed journal-less transaction state. That is proof
+    // that recovery finished, not that the update was installed. If the exact
+    // outgoing version still runs, release only its verified stage and receipt
+    // so an earlier prepare failure cannot permanently block another attempt.
+    if (Platform.isMacOS &&
+        transactionId != null &&
+        _isAuthenticatedSafeRetryStatus(nativeStatus, transactionId) &&
+        currentAppVersion != null &&
+        currentAppVersion == marker.appVersion) {
+      try {
+        persistedInstallTransactionFromExactReadback(
+          written: marker,
+          readback: await recoveryStore.readPendingInstall(channel: channel),
+        );
+        if (!await _cleanupRecoveredOwnedStage(marker)) {
+          _failRecoveredInstall(
+            marker,
+            StateError("The recovered install stage could not be cleaned."),
+            message: "The recovered install stage could not be cleaned.",
+            appVersion: currentAppVersion,
+          );
+          return;
+        }
+        await _clearRetryReceipt(marker);
+      } on Object catch (error) {
+        _failRecoveredInstall(
+          marker,
+          StateError("Could not clear the recovered install receipt."),
+          message: "Could not clear the recovered install receipt.",
+          error: error,
+        );
+        return;
+      }
+      _failRecoveredInstall(
+        marker,
+        StateError(
+            "The previous install did not complete. Check for updates to retry."),
+        message: "Inactive install recovered; the previous app is unchanged.",
+        appVersion: currentAppVersion,
+      );
       return;
     }
 

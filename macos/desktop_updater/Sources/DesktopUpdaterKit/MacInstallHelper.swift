@@ -1895,7 +1895,7 @@ final class PackagedMacInstallHelperTransport:
         -> InstallTransactionState?
     {
         switch value {
-        case "prepared":
+        case "preparing", "prepared", "recoveryRequired":
             return .prepared
         case "commitAccepted":
             return .commitAccepted
@@ -1935,7 +1935,9 @@ final class PackagedMacInstallHelperTransport:
              ("rolledBack", "rolledBack"),
              ("manualActionRequired", "manualActionRequired"):
             return true
-        case ("prepared", "recoveryRequired"),
+        case ("preparing", "recoveryRequired"),
+             ("prepared", "recoveryRequired"),
+             ("recoveryRequired", "recoveryRequired"),
              ("commitAccepted", "recoveryRequired"),
              ("backupCreated", "recoveryRequired"),
              ("targetActivated", "recoveryRequired"),
@@ -1952,7 +1954,8 @@ final class PackagedMacInstallHelperTransport:
         outcome: String
     ) -> (InstallTransactionState, InstallTransactionResultCode)? {
         switch (result, outcome) {
-        case ("completed", "newTarget"), ("completed", "none"):
+        case ("completed", "newTarget"), ("completed", "none"),
+             ("completed", "orphanStateCleared"):
             return (.completed, .succeeded)
         case ("rolledBack", "oldTarget"):
             return (.rolledBack, .succeeded)

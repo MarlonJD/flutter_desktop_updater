@@ -631,6 +631,126 @@ final class MacPackagedHelperTransportTests: XCTestCase {
         XCTAssertTrue(session.didCloseInput)
     }
 
+    func testQueryAcceptsRecoverablePreparationAndOrphanStates() throws {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        for state in ["preparing", "recoveryRequired"] {
+            let session = RecordingMacOneShotClientSession(responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: state,
+                    resultCode: "recoveryRequired"
+                ),
+            ])
+            let privileged = RecordingPrivilegedXPCExchange(responses: [])
+            let transport = PackagedMacInstallHelperTransport(
+                helperURL: URL(fileURLWithPath: "/fixed/helper"),
+                policyID: "com.example.desktop-updater.test",
+                launcher: RecordingMacOneShotProcessLauncher(session: session),
+                authenticator: RecordingEndpointAuthenticator(),
+                privilegedInstaller: RecordingPrivilegedHelperInstaller {},
+                privilegedExchange: privileged,
+                privilegedEndpointActivationAttempts: 1
+            )
+
+            let status = try transport.queryTransactionThrowingForTesting(
+                transactionID: transactionID
+            )
+
+            XCTAssertEqual(status.state, .prepared)
+            XCTAssertEqual(status.resultCode, .recoveryRequired)
+            XCTAssertEqual(status.transactionID, transactionID)
+            XCTAssertEqual(status.responseDigestSHA256, String(repeating: "b", count: 64))
+            XCTAssertEqual(status.helperEndpointIdentitySHA256, String(repeating: "c", count: 64))
+            XCTAssertEqual(privileged.validationCount, 0)
+        }
+    }
+
+    func testRecoveryAcceptsAuthenticatedOrphanCleanup() throws {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let session = RecordingMacOneShotClientSession(responses: [
+            recoveryData(
+                transactionID: transactionID,
+                resultCode: "completed",
+                verifiedOutcome: "orphanStateCleared"
+            ),
+        ])
+        let privileged = RecordingPrivilegedXPCExchange(responses: [])
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(session: session),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: RecordingPrivilegedHelperInstaller {},
+            privilegedExchange: privileged,
+            privilegedEndpointActivationAttempts: 1
+        )
+
+        let status = try transport.recoverPendingInstallThrowingForTesting(
+            transactionID: transactionID
+        )
+
+        XCTAssertEqual(status.state, .completed)
+        XCTAssertEqual(status.resultCode, .succeeded)
+        XCTAssertEqual(status.detail, "orphanStateCleared")
+        XCTAssertEqual(status.responseDigestSHA256, String(repeating: "b", count: 64))
+        XCTAssertEqual(privileged.validationCount, 0)
+    }
+
+    func testRecoveryRejectsOrphanCleanupWithoutCompletedResult() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        let session = RecordingMacOneShotClientSession(responses: [
+            recoveryData(
+                transactionID: transactionID,
+                resultCode: "rolledBack",
+                verifiedOutcome: "orphanStateCleared"
+            ),
+        ])
+        let transport = PackagedMacInstallHelperTransport(
+            helperURL: URL(fileURLWithPath: "/fixed/helper"),
+            policyID: "com.example.desktop-updater.test",
+            launcher: RecordingMacOneShotProcessLauncher(session: session),
+            authenticator: RecordingEndpointAuthenticator(),
+            privilegedInstaller: RecordingPrivilegedHelperInstaller {},
+            privilegedExchange: RecordingPrivilegedXPCExchange(responses: []),
+            privilegedRegistrationAttempts: 1,
+            privilegedRegistrationDelay: {},
+            privilegedEndpointActivationAttempts: 1
+        )
+
+        XCTAssertThrowsError(
+            try transport.recoverPendingInstallThrowingForTesting(
+                transactionID: transactionID
+            )
+        )
+    }
+
+    func testQueryRejectsPreparationOrOrphanStateClaimingCompletion() {
+        let transactionID = "00000000-0000-4000-8000-000000000099"
+        for state in ["preparing", "recoveryRequired"] {
+            let session = RecordingMacOneShotClientSession(responses: [
+                statusData(
+                    transactionID: transactionID,
+                    state: state,
+                    resultCode: "completed"
+                ),
+            ])
+            let transport = PackagedMacInstallHelperTransport(
+                helperURL: URL(fileURLWithPath: "/fixed/helper"),
+                policyID: "com.example.desktop-updater.test",
+                launcher: RecordingMacOneShotProcessLauncher(session: session),
+                authenticator: RecordingEndpointAuthenticator(),
+                privilegedInstaller: RecordingPrivilegedHelperInstaller {},
+                privilegedExchange: RecordingPrivilegedXPCExchange(responses: []),
+                privilegedEndpointActivationAttempts: 1
+            )
+            XCTAssertThrowsError(
+                try transport.queryTransactionThrowingForTesting(
+                    transactionID: transactionID
+                )
+            )
+        }
+    }
+
     func testProtectedPrepareAndCommitUseInstalledAuthenticatedXPC()
         throws
     {
@@ -2045,13 +2165,17 @@ private func reservationData(transactionID: String) -> Data {
     )
 }
 
-private func recoveryData(transactionID: String) -> Data {
+private func recoveryData(
+    transactionID: String,
+    resultCode: String = "rolledBack",
+    verifiedOutcome: String = "oldTarget"
+) -> Data {
     try! JSONSerialization.data(
         withJSONObject: [
             "protocolVersion": 1,
             "transactionId": transactionID,
-            "resultCode": "rolledBack",
-            "verifiedOutcome": "oldTarget",
+            "resultCode": resultCode,
+            "verifiedOutcome": verifiedOutcome,
             "journalSha256": String(repeating: "b", count: 64),
         ],
         options: [.sortedKeys]
