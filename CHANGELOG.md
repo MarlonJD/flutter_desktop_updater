@@ -1,3 +1,20 @@
+## 3.2.7
+
+* Add `release helper-policy` for Flutter apps: generate the editable helper
+  policy, canonical JSON, and digest from the app directory without a separate
+  repository checkout. Existing policies are preserved; new policies use the
+  app bundle ID, explicit Apple Team ID, and feed-bound public release keys.
+* Make macOS installation preparation failures report a bounded phase and
+  reason. Catch missing helper integration and invalid build numbers before
+  notarized publishing, and explain malformed or stale helper policy pins.
+* Fix helper packaging when project or DerivedData paths contain spaces,
+  including universal builds. Keep exact policy digest and signer checks.
+* Support custom DMG artifact names through `macos.dmg.fileName`.
+* Isolate hosted smoke recovery receipts between runs. Rebuild and manually
+  install the outgoing app when fixing missing/incorrect helper setup, then
+  rebuild the incoming update; updating only the incoming artifact cannot
+  repair the installed host.
+
 ## 3.2.6
 
 * Fix macOS recovery rejecting authenticated helper responses for interrupted

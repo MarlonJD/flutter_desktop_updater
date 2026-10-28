@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.2.6
+  desktop_updater: ^3.2.7
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -224,8 +224,7 @@ Run this from **your Flutter app directory** after `flutter pub get`, replacing
 dart run desktop_updater:release helper-policy --team-id ABC1234567
 ```
 
-`helper-policy` is currently available on `main`; it is not included in the
-published 3.2.6 package.
+`helper-policy` is available starting with desktop_updater 3.2.7.
 
 The command reads your bundle ID from `macos/Runner/Configs/AppInfo.xcconfig`
 and public release keys from `desktop_updater.keys.json`, checking that the
