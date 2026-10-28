@@ -24,7 +24,7 @@ Do not claim the original consumer's cause is confirmed from its generic error.
 - [x] Add safe configurable DMG filenames and publishing integration tests.
 - [x] Update canonical setup, diagnostics, and publishing guidance.
 - [x] Run focused tests, formatting, analysis, and the full Linux test suite.
-- [ ] Verify the clean commit's publish dry-run and native macOS CI.
+- [x] Verify the clean commit's publish dry-run and native macOS CI.
 
 ## Work and acceptance evidence
 
@@ -87,8 +87,8 @@ Local evidence on Linux:
   warning; repeat on the clean commit.
 - Added native tests for typed diagnostics, hostile native error redaction,
   missing host metadata, and retained DMG artifact binding/mutation rejection.
-  These are pending the macOS CI lane; Linux Dart source-contract tests are
-  not evidence that Swift or Apple trust execution passed.
+  These passed on the macOS CI host as recorded below; Linux source-contract
+  checks alone were not used as native execution evidence.
 
 Commit `bc89f64` passed the clean publish dry-run with zero warnings.
 CI run `40640821371` passed Dart, documentation, and standalone CLI checks.
@@ -106,6 +106,30 @@ the new DMG fixture had one URL equality mismatch from macOS adding the
 directory trailing slash. Compare standardized file URLs, matching the existing
 ZIP fixture assertion. Artifact verification and mutation rejection succeeded.
 
+Final implementation evidence at `71f984d`:
+
+- [CI run 40642209911](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40642209911):
+  all six selected jobs passed, including the aggregate gate, macOS Native
+  Consumer, SwiftPM and CocoaPods Flutter integration, and documentation.
+- Native kit: 155 tests, zero failures; all four new preparation diagnostic
+  tests and the DMG retained-artifact verification test passed.
+- macOS 10.14 CocoaPods source-set typecheck, external SwiftPM consumer,
+  forged-request rejection, real ad hoc release trust fixtures, and native
+  runtime candidate-rejection smoke passed.
+- The initial implementation run `40640821371` also passed its Dart, Linux,
+  Windows, documentation, and four standalone CLI jobs. Its macOS failures
+  were the test issues resolved above; final production code is identical.
+- Follow-up local source-layout and documentation suite: 31 passed.
+- Final analysis: exit 0, no errors or warnings (812 informational lints).
+- Clean `71f984d` publish dry-run: zero warnings.
+
+The implementation and available verification are complete. Credential-gated
+notarized publish and SMAppService production lanes were not run. The original
+consumer's signed app upgrade remains unverified; its generic 3.2.6 report
+cannot establish whether helper setup, release keys, host metadata, or another
+preparation step failed. No package version, release tag, or pub.dev release
+was created.
+
 The public report still cannot establish the original consumer's exact cause.
 No reporter artifact, Apple credentials, or macOS host is available here.
 
@@ -119,3 +143,6 @@ delete ambiguous receipts or loosen trust policy to make an install pass.
 ## Revision history
 
 - 2026-10-28: Initial plan after investigation of the 3.2.6 follow-up report.
+- 2026-10-28: Complete after local validation and passing macOS CI; retain the
+  explicit boundary between package verification and the unavailable consumer
+  application's upgrade.
