@@ -1,126 +1,150 @@
-# Issue 82 DMG update reproduction
+# Issue 82 DMG update reproduction and helper setup
 
 ## Context and acceptance
 
-The user asks to reproduce and fix the remaining macOS update problem after
-main `e6b83f5` added bounded preparation diagnostics and publishing readiness
-checks. The reporter deleted the October 28 comment; both REST and GraphQL
-currently omit it and its direct endpoint returns 404. The completed
-install-preparation record preserves a DMG 1.0.0+1 to 1.0.0+2 failure after
-successful download/staging. The user confirms the problem involved DMG.
+The user requested investigation of the remaining macOS DMG update problem
+following main `e6b83f5`, then asked to make helper setup easier and automatic.
+The deleted runtime report cannot establish its exact cause. The subsequent
+[policy setup comment](https://github.com/MarlonJD/flutter_desktop_updater/issues/82#issuecomment-6465573496)
+and [generator-path comment](https://github.com/MarlonJD/flutter_desktop_updater/issues/82#issuecomment-6466362904)
+provide concrete build/setup failures that can be reproduced locally.
 
-The previous local notarized E2E exercised ZIP updates. Exercise the actual
-DMG mount/copy/install/relaunch path with the new diagnostics, retain failure
-evidence, fix a reproduced defect with focused regressions, and rerun that
-same path. Keep claims scoped to the isolated test app; the deleted report
-cannot establish the reporter's exact cause. No new release is requested.
+Acceptance: exercise a real notarized DMG 1-to-2 update and relaunch with the
+signed native helper, preserve failed-run evidence, and provide a packaged
+policy setup command that runs in the consuming Flutter app. Preserve unrelated
+work, existing branch, and credentials. Version remains 3.2.6; this continuation
+does not create a release, tag, issue comment, or review submission.
 
 ## Progress
 
-- [x] Read current instructions, available issue history, and new main record.
-- [x] Preserve unrelated work and fast-forward the existing main to e6b83f5.
-- [ ] Reproduce the DMG 1 to 2 update through the real signed native helper.
-- [x] Reproduce the new comment's helper policy setup error and add regressions.
-- [x] Review the fix independently and run the relevant local validation ladder.
-- [ ] Verify the corrected notarized DMG update and cleanup task fixtures.
-- [ ] Record evidence and complete the plan with remaining limitations.
+- [x] Read repository guidance, issue history, and previous verification records.
+- [x] Reproduce and fix malformed/stale policy-pin diagnostics.
+- [x] Verify that correction locally and at exact commit `4511b7e` in CI.
+- [x] Resolve existing notarization profile access without changing credentials.
+- [x] Run the actual notarized DMG 1-to-2 update and verify relaunch/trust.
+- [x] Isolate hosted smoke recovery receipts and preserve the foreign receipt.
+- [x] Replace the repository-only Flutter setup recipe with a packaged command.
+- [x] Verify consumer invocation, signed helper requirements, and path handling.
+- [x] Review independently and run the local validation ladder.
+- [ ] Verify CI for the final implementation commit.
+- [ ] Complete the record and remove remaining task-owned temporary exports.
 
-## Surprises & Discoveries
+## Findings and decisions
 
-- The latest reporter comment is deleted, as confirmed by the user. No new
-  consumer artifacts or detailed phase/reason output are available.
-- The prior notarized 3.2.6 test exercised `app-update` (ZIP); this task must
-  exercise `dmg-update` rather than treating that ZIP success as DMG evidence.
-- The new [reporter comment](https://github.com/MarlonJD/flutter_desktop_updater/issues/82#issuecomment-6465573496)
-  shows a build-time setup failure: the digest remains the literal
-  `REPLACE_WITH_GENERATED_SHA256`, and `allowedApplicationSigner` uses the
-  helper identifier instead of `applicationPackageId`. The first necessarily
-  fails the exact digest check; the second rejects the signed application.
-  This does not establish the cause of the deleted DMG runtime report.
-- The fresh DMG fixture built and passed strict Developer ID signature checks,
-  but the first notarization stopped because the previously used Keychain
-  profile was unavailable. Default and explicit login-Keychain checks failed;
-  the repository's CI profile name was also unavailable locally. Broader
-  Keychain metadata/GUI discovery was rejected by automatic approval review.
-  The user was asked for the exact existing profile name, without secrets.
+1. The original policy setup snapshot contained a placeholder digest and a
+   helper identifier in the application signing requirement. Exact digest
+   comparison and native signer authorization correctly reject these inputs.
+   The reporter later corrected the application identifier in the comment;
+   do not describe that old typo as the current report.
+2. The generator-path error occurs because `tool/generate_native_install_helper_policy.dart`
+   belongs to this repository, not the consumer app. `flutter pub get` does
+   not copy it into the consumer's `tool/`. The initial documentation-only
+   two-directory recipe was executed successfully, but the user's follow-up
+   correctly identified unnecessary setup work. It is superseded for Flutter
+   consumers by `dart run desktop_updater:release helper-policy`.
+3. `general-notary` works with default Data Protection Keychain resolution.
+   All three successful Apple submissions below omitted `--keychain`.
+   Explicit login-Keychain lookup searches a different store. Earlier default
+   lookup failures remain historical observations; their exact cause was not
+   established. No profile was recreated and no credentials were exported.
+4. The first full DMG run passed app/DMG notarization and staging, then failed
+   before native handoff with `A pending install must be recovered before
+   another install`. The hosted smoke driver had read an August receipt for a
+   different sample app. Give each invocation its own recovery-store path;
+   retain the real pending-install guard and preserve the unrelated receipt.
+5. Fresh helper policies reuse the feed-bound public release-key profile and
+   literal bundle ID, require an explicit Team ID, and generate distinct app
+   and helper signing requirements. Defaults permit bundle replacement in
+   writable `/Applications`; elevated and PKG authority must be reviewed in
+   the source. Existing source bytes/custom authority remain unchanged.
+   Canonical JSON and digest are validated together and the digest is written
+   last. Build-time pin comparison remains independent of generated JSON.
+6. The shared strict policy validator and UTF-8 canonicalizer moved from
+   repository tools into `lib/src/native_install_helper/`; fixture generation
+   remains in `tool/`. Existing fixture bytes and digests are unchanged.
+7. Real consumer verification with spaces in project/DerivedData paths exposed
+   an existing unquoted architecture-output list in the embed script. Quoted
+   positional arguments now preserve paths for both `cp` and universal `lipo`.
+   No native Swift runtime or install authorization was changed.
+8. Independent read-only reviews found no blocking issues in the final policy
+   command, receipt isolation, documentation, or shell quoting. The suggested
+   explicit-package-ID regeneration note and consumer invocation check were
+   incorporated. Only the main agent edited source and ran GUI/signing tests.
 
-## Decision Log
+## Verification
 
-- 2026-10-28: use isolated exports and a unique test app/bundle ID, reusing
-  the authorized local Developer ID identity and existing notary profile.
-  Preserve the user's installed apps, current branch, and unrelated plans.
-- 2026-10-28: run read-only DMG contract investigation independently while
-  the main agent builds and runs the notarized fixture. Only the main agent
-  writes source or runs GUI tests.
-- 2026-10-28: address the concrete new setup error first. Read the generator's
-  reviewed `.sha256` input from the build phase; do not derive the expected
-  digest from the policy during a build. Preserve exact digest comparison and
-  native signature authorization. Explain the distinct app/helper requirements
-  without inventing a partial parser for Apple's requirement language.
-- 2026-10-28: read-only DMG review identified a possible custom bundle-name
-  mismatch and staging trust-check asymmetry. Neither was reproduced or tied
-  to the new build failure; do not change DMG runtime behavior speculatively.
+Local evidence is retained under `reports/releases/issue82-dmg-2026-10-28/`.
+The app and artifact evidence are separate from setup-command signing checks.
 
-## Verification and recovery
+### Earlier policy preflight correction
 
-Evidence lives in `reports/releases/issue82-dmg-2026-10-28/`. Record the base
-commit and package source hashes for exported hosts. Use a unique `/Applications`
-fixture, verify ownership before replacing or removing it, preserve trust and
-transaction checks, and stop only task-owned processes. Keep SDK/cache writes,
-GUI tests, and authenticated GitHub commands outside the sandbox. Authenticated
-GitHub CLI calls unset GH_TOKEN and GITHUB_TOKEN.
+- Seven original malformed-pin cases failed before the correction; the final
+  suite also covers unset pins and ad hoc policy selection.
+- Full suite: 1,022 passed, four skipped. Format, analysis (no errors/warnings),
+  version consistency, shell syntax, and committed publish dry-run passed.
+- Exact code commit: `4511b7e94dbc0a91189169c9cbb40813b1698051`.
+- [CI 40667815377](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40667815377)
+  passed: Dart Package, docs, macOS Native Consumer, SwiftPM Flutter, CocoaPods
+  Flutter, and aggregate gate. Credential-gated jobs were skipped.
 
-Start with focused Swift/Dart regressions for the observed cause, then run
-format, analysis, full relevant suites, version check, documentation contracts,
-and publish dry-run as applicable. The product remains version 3.2.6; no tag,
-publication, or issue comment is part of this new request. Missing reporter
-artifacts limit attribution, not local reproduction work.
+### Actual notarized DMG update
 
-## Outcomes & Retrospective
+- Source export: `52b4a62fdcfe82c941db1ec64b2a1d6ddd3fa1e7`; source hashes and
+  fixture-only namespace changes are recorded in `candidate-source.json`.
+- Isolated app: `/Applications/Desktop Updater DMG82 Smoke.app`, bundle ID
+  `com.example.desktopUpdaterDmg82`. Outgoing `1.0.0+1`, incoming `1.0.0+2`.
+- Both application builds and the DMG received Apple `Accepted` results and
+  passed stapling. The mounted DMG app passed strict signature and trust checks.
+- Signed DMG SHA-256:
+  `7ca4afe6f4c61ed3ec57e49138c578974b7c7c2b3f30d378ed79cf5324403f81`.
+  The retry reused this exact artifact with the isolated recovery-store driver.
+- `dmg-isolated-retry.json`: exit 0, installed build changed 1 to 2, foreign
+  receipt preserved. Diagnostics reached checking, downloading, installing,
+  and relaunch. The outgoing process exited 0; the relaunched app wrote its
+  marker and was observed running before cleanup.
+- Final installed app and DMG strict signatures, Gatekeeper assessment, and
+  stapled tickets passed (`dmg-final-verification.json`, `dmg-final-trust.log`).
+- The installed fixture and its process were removed; no task DMG was mounted.
+  `dmg-evidence/` retains the exact DMG, signed metadata, diagnostics, and local
+  pending receipt. The old unrelated receipt remains byte-for-byte intact.
+- This run establishes DMG install/relaunch for this fixture. It does not
+  establish the reporter's app behavior or recovery on a subsequent update.
 
-The setup correction is verified locally; notarized DMG E2E remains blocked.
+### Packaged helper setup and final local checks
 
-- Seven original regression cases failed against the old embed script, which
-  returned only a generic missing/mismatched digest error. The final coverage
-  also exercises unset pins and ad hoc policy selection boundaries.
-- Full `flutter test --no-pub --reporter expanded`: 1,022 passed, four skipped.
-- `flutter analyze --no-pub --no-fatal-infos`: exit 0, no errors or warnings.
-- `dart format --output=none --set-exit-if-changed .`: 289 files, no changes.
-- `dart run tool/version_check.dart`: all native versions match 3.2.6.
-- `/bin/sh -n macos/install_helper/embed_install_helper.sh` and
-  `git diff --check`: passed.
-- Executed the actual README build-phase snippet with newly generated canonical
-  JSON and `.sha256`, including its final newline, in an isolated Developer ID
-  signed application. Helper embedding and strict app/helper verification passed.
-  Applying the helper's requirement to the app failed with codesign exit 3,
-  confirming why the reporter's swapped identifier cannot authorize the app.
-- Signed test evidence: `policy-signed-setup-final.log` and
-  `policy-signed-setup.json` under the local report directory. These are signing
-  checks, not notarization or update/relaunch evidence.
-- Fix commit `4511b7e94dbc0a91189169c9cbb40813b1698051` was pushed normally to
-  the existing main branch. Its committed `dart pub publish --dry-run` passed
-  with zero warnings. No package version, tag, or release was created.
-- [CI run 40667815377](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40667815377)
-  passed at that exact commit: Dart Package, documentation contracts, macOS
-  Native Consumer, macOS Flutter SwiftPM, macOS Flutter CocoaPods, and the
-  aggregate gate. Credential-gated notarization and privileged-helper jobs were
-  skipped and are not counted as passes.
-- A documentation search found the same default-resolution profile recipe in
-  `docs/publishing.md` and the prior October 14/27 verification records, with
-  no alternative stored Keychain path. Repeating the documented command with
-  and without the explicit login-Keychain option, including an interactive
-  terminal, returned exit 69. No credentials were read or changed.
-- No task app was installed in `/Applications`, and no task-owned GUI, helper,
-  notarization, or test processes remain. The isolated signed fixtures are
-  retained under the task's temporary directory for the pending DMG rerun.
-  Unrelated file contents and the user's separate index edits were preserved.
+- `helper-policy-before.log`: ten consumer-command cases failed before the
+  command existed. Focused policy/native-contract suites subsequently passed.
+- Full `flutter test --no-pub --reporter expanded`: 1,037 passed, four skipped.
+- Final focused helper/setup/harness tests: 35 passed after the path fix.
+- `dart format --output=none --set-exit-if-changed .`: 294 files, unchanged.
+- `flutter analyze --no-pub --no-fatal-infos`: exit 0; no errors or warnings.
+- Native helper contract and policy fixture checks: unchanged.
+- Version check: all native SDK versions still match 3.2.6.
+- Shell syntax and `git diff --check`: passed.
+- `helper-policy-packaged.json`: the exact published-style invocation ran from
+  a separate app with a package containing `bin/` and `lib/` but no `tool/`.
+  Paths contained spaces; repeat runs preserved all three generated files.
+- Executed the README build phase with the generated policy and digest. Actual
+  Developer ID single-arm64 and universal arm64/x86_64 helpers built and passed
+  strict app/helper signing requirements. Using the helper requirement for the
+  app failed; changing JSON while retaining the pin failed before compilation.
+- The packaged-command fixture was signed but was not separately notarized.
+  The preceding DMG run is independently recorded notarization evidence.
+- The first dry-run reported only uncommitted package files; repeat after the
+  source commit before handoff. No publication is authorized by that check.
 
-Pending: obtain the exact existing notary profile name, rerun the real DMG
-`1.0.0+1` to `1.0.0+2` update, and retain its result. The historical intermittent
-restart failure and Flutter-runner timeout remain separate unresolved evidence;
-this setup fix does not explain them. The reporter's actual app and original
-post-update file-selection scenario remain unverified.
+## Remaining boundaries
+
+The reporter's actual application, deleted DMG report, and original post-update
+file-selection scenario remain unverified. The earlier intermittent restart
+failure and Flutter-runner timeout are separate historical evidence; these
+passes do not establish their causes. The command automates policy generation;
+Runner still needs its documented helper build phase and signing configuration.
+New command availability is explicitly marked as main-only, absent from pub.dev
+3.2.6. No package release, Git tag, or GitHub issue comment was created here.
 
 ## Revision history
 
-- 2026-10-28: created for the user-requested DMG reproduction and fix.
+- 2026-10-28: opened for DMG reproduction and the policy setup report.
+- 2026-10-28: resolved profile lookup, verified notarized DMG, and added the
+  consumer CLI after the user requested simpler automatic setup.

@@ -68,6 +68,8 @@ Future<void> main(List<String> args) async {
       "DESKTOP_UPDATER_APP_ARCHIVE_URL": appArchiveUrl.trim(),
       "DESKTOP_UPDATER_HOSTED_SMOKE": "1",
       "DESKTOP_UPDATER_HOSTED_SMOKE_MARKER": markerPath,
+      "DESKTOP_UPDATER_RECOVERY_STORE_PATH":
+          _join(tempRoot.path, "pending-install.json"),
       if (Platform.isMacOS && relaunch)
         "DESKTOP_UPDATER_SMOKE_RELAUNCH_MARKER": relaunchMarkerPath,
       if (Platform.environment["DESKTOP_UPDATER_SMOKE_PACKAGE_ID"]
@@ -114,7 +116,7 @@ Future<void> main(List<String> args) async {
     const Duration(seconds: 45),
   );
   await _waitForFileText(markerPath, "installing", const Duration(seconds: 45));
-  stdout.writeln("Hosted app scheduled native installation and is closing...");
+  stdout.writeln("Hosted app reached the install step; waiting for exit...");
 
   final exitCode = await process.exitCode.timeout(
     const Duration(seconds: 45),

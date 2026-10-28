@@ -2,6 +2,7 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/doctor_command.dart";
+import "package:desktop_updater/src/release_cli/helper_policy_command.dart";
 import "package:desktop_updater/src/release_cli/keys/key_commands.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
 import "package:desktop_updater/src/release_cli/publish_command.dart";
@@ -20,6 +21,7 @@ Future<int> runReleaseCommand(
     ..addFlag("help", abbr: "h", negatable: false)
     ..addCommand("doctor", buildDoctorParser())
     ..addCommand("keygen", buildKeygenParser())
+    ..addCommand("helper-policy", buildHelperPolicyParser())
     ..addCommand("keys", buildKeysParser())
     ..addCommand("publish", buildPublishParser())
     ..addCommand("sign", buildSignParser())
@@ -53,6 +55,12 @@ Future<int> runReleaseCommand(
           projectRoot: projectRoot ?? Directory.current,
           output: out,
           keyStore: keyStore,
+        );
+      case "helper-policy":
+        return await runHelperPolicyCommand(
+          command,
+          projectRoot: projectRoot ?? Directory.current,
+          output: out,
         );
       case "keys":
         return await runKeysCommand(
@@ -94,6 +102,7 @@ Publish and validate desktop updater releases.
 Usage:
   dart run desktop_updater:release doctor --platform macos
   dart run desktop_updater:release keygen
+  dart run desktop_updater:release helper-policy --team-id ABC1234567
   dart run desktop_updater:release publish --platform macos
   dart run desktop_updater:release sign --release dist/desktop_updater/releases/stable/3.1.0/build-310/macos/release.json
   dart run desktop_updater:release validate --manifest dist/desktop_updater/.desktop_updater_publish.json

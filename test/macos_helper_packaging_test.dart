@@ -70,7 +70,7 @@ void main() {
               result.stderr, contains("64 lowercase hexadecimal characters"));
           expect(
             result.stderr,
-            contains("tool/generate_native_install_helper_policy.dart"),
+            contains("dart run desktop_updater:release helper-policy"),
           );
           expect(await appInfo.readAsBytes(), before);
           expect(

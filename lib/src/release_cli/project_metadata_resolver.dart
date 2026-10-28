@@ -126,7 +126,7 @@ Future<String> _resolveAppName({
   }
 
   if (platform == "macos") {
-    final xcconfig = await _readMacosAppInfo(projectRoot);
+    final xcconfig = await readMacosAppInfo(projectRoot);
     final productName = xcconfig["PRODUCT_NAME"];
     return _platformAppName(
       platform,
@@ -151,7 +151,7 @@ Future<String> _resolvePackageId({
   }
 
   if (platform == "macos") {
-    final xcconfig = await _readMacosAppInfo(projectRoot);
+    final xcconfig = await readMacosAppInfo(projectRoot);
     final bundleId = xcconfig["PRODUCT_BUNDLE_IDENTIFIER"];
     if (bundleId != null && bundleId.isNotEmpty) {
       return bundleId;
@@ -171,7 +171,8 @@ Future<String> _resolvePackageId({
   return pubspecName;
 }
 
-Future<Map<String, String>> _readMacosAppInfo(Directory projectRoot) async {
+/// Reads literal macOS app settings without inventing missing values.
+Future<Map<String, String>> readMacosAppInfo(Directory projectRoot) async {
   final file = File(
     path.join(
       projectRoot.path,

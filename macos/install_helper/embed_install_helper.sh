@@ -40,11 +40,11 @@ fi
 
 case "$expected_policy_sha256" in
   ''|*[!0-9a-f]*)
-    fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from tool/generate_native_install_helper_policy.dart"
+    fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from dart run desktop_updater:release helper-policy"
     ;;
 esac
 [ "${#expected_policy_sha256}" -eq 64 ] || \
-  fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from tool/generate_native_install_helper_policy.dart"
+  fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from dart run desktop_updater:release helper-policy"
 
 for required_file in "$app_info" "$info_template" "$sealed_policy"; do
   [ -f "$required_file" ] || fail "required metadata is missing: $required_file"
@@ -81,7 +81,7 @@ host_application_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app
 
 policy_sha256=$(/usr/bin/shasum -a 256 "$canonical_policy" | /usr/bin/awk '{print $1}')
 [ "$policy_sha256" = "$expected_policy_sha256" ] || \
-  fail "sealed policy digest does not match the canonical packaging input; regenerate the canonical JSON and .sha256 together with tool/generate_native_install_helper_policy.dart, then update the pinned build inputs"
+  fail "sealed policy digest does not match the canonical packaging input; regenerate the canonical JSON and .sha256 together with dart run desktop_updater:release helper-policy, then update the pinned build inputs"
 policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 
 /usr/bin/plutil -replace CFBundleIdentifier -string "$helper_id" "$helper_info"
@@ -108,8 +108,9 @@ helper_info_sha256=$(/usr/bin/shasum -a 256 "$helper_info" | /usr/bin/awk '{prin
 helper_launchd_sha256=$(/usr/bin/shasum -a 256 "$helper_launchd" | /usr/bin/awk '{print $1}')
 
 archs=${ARCHS:-$(/usr/bin/uname -m)}
-arch_count=0
-arch_outputs=""
+# Keep each architecture output as one argument even when DerivedData or the
+# application project path contains spaces.
+set --
 for arch in $archs; do
   scratch="$work/build-$arch-$helper_info_sha256-$helper_launchd_sha256"
   DESKTOP_UPDATER_HELPER_INFO_PLIST="$helper_info" \
@@ -120,15 +121,13 @@ for arch in $archs; do
       --arch "$arch" --scratch-path "$scratch" --show-bin-path)
   arch_helper="$work/DesktopUpdaterInstallHelper.$arch"
   cp "$bin_path/DesktopUpdaterInstallHelper" "$arch_helper"
-  arch_outputs="$arch_outputs $arch_helper"
-  arch_count=$((arch_count + 1))
+  set -- "$@" "$arch_helper"
 done
 
-if [ "$arch_count" -eq 1 ]; then
-  cp ${arch_outputs# } "$unsigned_helper"
+if [ "$#" -eq 1 ]; then
+  cp "$1" "$unsigned_helper"
 else
-  # shellcheck disable=SC2086
-  /usr/bin/lipo -create $arch_outputs -output "$unsigned_helper"
+  /usr/bin/lipo -create "$@" -output "$unsigned_helper"
 fi
 
 cp "$unsigned_helper" "$signed_helper"

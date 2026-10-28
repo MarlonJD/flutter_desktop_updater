@@ -211,11 +211,25 @@ require a Flutter engine.
 
 ### macOS helper policy configuration
 
-Use a checkout of this repository matching the package version in your app.
-Copy
+For Flutter apps, run the packaged command from the app root:
+
+```sh
+dart run desktop_updater:release helper-policy --team-id ABC1234567
+```
+
+Replace the Team ID. The [README setup](../README.md#2-prepare-the-helper-policy-and-signing)
+explains project discovery, the public release-key profile, file preservation,
+and current package availability. No separate repository checkout is needed.
+After editing the app-owned `macos/Runner/DesktopUpdaterHelperPolicy.source.json`,
+run `dart run desktop_updater:release helper-policy` again to regenerate its
+canonical `.json` and `.sha256` outputs. This command defaults to bundle
+replacement in writable `/Applications`; additional install authority must be
+configured explicitly in the source.
+
+For a standalone native host, use a checkout matching your SDK revision. Copy
+your customized policy or the complete
 [`example/macos/Runner/DesktopUpdaterHelperPolicy.json`](../example/macos/Runner/DesktopUpdaterHelperPolicy.json)
-to your app as `macos/Runner/DesktopUpdaterHelperPolicy.source.json` and edit
-the source policy before generating the sealed output:
+template to an app-owned source file, then edit all app-specific fields:
 
 | Field | App-specific value |
 | --- | --- |
@@ -245,17 +259,21 @@ defines the complete field and strategy contract.
 The example policy allows installs under `/Applications`. Run update tests from
 an app installed there, or configure the policy for your supported test location.
 
-From the package repository checkout, generate canonical JSON and its digest
-(replace the absolute app paths and bundle ID):
+For a standalone native host, run this from the SDK repository checkout,
+using absolute paths into your application project:
 
 ```sh
 flutter pub get
 dart run tool/generate_native_install_helper_policy.dart \
-  --config /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.source.json \
+  --config /path/to/your_app/DesktopUpdaterHelperPolicy.source.json \
   --expected-package-id com.example.myApp \
-  --output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.json \
-  --digest-output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.sha256
+  --output /path/to/your_app/DesktopUpdaterHelperPolicy.json \
+  --digest-output /path/to/your_app/DesktopUpdaterHelperPolicy.sha256
 ```
+
+The repository generator is intended for SDK/fixture work. A Flutter consumer
+should use the packaged `release helper-policy` command above from its own app
+directory. Keep each continuation `\` at the end of its line without spaces.
 
 Use the generated JSON for `DESKTOP_UPDATER_SEALED_POLICY_PATH`. Read the
 generated digest file in the Runner build phase as shown in the README:

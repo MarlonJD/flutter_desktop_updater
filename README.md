@@ -217,48 +217,50 @@ override the corresponding pubspec values.
 
 ### 2. Prepare the helper policy and signing
 
-Create an app-owned `macos/Runner/DesktopUpdaterHelperPolicy.json` and its
-canonical SHA-256 using the
-[macOS helper policy recipe](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md#macos-helper-policy-configuration).
-It binds your bundle ID, helper service ID, Apple signing requirements, allowed
-install locations and strategies, and the release public keys pinned in the
-controller. Replace the example app's identifiers, Team ID, and release keys
-with your own values.
-
-The two signing requirements have different identifiers:
-
-```json
-"allowedApplicationSigner": {
-  "kind": "appleDesignatedRequirement",
-  "value": "identifier com.example.myApp and anchor apple generic and certificate leaf[subject.OU] = \"YOURTEAMID\""
-},
-"allowedHelperSigner": {
-  "kind": "appleDesignatedRequirement",
-  "value": "identifier com.example.myApp.helper and anchor apple generic and certificate leaf[subject.OU] = \"YOURTEAMID\""
-}
-```
-
-Use your `applicationPackageId` in the application requirement and your
-`helperServiceId` in the helper requirement. Putting the helper ID in both
-prevents the helper from authorizing your app. Replace `YOURTEAMID` with your
-Apple Team ID in both requirements.
-
-From a package repository checkout matching your app's dependency, generate
-the policy and its digest together after editing the source JSON:
+Run this from **your Flutter app directory** after `flutter pub get`, replacing
+`ABC1234567` with your Apple Team ID:
 
 ```sh
-flutter pub get
-dart run tool/generate_native_install_helper_policy.dart \
-  --config /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.source.json \
-  --expected-package-id com.example.myApp \
-  --output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.json \
-  --digest-output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.sha256
+dart run desktop_updater:release helper-policy --team-id ABC1234567
 ```
 
-Replace the paths and bundle ID with your app's values. Commit the generated
-JSON and `.sha256` together. Do not edit the generated JSON or calculate its
-expected hash in the build phase: regenerate both files from the reviewed
-source policy whenever it changes.
+`helper-policy` is currently available on `main`; it is not included in the
+published 3.2.6 package.
+
+The command reads your bundle ID from `macos/Runner/Configs/AppInfo.xcconfig`
+and public release keys from `desktop_updater.keys.json`, checking that the
+profile matches your configured update feed. If the bundle ID uses an Xcode
+expression or another configuration, pass `--package-id com.example.myApp`.
+Prepare the public key profile with the existing [release key setup](#quick-start)
+first; this command does not create or read private keys.
+
+It creates these files in `macos/Runner`:
+
+- `DesktopUpdaterHelperPolicy.source.json`: the editable policy.
+- `DesktopUpdaterHelperPolicy.json`: canonical JSON used by the build.
+- `DesktopUpdaterHelperPolicy.sha256`: the generated digest used by the build.
+
+An existing source file is preserved exactly. If only an existing policy JSON
+is present, the command adopts it as the source instead of replacing its
+settings. For a new policy, the app requirement uses your bundle ID and the
+helper requirement uses `<bundle-id>.helper`; both pin your explicit Team ID.
+Use `--helper-service-id` during first setup if your helper has another ID.
+
+New policies allow ZIP/DMG bundle replacement in writable `/Applications`.
+Privileged installs, PKG installers, other install roots, custom signing
+requirements, and release key rotation require reviewing the source policy.
+The [macOS helper policy reference](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md#macos-helper-policy-configuration)
+explains those fields. After editing the source, regenerate the pair:
+
+```sh
+dart run desktop_updater:release helper-policy
+```
+
+If initial setup needed `--package-id`, supply the same option when regenerating.
+
+Review and commit all three files with your app. The controller must pin the
+same release public keys. Do not calculate the expected digest from the policy
+inside the build phase; consume the generated `.sha256` file as shown below.
 
 Configure Runner's signing identity in Xcode. The embed script uses
 `EXPANDED_CODE_SIGN_IDENTITY` (falling back to `CODE_SIGN_IDENTITY`) to sign the
