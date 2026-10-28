@@ -67,7 +67,15 @@ void main() {
               "sanitized message",
               "Unable to prepare update installation.",
             )
-            .having((error) => error.details, "sanitized details", isNull)
+            .having(
+            (error) => error.details,
+            "bounded preparation details",
+            const {
+              "phase": "stageVerification",
+              "reason": "stageVerificationFailed",
+              "action": "verifyReleaseKeysAndRedownload",
+            },
+          )
         : Platform.isWindows || Platform.isLinux
             // The forged map intentionally omits the complete v3 payload.
             // Windows and Linux must reject it before any install binding.

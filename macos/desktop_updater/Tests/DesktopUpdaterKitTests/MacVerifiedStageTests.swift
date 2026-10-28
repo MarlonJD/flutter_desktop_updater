@@ -231,7 +231,14 @@ private struct SignedStageFixture {
         keyID: String,
         signature: String
     ) -> [String: Any] {
-        [
+        var install: [String: Any] = ["strategy": "wholeBundleReplace"]
+        if artifactKind == "dmg" {
+            install["macosDmg"] = [
+                "appBundleName": "Example.app",
+                "verifyPrimarySignature": true,
+            ] as [String: Any]
+        }
+        return [
             "schemaVersion": 3,
             "packageId": packageID,
             "appName": "Example",
@@ -245,11 +252,7 @@ private struct SignedStageFixture {
                 "sha256": artifactSHA256,
                 "length": artifactLength,
             ],
-            "install": artifactKind == "dmg"
-                ? ["strategy": "wholeBundleReplace", "macosDmg": [
-                    "appBundleName": "Example.app", "verifyPrimarySignature": true,
-                ]] as [String: Any]
-                : ["strategy": "wholeBundleReplace"],
+            "install": install,
             "signature": [
                 "algorithm": "ed25519",
                 "publicKeyId": keyID,

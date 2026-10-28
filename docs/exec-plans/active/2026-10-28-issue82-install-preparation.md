@@ -90,6 +90,15 @@ Local evidence on Linux:
   These are pending the macOS CI lane; Linux Dart source-contract tests are
   not evidence that Swift or Apple trust execution passed.
 
+Commit `bc89f64` passed the clean publish dry-run with zero warnings.
+CI run `40640821371` passed Dart, documentation, and standalone CLI checks.
+Both macOS integrations compiled, then exposed an outdated integration-test
+expectation (`details: null`); the bridge correctly rejected the forged request
+with bounded stage-verification details. Update that expectation to the exact
+safe map. The native test build also exposed ambiguous Swift type inference in
+the new DMG fixture's heterogeneous conditional dictionary; use an explicitly
+typed install dictionary. Production code remains unchanged in this follow-up.
+
 The public report still cannot establish the original consumer's exact cause.
 No reporter artifact, Apple credentials, or macOS host is available here.
 
