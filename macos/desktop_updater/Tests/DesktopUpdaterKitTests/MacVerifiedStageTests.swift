@@ -104,7 +104,10 @@ final class MacVerifiedStageTests: XCTestCase {
         let verified = try fixture.load()
         XCTAssertEqual(verified.artifactKind, "dmg")
         XCTAssertEqual(fixture.artifactURL.lastPathComponent, "artifact.dmg")
-        XCTAssertEqual(verified.stagedPath, fixture.stagedApp)
+        XCTAssertEqual(
+            verified.stagedPath.standardizedFileURL,
+            fixture.stagedApp.standardizedFileURL
+        )
         try Data("changed dmg".utf8).write(to: fixture.artifactURL)
         XCTAssertThrowsError(try fixture.load())
     }

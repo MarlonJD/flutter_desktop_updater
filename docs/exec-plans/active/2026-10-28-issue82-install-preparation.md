@@ -99,6 +99,13 @@ safe map. The native test build also exposed ambiguous Swift type inference in
 the new DMG fixture's heterogeneous conditional dictionary; use an explicitly
 typed install dictionary. Production code remains unchanged in this follow-up.
 
+CI run `40641495512` on `6338591` passed both macOS Flutter integration lanes,
+including forged-request rejection and real ad hoc release trust fixtures.
+The native kit ran 155 tests: all diagnostics and host-metadata tests passed;
+the new DMG fixture had one URL equality mismatch from macOS adding the
+directory trailing slash. Compare standardized file URLs, matching the existing
+ZIP fixture assertion. Artifact verification and mutation rejection succeeded.
+
 The public report still cannot establish the original consumer's exact cause.
 No reporter artifact, Apple credentials, or macOS host is available here.
 
