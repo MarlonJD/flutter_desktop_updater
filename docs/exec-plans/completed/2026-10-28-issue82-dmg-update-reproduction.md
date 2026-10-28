@@ -26,8 +26,9 @@ does not create a release, tag, issue comment, or review submission.
 - [x] Replace the repository-only Flutter setup recipe with a packaged command.
 - [x] Verify consumer invocation, signed helper requirements, and path handling.
 - [x] Review independently and run the local validation ladder.
-- [ ] Verify CI for the final implementation commit.
-- [ ] Complete the record and remove remaining task-owned temporary exports.
+- [x] Verify CI for the final implementation commit.
+- [x] Remove task-owned temporary exports and preserve diagnostic artifacts.
+- [x] Complete the record with the final CI result.
 
 ## Findings and decisions
 
@@ -130,8 +131,25 @@ The app and artifact evidence are separate from setup-command signing checks.
   app failed; changing JSON while retaining the pin failed before compilation.
 - The packaged-command fixture was signed but was not separately notarized.
   The preceding DMG run is independently recorded notarization evidence.
-- The first dry-run reported only uncommitted package files; repeat after the
-  source commit before handoff. No publication is authorized by that check.
+- Committed `dart pub publish --dry-run`: zero warnings, 1 MB compressed
+  package. No version, tag, or publication changed.
+- Implementation commit `cdbd409cec2af942ddd80408d82f51c676527c14` was pushed
+  normally to existing main. [CI 40677620796](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40677620796)
+  passed at that exact commit: Dart Package, documentation contracts, macOS
+  Native Consumer, macOS Flutter SwiftPM, macOS Flutter CocoaPods, Windows,
+  Linux, all four standalone CLI candidates, and Selective CI gate. The
+  credential-gated notarization and privileged-helper jobs were skipped and
+  are not counted as passes. Detailed job/step evidence: `ci-cdbd409.json`.
+- `cleanup-final.json`: task-owned installed app, temporary exports, staging
+  directories, and processes removed. Exact signed DMG and bounded diagnostics
+  retained under the local report directory; unrelated receipt and work preserved.
+
+## Outcomes
+
+The DMG install/relaunch fixture and the simplified consumer setup are verified
+locally; the implementation commit passed CI. Both reported setup failures and
+the independently reproduced path-with-spaces packaging defect are addressed.
+The separate reporter/runtime limitations below remain explicit.
 
 ## Remaining boundaries
 
