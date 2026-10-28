@@ -230,7 +230,13 @@ the source policy before generating the sealed output:
 For example, an application signer requirement can be
 `identifier com.example.myApp and anchor apple generic and certificate leaf[subject.OU] = "YOURTEAMID"`.
 Use the helper identifier in the helper requirement and substitute your actual
-Team ID in both. The example policy's keys and signing identities belong to the
+Team ID in both. For that app, the helper requirement would be
+`identifier com.example.myApp.helper and anchor apple generic and certificate leaf[subject.OU] = "YOURTEAMID"`.
+Using `helperServiceId` in `allowedApplicationSigner` rejects the application,
+even when its signature and the policy digest are valid. The generator checks
+the policy structure; actual Apple requirement evaluation happens during signing
+verification and native authorization.
+The example policy's keys and signing identities belong to the
 repository's smoke app; they are not defaults for your application. Keep the
 policy's `policyVersion` and `minimumHelperProtocolVersion` fields as well.
 The [policy schema](../schemas/native-install-helper-policy-v1.schema.json)
@@ -251,10 +257,19 @@ dart run tool/generate_native_install_helper_policy.dart \
   --digest-output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.sha256
 ```
 
-Use the generated JSON for `DESKTOP_UPDATER_SEALED_POLICY_PATH` and copy the
-printed digest (also written to the `.sha256` file) into
-`DESKTOP_UPDATER_SEALED_POLICY_SHA256` in the Runner build phase. Commit these
-public policy inputs with the app and regenerate both after policy changes.
+Use the generated JSON for `DESKTOP_UPDATER_SEALED_POLICY_PATH`. Read the
+generated digest file in the Runner build phase as shown in the README:
+
+```sh
+DESKTOP_UPDATER_SEALED_POLICY_SHA256="$(cat "${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.sha256")"
+export DESKTOP_UPDATER_SEALED_POLICY_SHA256
+```
+
+Commit these public policy inputs with the app and regenerate both after policy
+changes. The expected digest is a reviewed build input; never derive it from the
+JSON in the build phase. An empty value, placeholder, or malformed digest fails
+preflight before helper compilation. A valid 64-character digest that does not
+match means the JSON and digest are not the same generated pair.
 Hashing a pretty-printed JSON file is not equivalent: the embed script checks
 the canonical bytes, excluding the generator's final newline.
 

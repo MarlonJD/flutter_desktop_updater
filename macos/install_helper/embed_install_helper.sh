@@ -24,7 +24,7 @@ esac
 app_info="$app_bundle/Contents/Info.plist"
 info_template=${DESKTOP_UPDATER_HELPER_INFO_TEMPLATE:?DESKTOP_UPDATER_HELPER_INFO_TEMPLATE is required}
 sealed_policy=${DESKTOP_UPDATER_SEALED_POLICY_PATH:?DESKTOP_UPDATER_SEALED_POLICY_PATH is required}
-expected_policy_sha256=${DESKTOP_UPDATER_SEALED_POLICY_SHA256:?DESKTOP_UPDATER_SEALED_POLICY_SHA256 is required}
+expected_policy_sha256=${DESKTOP_UPDATER_SEALED_POLICY_SHA256:-}
 code_sign_identity=${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}
 [ -n "$code_sign_identity" ] || fail "CODE_SIGN_IDENTITY is required"
 if [ "$code_sign_identity" = "-" ]; then
@@ -37,6 +37,14 @@ if [ "$code_sign_identity" = "-" ]; then
     expected_policy_sha256=$ad_hoc_policy_sha256
   fi
 fi
+
+case "$expected_policy_sha256" in
+  ''|*[!0-9a-f]*)
+    fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from tool/generate_native_install_helper_policy.dart"
+    ;;
+esac
+[ "${#expected_policy_sha256}" -eq 64 ] || \
+  fail "sealed policy SHA-256 must contain exactly 64 lowercase hexadecimal characters; use the .sha256 output from tool/generate_native_install_helper_policy.dart"
 
 for required_file in "$app_info" "$info_template" "$sealed_policy"; do
   [ -f "$required_file" ] || fail "required metadata is missing: $required_file"
@@ -73,7 +81,7 @@ host_application_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app
 
 policy_sha256=$(/usr/bin/shasum -a 256 "$canonical_policy" | /usr/bin/awk '{print $1}')
 [ "$policy_sha256" = "$expected_policy_sha256" ] || \
-  fail "sealed policy digest does not match the canonical packaging input"
+  fail "sealed policy digest does not match the canonical packaging input; regenerate the canonical JSON and .sha256 together with tool/generate_native_install_helper_policy.dart, then update the pinned build inputs"
 policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 
 /usr/bin/plutil -replace CFBundleIdentifier -string "$helper_id" "$helper_info"

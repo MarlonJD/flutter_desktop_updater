@@ -13,6 +13,7 @@ branch, release, or external-write authority.
 
 ## Active
 
+- [2026-10-28 - Issue 82 DMG update reproduction](active/2026-10-28-issue82-dmg-update-reproduction.md)
 - [2026-08-10 - Windows ARM64 local production readiness](active/2026-08-10-windows-arm64-local-production-readiness.md)
 - [2026-08-13 - Release publishing hardening](active/2026-08-13-release-publishing-hardening-plan.md)
 - [2026-08-05 - Desktop Updater 3.1 release-key profile migration](active/2026-08-05-release-key-management-plan.md)

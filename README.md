@@ -225,6 +225,41 @@ install locations and strategies, and the release public keys pinned in the
 controller. Replace the example app's identifiers, Team ID, and release keys
 with your own values.
 
+The two signing requirements have different identifiers:
+
+```json
+"allowedApplicationSigner": {
+  "kind": "appleDesignatedRequirement",
+  "value": "identifier com.example.myApp and anchor apple generic and certificate leaf[subject.OU] = \"YOURTEAMID\""
+},
+"allowedHelperSigner": {
+  "kind": "appleDesignatedRequirement",
+  "value": "identifier com.example.myApp.helper and anchor apple generic and certificate leaf[subject.OU] = \"YOURTEAMID\""
+}
+```
+
+Use your `applicationPackageId` in the application requirement and your
+`helperServiceId` in the helper requirement. Putting the helper ID in both
+prevents the helper from authorizing your app. Replace `YOURTEAMID` with your
+Apple Team ID in both requirements.
+
+From a package repository checkout matching your app's dependency, generate
+the policy and its digest together after editing the source JSON:
+
+```sh
+flutter pub get
+dart run tool/generate_native_install_helper_policy.dart \
+  --config /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.source.json \
+  --expected-package-id com.example.myApp \
+  --output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.json \
+  --digest-output /path/to/your_app/macos/Runner/DesktopUpdaterHelperPolicy.sha256
+```
+
+Replace the paths and bundle ID with your app's values. Commit the generated
+JSON and `.sha256` together. Do not edit the generated JSON or calculate its
+expected hash in the build phase: regenerate both files from the reviewed
+source policy whenever it changes.
+
 Configure Runner's signing identity in Xcode. The embed script uses
 `EXPANDED_CODE_SIGN_IDENTITY` (falling back to `CODE_SIGN_IDENTITY`) to sign the
 helper before Xcode signs the outer app. Production builds need Developer ID
@@ -258,14 +293,18 @@ set -eu
 : "${DESKTOP_UPDATER_PACKAGE_ROOT:?Set DESKTOP_UPDATER_PACKAGE_ROOT in Runner build settings}"
 export DESKTOP_UPDATER_HELPER_INFO_TEMPLATE="${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/Configuration/Helper-Info.plist"
 export DESKTOP_UPDATER_SEALED_POLICY_PATH="${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json"
-export DESKTOP_UPDATER_SEALED_POLICY_SHA256="REPLACE_WITH_GENERATED_SHA256"
+DESKTOP_UPDATER_SEALED_POLICY_SHA256="$(cat "${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.sha256")"
+export DESKTOP_UPDATER_SEALED_POLICY_SHA256
 
 "${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/embed_install_helper.sh"
 ```
 
-Replace `REPLACE_WITH_GENERATED_SHA256` with the digest from step 2 and update it
-whenever you regenerate the policy. Xcode supplies the build paths and signing
-identity; run this script as a build phase. It builds the helper, embeds its
+The `.sha256` file must be the generated digest from step 2: exactly 64 lowercase
+hexadecimal characters, with an optional final newline. A placeholder is not a
+digest. If the build reports `sealed policy digest does not match`, regenerate
+the canonical JSON and digest together and use that pair; hashing the source
+JSON directly includes different formatting bytes. Xcode supplies the build
+paths and signing identity; run this script as a build phase. It builds the helper, embeds its
 sealed policy, writes the host's `DesktopUpdaterInstall*` metadata and launch
 daemon plist, and verifies the helper layout. Missing metadata or a digest or
 signing mismatch fails the build.
