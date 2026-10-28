@@ -371,7 +371,8 @@ void _usage() {
     "DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION, "
     "and DESKTOP_UPDATER_MACOS_NOTARY_PROFILE. An optional "
     "DESKTOP_UPDATER_MACOS_KEYCHAIN enables explicit keychain binding; when "
-    "omitted, notarytool uses the default keychain search list. Use "
+    "omitted, notarytool uses the Data Protection Keychain. Leave it unset "
+    "for the maintainer Mac's general-notary profile. Use "
     "--app-bundle-name and "
     "DESKTOP_UPDATER_RELEASE_PUBLISH_EVIDENCE_ROOT for bound evidence.",
   );

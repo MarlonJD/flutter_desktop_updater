@@ -700,6 +700,10 @@ For macOS DMG first installs, DMG update artifacts, PKG installer artifacts,
 and the local Apple-trust smoke harness, see
 [macOS DMG and PKG installer updates](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/macos-dmg-pkg-installer-updates.md).
 
+For `No Keychain password item found`, follow the
+[notarization profile lookup guide](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/publishing.md#local-notarization-profile-general-notary)
+before recreating credentials or forcing a login-keychain path.
+
 ## Documentation
 
 - [Update policy modes](doc/update-policy-modes.md): optional, mandatory,

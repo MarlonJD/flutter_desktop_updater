@@ -340,6 +340,8 @@ macOS production-trusted direct distribution requires:
 
 In CI, create an ephemeral keychain and pass that same keychain to every command that stores or uses credentials. This is the CI equivalent of the local rule: if `store-credentials` prints a `--keychain` value, use that value again with `--keychain-profile`.
 
+This explicit file-based keychain setup is specific to CI. The maintainer Mac's existing `general-notary` profile uses the Data Protection Keychain: omit `--keychain` and `macos.keychain`, and leave `DESKTOP_UPDATER_MACOS_KEYCHAIN` unset. Check the [local notarization profile note](publishing.md#local-notarization-profile-general-notary) before treating a failed login-keychain lookup as a missing profile or recreating credentials.
+
 Example setup:
 
 ```yaml

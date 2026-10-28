@@ -19,6 +19,7 @@ an existing authority instead of copying mutable rules into a second document.
 | Runtime diagnostics and recovery | [`diagnostics-and-recovery.md`](diagnostics-and-recovery.md) | Failure modes, diagnostics, or recovery semantics change |
 | CI, target-host, and secret boundaries | [`github-actions-ci-cd.md`](github-actions-ci-cd.md) | Workflow lanes, credentials, or target-host contracts change |
 | Publishing and rollback-sensitive release flow | [`publishing.md`](publishing.md) | Artifact, trust, upload, or validation behavior changes |
+| Local macOS `general-notary` profile and Keychain lookup | [Local notarization profile](publishing.md#local-notarization-profile-general-notary) | Before declaring a profile missing, recreating credentials, or choosing a keychain path |
 | Release key profiles and backups | [`release-key-management.md`](release-key-management.md) | Key generation, local storage, backup, adoption, or rotation changes |
 | Native contracts | [`native-contract.md`](native-contract.md) and [`native-install-helper-protocol.md`](native-install-helper-protocol.md) | Cross-language schema or helper protocol changes |
 | Public widget behavior | [`ui-widgets.md`](ui-widgets.md) | Widget states, accessibility, or integration examples change |

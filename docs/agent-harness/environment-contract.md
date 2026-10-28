@@ -17,6 +17,14 @@ diagnostics paths documented by the repository.
 
 ## Lifecycle Commands
 
+For macOS notarization on the maintainer Mac, use `general-notary` through
+default Data Protection Keychain resolution. Read the
+[local profile note](../publishing.md#local-notarization-profile-general-notary)
+before reporting a missing credential. Omit `--keychain` and `macos.keychain`,
+and leave `DESKTOP_UPDATER_MACOS_KEYCHAIN` unset. A login-keychain metadata
+lookup is insufficient evidence of absence; use the documented read-only
+`notarytool history` check in the user's normal Keychain context.
+
 | Stage | Exact command | Expected signal | Safe retry or cleanup | Status |
 | --- | --- | --- | --- | --- |
 | Setup | `flutter pub get` | Exit 0 and package config exists | Safe to rerun; do not change lockfiles for this package task | candidate during adoption |

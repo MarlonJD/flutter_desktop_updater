@@ -33,6 +33,10 @@ GitHub issue comments and reviews are outside this continuation.
 - The available local notary profile is `general-notary`; the CI profile name
   `desktop-updater-notary` is not configured locally. Default keychain
   resolution for `general-notary` succeeds without exposing credentials.
+  This uses the Data Protection Keychain; omit `--keychain` and
+  `macos.keychain`, and leave `DESKTOP_UPDATER_MACOS_KEYCHAIN` unset. See the
+  [local profile note](../../publishing.md#local-notarization-profile-general-notary)
+  before interpreting a login-keychain lookup failure as missing credentials.
 - The first reported error is emitted by native preparation/commit, whereas
   the second is a recovery-status failure. These messages alone do not prove
   the reporter's root cause.

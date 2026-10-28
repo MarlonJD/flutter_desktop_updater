@@ -5,6 +5,36 @@ Run date: 2026-08-06
 Evidence labels in this report are literal: `verified locally`, `blocked`, and
 `not run` are not interchangeable.
 
+## 2026-10-28 notarization profile correction
+
+This note supersedes every historical claim below that `general-notary` must
+be restored or is missing based on a login-keychain lookup. The read-only
+`xcrun notarytool history --keychain-profile general-notary --output-format json`
+check without `--keychain` exited 0 and returned 100 history entries on
+2026-10-28. No new artifact was submitted and no credential was changed.
+
+The profile uses the Data Protection Keychain. In Keychain Access, select
+iCloud or Local Items and search for `com.apple.gke.notary.tool`. Do not force
+`login.keychain-db`, set `macos.keychain`, or populate
+`DESKTOP_UPDATER_MACOS_KEYCHAIN` for this profile. File-based keychain lookup
+failures do not establish its absence. Follow the canonical
+[local profile note](../../docs/publishing.md#local-notarization-profile-general-notary)
+for commands, configuration, and the Apple reference. Historical artifact and
+release evidence below retains its original scope and dates.
+
+Documentation follow-up validation on 2026-10-28:
+
+- `verified locally`: `dart run tool/harness_gate.dart --structural` (31/31
+  canonical rows), 78 focused harness/docs/notary configuration/trust tests,
+  `dart format --output=none --set-exit-if-changed .` (289 files, no changes),
+  13 links to the canonical profile section, and `git diff --check`.
+- The external adaptive `harness.py check --warnings-as-errors` exited 1 with
+  80 `LINK001` errors, all in pre-existing `workspace-before` copies of
+  `docs/exec-plans/index.md` under `reports/releases/desktop_updater-3.2.5`
+  (25), `reports/releases/desktop_updater-3.2.6` (27), and
+  `reports/releases/issue82-dmg-2026-10-28` (28). Those release snapshots were
+  not modified by this documentation task; no new profile link failed.
+
 ## Scope and version separation
 
 The historical PR #67 reproduction targeted the `desktop_updater` 3.1.0
@@ -814,11 +844,11 @@ dialog was modal, so no password was entered and no background/login approval
 setting was changed. This fixture must not be reported as a notarized or
 production artifact.
 
-The latest sandbox-external `notarytool history` check did not find a usable
+The historical sandbox-external `notarytool history` check did not find a usable
 `general-notary` keychain item. No alternate profile was used and no fake
 credential was created. Existing previously accepted artifacts remain
-historical trust evidence only; a new source-current notarized v1 fixture
-cannot be produced until the profile is available.
+historical trust evidence only. The credential-blocker conclusion was later
+superseded by successful default resolution; see the profile correction above.
 
 Production-readiness remains **blocked** pending completion of the visible
 admin-approved source-current v1 install and a fresh v1 -> v2 privileged
@@ -843,9 +873,9 @@ The latest sandbox-external check was:
 
 It returned `No Keychain password item found for profile: general-notary`.
 No alternate profile was used and no credential was fabricated. Earlier
-accepted artifacts remain historical trust evidence; a new source-current
-notarized v1 artifact cannot be produced until this exact profile is available
-to `notarytool` in the login keychain.
+accepted artifacts remain historical trust evidence. This explicit-path
+failure did not establish profile absence: `general-notary` uses the Data
+Protection Keychain, as documented in the profile correction above.
 
 The administrator password was entered by the user in macOS Installer prompts
 when required. It was not accepted by the agent, stored in a `.env` file, put
@@ -928,8 +958,9 @@ result and does not substitute for privileged production recovery evidence.
 Production-readiness remains **blocked**. The direct app, DMG, PKG trust lanes,
 method-channel negative case, focused tests, and unprivileged helper smoke are
 verified locally, but a fresh source-matching notarized v1 -> v2 privileged
-install and recovery closure is still unavailable because the exact
-`general-notary` profile is missing and the existing notarized v1 helper is an
+install and recovery closure was unavailable at this checkpoint. The profile
+was incorrectly classified as missing from an explicit login-keychain lookup;
+see the profile correction above. The existing notarized v1 helper was an
 older fixture. No commit, push, branch operation, or GitHub operation was
 performed.
 
@@ -943,9 +974,11 @@ The profile claim was rechecked again outside the filesystem sandbox on
 - `security find-generic-password -a general-notary -s com.apple.gke.notary.tool /Users/marlonjd/Library/Keychains/login.keychain-db`: item not found.
 - The service-only metadata lookup for `com.apple.gke.notary.tool` also returned item not found.
 
-This confirms the blocker is not caused by the Codex filesystem sandbox. The
-required `general-notary` keychain item is absent or stored under a different
-keychain/profile name; no alternate profile was used and no secret was read.
+These results only describe the explicit file-based login-keychain lookup.
+They do not establish that `general-notary` is absent from the Data Protection
+Keychain. The successful default-resolution check below supersedes the original
+credential-blocker conclusion; no alternate profile was used and no secret was
+read.
 
 ### Operational note: notarytool keychain invocation
 
@@ -958,7 +991,7 @@ returned accepted Apple submission history:
 The same invocation with an explicit
 `--keychain /Users/marlonjd/Library/Keychains/login.keychain-db` incorrectly
 returned `No Keychain password item found`. For this Mac mini, use the
-`general-notary` profile through the keychain search list and do not add the
+`general-notary` profile through the Data Protection Keychain and do not add the
 explicit login-keychain path. No credential value was printed or stored in the
 repository.
 
@@ -1596,8 +1629,9 @@ The only user keychain listed was
 `notarytool-profile-general-notary` generic item was not found there or in the
 other user keychain files. Developer ID Application and Developer ID Installer
 identities were both present when counted without printing their values. No
-credential value was read or exposed. The report therefore retains the
-`general-notary` lane as blocked until `notarytool` can resolve that profile.
+credential value was read or exposed. This explicit-path check was originally
+classified as blocked; the default-resolution correction immediately below
+supersedes that classification.
 
 #### Correction: default keychain resolution
 
@@ -1643,10 +1677,12 @@ The helper is loaded by launchd at the end of this continuation. No other
 
 The machine has one Developer ID Application identity and one Developer ID
 Installer identity when counted without printing certificate subjects or
-fingerprints. The required notary profile is not available to `notarytool` in
-the current login keychain:
+fingerprints. The historical login-keychain check returned:
 
 `Error: No Keychain password item found for profile: general-notary`
+
+That result does not establish absence from the Data Protection Keychain. The
+profile correction above supersedes this historical credential blocker.
 
 No credential value, password, private key, API key, Apple credential, or
 release seed was printed, stored, or added. The Background Activity disposition
@@ -1729,8 +1765,10 @@ No secret-bearing values were observed in the inspected diagnostics.
 
 Overall status remains `release pending`, not `production-ready`.
 
-1. Restore the `general-notary` keychain profile through the secure local
-   credential workflow; do not paste or store its values in the repository.
+1. Verify `general-notary` with default Data Protection Keychain resolution,
+   omitting `--keychain`. The former instruction to restore this profile is
+   superseded by the profile correction above; do not recreate it because a
+   login-keychain lookup fails or paste its values into the repository.
 2. Build a fresh v2 recovery PKG from the current source with a currently valid
    Developer ID Installer signature, then notarize and staple it with
    `general-notary`. Confirm `pkgutil`, `spctl`, and stapler independently.

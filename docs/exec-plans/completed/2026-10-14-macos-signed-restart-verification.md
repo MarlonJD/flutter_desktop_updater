@@ -26,6 +26,8 @@ Also run the SwiftPM and CocoaPods build/integration lanes locally.
 ## Surprises & Discoveries
 
 - The profile is named `general-notary`; its credential check succeeded.
+  Use default Data Protection Keychain resolution without `--keychain`; see
+  the [local profile note](../../publishing.md#local-notarization-profile-general-notary).
 - The existing app-update smoke only builds two versions and rejects an
   installed sentinel, so it cannot establish consecutive-update behavior.
 - `/Applications/Desktop Updater Smoke.app` predates this task and is owned

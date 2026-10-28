@@ -1115,7 +1115,6 @@ macos:
   notarize: true
   developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
   notaryProfile: desktop-updater-notary
-  keychain: /Users/me/Library/Keychains/login.keychain-db
   staple: true
   gatekeeperAssess: true
 ```
@@ -1125,14 +1124,23 @@ API key, `.p12` Developer ID certificate, passwords, API key ID, issuer ID, and
 CI keychain password must still come from the user's machine, keychain, CI
 secrets, or standard environment setup.
 
-The three macOS signing references may also be supplied by the calling process
+`macos.keychain` is optional. Omit it for a profile stored in the default Data
+Protection Keychain. Set it only when the profile was explicitly stored in
+that file-based keychain. See the
+[local `general-notary` profile note](#local-notarization-profile-general-notary)
+before copying a login-keychain path into configuration.
+
+The macOS signing references may also be supplied by the calling process
 when their YAML fields are absent:
 
 ```sh
 export DESKTOP_UPDATER_MACOS_DEVELOPER_ID_APPLICATION="Developer ID Application: Example Corp (TEAMID1234)"
 export DESKTOP_UPDATER_MACOS_NOTARY_PROFILE="desktop-updater-notary"
-export DESKTOP_UPDATER_MACOS_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 ```
+
+The optional `DESKTOP_UPDATER_MACOS_KEYCHAIN` supplies `macos.keychain` for an
+explicitly provisioned file-based keychain. Leave it unset for default Data
+Protection Keychain resolution.
 
 Only these canonical variables are recognized. An explicit YAML value wins;
 an explicit blank or non-string YAML value is an error and does not fall back
@@ -1248,7 +1256,6 @@ macos:
   notarize: true
   developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
   notaryProfile: desktop-updater-notary
-  keychain: /Users/me/Library/Keychains/login.keychain-db
   artifact:
     kind: dmg
   dmg:
@@ -1275,7 +1282,6 @@ macos:
   notarize: true
   developerIdApplication: "Developer ID Application: Example Corp (TEAMID1234)"
   notaryProfile: desktop-updater-notary
-  keychain: /Users/me/Library/Keychains/login.keychain-db
   staple: true
   artifact:
     kind: pkg
@@ -1303,6 +1309,11 @@ What you must do for production-trusted macOS updates:
 
 ### macOS Developer ID And Notary Setup
 
+If this Mac already has a profile, check
+[local notarization profile lookup](#local-notarization-profile-general-notary)
+before creating or replacing credentials. A notarization profile is a stored
+credential reference, separate from the Developer ID signing certificate.
+
 One-time Apple setup:
 
 1. Join the Apple Developer Program.
@@ -1322,19 +1333,27 @@ Check the local Developer ID identity:
 security find-identity -v -p codesigning
 ```
 
-Create a local notary profile:
+For a new profile, store the credentials in the default Data Protection
+Keychain:
 
 ```sh
 xcrun notarytool store-credentials desktop-updater-notary \
   --key "$HOME/Developer/secrets/AuthKey_XXXXXXXXXX.p8" \
   --key-id "XXXXXXXXXX" \
   --issuer "00000000-0000-0000-0000-000000000000" \
-  --keychain "$HOME/Library/Keychains/login.keychain-db" \
   --validate
 ```
 
-For an already-provisioned profile, first verify default/global resolution
-without forcing a keychain path:
+#### Local notarization profile: general-notary
+
+The existing profile on the maintainer Mac is `general-notary`. On
+2026-10-28, a read-only `notarytool history` check without `--keychain` exited
+0 and returned 100 submission-history entries. This is `verified locally`
+for profile access; it is not a new artifact notarization or release result.
+The profile name is local configuration, not a new signing certificate or a
+profile automatically installed for package consumers.
+
+Always check this profile with default resolution first:
 
 ```sh
 xcrun notarytool history \
@@ -1342,17 +1361,47 @@ xcrun notarytool history \
   --output-format json >/dev/null
 ```
 
-This is the profile-availability check and uses macOS's keychain search list.
-Use the same `--keychain-profile` and `--keychain` pair for later commands when
-the profile was explicitly stored in a named keychain. If the default check
-succeeds but an explicit `--keychain` lookup returns `No Keychain password item
-found`, classify that as an explicit-keychain path mismatch, not as a missing
-profile. Use the profile's actual stored keychain or the repository flow's
-default-resolution mode; never guess a keychain path or print credential
-contents.
+Without `--keychain`, `notarytool` uses the **Data Protection Keychain**, not
+the file-based login-keychain search list. In **Keychain Access**, select
+**iCloud** (or **Local Items** if iCloud Keychain is disabled) and search for
+**`com.apple.gke.notary.tool`**. The profile's display name need not be
+`general-notary`. This storage distinction is documented in
+[Apple TN3147, Save credentials in the keychain](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
+
+For this existing profile:
+
+- Omit `--keychain` from `history`, `submit`, and other notarytool commands.
+  Forcing `--keychain "$HOME/Library/Keychains/login.keychain-db"` searches a
+  different store and has repeatedly returned `No Keychain password item
+  found` on this host.
+- For `release publish` and `example/tool/release_publish_smoke.dart`, set
+  `macos.notaryProfile: general-notary` or
+  `DESKTOP_UPDATER_MACOS_NOTARY_PROFILE=general-notary`. Omit `macos.keychain`
+  and leave `DESKTOP_UPDATER_MACOS_KEYCHAIN` unset. Do not supply an empty YAML
+  value: explicit blank configuration is rejected.
+- For `tool/macos_production_smoke.dart`, set
+  `DESKTOP_UPDATER_NOTARY_PROFILE=general-notary`. Native runtime smoke uses
+  `DESKTOP_UPDATER_RUNTIME_NOTARY_PROFILE=general-notary`.
+- `security list-keychains` and `security find-generic-password` against
+  `login.keychain-db` do not establish that a Data Protection Keychain profile
+  is absent. Run the history check in the user's normal Keychain context;
+  restricted sandbox access can also give false negatives.
+- If default resolution succeeds and an explicit path fails, record a
+  **keychain-store mismatch**, not a missing profile. Do not recreate,
+  overwrite, or move `general-notary` to fix that mismatch. If default
+  resolution also fails, diagnose its actual error before changing credentials.
+
+The dated check above supersedes older "missing general-notary" conclusions
+based only on login-keychain lookups. Recheck access when needed, and keep
+passwords, private keys, account identifiers, and raw history out of repository
+notes. Profile access does not by itself authorize a new Apple submission.
+
+#### Explicit keychains in CI
 
 CI should create an ephemeral keychain, import the Developer ID `.p12`, and
-store the notary profile into that same keychain:
+store the notary profile into that same keychain. In this explicitly
+provisioned case, pass the same `--keychain-profile` and `--keychain` pair to
+later commands; this differs from the existing local `general-notary` profile:
 
 ```sh
 KEYCHAIN="$RUNNER_TEMP/build.keychain-db"

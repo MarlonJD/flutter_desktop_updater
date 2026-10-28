@@ -21,6 +21,10 @@ knowledge belongs in `docs/`.
   asks for that branch action.
 - Do not post GitHub comments or PR reviews through connector identities. Draft
   text for the user instead.
+- Before macOS notarization work, read the
+  [local `general-notary` profile note](docs/publishing.md#local-notarization-profile-general-notary).
+  On the maintainer Mac, omit `--keychain` and `macos.keychain`; a failed
+  `login.keychain-db` lookup does not establish that this profile is missing.
 
 ## Repository Map
 
