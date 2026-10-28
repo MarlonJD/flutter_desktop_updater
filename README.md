@@ -180,6 +180,13 @@ app bundle. Both SwiftPM and CocoaPods hosts need the Runner build phase below;
 installing the Flutter plugin alone does not add it. Start with `flutter pub get`
 and open `macos/Runner.xcworkspace` in Xcode.
 
+The `macos.notarize` and `macos.dmg` publishing settings do not install or
+configure this helper. Notarized publishing checks for the embedded helper,
+sealed policy, and integer build metadata before signing. When correcting an
+existing app, rebuild and manually reinstall the outgoing version with this
+setup, then rebuild the update version. An incoming update cannot repair a
+missing helper in the app that is currently running.
+
 ### 1. Set the app version and build number
 
 Use Flutter's `version: <version>+<build-number>` convention in your app's

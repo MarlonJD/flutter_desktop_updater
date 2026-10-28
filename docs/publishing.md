@@ -1144,8 +1144,12 @@ When notarization is enabled, publish runs:
 1. Validate configuration and reject macOS-applicable `postPackage` hooks.
 2. Run `prePackage` hooks.
 3. Complete a read-only bundle-topology, Mach-O, symlink, entitlement, and
-   sealed-helper-policy preflight. No `codesign` mutation is allowed before it
-   succeeds.
+   sealed-helper-policy preflight. Require an executable
+   `DesktopUpdaterInstallHelper`, matching sealed policy and host metadata,
+   and an integer `CFBundleVersion`. Missing setup points to the
+   **Embed Desktop Updater Install Helper** build phase in
+   [macOS setup](../README.md#macos-setup). No `codesign` mutation is allowed
+   before these checks succeed.
 4. Sign nested code inner-to-outer, with the outer app last, and verify every
    target plus the final app.
 5. Submit the app notarization archive with `--output-format json` and require
@@ -1248,10 +1252,19 @@ macos:
   artifact:
     kind: dmg
   dmg:
+    fileName: "Example-v{version}({buildNumber})-{platform}.dmg"
     volumeName: Example
     appBundleName: Example.app
     applicationsAlias: true
 ```
+
+`macos.dmg.fileName` is optional. It accepts a literal `.dmg` filename or
+`{appName}`, `{version}`, `{buildNumber}`, and `{platform}` placeholders.
+`{appName}` omits the `.app` suffix; `{buildNumber}` requires release build
+metadata. The default remains `{appName}-{version}-{platform}.dmg`. Paths,
+unknown placeholders, and unsafe filename characters are rejected. The
+artifact, descriptor URL, and publish manifest use the same resolved name;
+`appBundleName` still controls the app name inside the mounted image.
 
 PKG example:
 

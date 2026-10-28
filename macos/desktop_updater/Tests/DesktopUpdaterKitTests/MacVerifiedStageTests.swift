@@ -97,6 +97,17 @@ final class MacVerifiedStageTests: XCTestCase {
         )
         XCTAssertNil(macStagedArtifactFileName(for: "unknown"))
     }
+
+    func testSignedDMGStageUsesRetainedImageAndRejectsArtifactMutation() throws {
+        let fixture = try SignedStageFixture.create(artifactKind: "dmg")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let verified = try fixture.load()
+        XCTAssertEqual(verified.artifactKind, "dmg")
+        XCTAssertEqual(fixture.artifactURL.lastPathComponent, "artifact.dmg")
+        XCTAssertEqual(verified.stagedPath, fixture.stagedApp)
+        try Data("changed dmg".utf8).write(to: fixture.artifactURL)
+        XCTAssertThrowsError(try fixture.load())
+    }
 }
 
 private struct SignedStageFixture {
@@ -119,6 +130,7 @@ private struct SignedStageFixture {
     }
 
     static func create(
+        artifactKind: String = "zip",
         descriptorArtifactSHA256: String? = nil,
         descriptorArtifactLengthAdjustment: Int64 = 0
     ) throws -> Self {
@@ -149,9 +161,9 @@ private struct SignedStageFixture {
         try Data("new executable".utf8).write(to: executable)
 
         let artifactURL = stageRoot.appendingPathComponent(
-            ".desktop_updater_artifact.zip"
+            macStagedArtifactFileName(for: artifactKind)!
         )
-        let artifactData = Data("signed retained zip artifact".utf8)
+        let artifactData = Data("signed retained \(artifactKind) artifact".utf8)
         try artifactData.write(to: artifactURL)
         let actualArtifactSHA256 = sha256(artifactData)
         let signedArtifactSHA256 = descriptorArtifactSHA256
@@ -163,6 +175,7 @@ private struct SignedStageFixture {
         let keyID = "stable-2026"
         var manifest = descriptorJSON(
             packageID: packageID,
+            artifactKind: artifactKind,
             artifactSHA256: signedArtifactSHA256,
             artifactLength: signedArtifactLength,
             keyID: keyID,
@@ -212,6 +225,7 @@ private struct SignedStageFixture {
 
     private static func descriptorJSON(
         packageID: String,
+        artifactKind: String,
         artifactSHA256: String,
         artifactLength: Int64,
         keyID: String,
@@ -226,12 +240,16 @@ private struct SignedStageFixture {
             "platform": "macos",
             "channel": "stable",
             "artifact": [
-                "kind": "zip",
-                "url": "https://updates.example.test/Example.zip",
+                "kind": artifactKind,
+                "url": "https://updates.example.test/Example.\(artifactKind)",
                 "sha256": artifactSHA256,
                 "length": artifactLength,
             ],
-            "install": ["strategy": "wholeBundleReplace"],
+            "install": artifactKind == "dmg"
+                ? ["strategy": "wholeBundleReplace", "macosDmg": [
+                    "appBundleName": "Example.app", "verifyPrimarySignature": true,
+                ]] as [String: Any]
+                : ["strategy": "wholeBundleReplace"],
             "signature": [
                 "algorithm": "ed25519",
                 "publicKeyId": keyID,

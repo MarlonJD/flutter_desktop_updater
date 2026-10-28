@@ -635,10 +635,15 @@ MacOSDmgPublishConfig _readMacOSDmgConfig(
 ) {
   final defaults = MacOSDmgPublishConfig.defaultsForAppName(appName);
   final dmg = _mapValue(macos, "dmg");
+  final fileName = dmg["fileName"];
+  if (fileName != null && fileName is! String) {
+    throw const FormatException("macos.dmg.fileName must be a string.");
+  }
   final explicitAppBundleName = _stringValue(dmg, "appBundleName");
   final appBundleName = explicitAppBundleName ?? defaults.appBundleName;
   final explicitVolumeName = _stringValue(dmg, "volumeName");
-  return MacOSDmgPublishConfig(
+  final config = MacOSDmgPublishConfig(
+    fileName: fileName as String?,
     volumeName: explicitVolumeName ?? _macOSAppNameStem(appBundleName),
     appBundleName: appBundleName,
     applicationsAlias: _boolValue(
@@ -650,6 +655,8 @@ MacOSDmgPublishConfig _readMacOSDmgConfig(
     usesDefaultVolumeName: explicitVolumeName == null,
     usesDefaultAppBundleName: explicitAppBundleName == null,
   );
+  config.validateFileName();
+  return config;
 }
 
 MacOSPkgPublishConfig _readMacOSPkgConfig(Map<String, dynamic> macos) {

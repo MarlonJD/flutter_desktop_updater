@@ -585,6 +585,60 @@ macos:
     }
   });
 
+  test("custom DMG filenames bind artifact, descriptor, and manifest URLs",
+      () async {
+    final root = await _createFixture("macos");
+    addTearDown(() => root.delete(recursive: true));
+    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString('''
+updates:
+  baseUrl: https://updates.example.com/
+macos:
+  artifact:
+    kind: dmg
+  dmg:
+    fileName: "Egas v{version}({buildNumber})-{platform}.dmg"
+''');
+    final commands = <List<String>>[];
+    final manifest = await ReleasePublisher(
+      skipBuild: true,
+      isMacOSHost: false,
+      dmgPackager: DmgPackager(runProcess: (executable, arguments) async {
+        commands.add([executable, ...arguments]);
+        if (executable == "/usr/bin/hdiutil" && arguments.first == "create") {
+          await File(arguments.last).writeAsString("dmg fixture");
+        }
+        return ProcessResult(0, 0, "", "");
+      }),
+    ).publish(
+      projectRoot: root,
+      platform: "macos",
+      overrides: const ReleasePublishOverrides(buildNumber: 201),
+      output: StringBuffer(),
+    );
+    const fileName = "Egas v2.1.0(201)-macos.dmg";
+    const relative = "releases/stable/2.1.0/build-201/macos/$fileName";
+    expect(manifest.artifact.path, relative);
+    expect(manifest.artifact.url.pathSegments.last, fileName);
+    expect(manifest.artifact.url.toString(), contains("Egas%20v2.1.0"));
+    final output = Directory(path.join(root.path, "dist", "desktop_updater"));
+    final artifact = File(path.join(output.path, relative));
+    expect(await artifact.readAsString(), "dmg fixture");
+    final descriptor = ReleaseDescriptor.fromJson(jsonDecode(await File(
+      path.join(artifact.parent.path, "release.json"),
+    ).readAsString()) as Map<String, dynamic>);
+    expect(descriptor.artifact.url, manifest.artifact.url);
+    expect(descriptor.artifact.length, await artifact.length());
+    expect(descriptor.install.macosDmg!.appBundleName, "Egas Manager.app");
+    final written = await PublishManifest.readFrom(
+      File(path.join(output.path, ".desktop_updater_publish.json")),
+    );
+    expect(written.artifact.path, relative);
+    expect(written.artifact.url, descriptor.artifact.url);
+    expect(
+        commands.singleWhere((args) => args.first == "/usr/bin/hdiutil").last,
+        artifact.path);
+  });
+
   test("macOS publish uses PKG packager when configured", () async {
     final root = await _createFixture("macos");
     final output = StringBuffer();
@@ -1657,6 +1711,11 @@ class _FakeDmgPackager extends DmgPackager {
 }
 
 class _StubMacOSReleaseTrust extends MacOSReleaseTrust {
+  @override
+  Future<void> verifyInstallReadiness({
+    required MacOSReleaseInventory inventory,
+  }) async {}
+
   @override
   Future<MacOSReleaseInventory> preflight({
     required Directory app,

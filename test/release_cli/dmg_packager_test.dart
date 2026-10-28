@@ -10,6 +10,41 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
+  test("rejects unsafe DMG filenames before filesystem or command side effects",
+      () async {
+    final root = await Directory.systemTemp.createTemp("dmg_packager_");
+    addTearDown(() => root.delete(recursive: true));
+    final output = Directory(path.join(root.path, "out"));
+    final commands = <String>[];
+    await expectLater(
+      DmgPackager(runProcess: (executable, arguments) async {
+        commands.add(executable);
+        return ProcessResult(0, 0, "", "");
+      }).package(
+        ReleasePackageRequest(
+          input: Directory(path.join(root.path, "Example.app")),
+          outputDirectory: output,
+          packageId: "com.example.app",
+          appName: "Example.app",
+          version: "1.0.0",
+          platform: "macos",
+          channel: "stable",
+          artifactUrl: Uri.parse("https://cdn.example.com/Example.dmg"),
+          installStrategy: "wholeBundleReplace",
+        ),
+        config: const MacOSDmgPublishConfig(
+          volumeName: "Example",
+          appBundleName: "Example.app",
+          applicationsAlias: true,
+          fileName: "../outside.dmg",
+        ),
+      ),
+      throwsA(isA<FormatException>()),
+    );
+    expect(commands, isEmpty);
+    expect(await output.exists(), isFalse);
+  });
+
   test("packages a macOS DMG descriptor", () async {
     final root = await Directory.systemTemp.createTemp("dmg_packager_");
     addTearDown(() async {

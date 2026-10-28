@@ -255,10 +255,25 @@ let dependency = Package.Dependency.package(name: "FlutterFramework", path: "../
       matches(
         RegExp(
           r'message: "Unable to prepare update installation\.",\s*'
-          r"details: nil",
+          r"details: MacInstallPreparationDiagnostic.details\(\s*"
+          r"for: error, phase: phase",
         ),
       ),
     );
+    final preparation = pluginSource.substring(
+      pluginSource.indexOf("private func prepareAndCommitInstall("),
+      pluginSource.indexOf("@_spi(DesktopUpdaterSmoke)"),
+    );
+    expect(preparation, isNot(contains("error.localizedDescription")));
+    expect(preparation, isNot(contains("error as NSError")));
+    for (final phase in [
+      "stageVerification",
+      "installPreparation",
+      "restartPreparation",
+      "commitHandoff"
+    ]) {
+      expect(preparation, contains("phase = .$phase"));
+    }
     expect(pluginSource, isNot(contains("allowUnsignedMacOSUpdates")));
     expect(pluginSource, isNot(contains("diagnosticsLogPath")));
     expect(helperSource, isNot(contains("makeHelperScript")));

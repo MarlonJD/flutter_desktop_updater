@@ -120,10 +120,19 @@ macos:
   artifact:
     kind: dmg
   dmg:
+    fileName: "Example-v{version}({buildNumber})-{platform}.dmg"
     volumeName: Example
     appBundleName: Example.app
     applicationsAlias: true
 ```
+
+The optional `macos.dmg.fileName` changes the distributed DMG filename, without
+renaming its app bundle or volume. It accepts a literal `.dmg` filename or the
+placeholders `{appName}` (without `.app`), `{version}`, `{buildNumber}`, and
+`{platform}`. The example produces `Example-v1.0.0(1)-macos.dmg` for version
+`1.0.0+1`. Omit it to keep `{appName}-{version}-{platform}.dmg`.
+`{buildNumber}` requires build metadata; paths and unsupported placeholders
+fail before packaging. Artifact URLs and publish manifests use the same name.
 
 PKG:
 
@@ -168,6 +177,10 @@ process environment and writes only `notarize`, `staple`, and
 The publisher completes the app trust gate before packaging: configuration,
 `prePackage`, read-only inventory, inner-to-outer signing, typed app
 notarization acceptance, stapling, validation, and Gatekeeper assessment.
+Notarized publishing requires the executable install helper, matching sealed
+policy, and integer host build metadata before signing. Follow
+[macOS setup](../README.md#macos-setup) in both the outgoing and incoming apps;
+`macos.notarize` configures distribution signing and does not embed the helper.
 Packaging then applies the same typed notarization/staple/assessment checks to
 the exact DMG or PKG. The final distributable is audited before release
 metadata is signed or uploaded; a macOS `postPackage` hook is rejected while

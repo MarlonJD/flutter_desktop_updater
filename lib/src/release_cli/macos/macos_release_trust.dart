@@ -394,6 +394,43 @@ class MacOSReleaseTrust {
     );
   }
 
+  /// Rejects apps that cannot prepare updates before release signing begins.
+  /// General code inventories may omit the helper; updater publications cannot.
+  Future<void> verifyInstallReadiness({
+    required MacOSReleaseInventory inventory,
+  }) async {
+    if (inventory.sealedPolicy == null) {
+      throw StateError(
+        "macOS updater app is missing DesktopUpdaterInstallHelper. Configure "
+        "DesktopUpdaterHelperPolicy.json and the 'Embed Desktop Updater "
+        "Install Helper' Xcode build phase from README's macOS Setup, then "
+        "rebuild. Reinstall the rebuilt outgoing app before testing updates.",
+      );
+    }
+    final helper = File(path.join(inventory.app.path, "Contents", "Helpers",
+        "DesktopUpdaterInstallHelper"));
+    if (!await _isExecutable(helper)) {
+      throw StateError(
+          "Packaged DesktopUpdaterInstallHelper is not executable. "
+          "Rebuild with the 'Embed Desktop Updater Install Helper' build phase.");
+    }
+    final info = await _readRequiredPlist(
+      File(path.join(inventory.app.path, "Contents", "Info.plist")),
+      runProcess,
+    );
+    final version = info["CFBundleShortVersionString"];
+    final build = info["CFBundleVersion"];
+    if (version is! String ||
+        version.isEmpty ||
+        build is! String ||
+        !RegExp(r"^[0-9]+$").hasMatch(build) ||
+        int.tryParse(build) == null) {
+      throw StateError("macOS updater host requires CFBundleShortVersionString "
+          "and an integer CFBundleVersion. Set CFBundleVersion to "
+          "FLUTTER_BUILD_NUMBER and rebuild both the installed and update apps.");
+    }
+  }
+
   /// Extracts each target's own entitlements, then signs and verifies targets.
   Future<void> signAndVerify({
     required MacOSReleaseInventory inventory,

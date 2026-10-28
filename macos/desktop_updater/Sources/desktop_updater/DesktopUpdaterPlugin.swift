@@ -162,7 +162,10 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         transactionID: String,
         result: @escaping FlutterResult
     ) {
+        var phase = MacInstallPreparationPhase.helperConfiguration
         do {
+            let releaseKeys = try Self.trustedReleasePublicKeys()
+            phase = .stageVerification
             let stagedURL = URL(fileURLWithPath: stagingPath)
             let stageRoot = stagedURL.pathExtension.lowercased() == "app"
                 ? stagedURL.deletingLastPathComponent()
@@ -171,23 +174,22 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 stagedPath: stagedURL,
                 stageRoot: stageRoot,
                 expectedPackageID: expectedPackageID,
-                trustedReleasePublicKeys: try Self.trustedReleasePublicKeys()
+                trustedReleasePublicKeys: releaseKeys
             )
             guard verifiedStage.provenance.markerSHA256
                     == stageProvenanceSHA256,
                   verifiedStage.provenance.marker.artifactSha256
                     == expectedArtifactSHA256 else {
-                throw NSError(
-                    domain: "desktop_updater.install_binding",
-                    code: 1
-                )
+                throw MacInstallPreparationError.stageBindingMismatch
             }
+            phase = .installPreparation
             let request = MacInstallRequest(verifiedStage: verifiedStage)
             let helper = MacInstallHelper()
             let reservation = try helper.prepareInstall(
                 request,
                 transactionID: transactionID
             )
+            phase = .restartPreparation
             let restart: MacApplicationRestartReservation?
             if Self.smokeRelaunchSuppressionAllowed() {
                 restart = nil
@@ -195,6 +197,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 restart = try MacApplicationRestarter()
                     .prepareCurrentApplicationRestart()
             }
+            phase = .commitHandoff
             do {
                 let status = try helper.commitAfterExit(reservation)
                 guard status.state == .commitAccepted || status.state == .completed,
@@ -246,12 +249,14 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 return
             }
             result(
-                    FlutterError(
-                        code: "InstallError",
-                        message: "Unable to prepare update installation.",
-                        details: nil
+                FlutterError(
+                    code: "InstallError",
+                    message: "Unable to prepare update installation.",
+                    details: MacInstallPreparationDiagnostic.details(
+                        for: error, phase: phase
                     )
                 )
+            )
         }
     }
 
@@ -273,6 +278,12 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
         let helperURL = Bundle.main.bundleURL.appendingPathComponent(
             "Contents/Helpers/DesktopUpdaterInstallHelper"
         )
+        guard FileManager.default.fileExists(atPath: helperURL.path) else {
+            throw MacInstallPreparationError.helperMissing
+        }
+        guard FileManager.default.isExecutableFile(atPath: helperURL.path) else {
+            throw MacInstallPreparationError.helperNotExecutable
+        }
         var staticCode: SecStaticCode?
         guard SecStaticCodeCreateWithPath(
             helperURL as CFURL,
@@ -285,7 +296,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
                 nil
             ) == errSecSuccess else {
-            throw NSError(domain: "desktop_updater.release_keys", code: 1)
+            throw MacInstallPreparationError.helperSignatureInvalid
         }
         var signingInformation: CFDictionary?
         guard SecCodeCopySigningInformation(
@@ -300,17 +311,17 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
             let expectedPolicySHA256 = plist[
                 "DesktopUpdaterSealedPolicySHA256"
             ] as? String,
-            let policy = try JSONSerialization.jsonObject(
+            let policy = (try? JSONSerialization.jsonObject(
                 with: sealedPolicy
-            ) as? [String: Any],
-            try StageProvenance.canonicalJSONSHA256(policy)
+            )) as? [String: Any],
+            (try? StageProvenance.canonicalJSONSHA256(policy))
                 == expectedPolicySHA256,
             policy["applicationPackageId"] as? String
                 == Bundle.main.bundleIdentifier,
             let releaseKeys = policy["releaseRootPublicKeys"]
                 as? [[String: Any]],
             !releaseKeys.isEmpty else {
-            throw NSError(domain: "desktop_updater.release_keys", code: 2)
+            throw MacInstallPreparationError.helperPolicyInvalid
         }
         var result: [String: Data] = [:]
         for key in releaseKeys {
@@ -324,10 +335,7 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
                 let encoded = key["publicKeyBase64"] as? String,
                 let publicKey = Data(base64Encoded: encoded),
                 publicKey.count == 32 else {
-                throw NSError(
-                    domain: "desktop_updater.release_keys",
-                    code: 3
-                )
+                throw MacInstallPreparationError.helperReleaseKeysInvalid
             }
             result[keyID] = publicKey
         }

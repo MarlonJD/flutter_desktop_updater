@@ -3,6 +3,24 @@ import "dart:io";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("macOS preparation guidance explains bounded reasons and host repair",
+      () {
+    final source = File("docs/diagnostics-and-recovery.md").readAsStringSync();
+    for (final reason in [
+      "helperMissing",
+      "helperSignatureInvalid",
+      "helperPolicyInvalid",
+      "hostMetadataInvalid",
+      "stageBindingMismatch"
+    ]) {
+      expect(source, contains(reason));
+    }
+    expect(source, contains("PlatformException.details"));
+    expect(source,
+        contains("rebuild and manually reinstall the outgoing version"));
+    expect(source, contains("details: null"));
+  });
+
   test("README surfaces native helper diagnostics and current setup", () {
     final source = File("README.md").readAsStringSync();
     final version = _currentPackageVersion();

@@ -323,12 +323,30 @@ it so a new check/download/install attempt can proceed. It reports the previous 
 Missing or invalid helper evidence, another running version, changed staging,
 or a replaced receipt prevents this cleanup.
 
-`Unable to prepare update installation` is a generic native preparation error;
-it does not identify a single cause. Verify the outgoing app's bundled helper,
-sealed release keys, integer build number, signing, and early restart bootstrap
-against [macOS setup](../README.md#macos-setup). Correct that setup before
-retrying. An app that cannot run the fixed recovery code may need a manual
-installation of a rebuilt app; do not delete an ambiguous recovery marker.
+`Unable to prepare update installation` retains its `InstallError` code and
+message. Its `PlatformException.details` now contains bounded `phase`, `reason`,
+and `action` values, which are included in the copied problem report. Native
+error descriptions, file paths, signing output, and policy contents are not
+copied into these details. Reports from older builds with `details: null` do
+not identify a single cause.
+
+| Reason or phase | What to check |
+| --- | --- |
+| `helperMissing` / `helperNotExecutable` | Add or repair the **Embed Desktop Updater Install Helper** Runner build phase; rebuild and reinstall the outgoing app. |
+| `helperSignatureInvalid` | Verify the installed helper's signature and rebuild with the intended Developer ID identity. |
+| `helperPolicyInvalid` / `helperReleaseKeysInvalid` | Regenerate the app-owned `DesktopUpdaterHelperPolicy.json` and canonical digest; verify bundle ID and release public keys. |
+| `hostMetadataInvalid` | Verify embedded `DesktopUpdaterInstallPolicyID`, bundle identity, version, and a nonnegative integer `CFBundleVersion`. |
+| `helperEndpointUnavailable` | Verify the host's helper signing requirement, service ID, launch daemon metadata, and helper availability. |
+| `stageVerification` / `stageBindingMismatch` | Check that the installed helper policy trusts the release signing key and package ID; download again and retain the report if verification still fails. |
+| `restartPreparation` | Check the early restart bootstrap from macOS setup. |
+| `commitHandoff` | Inspect the pending transaction through the existing recovery flow. |
+
+Follow [macOS setup](../README.md#macos-setup) for the outgoing app's helper,
+sealed release keys, integer build number, signing, and restart bootstrap.
+Publishing YAML and a successful `release validate` establish distribution
+checks; they do not prove the already installed app has a working helper.
+After correcting setup, rebuild and manually reinstall the outgoing version,
+then rebuild the incoming update. Do not delete an ambiguous recovery marker.
 
 ## Support Flow
 

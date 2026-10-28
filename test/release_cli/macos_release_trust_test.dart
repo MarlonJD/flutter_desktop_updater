@@ -726,6 +726,8 @@ void main() {
       _plistWithEntries([
         "<key>CFBundleIdentifier</key><string>com.example.desktopUpdaterSmoke</string>",
         "<key>CFBundleExecutable</key><string>Policy</string>",
+        "<key>CFBundleShortVersionString</key><string>1.0.0</string>",
+        "<key>CFBundleVersion</key><string>1</string>",
         "<key>DesktopUpdaterInstallPolicyID</key><string>com.example.desktopUpdaterSmoke.privileged</string>",
         "<key>DesktopUpdaterInstallHelperServiceID</key><string>com.example.desktopUpdaterSmoke.helper</string>",
         "<key>DesktopUpdaterInstallHelperRequirement</key><string>identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic</string>",
@@ -737,6 +739,9 @@ void main() {
     );
     await helper.parent.create(recursive: true);
     await helper.writeAsBytes(_machO);
+    if (!Platform.isWindows) {
+      expect((await Process.run("chmod", ["755", helper.path])).exitCode, 0);
+    }
     final helperInfo = _plistWithEntries([
       "<key>CFBundleIdentifier</key><string>com.example.desktopUpdaterSmoke.helper</string>",
       "<key>DesktopUpdaterSealedPolicy</key><data>${base64Encode(policyBytes)}</data>",
@@ -784,6 +789,30 @@ void main() {
       "identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic",
     );
     expect(inventory.targets, contains(isA<MacOSCodeTarget>()));
+    if (!Platform.isWindows) {
+      final trust = MacOSReleaseTrust();
+      await trust.verifyInstallReadiness(inventory: inventory);
+      final info = File(path.join(app.path, "Contents", "Info.plist"));
+      final original = await info.readAsString();
+      for (final invalidBuild in ["1.0.0", "-1", "", "9223372036854775808"]) {
+        await info.writeAsString(original.replaceFirst(
+          "<key>CFBundleVersion</key><string>1</string>",
+          "<key>CFBundleVersion</key><string>$invalidBuild</string>",
+        ));
+        await expectLater(
+          trust.verifyInstallReadiness(inventory: inventory),
+          throwsA(isA<StateError>().having((error) => error.message, "message",
+              contains("integer CFBundleVersion"))),
+        );
+      }
+      await info.writeAsString(original);
+      expect((await Process.run("chmod", ["644", helper.path])).exitCode, 0);
+      await expectLater(
+        trust.verifyInstallReadiness(inventory: inventory),
+        throwsA(isA<StateError>().having(
+            (error) => error.message, "message", contains("not executable"))),
+      );
+    }
   });
 
   test("typed notarization parsing requires accepted status and an id", () {

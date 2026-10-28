@@ -28,6 +28,8 @@ void main() {
     expect(doc, contains("hosted approval-boundary"));
     expect(doc, contains("self-hosted preapproved"));
     expect(doc, contains("hdiutil attach -readonly -nobrowse"));
+    expect(doc, contains("macos.dmg.fileName"));
+    expect(doc, contains("Example-v{version}({buildNumber})-{platform}.dmg"));
     expect(doc, contains("pkgutil --check-signature"));
   });
 

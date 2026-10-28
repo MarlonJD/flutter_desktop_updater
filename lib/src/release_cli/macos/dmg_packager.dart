@@ -20,14 +20,20 @@ class DmgPackager {
     required MacOSDmgPublishConfig config,
     MacOSPublishConfig? publishConfig,
   }) async {
-    await request.outputDirectory.create(recursive: true);
     final effectiveConfig = config.resolveDefaultsForAppName(request.appName);
+    final fileName = effectiveConfig.resolveFileName(
+      appName: request.appName,
+      version: request.version,
+      buildNumber: request.buildNumber,
+      platform: request.platform,
+    );
     final artifact = File(
       path.join(
         request.outputDirectory.path,
-        "${_artifactNameStem(request.appName)}-${request.version}-${request.platform}.dmg",
+        fileName,
       ),
     );
+    await request.outputDirectory.create(recursive: true);
     final dmgRoot =
         await Directory.systemTemp.createTemp("desktop_updater_dmg_");
     try {
@@ -136,12 +142,4 @@ class DmgPackager {
     }
     return result;
   }
-}
-
-String _artifactNameStem(String appName) {
-  var stem = path.basename(appName);
-  if (stem.endsWith(".app")) {
-    stem = stem.substring(0, stem.length - ".app".length);
-  }
-  return stem;
 }

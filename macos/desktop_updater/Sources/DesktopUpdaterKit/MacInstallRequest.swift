@@ -10,6 +10,52 @@ public let stageProvenanceFileName =
     ".desktop_updater_stage_provenance.json"
 public let updaterOwnedStagePrefix = "desktop_updater_stage_"
 
+/// Bounded preparation diagnostics shared by the native kit and Flutter bridge.
+public enum MacInstallPreparationPhase: String, CaseIterable {
+    case helperConfiguration, stageVerification, installPreparation
+    case restartPreparation, commitHandoff
+}
+
+public enum MacInstallPreparationError: String, Error {
+    case helperMissing, helperNotExecutable, helperSignatureInvalid
+    case helperPolicyInvalid, helperReleaseKeysInvalid, hostMetadataInvalid
+    case stageBindingMismatch
+}
+
+public enum MacInstallPreparationDiagnostic {
+    /// Never return localized errors, paths, signing output, or policy contents.
+    public static func details(
+        for error: Error,
+        phase: MacInstallPreparationPhase
+    ) -> [String: String] {
+        let reason: String
+        let action: String
+        if let failure = error as? MacInstallPreparationError {
+            reason = failure.rawValue
+            action = failure == .stageBindingMismatch
+                ? "downloadUpdateAgain" : "rebuildAndReinstallHost"
+        } else if error as? MacInstallClientError == .endpointUnavailable {
+            reason = "helperEndpointUnavailable"
+            action = "verifyHostHelperSetup"
+        } else {
+            reason = "\(phase.rawValue)Failed"
+            switch phase {
+            case .helperConfiguration:
+                action = "rebuildAndReinstallHost"
+            case .stageVerification:
+                action = "verifyReleaseKeysAndRedownload"
+            case .installPreparation:
+                action = "verifyHostHelperSetup"
+            case .restartPreparation:
+                action = "verifyRestartBootstrap"
+            case .commitHandoff:
+                action = "inspectInstallRecovery"
+            }
+        }
+        return ["phase": phase.rawValue, "reason": reason, "action": action]
+    }
+}
+
 func macStagedArtifactFileName(for artifactKind: String) -> String? {
     switch artifactKind {
     case "zip":
@@ -299,9 +345,7 @@ struct SystemMacInstallRequestEvidenceBuilder:
             let buildText = info["CFBundleVersion"] as? String,
             let buildNumber = Int64(buildText),
             buildNumber >= 0 else {
-            throw macInstallRequestFailure(
-                "Signed application helper metadata is incomplete."
-            )
+            throw MacInstallPreparationError.hostMetadataInvalid
         }
         let executableRelativePath = "Contents/MacOS/\(executableName)"
         let executableURL = target.bundleURL.appendingPathComponent(

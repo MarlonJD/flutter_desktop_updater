@@ -11,6 +11,40 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
+  test("notarized publishing rejects a missing install helper before signing",
+      () async {
+    final root = await _createMacOSFixture();
+    addTearDown(() => root.delete(recursive: true));
+    final commands = <String>[];
+    await expectLater(
+      ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(commands),
+        runProcess: (executable, arguments) async {
+          commands.add([executable, ...arguments].join(" "));
+          return ProcessResult(0, 0, "", "");
+        },
+      ).publish(
+        projectRoot: root,
+        platform: "macos",
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+      ),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        "message",
+        allOf(contains("DesktopUpdaterInstallHelper"),
+            contains("Embed Desktop Updater Install Helper")),
+      )),
+    );
+    expect(
+        commands.where((command) =>
+            command.contains("codesign") ||
+            command.contains("notarytool") ||
+            command.startsWith("PACKAGE ")),
+        isEmpty);
+  });
+
   test("macOS notarization runs before packaging when explicitly enabled",
       () async {
     final root = await _createMacOSFixture();
@@ -209,37 +243,39 @@ void main() {
     final commands = <String>[];
     final packager = _RecordingPackager(commands);
     try {
+      final runProcess = (String executable, List<String> arguments) async {
+        commands.add([executable, ...arguments].join(" "));
+        if (executable == "/usr/bin/xcrun" &&
+            arguments.length >= 2 &&
+            arguments[0] == "notarytool" &&
+            arguments[1] == "submit") {
+          return ProcessResult(
+            0,
+            0,
+            '{"id":"fake-submission","status":"Invalid"}',
+            "",
+          );
+        }
+        if (executable == "/usr/bin/ditto" && arguments.first == "-c") {
+          await File(arguments.last).writeAsBytes(<int>[1, 2, 3]);
+        }
+        if (executable == "/usr/bin/codesign" &&
+            arguments.length == 2 &&
+            arguments.first == "-dvvv") {
+          return ProcessResult(
+            0,
+            0,
+            _fakeCodeDetails(arguments.last),
+            "",
+          );
+        }
+        return ProcessResult(0, 0, "", "");
+      };
       final publisher = ReleasePublisher(
         skipBuild: true,
         packager: packager,
-        runProcess: (executable, arguments) async {
-          commands.add([executable, ...arguments].join(" "));
-          if (executable == "/usr/bin/xcrun" &&
-              arguments.length >= 2 &&
-              arguments[0] == "notarytool" &&
-              arguments[1] == "submit") {
-            return ProcessResult(
-              0,
-              0,
-              '{"id":"fake-submission","status":"Invalid"}',
-              "",
-            );
-          }
-          if (executable == "/usr/bin/ditto" && arguments.first == "-c") {
-            await File(arguments.last).writeAsBytes(<int>[1, 2, 3]);
-          }
-          if (executable == "/usr/bin/codesign" &&
-              arguments.length == 2 &&
-              arguments.first == "-dvvv") {
-            return ProcessResult(
-              0,
-              0,
-              _fakeCodeDetails(arguments.last),
-              "",
-            );
-          }
-          return ProcessResult(0, 0, "", "");
-        },
+        runProcess: runProcess,
+        macOSReleaseTrust: _SkipFinalAuditTrust(runProcess),
       );
 
       await expectLater(
@@ -452,6 +488,13 @@ String _fakeCodeDetails(String target) {
 final class _SkipFinalAuditTrust extends MacOSReleaseTrust {
   _SkipFinalAuditTrust(ProcessRunner runProcess)
       : super(runProcess: runProcess);
+
+  // These fixtures exercise signing order and notary failures, without a
+  // runnable helper. Production readiness has a separate rejection test above.
+  @override
+  Future<void> verifyInstallReadiness({
+    required MacOSReleaseInventory inventory,
+  }) async {}
 
   @override
   Future<void> auditFinalArtifact({

@@ -3,9 +3,33 @@ import "dart:io";
 
 import "package:desktop_updater/src/core/update_diagnostics.dart";
 import "package:desktop_updater/src/core/update_diagnostics_recorder.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("copied report retains safe native install preparation details", () {
+    final report = UpdateProblemReport(
+      generatedAt: DateTime.utc(2026, 10, 28),
+      packageVersion: "3.2.6",
+      platform: "macos",
+      channel: "stable",
+      failure: PlatformException(
+        code: "InstallError",
+        message: "Unable to prepare update installation.",
+        details: const {
+          "phase": "helperConfiguration",
+          "reason": "helperMissing",
+          "action": "rebuildAndReinstallHost",
+        },
+      ),
+      entries: const [],
+    );
+    final text = report.toPlainText();
+    expect(text, contains("phase: helperConfiguration"));
+    expect(text, contains("reason: helperMissing"));
+    expect(text, contains("action: rebuildAndReinstallHost"));
+  });
+
   test("diagnostic entry records lifecycle details", () {
     final timestamp = DateTime.utc(2026, 6, 13, 8, 30);
     final error = StateError("download failed");

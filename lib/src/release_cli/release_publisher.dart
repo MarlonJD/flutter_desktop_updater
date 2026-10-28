@@ -220,6 +220,14 @@ class ReleasePublisher {
         : null;
     final macosArtifact =
         platform == "macos" ? config.macos.artifactKind : null;
+    final dmgFileName = macosArtifact == MacOSArtifactKind.dmg
+        ? config.macos.dmg.resolveFileName(
+            appName: metadata.appName,
+            version: metadata.version,
+            buildNumber: metadata.buildNumber,
+            platform: platform,
+          )
+        : null;
     final artifactExtension = switch (macosArtifact) {
       MacOSArtifactKind.dmg => ".dmg",
       MacOSArtifactKind.pkg => ".pkg",
@@ -235,7 +243,8 @@ class ReleasePublisher {
       appName: metadata.appName,
       artifactExtension: artifactExtension,
       artifactSuffix: useInnoInstaller ? "-setup" : "",
-      artifactFileName: useInnoInstaller ? "$innoOutputBaseName.exe" : null,
+      artifactFileName:
+          useInnoInstaller ? "$innoOutputBaseName.exe" : dmgFileName,
     );
     await _assertReleaseIdentityAvailable(
       layout: layout,
@@ -1265,6 +1274,7 @@ Future<void> _notarizeMacOS({
 
   final effectiveTrust = trust ?? MacOSReleaseTrust(runProcess: runProcess);
   final inventory = await effectiveTrust.preflight(app: app);
+  await effectiveTrust.verifyInstallReadiness(inventory: inventory);
   output.writeln("Signing macOS app...");
   await effectiveTrust.signAndVerify(
     inventory: inventory,
