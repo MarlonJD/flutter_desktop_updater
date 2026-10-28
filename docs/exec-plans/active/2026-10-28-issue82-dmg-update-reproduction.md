@@ -97,6 +97,23 @@ The setup correction is verified locally; notarized DMG E2E remains blocked.
 - Signed test evidence: `policy-signed-setup-final.log` and
   `policy-signed-setup.json` under the local report directory. These are signing
   checks, not notarization or update/relaunch evidence.
+- Fix commit `4511b7e94dbc0a91189169c9cbb40813b1698051` was pushed normally to
+  the existing main branch. Its committed `dart pub publish --dry-run` passed
+  with zero warnings. No package version, tag, or release was created.
+- [CI run 40667815377](https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/40667815377)
+  passed at that exact commit: Dart Package, documentation contracts, macOS
+  Native Consumer, macOS Flutter SwiftPM, macOS Flutter CocoaPods, and the
+  aggregate gate. Credential-gated notarization and privileged-helper jobs were
+  skipped and are not counted as passes.
+- A documentation search found the same default-resolution profile recipe in
+  `docs/publishing.md` and the prior October 14/27 verification records, with
+  no alternative stored Keychain path. Repeating the documented command with
+  and without the explicit login-Keychain option, including an interactive
+  terminal, returned exit 69. No credentials were read or changed.
+- No task app was installed in `/Applications`, and no task-owned GUI, helper,
+  notarization, or test processes remain. The isolated signed fixtures are
+  retained under the task's temporary directory for the pending DMG rerun.
+  Unrelated file contents and the user's separate index edits were preserved.
 
 Pending: obtain the exact existing notary profile name, rerun the real DMG
 `1.0.0+1` to `1.0.0+2` update, and retain its result. The historical intermittent
