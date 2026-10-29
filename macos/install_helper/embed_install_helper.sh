@@ -25,6 +25,8 @@ app_info="$app_bundle/Contents/Info.plist"
 info_template=${DESKTOP_UPDATER_HELPER_INFO_TEMPLATE:?DESKTOP_UPDATER_HELPER_INFO_TEMPLATE is required}
 sealed_policy=${DESKTOP_UPDATER_SEALED_POLICY_PATH:?DESKTOP_UPDATER_SEALED_POLICY_PATH is required}
 expected_policy_sha256=${DESKTOP_UPDATER_SEALED_POLICY_SHA256:-}
+policy_path_source=DESKTOP_UPDATER_SEALED_POLICY_PATH
+policy_pin_source=DESKTOP_UPDATER_SEALED_POLICY_SHA256
 code_sign_identity=${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}
 [ -n "$code_sign_identity" ] || fail "CODE_SIGN_IDENTITY is required"
 if [ "$code_sign_identity" = "-" ]; then
@@ -35,6 +37,8 @@ if [ "$code_sign_identity" = "-" ]; then
       fail "ad hoc sealed policy path and digest must be provided together"
     sealed_policy=$ad_hoc_policy
     expected_policy_sha256=$ad_hoc_policy_sha256
+    policy_path_source=DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH
+    policy_pin_source=DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256
   fi
 fi
 
@@ -49,6 +53,27 @@ esac
 for required_file in "$app_info" "$info_template" "$sealed_policy"; do
   [ -f "$required_file" ] || fail "required metadata is missing: $required_file"
 done
+
+# Phase placement alone does not order Xcode's generated Info.plist task.
+# Declare that generated file as an input before modifying its helper metadata.
+if [ -n "${XCODE_VERSION_ACTUAL:-}" ]; then
+  input_count=${SCRIPT_INPUT_FILE_COUNT:-0}
+  case "$input_count" in
+    ''|*[!0-9]*) fail "invalid Xcode script input count" ;;
+  esac
+  info_dependency_found=false
+  input_index=0
+  while [ "$input_index" -lt "$input_count" ]; do
+    input_path=$(/usr/bin/printenv "SCRIPT_INPUT_FILE_$input_index" || true)
+    if [ "$input_path" = "$app_info" ]; then
+      info_dependency_found=true
+      break
+    fi
+    input_index=$((input_index + 1))
+  done
+  [ "$info_dependency_found" = true ] || \
+    fail 'run dart run desktop_updater:release helper-policy to repair Runner, or add $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH) to the Input Files of this build phase so Xcode finishes generating the host Info.plist before embedding the helper'
+fi
 
 work="$derived_root/desktop-updater-install-helper"
 helper_info="$work/Helper-Info.plist"
@@ -79,9 +104,22 @@ host_application_id=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app
 [ "$host_application_id" = "$application_id" ] || \
   fail "sealed applicationPackageId does not match the host bundle"
 
-policy_sha256=$(/usr/bin/shasum -a 256 "$canonical_policy" | /usr/bin/awk '{print $1}')
-[ "$policy_sha256" = "$expected_policy_sha256" ] || \
-  fail "sealed policy digest does not match the canonical packaging input; regenerate the canonical JSON and .sha256 together with dart run desktop_updater:release helper-policy, then update the pinned build inputs"
+# Hash stdin so shasum cannot prefix its digest with a filename escape marker.
+policy_sha256=$(/usr/bin/shasum -a 256 < "$canonical_policy" | /usr/bin/awk '{print $1}')
+if [ "$policy_sha256" != "$expected_policy_sha256" ]; then
+  printf '%s\n' \
+    "desktop_updater helper packaging: digest mismatch details" \
+    "  policy source: $policy_path_source" \
+    "  selected policy: $sealed_policy" \
+    "  pin source: $policy_pin_source" \
+    "  expected SHA-256: $expected_policy_sha256" \
+    "  actual SHA-256: $policy_sha256" >&2
+  if [ "$policy_path_source" = DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH ]; then
+    printf '%s\n' \
+      "  ad hoc overrides are selected; release helper-policy regenerates only the default Runner policy" >&2
+  fi
+  fail "sealed policy digest does not match the canonical packaging input; regenerate the canonical JSON and .sha256 for the selected policy together, then update $policy_pin_source"
+fi
 policy_base64=$(/usr/bin/base64 < "$canonical_policy")
 
 /usr/bin/plutil -replace CFBundleIdentifier -string "$helper_id" "$helper_info"
@@ -104,8 +142,8 @@ launch_daemon_plist_name="$helper_id.plist"
 /usr/bin/plutil -replace DesktopUpdaterInstallHelperLaunchDaemonPlistName -string "$launch_daemon_plist_name" "$app_info" 2>/dev/null || \
   /usr/bin/plutil -insert DesktopUpdaterInstallHelperLaunchDaemonPlistName -string "$launch_daemon_plist_name" "$app_info"
 
-helper_info_sha256=$(/usr/bin/shasum -a 256 "$helper_info" | /usr/bin/awk '{print $1}')
-helper_launchd_sha256=$(/usr/bin/shasum -a 256 "$helper_launchd" | /usr/bin/awk '{print $1}')
+helper_info_sha256=$(/usr/bin/shasum -a 256 < "$helper_info" | /usr/bin/awk '{print $1}')
+helper_launchd_sha256=$(/usr/bin/shasum -a 256 < "$helper_launchd" | /usr/bin/awk '{print $1}')
 
 archs=${ARCHS:-$(/usr/bin/uname -m)}
 # Keep each architecture output as one argument even when DerivedData or the

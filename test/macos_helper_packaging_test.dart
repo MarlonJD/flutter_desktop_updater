@@ -1,5 +1,8 @@
+import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart";
+import "package:desktop_updater/src/release_cli/release_command.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
@@ -32,7 +35,9 @@ void main() {
           Process.run(
             "/bin/sh",
             [
-              File("macos/install_helper/embed_install_helper.sh").absolute.path
+              File("macos/install_helper/embed_install_helper.sh")
+                  .absolute
+                  .path,
             ],
             environment: {
               "TARGET_BUILD_DIR": root.path,
@@ -67,7 +72,9 @@ void main() {
           final result = await embed(digest);
           expect(result.exitCode, 1);
           expect(
-              result.stderr, contains("64 lowercase hexadecimal characters"));
+            result.stderr,
+            contains("64 lowercase hexadecimal characters"),
+          );
           expect(
             result.stderr,
             contains("dart run desktop_updater:release helper-policy"),
@@ -112,7 +119,9 @@ void main() {
         expect(result.exitCode, 1);
         expect(result.stderr, contains("64 lowercase hexadecimal characters"));
         expect(
-            Directory(path.join(root.path, "derived")).existsSync(), isFalse);
+          Directory(path.join(root.path, "derived")).existsSync(),
+          isFalse,
+        );
       });
 
       test(
@@ -130,7 +139,24 @@ void main() {
           );
           expect(result.exitCode, 1);
           expect(
-              result.stderr, contains("sealed policy digest does not match"));
+            result.stderr,
+            contains("sealed policy digest does not match"),
+          );
+          expect(
+            result.stderr,
+            contains(
+              "pin source: DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256",
+            ),
+          );
+          expect(
+            result.stderr,
+            contains(
+              "policy source: DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH",
+            ),
+          );
+          expect(result.stderr, contains("selected policy:"));
+          expect(result.stderr, contains("expected SHA-256: ${"0" * 64}"));
+          expect(result.stderr, contains("actual SHA-256:"));
           expect(await appInfo.readAsBytes(), before);
         },
         skip: !Platform.isMacOS,
@@ -140,14 +166,41 @@ void main() {
         "rejects a stale pin without changing the host metadata",
         () async {
           final before = await appInfo.readAsBytes();
-          final result = await embed("0" * 64);
+          final result = await embed(
+            "0" * 64,
+            overrides: {
+              "DERIVED_FILE_DIR": path.join(root.path, r"derived \ build 中文"),
+            },
+          );
           expect(result.exitCode, 1);
           expect(
-              result.stderr, contains("sealed policy digest does not match"));
+            result.stderr,
+            contains("sealed policy digest does not match"),
+          );
           expect(
             result.stderr,
             contains("regenerate the canonical JSON and .sha256"),
           );
+          expect(
+            result.stderr,
+            contains("pin source: DESKTOP_UPDATER_SEALED_POLICY_SHA256"),
+          );
+          expect(
+            result.stderr,
+            contains("policy source: DESKTOP_UPDATER_SEALED_POLICY_PATH"),
+          );
+          expect(
+            result.stderr,
+            contains(
+              "selected policy: ${File("example/macos/Runner/DesktopUpdaterHelperPolicy.json").absolute.path}",
+            ),
+          );
+          expect(result.stderr, contains("expected SHA-256: ${"0" * 64}"));
+          final policy = await File(
+            "example/macos/Runner/DesktopUpdaterHelperPolicy.json",
+          ).readAsString();
+          final actual = sha256.convert(utf8.encode(policy.trimRight()));
+          expect(result.stderr, contains("actual SHA-256: $actual"));
           expect(await appInfo.readAsBytes(), before);
           expect(
             Directory(path.join(root.path, "Host.app", "Contents", "Helpers"))
@@ -156,6 +209,141 @@ void main() {
           );
         },
         skip: !Platform.isMacOS,
+      );
+
+      test(
+        "Xcode requires the generated host plist as a build input",
+        () async {
+          final before = await appInfo.readAsBytes();
+          final result = await embed(
+            "0" * 64,
+            overrides: {
+              "XCODE_VERSION_ACTUAL": "2710",
+              "SCRIPT_INPUT_FILE_COUNT": "1",
+              "SCRIPT_INPUT_FILE_0":
+                  path.join(root.path, "Runner", "Info.plist"),
+            },
+          );
+          expect(result.exitCode, 1);
+          expect(
+            result.stderr,
+            contains(r"add $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)"),
+          );
+          expect(await appInfo.readAsBytes(), before);
+          expect(
+            Directory(path.join(root.path, "derived")).existsSync(),
+            isFalse,
+          );
+        },
+        skip: !Platform.isMacOS,
+      );
+
+      test(
+        "managed phase embeds a generated pair through spaces and Unicode paths",
+        () async {
+          final consumer = Directory(path.join(root.path, "consumer app 中文"));
+          final runner = Directory(path.join(consumer.path, "macos", "Runner"));
+          final config =
+              File(path.join(runner.path, "Configs", "AppInfo.xcconfig"));
+          await config.parent.create(recursive: true);
+          await config.writeAsString(
+            "PRODUCT_BUNDLE_IDENTIFIER = com.example.desktopUpdaterSmoke\n",
+          );
+          final sealed =
+              File(path.join(runner.path, "DesktopUpdaterHelperPolicy.json"));
+          await File(
+            "example/macos/Runner/DesktopUpdaterHelperPolicy-Debug.json",
+          ).copy(sealed.path);
+          final output = StringBuffer();
+          expect(
+            await runReleaseCommand(
+              ["helper-policy"],
+              projectRoot: consumer,
+              output: output,
+            ),
+            0,
+            reason: "$output",
+          );
+          Future<ProcessResult> runManagedPhase() async {
+            return Process.run(
+              "dart",
+              [File("bin/release.dart").absolute.path, "helper-embed"],
+              environment: {
+                "PATH": Platform.environment["PATH"]!,
+                "PROJECT_DIR": path.join(consumer.path, "macos"),
+                "TARGET_BUILD_DIR": root.path,
+                "CONTENTS_FOLDER_PATH": "Host.app/Contents",
+                "DERIVED_FILE_DIR": path.join(root.path, "derived build 中文"),
+                "CODE_SIGN_IDENTITY": "-",
+                "EXPANDED_CODE_SIGN_IDENTITY": "-",
+                "XCODE_VERSION_ACTUAL": "2710",
+                "SCRIPT_INPUT_FILE_COUNT": "1",
+                "SCRIPT_INPUT_FILE_0": appInfo.path,
+              },
+              includeParentEnvironment: false,
+            );
+          }
+
+          final digest =
+              File(path.join(runner.path, "DesktopUpdaterHelperPolicy.sha256"));
+          final reviewedPin = await digest.readAsString();
+          final result = await runManagedPhase();
+          expect(
+            result.exitCode,
+            0,
+            reason: "${result.stdout}\n${result.stderr}",
+          );
+          final helper = File(
+            path.join(
+              root.path,
+              "Host.app",
+              "Contents",
+              "Helpers",
+              "DesktopUpdaterInstallHelper",
+            ),
+          );
+          expect(await helper.exists(), isTrue);
+          final helperBefore = await helper.readAsBytes();
+          final hostBefore = await appInfo.readAsBytes();
+          final policy =
+              jsonDecode(await sealed.readAsString()) as Map<String, dynamic>;
+          final generated = path.join(
+            root.path,
+            "derived build 中文",
+            "desktop-updater-install-helper",
+          );
+          final escapedPolicy =
+              await File(path.join(generated, "SealedPolicy.json"))
+                  .copy(path.join(root.path, r"policy \ canonical.json"));
+          final verified = await Process.run("/bin/sh", [
+            File("macos/install_helper/verify_install_helper_layout.sh")
+                .absolute
+                .path,
+            path.join(root.path, "Host.app"),
+            policy["helperServiceId"] as String,
+            (policy["allowedHelperSigner"] as Map)["value"] as String,
+            path.join(generated, "Helper-Info.plist"),
+            escapedPolicy.path,
+          ]);
+          expect(
+            verified.exitCode,
+            0,
+            reason: "${verified.stdout}\n${verified.stderr}",
+          );
+          policy["policyVersion"] = (policy["policyVersion"] as int) + 1;
+          await sealed.writeAsString("${jsonEncode(policy)}\n");
+          final rejected = await runManagedPhase();
+          expect(rejected.exitCode, 1);
+          expect(
+            "${rejected.stdout}${rejected.stderr}",
+            contains("sealed policy digest does not match"),
+          );
+          expect(await helper.readAsBytes(), helperBefore);
+          expect(await appInfo.readAsBytes(), hostBefore);
+          expect(await digest.readAsString(), reviewedPin);
+        },
+        skip: !Platform.isMacOS,
+        timeout: const Timeout(Duration(minutes: 3)),
       );
     },
     skip: Platform.isWindows,

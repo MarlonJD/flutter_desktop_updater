@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.2.7
+  desktop_updater: ^3.2.8
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to
@@ -217,14 +217,14 @@ override the corresponding pubspec values.
 
 ### 2. Prepare the helper policy and signing
 
+Automatic Runner configuration is available starting with desktop_updater 3.2.8.
+
 Run this from **your Flutter app directory** after `flutter pub get`, replacing
 `ABC1234567` with your Apple Team ID:
 
 ```sh
 dart run desktop_updater:release helper-policy --team-id ABC1234567
 ```
-
-`helper-policy` is available starting with desktop_updater 3.2.7.
 
 The command reads your bundle ID from `macos/Runner/Configs/AppInfo.xcconfig`
 and public release keys from `desktop_updater.keys.json`, checking that the
@@ -238,6 +238,9 @@ It creates these files in `macos/Runner`:
 - `DesktopUpdaterHelperPolicy.source.json`: the editable policy.
 - `DesktopUpdaterHelperPolicy.json`: canonical JSON used by the build.
 - `DesktopUpdaterHelperPolicy.sha256`: the generated digest used by the build.
+
+Edit or format only `.source.json`. Keep the generated `.json` and `.sha256`
+unchanged: the compact JSON is intentional, and formatting it changes its hash.
 
 An existing source file is preserved exactly. If only an existing policy JSON
 is present, the command adopts it as the source instead of replacing its
@@ -257,9 +260,18 @@ dart run desktop_updater:release helper-policy
 
 If initial setup needed `--package-id`, supply the same option when regenerating.
 
-Review and commit all three files with your app. The controller must pin the
+On macOS, the command also creates or repairs the helper build phase in
+`macos/Runner.xcodeproj/project.pbxproj`, including the generated plist dependency
+needed for incremental builds. Existing recognized helper scripts and their
+custom policy settings are preserved. Rerunning setup leaves an already configured
+project unchanged. Multiple helper phases or an ambiguous Flutter embed phase
+produce an error before writing files.
+
+Review and commit all three policy files and the Xcode project with your app. The controller must pin the
 same release public keys. Do not calculate the expected digest from the policy
-inside the build phase; consume the generated `.sha256` file as shown below.
+inside the build phase; the managed phase reads the generated `.sha256` file.
+Use `--no-configure-xcode` for policy-only generation, including on non-macOS hosts.
+If `Runner.xcodeproj` is absent, the command reports that Xcode setup was skipped.
 
 Configure Runner's signing identity in Xcode. The embed script uses
 `EXPANDED_CODE_SIGN_IDENTITY` (falling back to `CODE_SIGN_IDENTITY`) to sign the
@@ -267,38 +279,35 @@ helper before Xcode signs the outer app. Production builds need Developer ID
 signing, hardened runtime, and notarization. For ad hoc local builds, use the
 separate development-policy settings described in the policy recipe.
 
-### 3. Add the Runner build phase
+### 3. Review the automatic Runner build phase
 
-In **Runner target > Build Settings**, add a user-defined setting named
-`DESKTOP_UPDATER_PACKAGE_ROOT` pointing to the resolved `desktop_updater` package
-root (the directory containing its `pubspec.yaml` and `macos/install_helper`).
-For CocoaPods, use
-`$(PROJECT_DIR)/Flutter/ephemeral/.symlinks/plugins/desktop_updater` after pod
-installation. For SwiftPM, use the resolved plugin source root from the
-`desktop_updater` entry's `rootUri` in your app's
-`.dart_tool/package_config.json` (resolve a relative URI against that file), or
-the matching local package checkout. Set the filesystem path, not the `file:`
-URI, and update it when the resolved package location changes. The nested
-`macos/desktop_updater` Swift package directory is not the package root.
+`helper-policy` configures **Embed Desktop Updater Install Helper** after Flutter's
+`macos_assemble.sh embed` phase. It selects `/bin/sh` for new phases, disables
+**Based on dependency analysis**, and sets **User Script Sandboxing**
+(`ENABLE_USER_SCRIPT_SANDBOXING`) to **No** in the Runner configurations.
 
-In **Runner target > Build Phases**, add a **New Run Script Phase** named
-**Embed Desktop Updater Install Helper**. Place it after Flutter's script that
-runs `macos_assemble.sh embed`, before outer app signing. Use `/bin/sh`, uncheck
-**Based on dependency analysis** so it runs on every build, and set
-**User Script Sandboxing** (`ENABLE_USER_SCRIPT_SANDBOXING`) to **No** for the
-Runner configurations that use this phase, as in the example project. Paste:
+It adds `$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)` to the phase's **Input Files**.
+This is the generated app plist, not `Runner/Info.plist`. Xcode must finish
+generating it before the helper phase writes the host metadata. Phase placement
+alone does not declare that dependency; a later plist generation can remove the
+helper fields from an otherwise valid signed app. The script rejects Xcode
+builds without this input. This dependency also matters on incremental builds
+when changing `1.0.0+1` to `1.0.0+2`. That app version change does not require
+changing `policyVersion` or `minimumHelperProtocolVersion`.
+
+New projects receive this script:
 
 ```sh
 set -eu
-
-: "${DESKTOP_UPDATER_PACKAGE_ROOT:?Set DESKTOP_UPDATER_PACKAGE_ROOT in Runner build settings}"
-export DESKTOP_UPDATER_HELPER_INFO_TEMPLATE="${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/Configuration/Helper-Info.plist"
-export DESKTOP_UPDATER_SEALED_POLICY_PATH="${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.json"
-DESKTOP_UPDATER_SEALED_POLICY_SHA256="$(cat "${PROJECT_DIR}/Runner/DesktopUpdaterHelperPolicy.sha256")"
-export DESKTOP_UPDATER_SEALED_POLICY_SHA256
-
-"${DESKTOP_UPDATER_PACKAGE_ROOT}/macos/install_helper/embed_install_helper.sh"
+cd "${PROJECT_DIR}/.."
+"${FLUTTER_ROOT}/bin/dart" run desktop_updater:release helper-embed
 ```
+
+`helper-embed` resolves the installed package through Dart in both SwiftPM and
+CocoaPods projects; no package-cache path or `DESKTOP_UPDATER_PACKAGE_ROOT` setting
+is needed. It reads the generated Runner policy and pin without regenerating
+either. Configure the phase once, then build normally. If setup repaired an
+existing custom script, its package paths and exports remain app-owned.
 
 The `.sha256` file must be the generated digest from step 2: exactly 64 lowercase
 hexadecimal characters, with an optional final newline. A placeholder is not a
@@ -310,11 +319,20 @@ sealed policy, writes the host's `DesktopUpdaterInstall*` metadata and launch
 daemon plist, and verifies the helper layout. Missing metadata or a digest or
 signing mismatch fails the build.
 
+If regeneration does not resolve the mismatch, use the
+[helper policy digest diagnostics](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/docs/native-sdk.md#helper-policy-digest-diagnostics)
+to identify the policy and pin actually selected by the build, including ad hoc
+overrides.
+
 The
 [example Runner project](https://github.com/MarlonJD/flutter_desktop_updater/blob/main/example/macos/Runner.xcodeproj/project.pbxproj)
-shows the complete phase, including optional ad hoc policy settings. Its
-`../../macos/install_helper` path is specific to this repository's layout; use
-your resolved package root in a consuming app.
+shows a custom phase with separate ad hoc policy settings. Automatic setup
+preserves such scripts. If you maintain a custom phase manually, keep the plist
+input, phase order, and Runner sandboxing settings described above. Version 3.2.7
+generates only the policy files: use its
+[versioned build-phase recipe](https://github.com/MarlonJD/flutter_desktop_updater/blob/v3.2.7/README.md#3-add-the-runner-build-phase)
+and add the generated plist input described above. The managed `helper-embed`
+entrypoint is not available in 3.2.7.
 
 ### 4. Wait for the outgoing app before AppKit starts
 
@@ -371,10 +389,15 @@ test -f "$app/Contents/Library/LaunchDaemons/$helper_plist"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist"
+for key in DesktopUpdaterInstallPolicyID DesktopUpdaterInstallHelperServiceID \
+  DesktopUpdaterInstallHelperRequirement DesktopUpdaterInstallHelperLaunchDaemonPlistName; do
+  /usr/libexec/PlistBuddy -c "Print :$key" "$app/Contents/Info.plist"
+done
 ```
 
-The checks should succeed and the last two commands should print `1.2.3` and
-`45` for the example version. They verify bundle layout, signatures, and version
+The checks should succeed; the version commands should print `1.2.3` and `45`
+for the example version, followed by all four helper metadata values. They
+verify bundle layout, signatures, helper configuration, and version
 fields; notarization and an actual update still require their own validation.
 Writable app replacements use the embedded one-shot helper. Protected installs
 and PKG updates use the `SMAppService` daemon on macOS 13+ and may require the

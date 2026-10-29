@@ -66,7 +66,7 @@ embedded_policy="$embedded_info.policy"
   /usr/bin/base64 -D > "$embedded_policy"
 /usr/bin/cmp -s "$embedded_policy" "$canonical_policy" || \
   fail "helper sealed policy bytes do not match the retail policy"
-expected_policy_sha=$(/usr/bin/shasum -a 256 "$canonical_policy" | /usr/bin/awk '{print $1}')
+expected_policy_sha=$(/usr/bin/shasum -a 256 < "$canonical_policy" | /usr/bin/awk '{print $1}')
 embedded_policy_sha=$(/usr/bin/plutil -extract DesktopUpdaterSealedPolicySHA256 raw -o - "$embedded_info")
 [ "$embedded_policy_sha" = "$expected_policy_sha" ] || \
   fail "helper sealed policy digest mismatch"

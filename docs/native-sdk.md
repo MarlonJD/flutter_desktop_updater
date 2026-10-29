@@ -169,13 +169,17 @@ The Swift runtime exposes this as `RuntimeError.diagnostic` with
 switch on those typed values instead of matching the diagnostic message.
 
 Flutter macOS hosts invoke `macos/install_helper/embed_install_helper.sh` from
-their final app target after Flutter assembly. Follow the
+their final app target after Flutter assembly. `release helper-policy` creates
+or repairs that phase in `macos/Runner.xcodeproj` on macOS. New phases invoke
+`release helper-embed`, which resolves the installed Dart package and reads the
+reviewed Runner policy and SHA-256 pin without regenerating them during builds.
+Existing custom helper scripts and their exports are preserved. Follow the
 [README macOS setup](../README.md#macos-setup) for the Runner build phase,
 app version/build-number mapping, and bundle verification commands. The CocoaPods
 fallback preserves the tooling in its sandbox without adding helper sources to the pod's exact
 six-source allowlist; a CocoaPods host invokes it from
 `${PROJECT_DIR}/Flutter/ephemeral/.symlinks/plugins/desktop_updater/macos/install_helper`.
-SwiftPM hosts add the same final-app phase from the checked-out plugin source.
+The managed phase resolves the same package automatically for SwiftPM and CocoaPods.
 The example Xcode target is shared by both Flutter integration modes and shows
 the invocation. Set `DESKTOP_UPDATER_HELPER_INFO_TEMPLATE` to the package's
 `macos/install_helper/Configuration/Helper-Info.plist` template and
@@ -189,6 +193,17 @@ Release configuration into DerivedData, signs it once, copies it to
 at `Contents/Library/LaunchDaemons/<helper-service-id>.plist`, and validates the
 layout before Xcode signs the outer app. Missing policy, requirement, identity,
 or signing metadata fails the host build.
+
+Automatic setup adds `$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)` to the helper phase's
+**Input Files**, orders the phase after Flutter embed, enables execution on every
+build, and disables Runner user-script sandboxing. It preserves signing settings
+and unrelated targets, rejects ambiguous phases, and leaves a configured project
+unchanged on reruns. Review and commit its project diff alongside the policy files.
+Use `--no-configure-xcode` for policy-only generation or a fully custom project.
+For manually maintained phases, declare the same input. This dependency orders the generated host plist before the
+helper phase modifies it; phase placement alone is insufficient. Xcode builds
+without this explicit input fail before embedding. Check the final signed app
+for all four `DesktopUpdaterInstall*` fields, including after incremental builds.
 
 The Flutter plugin uses the same helper sources through SwiftPM. Its
 `macos/desktop_updater.podspec` keeps CocoaPods as a separately tested fallback
@@ -299,8 +314,90 @@ shows the structure; replace its identities and release keys too. Configure
 `DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH` and
 `DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256` together in Runner's build settings
 or export them in the build phase. The embed script selects them only when the
-effective signing identity is `-`. Keep the Developer ID policy for distribution;
+effective signing identity is `-`: it reads `EXPANDED_CODE_SIGN_IDENTITY` first,
+falling back to `CODE_SIGN_IDENTITY` when the expanded value is empty or unset.
+Keep the Developer ID policy for distribution;
 an ad hoc build does not validate Developer ID trust or notarization.
+
+### Helper policy digest diagnostics
+
+A repeated digest mismatch needs the inputs selected by the failing Xcode build.
+The packaging error reports the selected policy path, policy/pin setting names,
+and expected/actual SHA-256 values. Inspect those values before regenerating.
+The default `release helper-policy` command regenerates the default Runner pair;
+it does not update a separately configured ad hoc policy or its pinned digest.
+An older ad hoc pair can still have matching bytes and a matching pin. Its age
+alone does not explain a digest mismatch; compare the selected file with the
+selected pin. A stale pin for a changed ad hoc policy remains stale after
+regenerating the default pair.
+
+For an installed package such as 3.2.7 whose error lacks those details, temporarily
+insert this read-only diagnostic immediately before the `embed_install_helper.sh`
+invocation in Runner's existing build phase. Keep its policy and pin exports.
+It prints public digests and paths, without changing the expected pin, policy,
+signing settings, or build result:
+
+```sh
+du_diag_policy="${DESKTOP_UPDATER_SEALED_POLICY_PATH:-}"
+du_diag_pin="${DESKTOP_UPDATER_SEALED_POLICY_SHA256:-}"
+du_diag_source=DESKTOP_UPDATER_SEALED_POLICY_SHA256
+if [ "${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}" = "-" ] &&
+   { [ -n "${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH:-}" ] ||
+     [ -n "${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256:-}" ]; }; then
+  du_diag_policy="${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_PATH:-}"
+  du_diag_pin="${DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256:-}"
+  du_diag_source=DESKTOP_UPDATER_AD_HOC_SEALED_POLICY_SHA256
+fi
+printf 'configuration: %s\nselected policy: %s\npin source: %s\nexpected SHA-256: %s\nderived directory: %s\n' \
+  "${CONFIGURATION:-unset}" "$du_diag_policy" "$du_diag_source" "$du_diag_pin" \
+  "${DERIVED_FILE_DIR:-${TARGET_TEMP_DIR:-unset}}"
+if [ -r "$du_diag_policy" ]; then
+  printf 'actual SHA-256: '
+  /usr/bin/perl -0pe 's/\r?\n\z//' "$du_diag_policy" |
+    /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}'
+else
+  printf 'selected policy is missing or unreadable\n' >&2
+fi
+```
+
+Share these diagnostic lines and the packaging error when reporting a failure.
+Usernames and app identifiers may be redacted; preserve path punctuation and
+the selected setting names. Different hashes mean the selected file and reviewed
+pin need to be traced back to the same generated pair. Check for a wrong path,
+an ad hoc override, or editing/formatting the generated JSON after generation.
+Regenerate from the editable source and read its corresponding `.sha256` input;
+never replace the expected pin with a hash calculated during the build.
+
+If this diagnostic reports equal hashes but 3.2.7 still rejects them, inspect the
+DerivedData path for a literal backslash. That version parses filename-bearing
+`shasum` output, whose escape marker can be mistaken for part of the digest.
+Use a DerivedData directory without a literal backslash; the Swift build system
+also has a separate path-escaping limitation on the verified Xcode 27.1 host.
+The corrected helper scripts hash stdin. This path defect is not evidence that
+an individual reporter's mismatch has the same cause.
+
+### Helper policy and bundle metadata mismatch
+
+`Packaged helper policy does not match bundle metadata` compares the policy
+embedded in the helper with the final app's `Contents/Info.plist` and the
+helper's embedded identifier. The error identifies each differing field and its
+expected and actual values. Inspect the built bundle, because the helper phase
+writes these fields after Xcode processes the source plist.
+
+When a later build changes `CFBundleVersion`, Xcode can regenerate the host
+plist after the helper phase unless their dependency is declared. This removes
+the four `DesktopUpdaterInstall*` fields even though helper compilation and its
+own layout check passed. Rerun `release helper-policy` to repair the project,
+or in a manually maintained helper phase's **Input Files**, declare
+`$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)` and keep the phase after Flutter's embed
+phase. Rebuild and inspect the final bundle's helper metadata. Automatic setup
+also disables **Based on dependency analysis** to run the phase on every build;
+the generated plist dependency remains required for ordering.
+
+An app build-number change does not require changing `policyVersion` or
+`minimumHelperProtocolVersion`. Those describe policy revisions and protocol
+requirements, not the app's release version. Regenerating an unchanged policy
+correctly leaves its generated JSON and digest unchanged.
 
 ## Windows: CMake, C ABI, And .NET
 

@@ -2,6 +2,7 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/release_cli/doctor_command.dart";
+import "package:desktop_updater/src/release_cli/helper_embed_command.dart";
 import "package:desktop_updater/src/release_cli/helper_policy_command.dart";
 import "package:desktop_updater/src/release_cli/keys/key_commands.dart";
 import "package:desktop_updater/src/release_cli/keys/release_key_store.dart";
@@ -22,6 +23,7 @@ Future<int> runReleaseCommand(
     ..addCommand("doctor", buildDoctorParser())
     ..addCommand("keygen", buildKeygenParser())
     ..addCommand("helper-policy", buildHelperPolicyParser())
+    ..addCommand("helper-embed", buildHelperEmbedParser())
     ..addCommand("keys", buildKeysParser())
     ..addCommand("publish", buildPublishParser())
     ..addCommand("sign", buildSignParser())
@@ -61,6 +63,12 @@ Future<int> runReleaseCommand(
           command,
           projectRoot: projectRoot ?? Directory.current,
           output: out,
+        );
+      case "helper-embed":
+        return await runHelperEmbedCommand(
+          command,
+          output: out,
+          environment: environment,
         );
       case "keys":
         return await runKeysCommand(

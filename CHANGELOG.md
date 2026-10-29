@@ -1,3 +1,17 @@
+## 3.2.8
+
+* Make `release helper-policy` create or repair the macOS Runner helper phase,
+  including the generated `Info.plist` dependency that prevents helper metadata
+  loss on incremental builds. Preserve existing custom scripts and signing settings.
+* Add the managed `release helper-embed` build entrypoint. It resolves the installed
+  package for SwiftPM and CocoaPods and reads the reviewed policy/digest pair,
+  without regenerating policy authority or pinning a new digest during builds.
+* Report missing or mismatched helper metadata and the actual selected policy/pin
+  when verification fails. Explain that only the policy source should be formatted
+  and that app build-number changes do not require policy revisions.
+* Fix helper-policy hashing for paths containing backslashes by hashing stdin;
+  exact digest, signer, and bundle identity checks remain enforced.
+
 ## 3.2.7
 
 * Add `release helper-policy` for Flutter apps: generate the editable helper

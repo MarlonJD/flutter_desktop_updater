@@ -3,6 +3,7 @@ import "dart:io";
 
 import "package:args/args.dart";
 import "package:desktop_updater/src/native_install_helper/policy.dart";
+import "package:desktop_updater/src/release_cli/macos/helper_xcode_setup.dart";
 import "package:desktop_updater/src/release_cli/project_metadata_resolver.dart";
 import "package:desktop_updater/src/release_cli/release_publish_config.dart";
 import "package:desktop_updater/src/release_cli/release_signing_resolver.dart";
@@ -11,6 +12,12 @@ import "package:path/path.dart" as path;
 /// Builds the consumer-facing macOS helper policy command.
 ArgParser buildHelperPolicyParser() => ArgParser()
   ..addFlag("help", abbr: "h", negatable: false)
+  ..addFlag(
+    "configure-xcode",
+    defaultsTo: true,
+    help:
+        "Create or repair Runner's helper build phase on macOS. Use --no-configure-xcode for policy-only generation.",
+  )
   ..addOption(
     "team-id",
     help: "Apple Team ID for a new policy (10 uppercase letters/digits).",
@@ -162,15 +169,20 @@ Future<int> runHelperPolicyCommand(
     expectedApplicationPackageId: packageId,
     minimumAcceptedPolicyVersion: 1,
   );
+  final projectEdit = results["configure-xcode"] as bool
+      ? await prepareHelperXcodeSetup(projectRoot)
+      : null;
   // Validate every input before writing. Commit the pin last so an interrupted
   // regeneration fails closed in the embed script's exact digest comparison.
   if (!sourceExists) await _writeAtomically(source, sourceText);
   await _writeAtomically(sealed, "${policy.canonicalJson}\n");
   await _writeAtomically(digest, "${policy.canonicalSha256}\n");
+  await projectEdit?.apply();
   output.writeln("Generated ${sealed.path}\nGenerated ${digest.path}\n"
       "Policy SHA-256: ${policy.canonicalSha256}\n"
       "Review and commit the source JSON and generated JSON/SHA-256 pair.\n"
-      "Configure Runner's helper build phase as shown in the macOS Setup guide.\n"
+      "Edit or format only .source.json; keep the generated .json and .sha256 unchanged.\n"
+      "${projectEdit == null ? "Xcode project not configured; follow the macOS Setup guide or rerun on macOS with Runner.xcodeproj." : projectEdit.hasChanges ? "Configured Runner's helper phase and generated Info.plist dependency. Review and commit macos/Runner.xcodeproj/project.pbxproj." : "Runner's helper phase is already configured."}\n"
       "New policies support ZIP/DMG bundle replacement in writable /Applications; "
       "privileged and PKG installs require an explicitly reviewed source policy.");
   return 0;

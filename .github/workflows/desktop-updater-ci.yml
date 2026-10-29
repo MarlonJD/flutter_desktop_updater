@@ -1115,6 +1115,8 @@ jobs:
         run: |
           plutil -lint macos/install_helper/Configuration/Helper-Info.plist
           plutil -lint macos/install_helper/Configuration/Helper-Launchd.plist
+      - name: Run macOS helper setup and packaging regressions
+        run: flutter test --no-pub test/release_cli/helper_xcode_setup_test.dart test/release_cli/helper_policy_command_test.dart test/macos_helper_packaging_test.dart
       - name: Run macOS install helper tests
         shell: bash
         run: |

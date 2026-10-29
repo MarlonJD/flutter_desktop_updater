@@ -1083,16 +1083,43 @@ class MacOSReleaseTrust {
         "Packaged helper policy requires Apple designated requirements.",
       );
     }
-    if (helperInfo["CFBundleIdentifier"] != helperServiceId ||
-        appInfo["CFBundleIdentifier"] != applicationPackageId ||
-        appInfo["DesktopUpdaterInstallPolicyID"] != policyId ||
-        appInfo["DesktopUpdaterInstallHelperServiceID"] != helperServiceId ||
-        appInfo["DesktopUpdaterInstallHelperRequirement"] !=
-            helperRequirement ||
-        appInfo["DesktopUpdaterInstallHelperLaunchDaemonPlistName"] !=
-            "$helperServiceId.plist") {
+    final metadataMismatches = <String>[];
+    void checkMetadata(String field, Object? actual, String expected) {
+      if (actual == expected) return;
+      String describe(Object? value) {
+        if (value == null) return "<missing>";
+        if (value is! String) return "<invalid ${value.runtimeType}>";
+        return jsonEncode(
+            value.length > 256 ? "${value.substring(0, 256)}..." : value);
+      }
+
+      metadataMismatches.add(
+          "$field: expected ${describe(expected)}, actual ${describe(actual)}");
+    }
+
+    checkMetadata("helper embedded Info.plist.CFBundleIdentifier",
+        helperInfo["CFBundleIdentifier"], helperServiceId);
+    for (final entry in {
+      "CFBundleIdentifier": applicationPackageId,
+      "DesktopUpdaterInstallPolicyID": policyId,
+      "DesktopUpdaterInstallHelperServiceID": helperServiceId,
+      "DesktopUpdaterInstallHelperRequirement": helperRequirement,
+      "DesktopUpdaterInstallHelperLaunchDaemonPlistName":
+          "$helperServiceId.plist",
+    }.entries) {
+      checkMetadata(
+          "app Info.plist.${entry.key}", appInfo[entry.key], entry.value);
+    }
+    if (metadataMismatches.isNotEmpty) {
       throw StateError(
-        "Packaged helper policy does not match bundle metadata.",
+        "Packaged helper policy does not match bundle metadata.\n"
+        "${metadataMismatches.join("\n")}\n"
+        "Run dart run desktop_updater:release helper-policy to repair Runner's helper phase. "
+        "Rebuild with the 'Embed Desktop Updater Install Helper' phase after "
+        "Flutter's embed phase. Add \$(TARGET_BUILD_DIR)/\$(INFOPLIST_PATH) to "
+        "its Input Files so Xcode generates the host Info.plist first. "
+        "App build-number changes do not require policyVersion or "
+        "minimumHelperProtocolVersion changes.",
       );
     }
     final daemon = File(

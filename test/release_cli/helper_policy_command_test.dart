@@ -51,6 +51,39 @@ void main() {
 
   tearDown(() => root.delete(recursive: true));
 
+  test("invalid Xcode project rejects setup before writing policy files",
+      () async {
+    final project = File(
+      path.join(root.path, "macos", "Runner.xcodeproj", "project.pbxproj"),
+    );
+    await project.parent.create(recursive: true);
+    await project.writeAsString("{ malformed project");
+    expect(await run(["--team-id", "ABC1234567"]), isNonZero);
+    expect(await source.exists(), isFalse);
+    expect(await sealed.exists(), isFalse);
+    expect(await digest.exists(), isFalse);
+    expect(await project.readAsString(), "{ malformed project");
+    expect(await run(["--team-id", "ABC1234567", "--no-configure-xcode"]), 0);
+    expect(await project.readAsString(), "{ malformed project");
+  });
+
+  test("helper-embed requires Xcode context without generating policy files",
+      () async {
+    final log = StringBuffer();
+    expect(
+      await runReleaseCommand(
+        ["helper-embed"],
+        projectRoot: root,
+        output: log,
+        environment: {},
+      ),
+      isNonZero,
+    );
+    expect(log.toString(), contains("Runner Xcode build phase"));
+    expect(await source.exists(), isFalse);
+    expect(await digest.exists(), isFalse);
+  });
+
   test(
       "creates app-owned policy and digest from literal app ID and public profile",
       () async {

@@ -344,6 +344,7 @@
 				"$(PROJECT_DIR)/../../macos/install_helper/verify_install_helper_layout.sh",
 				"$(PROJECT_DIR)/Runner/DesktopUpdaterHelperPolicy.json",
 				"$(PROJECT_DIR)/Runner/DesktopUpdaterHelperPolicy-Debug.json",
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
 			);
 			name = "Embed Desktop Updater Install Helper";
 			outputFileListPaths = (

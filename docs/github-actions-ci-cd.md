@@ -38,6 +38,8 @@ The package CI covers:
 - macOS SwiftPM helper tests, a named unprivileged crash-recovery suite, an
   external Flutter-free Swift consumer, and separate Flutter SwiftPM and
   CocoaPods fallback build/integration lanes;
+- macOS automatic Runner setup, idempotent project repair, and real helper
+  packaging/policy-pin regression tests on the native macOS host;
 - Windows debug and release builds, named helper trust, pipe-spoofing,
   transaction, and crash-recovery tests, integration tests, and two fresh
   Debug plus two fresh Release update smokes;

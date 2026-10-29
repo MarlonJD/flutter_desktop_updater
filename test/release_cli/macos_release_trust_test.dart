@@ -765,7 +765,7 @@ void main() {
       ]),
     );
 
-    final inventory = await MacOSReleaseTrust(
+    final trust = MacOSReleaseTrust(
       runProcess: (executable, arguments) async {
         if (executable == "/usr/bin/lipo") {
           return ProcessResult(0, 0, "arm64 x86_64", "");
@@ -775,7 +775,8 @@ void main() {
         }
         return ProcessResult(0, 0, "", "");
       },
-    ).preflight(
+    );
+    final inventory = await trust.preflight(
       app: app,
       expectedApplicationIdentifier: "com.example.desktopUpdaterSmoke",
     );
@@ -789,6 +790,43 @@ void main() {
       "identifier com.example.desktopUpdaterSmoke.helper and anchor apple generic",
     );
     expect(inventory.targets, contains(isA<MacOSCodeTarget>()));
+    final hostInfo = File(path.join(app.path, "Contents", "Info.plist"));
+    final originalHost = await hostInfo.readAsString();
+    for (final field in [
+      "DesktopUpdaterInstallPolicyID",
+      "DesktopUpdaterInstallHelperServiceID",
+      "DesktopUpdaterInstallHelperRequirement",
+      "DesktopUpdaterInstallHelperLaunchDaemonPlistName",
+    ]) {
+      final entry = RegExp("<key>$field</key><string>[^<]*</string>");
+      for (final missing in [true, false]) {
+        await hostInfo.writeAsString(originalHost.replaceFirst(
+            entry,
+            missing
+                ? ""
+                : "<key>$field</key><string>com.example.wrong</string>"));
+        await expectLater(
+          trust.preflight(app: app),
+          throwsA(isA<StateError>()
+              .having(
+                  (error) => error.message,
+                  "message",
+                  contains(
+                      "Packaged helper policy does not match bundle metadata"))
+              .having((error) => error.message, "field",
+                  contains("app Info.plist.$field"))
+              .having((error) => error.message, "actual",
+                  contains(missing ? "<missing>" : '"com.example.wrong"'))),
+        );
+      }
+    }
+    await hostInfo.writeAsString(originalHost.replaceFirst(
+      "<key>CFBundleVersion</key><string>1</string>",
+      "<key>CFBundleVersion</key><string>2</string>",
+    ));
+    final nextBuild = await trust.preflight(app: app);
+    expect(nextBuild.sealedPolicy?.policyId, inventory.sealedPolicy?.policyId);
+    await hostInfo.writeAsString(originalHost);
     if (!Platform.isWindows) {
       final trust = MacOSReleaseTrust();
       await trust.verifyInstallReadiness(inventory: inventory);
