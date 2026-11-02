@@ -34,15 +34,19 @@ class InnoInstallerPackager {
     String? outputBaseName,
   }) async {
     validateInnoPublishConfig(config);
-    await request.outputDirectory.create(recursive: true);
     final rawExecutableRelativePath = request.executableRelativePath?.trim();
-    if (request.input is! Directory ||
-        rawExecutableRelativePath == null ||
-        rawExecutableRelativePath.isEmpty) {
+    if (request.input is! Directory || !await request.input.exists()) {
       throw FileSystemException(
-        "Inno packaging requires a Windows Release directory and its exact "
-        "application executable relative path.",
+        "Inno packaging requires an existing Windows Release directory.",
         request.input.path,
+      );
+    }
+    if (rawExecutableRelativePath == null ||
+        rawExecutableRelativePath.isEmpty) {
+      throw const FormatException(
+        "Inno packaging requires the exact application executable relative "
+        "path. For Flutter Windows apps, set a literal BINARY_NAME in "
+        "windows/CMakeLists.txt or pass --executable-relative-path <app.exe>.",
       );
     }
     final executableRelativePath =
@@ -97,6 +101,7 @@ class InnoInstallerPackager {
           version: request.version,
           platform: request.platform,
         );
+    await request.outputDirectory.create(recursive: true);
     final outputExe = File(
       path.join(request.outputDirectory.path, "$resolvedOutputBaseName.exe"),
     );

@@ -122,6 +122,9 @@ version: 1.0.0
 name: example
 version: 1.0.0
 """);
+      final cmake = File(path.join(root.path, "windows", "CMakeLists.txt"));
+      await cmake.parent.create();
+      await cmake.writeAsString('set(BINARY_NAME "inferred_app")\n');
       final adapter = FlutterProjectAdapter(
         overrides: const ReleasePublishOverrides(
           executableRelativePath: "desktop_updater_example.exe",
@@ -187,6 +190,96 @@ version: 1.0.0
         ),
       );
     });
+  });
+
+  group("Flutter Windows executable resolution", () {
+    late Directory root;
+    late File cmake;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp("flutter_executable_");
+      await File(path.join(root.path, "pubspec.yaml")).writeAsString("""
+name: example
+version: 1.0.0
+""");
+      cmake = File(path.join(root.path, "windows", "CMakeLists.txt"));
+      await cmake.parent.create();
+    });
+
+    tearDown(() async {
+      await root.delete(recursive: true);
+    });
+
+    Future<ProjectBuildResult> build() {
+      return FlutterProjectAdapter(
+        overrides: const ReleasePublishOverrides(),
+        output: StringBuffer(),
+        skipBuild: true,
+      ).build(
+        ProjectBuildRequest(
+          projectRoot: root,
+          platform: "windows",
+          releaseMode: true,
+        ),
+      );
+    }
+
+    for (final declaration in [
+      'set(BINARY_NAME "Custom Client")\n',
+      'set(BINARY_NAME "Custom Client")\r\n',
+      '  set ( BINARY_NAME "Custom Client" ) # application executable\n',
+      'set(\nBINARY_NAME\n"Custom Client"\n)\n',
+    ]) {
+      test("resolves literal BINARY_NAME in ${declaration.trim()}", () async {
+        await cmake.writeAsString(declaration);
+
+        final result = await build();
+
+        expect(result.appName, "Example");
+        expect(result.executableRelativePath, "Custom Client.exe");
+      });
+    }
+
+    test("resolves an unquoted binary name and ignores line comments",
+        () async {
+      await cmake.writeAsString('''
+# set(BINARY_NAME "obsolete")
+set(BINARY_NAME custom_client)
+''');
+
+      expect((await build()).executableRelativePath, "custom_client.exe");
+    });
+
+    for (final declaration in <String?>[
+      null,
+      '# set(BINARY_NAME "commented_out")\n',
+      r'set(BINARY_NAME "${PROJECT_NAME}")',
+      r'set(BINARY_NAME "$<CONFIG:Release>")',
+      'set(BINARY_NAME "first")\nset(BINARY_NAME "second")\n',
+      'set(BINARY_NAME "../outside")\n',
+    ]) {
+      test("leaves unresolved metadata for ${declaration ?? 'missing CMake'}",
+          () async {
+        if (declaration != null) {
+          await cmake.writeAsString(declaration);
+        }
+        final helper = File(
+          path.join(
+            root.path,
+            "build",
+            "windows",
+            "x64",
+            "runner",
+            "Release",
+            "desktop_updater_install_helper.exe",
+          ),
+        );
+        await helper.parent.create(recursive: true);
+        await helper.writeAsString("helper");
+
+        expect((await build()).executableRelativePath, isNull);
+      });
+    }
   });
 
   group("manual project adapter", () {

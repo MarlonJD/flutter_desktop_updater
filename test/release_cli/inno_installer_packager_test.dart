@@ -13,6 +13,64 @@ const _testCertificateSha256 =
     "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
 
 void main() {
+  for (final executableRelativePath in <String?>[null, "Missing.exe"]) {
+    test("rejects unavailable application metadata: $executableRelativePath",
+        () async {
+      final root = await Directory.systemTemp.createTemp("inno_executable_");
+      addTearDown(() => root.delete(recursive: true));
+      final input = Directory(path.join(root.path, "Release"));
+      await input.create();
+      await File(path.join(input.path, "desktop_updater_install_helper.exe"))
+          .writeAsString("helper");
+      var compilerCalled = false;
+      final packager = InnoInstallerPackager(
+        compileInno: ({required scriptFile, required outputExe}) async {
+          compilerCalled = true;
+        },
+      );
+
+      await expectLater(
+        packager.package(
+          ReleasePackageRequest(
+            input: input,
+            outputDirectory: Directory(path.join(root.path, "out")),
+            packageId: "com.example.app",
+            appName: "Example",
+            version: "2.5.0",
+            platform: "windows",
+            channel: "stable",
+            artifactUrl: Uri.parse("https://cdn.example.com/Example-setup.exe"),
+            installStrategy: "innoInstaller",
+            executableRelativePath: executableRelativePath,
+          ),
+          config: const InnoPublishConfig(
+            kind: "inno",
+            mode: "script",
+            script: "setup.iss",
+            privilegesRequired: "admin",
+            requiresElevation: "always",
+            authenticodeThumbprints: [_testCertificateSha256],
+          ),
+        ),
+        throwsA(
+          executableRelativePath == null
+              ? isA<FormatException>().having(
+                  (error) => error.message,
+                  "message",
+                  contains("--executable-relative-path"),
+                )
+              : isA<FileSystemException>().having(
+                  (error) => error.path,
+                  "path",
+                  path.join(input.path, executableRelativePath),
+                ),
+        ),
+      );
+      expect(compilerCalled, isFalse);
+      expect(await Directory(path.join(root.path, "out")).exists(), isFalse);
+    });
+  }
+
   test("packages an Inno installer descriptor", () async {
     final root = await Directory.systemTemp.createTemp("inno_packager_");
     addTearDown(() async {

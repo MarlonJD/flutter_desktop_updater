@@ -205,6 +205,21 @@ an elevated endpoint.
 
 ## Custom Script Mode
 
+For Flutter Windows apps, both installer modes resolve the application
+executable from the literal `BINARY_NAME` in `windows/CMakeLists.txt`, such as
+`set(BINARY_NAME "flutter_client")` for `flutter_client.exe`. This filename is
+independent of the display name and installer `outputBaseName`. The packager
+checks the executable in the Release directory and records its SHA-256 in
+`release.json`.
+
+For a custom CMake layout or a computed `BINARY_NAME`, provide the exact path
+relative to the Release directory:
+
+```sh
+dart run desktop_updater:release publish --platform windows \
+  --executable-relative-path flutter_client.exe
+```
+
 Use script mode when your app already owns an Inno script:
 
 ```yaml

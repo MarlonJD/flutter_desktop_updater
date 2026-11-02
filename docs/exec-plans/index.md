@@ -29,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-11-02 - Issue 83 Flutter Inno executable resolution](completed/2026-11-02-issue83-flutter-inno-executable.md)
 - [2026-10-29 - desktop_updater 3.2.8 release](completed/2026-10-29-desktop-updater-3-2-8-release.md)
 - [2026-10-29 - Automatic macOS helper build-phase setup](completed/2026-10-29-macos-helper-automatic-setup.md)
 - [2026-10-29 - Issue 82 helper policy digest investigation](completed/2026-10-29-issue82-helper-policy-digest.md)

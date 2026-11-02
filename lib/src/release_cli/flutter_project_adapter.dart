@@ -76,9 +76,33 @@ final class FlutterProjectAdapter implements ProjectAdapter {
       packageId: metadata.packageId,
       version: metadata.version,
       buildNumber: metadata.buildNumber,
-      executableRelativePath: overrides.executableRelativePath,
+      executableRelativePath: overrides.executableRelativePath ??
+          (request.platform == "windows"
+              ? await _resolveWindowsExecutable(request.projectRoot)
+              : null),
     );
   }
+}
+
+Future<String?> _resolveWindowsExecutable(Directory projectRoot) async {
+  final cmake = File(path.join(projectRoot.path, "windows", "CMakeLists.txt"));
+  if (!await cmake.exists()) {
+    return null;
+  }
+  final matches = RegExp(
+    r'^\s*set\s*\(\s*BINARY_NAME\s+(?:"([^"\r\n]+)"|([^\s"#()]+))\s*\)\s*(?:#[^\r\n]*)?$',
+    multiLine: true,
+  ).allMatches(await cmake.readAsString()).toList();
+  if (matches.length != 1) {
+    return null;
+  }
+  final binaryName = matches.single.group(1) ?? matches.single.group(2)!;
+  // Resolve only a literal filename; CMake expressions need an explicit path.
+  if (binaryName.trim().isEmpty ||
+      binaryName.contains(RegExp(r'''[\\/:*?"<>|;$]'''))) {
+    return null;
+  }
+  return "$binaryName.exe";
 }
 
 Future<void> _buildFlutterProject({

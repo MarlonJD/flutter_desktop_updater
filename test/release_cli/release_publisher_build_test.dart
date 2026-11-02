@@ -1,6 +1,7 @@
 import "dart:convert";
 import "dart:io";
 
+import "package:crypto/crypto.dart" as crypto;
 import "package:cryptography_plus/cryptography_plus.dart";
 import "package:desktop_updater/src/core/release_descriptor.dart";
 import "package:desktop_updater/src/core/release_index.dart";
@@ -539,6 +540,104 @@ windows:
       expect(
         writtenManifest.artifact.url.toString(),
         "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("Flutter custom Inno publish resolves the built application executable",
+      () async {
+    final root = await _createWindowsFixture();
+    final cmake = File(path.join(root.path, "windows", "CMakeLists.txt"));
+    await cmake.parent.create(recursive: true);
+    await cmake.writeAsString('set(BINARY_NAME "flutter_client")\n');
+    final script =
+        File(path.join(root.path, "packages", "windows", "setup.iss"));
+    await script.parent.create(recursive: true);
+    const scriptSource =
+        "[Setup]\nOutputBaseFilename=应用-v2.1.0(2)-windows-setup\n";
+    await script.writeAsString(scriptSource);
+    await File(path.join(root.path, "desktop_updater.yaml")).writeAsString("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: script
+    script: ${script.path}
+    outputBaseName: 应用-v2.1.0(2)-windows-setup
+    privilegesRequired: admin
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+""");
+    var buildCalls = 0;
+    var compileCalls = 0;
+    const executableBytes = [77, 90, 1, 2, 3];
+    try {
+      final publisher = ReleasePublisher(
+        startBuildProcess: (
+          executable,
+          arguments, {
+          workingDirectory,
+          runInShell = false,
+        }) async {
+          buildCalls++;
+          final release = Directory(
+            path.join(
+              root.path,
+              "build",
+              "windows",
+              "x64",
+              "runner",
+              "Release",
+            ),
+          );
+          await release.create(recursive: true);
+          await File(path.join(release.path, "flutter_client.exe"))
+              .writeAsBytes(executableBytes);
+          await File(
+            path.join(release.path, "desktop_updater_install_helper.exe"),
+          ).writeAsString("helper");
+          return const _FakeBuildProcess();
+        },
+        innoPackager: InnoInstallerPackager(
+          compileInno: ({required scriptFile, required outputExe}) async {
+            compileCalls++;
+            expect(await scriptFile.readAsString(), scriptSource);
+            await outputExe.writeAsBytes([1, 2, 3]);
+          },
+        ),
+      );
+
+      final manifest = await publisher.publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
+        output: StringBuffer(),
+      );
+
+      expect(buildCalls, 1);
+      expect(compileCalls, 1);
+      expect(manifest.artifact.kind, "innoInstaller");
+      expect(
+        path.basename(manifest.artifact.path),
+        "应用-v2.1.0(2)-windows-setup.exe",
+      );
+      final releaseFile = File(
+        path.join(root.path, "dist", "desktop_updater", manifest.release.path),
+      );
+      final descriptor = ReleaseDescriptor.fromJson(
+        jsonDecode(await releaseFile.readAsString()) as Map<String, dynamic>,
+      );
+      expect(
+        descriptor.install.inno!.installedExecutableRelativePath,
+        "flutter_client.exe",
+      );
+      expect(
+        descriptor.install.inno!.installedExecutableSha256,
+        crypto.sha256.convert(executableBytes).toString(),
       );
     } finally {
       await root.delete(recursive: true);
