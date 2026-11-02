@@ -55,7 +55,10 @@ final class MacApplicationBundleRestartTests: XCTestCase {
         }
         environment["DESKTOP_UPDATER_TEST_BUNDLE_RESTART_ROOT"] = root.path
         try runTool(
-            "/usr/bin/open", ["--", application.path], environment: environment
+            "/usr/bin/open", [
+                "--env", "DESKTOP_UPDATER_TEST_BUNDLE_RESTART_ROOT=\(root.path)",
+                "--", application.path,
+            ], environment: environment
         )
         var launched = try readProof("launched.json", in: root)
         XCTAssertFalse(launched.restarted)

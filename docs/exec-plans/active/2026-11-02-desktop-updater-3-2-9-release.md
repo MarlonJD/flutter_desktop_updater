@@ -22,7 +22,9 @@ and local main equal to origin/main at
 - [x] Pass the complete local harness for release commit fa476bf.
 - [x] Commit the scoped release metadata and push main without force.
 - [x] Repair the observed Linux CI fixture assumption and validate it on Ubuntu 26.
-- [ ] Wait for the exact release commit's full standard CI matrix.
+- [x] Observe nine successful exact-head CI jobs, including Windows and Linux.
+- [x] Record the user's authorization to replace queued macOS CI with local checks.
+- [ ] Complete local macOS SwiftPM, CocoaPods, native, and ARM64 CLI checks.
 - [ ] Publish immutable pub.dev 3.2.9 and matching GitHub tag/release.
 - [ ] Verify package archive bytes, tag identity, versions, and public links.
 - [ ] Post and read back the reporter comment through MarlonJD's CLI account.
@@ -36,9 +38,13 @@ and local main equal to origin/main at
 - The first commit contains the fix and the second synchronizes release
   versions. Preserve the unrelated .gitignore edit, two old 2.x plans, and their
   index entries through selective staging.
-- Require the exact candidate's standard Windows, Linux, macOS, and CLI CI
-  lanes. Signed/elevated Inno installation and fresh notarized macOS E2E are
-  separate evidence boundaries for this Dart release-CLI fix.
+- The initial release gate required the full standard CI matrix. After hosted
+  macOS ARM jobs expired without runners, the user explicitly authorized local
+  macOS testing without waiting for CI. Retain the nine successful jobs for
+  `1b2186368f992572044374f1e4fdd9063df9f051` and verify the remaining macOS
+  integration/CLI surfaces locally. Subsequent changes are limited to the
+  macOS test fixture and this release ledger. Signed/elevated Inno installation
+  and fresh notarized macOS E2E remain separate evidence boundaries.
 - Publish the Dart package and release notes only; standalone CLI artifacts
   remain candidate-only outputs of their existing CI lanes.
 - Keep the issue open for reporter confirmation; the requested action is a
@@ -79,6 +85,20 @@ an existing published package or move a tag to recover from a failed attempt.
 - The same CI run's macOS main-nib restart test timed out waiting for its first
   `launched.json` proof. Preserve its failure logs and require this gate to
   pass on the final candidate; do not weaken or skip the test.
+- Run 41420741395 passed nine jobs, including the complete Windows, Linux,
+  and native macOS lanes. Three hosted macOS ARM jobs expired after 15 minutes
+  with "The job was not acquired by Runner of type hosted even after multiple
+  attempts" and capacity notices. A retry was queued, then canceled after the
+  user authorized local macOS checks instead of waiting.
+- Local restart testing reproduced the first-launch fixture failure in the
+  full native suite after the focused case passed. Pass its root explicitly
+  with `open --env`, which is the documented application-environment option,
+  instead of relying solely on the environment of the `open` subprocess.
+  Three consecutive focused cases and the complete 155-test suite then passed.
+- Local verification uses separate source exports of the release candidate,
+  Flutter 3.44.8, Swift 6.4, and macOS 27.2 arm64. Signing and per-project
+  SwiftPM/CocoaPods settings change only in the owned example fixtures; the
+  user's global Flutter configuration and repository example remain intact.
 
 ## Outcomes & Retrospective
 
