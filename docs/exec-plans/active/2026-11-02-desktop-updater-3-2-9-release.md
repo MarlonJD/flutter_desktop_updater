@@ -19,8 +19,9 @@ and local main equal to origin/main at
 - [x] Commit only the two source files, three regression test files, and docs.
 - [x] Synchronize release versions, changelog, README, and version assertions.
 - [x] Pass focused validation: 98 Dart tests and 6 Swift helper version tests.
-- [ ] Pass the complete local harness for the immutable release candidate.
-- [ ] Commit the scoped release metadata and push main without force.
+- [x] Pass the complete local harness for release commit fa476bf.
+- [x] Commit the scoped release metadata and push main without force.
+- [x] Repair the observed Linux CI fixture assumption and validate it on Ubuntu 26.
 - [ ] Wait for the exact release commit's full standard CI matrix.
 - [ ] Publish immutable pub.dev 3.2.9 and matching GitHub tag/release.
 - [ ] Verify package archive bytes, tag identity, versions, and public links.
@@ -63,6 +64,21 @@ an existing published package or move a tag to recover from a failed attempt.
   instead of editing or deleting historical evidence.
 - The example path-dependency lock entry is updated only from 3.2.8 to 3.2.9;
   dependency constraints and unrelated locked packages are unchanged.
+- The first export's generated folder name changed SwiftPM's path-dependency
+  identity, causing two removed-API tests to fail before reaching their
+  intended compiler errors. A fresh export named `flutter_desktop_updater`
+  passed the focused contract tests and the complete local harness without
+  changing source. Both reports are retained.
+- Initial full CI 41418954713 ran on Ubuntu 26.04.1 and failed the Linux
+  `FexecveLauncherConfirmsChildExec` fixture because `/usr/bin/true` is a
+  symlink. Reproduced the exact no-follow failure in an isolated official
+  Ubuntu 26 container as an unprivileged user. Reuse the existing compiled
+  caller fixture and keep production no-follow enforcement unchanged.
+  The corrected unprivileged recovery group passed with 11 tests and 3
+  prerequisite skips; its separate root credential-drop test also passed.
+- The same CI run's macOS main-nib restart test timed out waiting for its first
+  `launched.json` proof. Preserve its failure logs and require this gate to
+  pass on the final candidate; do not weaken or skip the test.
 
 ## Outcomes & Retrospective
 

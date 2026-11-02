@@ -394,10 +394,15 @@ TEST(LinuxCrashRecovery, CapturesSanitizedCurrentPeerIdentity) {
 TEST(LinuxCrashRecovery, FexecveLauncherConfirmsChildExec) {
   const auto identity = CaptureLinuxRelaunchIdentity(
       getpid(), LinuxProcessStartIdentity(getpid()), geteuid(), getegid());
+  // Distro-provided commands may be symlinks; use the built test executable.
+  const std::filesystem::path fixture =
+      DESKTOP_UPDATER_COMMIT_CALLER_FIXTURE;
+  auto parent = OpenLinuxDirectory(fixture.parent_path().string());
   auto executable = OpenLinuxRelativeNoFollow(
-      OpenLinuxDirectory("/usr/bin").get(), "true", O_RDONLY);
+      parent.get(), fixture.filename().string(), O_RDONLY);
   FexecveLinuxProcessLauncher launcher;
-  EXPECT_NO_THROW(launcher.Launch(executable.get(), "true", identity));
+  EXPECT_NO_THROW(
+      launcher.Launch(executable.get(), fixture.filename().string(), identity));
 }
 
 TEST(LinuxCrashRecovery, RootLauncherDropsCredentialsAndSanitizesEnvironment) {
