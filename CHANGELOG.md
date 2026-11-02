@@ -1,3 +1,13 @@
+## 3.2.9
+
+* Fix Flutter Windows Inno publishing rejecting an existing Release directory
+  before compiling the installer script. Resolve the application executable
+  from `BINARY_NAME` in `windows/CMakeLists.txt` in both installer modes (#83).
+* Explain how to pass `--executable-relative-path` when a custom CMake layout
+  prevents automatic resolution. Explicit executable overrides retain precedence.
+* Validate executable inputs before creating the release output directory so
+  missing metadata or binaries do not leave an empty directory blocking retry.
+
 ## 3.2.8
 
 * Make `release helper-policy` create or repair the macOS Runner helper phase,
