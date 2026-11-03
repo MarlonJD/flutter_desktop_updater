@@ -22,7 +22,7 @@ Add the package:
 
 ```yaml
 dependencies:
-  desktop_updater: ^3.2.9
+  desktop_updater: ^3.2.10
 ```
 
 Add `desktop_updater.yaml` at your app repository root, next to

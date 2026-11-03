@@ -1,3 +1,12 @@
+## 3.2.10
+
+* Prevent first-feed publishing from silently discarding a copied local
+  `app-archive.json` history. Stop before building or changing output when
+  existing items have not been selected with `--existing-app-archive` (#84).
+* Clarify how to retain signed history when preparing releases on multiple
+  machines before the first upload, and how established hosted feeds retain
+  records across platforms.
+
 ## 3.2.9
 
 * Fix Flutter Windows Inno publishing rejecting an existing Release directory
