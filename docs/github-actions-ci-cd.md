@@ -72,6 +72,33 @@ the approved production signing workflow. macOS and Windows public assets must
 pass their repository signing/notarization policy after their final bytes are
 built.
 
+### Archive signature interoperability investigation
+
+The manual `Archive Signature Interoperability` workflow produces signed
+archives on macOS arm64, macOS x64, Windows x64, and Linux x64 with published
+3.2.9, published 3.2.10, and the checked-out candidate. It transfers the exact
+producer files through Actions artifacts, then verifies every producer on
+every reader host with all three package versions. Producer and reader reports
+record dependency versions and hashes of the actual resolved signing sources.
+
+The probe uses the real profile resolver, native-host key store (including
+Windows CurrentUser DPAPI), ZIP packager, signer, and local publication
+validator with a public synthetic test seed and non-executable application
+files. Only hosted HTTP responses are simulated. It checks raw and canonical
+hashes, three sequential builds, descriptor signatures, formatting invariance,
+same-path archive extension with native/forward separators, hosted and absent
+feed history, and rejection of signed-content changes before output mutation.
+Each producer also runs the read-only reporter diagnostic against its signed
+positive control.
+It does not upload app releases or prove a reporter's original generation
+history, native installation, platform signing, or notarization.
+
+Run it explicitly with `gh workflow run archive-signature-interop.yml --ref main`,
+verify the run's commit SHA, then inspect its producer and consumer artifacts.
+A passing run narrows the tested platform/version/transfer causes;
+it does not turn an unexplained external signature mismatch into a diagnosed
+cause. This investigation workflow is separate from the full release gates.
+
 ### Native SDK Target-Host Gates
 
 Package contents are not accepted from source unit tests alone. The target-host

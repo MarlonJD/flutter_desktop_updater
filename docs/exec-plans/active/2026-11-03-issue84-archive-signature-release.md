@@ -6,8 +6,9 @@ Continue the authorized implementation and release on existing main, initially
 `3dcbc0e2bc7362ffd1206d3a494384402b5c773e`. Preserve the unrelated `.gitignore`
 change, two old 2.x plans, and their ledger entries. The user authorized scoped
 commits, normal pushes, a new immutable patch release, CI target-host validation,
-and fresh local notarized macOS E2E. No branch operations or GitHub feedback
-writes are authorized. Prepare an English reporter comment without posting it.
+and fresh local notarized macOS E2E. No branch operations are authorized.
+Release publication remains on hold. The later explicit authorization to post
+the read-only diagnostic script via GitHub CLI is recorded below.
 
 The reporter's redacted archive cannot establish the cryptographic cause.
 The confirmed defect is that local and hosted signature failures both report
@@ -22,8 +23,8 @@ validation before build/output mutation.
 - [x] Reproduce ambiguous errors with focused regression tests.
 - [x] Implement source-aware diagnostics and document supported recovery.
 - [x] Verify valid cross-platform history and malformed/untrusted inputs.
-- [ ] Run focused tests and the full local harness on an immutable export.
-- [ ] Obtain Windows/Linux CI evidence and fresh local notarized macOS E2E.
+- [x] Run focused tests and the full local harness on an immutable export.
+- [x] Obtain Windows/Linux CI evidence and fresh local notarized macOS E2E.
 - [ ] Publish the next unused patch and verify registry/tag/package identity.
 - [ ] Complete the ledger, draft reporter reply, and clean owned fixtures.
 
@@ -98,3 +99,163 @@ that compared a mixed-separator path with a native Windows path. Normalize
 the test's path construction by joining URL path segments; production code
 already emitted the correct native path. Keep the failed CI log and rerun on
 the final test-corrected commit before publishing.
+
+### Final candidate evidence
+
+The release candidate is `bdd7377b81a43f16907c3845f3ba8ef6c4e0364c`. Its
+complete local harness passed with 1,144 tests and 4 optional skips, format,
+analysis, version consistency, structural 31/31, 10 harness documentation tests,
+and a zero-warning publish dry run. The 155 native macOS tests and 6 helper
+version tests passed again. All 869 expected package paths are unchanged from
+3.2.10; only excluded documentation paths were added/moved. All tracked export
+bytes match the candidate commit.
+
+Real CLI/HTTP/ZIP/Ed25519 evidence passed: invalid hosted and local inputs return
+64 without output mutation, and three macOS history records survive Windows
+and then Linux additions. A real macOS CLI run packaged a fresh notarized app
+and retained the signed Windows history with a valid final archive signature.
+
+Fresh local same-user DMG update/relaunch passed from 1.0.0+1 to 1.0.0+2.
+Apple accepted app build 1 `97b027b8-78e5-46dd-b3e6-ae659a7bc48b`, app build 2
+`c5370a5b-5f70-40c0-8507-bcb75a7f45d3`, and DMG
+`6db4d142-efa7-437c-b430-419fb59e0e3f`. The initial process exited 0 and the
+replacement PID was distinct. Strict signature, stapling, Gatekeeper, embedded
+helper metadata, and unchanged helper policy checks passed. The unrelated
+recovery receipt and source export were preserved; no owned app process or
+DMG mount remained. Build 1 preceded the final test-only commit, whose only
+changes were the DMG test assertion and this plan; all app build inputs were
+byte-identical.
+
+Exact-candidate full CI: https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/41629264550 .
+All four standalone CLI hosts passed the 102 publisher tests, including native
+Windows separators. Dart/package and documentation jobs passed. The larger
+Windows/Linux application builds and publishing smoke lanes remain pending at
+this checkpoint. Superseded/duplicate task runs were cancelled to free runners.
+
+Publication and cleanup are pending. Disposable roots are
+`/private/tmp/desktop-updater-3.2.11-validation-20261103`,
+`/private/tmp/desktop-updater-3.2.11-final-20261103`,
+`/private/tmp/desktop-updater-release-3211-20261103`, and
+`/private/tmp/desktop-updater-release-3211-final-20261103`; the installed fixture
+is `/Applications/Desktop Updater Release 3211.app`. Retain the ignored QA
+evidence and remove only these owned roots after verified publication.
+
+### User publication hold
+
+On 2026-11-03 the user explicitly asked to wait for the reporter's new comment
+and evaluate it before publishing. Release publication is paused at that
+boundary. Version 3.2.11 has not been published and no v3.2.11 tag has been
+created. Existing CI may finish, but do not publish until the new reporter
+evidence has been reviewed against the fix and this hold has been resolved.
+Keep the candidate and evidence intact; no issue reply or closure is authorized.
+
+The latest live discussion includes reporter comment 6602705614 confirming
+that the hosted archive returns HTTP 404 and asking whether the public profile
+should be shared unmasked. Maintainer comment 6602907167 requests intact public
+key IDs/values from both machines and the unchanged original signed archive.
+Those new cryptographic inputs have not arrived at this checkpoint. The
+comment draft in ignored reports predates those externally posted replies and
+should not be posted again. No comments were posted by this task.
+
+### Reporter attachment investigation
+
+Reporter comment 6603155097 supplied one public profile and the unredacted
+archive. Preserve attachment SHA-256
+`a7e5aa70db087707b3143125f0525d016b91372f1b3d8ef53e5db9d42c526e1e`;
+a read-only copy and bounded scripts/results are under
+`reports/releases/issue84-reporter-signature-2026-11-03/flow-investigation/`.
+The key ID matches the public-key fingerprint, lengths are correct, and both
+the package verifier and OpenSSL reject the signature. All eight item subsets
+fail. Five formatting/key-order/line-ending encodings retain identical
+canonical bytes; formatting alone does not explain it.
+
+Ten real CLI publications (three macOS builds, Windows, then Linux; with and
+without an archive-mutating post-package hook) all emitted valid signatures
+and preserved history. Six profile-backed signing/normalization variants
+passed. Low-level upsert refused signed input unchanged. OpenSSL accepted a
+CLI-generated positive control. The archive signing components are identical
+across 18 published 3.1/3.2 tags and current HEAD. A controlled post-sign edit
+reproduces rejection, but no external edit by the reporter is proven. No
+additional product bug was identified; the specific generation cause remains
+unresolved. See findings.md and the concise next-reporter-comment-draft.md.
+
+Request original Mac bytes, exact generation commands/version, any deliberate
+content merges/edits, confirmation of the same supplied public profile, and
+Mac/Windows file hashes. Do not re-request already supplied public data or
+secrets. Re-signing is only a possible recovery after preserving evidence,
+not a causal finding. A recovery comment (6603396994) was posted externally
+while this investigation ran; this task posted nothing. Publication stays on
+hold while the original cause is unresolved.
+
+The exact-candidate CI run 41629264550 has now completed successfully, including
+real Windows and Linux release publish smoke steps. Credentialed privileged
+lanes remained skipped. No production code or release identity changed during
+this evidence-only investigation.
+
+### Further causal investigation requested by the maintainer
+
+The latest reporter comment, 6603468146, says the Mac is currently unavailable
+and the investigation must wait until tomorrow. Publication remains on hold.
+The public attachment was fetched again; its bytes match the preserved original.
+The archive endpoint and its three referenced release descriptors all returned
+HTTP 404, so no hosted original was available for comparison.
+
+The exact reporter archive was supplied to the real publisher's public
+verification preflight. It was rejected before build, packaging, or output
+mutation; the input remained byte-identical and no new output files appeared.
+This establishes that the reported failing invocation encounters an existing
+mismatch. It does not identify the earlier event that created it.
+
+Controlled real CLI failures before packaging, after packaging, and after
+signing respectively left the original valid archive, an unsigned updated
+archive, and a valid updated archive. None retained an old signature on new
+content. These are bounded synthetic application/ZIP checks on macOS, not a
+reproduction of the reporter's unknown generating workflow.
+
+An independent Node verifier accepted the supported-CLI positive control and
+rejected 18,728 distinct bounded payload reconstructions covering item subsets
+and permutations plus selected app-name, URL, platform, and mandatory changes.
+No match was found. This excludes only the enumerated inputs and is not proof
+of an external edit. Earlier source inspection also found unchanged archive
+canonicalization; historical direct-key selection remains an unconfirmed
+possibility only if the unknown original generation used such a version.
+
+The ignored evidence directory now includes `causal-probes/README.md` and the
+read-only `diagnose_archive.dart` handoff. It reports raw/canonical hashes,
+public-key fingerprints, archive and contained descriptor signature results,
+and resolved dependency versions. Reporter input, valid signed control, and
+deliberately edited control produced the expected results without input writes.
+The diagnostic itself was verified locally on macOS; reporter Windows execution
+is not run. Original Mac and Windows diagnostics, original generation commands,
+and the package version at generation remain the discriminating evidence.
+No product code, release identity, GitHub feedback, or publication changed.
+
+### Authorized reporter handoff and independent CI investigation
+
+The user explicitly authorized sharing the read-only script in the issue,
+requesting both Mac and Windows outputs, and preserving the original files
+before re-signing. Posted through the maintainer's sanitized GitHub CLI/keyring
+session and read back byte-for-byte:
+https://github.com/MarlonJD/flutter_desktop_updater/issues/84#issuecomment-6603900915 .
+The author is MarlonJD; no connector identity was used. The package release
+remains on hold.
+
+The user also requested further synthetic/CI investigation without waiting for
+the reporter. Add a manual, secretless archive interoperability workflow with
+four native host producers/readers and three package versions: actual pub.dev
+3.2.9, actual pub.dev 3.2.10, and the current candidate. Transfer signed archive
+and descriptor bytes across jobs; compare producer hashes and canonical bytes,
+verify signatures, extend transferred history through the real ZIP publisher,
+and reject deliberate content changes without output mutation. Keep HTTP
+simulation and synthetic application input explicit. This scope authorizes CI
+test commits/pushes, not package publication or branch operations.
+
+Local macOS production and consumption passed across all three versions: 180
+case records, including 27 history extensions and 18 tampering rejections. The
+posted read-only diagnostic accepted a signed control under all three package
+versions without changing input files. Dart analysis has no errors/warnings,
+Python/YAML syntax checks passed, the structural gate passed 31/31, and 15
+focused harness/native documentation tests passed. Exact-head target-host CI
+results are pending. The workflow cannot establish the reporter's original
+input or signing key; it can expose reproducible platform, dependency,
+transfer, and publication defects independently.

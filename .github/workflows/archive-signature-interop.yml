@@ -1,0 +1,75 @@
+name: Archive Signature Interoperability
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  produce:
+    name: Produce signed archives (${{ matrix.host }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            host: macos-arm64
+          - runner: macos-15-intel
+            host: macos-x64
+          - runner: windows-latest
+            host: windows-x64
+          - runner: ubuntu-latest
+            host: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - name: Produce with 3.2.9, 3.2.10, and the candidate
+        run: python .github/scripts/run_release_archive_interop.py produce --output reports/archive-producers --host ${{ matrix.host }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-producer-${{ matrix.host }}
+          path: reports/archive-producers
+          if-no-files-found: error
+
+  consume:
+    name: Verify and extend transferred archives (${{ matrix.host }})
+    needs: produce
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            host: macos-arm64
+          - runner: macos-15-intel
+            host: macos-x64
+          - runner: windows-latest
+            host: windows-x64
+          - runner: ubuntu-latest
+            host: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: archive-producer-*
+          path: reports/transferred-archives
+          merge-multiple: true
+      - name: Verify all producer bytes and extend history with each reader version
+        run: python .github/scripts/run_release_archive_interop.py consume --inputs reports/transferred-archives --expected-fixtures 12 --output reports/archive-consumers --host ${{ matrix.host }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: archive-consumer-${{ matrix.host }}
+          path: reports/archive-consumers
+          if-no-files-found: error
