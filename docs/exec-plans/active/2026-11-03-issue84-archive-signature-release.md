@@ -90,3 +90,11 @@ initial failure report is retained separately. All 393 release CLI tests and
 the real CLI/HTTP/ZIP/signing smoke passed. The latter retained three macOS
 records while adding Windows and then Linux, and distinguished hosted/local
 unknown-key failures with exit 64 and unchanged output.
+
+The complete local harness on f7d2482 passed (1,144 tests, 4 skipped), as did
+155 macOS native tests and 6 helper-version tests. Windows CI executed every
+new archive case successfully but exposed an existing DMG test expectation
+that compared a mixed-separator path with a native Windows path. Normalize
+the test's path construction by joining URL path segments; production code
+already emitted the correct native path. Keep the failed CI log and rerun on
+the final test-corrected commit before publishing.

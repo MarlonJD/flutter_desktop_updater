@@ -720,7 +720,7 @@ macos:
     expect(manifest.artifact.url.pathSegments.last, fileName);
     expect(manifest.artifact.url.toString(), contains("Egas%20v2.1.0"));
     final output = Directory(path.join(root.path, "dist", "desktop_updater"));
-    final artifact = File(path.join(output.path, relative));
+    final artifact = File(path.joinAll([output.path, ...relative.split("/")]));
     expect(await artifact.readAsString(), "dmg fixture");
     final descriptor = ReleaseDescriptor.fromJson(jsonDecode(await File(
       path.join(artifact.parent.path, "release.json"),
