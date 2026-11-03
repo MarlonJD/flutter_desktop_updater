@@ -25,6 +25,9 @@ validation before build/output mutation.
 - [x] Verify valid cross-platform history and malformed/untrusted inputs.
 - [x] Run focused tests and the full local harness on an immutable export.
 - [x] Obtain Windows/Linux CI evidence and fresh local notarized macOS E2E.
+- [x] Post the explicitly authorized diagnostic script and request original Mac/Windows evidence.
+- [x] Verify cross-host and cross-version archive transfer in dedicated CI.
+- [ ] Obtain the reporter's original Mac/Windows comparison before resolving the release hold.
 - [ ] Publish the next unused patch and verify registry/tag/package identity.
 - [ ] Complete the ledger, draft reporter reply, and clean owned fixtures.
 
@@ -61,8 +64,10 @@ and temporary roots after acceptance and publication.
 
 ## Outcomes & Retrospective
 
-Implementation and release pending. Reporter-specific cryptographic cause is
-unconfirmed; public profiles and unedited source data are still needed.
+The diagnostic implementation and bounded local/CI checks are complete.
+Release publication remains on the user's explicit hold. The supplied archive
+fails verification, but its original generation cause is unconfirmed; original
+Mac/Windows comparisons and generation commands/version remain outstanding.
 
 ## Revision history
 
@@ -259,3 +264,37 @@ focused harness/native documentation tests passed. Exact-head target-host CI
 results are pending. The workflow cannot establish the reporter's original
 input or signing key; it can expose reproducible platform, dependency,
 transfer, and publication defects independently.
+
+### Cross-host CI results
+
+The interoperability workflow completed successfully at source commit
+`1be56844a3a50d05ae918a6a631496491d140c9b`:
+https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/41638061915 .
+All eight host jobs passed. Twelve producer fixtures (four hosts times three
+package versions) were consumed by twelve reader combinations. Downloaded
+artifacts contain 2,880 passing case records: 1,728 archive verification cases,
+432 descriptor verifications, 432 history extensions, and 288 deliberate
+signed-content changes rejected before output mutation. Each reader report
+contains all twelve producers; artifact bytes match producer hashes.
+
+The reporter diagnostic passed its signed positive control on all twelve
+producer combinations, including Windows x64 with CurrentUser DPAPI. Actual
+runner architecture was confirmed from Dart runtime metadata. Node/OpenSSL
+independently accepted all 72 transferred archive/descriptor signatures and
+rejected an edited control for each. The reporter's original attachment remains
+unchanged. Aggregated evidence is in ignored
+`reports/releases/issue84-reporter-signature-2026-11-03/ci-artifacts/summary.json`.
+
+Actual pub.dev 3.2.9/3.2.10 sources and the candidate share identical archive
+model, canonicalization/verifier, and signing command bytes. The published
+consumer environments resolved crypto 3.0.8 and archive 4.6.0 while the local
+candidate lock resolved crypto 3.0.7 and archive 4.0.9; all used
+cryptography_plus 2.7.1. Exact per-host dependency versions and source hashes
+are retained in producer/reader artifacts.
+
+This narrows the tested host, package-version, dependency, formatting, transfer,
+key-store, and archive-extension causes. It does not prove an external edit or
+reconstruct the reporter's unknown input. The general full CI run 41638062549
+had passed Dart/package, documentation, and all four CLI candidates at this
+checkpoint; its longer native application lanes were still running. No package
+release or version tag was published.
