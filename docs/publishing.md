@@ -826,6 +826,38 @@ dart run desktop_updater:release validate \
   --manifest dist/desktop_updater/.desktop_updater_publish.json
 ```
 
+### Publishing multiple platforms to one feed
+
+For an established feed, publish and upload one platform at a time using the
+same `updates.baseUrl` and release-key profile. Each publication reads and
+verifies the hosted `app-archive.json`, retains its existing platform/channel
+items, adds the new release, and signs the complete index again. Finish the
+first upload before starting the next platform. A copied `dist` directory does
+not replace the verified hosted history.
+
+Before the first upload, prepare the first platform with `--initialize-feed`.
+To carry its signed history to another machine/platform while the hosted feed
+is still absent, explicitly select the copied archive:
+
+```sh
+dart run desktop_updater:release publish \
+  --platform windows \
+  --initialize-feed \
+  --existing-app-archive dist/desktop_updater/app-archive.json
+```
+
+Import the same release-key profile on the second machine as described in
+[Release key management](release-key-management.md). The archive signature is
+verified before output is modified; the selected source may be the output
+archive itself. Adjust the path if `updates.output` or `--output` is set.
+
+If an initial publication finds non-empty local history without an explicit
+`--existing-app-archive`, it stops before building or changing release output.
+Use the signed archive option to preserve those items. Once the feed exists on
+the server, omit `--initialize-feed`; an optional `--existing-app-archive` must
+match the hosted bytes exactly. Upload immutable release files and artifacts
+first, and publish the final signed `app-archive.json` last.
+
 ## Recommended Setup
 
 For production, start from the minimum setup and add:

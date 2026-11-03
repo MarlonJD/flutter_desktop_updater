@@ -1102,6 +1102,7 @@ macos:
         relativePath: "hosted-app-archive.json",
         seed: seed,
         items: [
+          _macOSHistoryItem(),
           ReleaseIndexItem(
             version: "2.0.0",
             buildNumber: 200,
@@ -1153,14 +1154,258 @@ macos:
           ) as Map<String, dynamic>,
         );
         expect(finalIndex.items.map((item) => item.version), [
+          "2.1.0",
           "2.0.0",
           "2.1.0",
         ]);
+        expect(finalIndex.items.map((item) => item.platform), [
+          "macos",
+          "windows",
+          "windows",
+        ]);
+        expect(
+          await Ed25519ReleaseIndexSignatureVerifier(publicKeys)
+              .verify(finalIndex),
+          isTrue,
+        );
       } finally {
         await root.delete(recursive: true);
       }
     },
   );
+
+  for (final outputPath in ["dist/desktop_updater", "release output 中文"]) {
+    for (final signed in [true, false]) {
+      test(
+        "feed initialization protects unselected local history "
+        "(signed: $signed, output: $outputPath) before building",
+        () async {
+          final root = await _createWindowsFixture();
+          final seed = List<int>.generate(32, (index) => index);
+          final publicKeys = await _publicKeysForSeed(seed);
+          final packager = _RecordingPackager(<String>[]);
+          var buildCalls = 0;
+          try {
+            final archive = await _writeSignedAppArchive(
+              root: root,
+              relativePath: path.join(outputPath, "app-archive.json"),
+              seed: seed,
+              items: [_macOSHistoryItem()],
+            );
+            if (!signed) {
+              final json = jsonDecode(await archive.readAsString())
+                  as Map<String, dynamic>;
+              json.remove("signature");
+              await _writeJsonFileForTest(archive, json);
+            }
+            final originalBytes = await archive.readAsBytes();
+            final publisher = ReleasePublisher(
+              packager: packager,
+              httpClient: _missingHostedIndexClient(),
+              startBuildProcess: (
+                executable,
+                arguments, {
+                workingDirectory,
+                runInShell = false,
+              }) async {
+                buildCalls += 1;
+                return const _FakeBuildProcess();
+              },
+            );
+
+            await expectLater(
+              publisher.publish(
+                projectRoot: root,
+                platform: "windows",
+                overrides: ReleasePublishOverrides(
+                  initializeFeed: true,
+                  outputPath: outputPath,
+                ),
+                signing: ReleaseSigningOptions(
+                  publicKeyId: "stable-2026",
+                  privateKeyBase64: base64Encode(seed),
+                  trustedReleasePublicKeys: publicKeys,
+                ),
+                output: StringBuffer(),
+              ),
+              throwsA(
+                isA<FormatException>().having(
+                  (error) => error.message,
+                  "message",
+                  allOf(contains("local"), contains("--existing-app-archive")),
+                ),
+              ),
+            );
+            expect(buildCalls, 0);
+            expect(packager.requests, isEmpty);
+            expect(await archive.readAsBytes(), originalBytes);
+            expect(
+              await Directory(path.join(archive.parent.path, "releases"))
+                  .exists(),
+              isFalse,
+            );
+            expect(
+              await File(path.join(
+                archive.parent.path,
+                ".desktop_updater_publish.json",
+              )).exists(),
+              isFalse,
+            );
+          } finally {
+            await root.delete(recursive: true);
+          }
+        },
+      );
+    }
+
+    test(
+      "feed initialization extends explicit signed history at its output path "
+      "($outputPath)",
+      () async {
+        final root = await _createWindowsFixture();
+        final seed = List<int>.generate(32, (index) => index);
+        final publicKeys = await _publicKeysForSeed(seed);
+        final archivePath = path.join(outputPath, "app-archive.json");
+        try {
+          final macOSItem = _macOSHistoryItem();
+          final archive = await _writeSignedAppArchive(
+            root: root,
+            relativePath: archivePath,
+            seed: seed,
+            items: [macOSItem],
+          );
+          final publisher = ReleasePublisher(
+            skipBuild: true,
+            packager: _RecordingPackager(<String>[]),
+            httpClient: _missingHostedIndexClient(),
+          );
+
+          await publisher.publish(
+            projectRoot: root,
+            platform: "windows",
+            overrides: ReleasePublishOverrides(
+              initializeFeed: true,
+              outputPath: outputPath,
+              existingAppArchive: archivePath,
+            ),
+            signing: ReleaseSigningOptions(
+              publicKeyId: "stable-2026",
+              privateKeyBase64: base64Encode(seed),
+              trustedReleasePublicKeys: publicKeys,
+            ),
+            output: StringBuffer(),
+          );
+
+          final index = ReleaseIndex.fromJson(
+            jsonDecode(await archive.readAsString()) as Map<String, dynamic>,
+          );
+          expect(
+              index.items.map((item) => item.platform), ["macos", "windows"]);
+          expect(index.items.first.toJson(), macOSItem.toJson());
+          expect(
+            await Ed25519ReleaseIndexSignatureVerifier(publicKeys)
+                .verify(index),
+            isTrue,
+          );
+        } finally {
+          await root.delete(recursive: true);
+        }
+      },
+    );
+  }
+
+  test("feed initialization allows an empty local archive", () async {
+    final root = await _createWindowsFixture();
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    try {
+      final archive = await _writeSignedAppArchive(
+        root: root,
+        relativePath: "dist/desktop_updater/app-archive.json",
+        seed: seed,
+        items: [],
+      );
+      await ReleasePublisher(
+        skipBuild: true,
+        packager: _RecordingPackager(<String>[]),
+        httpClient: _missingHostedIndexClient(),
+      ).publish(
+        projectRoot: root,
+        platform: "windows",
+        overrides: const ReleasePublishOverrides(initializeFeed: true),
+        signing: ReleaseSigningOptions(
+          publicKeyId: "stable-2026",
+          privateKeyBase64: base64Encode(seed),
+          trustedReleasePublicKeys: publicKeys,
+        ),
+        output: StringBuffer(),
+      );
+      final index = ReleaseIndex.fromJson(
+        jsonDecode(await archive.readAsString()) as Map<String, dynamic>,
+      );
+      expect(index.items.single.platform, "windows");
+      expect(
+        await Ed25519ReleaseIndexSignatureVerifier(publicKeys).verify(index),
+        isTrue,
+      );
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
+
+  test("publisher rejects a local snapshot that differs from hosted history",
+      () async {
+    final root = await _createWindowsFixture();
+    final seed = List<int>.generate(32, (index) => index);
+    final publicKeys = await _publicKeysForSeed(seed);
+    final packager = _RecordingPackager(<String>[]);
+    try {
+      final archive = await _writeSignedAppArchive(
+        root: root,
+        relativePath: "dist/desktop_updater/app-archive.json",
+        seed: seed,
+        items: [_macOSHistoryItem()],
+      );
+      final originalBytes = await archive.readAsBytes();
+      final hosted = await _writeSignedAppArchive(
+        root: root,
+        relativePath: "hosted.json",
+        seed: seed,
+        items: [],
+      );
+      final hostedBytes = await hosted.readAsBytes();
+      await expectLater(
+        ReleasePublisher(
+          skipBuild: true,
+          packager: packager,
+          httpClient: MockClient(
+            (_) async => http.Response.bytes(hostedBytes, 200),
+          ),
+        ).publish(
+          projectRoot: root,
+          platform: "windows",
+          overrides: const ReleasePublishOverrides(
+            existingAppArchive: "dist/desktop_updater/app-archive.json",
+          ),
+          signing: ReleaseSigningOptions(
+            publicKeyId: "stable-2026",
+            privateKeyBase64: base64Encode(seed),
+            trustedReleasePublicKeys: publicKeys,
+          ),
+          output: StringBuffer(),
+        ),
+        throwsA(isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("does not match the hosted"),
+        )),
+      );
+      expect(packager.requests, isEmpty);
+      expect(await archive.readAsBytes(), originalBytes);
+    } finally {
+      await root.delete(recursive: true);
+    }
+  });
 
   test(
     "signed publisher requires explicit feed initialization when absent",
@@ -1432,6 +1677,17 @@ macos:
     },
   );
 }
+
+ReleaseIndexItem _macOSHistoryItem() => ReleaseIndexItem(
+      version: "2.1.0",
+      buildNumber: null,
+      platform: "macos",
+      channel: "stable",
+      mandatory: false,
+      release: Uri.parse(
+        "https://updates.example.com/releases/stable/2.1.0/no-build/macos/release.json",
+      ),
+    );
 
 Future<void> _configureDescriptorSigningHook(
   Directory root, {

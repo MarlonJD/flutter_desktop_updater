@@ -22,12 +22,14 @@ ArgParser buildPublishParser() {
     ..addFlag(
       "initialize-feed",
       negatable: false,
-      help: "Create a signed feed only when no hosted app-archive.json exists.",
+      help: "Create a signed feed only when no hosted app-archive.json exists. "
+          "Existing local history requires --existing-app-archive.",
     )
     ..addOption(
       "existing-app-archive",
-      help: "Path to the already-hosted signed app-archive.json history to "
-          "extend. When the hosted feed exists, bytes must match exactly.",
+      help: "Path to signed app-archive.json history to extend, including "
+          "local history before the first upload. When the hosted feed "
+          "exists, bytes must match exactly.",
     )
     ..addOption("version")
     ..addOption("build-number")

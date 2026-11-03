@@ -129,6 +129,9 @@ class ReleasePublisher {
         ? null
         : await _acquireSignedPublicationHistory(
             projectRoot: projectRoot,
+            localAppArchive: File(
+              path.join(config.outputDirectory.path, "app-archive.json"),
+            ),
             appArchiveUrl: config.baseUrl.resolve("app-archive.json"),
             overrides: overrides,
             signing: signing,
@@ -741,6 +744,7 @@ bool _containsReleaseIdentity(
 
 Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
   required Directory projectRoot,
+  required File localAppArchive,
   required Uri appArchiveUrl,
   required ReleasePublishOverrides overrides,
   required ReleaseSigningOptions signing,
@@ -774,6 +778,20 @@ Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
         "Signed publishing requires a hosted signed app-archive.json. "
         "Pass --initialize-feed only for a first feed publication.",
       );
+    }
+    if (local == null && await localAppArchive.exists()) {
+      final decoded = jsonDecode(await localAppArchive.readAsString());
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException("app-archive.json must be a JSON object.");
+      }
+      if (ReleaseIndex.fromJson(decoded).items.isNotEmpty) {
+        throw FormatException(
+          "The local app-archive.json contains release history. "
+          "Pass --existing-app-archive with the signed archive path to "
+          "preserve it when initializing the feed.",
+          localAppArchive.path,
+        );
+      }
     }
     return _SignedPublicationHistory(
       index: local?.index,
