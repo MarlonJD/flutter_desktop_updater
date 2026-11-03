@@ -1353,59 +1353,337 @@ macos:
     }
   });
 
-  test("publisher rejects a local snapshot that differs from hosted history",
-      () async {
-    final root = await _createWindowsFixture();
-    final seed = List<int>.generate(32, (index) => index);
-    final publicKeys = await _publicKeysForSeed(seed);
-    final packager = _RecordingPackager(<String>[]);
-    try {
-      final archive = await _writeSignedAppArchive(
-        root: root,
-        relativePath: "dist/desktop_updater/app-archive.json",
-        seed: seed,
-        items: [_macOSHistoryItem()],
-      );
-      final originalBytes = await archive.readAsBytes();
-      final hosted = await _writeSignedAppArchive(
-        root: root,
-        relativePath: "hosted.json",
-        seed: seed,
-        items: [],
-      );
-      final hostedBytes = await hosted.readAsBytes();
-      await expectLater(
-        ReleasePublisher(
-          skipBuild: true,
-          packager: packager,
-          httpClient: MockClient(
-            (_) async => http.Response.bytes(hostedBytes, 200),
+  for (final conflict in ["history", "formatting", "initialization"]) {
+    test("publisher rejects hosted archive conflict: $conflict", () async {
+      final root = await _createWindowsFixture();
+      final seed = List<int>.generate(32, (index) => index);
+      final publicKeys = await _publicKeysForSeed(seed);
+      final packager = _RecordingPackager(<String>[]);
+      try {
+        final archive = await _writeSignedAppArchive(
+          root: root,
+          relativePath: "dist/desktop_updater/app-archive.json",
+          seed: seed,
+          items: [_macOSHistoryItem()],
+        );
+        final originalBytes = await archive.readAsBytes();
+        final hosted = await _writeSignedAppArchive(
+          root: root,
+          relativePath: "hosted.json",
+          seed: seed,
+          items: [],
+        );
+        final hostedBytes = conflict == "history"
+            ? await hosted.readAsBytes()
+            : utf8.encode(jsonEncode(jsonDecode(utf8.decode(originalBytes))));
+        await expectLater(
+          ReleasePublisher(
+            skipBuild: true,
+            packager: packager,
+            httpClient: MockClient(
+              (_) async => http.Response.bytes(hostedBytes, 200),
+            ),
+          ).publish(
+            projectRoot: root,
+            platform: "windows",
+            overrides: ReleasePublishOverrides(
+              initializeFeed: conflict == "initialization",
+              existingAppArchive: "dist/desktop_updater/app-archive.json",
+            ),
+            signing: ReleaseSigningOptions(
+              publicKeyId: "stable-2026",
+              privateKeyBase64: base64Encode(seed),
+              trustedReleasePublicKeys: publicKeys,
+            ),
+            output: StringBuffer(),
           ),
-        ).publish(
-          projectRoot: root,
-          platform: "windows",
-          overrides: const ReleasePublishOverrides(
-            existingAppArchive: "dist/desktop_updater/app-archive.json",
-          ),
-          signing: ReleaseSigningOptions(
-            publicKeyId: "stable-2026",
-            privateKeyBase64: base64Encode(seed),
-            trustedReleasePublicKeys: publicKeys,
-          ),
-          output: StringBuffer(),
-        ),
-        throwsA(isA<FormatException>().having(
-          (error) => error.message,
-          "message",
-          contains("does not match the hosted"),
-        )),
-      );
-      expect(packager.requests, isEmpty);
-      expect(await archive.readAsBytes(), originalBytes);
-    } finally {
-      await root.delete(recursive: true);
+          throwsA(isA<FormatException>().having(
+            (error) => error.message,
+            "message",
+            allOf(
+              contains(conflict == "initialization"
+                  ? "omit --initialize-feed"
+                  : "does not match the hosted"),
+              contains("https://updates.example.com/app-archive.json"),
+            ),
+          )),
+        );
+        expect(packager.requests, isEmpty);
+        expect(await archive.readAsBytes(), originalBytes);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    });
+  }
+
+  for (final platform in ["windows", "macos", "linux"]) {
+    for (final hosted in [false, true]) {
+      for (final pathKind in [
+        "native relative",
+        "forward relative",
+        "absolute"
+      ]) {
+        test(
+            "signed history survives $platform publication (hosted: $hosted, $pathKind)",
+            () async {
+          final root = await _createFixture(platform);
+          final seed = List<int>.generate(32, (index) => index);
+          final publicKeys = await _publicKeysForSeed(seed);
+          const outputPath = "release output 中文/copied dist";
+          try {
+            final history = [
+              for (var build = 1; build <= 3; build++)
+                ReleaseIndexItem(
+                  version: "1.0.0",
+                  buildNumber: build,
+                  platform: "macos",
+                  channel: "stable",
+                  mandatory: false,
+                  release: Uri.parse(
+                      "https://updates.example.com/releases/stable/1.0.0/build-$build/macos/release.json"),
+                )
+            ];
+            final archive = await _writeSignedAppArchive(
+              root: root,
+              relativePath: path.join(outputPath, "app-archive.json"),
+              seed: seed,
+              items: history,
+            );
+            // Windows line endings and JSON formatting do not change the
+            // canonical signature. Hosted snapshot equality still uses bytes.
+            await archive.writeAsString(
+                (await archive.readAsString()).replaceAll("\n", "\r\n"));
+            final snapshot = await archive.readAsBytes();
+            final sourcePath = switch (pathKind) {
+              "absolute" => archive.absolute.path,
+              "forward relative" => "$outputPath/app-archive.json",
+              _ => path.join(
+                  "release output 中文", "copied dist", "app-archive.json"),
+            };
+            await ReleasePublisher(
+              skipBuild: true,
+              packager: _RecordingPackager(<String>[]),
+              macOSReleaseTrust: _StubMacOSReleaseTrust(),
+              httpClient: MockClient((_) async => hosted
+                  ? http.Response.bytes(snapshot, 200,
+                      headers: {"etag": '"snapshot"'})
+                  : http.Response("absent", 404)),
+            ).publish(
+              projectRoot: root,
+              platform: platform,
+              overrides: ReleasePublishOverrides(
+                initializeFeed: !hosted,
+                outputPath: outputPath,
+                existingAppArchive: sourcePath,
+                packageId: "com.example.archive-history",
+              ),
+              signing: ReleaseSigningOptions(
+                publicKeyId: "stable-2026",
+                privateKeyBase64: base64Encode(seed),
+                trustedReleasePublicKeys: publicKeys,
+              ),
+              output: StringBuffer(),
+            );
+            final index = ReleaseIndex.fromJson(
+                jsonDecode(await archive.readAsString())
+                    as Map<String, dynamic>);
+            expect(
+                index.items
+                    .where((item) => item.version == "1.0.0")
+                    .map((item) => item.toJson()),
+                history.map((item) => item.toJson()));
+            expect(index.items, hasLength(4));
+            expect(
+                index.items
+                    .singleWhere((item) => item.version == "2.1.0")
+                    .platform,
+                platform);
+            expect(
+                await Ed25519ReleaseIndexSignatureVerifier(publicKeys)
+                    .verify(index),
+                isTrue);
+          } finally {
+            await root.delete(recursive: true);
+          }
+        });
+      }
     }
-  });
+  }
+
+  for (final source in ["hosted", "local initial", "local hosted"]) {
+    final failures = <String, (void Function(Map<String, dynamic>), String)>{
+      "missing signature": (
+        (json) => json.remove("signature"),
+        "missing signature"
+      ),
+      "unsupported algorithm": (
+        (json) => json["signature"]["algorithm"] = "rsa",
+        "unsupported signature algorithm",
+      ),
+      "missing key id": (
+        (json) => json["signature"]["publicKeyId"] = " ",
+        "missing publicKeyId",
+      ),
+      "unknown key": (
+        (json) => json["signature"]["publicKeyId"] = "other-machine-key",
+        "unknown publicKeyId \"other-machine-key\"",
+      ),
+      "empty signature": (
+        (json) => json["signature"]["value"] = "",
+        "malformed Ed25519 signature",
+      ),
+      "invalid base64": (
+        (json) => json["signature"]["value"] = "not!base64",
+        "malformed Ed25519 signature",
+      ),
+      "wrong signature length": (
+        (json) => json["signature"]["value"] = base64Encode([1, 2, 3]),
+        "malformed Ed25519 signature",
+      ),
+      "wrong signature": (
+        (json) => json["signature"]["value"] = base64Encode(List.filled(64, 0)),
+        "signature does not verify with the trusted public key",
+      ),
+      "tampered content": (
+        (json) => json["appName"] = "Edited after signing",
+        "signature does not verify with the trusted public key",
+      ),
+      "wrong public key": (
+        (json) {},
+        "signature does not verify with the trusted public key",
+      ),
+      "invalid schema": (
+        (json) => json["schemaVersion"] = 2,
+        "invalid schema-v3 archive"
+      ),
+      "invalid field type": (
+        (json) => json["items"] = "items",
+        "invalid schema-v3 archive"
+      ),
+      "invalid signature type": (
+        (json) => json["signature"] = "signature",
+        "invalid schema-v3 archive"
+      ),
+      "invalid JSON": ((json) {}, "invalid UTF-8 JSON"),
+      "invalid UTF-8": ((json) {}, "invalid UTF-8 JSON"),
+      "non-object JSON": ((json) {}, "must be a JSON object"),
+    };
+    for (final failure in failures.entries) {
+      test(
+          "archive validation identifies $source ${failure.key} before mutation",
+          () async {
+        final root = await _createHookFixture();
+        final seed = List<int>.generate(32, (index) => index);
+        final publicKeys = await _publicKeysForSeed(
+          failure.key == "wrong public key" ? seed.reversed.toList() : seed,
+        );
+        final packager = _RecordingPackager(<String>[]);
+        var builds = 0;
+        var hooks = 0;
+        try {
+          final archive = await _writeSignedAppArchive(
+            root: root,
+            relativePath: path.join("release output 中文", "app-archive.json"),
+            seed: seed,
+            items: [_macOSHistoryItem()],
+          );
+          final validBytes = await archive.readAsBytes();
+          final hostedBytes =
+              source == "local hosted" && failure.key == "wrong public key"
+                  ? await (await _writeSignedAppArchive(
+                      root: root,
+                      relativePath: "hosted.json",
+                      seed: seed.reversed.toList(),
+                      items: [_macOSHistoryItem()],
+                    ))
+                      .readAsBytes()
+                  : validBytes;
+          final json =
+              jsonDecode(utf8.decode(validBytes)) as Map<String, dynamic>;
+          failure.value.$1(json);
+          final invalidBytes = switch (failure.key) {
+            "invalid JSON" => utf8.encode('{"private": "do not echo",'),
+            "invalid UTF-8" => [0xff],
+            "non-object JSON" => utf8.encode("[]"),
+            _ => utf8.encode(jsonEncode(json)),
+          };
+          if (source != "hosted") await archive.writeAsBytes(invalidBytes);
+          final before = await archive.readAsBytes();
+          final manifest = File(
+              path.join(archive.parent.path, ".desktop_updater_publish.json"));
+          await manifest.writeAsString("previous manifest");
+          await expectLater(
+            ReleasePublisher(
+              packager: packager,
+              startBuildProcess: (executable, arguments,
+                  {workingDirectory, runInShell = false}) async {
+                builds++;
+                return const _FakeBuildProcess();
+              },
+              runHookCommand: (_, {required environment}) async {
+                hooks++;
+                return ProcessResult(0, 0, "", "");
+              },
+              httpClient: MockClient((_) async => source == "local initial"
+                  ? http.Response("absent", 404)
+                  : http.Response.bytes(
+                      source == "hosted" ? invalidBytes : hostedBytes, 200)),
+            ).publish(
+              projectRoot: root,
+              platform: "windows",
+              overrides: ReleasePublishOverrides(
+                initializeFeed: source != "local hosted",
+                outputPath: "release output 中文",
+                existingAppArchive:
+                    path.relative(archive.path, from: root.path),
+              ),
+              signing: ReleaseSigningOptions(
+                publicKeyId: "stable-2026",
+                privateKeyBase64: base64Encode(seed),
+                trustedReleasePublicKeys: publicKeys,
+              ),
+              output: StringBuffer(),
+            ),
+            throwsA(isA<FormatException>().having(
+              (error) => error.message,
+              "source-aware diagnostic",
+              allOf([
+                contains(source == "hosted"
+                    ? "Hosted app-archive.json"
+                    : "Local --existing-app-archive"),
+                contains(source == "hosted"
+                    ? "https://updates.example.com/app-archive.json"
+                    : archive.absolute.path),
+                contains(failure.value.$2),
+                if ([
+                  "empty signature",
+                  "invalid base64",
+                  "wrong signature length",
+                  "wrong signature",
+                  "wrong public key",
+                  "tampered content",
+                  "unsupported algorithm"
+                ].contains(failure.key))
+                  contains("stable-2026"),
+                isNot(contains("do not echo")),
+              ]),
+            )),
+          );
+          expect(builds, 0);
+          expect(hooks, 0);
+          expect(packager.requests, isEmpty);
+          expect(await archive.readAsBytes(), before);
+          expect(await manifest.readAsString(), "previous manifest");
+          expect(
+              await Directory(path.join(archive.parent.path, "releases"))
+                  .exists(),
+              isFalse);
+        } finally {
+          await root.delete(recursive: true);
+        }
+      });
+    }
+  }
 
   test(
     "signed publisher requires explicit feed initialization when absent",

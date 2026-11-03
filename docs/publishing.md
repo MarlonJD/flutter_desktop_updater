@@ -858,6 +858,37 @@ the server, omit `--initialize-feed`; an optional `--existing-app-archive` must
 match the hosted bytes exactly. Upload immutable release files and artifacts
 first, and publish the final signed `app-archive.json` last.
 
+### Diagnosing archive verification failures
+
+Publication verifies the hosted archive first, then any explicit
+`--existing-app-archive`. Errors identify `Hosted app-archive.json` with its URL
+or `Local --existing-app-archive` with its resolved file path. A present hosted
+archive must verify even when `--initialize-feed` is supplied; that flag is only
+for an absent feed and never bypasses verification.
+
+- **Unknown publicKeyId:** the selected release-key profile does not trust the
+  archive's key ID. Compare the public `desktop_updater.keys.json` profiles on
+  both machines, including `feedUrl`, `activeKeyId`, and `publicKeys`. Use the
+  original feed profile and the documented encrypted key transfer process.
+- **Missing, unsupported, or malformed signature:** restore the original signed
+  archive. Ed25519 signatures must be Base64 values decoding to 64 bytes.
+- **Signature does not verify with the trusted public key:** the key ID is
+  known, but the signature does not authenticate the parsed signed content.
+  Changed content, an altered signature, or a different public key can produce
+  this result; the error alone does not determine which occurred. Compare the
+  public profiles and recover an unedited copy of the original signed archive.
+- **Invalid UTF-8 JSON or schema-v3 archive:** check the named source for a
+  truncated file, an HTML response, or malformed fields.
+- **Local snapshot does not match hosted bytes:** use an unchanged copy of the
+  current hosted archive, or omit `--existing-app-archive` to retain verified
+  hosted history. Even a valid signature does not bypass this exact byte guard.
+
+Do not regenerate keys, remove the signature, edit signed fields, or reset the
+feed to work around a verification failure. Public profiles can be shared for
+diagnosis; never share private seeds, credentials, encrypted key bundles, or
+their passphrases. All of these history checks finish before building or
+changing release output.
+
 ## Recommended Setup
 
 For production, start from the minimum setup and add:

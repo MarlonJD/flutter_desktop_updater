@@ -284,6 +284,8 @@ jobs:
       - name: Run Windows CurrentUser DPAPI host test
         if: runner.os == 'Windows'
         run: flutter test --no-pub test/release_cli/windows_dpapi_current_user_test.dart
+      - name: Verify archive history and signature diagnostics on target host
+        run: flutter test --no-pub test/release_cli/release_publisher_build_test.dart
       - name: Build and checksum Unix candidate-only CLI
         if: runner.os != 'Windows'
         shell: bash

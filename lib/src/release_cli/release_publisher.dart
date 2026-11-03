@@ -759,8 +759,9 @@ Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
     verifier: verifier,
   );
   if (overrides.initializeFeed && hosted != null) {
-    throw const FormatException(
-      "--initialize-feed can only be used when hosted app-archive.json is absent.",
+    throw FormatException(
+      "--initialize-feed can only be used when hosted app-archive.json is absent. "
+      'A verified archive already exists at "$appArchiveUrl"; omit --initialize-feed.',
     );
   }
 
@@ -800,8 +801,11 @@ Future<_SignedPublicationHistory> _acquireSignedPublicationHistory({
   }
 
   if (local != null && local.sha256 != hosted.revision.sha256) {
-    throw const FormatException(
-      "--existing-app-archive does not match the hosted app-archive.json bytes.",
+    throw FormatException(
+      'Local --existing-app-archive at "${existingFile!.absolute.path}" '
+      'does not match the hosted app-archive.json bytes at "$appArchiveUrl". '
+      "Use an unchanged copy of the current hosted archive, or omit "
+      "--existing-app-archive to use verified hosted history.",
     );
   }
   return _SignedPublicationHistory(
@@ -872,6 +876,7 @@ Future<_HostedSignedAppArchive?> _fetchHostedAppArchive({
   }
   final index = await _parseAndVerifySignedAppArchiveBytes(
     response.bodyBytes,
+    source: 'Hosted app-archive.json at "$appArchiveUrl"',
     verifier: verifier,
   );
   return _HostedSignedAppArchive(
@@ -887,6 +892,7 @@ Future<_LocalSignedAppArchive> _readSignedAppArchiveFile(
   final bytes = await file.readAsBytes();
   final index = await _parseAndVerifySignedAppArchiveBytes(
     bytes,
+    source: 'Local --existing-app-archive at "${file.absolute.path}"',
     verifier: verifier,
   );
   return _LocalSignedAppArchive(index: index, sha256: _sha256Bytes(bytes));
@@ -894,19 +900,73 @@ Future<_LocalSignedAppArchive> _readSignedAppArchiveFile(
 
 Future<ReleaseIndex> _parseAndVerifySignedAppArchiveBytes(
   List<int> bytes, {
+  required String source,
   required Ed25519ReleaseIndexSignatureVerifier verifier,
 }) async {
-  final json = jsonDecode(utf8.decode(bytes));
-  if (json is! Map<String, dynamic>) {
-    throw const FormatException("app-archive.json must be a JSON object.");
+  final dynamic json;
+  try {
+    json = jsonDecode(utf8.decode(bytes));
+  } on FormatException {
+    // Do not include decoder errors: their source may contain the raw document.
+    throw FormatException("$source: invalid UTF-8 JSON.");
   }
-  final index = ReleaseIndex.fromJson(json);
+  if (json is! Map<String, dynamic>) {
+    throw FormatException("$source: app-archive.json must be a JSON object.");
+  }
+  final ReleaseIndex index;
+  try {
+    index = ReleaseIndex.fromJson(json);
+  } on FormatException {
+    throw FormatException("$source: invalid schema-v3 archive.");
+  } on TypeError {
+    throw FormatException("$source: invalid schema-v3 archive field types.");
+  }
   if (!await verifier.verify(index)) {
-    throw const FormatException(
-      "Hosted app-archive.json signature verification failed.",
+    throw FormatException(
+      "$source: ${_archiveSignatureFailure(index, verifier)}",
     );
   }
   return index;
+}
+
+// Describe a failure only after the existing verifier has rejected the index.
+// The diagnostic must never become a separate trust decision.
+String _archiveSignatureFailure(
+  ReleaseIndex index,
+  Ed25519ReleaseIndexSignatureVerifier verifier,
+) {
+  final signature = index.signature;
+  if (signature == null) {
+    return "missing signature. Use the original signed app-archive.json.";
+  }
+  final keyId = signature.publicKeyId.trim();
+  final keyLabel = "publicKeyId ${jsonEncode(keyId)}";
+  if (signature.algorithm != "ed25519") {
+    return "unsupported signature algorithm ${jsonEncode(signature.algorithm)} "
+        "for $keyLabel; expected ed25519.";
+  }
+  if (keyId.isEmpty) {
+    return "missing publicKeyId in the signature envelope.";
+  }
+  if (!verifier.publicKeys.containsKey(keyId)) {
+    return "unknown $keyLabel. The selected release-key profile does not "
+        "trust this key. Compare the public desktop_updater.keys.json "
+        "profiles on both machines and use the original feed profile.";
+  }
+  List<int>? signatureBytes;
+  try {
+    signatureBytes = base64Decode(signature.value.trim());
+  } on FormatException {
+    // The verifier already rejected the malformed value; never echo it.
+  }
+  if (signatureBytes == null || signatureBytes.length != 64) {
+    return "malformed Ed25519 signature for $keyLabel; expected a base64 "
+        "value decoding to 64 bytes. Restore the original signed archive.";
+  }
+  return "signature does not verify with the trusted public key for $keyLabel. "
+      "The signed content, signature, or public key may differ. Compare the "
+      "public desktop_updater.keys.json profiles and restore the original "
+      "signed archive; do not generate replacement keys.";
 }
 
 File? _resolveExistingAppArchive({

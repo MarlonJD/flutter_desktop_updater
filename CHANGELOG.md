@@ -1,3 +1,12 @@
+## 3.2.11
+
+* Identify the actual hosted URL or local `--existing-app-archive` path when
+  archive verification fails, instead of reporting every failure as hosted (#84).
+* Include the relevant key ID and distinguish unknown keys, malformed signatures,
+  invalid archives, and cryptographic mismatches without bypassing verification.
+* Clarify how to diagnose public-key profiles and preserve signed history across
+  Windows, macOS, and Linux. Retain exact hosted snapshot and revision checks.
+
 ## 3.2.10
 
 * Prevent first-feed publishing from silently discarding a copied local
