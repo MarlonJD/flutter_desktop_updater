@@ -80,3 +80,13 @@ raw document or signature. CI runs these publisher tests on each CLI host.
 Pub.dev reports 3.2.11 absent; `general-notary` default-resolution history
 access passed. The candidate version is 3.2.11. Generated native version source
 files are release metadata and will be committed; QA artifacts remain ignored.
+
+The first complete candidate harness exposed four release-version expectations
+that the version generator does not own (README and source-shape tests); these
+are synchronized to 3.2.11 along with the native helper test and example lock.
+Two Swift negative-compilation tests require the source directory basename
+`flutter_desktop_updater`; rerun the immutable export with that basename. The
+initial failure report is retained separately. All 393 release CLI tests and
+the real CLI/HTTP/ZIP/signing smoke passed. The latter retained three macOS
+records while adding Windows and then Linux, and distinguished hosted/local
+unknown-key failures with exit 64 and unchanged output.
