@@ -13,7 +13,6 @@ branch, release, or external-write authority.
 
 ## Active
 
-- [2026-11-03 - Issue 84 archive signature diagnostics and patch release](active/2026-11-03-issue84-archive-signature-release.md)
 - [2026-08-10 - Windows ARM64 local production readiness](active/2026-08-10-windows-arm64-local-production-readiness.md)
 - [2026-08-13 - Release publishing hardening](active/2026-08-13-release-publishing-hardening-plan.md)
 - [2026-08-05 - Desktop Updater 3.1 release-key profile migration](active/2026-08-05-release-key-management-plan.md)
@@ -30,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-11-03 - Issue 84 archive signature diagnostics and patch release](completed/2026-11-03-issue84-archive-signature-release.md)
 - [2026-11-03 - Issue 84 archive history protection and patch release](completed/2026-11-03-issue84-archive-history-release.md)
 - [2026-11-02 - desktop_updater 3.2.9 release](completed/2026-11-02-desktop-updater-3-2-9-release.md)
 - [2026-11-02 - Issue 83 Flutter Inno executable resolution](completed/2026-11-02-issue83-flutter-inno-executable.md)

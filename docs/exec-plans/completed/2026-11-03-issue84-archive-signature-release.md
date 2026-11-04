@@ -7,8 +7,8 @@ Continue the authorized implementation and release on existing main, initially
 change, two old 2.x plans, and their ledger entries. The user authorized scoped
 commits, normal pushes, a new immutable patch release, CI target-host validation,
 and fresh local notarized macOS E2E. No branch operations are authorized.
-Release publication is gated on the accepted Windows filename work and its
-validation, after reviewing the reporter's response. The explicit authorization
+Release 3.2.11 is published after the accepted Windows filename work, full
+validation, and review of the reporter's response. The explicit authorization
 to post the read-only diagnostic script via GitHub CLI is recorded below.
 
 The initial redacted archive could not establish the cryptographic cause;
@@ -30,9 +30,9 @@ validation before build/output mutation.
 - [x] Post the explicitly authorized diagnostic script and request original Mac/Windows evidence.
 - [x] Verify cross-host and cross-version archive transfer in dedicated CI.
 - [x] Identify the signed payload mismatch using the reporter's localhost clue and preserved attachment.
-- [ ] Expand Windows installer filename templates and verify real ISCC output in CI.
-- [ ] Publish the next unused patch and verify registry/tag/package identity.
-- [ ] Complete the ledger, draft reporter reply, and clean owned fixtures.
+- [x] Expand Windows installer filename templates and verify real ISCC output in CI.
+- [x] Publish the next unused patch and verify registry/tag/package identity.
+- [x] Complete the ledger, draft reporter reply, and clean owned fixtures.
 
 ## Decision Log
 
@@ -72,8 +72,10 @@ The 2026-11-04 reply enabled cryptographic identification of the supplied
 archive's mismatch: the existing signature authenticates localhost:3000 release
 URLs, while the attachment contains production URLs with the same signature.
 The tool or person that changed/combined those fields is not established.
-The user accepted adding the separate Windows filename-placeholder support
-gap to this patch. Publication awaits its implementation and validation.
+Windows filename placeholders are included in published 3.2.11 at
+`aacfc651fdcc7eb2ebb98097fa06a0f983336af7`. Full target-host CI and the local
+harness passed; downloaded package bytes and the immutable tag match that
+commit. The reporter reply is drafted and the owned fixtures are cleaned.
 
 ## Revision history
 
@@ -360,3 +362,49 @@ preprocessor custom fixtures producing `v1.0.0(3)-windows.exe`.
 
 The fixture installers are compilation evidence only, with synthetic payloads;
 they are not installed or represented as signed production installers.
+
+The implementation is committed and pushed as
+`aacfc651fdcc7eb2ebb98097fa06a0f983336af7`. Focused local tests passed 159 cases;
+the complete immutable-export harness passed 1,160 tests with 7 skips (the 4
+existing optional cases and 3 Windows-only ISCC cases), structural 31/31,
+format, analysis, version checks, documentation checks, and a zero-warning
+publish dry run. All tracked export files match the commit and the expected
+package inventory remains 869 files.
+
+Windows CI job 126479683286 in run 41801962046 passed 102 publisher tests,
+2 CurrentUser DPAPI tests, and all 30 filename/packager tests. Inno Setup 6.7.1
+compiled the generated, literal custom, and preprocessor custom scripts into
+real PE installers named `v1.0.0(3)-windows.exe`; their descriptor names,
+lengths, and SHA-256 hashes matched the produced files. All four standalone
+CLI hosts passed. Full CI completed successfully: 13 selected jobs passed and
+4 explicitly credentialed/privileged lanes remained skipped.
+
+Evidence is under
+`reports/releases/desktop_updater-3.2.11/windows-filename/`, including the source
+manifest, harness report, Windows job log, package-inventory verification, and
+updated reporter reply draft. The previous notarized macOS E2E remains scoped
+to unchanged runtime/native/example inputs; the only application package
+sources changed since that candidate are four release-CLI files. No new
+notarization or privileged production-installation claim is made.
+
+
+### Publication and closure, 2026-11-04
+
+- Published package: https://pub.dev/packages/desktop_updater/versions/3.2.11 .
+- GitHub release: https://github.com/MarlonJD/flutter_desktop_updater/releases/tag/v3.2.11 .
+- Immutable release commit: `aacfc651fdcc7eb2ebb98097fa06a0f983336af7`.
+- Exact-commit full CI: https://github.com/MarlonJD/flutter_desktop_updater/actions/runs/41801962046 .
+- Downloaded package SHA-256: `934599c5f4e848e15d806c9f873d494539cb6f8b3d0bbab3a551f52bdb9710bb`.
+
+The registry reports version 3.2.11 and its archive hash matches the downloaded
+package. All 869 package files match the release commit byte-for-byte, with no
+unexpected or missing paths. GitHub's v3.2.11 tag resolves to the exact release
+commit, and the release body was read back and matched the prepared notes.
+
+The current reporter reply remains a local draft, as required by repository
+feedback rules; the earlier specifically authorized diagnostic script comment
+remains posted. No new issue comment or closure was submitted. The reporter's
+original archive still matches its preserved SHA-256. The installed fixture
+and all five recorded temporary roots were removed after verification. No
+owned app process or mounted image remained; ignored evidence and unrelated
+workspace changes were retained.
