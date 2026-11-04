@@ -5,6 +5,33 @@ import "package:flutter_test/flutter_test.dart";
 import "package:path/path.dart" as path;
 
 void main() {
+  for (final name in ["{unknown}", "../{version}", r"folder\{platform}"]) {
+    test("rejects invalid Inno name template during configuration: $name",
+        () async {
+      await expectLater(
+        ReleasePublishConfig.fromYaml("""
+updates:
+  baseUrl: https://updates.example.com/
+windows:
+  installer:
+    kind: inno
+    mode: script
+    script: setup.iss
+    outputBaseName: '$name'
+    privilegesRequired: admin
+    requiresElevation: always
+    authenticodeThumbprints:
+      - 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+"""),
+        throwsA(isA<FormatException>().having(
+          (error) => error.message,
+          "message",
+          contains("windows.installer.outputBaseName"),
+        )),
+      );
+    });
+  }
+
   test("loads minimum updates baseUrl config", () async {
     final tempDir = await Directory.systemTemp.createTemp("release_config_");
     try {

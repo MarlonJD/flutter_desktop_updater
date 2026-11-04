@@ -18,9 +18,33 @@ Future<String> resolveInnoOutputBaseName({
   required String appName,
   required String version,
   required String platform,
+  int? buildNumber,
 }) async {
-  final configuredName = _validatedOutputBaseName(
+  final template = _validatedOutputBaseName(
     config.outputBaseName,
+    fieldName: "windows.installer.outputBaseName",
+    allowNull: true,
+    allowPlaceholders: true,
+  );
+  if (template != null &&
+      template.contains("{buildNumber}") &&
+      buildNumber == null) {
+    throw const FormatException(
+      "windows.installer.outputBaseName uses {buildNumber}, but the release "
+      "has no build number.",
+    );
+  }
+  final values = {
+    "appName": _artifactNameStem(appName),
+    "version": version,
+    "buildNumber": buildNumber?.toString() ?? "",
+    "platform": platform,
+  };
+  final configuredName = _validatedOutputBaseName(
+    template?.replaceAllMapped(
+      _outputNamePlaceholders,
+      (match) => values[match[1]]!,
+    ),
     fieldName: "windows.installer.outputBaseName",
     allowNull: true,
   );
@@ -57,6 +81,19 @@ Future<String> resolveInnoOutputBaseName({
   throw const FormatException(
     "windows.installer.outputBaseName is required when the Inno script "
     "OutputBaseFilename cannot be resolved.",
+  );
+}
+
+final _outputNamePlaceholders =
+    RegExp(r"\{(appName|version|buildNumber|platform)\}");
+
+/// Rejects invalid configured filenames before the project build starts.
+void validateInnoOutputBaseNameTemplate(String? value) {
+  _validatedOutputBaseName(
+    value,
+    fieldName: "windows.installer.outputBaseName",
+    allowNull: true,
+    allowPlaceholders: true,
   );
 }
 
@@ -98,6 +135,7 @@ String? _validatedOutputBaseName(
   String? value, {
   required String fieldName,
   bool allowNull = false,
+  bool allowPlaceholders = false,
 }) {
   if (value == null) {
     if (allowNull) {
@@ -112,6 +150,17 @@ String? _validatedOutputBaseName(
   final parts = path.posix.split(trimmed.replaceAll(r"\", "/"));
   if (parts.length != 1 || parts.contains("..")) {
     throw FormatException("$fieldName must be a file name, not a path.");
+  }
+  final literal = allowPlaceholders
+      ? trimmed.replaceAll(_outputNamePlaceholders, "")
+      : trimmed;
+  if (RegExp(r'[<>:"/\\|?*\x00-\x1f\x7f{}]').hasMatch(literal) ||
+      trimmed == "." ||
+      trimmed.endsWith(".")) {
+    throw FormatException(
+      "$fieldName must be a safe file name. Supported placeholders: "
+      "{appName}, {version}, {buildNumber}, {platform}.",
+    );
   }
   return trimmed;
 }

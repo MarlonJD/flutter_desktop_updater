@@ -7,11 +7,13 @@ Continue the authorized implementation and release on existing main, initially
 change, two old 2.x plans, and their ledger entries. The user authorized scoped
 commits, normal pushes, a new immutable patch release, CI target-host validation,
 and fresh local notarized macOS E2E. No branch operations are authorized.
-Release publication remains on hold. The later explicit authorization to post
-the read-only diagnostic script via GitHub CLI is recorded below.
+Release publication is gated on the accepted Windows filename work and its
+validation, after reviewing the reporter's response. The explicit authorization
+to post the read-only diagnostic script via GitHub CLI is recorded below.
 
-The reporter's redacted archive cannot establish the cryptographic cause.
-The confirmed defect is that local and hosted signature failures both report
+The initial redacted archive could not establish the cryptographic cause;
+the later preserved original and localhost clue now identify it below.
+The confirmed diagnostic defect is that local and hosted failures both report
 `Hosted app-archive.json signature verification failed.` Identify the actual
 source and key ID, distinguish determinable failure categories, and preserve
 signature verification, byte/revision guards, immutable identities, and
@@ -27,7 +29,8 @@ validation before build/output mutation.
 - [x] Obtain Windows/Linux CI evidence and fresh local notarized macOS E2E.
 - [x] Post the explicitly authorized diagnostic script and request original Mac/Windows evidence.
 - [x] Verify cross-host and cross-version archive transfer in dedicated CI.
-- [ ] Obtain the reporter's original Mac/Windows comparison before resolving the release hold.
+- [x] Identify the signed payload mismatch using the reporter's localhost clue and preserved attachment.
+- [ ] Expand Windows installer filename templates and verify real ISCC output in CI.
 - [ ] Publish the next unused patch and verify registry/tag/package identity.
 - [ ] Complete the ledger, draft reporter reply, and clean owned fixtures.
 
@@ -65,9 +68,12 @@ and temporary roots after acceptance and publication.
 ## Outcomes & Retrospective
 
 The diagnostic implementation and bounded local/CI checks are complete.
-Release publication remains on the user's explicit hold. The supplied archive
-fails verification, but its original generation cause is unconfirmed; original
-Mac/Windows comparisons and generation commands/version remain outstanding.
+The 2026-11-04 reply enabled cryptographic identification of the supplied
+archive's mismatch: the existing signature authenticates localhost:3000 release
+URLs, while the attachment contains production URLs with the same signature.
+The tool or person that changed/combined those fields is not established.
+The user accepted adding the separate Windows filename-placeholder support
+gap to this patch. Publication awaits its implementation and validation.
 
 ## Revision history
 
@@ -298,3 +304,59 @@ reconstruct the reporter's unknown input. The general full CI run 41638062549
 had passed Dart/package, documentation, and all four CLI candidates at this
 checkpoint; its longer native application lanes were still running. No package
 release or version tag was published.
+
+### Reporter response and exact payload reconstruction, 2026-11-04
+
+Reporter comment 6621235199 states that the Mac feed URL was localhost and that
+their configuration caused the problem. Comment 6621314825 separately asks
+whether Windows YAML supports `v{version}({buildNumber})-{platform}`.
+
+Using that new localhost clue, reconstruct a separate candidate by replacing
+only the three `items[].release` URL origins in the preserved attachment:
+`https://flutter-client.scqkxx.com/` becomes `http://localhost:3000/`.
+Keep every other field and the exact signature envelope unchanged. Node,
+the package verifier, and OpenSSL all accept this reconstructed payload;
+all reject the supplied production-URL payload with the same public key and
+signature. No private key or new signing operation was involved. The original
+attachment remains unchanged at SHA-256
+`a7e5aa70db087707b3143125f0525d016b91372f1b3d8ef53e5db9d42c526e1e`.
+The matching canonical payload SHA-256 is
+`94f82f49c2501ef9e4cfd7260caac54bd62d0dd4493e50e88d2d635a63543945`.
+
+This establishes the precise content/signature mismatch rather than merely
+accepting the reporter's attribution: the signature authenticates the
+localhost URLs, not the production URLs attached to it. Which operation,
+tool, or person substituted the URLs or combined the fields is still unknown.
+A profile/config feed mismatch by itself has a separate profile-binding error;
+the signed archive URL substitution explains the observed cryptographic
+failure. Evidence and a proposed unposted reply are under ignored
+`reports/releases/issue84-reporter-signature-2026-11-04/`.
+
+The actual naming resolvers were also exercised: `macos.dmg.fileName` expands
+the example to `v1.0.0(3)-macos.dmg`; `windows.installer.outputBaseName` returns
+the placeholder string literally. The reporter has not provided their YAML
+field, so the response should qualify that Windows answer by configuration
+field. No Inno compiler/native Windows build was run for this naming probe.
+No product code, new GitHub feedback, release, or tag was changed in this turn.
+The previous full CI run 41638062549 is now confirmed completed successfully.
+
+### Windows filename support and release resumption, 2026-11-04
+
+The user accepted the recommendation to explain the proven signature mismatch,
+implement Windows filename placeholders, verify real Windows packaging and CI,
+and include the change in the same 3.2.11 patch. Publication remains gated on
+completion of this new scope and validation. Keep the current branch and all
+unrelated worktree changes intact.
+
+Expand `{appName}`, `{version}`, `{buildNumber}`, and `{platform}` in
+`windows.installer.outputBaseName` before layout and packaging. Validate the
+configured template before building and the resolved filename before output
+creation. Require a build number only when the template requests it. Preserve
+literal custom-script filename matching and require a resolved configured name
+for dynamic Inno scripts; do not rewrite user scripts. Test publisher artifact
+URLs/manifests, packager-generated scripts, both custom-script cases, and
+invalid input. Run real ISCC on Windows for generated, literal custom, and
+preprocessor custom fixtures producing `v1.0.0(3)-windows.exe`.
+
+The fixture installers are compilation evidence only, with synthetic payloads;
+they are not installed or represented as signed production installers.

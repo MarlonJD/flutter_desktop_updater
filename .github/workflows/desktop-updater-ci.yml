@@ -286,6 +286,21 @@ jobs:
         run: flutter test --no-pub test/release_cli/windows_dpapi_current_user_test.dart
       - name: Verify archive history and signature diagnostics on target host
         run: flutter test --no-pub test/release_cli/release_publisher_build_test.dart
+      - name: Compile templated Windows installers with real Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if ($null -eq $iscc) { throw "Inno Setup Compiler is required for filename packaging tests." }
+          $env:DESKTOP_UPDATER_TEST_ISCC_PATH = $iscc
+          flutter test --no-pub test/release_cli/inno_output_name_test.dart test/release_cli/inno_installer_packager_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and checksum Unix candidate-only CLI
         if: runner.os != 'Windows'
         shell: bash

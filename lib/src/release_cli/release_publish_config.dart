@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:desktop_updater/src/release_cli/inno/inno_output_name.dart";
 import "package:desktop_updater/src/release_cli/inno/inno_publish_config.dart";
 import "package:desktop_updater/src/release_cli/macos/macos_artifact_config.dart";
 import "package:path/path.dart" as path;
@@ -721,6 +722,7 @@ WindowsPublishConfig _readWindowsConfig(Map<String, dynamic> document) {
 
 void _validateInnoConfig(InnoPublishConfig config) {
   validateInnoPublishConfig(config);
+  validateInnoOutputBaseNameTemplate(config.outputBaseName);
 }
 
 Uri _normalizeBaseUrl(String value) {

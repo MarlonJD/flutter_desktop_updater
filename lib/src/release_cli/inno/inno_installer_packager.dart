@@ -99,6 +99,7 @@ class InnoInstallerPackager {
           config: config,
           appName: request.appName,
           version: request.version,
+          buildNumber: request.buildNumber,
           platform: request.platform,
         );
     await request.outputDirectory.create(recursive: true);

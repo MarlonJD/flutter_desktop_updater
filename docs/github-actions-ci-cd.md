@@ -72,6 +72,12 @@ the approved production signing workflow. macOS and Windows public assets must
 pass their repository signing/notarization policy after their final bytes are
 built.
 
+The Windows candidate lane also installs Inno Setup and compiles the filename
+fixtures with real ISCC. Generated, literal custom, and preprocessor custom
+scripts must produce `v1.0.0(3)-windows.exe` from the configured filename
+template. These are unsigned synthetic packaging fixtures: the lane does not
+install them or establish Authenticode/runtime-update readiness.
+
 ### Archive signature interoperability investigation
 
 The manual `Archive Signature Interoperability` workflow produces signed

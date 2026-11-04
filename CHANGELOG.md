@@ -1,5 +1,8 @@
 ## 3.2.11
 
+* Expand `{appName}`, `{version}`, `{buildNumber}`, and `{platform}` in Windows
+  `installer.outputBaseName` for generated and custom Inno scripts. Use the
+  resolved name consistently in installer output and published artifact URLs.
 * Identify the actual hosted URL or local `--existing-app-archive` path when
   archive verification fails, instead of reporting every failure as hosted (#84).
 * Include the relevant key ID and distinguish unknown keys, malformed signatures,

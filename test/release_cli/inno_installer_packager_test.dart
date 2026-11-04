@@ -166,7 +166,7 @@ void main() {
     );
   });
 
-  test("uses custom output base name in generated mode", () async {
+  test("expands output base name in generated mode", () async {
     final root = await Directory.systemTemp.createTemp("inno_packager_");
     addTearDown(() async {
       if (await root.exists()) {
@@ -196,7 +196,8 @@ void main() {
         buildNumber: 250,
         platform: "windows",
         channel: "stable",
-        artifactUrl: Uri.parse("https://cdn.example.com/CustomSetup.exe"),
+        artifactUrl:
+            Uri.parse("https://cdn.example.com/v2.5.0(250)-windows.exe"),
         installStrategy: "innoInstaller",
         executableRelativePath: "Example.exe",
         minimumUpdaterVersion: "2.5.0",
@@ -205,25 +206,103 @@ void main() {
         kind: "inno",
         mode: "generated",
         appId: "com.example.app",
+        outputBaseName: "v{version}({buildNumber})-{platform}",
         privilegesRequired: "admin",
         requiresElevation: "always",
         authenticodeThumbprints: [_testCertificateSha256],
         protectedHelperInstallDir:
             r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--2.5.0",
       ),
-      outputBaseName: "CustomSetup",
     );
 
-    expect(path.basename(result.artifact.path), "CustomSetup.exe");
+    expect(path.basename(result.artifact.path), "v2.5.0(250)-windows.exe");
     expect(
       await result.releaseFile.readAsString(),
-      contains('"url": "https://cdn.example.com/CustomSetup.exe"'),
+      contains('"url": "https://cdn.example.com/v2.5.0(250)-windows.exe"'),
     );
     expect(
-      await File(path.join(output.path, "CustomSetup.iss")).readAsString(),
-      contains("OutputBaseFilename=CustomSetup"),
+      await File(path.join(output.path, "v2.5.0(250)-windows.iss"))
+          .readAsString(),
+      contains("OutputBaseFilename=v2.5.0(250)-windows"),
     );
   });
+
+  final isccPath = Platform.environment["DESKTOP_UPDATER_TEST_ISCC_PATH"];
+  for (final mode in ["generated", "script-literal", "script-dynamic"]) {
+    test(
+      "real ISCC compiles expanded output name ($mode)",
+      () async {
+        final root = await Directory.systemTemp.createTemp("inno_real_name_");
+        addTearDown(() => root.delete(recursive: true));
+        final input = Directory(path.join(root.path, "Release"));
+        await input.create();
+        // This lane compiles packaging fixtures; it never installs or claims
+        // Authenticode trust for these deliberately synthetic payloads.
+        await File(path.join(input.path, "Example.exe"))
+            .writeAsBytes([77, 90, 1, 2, 3]);
+        await writeProtectedHelperInputs(input);
+        const helperDir =
+            r"C:\Program Files\DesktopUpdaterHelperGenerationV1--com.example.app--1.0.0";
+        await writeProtectedHelperCMakeCache(root, installDir: helperDir);
+        final output = Directory(path.join(root.path, "output with spaces"));
+        final script = File(path.join(root.path, "custom.iss"));
+        final scriptName =
+            mode == "script-dynamic" ? "{#SetupBaseName}" : "v1.0.0(3)-windows";
+        await script.writeAsString("""
+#define SetupBaseName "v1.0.0(3)-windows"
+[Setup]
+AppName=Example
+AppVersion=1.0.0
+DefaultDirName={autopf}\\Example
+OutputDir=${output.path}
+OutputBaseFilename=$scriptName
+[Files]
+Source: "${input.path}\\Example.exe"; DestDir: "{app}"
+""");
+        final result = await const InnoInstallerPackager().package(
+          ReleasePackageRequest(
+            input: input,
+            outputDirectory: output,
+            packageId: "com.example.app",
+            appName: "Example",
+            version: "1.0.0",
+            buildNumber: 3,
+            platform: "windows",
+            channel: "stable",
+            artifactUrl:
+                Uri.parse("https://cdn.example.com/v1.0.0(3)-windows.exe"),
+            installStrategy: "innoInstaller",
+            executableRelativePath: "Example.exe",
+          ),
+          config: InnoPublishConfig(
+            kind: "inno",
+            mode: mode == "generated" ? "generated" : "script",
+            script: mode == "generated" ? null : script.path,
+            isccPath: isccPath,
+            outputBaseName: "v{version}({buildNumber})-{platform}",
+            privilegesRequired: "admin",
+            requiresElevation: "always",
+            authenticodeThumbprints: [_testCertificateSha256],
+            protectedHelperInstallDir: mode == "generated" ? helperDir : null,
+          ),
+        );
+        final bytes = await result.artifact.readAsBytes();
+        expect(path.basename(result.artifact.path), "v1.0.0(3)-windows.exe");
+        expect(bytes.length, greaterThan(1024));
+        expect(bytes.take(2), [77, 90]);
+        final descriptor = ReleaseDescriptor.fromJson(
+          jsonDecode(await result.releaseFile.readAsString())
+              as Map<String, dynamic>,
+        );
+        expect(descriptor.artifact.url.pathSegments.last,
+            path.basename(result.artifact.path));
+        expect(descriptor.artifact.length, bytes.length);
+        expect(descriptor.artifact.sha256,
+            crypto.sha256.convert(bytes).toString());
+      },
+      skip: !Platform.isWindows || isccPath == null,
+    );
+  }
 
   test("rejects a generated installer without protected helper inputs",
       () async {

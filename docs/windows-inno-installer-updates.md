@@ -78,8 +78,9 @@ Important fields:
 - `mode`: `generated` or `script`. Defaults to `generated`.
 - `appId`: Inno `AppId`. If omitted in generated mode, the package id is used.
 - `isccPath`: optional explicit path to `ISCC.exe`.
-- `outputBaseName`: optional installer filename stem. Defaults to
-  `<app>-<version>-windows-setup`.
+- `outputBaseName`: optional installer filename stem, without `.exe`. Supports
+  `{appName}`, `{version}`, `{buildNumber}`, and `{platform}` in both modes.
+  Defaults to `<app>-<version>-windows-setup`.
 - `privilegesRequired`: must be `admin`. Inno updates use only the protected
   helper authority.
 - `protectedHelperInstallDir`: required only for generated administrative
@@ -100,6 +101,18 @@ Generated mode also accepts `setupIcon`, `licenseFile`,
 Use `x64compatible` for both architecture fields when an x64 Flutter build
 should also install on Arm64 Windows 11 through x64 emulation. The legacy
 `x64` identifier matches x64 Windows only.
+
+For example, add this field under `windows.installer`:
+
+```yaml
+outputBaseName: "v{version}({buildNumber})-{platform}"
+```
+
+A Windows release with version `1.0.0` and build number `3` produces
+`v1.0.0(3)-windows.exe`. `{appName}` omits a trailing `.exe` from the application
+name. `{buildNumber}` requires a release build number; unknown placeholders,
+paths, and unsafe filename characters are rejected. The resolved name is used
+for the installer, artifact URL, and publish manifest.
 
 Set the same protected directory before the Windows native client is
 configured. For a native CMake build, pass it directly:
@@ -233,6 +246,10 @@ windows:
 
 The CLI copies your script into the release output directory and invokes ISCC.
 Your script must write an installer whose filename matches `outputBaseName.exe`.
+If `outputBaseName` contains placeholders, this comparison uses the resolved
+name. The CLI does not substitute placeholders inside your custom `.iss` file;
+set its `OutputBaseFilename` directly or through your own Inno preprocessor
+definitions. A literal script filename must match the resolved configured name.
 
 Keep these responsibilities in your script:
 

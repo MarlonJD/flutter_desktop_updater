@@ -478,7 +478,8 @@ updates:
     }
   });
 
-  test("windows publish uses Inno installer package when configured", () async {
+  test("windows publish expands installer name in layout and manifest",
+      () async {
     final root = await _createWindowsFixture();
     final output = StringBuffer();
     final innoPackager = _FakeInnoPackager();
@@ -495,7 +496,7 @@ windows:
     kind: inno
     mode: generated
     appId: com.example.app
-    outputBaseName: CustomSetup
+    outputBaseName: "v{version}({buildNumber})-{platform}"
     privilegesRequired: admin
     protectedHelperInstallDir: C:\Program Files\DesktopUpdaterHelperGenerationV1--egas_manager--2.1.0
     requiresElevation: always
@@ -506,23 +507,24 @@ windows:
       final manifest = await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(initializeFeed: true),
+        overrides:
+            const ReleasePublishOverrides(initializeFeed: true, buildNumber: 3),
         output: output,
       );
 
       expect(manifest.artifact.kind, "innoInstaller");
       expect(manifest.artifact.path,
-          "releases/stable/2.1.0/no-build/windows/CustomSetup.exe");
+          "releases/stable/2.1.0/build-3/windows/v2.1.0(3)-windows.exe");
       expect(
         manifest.artifact.url.toString(),
-        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/build-3/windows/v2.1.0(3)-windows.exe",
       );
       expect(
         innoPackager.requests.single.artifactUrl.toString(),
-        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/build-3/windows/v2.1.0(3)-windows.exe",
       );
       expect(innoPackager.requests.single.minimumUpdaterVersion, "2.5.0");
-      expect(innoPackager.outputBaseNames.single, "CustomSetup");
+      expect(innoPackager.outputBaseNames.single, "v2.1.0(3)-windows");
       final writtenManifest = await PublishManifest.readFrom(
         File(
           path.join(
@@ -535,11 +537,11 @@ windows:
       );
       expect(
         writtenManifest.artifact.path,
-        "releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
+        "releases/stable/2.1.0/build-3/windows/v2.1.0(3)-windows.exe",
       );
       expect(
         writtenManifest.artifact.url.toString(),
-        "https://updates.example.com/releases/stable/2.1.0/no-build/windows/CustomSetup.exe",
+        "https://updates.example.com/releases/stable/2.1.0/build-3/windows/v2.1.0(3)-windows.exe",
       );
     } finally {
       await root.delete(recursive: true);
@@ -566,7 +568,7 @@ windows:
     kind: inno
     mode: script
     script: ${script.path}
-    outputBaseName: 应用-v2.1.0(2)-windows-setup
+    outputBaseName: "应用-v{version}({buildNumber})-{platform}-setup"
     privilegesRequired: admin
     requiresElevation: always
     authenticodeThumbprints:
@@ -614,7 +616,8 @@ windows:
       final manifest = await publisher.publish(
         projectRoot: root,
         platform: "windows",
-        overrides: const ReleasePublishOverrides(initializeFeed: true),
+        overrides:
+            const ReleasePublishOverrides(initializeFeed: true, buildNumber: 2),
         output: StringBuffer(),
       );
 

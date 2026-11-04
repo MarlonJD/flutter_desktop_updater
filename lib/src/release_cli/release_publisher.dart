@@ -218,6 +218,7 @@ class ReleasePublisher {
             config: config.windows.installer,
             appName: metadata.appName,
             version: metadata.version,
+            buildNumber: metadata.buildNumber,
             platform: platform,
           )
         : null;
