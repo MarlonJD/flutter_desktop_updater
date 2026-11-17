@@ -3,6 +3,44 @@ import XCTest
 @testable import DesktopUpdaterInstallHelper
 
 final class NativeInstallRequestTests: XCTestCase {
+    func testProtectedApplicationAndSameUserWritableStrategyConstraints() throws {
+        let fixture = try fixtureObject("valid-requests.json")
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+
+        for targetClass in ["protectedApplication", "sameUserWritable"] {
+            for entry in cases {
+                var request = try XCTUnwrap(entry["request"] as? [String: Any])
+                var target = try XCTUnwrap(request["target"] as? [String: Any])
+                target["class"] = targetClass
+                request["target"] = target
+                let data = try JSONSerialization.data(withJSONObject: request)
+                let strategy = try XCTUnwrap(request["strategy"] as? String)
+                let context = "\(strategy): \(targetClass)"
+                let allowed = strategy == "directoryReplace"
+                    || (strategy == "verifiedInstallerHandoff"
+                        && targetClass == "protectedApplication")
+
+                if allowed {
+                    XCTAssertNoThrow(
+                        try NativeInstallTransactionRequestV1.parse(data),
+                        context
+                    )
+                } else {
+                    XCTAssertThrowsError(
+                        try NativeInstallTransactionRequestV1.parse(data),
+                        context
+                    ) { error in
+                        XCTAssertEqual(
+                            (error as? NativeInstallProtocolError)?.code,
+                            "strategyTargetMismatch",
+                            context
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     func testAcceptsEveryCanonicalVersionOneRequest() throws {
         let fixture = try fixtureObject("valid-requests.json")
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
@@ -23,6 +61,10 @@ final class NativeInstallRequestTests: XCTestCase {
                 entry["strategy"] as? String,
                 name
             )
+            let target = try XCTUnwrap(
+                (request as? [String: Any])?["target"] as? [String: Any]
+            )
+            XCTAssertEqual(parsed.target.targetClass, target["class"] as? String, name)
         }
     }
 

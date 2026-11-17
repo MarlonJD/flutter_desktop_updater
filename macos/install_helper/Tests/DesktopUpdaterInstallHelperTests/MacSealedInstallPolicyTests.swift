@@ -95,6 +95,38 @@ final class MacSealedInstallPolicyTests: XCTestCase {
         }
     }
 
+    func testProtectedApplicationRequiresExplicitSealedPolicyPermission() throws {
+        let fixture = try privilegedPolicyFixture()
+        let request = try policyBoundDirectoryRequest(
+            targetClass: "protectedApplication"
+        )
+        let targetURL = URL(fileURLWithPath: "/Applications/Example.app")
+        let policy = try MacSealedInstallPolicyV1.load(
+            sealedJSON: fixture.data,
+            expectedSHA256: fixture.sha256
+        )
+        XCTAssertNoThrow(
+            try policy.authorize(request, canonicalTargetURL: targetURL)
+        )
+
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: fixture.data) as? [String: Any]
+        )
+        object["allowedTargetClasses"] = ["applicationBundle"]
+        let restrictedData = try NativeStrictJSON.canonicalize(
+            JSONSerialization.data(withJSONObject: object)
+        )
+        let restrictedPolicy = try MacSealedInstallPolicyV1.load(
+            sealedJSON: restrictedData,
+            expectedSHA256: sha256(restrictedData)
+        )
+        XCTAssertThrowsError(
+            try restrictedPolicy.authorize(request, canonicalTargetURL: targetURL)
+        ) { error in
+            XCTAssertEqual(error as? MacSealedInstallPolicyError, .unauthorized)
+        }
+    }
+
     func testPolicyAuthorizesOnlyExactRequestAndCanonicalRoot() throws {
         let fixture = try privilegedPolicyFixture()
         let policy = try MacSealedInstallPolicyV1.load(
@@ -152,7 +184,8 @@ private func privilegedPolicyFixture() throws -> (data: Data, sha256: String) {
 }
 
 private func policyBoundDirectoryRequest(
-    packageID: String = "com.example.app"
+    packageID: String = "com.example.app",
+    targetClass: String = "applicationBundle"
 ) throws
     -> NativeInstallTransactionRequestV1
 {
@@ -167,7 +200,7 @@ private func policyBoundDirectoryRequest(
     caller["packageId"] = packageID
     request["caller"] = caller
     request["target"] = [
-        "class": "applicationBundle",
+        "class": targetClass,
         "pathHint": "/Applications/Example.app",
         "targetNameHint": "Example.app",
         "executableRelativePath": "Contents/MacOS/Example",

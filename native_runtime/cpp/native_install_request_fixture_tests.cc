@@ -38,11 +38,14 @@ TEST(native_install_request, AcceptsEveryCanonicalV1Fixture) {
     EXPECT_EQ(1, request.protocol_version) << entry.at("name").string();
     EXPECT_EQ(entry.at("strategy").string(), request.strategy)
         << entry.at("name").string();
+    EXPECT_EQ(entry.at("request").at("target").at("class").string(),
+              request.target.target_class)
+        << entry.at("name").string();
     EXPECT_EQ(request.package_id, request.caller.package_id)
         << entry.at("name").string();
     ++count;
   }
-  EXPECT_EQ(5u, count);
+  EXPECT_EQ(8u, count);
 }
 
 TEST(native_install_request, CanonicalEncoderRoundTripsEveryV1Fixture) {

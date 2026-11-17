@@ -216,9 +216,11 @@
       "properties": {
         "class": {
           "enum": [
+            "sameUserWritable",
             "applicationBundle",
             "applicationDirectory",
             "singleExecutable",
+            "protectedApplication",
             "systemPackage",
             "externalManaged"
           ]

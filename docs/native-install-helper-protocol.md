@@ -82,15 +82,20 @@ install roots, trusted signers, arbitrary commands, sibling paths, or elevated
 capabilities. The sealed `HelperPolicyV1` remains authoritative for every
 provider, target, signer, release key, and privileged strategy.
 
-The fixed strategy/provider families are:
+The fixed strategy/provider families and target classes are:
 
-| Strategy | V1 provider family |
-| --- | --- |
-| `directoryReplace` | `platformDirectory` |
-| `singleFileReplace` | `platformFile` |
-| `verifiedInstallerHandoff` | `macosInstaller` or `windowsInno` |
-| `systemPackageTransaction` | `apt` or `dnf` |
-| `externalManagedRefresh` | `flatpak` or `snap` |
+| Strategy | V1 provider family | Target classes |
+| --- | --- | --- |
+| `directoryReplace` | `platformDirectory` | `sameUserWritable`, `applicationBundle`, `applicationDirectory`, `protectedApplication` |
+| `singleFileReplace` | `platformFile` | `singleExecutable` |
+| `verifiedInstallerHandoff` | `macosInstaller` or `windowsInno` | `applicationBundle`, `applicationDirectory`, `protectedApplication` |
+| `systemPackageTransaction` | `apt` or `dnf` | `systemPackage` |
+| `externalManagedRefresh` | `flatpak` or `snap` | `externalManaged` |
+
+On macOS, an application directly under `/Applications` is classified as
+`protectedApplication` when its parent is not writable by the caller. The
+helper accepts this class at the protocol layer, then independently enforces
+the sealed policy's allowed target classes, install roots, and strategies.
 
 Capability negotiation never silently substitutes a strategy or provider.
 Production Snap dangerous sideloading, caller command lines, direct Flatpak or

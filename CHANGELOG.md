@@ -1,3 +1,13 @@
+## 3.2.12
+
+* Fix macOS privileged updates for standard users by accepting the
+  `protectedApplication` target class in the install helper (#85).
+* Align `sameUserWritable` and `protectedApplication` validation with the shared
+  native protocol, including strategy restrictions and sealed-policy checks.
+* Rebuild the host app with this version to embed the fixed helper. Already
+  affected installations may need an administrator-assisted update or reinstall
+  to receive the fix.
+
 ## 3.2.11
 
 * Expand `{appName}`, `{version}`, `{buildNumber}`, and `{platform}` in Windows

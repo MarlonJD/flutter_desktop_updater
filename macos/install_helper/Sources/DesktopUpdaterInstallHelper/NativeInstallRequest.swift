@@ -295,18 +295,26 @@ private enum NativeRequestValidation {
         "externalManagedRefresh": ["flatpak", "snap"],
     ]
     private static let targetClasses: Set<String> = [
+        "sameUserWritable",
         "applicationBundle",
         "applicationDirectory",
         "singleExecutable",
+        "protectedApplication",
         "systemPackage",
         "externalManaged",
     ]
     private static let strategyTargetClasses: [String: Set<String>] = [
-        "directoryReplace": ["applicationBundle", "applicationDirectory"],
+        "directoryReplace": [
+            "sameUserWritable",
+            "applicationBundle",
+            "applicationDirectory",
+            "protectedApplication",
+        ],
         "singleFileReplace": ["singleExecutable"],
         "verifiedInstallerHandoff": [
             "applicationBundle",
             "applicationDirectory",
+            "protectedApplication",
         ],
         "systemPackageTransaction": ["systemPackage"],
         "externalManagedRefresh": ["externalManaged"],

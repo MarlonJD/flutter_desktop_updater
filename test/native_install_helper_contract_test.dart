@@ -95,6 +95,48 @@ void main() {
     }
   });
 
+  test("request fixtures cover the sealed-policy target classes", () async {
+    final schema = await _readJson(
+      "schemas/native-install-helper-v1.schema.json",
+    );
+    final policySchema = await _readJson(
+      "schemas/native-install-helper-policy-v1.schema.json",
+    );
+    final definitions = schema[r"$defs"] as Map<String, dynamic>;
+    final targetSchema = definitions["target"] as Map<String, dynamic>;
+    final targetProperties = targetSchema["properties"] as Map<String, dynamic>;
+    final targetClassSchema = targetProperties["class"] as Map<String, dynamic>;
+    final requestClasses =
+        (targetClassSchema["enum"] as List).cast<String>().toSet();
+    final policyProperties = policySchema["properties"] as Map<String, dynamic>;
+    final allowedTargetClasses =
+        policyProperties["allowedTargetClasses"] as Map<String, dynamic>;
+    final allowedClassSchema =
+        allowedTargetClasses["items"] as Map<String, dynamic>;
+    final policyClasses =
+        (allowedClassSchema["enum"] as List).cast<String>().toSet();
+    expect(requestClasses, policyClasses);
+
+    final fixture = await _readJson("$fixtureRoot/valid-requests.json");
+    final strategyTargets = _mapList(fixture, "cases").map((entry) {
+      final request = entry["request"] as Map<String, dynamic>;
+      final target = request["target"] as Map<String, dynamic>;
+      return (request["strategy"] as String, target["class"] as String);
+    }).toSet();
+    expect(
+      strategyTargets.map((entry) => entry.$2).toSet(),
+      requestClasses,
+    );
+    expect(
+      strategyTargets,
+      containsAll(<(String, String)>[
+        ("directoryReplace", "protectedApplication"),
+        ("directoryReplace", "sameUserWritable"),
+        ("verifiedInstallerHandoff", "protectedApplication"),
+      ]),
+    );
+  });
+
   test("every generated valid request passes the strict validator", () async {
     final fixture = await _readJson("$fixtureRoot/valid-requests.json");
     final cases = _mapList(fixture, "cases");

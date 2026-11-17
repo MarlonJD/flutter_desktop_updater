@@ -569,6 +569,33 @@ List<Map<String, Object?>> _validRequestCases() {
       targetName: "com.example.App",
       executableRelativePath: "files/bin/example",
     ),
+    (
+      name: "protected macOS application directory replacement",
+      strategy: "directoryReplace",
+      provider: "platformDirectory",
+      targetClass: "protectedApplication",
+      pathHint: "/Applications/Example.app",
+      targetName: "Example.app",
+      executableRelativePath: "Contents/MacOS/Example",
+    ),
+    (
+      name: "protected macOS application installer handoff",
+      strategy: "verifiedInstallerHandoff",
+      provider: "macosInstaller",
+      targetClass: "protectedApplication",
+      pathHint: "/Applications/Example.app",
+      targetName: "Example.app",
+      executableRelativePath: "Contents/MacOS/Example",
+    ),
+    (
+      name: "same-user writable directory replacement",
+      strategy: "directoryReplace",
+      provider: "platformDirectory",
+      targetClass: "sameUserWritable",
+      pathHint: "/home/example/Example",
+      targetName: "Example",
+      executableRelativePath: "bin/example",
+    ),
   ];
 
   return <Map<String, Object?>>[
@@ -701,6 +728,23 @@ List<Map<String, Object?>> _invalidRequestCases() {
   });
   add("strategy target mismatch", "strategyTargetMismatch", (request) {
     _nested(request, "target")["class"] = "systemPackage";
+  });
+  for (final targetClass in <String>[
+    "protectedApplication",
+    "sameUserWritable",
+  ]) {
+    add("single-file replacement rejects $targetClass",
+        "strategyTargetMismatch", (request) {
+      request["strategy"] = "singleFileReplace";
+      request["provider"] = "platformFile";
+      _nested(request, "target")["class"] = targetClass;
+    });
+  }
+  add("installer handoff rejects sameUserWritable", "strategyTargetMismatch",
+      (request) {
+    request["strategy"] = "verifiedInstallerHandoff";
+    request["provider"] = "macosInstaller";
+    _nested(request, "target")["class"] = "sameUserWritable";
   });
   add("blank target path hint", "invalidString:target.pathHint", (request) {
     _nested(request, "target")["pathHint"] = "";
@@ -1862,19 +1906,27 @@ const _strategyProviders = <String, Set<String>>{
 };
 
 const _targetClasses = <String>{
+  "sameUserWritable",
   "applicationBundle",
   "applicationDirectory",
   "singleExecutable",
+  "protectedApplication",
   "systemPackage",
   "externalManaged",
 };
 
 const _strategyTargetClasses = <String, Set<String>>{
-  "directoryReplace": <String>{"applicationBundle", "applicationDirectory"},
+  "directoryReplace": <String>{
+    "sameUserWritable",
+    "applicationBundle",
+    "applicationDirectory",
+    "protectedApplication",
+  },
   "singleFileReplace": <String>{"singleExecutable"},
   "verifiedInstallerHandoff": <String>{
     "applicationBundle",
     "applicationDirectory",
+    "protectedApplication",
   },
   "systemPackageTransaction": <String>{"systemPackage"},
   "externalManagedRefresh": <String>{"externalManaged"},

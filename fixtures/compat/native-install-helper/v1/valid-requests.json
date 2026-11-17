@@ -269,6 +269,168 @@
         "transactionId": "00000000-0000-4000-8000-000000000005"
       },
       "strategy": "externalManagedRefresh"
+    },
+    {
+      "name": "protected macOS application directory replacement",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4248,
+          "processStartIdentity": "pid-start-6",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "BgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCU",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBg=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_6",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "protectedApplication",
+          "executableRelativePath": "Contents/MacOS/Example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/Applications/Example.app",
+          "targetNameHint": "Example.app"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000006"
+      },
+      "strategy": "directoryReplace"
+    },
+    {
+      "name": "protected macOS application installer handoff",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4249,
+          "processStartIdentity": "pid-start-7",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "macosInstaller",
+        "requestNonce": "BwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSY",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_7",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "verifiedInstallerHandoff",
+        "target": {
+          "class": "protectedApplication",
+          "executableRelativePath": "Contents/MacOS/Example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/Applications/Example.app",
+          "targetNameHint": "Example.app"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000007"
+      },
+      "strategy": "verifiedInstallerHandoff"
+    },
+    {
+      "name": "same-user writable directory replacement",
+      "request": {
+        "caller": {
+          "executableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "packageId": "com.example.app",
+          "processId": 4250,
+          "processStartIdentity": "pid-start-8",
+          "signerIdentity": "Example Publisher"
+        },
+        "currentIdentity": {
+          "buildNumber": 270,
+          "packageIdentitySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "2.7.0"
+        },
+        "desiredIdentity": {
+          "buildNumber": 280,
+          "packageIdentitySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "version": "2.8.0"
+        },
+        "diagnosticsDestination": {
+          "kind": "platformLog"
+        },
+        "packageId": "com.example.app",
+        "policyId": "com.example.desktop-updater",
+        "protocolVersion": 1,
+        "provider": "platformDirectory",
+        "requestNonce": "CAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJic",
+        "schemaVersion": 1,
+        "signedDescriptor": {
+          "canonicalSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "keyId": "stable-2026",
+          "signatureAlgorithm": "ed25519",
+          "signatureBase64": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA=="
+        },
+        "stage": {
+          "artifactLength": 9007199254740993,
+          "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "ownershipNonce": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "pathHint": "/var/tmp/.desktop_updater_stage_8",
+          "provenanceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "strategy": "directoryReplace",
+        "target": {
+          "class": "sameUserWritable",
+          "executableRelativePath": "bin/example",
+          "identityProofSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "pathHint": "/home/example/Example",
+          "targetNameHint": "Example"
+        },
+        "transactionId": "00000000-0000-4000-8000-000000000008"
+      },
+      "strategy": "directoryReplace"
     }
   ],
   "schemaVersion": 1
