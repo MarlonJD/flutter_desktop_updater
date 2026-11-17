@@ -94,4 +94,4 @@ verification logs remain available.
 
 The user subsequently authorized commit, push, package publication, and a
 GitHub CLI reply to the reporter. That follow-up is tracked in the
-[3.2.12 release plan](../active/2026-11-17-desktop-updater-3-2-12-release.md).
+[3.2.12 release plan](2026-11-17-desktop-updater-3-2-12-release.md).
