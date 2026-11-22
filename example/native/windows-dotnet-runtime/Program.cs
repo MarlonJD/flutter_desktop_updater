@@ -1,4 +1,39 @@
+using System.Diagnostics;
 using DesktopUpdater.Native;
+
+if (args is ["--verify-completed-recovery", var expectedId])
+{
+    // File replacement can finish before the helper records a successful relaunch.
+    var wait = Stopwatch.StartNew();
+    DesktopUpdaterInstallTransactionStatus terminal;
+    while (true)
+    {
+        terminal = DesktopUpdaterNative.QueryTransaction(expectedId);
+        if (terminal.State == DesktopUpdaterInstallTransactionState.Completed &&
+            terminal.ResultCode == DesktopUpdaterInstallTransactionResultCode.Succeeded)
+        {
+            break;
+        }
+        if (wait.Elapsed >= TimeSpan.FromSeconds(30))
+        {
+            throw new InvalidOperationException(
+                $"Transaction did not settle: {terminal.State} {terminal.ResultCode} {terminal.Detail}");
+        }
+        Thread.Sleep(250);
+    }
+
+    var resolved = DesktopUpdaterNative.ResolvePendingInstallAfterExit(expectedId);
+    if (resolved.State != terminal.State || resolved.ResultCode != terminal.ResultCode ||
+        resolved.ResponseDigestSha256 != terminal.ResponseDigestSha256 ||
+        resolved.HelperEndpointIdentitySha256 != terminal.HelperEndpointIdentitySha256)
+    {
+        throw new InvalidOperationException(
+            $"Unexpected terminal recovery: {resolved.State} {resolved.ResultCode} {resolved.Detail}");
+    }
+    Console.WriteLine($"completed {resolved.TransactionId}");
+    // Stay alive until the smoke runner has checked this caller's child processes.
+    return Console.ReadLine() == "exit" ? 0 : 1;
+}
 
 if (!args.Contains("--smoke", StringComparer.Ordinal))
 {
