@@ -94,6 +94,11 @@ void RunWindowsPersistentRecoveryPipeSession(
           channel.WriteFrame(
               desktop_updater::runtime::internal::
                   EncodeNativeInstallTransactionStatusV1(status));
+          // A final status ends the exchange. The app keeps running, and the
+          // portable client waits for this helper to exit before returning,
+          // so holding the caller here would block both until the client's
+          // startup timeout.
+          if (!ResolveAfterExitAwaitsCallerExit(status)) return;
           if (WaitForSingleObject(observed_caller_process, INFINITE) !=
               WAIT_OBJECT_0) {
             throw WindowsOneShotTransportError(

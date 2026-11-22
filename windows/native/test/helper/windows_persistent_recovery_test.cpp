@@ -5,6 +5,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "helper_authenticode.h"
@@ -635,6 +636,38 @@ TEST(windows_persistent_recovery,
   EXPECT_FALSE(loser.should_relaunch);
   EXPECT_EQ(1, static_cast<int>(winner.should_relaunch) +
                    static_cast<int>(loser.should_relaunch));
+}
+
+TEST(windows_persistent_recovery,
+     ResolveAfterExitHoldsCallerOnlyWhenRecoveryContinuesAfterExit) {
+  using desktop_updater::runtime::internal::NativeInstallTransactionStatusV1;
+  const std::string transaction_id = "00000000-0000-4000-8000-000000000025";
+  const std::string journal(64, 'a');
+
+  // The app exits after this acknowledgement and the helper finishes the
+  // transaction, so the helper must outlive the caller.
+  for (const char *state : {"prepared", "targetActivated"}) {
+    EXPECT_TRUE(ResolveAfterExitAwaitsCallerExit(NativeInstallTransactionStatusV1{
+        1, transaction_id, state, "recoveryRequired", journal}))
+        << state;
+  }
+
+  // Final statuses leave the app running; waiting for it to exit would stall
+  // the portable exchange until the client's startup timeout.
+  const std::pair<const char *, const char *> final_statuses[] = {
+      {"completed", "completed"},
+      {"completed", "relaunchFailure"},
+      {"rolledBack", "rolledBack"},
+      {"manualActionRequired", "manualActionRequired"},
+      {"manualActionRequired", "helperUnavailable"},
+      {"manualActionRequired", "journalCorrupt"},
+  };
+  for (const auto &[state, result_code] : final_statuses) {
+    EXPECT_FALSE(
+        ResolveAfterExitAwaitsCallerExit(NativeInstallTransactionStatusV1{
+            1, transaction_id, state, result_code, journal}))
+        << state << "/" << result_code;
+  }
 }
 
 } // namespace
