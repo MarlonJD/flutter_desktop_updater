@@ -204,6 +204,15 @@ class WindowsPersistentTransactionIndex {
   std::string helper_endpoint_identity_sha256_;
 };
 
+// Whether resolvePendingInstallAfterExit keeps its caller after acknowledging
+// `status`. Only `recoveryRequired` hands the transaction to the helper to
+// finish once the app has exited; every other status is final, the app keeps
+// running, and waiting for it would stall the exchange until the client's
+// timeout.
+bool ResolveAfterExitAwaitsCallerExit(
+    const desktop_updater::runtime::internal::NativeInstallTransactionStatusV1&
+        status);
+
 class WindowsPersistentRecoveryService {
  public:
   WindowsPersistentRecoveryService(const WindowsHelperPolicy& policy,

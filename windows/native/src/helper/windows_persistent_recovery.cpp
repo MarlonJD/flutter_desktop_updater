@@ -2162,6 +2162,12 @@ WindowsPersistentRecoveryService::Query(const std::string &transaction_id) {
   }
 }
 
+bool ResolveAfterExitAwaitsCallerExit(
+    const desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
+        &status) {
+  return status.result_code == "recoveryRequired";
+}
+
 desktop_updater::runtime::internal::NativeInstallTransactionStatusV1
 WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
     const std::string &transaction_id,
@@ -2244,7 +2250,7 @@ WindowsPersistentRecoveryService::ResolvePendingInstallAfterCallerExit(
   // acknowledgement callback owns the exact-process wait; re-checking here
   // prevents recovery if a future transport callback returns early.
   acknowledge(status);
-  if (status.result_code != "recoveryRequired")
+  if (!ResolveAfterExitAwaitsCallerExit(status))
     return status;
   if (!frozen_record.has_value() || !resolver_claim.has_value() ||
       WaitForSingleObject(caller_process_, 0) != WAIT_OBJECT_0) {

@@ -456,6 +456,39 @@ for ($attempt = 0; $attempt -lt 600; $attempt++) {
 [ordered]@{ versionReady = $versionReady; stagingClean = $stagingClean } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DESKTOP_UPDATER_SMOKE_VERIFY_OUT -Encoding utf8
 if (-not $versionReady) { throw 'Standard-user ZIP smoke did not observe version 2.7.1.' }
 if (-not $stagingClean) { throw 'Standard-user ZIP smoke observed an owned staging child.' }
+
+$transactionFile = Join-Path $env:DESKTOP_UPDATER_SMOKE_USER_RUNTIME 'transaction-id'
+$transactionId = [guid]::ParseExact([IO.File]::ReadAllText($transactionFile), 'D').ToString('D')
+$application = Join-Path $env:DESKTOP_UPDATER_SMOKE_INSTALL 'DesktopUpdater.RuntimeCompile.exe'
+$start = [Diagnostics.ProcessStartInfo]::new($application, "--verify-completed-recovery $transactionId")
+$start.UseShellExecute = $false
+$start.RedirectStandardInput = $true
+$start.RedirectStandardOutput = $true
+$caller = [Diagnostics.Process]::Start($start)
+try {
+  $response = $caller.StandardOutput.ReadLineAsync()
+  # The regression waits for the full 90-second helper timeout while the caller is alive.
+  if (-not $response.Wait(60000)) { throw 'Timed out waiting for portable terminal recovery.' }
+  if ($response.Result -cne "completed $transactionId") {
+    throw "Missing terminal recovery acknowledgement for $transactionId."
+  }
+  $filter = "ParentProcessId = $($caller.Id) AND Name = 'desktop_updater_install_helper.exe'"
+  $helpers = @(Get-CimInstance Win32_Process -Filter $filter -ErrorAction Stop)
+  if ($helpers.Count -ne 0) { throw "Recovery helper still running for caller $($caller.Id)." }
+  if ($caller.HasExited) { throw 'Application exited before its recovery helper was checked.' }
+  $caller.StandardInput.WriteLine('exit')
+  $caller.StandardInput.Close()
+  if (-not $caller.WaitForExit(5000) -or $caller.ExitCode -ne 0) {
+    throw 'Terminal recovery caller did not exit cleanly.'
+  }
+  Write-Output 'Portable terminal recovery returned and its helper exited while the application was alive.'
+} finally {
+  if (-not $caller.HasExited) {
+    $caller.Kill()
+    if (-not $caller.WaitForExit(5000)) { throw 'Terminal recovery caller cleanup timed out.' }
+  }
+  $caller.Dispose()
+}
 '@, [Text.UTF8Encoding]::new($false))
   $postSmoke = Start-Process -FilePath $profileProbeShell -ArgumentList @(
     '-NoLogo',
