@@ -1,3 +1,11 @@
+## 3.2.13
+
+* Fix a 90-second startup delay after successful Windows portable ZIP updates.
+  The recovery helper now exits after returning the final install status, so
+  the relaunched app can show its window promptly (#86, #87).
+* Rebuild your Windows app with this version and include its updated helper
+  when packaging the next release.
+
 ## 3.2.12
 
 * Fix macOS privileged updates for standard users by accepting the

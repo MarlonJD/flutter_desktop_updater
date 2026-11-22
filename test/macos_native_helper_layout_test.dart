@@ -73,19 +73,19 @@ void main() {
     }
   });
 
-  test("helper executable version follows the 3.2.12 package version", () {
+  test("helper executable version follows the 3.2.13 package version", () {
     final helperVersion = _source(
       "$helperRoot/Sources/DesktopUpdaterInstallHelper/HelperVersion.swift",
     );
     final plist = _source("$helperRoot/Configuration/Helper-Info.plist");
 
-    expect(helperVersion, contains('semanticVersion = "3.2.12"'));
+    expect(helperVersion, contains('semanticVersion = "3.2.13"'));
     expect(
         plist,
         contains(
-            "<key>CFBundleShortVersionString</key>\n  <string>3.2.12</string>"));
+            "<key>CFBundleShortVersionString</key>\n  <string>3.2.13</string>"));
     expect(plist,
-        contains("<key>CFBundleVersion</key>\n  <string>3.2.12</string>"));
+        contains("<key>CFBundleVersion</key>\n  <string>3.2.13</string>"));
   });
 
   test("embedded helper discovery uses only fixed bundle-relative locations",
