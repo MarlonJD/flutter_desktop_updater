@@ -13,7 +13,6 @@ branch, release, or external-write authority.
 
 ## Active
 
-- [2026-11-23 - desktop_updater 3.2.13 release](active/2026-11-23-desktop-updater-3-2-13-release.md)
 - [2026-08-10 - Windows ARM64 local production readiness](active/2026-08-10-windows-arm64-local-production-readiness.md)
 - [2026-08-13 - Release publishing hardening](active/2026-08-13-release-publishing-hardening-plan.md)
 - [2026-08-05 - Desktop Updater 3.1 release-key profile migration](active/2026-08-05-release-key-management-plan.md)
@@ -30,6 +29,7 @@ branch, release, or external-write authority.
 
 ## Completed
 
+- [2026-11-23 - desktop_updater 3.2.13 release](completed/2026-11-23-desktop-updater-3-2-13-release.md)
 - [2026-11-17 - desktop_updater 3.2.12 release](completed/2026-11-17-desktop-updater-3-2-12-release.md)
 - [2026-11-17 - Issue 85 macOS helper target-class parity](completed/2026-11-17-issue85-macos-helper-target-classes.md)
 - [2026-11-03 - Issue 84 archive signature diagnostics and patch release](completed/2026-11-03-issue84-archive-signature-release.md)
