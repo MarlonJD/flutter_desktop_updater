@@ -1,7 +1,7 @@
 import Foundation
 
 enum HelperVersion {
-    static let semanticVersion = "3.2.13"
+    static let semanticVersion = "3.2.14"
     static let protocolVersion = 1
     static let displayString =
         "DesktopUpdaterInstallHelper \(semanticVersion) (protocol \(protocolVersion))"

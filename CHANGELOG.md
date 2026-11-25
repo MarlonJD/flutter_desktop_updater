@@ -1,3 +1,11 @@
+## 3.2.14
+
+* Fix Windows portable ZIP updates that stop with `ERROR_SHARING_VIOLATION`
+  when the install helper renames `locator.next` to `locator.json` (#88, #89).
+* Rebuild your Windows app with the 3.2.14 helper and its matching policy.
+  Users who hit this error with 3.2.13 need to install the rebuilt app manually
+  once, because the currently installed helper applies each ZIP update.
+
 ## 3.2.13
 
 * Fix a 90-second startup delay after successful Windows portable ZIP updates.
