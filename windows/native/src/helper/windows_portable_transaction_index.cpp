@@ -296,7 +296,7 @@ UniqueWindowsHandle OpenSecureDirectory(HANDLE parent,
   }
   constexpr ACCESS_MASK writable_access =
       FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
-      FILE_READ_ATTRIBUTES | READ_CONTROL | DELETE | SYNCHRONIZE;
+      FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE;
   const ACCESS_MASK open_access =
       (disposition != FILE_OPEN || writable)
           ? writable_access
